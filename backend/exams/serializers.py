@@ -547,6 +547,9 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     order = serializers.IntegerField(required=False, allow_null=True)
     is_active = serializers.BooleanField(required=False)
     usage_count = serializers.IntegerField(read_only=True, required=False)
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(), required=False, allow_null=True
+    )
     option_a = serializers.CharField(required=False, allow_blank=True)
     option_b = serializers.CharField(required=False, allow_blank=True)
     option_c = serializers.CharField(required=False, allow_blank=True)
@@ -557,14 +560,35 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     clear_option_c_image = serializers.BooleanField(write_only=True, required=False)
     clear_option_d_image = serializers.BooleanField(write_only=True, required=False)
 
+    status = serializers.CharField(read_only=True)
+    review_comment = serializers.CharField(read_only=True)
+    created_by = serializers.SerializerMethodField(read_only=True)
+    updated_by = serializers.SerializerMethodField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
     class Meta:
         model = Question
-        fields = ['id', 'module_id', 'practice_test_id', 'question_type', 'question_text', 'question_prompt', 'question_image',
-                  'is_math_input', 'correct_answer', 'score', 'explanation', 'order', 'is_active', 'usage_count',
-                  'option_a', 'option_b', 'option_c', 'option_d',
-                  'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image',
-                  'clear_question_image', 'clear_option_a_image', 'clear_option_b_image',
-                  'clear_option_c_image', 'clear_option_d_image']
+        fields = [
+            'id', 'module_id', 'practice_test_id', 'category', 'question_type', 'question_text', 'question_prompt', 'question_image',
+            'is_math_input', 'correct_answer', 'score', 'explanation', 'order', 'is_active', 'usage_count',
+            'status', 'review_comment', 'created_by', 'updated_by', 'created_at', 'updated_at',
+            'option_a', 'option_b', 'option_c', 'option_d',
+            'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image',
+            'clear_question_image', 'clear_option_a_image', 'clear_option_b_image',
+            'clear_option_c_image', 'clear_option_d_image']
+
+    def get_created_by(self, obj):
+        u = getattr(obj, "created_by", None)
+        if not u:
+            return None
+        return {"id": int(u.pk), "email": str(getattr(u, "email", "") or "")}
+
+    def get_updated_by(self, obj):
+        u = getattr(obj, "updated_by", None)
+        if not u:
+            return None
+        return {"id": int(u.pk), "email": str(getattr(u, "email", "") or "")}
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -615,6 +639,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         # Clear flags are serializer-only controls and must not be passed to model create().
         validated_data.pop("order", None)
+        validated_data.pop("status", None)
         validated_data.pop('clear_question_image', None)
         validated_data.pop('clear_option_a_image', None)
         validated_data.pop('clear_option_b_image', None)
@@ -655,6 +680,14 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
             if instance.option_d_image:
                 instance.option_d_image.delete(save=False)
             instance.option_d_image = None
+
+        validated_data.pop("status", None)
+
+        ia = validated_data.get("is_active")
+        if ia is False:
+            validated_data["status"] = Question.STATUS_ARCHIVED
+        elif ia is True and instance.status == Question.STATUS_ARCHIVED:
+            validated_data["status"] = Question.STATUS_DRAFT
 
         return super().update(instance, validated_data)
 

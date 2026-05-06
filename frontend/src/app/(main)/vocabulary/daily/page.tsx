@@ -62,7 +62,7 @@ export default function VocabularyDailyPage() {
       <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Daily Vocabulary</p>
-          <p className="mt-1 text-xl font-extrabold tracking-tight text-foreground">Learn a little, every day</p>
+          <p className="mt-1 text-2xl font-extrabold tracking-tight text-foreground md:text-3xl">Learn a little, every day</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Reviews come first (spaced repetition), then new words.
           </p>

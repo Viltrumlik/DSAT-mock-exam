@@ -867,6 +867,12 @@ export const examsAdminApi = {
     deleteQuestion: async (testId: number, moduleId: number, questionId: number) => {
         await api.delete(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/`);
     },
+    unlinkQuestionFromModule: async (testId: number, moduleId: number, questionId: number) => {
+        const r = await api.post(
+            `/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/unlink-from-module/`,
+        );
+        return r.data;
+    },
     reorderQuestion: async (testId: number, moduleId: number, questionId: number, action: 'up' | 'down') => {
         const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/reorder/`, { action });
         return r.data;
@@ -875,16 +881,47 @@ export const examsAdminApi = {
     // Standalone question bank + categories
     listStandaloneQuestions: async (params?: {
         standalone?: "1";
+        composer?: "1";
+        exclude_module?: number;
+        limit?: number;
+        offset?: number;
         q?: string;
         category?: number | "all";
         subject?: "MATH" | "READING_WRITING" | "all";
         is_active?: "1" | "0" | "all";
+        status?: "draft" | "review" | "approved" | "archived";
     }) => {
         const r = await api.get("/exams/admin/questions/", { params });
         return unwrapAdminList<AdminListEntity>(r.data);
     },
     updateStandaloneQuestion: async (questionId: number, data: Record<string, unknown>) => {
         const r = await api.patch(`/exams/admin/questions/${questionId}/`, data);
+        return r.data;
+    },
+    createStandaloneQuestion: async (data: Record<string, unknown>) => {
+        const r = await api.post("/exams/admin/questions/", data);
+        return r.data;
+    },
+    getStandaloneQuestion: async (questionId: number) => {
+        const r = await api.get(`/exams/admin/questions/${questionId}/`);
+        return r.data;
+    },
+    submitStandaloneQuestionForReview: async (questionId: number) => {
+        const r = await api.post(`/exams/admin/questions/${questionId}/submit-for-review/`);
+        return r.data;
+    },
+    approveStandaloneQuestion: async (questionId: number) => {
+        const r = await api.post(`/exams/admin/questions/${questionId}/approve/`);
+        return r.data;
+    },
+    rejectStandaloneQuestion: async (questionId: number, comment?: string) => {
+        const r = await api.post(`/exams/admin/questions/${questionId}/reject/`, {
+            comment: comment?.trim() || "",
+        });
+        return r.data;
+    },
+    getStandaloneQuestionModuleLinks: async (questionId: number) => {
+        const r = await api.get(`/exams/admin/questions/${questionId}/module-links/`);
         return r.data;
     },
     getCategoriesAdmin: async () => {

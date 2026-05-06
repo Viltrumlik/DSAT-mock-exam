@@ -22,7 +22,7 @@ import json
 from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
-from access.permissions import CanManageQuestions, RequiresSubmitTest
+from access.permissions import CanManageQuestions, CanPublishQuestions, RequiresSubmitTest
 from access.policies import (
     BulkAssignAccess,
     BulkAssignmentHistoryAccess,
@@ -1258,6 +1258,14 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
             return Response({"detail": "question_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
 
         question = get_object_or_404(Question, pk=qid_i)
+        if question.status != Question.STATUS_APPROVED or not question.is_active:
+            return Response(
+                {
+                    "detail": "Only approved, active questions can be assigned to a module. "
+                    "Archive/incomplete items must be reviewed and approved first."
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         raw_order = request.data.get("order", None)
         try:
             insert_at = int(raw_order) if raw_order is not None else None
@@ -1388,7 +1396,12 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
             insert_at = int(raw_order) if raw_order is not None else None
         except (TypeError, ValueError):
             insert_at = None
-        q = serializer.save()
+        actor = self.request.user if self.request.user.is_authenticated else None
+        q = serializer.save(
+            created_by=actor,
+            updated_by=actor,
+            status=Question.STATUS_APPROVED,
+        )
         assign_question_to_module_dense_locked(module_id=int(module.pk), question=q, insert_at=insert_at)
         assert_module_question_dense_integrity(
             module_id=int(module.pk),
@@ -1397,7 +1410,8 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         )
 
     def perform_update(self, serializer):
-        serializer.save()
+        actor = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(updated_by=actor)
 
     def perform_destroy(self, instance):
         module_id = int(self.kwargs["module_pk"])
@@ -1453,6 +1467,29 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
         return Response({"status": "reordered"})
 
+    @action(detail=True, methods=["post"], url_path="unlink-from-module")
+    def unlink_from_module(self, request, test_pk=None, module_pk=None, pk=None):
+        """
+        Remove this question from the module only (keeps Question row; removes ModuleQuestion link).
+        """
+        question = self.get_object()
+        mid = int(module_pk)
+        with transaction.atomic():
+            Module.objects.select_for_update().get(pk=mid)
+            n, _ = ModuleQuestion.objects.filter(module_id=mid, question_id=question.pk).delete()
+            if not n:
+                return Response(
+                    {"detail": "Question is not linked to this module."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            dense_compact_module_orders_locked(mid)
+            assert_module_question_dense_integrity(
+                module_id=mid,
+                raise_on_error=True,
+                context="unlink_from_module",
+            )
+        return Response({"status": "unlinked", "question_id": question.pk})
+
 
 class AdminStandaloneQuestionViewSet(viewsets.ModelViewSet):
     """
@@ -1468,12 +1505,18 @@ class AdminStandaloneQuestionViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         from django.db.models import Count, Q
 
-        qs = Question.objects.all().annotate(usage_count=Count("module_questions", distinct=True))
+        qs = (
+            Question.objects.select_related("created_by", "updated_by")
+            .all()
+            .annotate(usage_count=Count("module_questions", distinct=True))
+        )
 
-        # Base scope
-        standalone = self.request.query_params.get("standalone")
-        if standalone in ("1", "true", "yes"):
-            qs = qs.filter(module_questions__isnull=True)
+        composer = self.request.query_params.get("composer") in ("1", "true", "yes")
+        # Base scope (composer lists reusable pool; still omit rows already linked to exclude_module)
+        if not composer:
+            standalone = self.request.query_params.get("standalone")
+            if standalone in ("1", "true", "yes"):
+                qs = qs.filter(module_questions__isnull=True)
 
         # Filters
         cat = self.request.query_params.get("category")
@@ -1488,6 +1531,11 @@ class AdminStandaloneQuestionViewSet(viewsets.ModelViewSet):
             qs = qs.filter(is_active=False)
         elif raw_active in ("1", "true", "yes"):
             qs = qs.filter(is_active=True)
+
+        st = (self.request.query_params.get("status") or "").strip().lower()
+        allowed_status = {"draft", "review", "approved", "archived"}
+        if st in allowed_status:
+            qs = qs.filter(status=st)
 
         subj = (self.request.query_params.get("subject") or "").strip().upper()
         if subj in ("MATH", "READING_WRITING"):
@@ -1504,7 +1552,124 @@ class AdminStandaloneQuestionViewSet(viewsets.ModelViewSet):
                 | Q(explanation__icontains=q)
             )
 
-        return qs.order_by("-created_at", "-id")
+        exclude_mid = self.request.query_params.get("exclude_module")
+        if exclude_mid not in (None, ""):
+            try:
+                em = int(exclude_mid)
+                qs = qs.exclude(module_questions__module_id=em).distinct()
+            except (TypeError, ValueError):
+                pass
+
+        qs = qs.order_by("-created_at", "-id")
+
+        limit_raw = self.request.query_params.get("limit")
+        if limit_raw is not None:
+            try:
+                limit = min(200, max(1, int(limit_raw)))
+                offset = max(0, int(self.request.query_params.get("offset") or 0))
+                qs = qs[offset : offset + limit]
+            except (TypeError, ValueError):
+                pass
+
+        return qs
+
+    def perform_create(self, serializer):
+        actor = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(
+            created_by=actor,
+            updated_by=actor,
+            status=Question.STATUS_DRAFT,
+        )
+
+    def perform_update(self, serializer):
+        actor = self.request.user if self.request.user.is_authenticated else None
+        serializer.save(updated_by=actor)
+
+    @action(detail=True, methods=["post"], url_path="submit-for-review")
+    def submit_for_review(self, request, pk=None):
+        """draft → review."""
+        question = self.get_object()
+        if question.status != Question.STATUS_DRAFT:
+            return Response(
+                {"detail": "Only draft questions can be submitted for review."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        actor = request.user if request.user.is_authenticated else None
+        question.status = Question.STATUS_REVIEW
+        question.updated_by = actor
+        question.save(update_fields=["status", "updated_at", "updated_by"])
+        return Response(self.get_serializer(question).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="approve",
+        permission_classes=[IsAuthenticated, CanPublishQuestions],
+    )
+    def approve(self, request, pk=None):
+        """review → approved (publisher only)."""
+        question = self.get_object()
+        if question.status != Question.STATUS_REVIEW:
+            return Response(
+                {"detail": "Only questions in review can be approved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        actor = request.user if request.user.is_authenticated else None
+        question.status = Question.STATUS_APPROVED
+        question.is_active = True
+        question.review_comment = ""
+        question.updated_by = actor
+        question.save(update_fields=["status", "is_active", "review_comment", "updated_at", "updated_by"])
+        return Response(self.get_serializer(question).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="reject",
+        permission_classes=[IsAuthenticated, CanPublishQuestions],
+    )
+    def reject(self, request, pk=None):
+        """review → draft with optional reviewer comment."""
+        question = self.get_object()
+        if question.status != Question.STATUS_REVIEW:
+            return Response(
+                {"detail": "Only questions in review can be rejected."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        note_raw = request.data.get("comment")
+        note = ((note_raw or "") if isinstance(note_raw, str) else str(note_raw or "")).strip()
+        actor = request.user if request.user.is_authenticated else None
+        question.status = Question.STATUS_DRAFT
+        question.review_comment = note[:4000]
+        question.updated_by = actor
+        question.save(update_fields=["status", "review_comment", "updated_at", "updated_by"])
+        return Response(self.get_serializer(question).data)
+
+    @action(detail=True, methods=["get"], url_path="module-links")
+    def module_links(self, request, pk=None):
+        """Return ModuleQuestion rows using this question (for authoring UX)."""
+        question = self.get_object()
+        qs = (
+            ModuleQuestion.objects.filter(question_id=question.pk)
+            .select_related("module", "module__practice_test")
+            .order_by("module__practice_test_id", "module__module_order", "id")
+        )
+        out = []
+        for mq in qs:
+            m = mq.module
+            pt = m.practice_test
+            title = getattr(pt, "title", None) or f"Test #{pt.pk}"
+            out.append(
+                {
+                    "module_question_id": mq.pk,
+                    "module_id": m.pk,
+                    "module_order": m.module_order,
+                    "practice_test_id": pt.pk,
+                    "practice_test_title": str(title),
+                    "subject": getattr(pt, "subject", None),
+                }
+            )
+        return Response(out)
 
 
 def _as_int_ids_bulk(seq):

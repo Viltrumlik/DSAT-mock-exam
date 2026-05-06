@@ -12,6 +12,7 @@ from access.services import (
     can_edit_multi_subject_object,
     can_edit_tests,
     can_manage_questions,
+    can_publish_questions,
     can_view_tests,
     filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
@@ -39,6 +40,20 @@ class CanManageQuestionsTests(TestCase):
     def test_test_admin_can_manage_questions(self):
         u = User.objects.create_user(email="taq@example.com", password="x", role=C.ROLE_TEST_ADMIN)
         self.assertTrue(can_manage_questions(u))
+
+
+class CanPublishQuestionsTests(TestCase):
+    def test_test_admin_cannot_publish_questions(self):
+        u = User.objects.create_user(email="ta_pub@example.com", password="x", role=C.ROLE_TEST_ADMIN)
+        self.assertFalse(can_publish_questions(u))
+
+    def test_admin_can_publish_questions(self):
+        u = User.objects.create_user(email="adm_pub@example.com", password="x", role=C.ROLE_ADMIN)
+        self.assertTrue(can_publish_questions(u))
+
+    def test_super_admin_can_publish_questions(self):
+        u = User.objects.create_user(email="su_pub@example.com", password="x", role=C.ROLE_SUPER_ADMIN)
+        self.assertTrue(can_publish_questions(u))
 
 
 class AccessPrimitivesTests(TestCase):

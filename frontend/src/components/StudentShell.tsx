@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   BookOpenCheck,
   ClipboardList,
+  ClipboardCheck,
   FileWarning,
   Users,
   UserCircle,
@@ -26,6 +27,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Bell,
+  BookMarked,
+  FolderKanban,
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { Badge } from "@/components/ui/Badge";
@@ -40,6 +43,9 @@ const nav = [
   { href: "/practice-tests", label: "Pastpaper tests", icon: BookOpenCheck },
   { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
   { href: "/midterm", label: "Midterm", icon: FileWarning },
+  { href: "/assessments", label: "Assessments", icon: ClipboardCheck },
+  { href: "/vocabulary", label: "Vocabulary", icon: BookMarked },
+  { href: "/question-bank", label: "Question bank", icon: FolderKanban },
   { href: "/classes", label: "Classes", icon: Users },
   { href: "/profile", label: "Profile", icon: UserCircle },
   { href: "/security", label: "Security", icon: Shield },
@@ -48,12 +54,17 @@ const nav = [
 const quickLinks = [
   { href: "/practice-tests", label: "Practice" },
   { href: "/mock-exam", label: "Mock" },
+  { href: "/assessments", label: "Assessments" },
+  { href: "/vocabulary", label: "Vocabulary" },
   { href: "/classes", label: "Classes" },
 ];
 
 function pageTitle(pathname: string): string {
   if (pathname === "/") return "Dashboard";
   if (pathname === "/security" || pathname.startsWith("/security/")) return "Security";
+  if (pathname === "/question-bank" || pathname.startsWith("/question-bank/")) return "Question bank";
+  if (pathname === "/assessments" || pathname.startsWith("/assessments/")) return "Assessments";
+  if (pathname === "/vocabulary" || pathname.startsWith("/vocabulary/")) return "Vocabulary";
   const item = nav.find((n) =>
     n.href === "/"
       ? false
@@ -278,7 +289,11 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                     ? pathname === "/"
                     : href === "/practice-tests"
                       ? pathname === "/practice-tests" || pathname.startsWith("/practice-test/")
-                      : pathname.startsWith(href);
+                      : href === "/assessments"
+                        ? pathname === "/assessments" || pathname.startsWith("/assessments/")
+                        : href === "/vocabulary"
+                          ? pathname === "/vocabulary" || pathname.startsWith("/vocabulary/")
+                          : pathname.startsWith(href);
                 return (
                   <Link
                     key={href}

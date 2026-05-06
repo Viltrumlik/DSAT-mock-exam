@@ -59,7 +59,7 @@ export default function LoginPage() {
             if (host.startsWith("admin.")) {
                 router.push("/admin");
             } else if (host.startsWith("questions.")) {
-                router.push("/admin");
+                router.push("/");
             } else {
                 // main domain: student/teacher portal
                 router.push("/");

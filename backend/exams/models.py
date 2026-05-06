@@ -45,6 +45,43 @@ class Question(TimestampedModel):
     score = models.IntegerField(default=10, help_text="Score weight for this question")
     explanation = models.TextField(blank=True)
     is_active = models.BooleanField(default=True, db_index=True)
+
+    STATUS_DRAFT = "draft"
+    STATUS_REVIEW = "review"
+    STATUS_APPROVED = "approved"
+    STATUS_ARCHIVED = "archived"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_REVIEW, "In review"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_ARCHIVED, "Archived"),
+    ]
+    status = models.CharField(
+        max_length=16,
+        choices=STATUS_CHOICES,
+        default=STATUS_DRAFT,
+        db_index=True,
+    )
+    created_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="questions_created",
+    )
+    updated_by = models.ForeignKey(
+        User,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="questions_updated",
+    )
+    review_comment = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional note from last rejection for authors.",
+    )
+
     category = models.ForeignKey(
         "Category",
         on_delete=models.SET_NULL,

@@ -5,4 +5,6 @@ export type AdminModuleQuestion = {
   order: number;
   question_text: string;
   question_type: string;
+  score?: number;
+  is_active?: boolean;
 };

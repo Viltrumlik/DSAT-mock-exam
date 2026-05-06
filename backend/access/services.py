@@ -162,6 +162,21 @@ def can_manage_questions(user) -> bool:
     return is_global_scope_staff(user)
 
 
+def can_publish_questions(user) -> bool:
+    """
+    Approve/reject standalone questions for production (narrower than :func:`can_manage_questions`).
+
+    ``test_admin`` can author and submit for review but cannot publish — only ``admin``, ``super_admin``,
+    and Django superusers may approve or reject content.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    r = normalized_role(user)
+    return r in (constants.ROLE_ADMIN, constants.ROLE_SUPER_ADMIN)
+
+
 def bulk_assign_request_platform_subjects(data: object) -> frozenset[str]:
     """
     Collect all platform subjects (MATH / READING_WRITING) touched by a bulk_assign payload.

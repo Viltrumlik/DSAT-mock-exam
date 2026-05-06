@@ -38,7 +38,7 @@ export default function VocabularyWordsPage() {
       <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Vocabulary</p>
-          <p className="mt-1 text-xl font-extrabold tracking-tight text-foreground">Word list</p>
+          <p className="mt-1 text-2xl font-extrabold tracking-tight text-foreground md:text-3xl">Word list</p>
           <p className="mt-1 text-sm text-muted-foreground">Search and preview words (learning happens in Daily).</p>
         </div>
         <Link

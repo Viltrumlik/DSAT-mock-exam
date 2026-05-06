@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import ModuleQuestionsPanel from "@/features/questionsAdmin/ModuleQuestionsPanel";
+import ModuleComposer from "@/features/moduleComposer/ModuleComposer";
 
 export default function ModuleQuestionsPageInner() {
   const params = useParams();
@@ -22,8 +22,8 @@ export default function ModuleQuestionsPageInner() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-6">
-      <ModuleQuestionsPanel testId={testId} moduleId={moduleId} />
+    <div className="mx-auto w-full max-w-[1600px] px-4 py-6">
+      <ModuleComposer testId={testId} moduleId={moduleId} />
     </div>
   );
 }

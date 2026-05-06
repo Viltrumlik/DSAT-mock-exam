@@ -12,6 +12,7 @@ from .services import (
     can_view_tests,
     can_assign_tests,
     can_manage_questions,
+    can_publish_questions,
     get_effective_permission_codenames,
     is_global_scope_staff,
 )
@@ -28,6 +29,16 @@ class CanManageQuestions(BasePermission):
 
     def has_object_permission(self, request, view, obj):
         return can_manage_questions(request.user)
+
+
+class CanPublishQuestions(BasePermission):
+    """Approve or reject questions after review (admin / super_admin / superuser)."""
+
+    def has_permission(self, request, view):
+        return can_publish_questions(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        return can_publish_questions(request.user)
 
 
 class HasLMSPermission(BasePermission):

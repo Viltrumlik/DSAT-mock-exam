@@ -15,6 +15,7 @@ from access.services import (  # adapter: keep behavior centralized
     can_assign_tests,
     can_edit_tests,
     can_manage_questions,
+    can_publish_questions,
     can_view_tests,
     normalized_role,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "can_assign_tests",
     "can_edit_tests",
     "can_manage_questions",
+    "can_publish_questions",
     "can_view_tests",
     "actor_subject_probe_for_domain_perm",
     "normalized_role",

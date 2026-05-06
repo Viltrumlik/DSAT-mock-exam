@@ -1,19 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-
-function consoleFromHost(host: string | null): "admin" | "questions" | null {
-  if (!host) return null;
-  const h = host.split(":")[0].toLowerCase();
-  const labels = h.split(".").filter(Boolean);
-  if (!labels.length) return null;
-  if (labels[0] === "admin" || h.startsWith("admin.")) return "admin";
-  if (labels[0] === "questions" || h.startsWith("questions.")) return "questions";
-  if (labels.length >= 2 && labels[1] === "questions") return "questions";
-  return null;
-}
+import { getConsoleFromHostHeader } from "@/lib/hostConsole";
 
 export function middleware(req: NextRequest) {
   const host = req.headers.get("host");
-  const console = consoleFromHost(host);
+  const console = getConsoleFromHostHeader(host);
   const res = NextResponse.next();
   const pathname = req.nextUrl.pathname;
 
@@ -27,7 +17,9 @@ export function middleware(req: NextRequest) {
   // Questions console: dedicated Question Bank only.
   if (console === "questions") {
     const allowPrefixes = [
+      "/",
       "/questions/bank",
+      "/vocabulary/admin",
       "/login",
       "/register",
       "/security",
@@ -36,15 +28,9 @@ export function middleware(req: NextRequest) {
     ];
     const allowed = allowPrefixes.some((p) => pathname === p || pathname.startsWith(p + "/"));
 
-    if (pathname === "/") {
-      const url = req.nextUrl.clone();
-      url.pathname = "/questions/bank";
-      return NextResponse.redirect(url, { headers: res.headers });
-    }
-
     if (!allowed) {
       const url = req.nextUrl.clone();
-      url.pathname = "/questions/bank";
+      url.pathname = "/";
       url.search = "";
       return NextResponse.redirect(url, { headers: res.headers });
     }
@@ -63,4 +49,3 @@ export function middleware(req: NextRequest) {
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)"],
 };
-
