@@ -217,7 +217,9 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
                 mock_exam__is_active=True,
                 mock_exam__is_published=True,
                 assigned_users=user,
-            ).select_related("mock_exam")
+            )
+            .select_related("mock_exam")
+            .prefetch_related("mock_exam__tests")
         )
         return Response(PortalMockExamStudentSerializer(qs, many=True).data)
 
@@ -438,6 +440,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 "practice_test__mock_exam",
                 "practice_test__pastpaper_pack",
             )
+            .prefetch_related(
+                "practice_test__modules",
+                "current_module__questions",
+            )
         )
 
     def create(self, request, *args, **kwargs):
@@ -632,7 +638,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 metric_incr_role("slo_exam_engine_start_ok_total", actor=getattr(request, "user", None))
                 metric_incr("slo_exam_engine_start_latency_ms_sum", int((monotonic() - t0) * 1000))
                 metric_incr("slo_exam_engine_start_latency_ms_count")
-                return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+                refreshed = (
+                    TestAttempt.objects.select_related("practice_test", "current_module")
+                    .prefetch_related("practice_test__modules", "current_module__questions")
+                    .get(pk=attempt.pk)
+                )
+                return Response(self.get_serializer(refreshed).data)
             except TransitionConflict:
                 return _transition_conflict_response(self, attempt_pk=attempt.pk, detail="Exam attempt state conflict; refresh from the snapshot.")
             except Exception as exc:
@@ -980,7 +991,10 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
     serializer_class = AdminMockExamSerializer
 
     def get_queryset(self):
-        base = MockExam.objects.all().prefetch_related("tests__modules")
+        base = MockExam.objects.all().prefetch_related(
+            "tests__modules",
+            "tests__modules__questions",
+        )
         if not can_manage_questions(self.request.user):
             return base.none()
         return base

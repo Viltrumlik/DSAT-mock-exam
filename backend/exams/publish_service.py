@@ -12,6 +12,9 @@ def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
     """
     Full SAT mock: at least one section; each section needs ≥1 module with ≥1 question.
     Midterm: one section, 1–2 modules per settings, each with ≥1 question.
+
+    Uses len(qs.all()) instead of qs.count() so Django's prefetch cache is used when
+    tests__modules__questions is prefetched by the caller (AdminMockExamViewSet).
     """
 
     from .models import MockExam
@@ -27,7 +30,7 @@ def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
         if len(mods) < need_mods:
             return False, f"Add {need_mods} module(s) with questions for this midterm."
         for m in mods[:need_mods]:
-            if m.questions.count() < 1:
+            if not m.questions.all():
                 return False, f"Module {m.module_order} must have at least one question."
         return True, ""
 
@@ -42,6 +45,6 @@ def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
         if len(mods) < 1:
             return False, f"{pt.get_subject_display()} needs at least one module."
         for m in mods:
-            if m.questions.count() < 1:
+            if not m.questions.all():
                 return False, f"{pt.get_subject_display()} module {m.module_order} needs at least one question."
     return True, ""
