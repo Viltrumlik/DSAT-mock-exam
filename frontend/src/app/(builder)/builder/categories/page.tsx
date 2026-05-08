@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
-import { extractCategories } from "@/domains/assessments/api";
 import type { AssessmentSet } from "@/features/assessments/types";
-import { Tag, LayoutGrid, Plus, AlertTriangle } from "lucide-react";
+import { Tag, LayoutGrid, AlertTriangle } from "lucide-react";
 
 type CategoryRow = {
   name: string;
