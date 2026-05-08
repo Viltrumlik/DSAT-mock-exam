@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
-import { Library, LayoutGrid, Tag, SendHorizonal, Archive, ArrowRight, AlertTriangle } from "lucide-react";
+import { Library, LayoutGrid, Tag, SendHorizonal, ArrowRight, AlertTriangle } from "lucide-react";
+import { StateTag } from "@/components/governance";
 
 type SummaryStats = {
   totalSets: number;
@@ -152,21 +153,47 @@ export default function BuilderDashboardPage() {
         ))}
       </div>
 
-      {/* Governance reminder */}
-      <div className="rounded-2xl border border-border bg-card p-5">
-        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">
-          Content governance
-        </p>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Questions in active assignments are{" "}
-          <strong className="text-foreground">protected by immutable snapshots</strong>. Editing an
-          active question creates a new revision — students who already submitted are not affected.
-          Use the{" "}
-          <Link href="/builder/archived" className="font-semibold text-primary hover:underline">
-            Archived
-          </Link>{" "}
-          section to retire deprecated content.
-        </p>
+      {/* Governance reminder + state vocabulary */}
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div>
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">
+            Content governance
+          </p>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Questions in active assignments are{" "}
+            <strong className="text-foreground">protected by immutable snapshots</strong>. Editing an
+            active question creates a new revision — students who already submitted are not affected.
+            Use the{" "}
+            <Link href="/builder/archived" className="font-semibold text-primary hover:underline">
+              Archived
+            </Link>{" "}
+            section to retire deprecated content.
+          </p>
+        </div>
+
+        {/* State vocabulary reference */}
+        <div className="border-t border-border pt-4">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-3">
+            State reference
+          </p>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
+            {(
+              [
+                ["DRAFT", "Work in progress. Safe to edit."],
+                ["PUBLISHED", "Live. Content is immutable."],
+                ["ARCHIVED", "Retired. Preserved for records."],
+                ["FREE", "Question not in any published set."],
+                ["IN_USE", "Edits create a new revision."],
+                ["HISTORICAL", "Frozen for exam review."],
+              ] as const
+            ).map(([state, note]) => (
+              <div key={state} className="flex items-start gap-2">
+                <StateTag state={state} size="xs" showIcon={false} className="shrink-0 mt-0.5" />
+                <span className="text-[11px] text-muted-foreground leading-snug">{note}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -16,7 +16,8 @@ import { useBuilderStore, useBuilderViewSet } from "@/features/assessments/build
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Lock, Rocket } from "lucide-react";
+import { StateTag } from "@/components/governance";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
@@ -401,11 +402,12 @@ export default function BuilderSetEditorContainer() {
   if (!view) return <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">Set not found.</div>;
 
   const canPublish = validation.length === 0;
+  const isPublished = Boolean((view as any)?.is_active);
 
   return (
     <>
       {/* § 4.3 — back-navigation breadcrumb */}
-      <div className="mb-3">
+      <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
         <Link
           href="/builder/sets"
           className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
@@ -413,7 +415,33 @@ export default function BuilderSetEditorContainer() {
           <ChevronLeft className="h-4 w-4" />
           All sets
         </Link>
+        <div className="flex items-center gap-2">
+          <StateTag state={isPublished ? "PUBLISHED" : "DRAFT"} size="sm" />
+          {!isPublished && canPublish && (
+            <Link
+              href={`/builder/sets/${view.id}/publish`}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-700 transition-colors"
+            >
+              <Rocket className="h-3 w-3" />
+              Publish
+            </Link>
+          )}
+        </div>
       </div>
+
+      {/* Immutability warning banner — shown when editing a published set */}
+      {isPublished && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3">
+          <Lock className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-amber-900">This set is published and immutable</p>
+            <p className="text-sm text-amber-800 mt-0.5">
+              Any changes you save here will create a new revision. Historical assignments already
+              assigned to students reference the original published snapshot and are unaffected.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* § 1.1 — responsive grid: two-column from md, wider right panel at xl */}
       <div className="grid gap-4 md:grid-cols-[1fr_380px] xl:grid-cols-[1fr_440px]">
@@ -536,24 +564,29 @@ export default function BuilderSetEditorContainer() {
           ) : (
             <p className="mt-3 text-sm font-semibold text-muted-foreground">All checks passed.</p>
           )}
-          {/* § 1.2 — button is intentionally disabled; publish/finalize is managed server-side.
-              Do NOT wire an onClick here. When snapshot/version architecture ships this button
-              will trigger SetVersion creation — its semantics will differ from any partial wiring today. */}
-          <button
-            type="button"
-            disabled
-            title="Use the sets list to manage publish status. Full finalization workflow coming soon."
-            className="mt-3 cursor-not-allowed rounded-xl border border-border bg-card px-4 py-2 text-sm font-extrabold opacity-50"
-          >
-            Save &amp; Finalize
-          </button>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            Publish status is managed from the{" "}
-            <Link href="/builder/sets" className="font-semibold text-primary hover:underline">
-              sets list
+          {/* Publish gateway */}
+          {isPublished ? (
+            <div className="mt-3 flex items-center gap-2">
+              <StateTag state="PUBLISHED" size="sm" />
+              <span className="text-xs text-muted-foreground">
+                Set is live. Edits create a new revision automatically.
+              </span>
+            </div>
+          ) : canPublish ? (
+            <Link
+              href={`/builder/sets/${view.id}/publish`}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-700 transition-colors"
+            >
+              <Rocket className="h-4 w-4" />
+              Publish this set →
             </Link>
-            .
-          </p>
+          ) : (
+            <div className="mt-3">
+              <p className="text-xs text-muted-foreground">
+                Fix the validation issues above before publishing.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

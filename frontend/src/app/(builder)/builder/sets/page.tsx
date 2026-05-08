@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useAssessmentSetsList } from "@/features/assessments/hooks";
 import { getRole, getSubject } from "@/lib/permissions";
-import { Plus, Search, RefreshCw, CheckCircle2, XCircle, SendHorizonal } from "lucide-react";
+import { Plus, Search, RefreshCw, SendHorizonal } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { StateTag } from "@/components/governance";
 
 const SUBJECT_COLORS: Record<string, string> = {
   math: "bg-purple-100 text-purple-800",
@@ -174,10 +175,16 @@ export default function BuilderSetsPage() {
             {filtered.map((s) => {
               const questionCount = (s.questions ?? []).length;
               const activeQs = (s.questions ?? []).filter((q) => q.is_active).length;
+              const isDraft = !s.is_active;
+              const isPublishReady =
+                isDraft &&
+                questionCount > 0 &&
+                activeQs > 0 &&
+                Boolean(s.title?.trim()) &&
+                Boolean(s.category?.trim());
               return (
-                <Link
+                <div
                   key={s.id}
-                  href={`/builder/sets/${s.id}`}
                   className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-surface-2/50 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
@@ -195,17 +202,7 @@ export default function BuilderSetsPage() {
                           {s.subject}
                         </span>
                       )}
-                      {s.is_active ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Active
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-                          <XCircle className="h-3 w-3" />
-                          Draft
-                        </span>
-                      )}
+                      <StateTag state={s.is_active ? "PUBLISHED" : "DRAFT"} size="xs" />
                     </div>
                     <p className="text-xs text-muted-foreground">
                       {s.category || "No category"} ·{" "}
@@ -217,10 +214,24 @@ export default function BuilderSetsPage() {
                       ) : null}
                     </p>
                   </div>
-                  <span className="text-xs font-bold text-muted-foreground shrink-0">
-                    Open editor →
-                  </span>
-                </Link>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isPublishReady && (
+                      <Link
+                        href={`/builder/sets/${s.id}/publish`}
+                        className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-700 transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Publish
+                      </Link>
+                    )}
+                    <Link
+                      href={`/builder/sets/${s.id}`}
+                      className="text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Open editor →
+                    </Link>
+                  </div>
+                </div>
               );
             })}
           </div>

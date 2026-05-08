@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { listAllQuestions, applyClientFilters, computeQuestionBankStats } from "@/domains/questions/api";
 import type { QuestionWithContext, QuestionBankFilters } from "@/domains/questions/types";
-import { Search, Plus, Filter, ChevronRight, BookOpen, CheckCircle2, XCircle, Edit2 } from "lucide-react";
+import { Search, Plus, Filter, ChevronRight, BookOpen, Edit2 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { StateTag } from "@/components/governance";
 
 const QUESTION_TYPE_LABELS: Record<string, string> = {
   multiple_choice: "MC",
@@ -368,17 +369,7 @@ function QuestionRow({ question: q }: { question: QuestionWithContext }) {
 
       {/* Status */}
       <td className="px-4 py-3 whitespace-nowrap">
-        {q.is_active ? (
-          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
-            <CheckCircle2 className="h-3.5 w-3.5" />
-            Active
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-xs font-bold text-muted-foreground">
-            <XCircle className="h-3.5 w-3.5" />
-            Inactive
-          </span>
-        )}
+        <StateTag state={q.is_active ? "ACTIVE" : "ARCHIVED"} size="xs" />
       </td>
 
       {/* Actions */}

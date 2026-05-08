@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import type { AssessmentSet } from "@/features/assessments/types";
-import { SendHorizonal, CheckCircle2, Clock, AlertTriangle, ArrowRight } from "lucide-react";
+import { StateTag } from "@/components/governance";
+import { SendHorizonal, CheckCircle2, AlertTriangle, ArrowRight, Rocket } from "lucide-react";
 
 type PublishCandidate = {
   set: AssessmentSet;
@@ -36,6 +37,11 @@ function analyzeSet(set: AssessmentSet): PublishCandidate {
   };
 }
 
+const SUBJECT_COLORS: Record<string, string> = {
+  math: "bg-purple-100 text-purple-800",
+  english: "bg-teal-100 text-teal-800",
+};
+
 export default function PublishQueuePage() {
   const [sets, setSets] = useState<AssessmentSet[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +70,6 @@ export default function PublishQueuePage() {
         .filter((s) => !s.is_active) // DRAFT sets only
         .map(analyzeSet)
         .sort((a, b) => {
-          // Ready ones first, then by name
           if (a.readyToPublish !== b.readyToPublish) return a.readyToPublish ? -1 : 1;
           return a.set.title.localeCompare(b.set.title);
         }),
@@ -72,6 +77,7 @@ export default function PublishQueuePage() {
   );
 
   const readyCount = candidates.filter((c) => c.readyToPublish).length;
+  const blockedCount = candidates.length - readyCount;
 
   return (
     <div className="space-y-5">
@@ -86,6 +92,24 @@ export default function PublishQueuePage() {
           snapshot that can be assigned to classrooms.
         </p>
       </div>
+
+      {/* Stats row */}
+      {!loading && candidates.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-xl font-extrabold tabular-nums text-foreground">{candidates.length}</p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">In queue</p>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <p className="text-xl font-extrabold tabular-nums text-emerald-700">{readyCount}</p>
+            <p className="text-[10px] font-bold text-emerald-700/70 uppercase tracking-widest mt-0.5">Ready</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-xl font-extrabold tabular-nums text-amber-700">{blockedCount}</p>
+            <p className="text-[10px] font-bold text-amber-700/70 uppercase tracking-widest mt-0.5">Blocked</p>
+          </div>
+        </div>
+      )}
 
       {/* Snapshot architecture note */}
       <div className="rounded-2xl border border-border bg-card p-4">
@@ -120,7 +144,9 @@ export default function PublishQueuePage() {
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-5 py-4 flex items-center justify-between gap-2">
           <p className="font-bold text-foreground">
-            {loading ? "Loading…" : `${candidates.length} draft set${candidates.length === 1 ? "" : "s"}`}
+            {loading
+              ? "Loading…"
+              : `${candidates.length} draft set${candidates.length === 1 ? "" : "s"}`}
           </p>
           {!loading && readyCount > 0 && (
             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
@@ -143,23 +169,26 @@ export default function PublishQueuePage() {
         ) : (
           <div className="divide-y divide-border">
             {candidates.map((c) => (
-              <div key={c.set.id} className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+              <div key={c.set.id} className="px-5 py-4 flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
+                  {/* Title row */}
                   <div className="flex flex-wrap items-center gap-2 mb-1">
-                    <p className="font-extrabold text-foreground truncate">{c.set.title}</p>
+                    <p className="font-extrabold text-foreground truncate">
+                      #{c.set.id} · {c.set.title || <span className="italic text-muted-foreground">Untitled</span>}
+                    </p>
                     {c.set.subject && (
                       <span
-                        className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${c.set.subject === "math" ? "bg-purple-100 text-purple-800" : "bg-teal-100 text-teal-800"}`}
+                        className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${SUBJECT_COLORS[c.set.subject] ?? "bg-slate-100 text-slate-700"}`}
                       >
                         {c.set.subject}
                       </span>
                     )}
-                    {c.set.category && (
-                      <span className="text-xs text-muted-foreground">· {c.set.category}</span>
-                    )}
+                    <StateTag state="DRAFT" size="xs" showIcon={false} />
                   </div>
 
+                  {/* Meta row */}
                   <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    {c.set.category && <span>{c.set.category}</span>}
                     <span>
                       {c.totalQuestions} question{c.totalQuestions === 1 ? "" : "s"}
                     </span>
@@ -175,9 +204,9 @@ export default function PublishQueuePage() {
                     )}
                   </div>
 
-                  {/* Issues */}
+                  {/* Blocking issues */}
                   {c.issues.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {c.issues.map((issue) => (
                         <span
                           key={issue}
@@ -191,25 +220,25 @@ export default function PublishQueuePage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  {c.readyToPublish ? (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      Ready
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-700">
-                      <Clock className="h-3.5 w-3.5" />
-                      Needs attention
-                    </span>
-                  )}
+                {/* Actions */}
+                <div className="flex items-center gap-2 shrink-0 mt-0.5">
                   <Link
                     href={`/builder/sets/${c.set.id}`}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
                   >
-                    Open editor
+                    Edit
                     <ArrowRight className="h-3 w-3" />
                   </Link>
+
+                  {c.readyToPublish && (
+                    <Link
+                      href={`/builder/sets/${c.set.id}/publish`}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-700 transition-colors shadow-sm"
+                    >
+                      <Rocket className="h-3 w-3" />
+                      Publish
+                    </Link>
+                  )}
                 </div>
               </div>
             ))}
