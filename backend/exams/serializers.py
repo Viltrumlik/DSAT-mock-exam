@@ -632,12 +632,17 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
-    def _question_for_validation(self, attrs):
+    def _question_for_validation(self, attrs, module=None):
         model_fields = {f.name for f in Question._meta.concrete_fields}
         q = Question()
         if self.instance is not None:
             for name in model_fields:
                 setattr(q, name, getattr(self.instance, name))
+        elif module is not None:
+            # full_clean() raises "This field cannot be blank." for ForeignKey(blank=False)
+            # even when null=True, so pre-populate the module to pass validation.
+            q.module = module
+            q.module_id = module.pk
         for key, val in attrs.items():
             if key in (
                 "clear_question_image",
@@ -729,7 +734,7 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                         }
                     )
 
-        q = self._question_for_validation(attrs)
+        q = self._question_for_validation(attrs, module=module)
         try:
             q.full_clean()
         except DjangoValidationError as e:
