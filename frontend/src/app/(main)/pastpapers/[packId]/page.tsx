@@ -305,8 +305,7 @@ function PastpaperPackDetailInner() {
           {formatDate(pack.practice_date)}
         </p>
         <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-          Work through each section at your own pace — you can pause and come back. After finishing a section you can
-          review every question with explanations.
+          Complete each section to simulate SAT conditions — start Reading &amp; Writing, then Mathematics. After finishing a section, review every question with full explanations.
         </p>
       </div>
 

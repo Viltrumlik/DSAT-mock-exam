@@ -486,12 +486,12 @@ export default function ProfilePage() {
         {/* Avatar inside cover */}
         <div className="absolute bottom-6 left-8 sm:left-10">
           <div className="relative">
-            <div className="w-28 h-28 rounded-full overflow-hidden border-[3px] border-border bg-card/20 shadow-[0_18px_48px_color-mix(in_oklab,var(--primary)_28%,transparent)]">
+            <div className="w-28 h-28 rounded-full overflow-hidden border-[3px] border-border bg-surface-2 shadow-sm">
               {me.profile_image_url ? (
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img src={me.profile_image_url} alt={`${me.first_name} ${me.last_name}`} className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center bg-card/10">
+                <div className="w-full h-full flex items-center justify-center bg-surface-2">
                   <UserCircle className="w-16 h-16 text-label-foreground" />
                 </div>
               )}
@@ -533,7 +533,7 @@ export default function ProfilePage() {
       </div>
 
       {!loading && telegramCfg?.enabled && !me.telegram_linked && telegramCfg.bot_username ? (
-        <div className="mt-10 rounded-2xl border border-border bg-gradient-to-br from-accent-cyan/12 via-card to-surface-2 p-6 md:p-8 shadow-sm backdrop-blur-sm">
+        <div className="mt-10 rounded-2xl border border-border bg-card p-6 md:p-8 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
             <div className="max-w-xl">
               <p className="text-xs font-black uppercase tracking-widest text-accent-cyan mb-1">Telegram</p>
@@ -942,7 +942,7 @@ export default function ProfilePage() {
       {editOpen && draft && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-[var(--overlay-scrim)] backdrop-blur-sm"
+            className="absolute inset-0 bg-[var(--overlay-scrim)]"
             onClick={handleCloseEdit}
             aria-hidden="true"
           />
@@ -969,12 +969,12 @@ export default function ProfilePage() {
 
               <form onSubmit={handleSubmit} className="mt-6 space-y-6">
                 <div className="flex flex-col items-center gap-3">
-                  <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-border bg-card/10 shadow-[0_18px_48px_color-mix(in_oklab,var(--primary)_28%,transparent)]">
+                  <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-border bg-surface-2 shadow-sm">
                     {previewUrl ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img src={previewUrl} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-card/10">
+                      <div className="w-full h-full flex items-center justify-center bg-surface-2">
                         <UserCircle className="w-14 h-14 text-label-foreground" />
                       </div>
                     )}
@@ -995,7 +995,7 @@ export default function ProfilePage() {
                   </label>
 
                   {draft.profile_image_url && (
-                    <label className="flex items-center gap-2 text-xs text-foreground bg-card/20 px-3 py-1.5 rounded-full border border-border">
+                    <label className="flex items-center gap-2 text-xs text-foreground bg-surface-2 px-3 py-1.5 rounded-full border border-border">
                       <input
                         type="checkbox"
                         checked={clearPhoto}

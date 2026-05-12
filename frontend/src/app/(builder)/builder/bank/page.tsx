@@ -7,6 +7,14 @@ import type { QuestionWithContext, QuestionBankFilters } from "@/domains/questio
 import { Search, Plus, Filter, BookOpen, PenLine } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, QuestionLineage } from "@/components/governance";
+import { useDebounce } from "@/hooks/useDebounce";
+
+/** Maximum questions rendered to DOM at one time. Performance safety valve.
+ *  When exceeded, a "Showing N of M — narrow your search" indicator is shown.
+ *  Threshold for server-side pagination: when allQuestions.length > 300, log a
+ *  warning to signal that a paginated API migration is becoming necessary. */
+const RENDER_CAP = 150;
+const PAGINATION_WARN_THRESHOLD = 300;
 
 const QUESTION_TYPE_LABELS: Record<string, string> = {
   multiple_choice: "MC",
@@ -37,6 +45,14 @@ export default function QuestionBankPage() {
 
   const [showFilters, setShowFilters] = useState(false);
 
+  // Debounce the search string — avoids filtering on every keystroke.
+  const debouncedSearch = useDebounce(filters.search ?? "", 200);
+  const filtersForSearch = useMemo(
+    () => ({ ...filters, search: debouncedSearch }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [debouncedSearch, filters.subject, filters.questionType, filters.activeStatus, filters.setId],
+  );
+
   // Load questions; re-fetch when subject filter changes (server-side filter)
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +63,16 @@ export default function QuestionBankPage() {
         const subjectParam =
           filters.subject && filters.subject !== "all" ? filters.subject : undefined;
         const data = await listAllQuestions(subjectParam ? { subject: subjectParam } : undefined);
-        if (!cancelled) setAllQuestions(data);
+        if (!cancelled) {
+          setAllQuestions(data);
+          // Payload growth warning — signals when server-side pagination is needed.
+          if (data.length > PAGINATION_WARN_THRESHOLD) {
+            console.warn(
+              `[QuestionBank] Loaded ${data.length} questions client-side. ` +
+              `Consider migrating to server-side pagination when this exceeds ${PAGINATION_WARN_THRESHOLD}.`,
+            );
+          }
+        }
       } catch (e: unknown) {
         const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
         if (!cancelled) setError(typeof detail === "string" ? detail : "Could not load questions.");
@@ -58,11 +83,15 @@ export default function QuestionBankPage() {
     return () => { cancelled = true; };
   }, [filters.subject]);
 
-  // Client-side filtering for everything else
+  // Client-side filtering for everything else (using debounced search).
   const filtered = useMemo(
-    () => applyClientFilters(allQuestions, filters),
-    [allQuestions, filters],
+    () => applyClientFilters(allQuestions, filtersForSearch),
+    [allQuestions, filtersForSearch],
   );
+
+  // Render cap: limit DOM nodes for performance. Show indicator when cap is hit.
+  const visible = useMemo(() => filtered.slice(0, RENDER_CAP), [filtered]);
+  const isCapped = filtered.length > RENDER_CAP;
 
   const stats = useMemo(() => computeQuestionBankStats(allQuestions), [allQuestions]);
 
@@ -81,13 +110,10 @@ export default function QuestionBankPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">
-            Questions console
-          </p>
           <h1 className="text-xl font-bold text-foreground tracking-tight">Question Bank</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            All questions across every assessment set. Questions are reusable — they exist
-            independently of any single assessment.
+            Read-only view across all assessment sets. To edit a question, open it inside its
+            set — questions are authored and managed from the set editor.
           </p>
         </div>
         <Link
@@ -243,7 +269,11 @@ export default function QuestionBankPage() {
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
           <p className="font-bold text-foreground">
-            {loading ? "Loading…" : `${filtered.length} question${filtered.length === 1 ? "" : "s"}`}
+            {loading
+              ? "Loading…"
+              : isCapped
+              ? `${filtered.length} questions (showing first ${RENDER_CAP})`
+              : `${filtered.length} question${filtered.length === 1 ? "" : "s"}`}
           </p>
           {!loading && filtered.length !== allQuestions.length && (
             <p className="text-xs text-muted-foreground">{allQuestions.length} total</p>
@@ -267,11 +297,18 @@ export default function QuestionBankPage() {
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-border">
-            {filtered.map((q) => (
-              <QuestionCard key={`${q.setId}-${q.id}`} question={q} />
-            ))}
-          </div>
+          <>
+            <div className="divide-y divide-border">
+              {visible.map((q) => (
+                <QuestionCard key={`${q.setId}-${q.id}`} question={q} />
+              ))}
+            </div>
+            {isCapped && (
+              <div className="border-t border-border bg-surface-2/40 px-5 py-3 text-center text-xs text-muted-foreground">
+                Showing {RENDER_CAP} of {filtered.length} results — narrow your search to see more.
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -332,10 +369,10 @@ function QuestionCard({ question: q }: { question: QuestionWithContext }) {
         <Link
           href={`/builder/sets/${q.setId}?questionId=${q.id}`}
           className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-          title={`Edit in set "${q.setTitle}"`}
+          title={`Open in set "${q.setTitle}"`}
         >
           <PenLine className="h-3 w-3" />
-          Edit
+          Open in set →
         </Link>
       </div>
     </div>

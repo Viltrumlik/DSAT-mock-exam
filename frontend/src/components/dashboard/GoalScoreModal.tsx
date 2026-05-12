@@ -55,7 +55,7 @@ export function GoalScoreModal({
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/60"
         onClick={close}
       />
       <div
@@ -85,7 +85,7 @@ export function GoalScoreModal({
           <div
             className={cn(
               "flex h-20 w-20 items-center justify-center rounded-2xl border-2 border-primary/40",
-              "bg-gradient-to-br from-primary/20 to-ds-gold/15 text-2xl font-black tracking-tight text-foreground",
+              "bg-gradient-to-br from-primary/20 to-primary/10 text-2xl font-black tracking-tight text-foreground",
               "shadow-[0_12px_28px_-8px_color-mix(in_srgb,var(--primary)_35%,transparent)]",
             )}
           >

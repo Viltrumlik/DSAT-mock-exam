@@ -66,7 +66,7 @@ function ResultsInner() {
   return (
     <AuthGuard>
       <div className="min-h-screen bg-background">
-        <header className="border-b border-border bg-card backdrop-blur-xl">
+        <header className="border-b border-border bg-card">
           <div className="mx-auto flex h-16 max-w-3xl items-center justify-between px-6">
             <button
               type="button"
@@ -84,7 +84,7 @@ function ResultsInner() {
             </div>
           ) : (
             <>
-              <Trophy className="mx-auto mb-6 h-16 w-16 text-ds-gold" />
+              <Trophy className="mx-auto mb-6 h-16 w-16 text-primary" />
               <p className="mb-2 text-xs font-black uppercase tracking-widest text-label-foreground">Finished</p>
               <h1 className="mb-2 text-3xl font-black text-foreground">{title}</h1>
               <p className="mb-10 font-medium text-muted-foreground">Your scores out of the SAT 1600 scale (800 + 800).</p>

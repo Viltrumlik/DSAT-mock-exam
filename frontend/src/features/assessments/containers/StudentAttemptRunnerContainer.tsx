@@ -32,6 +32,7 @@ import { useAttemptBundle, useSaveAnswer, useSubmitAttempt } from "@/features/as
 import { normalizeApiError } from "@/lib/apiError";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import { AnswerInput } from "@/features/assessments/components/QuestionInputs";
+import { MathText } from "@/components/MathText";
 import {
   answersMapFromAttempt,
   detectAnswerConflicts,
@@ -1055,7 +1056,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         {/* Header */}
         <div className="rounded-2xl border border-border bg-card px-5 py-4 flex items-center justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold truncate">
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary truncate">
               {set?.subject ? String(set.subject) : "Assessment"}
             </p>
             <p className="font-extrabold text-foreground text-base leading-tight truncate">
@@ -1083,9 +1084,11 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
             Question {currentIdx + 1} of {_passiveTotal}
           </p>
-          <p className="text-base font-semibold text-foreground leading-relaxed">
-            {String(current?.prompt || "").trim() || "—"}
-          </p>
+          <MathText
+            text={String(current?.prompt || "").trim() || "—"}
+            block
+            className="text-base font-semibold text-foreground leading-relaxed"
+          />
           <div className="mt-5 pointer-events-none select-none opacity-75">
             <AnswerInput
               type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
@@ -1274,7 +1277,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card px-5 py-4 flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold truncate">
+          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary truncate">
             {set?.subject ? String(set.subject) : "Assessment"}
           </p>
           <p className="font-extrabold text-foreground text-base leading-tight truncate">
@@ -1308,9 +1311,11 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
           Question {currentIdx + 1} of {totalCount}
         </p>
-        <p className="text-base font-semibold text-foreground leading-relaxed">
-          {String(current?.prompt || "").trim() || "—"}
-        </p>
+        <MathText
+          text={String(current?.prompt || "").trim() || "—"}
+          block
+          className="text-base font-semibold text-foreground leading-relaxed"
+        />
         <div className="mt-5">
           <AnswerInput
             type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
@@ -1326,7 +1331,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 
       {/* ── Navigation + submit ───────────────────────────────────────────── */}
       {/* sticky bottom-0 on mobile keeps buttons always reachable on long questions */}
-      <div className="flex items-center justify-between gap-3 sticky bottom-0 sm:static bg-background/95 sm:bg-transparent backdrop-blur-sm sm:backdrop-blur-none pb-safe py-2 sm:py-0 -mx-4 sm:mx-0 px-4 sm:px-0 border-t border-border sm:border-t-0">
+      <div className="flex items-center justify-between gap-3 sticky bottom-0 sm:static bg-background/95 sm:bg-transparent pb-safe py-2 sm:py-0 -mx-4 sm:mx-0 px-4 sm:px-0 border-t border-border sm:border-t-0">
         <button
           type="button"
           onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}

@@ -1384,6 +1384,83 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
         return Response({"status": "reordered"})
 
+    @action(detail=False, methods=["post"], url_path="bulk-reorder")
+    def bulk_reorder(self, request, test_pk=None, module_pk=None):
+        """
+        Atomically reorder all questions in a module in a single round-trip.
+
+        Request body: { "ordered_ids": [id1, id2, id3, ...] }
+
+        Validation:
+        - ``ordered_ids`` must be a non-empty list.
+        - Every ID must belong to this module (no cross-module moves).
+        - The list must be complete — partial reorders are rejected to prevent
+          silent ordering corruption.
+        - Duplicate IDs are rejected.
+
+        Concurrency: holds a SELECT FOR UPDATE lock on the Module row for the
+        full duration, using the same two-phase dense-reindex path as the
+        per-question reorder action.
+        """
+        raw_ids = request.data.get("ordered_ids")
+        if not isinstance(raw_ids, list) or len(raw_ids) == 0:
+            return Response(
+                {"error": "ordered_ids must be a non-empty list."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Coerce to ints and reject any non-integer values.
+        try:
+            ordered_ids = [int(x) for x in raw_ids]
+        except (TypeError, ValueError):
+            return Response(
+                {"error": "All values in ordered_ids must be integers."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Reject duplicates.
+        if len(ordered_ids) != len(set(ordered_ids)):
+            return Response(
+                {"error": "ordered_ids contains duplicate values."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        with transaction.atomic():
+            module = get_object_or_404(
+                Module,
+                pk=module_pk,
+                practice_test_id=test_pk,
+            )
+            Module.objects.select_for_update().filter(pk=module.pk).get()
+
+            # Fetch all questions that currently belong to this module.
+            existing_qs = list(
+                Question.objects.filter(module_id=module.pk).order_by("order", "id")
+            )
+            existing_ids = {q.pk for q in existing_qs}
+
+            # Validate completeness: every existing ID must appear in the request.
+            if existing_ids != set(ordered_ids):
+                missing = existing_ids - set(ordered_ids)
+                extra = set(ordered_ids) - existing_ids
+                detail_parts = []
+                if missing:
+                    detail_parts.append(f"Missing from ordered_ids: {sorted(missing)}")
+                if extra:
+                    detail_parts.append(f"Not in module: {sorted(extra)}")
+                return Response(
+                    {"error": "ordered_ids must contain exactly the questions in this module. " + ". ".join(detail_parts)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Build the ordered list in the requested sequence.
+            by_id = {q.pk: q for q in existing_qs}
+            ordered = [by_id[qid] for qid in ordered_ids]
+
+            reindex_module_questions_dense_locked(module.pk, ordered)
+
+        return Response({"status": "reordered", "count": len(ordered_ids)})
+
 
 def _as_int_ids_bulk(seq):
     out = []

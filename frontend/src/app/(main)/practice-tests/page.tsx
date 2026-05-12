@@ -3,9 +3,9 @@ import PracticeTestsList from "@/components/PracticeTestsList";
 export default function PracticeTestsPage() {
   return (
     <PracticeTestsList
-      eyebrow="Practice"
-      title="Pastpaper practice tests"
-      description="Use released past papers and drills to build skills before test day—work modules at your own pace, review as you go. When you are ready to check readiness under timed conditions, use Timed mock (original exams your instructors publish; those are not assembled from this practice bank)."
+      eyebrow="SAT Simulation"
+      title="Past paper sections"
+      description="Released SAT sections — work through Reading & Writing and Mathematics modules at your own pace, review every question with explanations after finishing. For a timed, continuous full-length run, use Mock Exam."
     />
   );
 }

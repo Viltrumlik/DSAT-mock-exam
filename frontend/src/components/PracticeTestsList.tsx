@@ -328,7 +328,7 @@ export default function PracticeTestsList({
         })}
 
         {filtered.length === 0 ? (
-          <div className="col-span-full rounded-[40px] border-2 border-dashed border-border bg-card/50 py-32 text-center backdrop-blur-sm">
+          <div className="col-span-full rounded-[40px] border-2 border-dashed border-border bg-card py-32 text-center">
             <FileText className="mx-auto mb-4 h-12 w-12 text-label-foreground/40" />
             <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">No practice tests assigned yet</p>
           </div>

@@ -9,6 +9,8 @@
     "lint": "eslint",
     "gen:openapi": "node scripts/generate-openapi-types.mjs",
     "gen:openapi-client": "node scripts/generate-openapi-client.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:e2e": "playwright test",
     "deadcode": "knip"
   },
@@ -38,12 +40,15 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitest/coverage-v8": "^4.1.6",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "jsdom": "^29.1.1",
     "knip": "^6.9.0",
     "openapi-typescript": "^7.9.1",
     "tailwindcss": "^4",
     "typescript": "^5",
+    "vitest": "^4.1.6",
     "yaml": "^2.8.1"
   }
 }

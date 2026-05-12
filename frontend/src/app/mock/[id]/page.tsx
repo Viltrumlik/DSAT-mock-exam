@@ -275,7 +275,7 @@ function MockExamDetailInner() {
             </div>
           </div>
         )}
-        <header className="sticky top-0 z-50 border-b border-border bg-card backdrop-blur-xl">
+        <header className="sticky top-0 z-50 border-b border-border bg-card">
           <div className="mx-auto flex h-20 max-w-5xl items-center justify-between px-6">
             <button
               type="button"
@@ -307,7 +307,7 @@ function MockExamDetailInner() {
 
               {mathDone ? (
                 <div className="rounded-3xl border border-border bg-card p-10 text-center shadow-sm">
-                  <Trophy className="mx-auto mb-4 h-14 w-14 text-ds-gold" />
+                  <Trophy className="mx-auto mb-4 h-14 w-14 text-primary" />
                   <h3 className="mb-2 text-2xl font-black text-foreground">Mock complete</h3>
                   <p className="mb-8 text-muted-foreground">View your combined Reading &amp; Writing and Math scores.</p>
                   <button

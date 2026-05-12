@@ -11,10 +11,17 @@ import {
   FileText,
   LayoutGrid,
   Library,
+  PlayCircle,
   SendHorizonal,
   Tag,
 } from "lucide-react";
 import { StateTag } from "@/components/governance";
+import {
+  readStudioSession,
+  sessionContinueHref,
+  sessionContinueLabel,
+  type StudioSession,
+} from "@/lib/studioSession";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,6 +76,12 @@ const QUICK_LINKS = [
 export default function BuilderDashboardPage() {
   const [signal, setSignal] = useState<QueueSignal | null>(null);
   const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<StudioSession | null>(null);
+
+  // Read session on client only (localStorage unavailable during SSR).
+  useEffect(() => {
+    setSession(readStudioSession());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,6 +112,29 @@ export default function BuilderDashboardPage() {
         <h1 className="text-xl font-bold text-foreground tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground mt-1">Content health at a glance.</p>
       </div>
+
+      {/* Session continuity — "Continue working" card */}
+      {(() => {
+        if (!session) return null;
+        const href = sessionContinueHref(session);
+        const label = sessionContinueLabel(session);
+        if (!href || !label) return null;
+        return (
+          <Link
+            href={href}
+            className="flex items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4 hover:border-primary/30 hover:bg-surface-2/60 transition-colors"
+          >
+            <div className="shrink-0 rounded-xl bg-surface-2 p-3">
+              <PlayCircle className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-extrabold text-foreground">Continue working</p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">{label}</p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          </Link>
+        );
+      })()}
 
       {/* Publish queue signal */}
       <Link

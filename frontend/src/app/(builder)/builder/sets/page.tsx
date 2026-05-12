@@ -48,9 +48,6 @@ export default function BuilderSetsPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">
-            Questions console
-          </p>
           <h1 className="text-xl font-bold text-foreground tracking-tight">Assessments</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Assessment sets group reusable questions into a deliverable unit. Publishing creates an

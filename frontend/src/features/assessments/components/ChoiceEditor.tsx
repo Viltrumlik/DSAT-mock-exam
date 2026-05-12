@@ -4,6 +4,7 @@ import { useCallback, useRef } from "react";
 import { CheckCircle2, Circle, Plus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { AssessmentChoice } from "@/features/assessments/types";
+import { MathText } from "@/components/MathText";
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
@@ -64,7 +65,9 @@ export function validateChoices(
     if (!c.text.trim()) {
       issues.push({ type: "empty", index: i });
     } else {
-      const norm = c.text.trim().toLowerCase();
+      // Do NOT lowercase — LaTeX is case-sensitive (\( A \) ≠ \( a \)).
+      // Trim only for whitespace normalisation.
+      const norm = c.text.trim();
       if (seen.has(norm)) {
         issues.push({ type: "duplicate", index: i });
       } else {
@@ -152,21 +155,34 @@ function ChoiceRow({
         {choice.id}
       </span>
 
-      {/* Text — auto-resize textarea */}
-      <textarea
-        ref={textareaRef}
-        rows={1}
-        disabled={disabled}
-        placeholder={`Option ${choice.id}…`}
-        value={choice.text}
-        onChange={(e) => onChangeText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onInput={handleInput}
-        className={cn(
-          "mt-0.5 flex-1 resize-none overflow-hidden bg-transparent py-0 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none",
-          disabled && "cursor-not-allowed opacity-50",
+      {/* Text input + live rendered preview */}
+      <div className="mt-0.5 flex-1 min-w-0">
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          disabled={disabled}
+          placeholder={`Option ${choice.id}… (supports LaTeX: \( x^2 \), **bold**, *italic*)`}
+          value={choice.text}
+          onChange={(e) => onChangeText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onInput={handleInput}
+          className={cn(
+            "w-full resize-none overflow-hidden bg-transparent py-0 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none",
+            disabled && "cursor-not-allowed opacity-50",
+          )}
+        />
+        {/* Live rendered preview — shown whenever the field has content.
+            Lets the author see math / formatting as students will see it
+            without switching focus to the right-panel preview. */}
+        {choice.text.trim() && (
+          <div className="mt-1 border-t border-dashed border-border/50 pt-1">
+            <MathText
+              text={choice.text}
+              className="text-xs text-muted-foreground/70 leading-relaxed"
+            />
+          </div>
         )}
-      />
+      </div>
 
       {/* Duplicate badge */}
       {hasDuplicateError && (
@@ -336,6 +352,24 @@ export function ChoiceEditor({
             Mark one choice as correct ↑
           </span>
         )}
+      </div>
+
+      {/* Inline formatting hint — shows the complete SAT-safe syntax.
+          Non-interactive, non-modal. Documents the boundary deliberately:
+          exactly 4 items, no more. Do not add formatting here without
+          updating MathText and MATH_TEXT_BOUNDARIES.md. */}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+        {[
+          { label: "Math", sample: "\\( x^2 \\)" },
+          { label: "Bold", sample: "**word**" },
+          { label: "Italic", sample: "*word*" },
+          { label: "Sup", sample: "x<sup>2</sup>" },
+        ].map(({ label, sample }) => (
+          <span key={label} className="text-[10px] text-muted-foreground/50">
+            <span className="font-semibold">{label}:</span>{" "}
+            <code className="rounded bg-surface-2 px-1 font-mono text-[9px]">{sample}</code>
+          </span>
+        ))}
       </div>
 
       {/* Choice rows */}

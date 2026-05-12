@@ -215,7 +215,7 @@ export default function AssignmentDrawer({ mode, onClose, onSaved }: Props) {
       {/* Backdrop */}
       <button
         type="button"
-        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+        className="fixed inset-0 z-40 bg-black/30[2px]"
         aria-label="Close drawer"
         onClick={onClose}
       />

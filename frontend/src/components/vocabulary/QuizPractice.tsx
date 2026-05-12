@@ -47,7 +47,7 @@ export function QuizPractice({
   return (
     <div className="mx-auto w-full max-w-2xl">
       <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Quiz</p>
+        <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Quiz</p>
         <p className="mt-3 text-3xl font-extrabold tracking-tight text-foreground">{word.word}</p>
         <p className="mt-2 text-sm text-muted-foreground">Pick the best meaning.</p>
 

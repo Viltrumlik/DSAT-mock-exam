@@ -18,6 +18,10 @@ import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from '@/lib/permissions';
 import { renderMath } from '@/lib/mathRender';
 import { Bookmark, ChevronDown, Highlighter, ZoomIn, Calculator, ChevronUp, X, Eye, EyeOff, MinusCircle, Info, Eye as EyeIcon, Play, Pause, ChevronLeft, ChevronRight, AlertCircle, BookOpen, Trash2, MoreVertical, Save } from 'lucide-react';
+// SafeHtml is correct here — the text-highlighting feature stores annotated HTML
+// with <mark> spans in state. MathText's allowlist strips <mark> unconditionally.
+// Do NOT replace with MathText until highlight storage is redesigned to use
+// character offsets. See SafeHtml.tsx "Long-term Architectural Positioning".
 import SafeHtml from '@/components/SafeHtml';
 // Fix for image URL if it's relative
 const getImageUrl = (path: string | null | undefined) => {
@@ -950,8 +954,12 @@ function ExamPlayerInner() {
 
     useEffect(() => {
         if (!loading) {
-            // Single-engine deterministic KaTeX render. Call twice to avoid “first paint raw latex”
-            // when React commits large DOM updates.
+            // KaTeX sweep — document-body scope is intentional for the exam page.
+            // SafeHtml does not trigger per-element KaTeX (it uses MathJax for the admin
+            // surface; here we supplement with KaTeX for any question math). Called twice
+            // at 0ms and 60ms to handle React's two-pass commit for large DOM trees.
+            // This is the correct rendering pattern for this legacy surface — do NOT
+            // replace with per-element MathText until SafeHtml is fully removed here.
             renderMath({ root: document.body });
             const t = setTimeout(() => renderMath({ root: document.body }), 60);
             return () => clearTimeout(t);
@@ -1661,7 +1669,7 @@ function ExamPlayerInner() {
             <AuthGuard>
                 <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white px-8">
                     <div className="w-full max-w-xl text-center">
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-ds-gold">Scoring</p>
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Scoring</p>
                         <h1 className="mt-4 text-4xl font-black tracking-tight">Calculating your score</h1>
                         <p className="mt-3 text-slate-300 font-medium">
                             Do not close this tab. If your connection drops, we will reconnect automatically.
@@ -1754,7 +1762,7 @@ function ExamPlayerInner() {
             <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 px-10 text-center relative overflow-hidden">
                 {/* Visual Kick Warning overlay */}
                 {fullscreenWarningCountdown !== null && (
-                    <div className="absolute inset-0 bg-red-600/10 flex items-center justify-center backdrop-blur-sm z-50">
+                    <div className="absolute inset-0 bg-red-600/10 flex items-center justify-center z-50">
                         <div className="bg-white p-10 rounded-2xl shadow-2xl max-w-lg border border-red-200 animate-in zoom-in-95">
                             <AlertCircle className="w-16 h-16 text-red-600 mx-auto mb-6" />
                             <h2 className="text-2xl font-black text-slate-900 mb-3">You left full-screen!</h2>
@@ -2058,7 +2066,7 @@ function ExamPlayerInner() {
 
                 {/* Question Navigation Drawer */}
                 {showNavigation && (
-                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/5 backdrop-blur-[1px] p-4 text-slate-900">
+                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/5[1px] p-4 text-slate-900">
                         <div className="mb-16 mx-auto bg-white max-w-xl w-full rounded-2xl shadow-[0_2px_40px_rgb(0,0,0,0.3)] border border-slate-200 border-t-[6px] border-t-slate-800 overflow-hidden animate-in slide-in-from-bottom-4 duration-200">
                             <div className="px-6 py-4 flex justify-between items-center bg-white border-b border-slate-200">
                                 <h2 className="text-base font-bold text-slate-900">
@@ -2132,7 +2140,7 @@ function ExamPlayerInner() {
                 
                 {/* Answer Preview Modal Before Submit */}
                 {showAnswerPreview && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-6 animate-in fade-in duration-200">
+                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-6 animate-in fade-in duration-200">
                         <div className="bg-white w-full max-w-5xl h-[80vh] flex flex-col rounded-[32px] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                             <div className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-white relative z-10">
                                 <div>

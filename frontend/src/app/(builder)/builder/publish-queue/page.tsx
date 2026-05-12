@@ -99,9 +99,6 @@ export default function PublishQueuePage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">
-          Questions console
-        </p>
         <h1 className="text-xl font-bold text-foreground tracking-tight">Publish Queue</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Draft assessment sets awaiting review and publication. Publishing creates an immutable

@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock,
+  Eye,
   Lightbulb,
   Loader2,
   RefreshCw,
@@ -570,14 +571,27 @@ export default function AssessmentResultPage() {
             )}
 
             {/* Per-question breakdown (if available) */}
-            {hasBreakdown && (
+            {hasBreakdown && attempt && (
               <div className="rounded-2xl border border-border bg-card overflow-hidden">
-                <div className="border-b border-border px-5 py-3">
+                <div className="border-b border-border px-5 py-3 flex items-center justify-between gap-3">
                   <p className="text-sm font-bold text-foreground">Question breakdown</p>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/review/${attempt.id}`)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Review all
+                  </button>
                 </div>
                 <div className="divide-y divide-border">
                   {answers.map((ans, i) => (
-                    <div key={ans.question_id} className="flex items-center gap-3 px-5 py-3">
+                    <button
+                      key={ans.question_id}
+                      type="button"
+                      onClick={() => router.push(`/review/${attempt.id}?q=${i + 1}`)}
+                      className="w-full flex items-center gap-3 px-5 py-3 hover:bg-surface-2 transition-colors text-left"
+                    >
                       <span className="text-xs font-bold text-muted-foreground w-6 text-right shrink-0">
                         {i + 1}
                       </span>
@@ -590,7 +604,7 @@ export default function AssessmentResultPage() {
                       )}
                       <span
                         className={cn(
-                          "text-sm font-semibold",
+                          "text-sm font-semibold flex-1",
                           ans.is_correct === true
                             ? "text-emerald-700"
                             : ans.is_correct === false
@@ -605,11 +619,12 @@ export default function AssessmentResultPage() {
                           : "Not answered"}
                       </span>
                       {ans.points_awarded != null && (
-                        <span className="ml-auto text-xs font-bold text-muted-foreground">
+                        <span className="text-xs font-bold text-muted-foreground">
                           +{ans.points_awarded} pts
                         </span>
                       )}
-                    </div>
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    </button>
                   ))}
                 </div>
               </div>

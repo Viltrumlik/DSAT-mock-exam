@@ -6,7 +6,7 @@ const padMap = { none: "", sm: "p-4", md: "p-5 md:p-6", lg: "p-7 md:p-8" };
 export type DashboardAccent = "blue" | "neutral" | "gold";
 
 /**
- * Dashboard card: blue / white / black + optional gold premium hover.
+ * Dashboard card — minimal white/blue design.
  */
 export function DashboardCard({
   children,
@@ -21,23 +21,12 @@ export function DashboardCard({
   interactive?: boolean;
   accent?: DashboardAccent;
 }) {
-  const glow =
-    accent === "blue"
-      ? "hover:shadow-[0_0_28px_color-mix(in_srgb,var(--primary)_14%,transparent)] hover:border-primary/25"
-      : accent === "gold"
-        ? "hover:shadow-[0_0_24px_color-mix(in_srgb,var(--ds-gold)_12%,transparent)] hover:border-amber-500/35"
-        : "hover:border-border hover:shadow-[0_12px_40px_-12px_color-mix(in_srgb,var(--foreground)_8%,transparent)]";
-
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border bg-card shadow-md backdrop-blur-sm",
-        accent === "gold" ? "border-amber-500/40 dark:border-amber-400/35" : "",
-        "shadow-[0_4px_24px_-4px_color-mix(in_srgb,var(--foreground)_6%,transparent)]",
-        "dark:shadow-[0_10px_40px_-10px_rgba(0,0,0,0.85),0_0_0_1px_rgba(255,255,255,0.06),inset_0_1px_0_0_rgba(255,255,255,0.05)]",
-        "transition-[transform,box-shadow,border-color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-        interactive && "cursor-pointer hover:-translate-y-0.5 hover:shadow-lg",
-        interactive && glow,
+        "rounded-xl border border-border bg-card shadow-sm",
+        "transition-[box-shadow,border-color] duration-150",
+        interactive && "cursor-pointer hover:border-primary/25 hover:shadow-md",
         padMap[padding],
         className,
       )}
@@ -52,7 +41,7 @@ export function DashboardEyebrow({ children, className }: { children: ReactNode;
   return (
     <p
       className={cn(
-        "text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800/90 dark:text-amber-400/90",
+        "text-[10px] font-semibold uppercase tracking-[0.12em] text-primary",
         className,
       )}
     >

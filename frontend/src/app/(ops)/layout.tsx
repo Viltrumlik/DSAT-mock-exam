@@ -137,7 +137,7 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
             <aside className="rounded-2xl border border-border bg-card p-3 shadow-sm lg:self-start lg:sticky lg:top-4">
               {/* Console identity — compact */}
               <div className="mb-3 border-b border-border px-2 pb-3">
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-ds-gold">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-primary">
                   Admin console
                 </p>
                 <p className="mt-0.5 text-sm font-extrabold text-foreground">MasterSAT</p>

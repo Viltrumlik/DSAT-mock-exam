@@ -175,6 +175,8 @@ class AssessmentQuestion(models.Model):
 
     points = models.PositiveIntegerField(default=1)
     is_active = models.BooleanField(default=True, db_index=True)
+    # Solution explanation shown to students after grading
+    explanation = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True, db_index=True)
 

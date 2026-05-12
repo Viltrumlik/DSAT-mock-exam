@@ -233,7 +233,7 @@ export default function MockExamsList({
         })}
 
         {groupedExams.length === 0 ? (
-          <div className="col-span-full mx-auto max-w-2xl rounded-[40px] border-2 border-dashed border-border bg-card/60 px-8 py-24 text-center backdrop-blur-sm">
+          <div className="col-span-full mx-auto max-w-2xl rounded-[40px] border-2 border-dashed border-border bg-card px-8 py-24 text-center">
             <FileText className="mx-auto mb-4 h-12 w-12 text-label-foreground/40" />
             <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground">No mock exams here yet</p>
             <p className="mt-3 text-sm leading-relaxed text-label-foreground">

@@ -126,7 +126,7 @@ export default function ClassLeaderboard({ classId }: Props) {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-border bg-card/70 py-24 backdrop-blur-md">
+      <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-border bg-card py-24">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
         <p className="text-sm font-semibold text-muted-foreground">Loading leaderboard…</p>
       </div>
@@ -152,7 +152,7 @@ export default function ClassLeaderboard({ classId }: Props) {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-3xl border border-primary/35 bg-gradient-to-br from-primary via-[color-mix(in_srgb,var(--primary)_45%,var(--accent-cyan))] to-accent-cyan p-8 md:p-10 text-white shadow-[0_24px_80px_-12px_color-mix(in_oklab,var(--primary)_32%,transparent)]">
+      <div className="relative overflow-hidden rounded-3xl border border-primary/35 bg-primary p-8 md:p-10 text-white shadow-sm">
         <div className="absolute inset-0 opacity-[0.15] bg-[radial-gradient(circle_at_20%_20%,white,transparent_50%),radial-gradient(circle_at_80%_80%,white,transparent_45%)]" />
         <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
           <div>
@@ -164,11 +164,11 @@ export default function ClassLeaderboard({ classId }: Props) {
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
-            <div className="rounded-2xl bg-card/25 backdrop-blur-md border border-border px-5 py-3 min-w-[120px]">
+            <div className="rounded-2xl bg-card border border-border px-5 py-3 min-w-[120px]">
               <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Students</p>
               <p className="text-2xl font-black tabular-nums">{data.student_count}</p>
             </div>
-            <div className="rounded-2xl bg-card/25 backdrop-blur-md border border-border px-5 py-3 min-w-[120px]">
+            <div className="rounded-2xl bg-card border border-border px-5 py-3 min-w-[120px]">
               <p className="text-[10px] font-black uppercase tracking-widest text-white/75">Practice HW</p>
               <p className="text-2xl font-black tabular-nums">{data.practice_assignment_count}</p>
             </div>
@@ -225,7 +225,7 @@ export default function ClassLeaderboard({ classId }: Props) {
       </div>
 
       {hasHomeworkGrades && hw ? (
-        <section className="rounded-3xl border border-border bg-card/80 p-6 shadow-sm backdrop-blur-sm md:p-8">
+        <section className="rounded-3xl border border-border bg-card p-6 shadow-sm md:p-8">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">Teacher grades</p>
@@ -310,7 +310,7 @@ export default function ClassLeaderboard({ classId }: Props) {
       ) : null}
 
       {!hasPractice ? (
-        <div className="rounded-2xl border border-dashed border-border bg-surface-2/80 p-10 text-center backdrop-blur-sm">
+        <div className="rounded-2xl border border-dashed border-border bg-surface-2/80 p-10 text-center">
           <Target className="mx-auto mb-3 h-12 w-12 text-label-foreground" />
           <p className="text-lg font-bold text-foreground">No practice-test homework yet</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
@@ -377,7 +377,7 @@ export default function ClassLeaderboard({ classId }: Props) {
               <span className="font-semibold text-foreground">Latest assigned pastpaper</span> is the most recent homework
               with a linked practice test—each student&apos;s score on that assignment is highlighted.
             </p>
-            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm backdrop-blur-sm">
+            <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
               <div className="divide-y divide-border">
                 {data.students.map((s) => (
                   <div
@@ -408,7 +408,7 @@ export default function ClassLeaderboard({ classId }: Props) {
                       </div>
                     </div>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 md:shrink-0">
-                      <div className="min-w-[200px] rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 backdrop-blur-sm">
+                      <div className="min-w-[200px] rounded-xl border border-primary/20 bg-primary/10 px-4 py-3">
                         <p className="text-[10px] font-black uppercase tracking-widest text-primary">
                           Latest assigned pastpaper
                         </p>

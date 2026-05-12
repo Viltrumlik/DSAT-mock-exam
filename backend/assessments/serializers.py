@@ -26,6 +26,7 @@ class AssessmentQuestionSerializer(serializers.ModelSerializer):
             "choices",
             "points",
             "is_active",
+            "explanation",
         ]
 
 
@@ -43,6 +44,7 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
             "grading_config",
             "points",
             "is_active",
+            "explanation",
         ]
 
 

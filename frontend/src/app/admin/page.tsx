@@ -22,6 +22,9 @@ import {
     getSubject,
 } from '@/lib/permissions';
 import Cookies from "js-cookie";
+// SafeHtml is correct here — admin panel is a legacy rich-text surface with its
+// own editor toolbar. Migration to MathText is not planned (see SafeHtml.tsx
+// "Long-term Architectural Positioning", Surface B).
 import SafeHtml from "@/components/SafeHtml";
 import {
     buildHomeworkPastpaperCards,
@@ -83,7 +86,10 @@ import {
     Calendar,
 } from 'lucide-react';
 
-// KaTeX dynamic import for rendering math in previews
+// MathRenderer — legacy admin math preview component. Uses KaTeX + MathJax hybrid.
+// This is the correct renderer for the admin surface (predates MathText adoption).
+// Do NOT consolidate into MathText — MathText uses KaTeX only, admin uses MathJax.
+// See audit-rendering.sh §12 and SafeHtml.tsx "Long-term Architectural Positioning".
 const MathRenderer = ({ html, id = 'math-preview' }: { html: string, id?: string }) => {
     useEffect(() => {
         const render = () => {
@@ -442,6 +448,7 @@ export default function AdminPage() {
         correctAnswerText: string;
         gradingConfigText: string;
         is_active: boolean;
+        explanation: string;
     }>(null);
 
     const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -1719,6 +1726,7 @@ export default function AdminPage() {
                 choices: parseJsonFlexible(aqDraft.choicesText, []),
                 correct_answer: parseJsonFlexible(aqDraft.correctAnswerText, null),
                 grading_config: parseJsonFlexible(aqDraft.gradingConfigText, {}),
+                explanation: String(aqDraft.explanation || ""),
             };
             if (payload.question_type === "multiple_choice") {
                 const ids = new Set((payload.choices || []).map((c: { id?: unknown }) => String(c?.id ?? "").trim()).filter(Boolean));
@@ -1822,7 +1830,7 @@ export default function AdminPage() {
                     </div>
                 )}
 
-                <header className="bg-slate-900/95 backdrop-blur-xl px-8 py-4 flex items-center justify-between sticky top-0 z-50 border-b border-slate-800">
+                <header className="bg-slate-900/95 px-8 py-4 flex items-center justify-between sticky top-0 z-50 border-b border-slate-800">
                     <div className="flex items-center gap-3">
                         <div className="w-9 h-9 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg">
                             <ShieldCheck className="w-5 h-5 text-white" />
@@ -1847,7 +1855,7 @@ export default function AdminPage() {
                 </header>
 
                 <div className="flex flex-1 overflow-hidden">
-                    <aside className="w-56 bg-white/85 backdrop-blur-xl border-r border-slate-200/90 flex flex-col py-4 gap-1 px-2 shrink-0">
+                    <aside className="w-56 bg-white/85 border-r border-slate-200/90 flex flex-col py-4 gap-1 px-2 shrink-0">
                         {/* § 3.1 — active tab: font-bold + colour; inactive: font-medium + muted
                             text-weight signal supplements the border indicator for faster scanning */}
                         {navItems.map(item => (
@@ -2121,6 +2129,7 @@ export default function AdminPage() {
                                                                         correctAnswerText: JSON.stringify("A"),
                                                                         gradingConfigText: "{}",
                                                                         is_active: true,
+                                                                        explanation: "",
                                                                     })
                                                                 }
                                                             >
@@ -2158,6 +2167,7 @@ export default function AdminPage() {
                                                                                     correctAnswerText: JSON.stringify(q.correct_answer ?? null, null, 2),
                                                                                     gradingConfigText: JSON.stringify(q.grading_config ?? {}, null, 2),
                                                                                     is_active: Boolean(q.is_active ?? true),
+                                                                                    explanation: String(q.explanation ?? ""),
                                                                                 })
                                                                             }
                                                                         >

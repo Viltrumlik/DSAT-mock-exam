@@ -161,10 +161,10 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
   const navLinkClass = (active: boolean) =>
     cn(
-      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200",
+      "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
       sidebarCollapsed && "md:justify-center md:px-2",
       active
-        ? "bg-gradient-to-r from-primary/12 via-amber-500/6 to-primary/8 text-foreground ring-1 ring-primary/30 ring-offset-0"
+        ? "bg-primary/10 text-primary"
         : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
     );
 
@@ -175,7 +175,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
         {mobileOpen ? (
           <button
             type="button"
-            className="fixed inset-0 z-[90] bg-foreground/30 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-[90] bg-foreground/20 md:hidden"
             aria-label="Close menu"
             onClick={() => setMobileOpen(false)}
           />
@@ -184,7 +184,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
         {/* Sidebar */}
         <aside
           className={cn(
-            "shell-sidebar-gold fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,280px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card backdrop-blur-xl transition-[transform,width,padding] duration-200 ease-out md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0",
+            "fixed inset-y-0 left-0 z-[100] flex h-[100dvh] w-[min(100%,260px)] shrink-0 flex-col overflow-hidden border-r border-border bg-card transition-[transform,width,padding] duration-200 ease-out md:relative md:z-30 md:h-full md:max-h-full md:min-h-0 md:translate-x-0",
             sidebarCollapsed ? "md:w-[4.25rem] md:px-0" : "md:w-72",
             mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           )}
@@ -213,7 +213,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 <span className="block truncate text-base font-extrabold tracking-tight text-foreground">
                   MasterSAT
                 </span>
-                <span className="mt-0.5 block text-[10px] font-extrabold uppercase tracking-[0.12em] text-ds-gold">
+                <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.1em] text-primary">
                   Learning OS
                 </span>
               </div>
@@ -292,10 +292,10 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                   >
                     <span
                       className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors duration-200",
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
                         active
-                          ? "bg-gradient-to-br from-primary/15 to-amber-500/10 text-foreground ring-1 ring-amber-500/15"
-                          : "bg-surface-2 text-label-foreground group-hover:bg-card",
+                          ? "text-primary"
+                          : "text-label-foreground group-hover:text-foreground",
                       )}
                     >
                       <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -336,7 +336,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
           {/* Top bar (mobile + desktop) */}
-          <header className="sticky top-0 z-40 flex h-[60px] shrink-0 items-center gap-2 border-b border-border bg-card px-2 backdrop-blur-xl md:h-[72px] md:gap-3 md:px-6">
+          <header className="sticky top-0 z-40 flex h-[60px] shrink-0 items-center gap-2 border-b border-border bg-card px-2 md:h-[64px] md:gap-3 md:px-6">
             <IconButton
               variant="ghost"
               className="md:hidden"
@@ -365,14 +365,14 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 {headerSearchOpen && commandResults.length > 0 ? (
                   <ul
                     id="header-search-results"
-                    className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-72 overflow-auto rounded-xl border border-border bg-card py-1 shadow-xl backdrop-blur-xl"
+                    className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-72 overflow-auto rounded-lg border border-border bg-card py-1 shadow-lg"
                     role="listbox"
                   >
                     {commandResults.map((r) => (
                       <li key={r.href + r.label} role="option">
                         <Link
                           href={r.href}
-                          className="block px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-surface-2"
+                          className="block px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-2"
                           onClick={() => {
                             setHeaderSearchOpen(false);
                             setHeaderSearch("");
@@ -421,11 +421,11 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                     className="relative"
                   >
                     <Bell className="h-5 w-5" />
-                    <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-amber-500 opacity-80 shadow-sm shadow-amber-500/40" aria-hidden />
+                    <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary opacity-60" aria-hidden />
                   </IconButton>
                 </Tooltip>
                 {notifOpen ? (
-                  <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-xl border border-border bg-card p-4 shadow-xl backdrop-blur-xl">
+                  <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-72 rounded-lg border border-border bg-card p-4 shadow-lg">
                     <p className="text-xs font-bold uppercase tracking-wider text-label-foreground">
                       Notifications
                     </p>

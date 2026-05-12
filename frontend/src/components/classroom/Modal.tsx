@@ -37,7 +37,7 @@ export function ClassroomModal({
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6" role="presentation">
       <button
         type="button"
-        className="absolute inset-0 bg-[var(--overlay-scrim)] backdrop-blur-[8px] transition-opacity duration-200"
+        className="absolute inset-0 bg-[var(--overlay-scrim)][8px] transition-opacity duration-200"
         aria-label="Close dialog"
         onClick={onClose}
       />
@@ -46,7 +46,7 @@ export function ClassroomModal({
         aria-modal="true"
         aria-labelledby={titleId}
         className={cn(
-          "relative flex max-h-[min(90vh,880px)] w-full flex-col overflow-hidden rounded-[1.25rem] border border-border bg-card/95 shadow-2xl backdrop-blur-xl",
+          "relative flex max-h-[min(90vh,880px)] w-full flex-col overflow-hidden rounded-[1.25rem] border border-border bg-card shadow-2xl",
           "animate-[ds-modal-in_0.22s_cubic-bezier(0.16,1,0.3,1)]",
           maxW,
           className,

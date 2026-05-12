@@ -3,186 +3,769 @@
 import * as React from "react";
 import Link from "next/link";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
   useCreateModuleQuestion,
+  useDeleteModuleQuestion,
   useModuleQuestionsQuery,
-  useReorderModuleQuestion,
+  useReorderModuleQuestionsBulk,
+  useUpdateModuleQuestion,
 } from "@/features/questionsAdmin/hooks";
 import type { AdminModuleQuestion } from "@/features/questionsAdmin/types";
 import { normalizeApiError } from "@/lib/apiError";
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  GripVertical,
+  Loader2,
+  Plus,
+  RefreshCcw,
+  Save,
+  Trash2,
+} from "lucide-react";
+import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { StudioSpinner } from "@/components/studio/StudioSpinner";
 
-function QuestionRow(props: {
-  q: AdminModuleQuestion;
-  index: number;
-  total: number;
-  testId: number;
-  moduleId: number;
-  actionsDisabled: boolean;
-  onMove: (questionId: number, action: "up" | "down") => void;
-}) {
-  const { q, index, total, testId, moduleId, actionsDisabled, onMove } = props;
-  const atFirst = index <= 0;
-  const atLast = index >= total - 1;
+// ─── Draft type ──────────────────────────────────────────────────────────────
 
-  return (
-    <tr className="border-b border-border">
-      <td className="px-2 py-2 align-top text-sm tabular-nums">{q.order}</td>
-      <td className="px-2 py-2 align-top text-sm">{q.question_text || "—"}</td>
-      <td className="px-2 py-2 align-top text-xs text-muted-foreground">{q.question_type}</td>
-      <td className="px-2 py-2 align-top">
-        <div className="flex flex-wrap gap-1">
-          <button
-            type="button"
-            disabled={actionsDisabled || atFirst}
-            onClick={() => onMove(q.id, "up")}
-            className="rounded border border-border bg-card px-2 py-1 text-xs font-semibold disabled:opacity-40"
-          >
-            Move up
-          </button>
-          <button
-            type="button"
-            disabled={actionsDisabled || atLast}
-            onClick={() => onMove(q.id, "down")}
-            className="rounded border border-border bg-card px-2 py-1 text-xs font-semibold disabled:opacity-40"
-          >
-            Move down
-          </button>
-          <Link
-            href={`/questions/tests/${testId}/modules/${moduleId}?questionId=${q.id}`}
-            className="inline-flex items-center rounded border border-border bg-card px-2 py-1 text-xs font-semibold hover:bg-surface-2"
-          >
-            Edit
-          </Link>
-        </div>
-      </td>
-    </tr>
-  );
+type QuestionDraft = {
+  question_type: "MATH" | "READING" | "WRITING";
+  question_text: string;
+  question_prompt: string;
+  is_math_input: boolean;
+  option_a: string;
+  option_b: string;
+  option_c: string;
+  option_d: string;
+  correct_answer: string;
+  explanation: string;
+  score: number;
+};
+
+function questionToDraft(q: AdminModuleQuestion): QuestionDraft {
+  return {
+    question_type: q.question_type ?? "MATH",
+    question_text: q.question_text ?? "",
+    question_prompt: q.question_prompt ?? "",
+    is_math_input: q.is_math_input ?? false,
+    option_a: q.option_a ?? "",
+    option_b: q.option_b ?? "",
+    option_c: q.option_c ?? "",
+    option_d: q.option_d ?? "",
+    correct_answer: q.correct_answer ?? "",
+    explanation: q.explanation ?? "",
+    score: q.score ?? 10,
+  };
 }
 
-export default function ModuleQuestionsPanel(props: { testId: number; moduleId: number }) {
-  const { testId, moduleId } = props;
-  const { data: questions = [], isLoading, isError, error, refetch, isFetching } = useModuleQuestionsQuery(
-    testId,
-    moduleId,
-  );
-  const create = useCreateModuleQuestion(testId, moduleId);
-  const reorder = useReorderModuleQuestion(testId, moduleId);
+// Re-export canonical tokens under local aliases so the rest of this file
+// uses concise names, while the source of truth lives in studio/primitives.ts.
+const FIELD_LABEL = STUDIO_FIELD_LABEL;
+const INPUT = STUDIO_INPUT;
 
-  const move = React.useCallback(
-    (questionId: number, action: "up" | "down") => {
-      reorder.mutate({ questionId, action });
-    },
-    [reorder],
-  );
+// ─── Question editor pane ────────────────────────────────────────────────────
 
-  const listFailed = isError && error;
-  const listErrMsg = listFailed ? normalizeApiError(error).message : null;
-  const reorderErrMsg =
-    reorder.isError && reorder.error ? normalizeApiError(reorder.error).message : null;
-  const createErrMsg =
-    create.isError && create.error ? normalizeApiError(create.error).message : null;
+function QuestionEditor({
+  question,
+  testId,
+  moduleId,
+  onSaved,
+  onDeleted,
+}: {
+  question: AdminModuleQuestion;
+  testId: number;
+  moduleId: number;
+  onSaved: (updated: AdminModuleQuestion) => void;
+  onDeleted: () => void;
+}) {
+  const update = useUpdateModuleQuestion(testId, moduleId);
+  const del = useDeleteModuleQuestion(testId, moduleId);
 
-  const mutationBusy = reorder.isPending || create.isPending;
-  const actionsDisabled = mutationBusy;
+  const [draft, setDraft] = React.useState<QuestionDraft>(() => questionToDraft(question));
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [saveOk, setSaveOk] = React.useState(false);
+
+  // Reset draft when question changes
+  React.useEffect(() => {
+    setDraft(questionToDraft(question));
+    setSaveOk(false);
+    setConfirmDelete(false);
+  }, [question.id]);
+
+  const patch = (p: Partial<QuestionDraft>) => setDraft((d) => ({ ...d, ...p }));
+
+  const handleSave = async () => {
+    setSaveOk(false);
+    try {
+      const result = await update.mutateAsync({
+        questionId: question.id,
+        data: {
+          question_type: draft.question_type,
+          question_text: draft.question_text,
+          question_prompt: draft.question_prompt,
+          is_math_input: draft.is_math_input,
+          option_a: draft.option_a,
+          option_b: draft.option_b,
+          option_c: draft.option_c,
+          option_d: draft.option_d,
+          correct_answer: draft.correct_answer,
+          explanation: draft.explanation,
+          score: draft.score,
+        },
+      });
+      setSaveOk(true);
+      onSaved(result as AdminModuleQuestion);
+      setTimeout(() => setSaveOk(false), 2000);
+    } catch {
+      // error shown via update.error
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await del.mutateAsync(question.id);
+      onDeleted();
+    } catch {
+      // error shown via del.error
+    }
+  };
+
+  const isMC = !draft.is_math_input;
+  const isBusy = update.isPending || del.isPending;
+
+  const updateErr = update.isError && update.error ? normalizeApiError(update.error).message : null;
+  const deleteErr = del.isError && del.error ? normalizeApiError(del.error).message : null;
 
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-bold">Module questions</h1>
-          <p className="text-sm text-muted-foreground">
-            Practice test #{testId} · Module #{moduleId}
-          </p>
+    <div className="flex h-full flex-col overflow-y-auto">
+      {/* Sticky header */}
+      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-5 py-3">
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold text-foreground">Q{question.order + 1} — #{question.id}</p>
+          <p className="text-[10px] text-muted-foreground">Question editor</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          {saveOk && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Saved
+            </span>
+          )}
           <button
             type="button"
-            onClick={() => void refetch()}
-            disabled={isFetching && !isLoading}
-            className="rounded border border-border px-3 py-1.5 text-sm font-semibold hover:bg-surface-2 disabled:opacity-40"
+            disabled={isBusy}
+            onClick={() => void handleSave()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            {isFetching ? "Refreshing…" : "Retry / refresh"}
+            {update.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            Save
           </button>
         </div>
       </div>
 
-      {listErrMsg ? (
-        <div className="mt-3 rounded border border-destructive/40 bg-destructive/5 p-3 text-sm">
-          <p className="font-semibold text-destructive">Could not load questions</p>
-          <p className="mt-1 text-muted-foreground">{listErrMsg}</p>
+      {/* Error banners */}
+      {(updateErr || deleteErr) && (
+        <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{updateErr ?? deleteErr}</span>
+        </div>
+      )}
+
+      {/* Form body */}
+      <div className="flex-1 space-y-5 p-5">
+
+        {/* Type row */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className={FIELD_LABEL}>Question type</label>
+            <select
+              className={INPUT}
+              value={draft.question_type}
+              onChange={(e) => patch({ question_type: e.target.value as QuestionDraft["question_type"] })}
+            >
+              <option value="MATH">Math</option>
+              <option value="READING">Reading</option>
+              <option value="WRITING">Writing</option>
+            </select>
+          </div>
+          <div>
+            <label className={FIELD_LABEL}>Score weight</label>
+            <input
+              className={INPUT}
+              type="number"
+              min={1}
+              value={draft.score}
+              onChange={(e) => patch({ score: Number(e.target.value) })}
+            />
+          </div>
+        </div>
+
+        {/* Math input toggle */}
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            id="is_math_input"
+            checked={draft.is_math_input}
+            onChange={(e) => patch({ is_math_input: e.target.checked })}
+            className="h-4 w-4 rounded border-border accent-primary"
+          />
+          <label htmlFor="is_math_input" className="text-sm font-semibold text-foreground cursor-pointer select-none">
+            Student types numeric answer (no A/B/C/D choices)
+          </label>
+        </div>
+
+        {/* Question text */}
+        <div>
+          <label className={FIELD_LABEL}>Question text (stem)</label>
+          <textarea
+            className={`${INPUT} min-h-[140px] leading-relaxed`}
+            placeholder="Enter the full question text here. LaTeX math is supported: \\( x^2 + 1 = 0 \\)"
+            value={draft.question_text}
+            onChange={(e) => patch({ question_text: e.target.value })}
+          />
+        </div>
+
+        {/* Secondary prompt */}
+        <div>
+          <label className={FIELD_LABEL}>Stimulus / passage excerpt (optional)</label>
+          <textarea
+            className={`${INPUT} min-h-[80px] leading-relaxed`}
+            placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
+            value={draft.question_prompt}
+            onChange={(e) => patch({ question_prompt: e.target.value })}
+          />
+        </div>
+
+        {/* MC choices */}
+        {isMC && (
+          <div className="rounded-2xl border border-border bg-surface-2/30 p-4 space-y-3">
+            <p className={FIELD_LABEL}>Answer choices</p>
+            {(["a", "b", "c", "d"] as const).map((letter) => {
+              const key = `option_${letter}` as keyof QuestionDraft;
+              return (
+                <div key={letter} className="flex items-start gap-3">
+                  <div className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-extrabold text-foreground">
+                    {letter.toUpperCase()}
+                  </div>
+                  <input
+                    className={`${INPUT} flex-1`}
+                    placeholder={`Option ${letter.toUpperCase()}`}
+                    value={draft[key] as string}
+                    onChange={(e) => patch({ [key]: e.target.value } as Partial<QuestionDraft>)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Correct answer */}
+        <div>
+          <label className={FIELD_LABEL}>
+            {isMC
+              ? "Correct answer (A, B, C, or D)"
+              : "Correct answer (comma-separated for multiple valid forms, e.g. 2/3, 0.667)"}
+          </label>
+          <input
+            className={INPUT}
+            placeholder={isMC ? "A" : "e.g. 42 or 2/3, 0.666, 0.667"}
+            value={draft.correct_answer}
+            onChange={(e) => patch({ correct_answer: e.target.value })}
+          />
+          {isMC && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Must exactly match one of the choice letters above (case-insensitive).
+            </p>
+          )}
+        </div>
+
+        {/* Explanation */}
+        <div>
+          <label className={FIELD_LABEL}>Explanation / solution rationale</label>
+          <textarea
+            className={`${INPUT} min-h-[100px] leading-relaxed`}
+            placeholder="Explain why the correct answer is right. Students see this after the test."
+            value={draft.explanation}
+            onChange={(e) => patch({ explanation: e.target.value })}
+          />
+        </div>
+
+        {/* Save button (bottom) */}
+        <div className="flex items-center justify-between border-t border-border pt-4">
           <button
             type="button"
-            className="mt-2 rounded border border-border px-3 py-1 text-xs font-semibold hover:bg-surface-2"
-            onClick={() => void refetch()}
+            disabled={isBusy}
+            onClick={() => void handleSave()}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            Retry
+            {update.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            {update.isPending ? "Saving…" : "Save question"}
           </button>
-        </div>
-      ) : null}
 
-      {reorderErrMsg ? (
-        <p className="mt-2 text-sm text-destructive">Reorder failed: {reorderErrMsg}</p>
-      ) : null}
-      {createErrMsg ? (
-        <p className="mt-2 text-sm text-destructive">Could not add question: {createErrMsg}</p>
-      ) : null}
-
-      {isLoading ? <p className="mt-4 text-sm text-muted-foreground">Loading…</p> : null}
-
-      {!isLoading && !listFailed ? (
-        <>
-          {questions.length === 0 ? (
-            <div className="mt-6 rounded border border-dashed border-border p-6 text-center">
-              <p className="text-sm font-semibold text-foreground">No questions in this module yet.</p>
-              <p className="mt-1 text-sm text-muted-foreground">Add a question to get started.</p>
+          {/* Delete */}
+          {confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-red-700">Delete this question?</span>
               <button
                 type="button"
-                disabled={actionsDisabled}
-                onClick={() => create.mutate()}
-                className="mt-4 rounded border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold hover:bg-primary/15 disabled:opacity-40"
+                disabled={del.isPending}
+                onClick={() => void handleDelete()}
+                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
               >
-                {create.isPending ? "Adding…" : "Add question"}
+                {del.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes, delete"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+              >
+                Cancel
               </button>
             </div>
           ) : (
-            <div className="mt-4 overflow-x-auto">
-              <div className="mb-2 flex justify-end">
-                <button
-                  type="button"
-                  disabled={actionsDisabled}
-                  onClick={() => create.mutate()}
-                  className="rounded border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-semibold hover:bg-primary/15 disabled:opacity-40"
-                >
-                  {create.isPending ? "Adding…" : "Add question"}
-                </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sortable question row ────────────────────────────────────────────────────
+
+function SortableQRow({
+  q,
+  index,
+  selected,
+  reordering,
+  onSelect,
+}: {
+  q: AdminModuleQuestion;
+  index: number;
+  selected: boolean;
+  reordering: boolean;
+  onSelect: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: q.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  const typeColor: Record<string, string> = {
+    MATH: "bg-purple-100 text-purple-700",
+    READING: "bg-blue-100 text-blue-700",
+    WRITING: "bg-teal-100 text-teal-700",
+  };
+  const color = typeColor[q.question_type] ?? "bg-surface-2 text-muted-foreground";
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group flex w-full items-start gap-1.5 rounded-xl border transition-colors ${
+        selected
+          ? "border-primary/40 bg-primary/8 ring-1 ring-primary/20"
+          : "border-border bg-card hover:border-primary/20 hover:bg-surface-2/60"
+      } ${reordering ? "pointer-events-none" : ""}`}
+    >
+      {/* Drag handle */}
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="flex shrink-0 cursor-grab items-center self-stretch rounded-l-xl px-1.5 text-muted-foreground/40 hover:text-muted-foreground active:cursor-grabbing transition-colors focus:outline-none"
+        aria-label="Drag to reorder"
+        tabIndex={-1}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+
+      {/* Row body — clicking selects the question */}
+      <button
+        type="button"
+        onClick={onSelect}
+        className="min-w-0 flex-1 py-3 pr-3 text-left"
+      >
+        <div className="mb-1 flex items-center gap-1.5">
+          <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-muted-foreground">
+            Q{index + 1}
+          </span>
+          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
+            {q.question_type}
+          </span>
+          {q.is_math_input && (
+            <span className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700">
+              INPUT
+            </span>
+          )}
+        </div>
+        <p className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">
+          {q.question_text?.trim() || <em className="text-muted-foreground/50">No text yet</em>}
+        </p>
+      </button>
+    </div>
+  );
+}
+
+/** Ghost card shown under the pointer during a drag */
+function DragGhostRow({ q, index }: { q: AdminModuleQuestion; index: number }) {
+  const typeColor: Record<string, string> = {
+    MATH: "bg-purple-100 text-purple-700",
+    READING: "bg-blue-100 text-blue-700",
+    WRITING: "bg-teal-100 text-teal-700",
+  };
+  const color = typeColor[q.question_type] ?? "bg-surface-2 text-muted-foreground";
+
+  return (
+    <div className="flex w-72 items-start gap-1.5 rounded-xl border border-primary/40 bg-card shadow-xl ring-1 ring-primary/20">
+      <div className="flex shrink-0 cursor-grabbing items-center self-stretch rounded-l-xl px-1.5 text-muted-foreground">
+        <GripVertical className="h-3.5 w-3.5" />
+      </div>
+      <div className="min-w-0 flex-1 py-3 pr-3">
+        <div className="mb-1 flex items-center gap-1.5">
+          <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-muted-foreground">
+            Q{index + 1}
+          </span>
+          <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${color}`}>
+            {q.question_type}
+          </span>
+        </div>
+        <p className="line-clamp-1 text-xs font-semibold leading-snug text-foreground">
+          {q.question_text?.trim() || <em className="text-muted-foreground/50">No text yet</em>}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main panel ──────────────────────────────────────────────────────────────
+
+export default function ModuleQuestionsPanel(props: {
+  testId: number;
+  moduleId: number;
+  /** Optional pack context — enriches the top-bar breadcrumb. */
+  packId?: number;
+  packTitle?: string;
+  sectionSubject?: string;
+  moduleOrder?: string;
+}) {
+  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder } = props;
+
+  const {
+    data: questions = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFetching,
+  } = useModuleQuestionsQuery(testId, moduleId);
+
+  const create = useCreateModuleQuestion(testId, moduleId);
+  const reorderBulk = useReorderModuleQuestionsBulk(testId, moduleId);
+
+  const [selectedId, setSelectedId] = React.useState<number | null>(null);
+
+  // ── Local optimistic ordering state ──────────────────────────────────────
+  // The local order is updated immediately on drag-end (optimistic); the
+  // single bulk-reorder API call reconciles the server in one round-trip.
+  const [localOrder, setLocalOrder] = React.useState<number[]>([]);
+
+  React.useEffect(() => {
+    // Only sync from server when no reorder mutation is in flight.
+    if (reorderBulk.isPending) return;
+    setLocalOrder(questions.map((q) => q.id));
+  }, [questions, reorderBulk.isPending]);
+
+  // Derived: questions ordered by localOrder (falls back to server order)
+  const orderedQuestions = React.useMemo(() => {
+    if (localOrder.length === 0) return questions;
+    const byId = new Map(questions.map((q) => [q.id, q]));
+    return localOrder.map((id) => byId.get(id)).filter(Boolean) as AdminModuleQuestion[];
+  }, [localOrder, questions]);
+
+  // Auto-select first question when list loads
+  React.useEffect(() => {
+    if (questions.length > 0 && selectedId === null) {
+      setSelectedId(questions[0].id);
+    }
+  }, [questions, selectedId]);
+
+  const selectedQ = orderedQuestions.find((q) => q.id === selectedId) ?? null;
+
+  // ── DnD sensors ──────────────────────────────────────────────────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  const [activeId, setActiveId] = React.useState<number | null>(null);
+  const activeQ = activeId != null
+    ? orderedQuestions.find((q) => q.id === activeId) ?? null
+    : null;
+  const activeIndex = activeId != null ? orderedQuestions.findIndex((q) => q.id === activeId) : -1;
+
+  const handleDragStart = React.useCallback((event: DragStartEvent) => {
+    setActiveId(Number(event.active.id));
+  }, []);
+
+  const handleDragEnd = React.useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event;
+      setActiveId(null);
+
+      if (!over || active.id === over.id) return;
+
+      const fromIdx = localOrder.indexOf(Number(active.id));
+      const toIdx = localOrder.indexOf(Number(over.id));
+      if (fromIdx === -1 || toIdx === -1) return;
+
+      // Optimistic update — immediate visual feedback before the API responds.
+      const newOrder = arrayMove(localOrder, fromIdx, toIdx);
+      setLocalOrder(newOrder);
+
+      // Single atomic bulk-reorder: one round-trip, one invalidation.
+      await reorderBulk.mutateAsync(newOrder);
+    },
+    [localOrder, reorderBulk],
+  );
+
+  const handleAdd = async () => {
+    const result = await create.mutateAsync();
+    if (result && typeof result === "object" && "id" in result) {
+      setSelectedId((result as AdminModuleQuestion).id);
+    }
+  };
+
+  const listErrMsg = isError && error ? normalizeApiError(error).message : null;
+  const reorderErrMsg =
+    reorderBulk.isError && reorderBulk.error ? normalizeApiError(reorderBulk.error).message : null;
+  const createErrMsg =
+    create.isError && create.error ? normalizeApiError(create.error).message : null;
+
+  const mutationBusy = create.isPending || reorderBulk.isPending;
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Top bar */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link
+            href={`/builder/pastpapers`}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors shrink-0"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Pastpapers
+          </Link>
+          {packId && packTitle ? (
+            <>
+              <span className="text-muted-foreground/30">/</span>
+              <span className="text-sm font-semibold text-muted-foreground truncate max-w-[160px]" title={packTitle}>
+                {packTitle}
+              </span>
+              <span className="text-muted-foreground/30">/</span>
+              <div className="min-w-0">
+                <p className="text-sm font-extrabold text-foreground leading-tight">
+                  {sectionSubject === "MATH" ? "Mathematics" : sectionSubject === "READING_WRITING" ? "Reading & Writing" : `Test #${testId}`}
+                  {moduleOrder ? ` · ${moduleOrder}` : ` · Module #${moduleId}`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isLoading ? "Loading…" : `${questions.length} question${questions.length !== 1 ? "s" : ""}`}
+                </p>
               </div>
-              <table className="w-full min-w-[480px] border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-border text-xs uppercase text-muted-foreground">
-                    <th className="px-2 py-2 font-semibold">Order</th>
-                    <th className="px-2 py-2 font-semibold">Text</th>
-                    <th className="px-2 py-2 font-semibold">Type</th>
-                    <th className="px-2 py-2 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {questions.map((q, i) => (
-                    <QuestionRow
+            </>
+          ) : (
+            <>
+              <span className="text-muted-foreground/30">/</span>
+              <div>
+                <p className="text-sm font-extrabold text-foreground">
+                  Test #{testId} · Module #{moduleId}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {isLoading ? "Loading…" : `${questions.length} question${questions.length !== 1 ? "s" : ""}`}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
+          >
+            <RefreshCcw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+          <button
+            type="button"
+            disabled={mutationBusy}
+            onClick={() => void handleAdd()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {create.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
+            Add question
+          </button>
+        </div>
+      </div>
+
+      {/* Error banners */}
+      {listErrMsg && (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold">Could not load questions</p>
+            <p className="mt-0.5">{listErrMsg}</p>
+          </div>
+        </div>
+      )}
+      {(reorderErrMsg || createErrMsg) && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800">
+          {reorderErrMsg ?? createErrMsg}
+        </div>
+      )}
+
+      {/* Split panel */}
+      {isLoading ? (
+        <StudioSpinner size="lg" center />
+      ) : (
+        <div className="flex min-h-0 flex-1 gap-5">
+          {/* Left: draggable question list */}
+          <div className="flex w-72 shrink-0 flex-col gap-2 overflow-y-auto rounded-2xl border border-border bg-card p-3">
+            {orderedQuestions.length === 0 ? (
+              <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12 text-center">
+                <p className="text-sm font-semibold text-foreground">No questions yet</p>
+                <p className="text-xs text-muted-foreground">
+                  Click &ldquo;Add question&rdquo; to create the first one.
+                </p>
+              </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={(e) => { void handleDragEnd(e); }}
+              >
+                <SortableContext
+                  items={localOrder}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {orderedQuestions.map((q, i) => (
+                    <SortableQRow
                       key={q.id}
                       q={q}
                       index={i}
-                      total={questions.length}
-                      testId={testId}
-                      moduleId={moduleId}
-                      actionsDisabled={actionsDisabled}
-                      onMove={move}
+                      selected={q.id === selectedId}
+                      reordering={reorderBulk.isPending}
+                      onSelect={() => setSelectedId(q.id)}
                     />
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </>
-      ) : null}
+                </SortableContext>
+
+                {/* Drag overlay — floats under cursor */}
+                <DragOverlay dropAnimation={null}>
+                  {activeQ ? (
+                    <DragGhostRow q={activeQ} index={activeIndex} />
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            )}
+
+            {/* Reorder in-progress indicator */}
+            {reorderBulk.isPending && (
+              <div className="flex items-center gap-1.5 rounded-xl bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving order…
+              </div>
+            )}
+          </div>
+
+          {/* Right: editor */}
+          <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card">
+            {selectedQ ? (
+              <QuestionEditor
+                key={selectedQ.id}
+                question={selectedQ}
+                testId={testId}
+                moduleId={moduleId}
+                onSaved={(updated) => {
+                  setSelectedId(updated.id);
+                }}
+                onDeleted={() => {
+                  const remainingIds = orderedQuestions
+                    .filter((q) => q.id !== selectedQ.id)
+                    .map((q) => q.id);
+                  setSelectedId(remainingIds[0] ?? null);
+                }}
+              />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-3 p-12 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-2">
+                  <Plus className="h-6 w-6 text-muted-foreground/40" />
+                </div>
+                <p className="font-semibold text-foreground">No question selected</p>
+                <p className="text-sm text-muted-foreground">
+                  Select a question from the list, or add a new one.
+                </p>
+                <button
+                  type="button"
+                  disabled={mutationBusy}
+                  onClick={() => void handleAdd()}
+                  className="mt-1 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  <Plus className="h-4 w-4" />
+                  Add first question
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

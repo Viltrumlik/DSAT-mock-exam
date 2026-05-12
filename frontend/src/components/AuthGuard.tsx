@@ -1,10 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
+
+/** If auth is still BOOTING after this many ms, force-redirect to /login rather than spinning forever. */
+const BOOT_TIMEOUT_MS = 12_000;
 
 function consoleFromHostname(): "admin" | "questions" | "main" {
     if (typeof window === "undefined") return "main";
@@ -50,6 +53,29 @@ export default function AuthGuard({
 }) {
     const router = useRouter();
     const { bootState, me } = useMe();
+    const bootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Safety net: if BOOTING for too long (e.g. a stuck promise), force redirect to login.
+    useEffect(() => {
+        if (isOptional) return;
+        if (bootState === "BOOTING") {
+            bootTimerRef.current = setTimeout(() => {
+                // Still booting after timeout — something is stuck; go to login.
+                window.location.href = "/login";
+            }, BOOT_TIMEOUT_MS);
+        } else {
+            if (bootTimerRef.current !== null) {
+                clearTimeout(bootTimerRef.current);
+                bootTimerRef.current = null;
+            }
+        }
+        return () => {
+            if (bootTimerRef.current !== null) {
+                clearTimeout(bootTimerRef.current);
+                bootTimerRef.current = null;
+            }
+        };
+    }, [bootState, isOptional]);
 
     const consoleMode = consoleFromHostname();
 

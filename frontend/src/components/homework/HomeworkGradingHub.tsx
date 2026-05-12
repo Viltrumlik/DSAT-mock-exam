@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
+import { subscribeRealtime } from "@/lib/realtime";
 import { AlertTriangle, Calendar, ChevronRight, ClipboardCheck } from "lucide-react";
 
 type Row = {
@@ -36,60 +37,74 @@ export default function HomeworkGradingHub({
 
   const base = basePath.replace(/\/$/, "");
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const all = await classesApi.list();
-        const groups = all.items.filter((g) => g.my_role === "ADMIN");
-        const out: Row[] = [];
-        for (const g of groups) {
-          const list = await classesApi.listAssignments(g.id);
-          const arr = list.items;
-          for (const a of arr) {
-            out.push({
-              id: Number(a.id),
-              title: String(a.title || "Untitled"),
-              due_at: a.due_at ?? null,
-              created_at: typeof (a as Record<string, unknown>).created_at === "string" ? (a as Record<string, unknown>).created_at as string : null,
-              submissions_count: typeof a.submissions_count === "number" ? a.submissions_count : undefined,
-              members_count: typeof g.members_count === "number" ? g.members_count : undefined,
-              classroom_id: g.id,
-              classroom_name: g.name || `Class #${g.id}`,
-              subject: g.subject,
-            });
-          }
+  const fetchRows = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setError(null);
+    try {
+      const all = await classesApi.list();
+      const groups = all.items.filter((g) => g.my_role === "ADMIN");
+      const out: Row[] = [];
+      for (const g of groups) {
+        const list = await classesApi.listAssignments(g.id);
+        const arr = list.items;
+        for (const a of arr) {
+          out.push({
+            id: Number(a.id),
+            title: String(a.title || "Untitled"),
+            due_at: a.due_at ?? null,
+            created_at: typeof (a as Record<string, unknown>).created_at === "string" ? (a as Record<string, unknown>).created_at as string : null,
+            submissions_count: typeof a.submissions_count === "number" ? a.submissions_count : undefined,
+            members_count: typeof g.members_count === "number" ? g.members_count : undefined,
+            classroom_id: g.id,
+            classroom_name: g.name || `Class #${g.id}`,
+            subject: g.subject,
+          });
         }
-        // Sort: overdue-with-missing-submissions first, then by due date desc
-        const urgencyScore = (row: Row) => {
-          const isOverdue = row.due_at ? new Date(row.due_at) < new Date() : false;
-          const hasMissing =
-            row.submissions_count != null &&
-            row.members_count != null &&
-            row.submissions_count < row.members_count;
-          return isOverdue && hasMissing ? 1 : 0;
-        };
-        out.sort((x, y) => {
-          const uDiff = urgencyScore(y) - urgencyScore(x);
-          if (uDiff !== 0) return uDiff;
-          const tx = x.due_at ? new Date(x.due_at).getTime() : 0;
-          const ty = y.due_at ? new Date(y.due_at).getTime() : 0;
-          return ty - tx;
-        });
-        if (!cancelled) setRows(out);
-      } catch (e: unknown) {
-        const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-        if (!cancelled) setError(typeof d === "string" ? d : "Could not load homework.");
-      } finally {
-        if (!cancelled) setLoading(false);
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      // Sort: overdue-with-missing-submissions first, then by due date desc
+      const urgencyScore = (row: Row) => {
+        const isOverdue = row.due_at ? new Date(row.due_at) < new Date() : false;
+        const hasMissing =
+          row.submissions_count != null &&
+          row.members_count != null &&
+          row.submissions_count < row.members_count;
+        return isOverdue && hasMissing ? 1 : 0;
+      };
+      out.sort((x, y) => {
+        const uDiff = urgencyScore(y) - urgencyScore(x);
+        if (uDiff !== 0) return uDiff;
+        const tx = x.due_at ? new Date(x.due_at).getTime() : 0;
+        const ty = y.due_at ? new Date(y.due_at).getTime() : 0;
+        return ty - tx;
+      });
+      setRows(out);
+    } catch (e: unknown) {
+      const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof d === "string" ? d : "Could not load homework.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchRows();
+  }, [fetchRows]);
+
+  // Realtime: silently refresh submission counts when workspace events fire
+  useEffect(() => {
+    const unsub = subscribeRealtime(
+      {
+        onEvent: async (ev) => {
+          const relevantTypes = ["workspace.updated", "stream.updated", "resync"];
+          if (relevantTypes.includes(ev.type)) {
+            await fetchRows(true);
+          }
+        },
+      },
+      { debounceMs: 300 },
+    );
+    return () => unsub();
+  }, [fetchRows]);
 
   const formatDue = (s?: string | null) => {
     if (!s) return "No deadline";

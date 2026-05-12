@@ -307,7 +307,7 @@ export function HomeDashboard() {
     <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
       <header className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-semibold text-amber-800/90 dark:text-amber-400/90">Overview</p>
+          <p className="text-sm font-semibold text-primary">Overview</p>
           <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground md:text-3xl">
             Hi, {firstName}
           </h1>
@@ -341,13 +341,12 @@ export function HomeDashboard() {
         {/* Target goal — dedicated row for quick score setup */}
         <div className="col-span-full">
           <DashboardCard
-            accent="gold"
+            accent="blue"
             padding="md"
-            className="border-amber-500/35 bg-gradient-to-br from-card via-card to-amber-500/[0.08] dark:to-amber-400/[0.12] dark:ring-1 dark:ring-amber-400/15"
           >
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 flex-1 items-start gap-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-ds-gold/20 text-primary ring-1 ring-ds-gold/30">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Target className="h-7 w-7" />
                 </div>
                 <div className="min-w-0">
@@ -376,7 +375,7 @@ export function HomeDashboard() {
               <button
                 type="button"
                 onClick={() => setGoalModalOpen(true)}
-                className="ms-btn-primary ms-cta-fill inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold ring-1 ring-ds-gold/35 sm:w-auto sm:min-w-[10.5rem]"
+                className="ms-btn-primary ms-cta-fill inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold  sm:w-auto sm:min-w-[10.5rem]"
               >
                 <Target className="h-4 w-4" />
                 {target != null ? "Update score" : "Set score"}
@@ -416,7 +415,7 @@ export function HomeDashboard() {
               {incomplete ? (
                 <Link
                   href={`/exam/${incomplete.id}`}
-                  className="ms-btn-primary ms-cta-fill inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold ring-1 ring-ds-gold/35"
+                  className="ms-btn-primary ms-cta-fill inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold "
                 >
                   <PlayCircle className="h-4 w-4" />
                   Resume
@@ -436,14 +435,8 @@ export function HomeDashboard() {
 
         {/* Exam countdown — highlight */}
         <div
-          className={cn(
-            "relative overflow-hidden rounded-2xl border p-5 md:p-6 text-white shadow-xl",
-            "border-primary/50 bg-gradient-to-br from-primary via-[color-mix(in_srgb,var(--primary)_55%,var(--surface-2))] to-[color-mix(in_srgb,var(--ds-gold-bright)_45%,var(--primary))]",
-            "shadow-[0_24px_48px_-12px_color-mix(in_oklab,var(--primary)_28%,transparent),0_0_0_1px_rgba(255,255,255,0.12)]",
-          )}
+          className="relative overflow-hidden rounded-xl border border-primary/30 bg-primary p-5 md:p-6 text-white shadow-sm"
         >
-          <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-amber-400/15 blur-2xl" />
-          <div className="pointer-events-none absolute -bottom-10 left-1/4 h-24 w-24 rounded-full bg-primary/8 blur-2xl" />
           <DashboardEyebrow className="text-white/80">Exam countdown</DashboardEyebrow>
           <div className="relative mt-2 flex items-baseline gap-2">
             <Calendar className="h-5 w-5 shrink-0 opacity-90" />
@@ -472,7 +465,7 @@ export function HomeDashboard() {
                   value={sat}
                   onChange={(e) => void handleExamDateChange(e.target.value)}
                   className={cn(
-                    "relative mt-3 w-full min-w-0 rounded-xl border border-white/25 bg-white/10 px-3 py-2.5 text-sm font-semibold text-white shadow-inner backdrop-blur-sm",
+                    "relative mt-3 w-full min-w-0 rounded-xl border border-white/25 bg-white/10 px-3 py-2.5 text-sm font-semibold text-white shadow-inner",
                     "outline-none focus:border-white/45 focus:ring-2 focus:ring-white/20",
                     "disabled:cursor-wait disabled:opacity-70",
                     "[&>option]:bg-[#0f172a] [&>option]:text-white",
@@ -531,7 +524,7 @@ export function HomeDashboard() {
               <DashboardEyebrow>Performance</DashboardEyebrow>
               <DashboardTitle className="mt-1">Last mock vs goal</DashboardTitle>
             </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/15 to-ds-gold/15 text-primary ring-1 ring-ds-gold/25">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <BarChart3 className="h-5 w-5" />
             </div>
           </div>
@@ -552,7 +545,7 @@ export function HomeDashboard() {
             className={cn(
               "mt-3 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-bold",
               trend.up === true && "bg-primary/12 text-primary ring-1 ring-primary/20",
-              trend.up === false && "bg-amber-500/15 text-amber-800 dark:text-amber-200",
+              trend.up === false && "bg-surface-2 text-muted-foreground",
               trend.up === null && "bg-surface-2 text-muted-foreground",
             )}
           >
@@ -583,7 +576,7 @@ export function HomeDashboard() {
                       className={cn(
                         "w-full max-w-[2rem] rounded-t-md transition-all duration-300",
                         d.n > 0
-                          ? "bg-gradient-to-t from-[color-mix(in_srgb,var(--primary)_35%,var(--surface-2))] via-primary to-ds-gold"
+                          ? "bg-primary"
                           : "bg-surface-2",
                       )}
                       style={{ height: `${Math.max(8, d.h)}%` }}

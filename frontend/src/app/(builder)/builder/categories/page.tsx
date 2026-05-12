@@ -76,9 +76,6 @@ export default function CategoriesPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">
-            Questions console
-          </p>
           <h1 className="text-xl font-bold text-foreground tracking-tight">Categories</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Taxonomy organising questions and assessment sets. Categories are set on each

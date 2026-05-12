@@ -1,6 +1,7 @@
 "use client";
 
 import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assessments/types";
+import { MathText } from "@/components/MathText";
 
 export function MultipleChoiceInput({
   choices,
@@ -45,7 +46,13 @@ export function MultipleChoiceInput({
               </span>
               <div className="min-w-0">
                 <p className="text-xs font-extrabold uppercase tracking-wider text-label-foreground">{c.id}</p>
-                <p className="mt-0.5 text-sm text-foreground leading-snug">{c.text}</p>
+                {/* MathText renders LaTeX delimiters via KaTeX and handles
+                    **bold** / *italic* markdown inline formatting. Long
+                    choice text wraps naturally — no truncation. */}
+                <MathText
+                  text={c.text}
+                  className="mt-0.5 text-sm text-foreground leading-snug"
+                />
               </div>
             </div>
           </button>

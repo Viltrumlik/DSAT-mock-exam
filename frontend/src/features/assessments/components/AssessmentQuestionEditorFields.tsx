@@ -10,6 +10,7 @@ export type AssessmentQuestionEditorDraft = {
   order: number;
   points: number;
   is_active: boolean;
+  explanation: string;
   choicesText: string;
   correctAnswerText: string;
   gradingConfigText: string;
@@ -36,19 +37,17 @@ export function AssessmentQuestionEditorFields({
   onPatch,
   inputClassName,
   disabled,
-  fieldLabelClass = "text-[11px] font-bold text-slate-500 uppercase tracking-widest",
+  fieldLabelClass = "text-[11px] font-bold text-muted-foreground uppercase tracking-widest",
 }: Props) {
-  // § 1.7 — persist advanced JSON panel preference across question switches
-  // Namespaced key avoids collisions with other localStorage consumers.
   const ADV_KEY = "mastersat:builder:advanced_json_open";
   const [showAdvanced, setShowAdvanced] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     try { return window.localStorage.getItem(ADV_KEY) === "true"; } catch { return false; }
   });
   useEffect(() => {
-    try { window.localStorage.setItem(ADV_KEY, String(showAdvanced)); } catch { /* ignore quota/private-mode */ }
+    try { window.localStorage.setItem(ADV_KEY, String(showAdvanced)); } catch { /* ignore */ }
   }, [showAdvanced]);
-  // MC choices — parsed and normalised for ChoiceEditor
+
   const choices = useMemo(
     () => parseAndNormalizeChoices(draft.choicesText),
     [draft.choicesText],
@@ -69,7 +68,6 @@ export function AssessmentQuestionEditorFields({
     onPatch({ gradingConfigText: JSON.stringify(next, null, 2) });
   };
 
-  // Resolve correctMcId: prefer the stored value if it still matches a choice
   const correctMcId = useMemo(() => {
     const ca = parseJson<unknown>(draft.correctAnswerText, null);
     if (ca == null || ca === "") return choices[0]?.id ?? "A";
@@ -78,9 +76,10 @@ export function AssessmentQuestionEditorFields({
   }, [draft.correctAnswerText, choices]);
 
   return (
-    <div className="space-y-3">
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="flex flex-col gap-1">
+    <div className="space-y-5">
+      {/* Question type + meta row */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="col-span-2 flex flex-col gap-1.5">
           <span className={fieldLabelClass}>Question type</span>
           <select
             className={inputClassName}
@@ -115,30 +114,20 @@ export function AssessmentQuestionEditorFields({
             <option value="boolean">True / False</option>
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex flex-col gap-1">
-            <span className={fieldLabelClass}>Order</span>
-            <input
-              className={inputClassName}
-              disabled={disabled}
-              type="number"
-              value={String(draft.order)}
-              onChange={(e) => onPatch({ order: Number(e.target.value) })}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <span className={fieldLabelClass}>Points</span>
-            <input
-              className={inputClassName}
-              disabled={disabled}
-              type="number"
-              min={1}
-              value={String(draft.points)}
-              onChange={(e) => onPatch({ points: Number(e.target.value) })}
-            />
-          </div>
+
+        <div className="flex flex-col gap-1.5">
+          <span className={fieldLabelClass}>Points</span>
+          <input
+            className={inputClassName}
+            disabled={disabled}
+            type="number"
+            min={1}
+            value={String(draft.points)}
+            onChange={(e) => onPatch({ points: Number(e.target.value) })}
+          />
         </div>
-        <div className="flex flex-col gap-1 md:col-span-2">
+
+        <div className="flex flex-col gap-1.5">
           <span className={fieldLabelClass}>Active</span>
           <select
             className={inputClassName}
@@ -152,18 +141,21 @@ export function AssessmentQuestionEditorFields({
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <span className={fieldLabelClass}>Prompt / stem</span>
+      {/* Prompt */}
+      <div className="flex flex-col gap-1.5">
+        <span className={fieldLabelClass}>Question text (prompt / stem)</span>
         <textarea
-          className={`${inputClassName} min-h-[110px]`}
+          className={`${inputClassName} min-h-[160px] leading-relaxed`}
           disabled={disabled}
+          placeholder="Enter the question text here. Supports plain text and LaTeX math (e.g. \( x^2 + 1 = 0 \))."
           value={draft.prompt}
           onChange={(e) => onPatch({ prompt: e.target.value })}
         />
       </div>
 
-      {draft.question_type === "multiple_choice" ? (
-        <div className="rounded-xl border border-border bg-surface-2/30 p-3">
+      {/* Multiple choice answers */}
+      {draft.question_type === "multiple_choice" && (
+        <div className="rounded-2xl border border-border bg-surface-2/30 p-4">
           <ChoiceEditor
             choices={choices}
             correctId={correctMcId}
@@ -176,17 +168,19 @@ export function AssessmentQuestionEditorFields({
             disabled={disabled}
           />
         </div>
-      ) : null}
+      )}
 
-      {draft.question_type === "numeric" ? (
-        <div className="grid gap-3 md:grid-cols-2">
-          <div className="flex flex-col gap-1">
+      {/* Numeric answer */}
+      {draft.question_type === "numeric" && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
             <span className={fieldLabelClass}>Correct value</span>
             <input
               className={inputClassName}
               disabled={disabled}
               type="text"
               inputMode="decimal"
+              placeholder="e.g. 42 or 3.14"
               value={String(parseJson(draft.correctAnswerText, "") ?? "")}
               onChange={(e) => {
                 const raw = e.target.value.trim();
@@ -196,7 +190,7 @@ export function AssessmentQuestionEditorFields({
               }}
             />
           </div>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <span className={fieldLabelClass}>Tolerance (±)</span>
             <input
               className={inputClassName}
@@ -218,10 +212,11 @@ export function AssessmentQuestionEditorFields({
             />
           </div>
         </div>
-      ) : null}
+      )}
 
-      {draft.question_type === "boolean" ? (
-        <div className="flex flex-col gap-1">
+      {/* Boolean answer */}
+      {draft.question_type === "boolean" && (
+        <div className="flex flex-col gap-1.5">
           <span className={fieldLabelClass}>Correct answer</span>
           <select
             className={inputClassName}
@@ -233,14 +228,18 @@ export function AssessmentQuestionEditorFields({
             <option value="false">False</option>
           </select>
         </div>
-      ) : null}
+      )}
 
-      {draft.question_type === "short_text" ? (
-        <div className="flex flex-col gap-1">
-          <span className={fieldLabelClass}>Expected answer (exact match unless graders extend)</span>
-          <input
-            className={inputClassName}
+      {/* Short text answer */}
+      {draft.question_type === "short_text" && (
+        <div className="flex flex-col gap-1.5">
+          <span className={fieldLabelClass}>Expected answer (exact match)</span>
+          {/* textarea instead of input: expected answers can include LaTeX,
+              multi-word phrases, or chemical formulas that exceed one line. */}
+          <textarea
+            className={`${inputClassName} min-h-[72px] leading-relaxed`}
             disabled={disabled}
+            placeholder={`Enter the exact expected answer.\nSupports LaTeX: \\( x^2 \\), **bold**, *italic*`}
             value={(() => {
               const ca = parseJson<unknown>(draft.correctAnswerText, "");
               if (typeof ca === "string") return ca;
@@ -250,19 +249,32 @@ export function AssessmentQuestionEditorFields({
             onChange={(e) => onPatch({ correctAnswerText: JSON.stringify(e.target.value) })}
           />
         </div>
-      ) : null}
+      )}
 
-      <div className="pt-1">
+      {/* Explanation */}
+      <div className="flex flex-col gap-1.5">
+        <span className={fieldLabelClass}>Explanation / solution rationale</span>
+        <textarea
+          className={`${inputClassName} min-h-[100px] leading-relaxed`}
+          disabled={disabled}
+          placeholder="Explain why the correct answer is right. Shown to students after grading."
+          value={draft.explanation}
+          onChange={(e) => onPatch({ explanation: e.target.value })}
+        />
+      </div>
+
+      {/* Advanced JSON toggle */}
+      <div className="border-t border-border pt-3">
         <button
           type="button"
-          className="text-xs font-bold text-indigo-600 hover:underline"
+          className="text-xs font-bold text-primary/70 hover:text-primary hover:underline"
           onClick={() => setShowAdvanced((v) => !v)}
         >
-          {showAdvanced ? "Hide" : "Show"} advanced JSON (grading config, raw correct value, …)
+          {showAdvanced ? "▾ Hide" : "▸ Show"} advanced JSON (choices, correct answer, grading config)
         </button>
-        {showAdvanced ? (
-          <div className="mt-2 grid gap-3 md:grid-cols-2">
-            <div className="flex flex-col gap-1 md:col-span-2">
+        {showAdvanced && (
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
               <span className={fieldLabelClass}>Choices JSON</span>
               <textarea
                 className={`${inputClassName} min-h-[90px] font-mono text-xs`}
@@ -271,7 +283,7 @@ export function AssessmentQuestionEditorFields({
                 onChange={(e) => onPatch({ choicesText: e.target.value })}
               />
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <span className={fieldLabelClass}>Correct answer JSON</span>
               <textarea
                 className={`${inputClassName} min-h-[90px] font-mono text-xs`}
@@ -280,7 +292,7 @@ export function AssessmentQuestionEditorFields({
                 onChange={(e) => onPatch({ correctAnswerText: e.target.value })}
               />
             </div>
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1.5">
               <span className={fieldLabelClass}>Grading config JSON</span>
               <textarea
                 className={`${inputClassName} min-h-[90px] font-mono text-xs`}
@@ -290,7 +302,7 @@ export function AssessmentQuestionEditorFields({
               />
             </div>
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );

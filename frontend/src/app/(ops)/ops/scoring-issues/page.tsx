@@ -13,15 +13,7 @@ import {
 } from "lucide-react";
 import { StateTag } from "@/components/governance";
 import { cn } from "@/lib/cn";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type GradingMetrics = {
-  pending_scoring: number;
-  failed_scoring: number;
-  avg_scoring_latency_ms: number | null;
-  last_updated: string | null;
-};
+import type { GradingMetrics } from "@/domains/scoring/types";
 
 type FailedAttempt = {
   id: number;
@@ -201,18 +193,18 @@ export default function ScoringIssuesPage() {
       <div className="grid gap-3 sm:grid-cols-3">
         <MetricCard
           loading={metricsLoading}
-          value={metrics?.pending_scoring ?? 0}
+          value={metrics?.queue.pending ?? 0}
           label="Pending scoring"
           icon={<Clock className="h-5 w-5" />}
           color={
-            metrics && metrics.pending_scoring > 50
+            metrics && metrics.queue.pending > 50
               ? "amber"
-              : metrics && metrics.pending_scoring > 0
+              : metrics && metrics.queue.pending > 0
               ? "normal"
               : "green"
           }
           tag={
-            metrics && metrics.pending_scoring > 0 ? (
+            metrics && metrics.queue.pending > 0 ? (
               <StateTag state="SCORING" size="xs" />
             ) : undefined
           }
@@ -234,11 +226,11 @@ export default function ScoringIssuesPage() {
         <MetricCard
           loading={metricsLoading}
           value={
-            metrics?.avg_scoring_latency_ms != null
-              ? `${Math.round(metrics.avg_scoring_latency_ms)}ms`
+            metrics?.latency_seconds.p50 != null
+              ? `${Math.round(metrics.latency_seconds.p50 * 1000)}ms`
               : "—"
           }
-          label="Avg grading latency"
+          label="Median grading latency"
           icon={<Zap className="h-5 w-5" />}
           color="normal"
         />

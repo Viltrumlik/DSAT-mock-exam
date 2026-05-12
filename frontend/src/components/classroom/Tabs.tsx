@@ -45,7 +45,7 @@ export function ClassroomTabs({
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
               active
                 ? "bg-card text-foreground shadow-sm ring-1 ring-border"
-                : "text-muted-foreground hover:bg-card/80 hover:text-foreground",
+                : "text-muted-foreground hover:bg-card hover:text-foreground",
             )}
           >
             {Icon ? <Icon className="h-4 w-4 shrink-0 opacity-85" strokeWidth={2} /> : null}

@@ -58,7 +58,7 @@ export function Flashcard({
           style={{ transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}
         >
           <div className="absolute inset-0 flex flex-col items-center justify-center px-6 text-center [backface-visibility:hidden]">
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Word</p>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Word</p>
             <p className="mt-3 text-4xl font-extrabold tracking-tight text-foreground">{word.word}</p>
             <p className="mt-3 text-sm text-muted-foreground">
               Tap to flip. Then choose <span className="font-semibold text-foreground">Correct</span> or{" "}
@@ -67,11 +67,11 @@ export function Flashcard({
           </div>
 
           <div className="absolute inset-0 flex flex-col justify-center px-6 text-left [backface-visibility:hidden] [transform:rotateY(180deg)]">
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Meaning</p>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Meaning</p>
             <p className="mt-2 text-lg font-bold text-foreground">{word.meaning || "—"}</p>
             {word.example ? (
               <>
-                <p className="mt-5 text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Example</p>
+                <p className="mt-5 text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Example</p>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{word.example}</p>
               </>
             ) : null}

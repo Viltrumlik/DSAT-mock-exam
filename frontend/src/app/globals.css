@@ -21,21 +21,21 @@
 }
 
 /*
-  MasterSAT design system — semantic tokens (light / dark)
-  Surfaces & text: use bg-background | bg-card | bg-surface-2, text-foreground, text-muted-foreground, text-label-foreground, border-border
+  MasterSAT design system — minimal white/blue theme
+  Surfaces: bg-background | bg-card | bg-surface-2
+  Text: text-foreground | text-muted-foreground | text-label-foreground
+  Border: border-border
 */
 :root {
-  /* Charcoal-light base (closer to black than icy blue-gray) */
-  --bg: #e6e8ec;
-  --surface: #f0f1f4;
-  --surface-2: #dcdfe5;
-  --text-primary: #050508;
-  --text-secondary: #3d4554;
-  --text-label: #5c6370;
-  --border-subtle: rgba(5, 5, 8, 0.12);
-  --accent-cyan: #22d3ee;
-  /* Modal / drawer scrim — theme-aware dimming */
-  --overlay-scrim: rgba(15, 23, 42, 0.48);
+  --bg: #ffffff;
+  --surface: #f8fafc;
+  --surface-2: #f1f5f9;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-label: #64748b;
+  --border-subtle: rgba(15, 23, 42, 0.1);
+  --accent-cyan: #0ea5e9;
+  --overlay-scrim: rgba(15, 23, 42, 0.4);
 
   --background: var(--bg);
   --foreground: var(--text-primary);
@@ -44,65 +44,63 @@
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
   --muted: var(--text-secondary);
-  --ring: rgba(37, 99, 235, 0.22);
+  --ring: rgba(37, 99, 235, 0.2);
 
+  /* Legacy ds-* tokens kept for compatibility */
   --ds-primary: #2563eb;
   --ds-primary-hover: #1d4ed8;
-  --ds-primary-soft: rgba(37, 99, 235, 0.1);
-  --ds-gold: #b45309;
-  --ds-gold-bright: #d97706;
-  --ds-gold-soft: rgba(180, 83, 9, 0.1);
-  --ds-secondary: #b45309;
-  --ds-secondary-soft: rgba(180, 83, 9, 0.12);
+  --ds-primary-soft: rgba(37, 99, 235, 0.08);
+  --ds-gold: #2563eb;
+  --ds-gold-bright: #2563eb;
+  --ds-gold-soft: rgba(37, 99, 235, 0.06);
+  --ds-secondary: #2563eb;
+  --ds-secondary-soft: rgba(37, 99, 235, 0.08);
   --ds-accent: #2563eb;
-  --ds-accent-amber: #d97706;
-  /* Gold edge accents (vertical rails on cards / chrome) */
-  --gold-rail: color-mix(in srgb, var(--ds-gold-bright) 22%, transparent);
-  --gold-rail-soft: color-mix(in srgb, var(--ds-gold) 7%, transparent);
-  --gold-rail-glow: color-mix(in srgb, var(--ds-gold-bright) 10%, transparent);
-  /* Align legacy ds-* surfaces with core tokens (one visual language app-wide) */
+  --ds-accent-amber: #2563eb;
+  --gold-rail: transparent;
+  --gold-rail-soft: transparent;
+  --gold-rail-glow: transparent;
   --ds-surface-0: var(--background);
   --ds-surface-1: var(--card);
   --ds-surface-2: var(--surface-2);
-  --ds-border-strong: color-mix(in srgb, var(--primary) 24%, var(--border));
+  --ds-border-strong: rgba(37, 99, 235, 0.2);
   --ds-text-muted: var(--text-secondary);
   --ds-radius-sm: 0.5rem;
   --ds-radius-md: 0.75rem;
   --ds-radius-lg: 1rem;
   --ds-radius-xl: 1.25rem;
-  --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --ds-shadow-md: 0 8px 30px rgba(37, 99, 235, 0.06), 0 12px 40px rgba(180, 83, 9, 0.05);
-  --ds-shadow-lg: 0 24px 48px rgba(15, 23, 42, 0.08);
-  --ds-transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --ds-transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
-  --ds-ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --ds-transition: 150ms ease;
+  --ds-transition-fast: 100ms ease;
+  --ds-ease-premium: ease;
 }
 
 .dark {
-  /* Page vs cards: keep --bg darkest so panels read as lifted surfaces */
-  --bg: #020203;
-  --surface: #151821;
-  --surface-2: #0c0e14;
-  --text-primary: #e8eaed;
-  --text-secondary: #9aa0a8;
-  --text-label: #7d8490;
-  --accent-cyan: #22d3ee;
-  --overlay-scrim: rgba(0, 0, 0, 0.78);
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --surface-2: #0f172a;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-label: #64748b;
+  --accent-cyan: #38bdf8;
+  --overlay-scrim: rgba(0, 0, 0, 0.6);
+  --border-subtle: rgba(255, 255, 255, 0.1);
 
   --ds-primary: #3b82f6;
   --ds-primary-hover: #60a5fa;
-  --ds-primary-soft: rgba(59, 130, 246, 0.15);
-  --ds-gold: #fbbf24;
-  --ds-gold-bright: #fcd34d;
-  --ds-gold-soft: rgba(251, 191, 36, 0.12);
-  --ds-secondary: #f59e0b;
-  --ds-secondary-soft: rgba(245, 158, 11, 0.14);
+  --ds-primary-soft: rgba(59, 130, 246, 0.12);
+  --ds-gold: #3b82f6;
+  --ds-gold-bright: #3b82f6;
+  --ds-gold-soft: rgba(59, 130, 246, 0.1);
+  --ds-secondary: #3b82f6;
+  --ds-secondary-soft: rgba(59, 130, 246, 0.1);
   --ds-accent: #60a5fa;
-  --ds-accent-amber: #fbbf24;
-  --border-subtle: color-mix(in srgb, var(--ds-gold-bright) 16%, rgba(255, 255, 255, 0.09));
-  --gold-rail: color-mix(in srgb, var(--ds-gold-bright) 48%, transparent);
-  --gold-rail-soft: color-mix(in srgb, var(--ds-gold-bright) 12%, transparent);
-  --gold-rail-glow: color-mix(in srgb, var(--ds-gold-bright) 14%, transparent);
+  --ds-accent-amber: #3b82f6;
+  --gold-rail: transparent;
+  --gold-rail-soft: transparent;
+  --gold-rail-glow: transparent;
 
   --background: var(--bg);
   --foreground: var(--text-primary);
@@ -111,15 +109,15 @@
   --primary: #3b82f6;
   --primary-hover: #60a5fa;
   --muted: var(--text-secondary);
-  --ring: rgba(96, 165, 250, 0.35);
+  --ring: rgba(59, 130, 246, 0.3);
   --ds-surface-0: var(--background);
   --ds-surface-1: var(--card);
   --ds-surface-2: var(--surface-2);
-  --ds-border-strong: color-mix(in srgb, var(--primary) 32%, var(--border));
+  --ds-border-strong: rgba(59, 130, 246, 0.25);
   --ds-text-muted: var(--text-secondary);
-  --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --ds-shadow-md: 0 12px 40px rgba(0, 0, 0, 0.45);
-  --ds-shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.55);
+  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
+  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 body {
@@ -143,8 +141,8 @@ body {
 
 .ds-section-title {
   font-size: 0.6875rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
+  font-weight: 700;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-label);
 }
@@ -166,7 +164,7 @@ body {
   outline: none;
 }
 .ds-focus:focus-visible {
-  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ds-primary);
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--primary);
 }
 
 @keyframes ds-shimmer {
@@ -181,7 +179,7 @@ body {
 @keyframes ds-modal-in {
   from {
     opacity: 0;
-    transform: scale(0.97) translateY(8px);
+    transform: scale(0.98) translateY(6px);
   }
   to {
     opacity: 1;
@@ -192,9 +190,9 @@ body {
 .ds-skeleton {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--surface-2) 55%, transparent) 0%,
-    color-mix(in srgb, var(--card) 92%, transparent) 50%,
-    color-mix(in srgb, var(--surface-2) 55%, transparent) 100%
+    var(--surface-2) 0%,
+    var(--card) 50%,
+    var(--surface-2) 100%
   );
   background-size: 200% 100%;
   animation: ds-shimmer 1.4s ease-in-out infinite;
@@ -203,134 +201,67 @@ body {
 .dark .ds-skeleton {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--foreground) 8%, transparent) 0%,
-    color-mix(in srgb, var(--foreground) 14%, transparent) 50%,
-    color-mix(in srgb, var(--foreground) 8%, transparent) 100%
+    rgba(255, 255, 255, 0.05) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 100%
   );
   background-size: 200% 100%;
 }
 
+/* App background — solid, no gradients */
 .app-bg {
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--ds-gold-bright) 5%, transparent) 0%,
-      transparent 12%,
-      transparent 88%,
-      color-mix(in srgb, var(--ds-gold-bright) 5%, transparent) 100%
-    ),
-    radial-gradient(1000px 520px at 0% 0%, var(--ds-primary-soft), transparent 55%),
-    radial-gradient(900px 480px at 100% 8%, var(--ds-secondary-soft), transparent 48%),
-    radial-gradient(700px 400px at 50% 100%, color-mix(in srgb, var(--primary) 6%, transparent), transparent 45%),
-    radial-gradient(520px 320px at 92% 92%, var(--ds-gold-soft), transparent 55%),
-    var(--background);
+  background: var(--background);
 }
 
 .dark .app-bg {
-  background:
-    /* Gold wash along left / right viewport edges */
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--ds-gold-bright) 9%, transparent) 0%,
-      transparent 14%,
-      transparent 86%,
-      color-mix(in srgb, var(--ds-gold-bright) 9%, transparent) 100%
-    ),
-    radial-gradient(900px 520px at 50% -20%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 58%),
-    radial-gradient(700px 400px at 100% 100%, color-mix(in srgb, var(--ds-gold-bright) 5%, transparent), transparent 50%),
-    var(--background);
+  background: var(--background);
 }
 
+/* Surface — solid card with subtle border */
 .surface {
-  background: color-mix(in srgb, var(--card) 88%, transparent);
+  background: var(--card);
   border: 1px solid var(--border);
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 12px 24px color-mix(in srgb, var(--foreground) 4%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--ds-shadow-sm);
 }
 
+/* Panel — rounded card */
 .panel {
-  border-radius: 1.125rem;
-  background: color-mix(in srgb, var(--card) 90%, transparent);
+  border-radius: var(--ds-radius-lg);
+  background: var(--card);
   border: 1px solid var(--border);
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 12px 24px color-mix(in srgb, var(--foreground) 4%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
-.dark .panel {
-  background: color-mix(in srgb, var(--card) 92%, transparent);
-  border: 1px solid var(--border);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.22),
-    0 18px 36px color-mix(in srgb, var(--ds-primary) 12%, transparent);
+  box-shadow: var(--ds-shadow-sm);
 }
 
 .panel-soft {
-  border-radius: 1rem;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  border-radius: var(--ds-radius-md);
+  background: var(--card);
   border: 1px solid var(--border);
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 5px 0 18px -10px var(--gold-rail-soft),
-    inset -5px 0 18px -10px var(--gold-rail-soft),
-    var(--ds-shadow-sm);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  box-shadow: var(--ds-shadow-sm);
 }
 
-/* Futuristic elevated cards (lists, dashboards) + gold side rails */
+/* Cards */
 .ui-card {
-  background: color-mix(in srgb, var(--card) 94%, transparent);
+  background: var(--card);
   border: 1px solid var(--border);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 6px 0 22px -10px var(--gold-rail-soft),
-    inset -6px 0 22px -10px var(--gold-rail-soft),
-    0 4px 24px -6px color-mix(in srgb, var(--foreground) 8%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--primary) 5%, transparent);
-  transition:
-    box-shadow 0.45s var(--ds-ease-premium),
-    transform 0.45s var(--ds-ease-premium),
-    border-color 0.35s ease;
-}
-
-.dark .ui-card {
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 10px 0 32px -12px var(--gold-rail-soft),
-    inset -10px 0 32px -12px var(--gold-rail-soft),
-    0 8px 36px -10px color-mix(in srgb, var(--ds-primary) 16%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
+  box-shadow: var(--ds-shadow-sm);
+  transition: box-shadow 150ms ease, border-color 150ms ease;
 }
 
 .ui-card:hover {
-  border-color: color-mix(in srgb, var(--ds-gold-bright) 22%, var(--border));
-  box-shadow:
-    inset 1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 55%, transparent),
-    inset -1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 45%, transparent),
-    inset 8px 0 28px -8px var(--gold-rail-glow),
-    inset -8px 0 28px -8px var(--gold-rail-glow),
-    0 0 28px color-mix(in srgb, var(--primary) 14%, transparent),
-    0 16px 48px -12px color-mix(in srgb, var(--primary) 10%, transparent);
+  border-color: rgba(37, 99, 235, 0.25);
+  box-shadow: var(--ds-shadow-md);
 }
 
+.dark .ui-card:hover {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Inputs */
 .ui-input,
 .input-modern {
-  background: color-mix(in srgb, var(--card) 96%, transparent);
+  background: var(--background);
   color: var(--foreground);
   border: 1px solid var(--border);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
 .ui-input::placeholder,
@@ -340,96 +271,54 @@ body {
 
 .ui-input:focus,
 .input-modern:focus {
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-color: var(--primary);
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
-/* Primary CTA motion: blue → gold controls, light sweep, press depth */
+/* Buttons — solid, no gradients */
 .ms-btn-primary,
 .btn-primary {
-  position: relative;
-  z-index: 0;
-  transition:
-    transform 0.38s var(--ds-ease-premium),
-    box-shadow 0.5s var(--ds-ease-premium),
-    filter 0.3s ease;
+  transition: background-color 150ms ease, box-shadow 150ms ease, transform 100ms ease;
 }
 .ms-btn-primary:hover:not(:disabled):not([aria-disabled="true"]),
 .btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
-  filter: brightness(1.06) saturate(1.05);
-  box-shadow:
-    0 16px 44px color-mix(in srgb, var(--primary) 28%, transparent),
-    0 8px 28px color-mix(in srgb, var(--ds-gold-bright) 22%, transparent);
+  filter: brightness(1.05);
 }
 .ms-btn-primary:active:not(:disabled):not([aria-disabled="true"]),
 .btn-primary:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: scale(0.97);
-  filter: brightness(0.96);
-  transition-duration: 0.12s;
-}
-.dark .ms-btn-primary:hover:not(:disabled):not([aria-disabled="true"]),
-.dark .btn-primary:hover:not(:disabled):not([aria-disabled="true"]) {
-  box-shadow:
-    0 16px 52px color-mix(in srgb, var(--primary) 24%, transparent),
-    0 10px 36px color-mix(in srgb, var(--ds-gold-bright) 18%, transparent);
+  transform: scale(0.98);
+  transition-duration: 0.08s;
 }
 
-/* Outline / secondary: lift + blue & gold shadow */
 .ms-btn-secondary,
 .btn-secondary {
-  transition:
-    transform 0.38s var(--ds-ease-premium),
-    border-color 0.35s ease,
-    background-color 0.35s ease,
-    box-shadow 0.5s var(--ds-ease-premium);
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 .ms-btn-secondary:hover:not(:disabled):not([aria-disabled="true"]),
 .btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(-2px);
-  box-shadow:
-    0 14px 36px color-mix(in srgb, var(--foreground) 6%, transparent),
-    0 6px 20px color-mix(in srgb, var(--primary) 10%, transparent),
-    0 2px 10px color-mix(in srgb, var(--ds-gold-bright) 8%, transparent);
+  background-color: var(--surface-2);
 }
 .ms-btn-secondary:active:not(:disabled):not([aria-disabled="true"]),
 .btn-secondary:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(0) scale(0.99);
-  transition-duration: 0.12s;
-}
-.dark .ms-btn-secondary:hover:not(:disabled):not([aria-disabled="true"]),
-.dark .btn-secondary:hover:not(:disabled):not([aria-disabled="true"]) {
-  box-shadow:
-    0 16px 44px color-mix(in srgb, #000 55%, transparent),
-    0 6px 22px color-mix(in srgb, var(--primary) 14%, transparent),
-    0 0 28px color-mix(in srgb, var(--ds-gold-bright) 8%, transparent);
+  transform: scale(0.99);
 }
 
 .ms-btn-ghost {
-  transition:
-    transform 0.32s var(--ds-ease-premium),
-    background-color 0.3s ease,
-    color 0.2s ease;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 .ms-btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(-1px);
+  background-color: var(--surface-2);
 }
 .ms-btn-ghost:active:not(:disabled):not([aria-disabled="true"]) {
   transform: scale(0.98);
-  transition-duration: 0.1s;
 }
 
-/* Strong action — black / white + gold (palette-only, no red) */
 .ms-btn-destructive {
-  transition:
-    transform 0.35s var(--ds-ease-premium),
-    border-color 0.3s ease,
-    background-color 0.3s ease,
-    box-shadow 0.45s var(--ds-ease-premium);
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 .ms-btn-destructive:hover:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(-1px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(217, 119, 6, 0.35);
+  filter: brightness(1.05);
 }
 .ms-btn-destructive:active:not(:disabled):not([aria-disabled="true"]) {
   transform: scale(0.98);
@@ -437,52 +326,37 @@ body {
 
 /* Icon buttons */
 .ms-icon-btn {
-  transition:
-    transform 0.35s var(--ds-ease-premium),
-    border-color 0.3s ease,
-    background-color 0.3s ease,
-    box-shadow 0.45s var(--ds-ease-premium);
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 .ms-icon-btn:hover:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(-2px);
-  box-shadow:
-    0 10px 24px color-mix(in srgb, var(--primary) 14%, transparent),
-    0 4px 14px color-mix(in srgb, var(--ds-gold-bright) 10%, transparent);
+  background-color: var(--surface-2);
 }
 .ms-icon-btn:active:not(:disabled):not([aria-disabled="true"]) {
-  transform: translateY(0) scale(0.95);
-  transition-duration: 0.1s;
-}
-.dark .ms-icon-btn:hover:not(:disabled):not([aria-disabled="true"]) {
-  box-shadow:
-    0 12px 28px color-mix(in srgb, #000 45%, transparent),
-    0 4px 16px color-mix(in srgb, var(--primary) 12%, transparent),
-    0 0 20px color-mix(in srgb, var(--ds-gold-bright) 6%, transparent);
+  transform: scale(0.96);
+  transition-duration: 0.08s;
 }
 
 .ms-icon-btn-ghost {
-  transition: transform 0.3s var(--ds-ease-premium), background-color 0.25s ease;
+  transition: background-color 150ms ease;
 }
 .ms-icon-btn-ghost:hover:not(:disabled):not([aria-disabled="true"]) {
-  transform: scale(1.06);
+  background-color: var(--surface-2);
 }
 .ms-icon-btn-ghost:active:not(:disabled):not([aria-disabled="true"]) {
   transform: scale(0.94);
 }
 
-/* Primary CTA fill — shared by .btn-primary and compact buttons (lists, shell) */
+/* Primary button fill */
 .ms-cta-fill,
 .btn-primary {
   color: #fff;
-  border: 1px solid color-mix(in srgb, var(--primary) 35%, transparent);
-  background: linear-gradient(
-    90deg,
-    var(--primary),
-    color-mix(in srgb, var(--primary) 38%, var(--ds-gold-bright))
-  );
-  box-shadow:
-    0 10px 28px color-mix(in srgb, var(--primary) 22%, transparent),
-    0 8px 22px color-mix(in srgb, var(--ds-gold-bright) 14%, transparent);
+  background: var(--primary);
+  border: 1px solid transparent;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.3);
+}
+.ms-cta-fill:hover,
+.btn-primary:hover {
+  background: var(--primary-hover);
 }
 
 .btn-primary {
@@ -490,44 +364,26 @@ body {
   align-items: center;
   justify-content: center;
   gap: 0.625rem;
-  border-radius: 1rem;
-  padding: 0.75rem 1.25rem;
-  font-size: 1rem;
+  border-radius: 0.625rem;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.9375rem;
   line-height: 1.25;
-  font-weight: 700;
+  font-weight: 600;
 }
 
-/* Optional: math / warm-only CTA (same token family) */
+/* Math CTA — same as primary for simplicity */
 .ms-cta-math {
-  border: 1px solid color-mix(in srgb, var(--ds-gold-bright) 40%, transparent);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--ds-secondary) 92%, #000),
-    var(--ds-gold-bright)
-  );
+  background: var(--primary);
   color: #fff;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-gold-bright) 22%, transparent);
+  border: 1px solid transparent;
 }
 
 .btn-secondary {
-  @apply inline-flex items-center justify-center gap-2.5 rounded-2xl px-5 py-3 text-base font-semibold text-foreground bg-card border border-border hover:border-primary/35;
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--card) 100%, transparent) 0%,
-    color-mix(in srgb, var(--surface-2) 40%, var(--card)) 100%
-  );
-}
-
-.btn-secondary:hover {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--card) 100%, transparent) 0%,
-    color-mix(in srgb, var(--ds-gold-soft) 35%, var(--card)) 100%
-  );
+  @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-foreground bg-card border border-border hover:bg-surface-2;
 }
 
 .input-modern {
-  @apply w-full rounded-2xl px-5 py-3 text-base transition-all;
+  @apply w-full rounded-lg px-4 py-2.5 text-sm transition-all;
 }
 
 .title-xl {
@@ -536,157 +392,94 @@ body {
 
 .eyebrow {
   font-size: 0.625rem;
-  font-weight: 900;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: color-mix(in srgb, var(--primary) 82%, var(--ds-gold-bright));
+  letter-spacing: 0.12em;
+  color: var(--primary);
 }
 
+/* Hero shell — simple bordered card */
 .hero-shell {
   position: relative;
   overflow: hidden;
-  border-radius: 1.5rem;
-  background:
-    linear-gradient(120deg, color-mix(in srgb, var(--card) 94%, transparent), color-mix(in srgb, var(--surface-2) 88%, var(--card))),
-    radial-gradient(700px 320px at 85% -10%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 60%),
-    radial-gradient(500px 260px at -10% 110%, color-mix(in srgb, var(--ds-gold-bright) 12%, transparent), transparent 58%);
-  border: 1px solid color-mix(in srgb, var(--primary) 18%, var(--border));
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 8px 0 28px -12px var(--gold-rail-soft),
-    inset -8px 0 28px -12px var(--gold-rail-soft),
-    inset 0 1px 0 color-mix(in srgb, var(--ds-gold-bright) 14%, transparent);
+  border-radius: var(--ds-radius-xl);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--ds-shadow-sm);
 }
 
 .hero-shell::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image: linear-gradient(color-mix(in srgb, var(--foreground) 8%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 8%, transparent) 1px, transparent 1px);
-  background-size: 36px 36px;
-  mask-image: radial-gradient(ellipse at center, black 45%, transparent 85%);
+  display: none;
 }
 
 .dark .hero-shell {
-  background:
-    linear-gradient(120deg, color-mix(in srgb, var(--background) 92%, transparent), color-mix(in srgb, var(--surface-2) 85%, transparent)),
-    radial-gradient(700px 320px at 85% -10%, color-mix(in srgb, var(--primary) 18%, transparent), transparent 60%),
-    radial-gradient(500px 260px at -10% 110%, color-mix(in srgb, var(--ds-gold-bright) 14%, transparent), transparent 58%);
-  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 10px 0 36px -12px var(--gold-rail-soft),
-    inset -10px 0 36px -12px var(--gold-rail-soft),
-    inset 0 1px 0 color-mix(in srgb, var(--ds-gold-bright) 10%, transparent);
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--ds-shadow-sm);
 }
 
 .dark .hero-shell::before {
-  opacity: 0.65;
-  background-image: linear-gradient(color-mix(in srgb, var(--foreground) 10%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 10%, transparent) 1px, transparent 1px);
+  display: none;
 }
 
+/* Metric tile — clean card */
 .metric-tile {
   position: relative;
   overflow: hidden;
-  border-radius: 1.125rem;
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--card) 100%, transparent) 0%,
-    color-mix(in srgb, var(--ds-primary-soft) 28%, var(--card)) 100%
-  );
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 6px 0 20px -10px var(--gold-rail-soft),
-    inset -6px 0 20px -10px var(--gold-rail-soft),
-    0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 22px 42px color-mix(in srgb, var(--primary) 9%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  border-radius: var(--ds-radius-md);
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: var(--ds-shadow-sm);
+  transition: box-shadow 150ms ease, border-color 150ms ease;
 }
 
 .metric-tile:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--ds-gold-bright) 25%, var(--border));
-  box-shadow:
-    inset 1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 50%, transparent),
-    inset -1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 40%, transparent),
-    inset 7px 0 24px -8px var(--gold-rail-glow),
-    inset -7px 0 24px -8px var(--gold-rail-glow),
-    0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 22px 40px color-mix(in srgb, var(--primary) 12%, transparent);
+  border-color: rgba(37, 99, 235, 0.2);
+  box-shadow: var(--ds-shadow-md);
 }
 
 .metric-tile::after {
-  content: "";
-  position: absolute;
-  top: -28px;
-  right: -20px;
-  width: 120px;
-  height: 120px;
-  border-radius: 999px;
-  background: radial-gradient(circle, color-mix(in srgb, var(--primary) 22%, transparent), transparent 70%);
-  pointer-events: none;
+  display: none;
 }
 
 .dark .metric-tile {
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--card) 96%, transparent) 0%,
-    color-mix(in srgb, var(--surface-2) 88%, transparent) 100%
-  );
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 8px 0 26px -10px var(--gold-rail-soft),
-    inset -8px 0 26px -10px var(--gold-rail-soft),
-    0 1px 2px rgba(0, 0, 0, 0.35),
-    0 22px 40px color-mix(in srgb, var(--primary) 11%, transparent);
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: var(--ds-shadow-sm);
 }
 
 .dark .metric-tile:hover {
-  box-shadow:
-    inset 1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 55%, transparent),
-    inset -1px 0 0 color-mix(in srgb, var(--ds-gold-bright) 45%, transparent),
-    inset 10px 0 30px -8px var(--gold-rail-glow),
-    inset -10px 0 30px -8px var(--gold-rail-glow),
-    0 1px 2px rgba(0, 0, 0, 0.35),
-    0 26px 44px color-mix(in srgb, var(--primary) 18%, transparent);
+  border-color: rgba(59, 130, 246, 0.25);
+  box-shadow: var(--ds-shadow-md);
 }
 
 .dark .metric-tile::after {
-  background: radial-gradient(circle, color-mix(in srgb, var(--primary) 26%, transparent), transparent 70%);
+  display: none;
 }
 
+/* Chip */
 .neo-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   border-radius: 9999px;
-  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
-  background: color-mix(in srgb, var(--primary) 10%, var(--card));
-  padding: 0.375rem 1rem;
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.06);
+  padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   line-height: 1rem;
-  font-weight: 700;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: color-mix(in srgb, var(--primary) 65%, var(--foreground));
+  color: var(--primary);
 }
 
+/* Text highlights */
 .persistent-highlight {
   background-color: #fef08a;
   color: #000000;
   padding: 1px 2px;
-  border-radius: 4px;
+  border-radius: 3px;
   border-bottom: 2px solid #facc15;
 }
 
@@ -695,153 +488,116 @@ body {
   color: #000000;
 }
 
-/* Custom Utilities for Professional Look */
+/* Glass — simplified, no blur */
 .glass {
-  background: color-mix(in srgb, var(--card) 78%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--card);
   border: 1px solid var(--border);
 }
 
 .dark .glass {
-  background: color-mix(in srgb, var(--card) 72%, transparent);
+  background: var(--card);
   border: 1px solid var(--border);
 }
 
-/* ─── Classroom module: glass surfaces + soft hero (blue / cyan accent) ─── */
+/* Classroom surfaces */
 .cr-surface {
-  border-radius: 1rem;
+  border-radius: var(--ds-radius-md);
   border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--card) 82%, transparent);
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 5px 0 16px -8px var(--gold-rail-soft),
-    inset -5px 0 16px -8px var(--gold-rail-soft),
-    0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 8px 24px color-mix(in srgb, var(--foreground) 5%, transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--card);
+  box-shadow: var(--ds-shadow-sm);
 }
 
 .dark .cr-surface {
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  box-shadow:
-    inset 1px 0 0 var(--gold-rail),
-    inset -1px 0 0 var(--gold-rail),
-    inset 7px 0 22px -10px var(--gold-rail-soft),
-    inset -7px 0 22px -10px var(--gold-rail-soft),
-    0 1px 2px rgba(0, 0, 0, 0.25),
-    0 12px 32px color-mix(in srgb, var(--ds-primary) 10%, transparent);
+  background: var(--card);
+  box-shadow: var(--ds-shadow-sm);
 }
 
-/* Main shell sidebars: gold-tinged divider + outward glow into content */
+/* Shell sidebar */
 .shell-sidebar-gold {
-  border-right-color: color-mix(in srgb, var(--ds-gold-bright) 22%, var(--border)) !important;
-  box-shadow:
-    inset -4px 0 24px -10px var(--gold-rail-glow),
-    8px 0 48px -20px color-mix(in srgb, var(--ds-gold-bright) 7%, transparent),
-    0 25px 50px -12px color-mix(in srgb, var(--foreground) 6%, transparent);
+  border-right-color: var(--border) !important;
+  box-shadow: none;
 }
 
-/* Light mode: softer outward glow so sidebar chrome does not visually stack on main content */
 html:not(.dark) .shell-sidebar-gold {
-  box-shadow:
-    inset -3px 0 18px -8px color-mix(in srgb, var(--ds-gold-bright) 10%, transparent),
-    3px 0 28px -16px color-mix(in srgb, var(--ds-gold-bright) 4%, transparent),
-    0 14px 32px -14px color-mix(in srgb, var(--foreground) 5%, transparent);
+  box-shadow: none;
 }
 
 .cr-hero {
-  background:
-    linear-gradient(125deg, color-mix(in srgb, var(--card) 96%, transparent) 0%, color-mix(in srgb, var(--surface-2) 90%, var(--card)) 45%, color-mix(in srgb, var(--primary) 8%, var(--card)) 100%),
-    radial-gradient(800px 400px at 95% -30%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 55%),
-    radial-gradient(600px 320px at -10% 80%, color-mix(in srgb, var(--accent-cyan) 8%, transparent), transparent 50%);
+  background: var(--card);
 }
 
 .dark .cr-hero {
-  background:
-    linear-gradient(125deg, color-mix(in srgb, var(--card) 94%, transparent) 0%, color-mix(in srgb, var(--background) 88%, transparent) 50%, color-mix(in srgb, var(--primary) 12%, transparent) 100%),
-    radial-gradient(800px 400px at 95% -30%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 55%),
-    radial-gradient(600px 320px at -10% 80%, color-mix(in srgb, var(--accent-cyan) 10%, transparent), transparent 50%);
+  background: var(--card);
 }
 
 .cr-modal-header {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 92%, var(--card)), color-mix(in srgb, var(--card) 94%, transparent)),
-    radial-gradient(500px 200px at 100% 0%, color-mix(in srgb, var(--primary) 7%, transparent), transparent 60%);
+  background: var(--surface-2);
 }
 
 .dark .cr-modal-header {
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--surface-2) 95%, transparent), color-mix(in srgb, var(--card) 92%, transparent)),
-    radial-gradient(500px 200px at 100% 0%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 60%);
+  background: var(--surface-2);
 }
 
 .cr-classroom-bg {
-  background:
-    radial-gradient(900px 480px at 100% -15%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 58%),
-    radial-gradient(720px 420px at -15% 35%, color-mix(in srgb, var(--accent-cyan) 6%, transparent), transparent 52%);
+  background: var(--background);
 }
 
 .dark .cr-classroom-bg {
-  background:
-    radial-gradient(900px 480px at 100% -15%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 58%),
-    radial-gradient(720px 420px at -15% 35%, color-mix(in srgb, var(--accent-cyan) 8%, transparent), transparent 52%);
+  background: var(--background);
 }
 
-/* Smooth sleek scrollbar */
+/* Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--primary);
+  background: var(--text-label);
 }
 
 .card-shadow {
-  box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.05), 0 0 3px rgb(0 0 0 / 0.02);
+  box-shadow: var(--ds-shadow-sm);
 }
 
 .dark .card-shadow {
-  box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.3), 0 0 3px rgb(0 0 0 / 0.2);
+  box-shadow: var(--ds-shadow-md);
 }
 
 .bluebook-dash {
-  height: 4px;
-  background-image: linear-gradient(to right, 
-      #9ca3af 20%, transparent 20%, 
-      transparent 25%, 
-      #fadd4d 25%, #fadd4d 45%, 
-      transparent 45%, 
-      transparent 50%, 
-      #60a5fa 50%, #60a5fa 70%, 
-      transparent 70%, 
-      transparent 75%, 
-      #475569 75%, #475569 95%, 
+  height: 3px;
+  background-image: linear-gradient(to right,
+      #94a3b8 20%, transparent 20%,
+      transparent 25%,
+      #60a5fa 25%, #60a5fa 45%,
+      transparent 45%,
+      transparent 50%,
+      #2563eb 50%, #2563eb 70%,
+      transparent 70%,
+      transparent 75%,
+      #475569 75%, #475569 95%,
       transparent 95%
   );
   background-size: 80px 100%;
 }
 
 .dark .bluebook-dash {
-  background-image: linear-gradient(to right, 
-      #475569 20%, transparent 20%, 
-      transparent 25%, 
-      #eab308 25%, #eab308 45%, 
-      transparent 45%, 
-      transparent 50%, 
-      #3b82f6 50%, #3b82f6 70%, 
-      transparent 70%, 
-      transparent 75%, 
-      #94a3b8 75%, #94a3b8 95%, 
+  background-image: linear-gradient(to right,
+      #475569 20%, transparent 20%,
+      transparent 25%,
+      #60a5fa 25%, #60a5fa 45%,
+      transparent 45%,
+      transparent 50%,
+      #3b82f6 50%, #3b82f6 70%,
+      transparent 70%,
+      transparent 75%,
+      #94a3b8 75%, #94a3b8 95%,
       transparent 95%
   );
 }

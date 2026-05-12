@@ -323,7 +323,17 @@ api.interceptors.response.use(
                 return Promise.reject(error);
             }
             const original = error.config as any;
-            if (original && !original.__isRetryRequest) {
+            const originalUrl = String(original?.url ?? "");
+            // Never try to refresh when the failing request IS an auth endpoint — doing so
+            // creates a circular promise deadlock: the refresh 401 re-enters the interceptor,
+            // awaits __mastersatRefreshPromise, which is itself awaiting the refresh POST,
+            // which is waiting for the interceptor → infinite hang.
+            const isAuthEndpoint =
+                originalUrl.includes("/auth/refresh/") ||
+                originalUrl.includes("/auth/csrf/") ||
+                originalUrl.includes("/auth/login/");
+
+            if (original && !original.__isRetryRequest && !isAuthEndpoint) {
                 original.__isRetryRequest = true;
                 try {
                     // Shared refresh promise to avoid thundering herd.
@@ -346,7 +356,7 @@ api.interceptors.response.use(
             }
 
             if (typeof window !== "undefined") {
-                const url = String(original?.url ?? "");
+                const url = originalUrl;
                 // `/users/me` is bootstrap-only; app layer (`useMe`, `AuthGuard`) decides redirect/session UX.
                 if (url.includes("users/me")) {
                     return Promise.reject(error);
@@ -887,6 +897,7 @@ export const examsAdminApi = {
 
     // Questions
     getQuestions: async (testId: number, moduleId: number) => { const r = await api.get(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/`); return r.data; },
+    getQuestion: async (testId: number, moduleId: number, questionId: number) => { const r = await api.get(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/`); return r.data; },
     createQuestion: async (testId: number, moduleId: number, data: FormData | object, isFormData = false) => {
         // Let axios set multipart boundary; a bare Content-Type breaks file uploads.
         const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/`, data, isFormData ? {} : {});
@@ -901,6 +912,17 @@ export const examsAdminApi = {
     },
     reorderQuestion: async (testId: number, moduleId: number, questionId: number, action: 'up' | 'down') => {
         const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/${questionId}/reorder/`, { action });
+        return r.data;
+    },
+    /**
+     * Atomically reorder all questions in a module in one round-trip.
+     * ``orderedIds`` must be the complete list of question IDs for the module in the desired order.
+     */
+    reorderQuestionsBulk: async (testId: number, moduleId: number, orderedIds: number[]) => {
+        const r = await api.post(
+            `/exams/admin/tests/${testId}/modules/${moduleId}/questions/bulk-reorder/`,
+            { ordered_ids: orderedIds },
+        );
         return r.data;
     },
 };

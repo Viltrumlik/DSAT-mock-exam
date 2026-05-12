@@ -122,11 +122,10 @@ export default function PastpapersPage() {
     <div className="mx-auto max-w-3xl px-4 py-8 md:px-8">
       {/* Header */}
       <div className="mb-8">
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary">Practice</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary">SAT Simulation</p>
         <h1 className="text-xl font-bold tracking-tight text-foreground">Past papers</h1>
         <p className="mt-2 text-muted-foreground">
-          Released SAT past papers — work through Reading &amp; Writing and Mathematics sections at your own pace,
-          review every question after finishing.
+          Released SAT past papers — start a Reading &amp; Writing or Mathematics section, work at your own pace, and review every question with explanations after finishing.
         </p>
       </div>
 

@@ -615,14 +615,7 @@ export default function ClassDetailPage() {
           ) : null}
 
           {tab === "grades" ? (
-            <ClassroomCard padding="lg">
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-50">Grades</h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
-                Open a classwork item to review submissions and enter scores. For class averages and rankings on pastpaper
-                homework, use the <strong className="font-semibold text-slate-800 dark:text-slate-100">Leaderboard</strong>{" "}
-                tab.
-              </p>
-            </ClassroomCard>
+            <GradeBook assignments={assignments} classId={id} formatDue={formatDue} wfLabel={wfLabel} />
           ) : null}
         </div>
       )}
@@ -635,6 +628,179 @@ export default function ClassDetailPage() {
           ← All groups
         </Link>
       </div>
+    </div>
+  );
+}
+
+// ─── Grade book ───────────────────────────────────────────────────────────────
+
+function GradeBook({
+  assignments,
+  classId,
+  formatDue,
+  wfLabel,
+}: {
+  assignments: any[];
+  classId: number;
+  formatDue: (s?: string) => string;
+  wfLabel: (w?: string | null) => { text: string; className: string } | null;
+}) {
+  const graded = assignments.filter(
+    (a) => a.workflow_state === "GRADED" || a.workflow_state === "RETURNED",
+  );
+
+  // Compute average percentage from graded items that have score fields
+  const scoredRows = graded.filter(
+    (a) =>
+      a.score != null &&
+      a.total_score != null &&
+      Number(a.total_score) > 0,
+  );
+  const avgPercent =
+    scoredRows.length > 0
+      ? scoredRows.reduce(
+          (sum: number, a: any) =>
+            sum + (Number(a.score) / Number(a.total_score)) * 100,
+          0,
+        ) / scoredRows.length
+      : null;
+
+  return (
+    <div className="space-y-4">
+      {/* Summary bar */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          {
+            label: "Total assignments",
+            value: assignments.length,
+            color: "text-slate-900 dark:text-slate-50",
+          },
+          {
+            label: "Completed",
+            value: graded.length,
+            color: "text-emerald-700 dark:text-emerald-400",
+          },
+          {
+            label: "Avg score",
+            value: avgPercent != null ? `${Math.round(avgPercent)}%` : "—",
+            color:
+              avgPercent == null
+                ? "text-slate-500"
+                : avgPercent >= 80
+                ? "text-emerald-700 dark:text-emerald-400"
+                : avgPercent >= 60
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-red-700 dark:text-red-400",
+          },
+        ].map((stat) => (
+          <ClassroomCard key={stat.label} padding="md">
+            <p className={`text-2xl font-extrabold tabular-nums ${stat.color}`}>
+              {stat.value}
+            </p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mt-1">
+              {stat.label}
+            </p>
+          </ClassroomCard>
+        ))}
+      </div>
+
+      {/* Assignment table */}
+      <ClassroomCard padding="none">
+        <div className="border-b border-slate-200 dark:border-slate-700 px-5 py-3">
+          <p className="text-sm font-bold text-slate-900 dark:text-slate-50">Grade book</p>
+        </div>
+        {assignments.length === 0 ? (
+          <ClassroomEmptyState
+            icon={GraduationCap}
+            title="No assignments yet"
+            description="Assignments will appear here once your teacher posts them."
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                  <th className="px-5 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    Assignment
+                  </th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 hidden sm:table-cell">
+                    Due
+                  </th>
+                  <th className="px-4 py-2.5 text-left text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    Status
+                  </th>
+                  <th className="px-4 py-2.5 text-right text-[10px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    Score
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {assignments.map((a: any) => {
+                  const status = wfLabel(a.workflow_state);
+                  const href = isAssessmentAssignmentRow(a)
+                    ? `/assessments/${a.id}`
+                    : `/classes/${classId}/assignments/${a.id}`;
+                  const hasScore =
+                    a.score != null && a.total_score != null && Number(a.total_score) > 0;
+                  const pct = hasScore
+                    ? Math.round((Number(a.score) / Number(a.total_score)) * 100)
+                    : null;
+
+                  return (
+                    <tr
+                      key={a.id}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <td className="px-5 py-3 font-semibold">
+                        <Link
+                          href={href}
+                          className="text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 hover:underline"
+                        >
+                          {a.title || `Assignment #${a.id}`}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 hidden sm:table-cell text-xs">
+                        {formatDue(a.due_at)}
+                      </td>
+                      <td className="px-4 py-3">
+                        {status ? (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${status.className}`}
+                          >
+                            {status.text}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {hasScore ? (
+                          <span
+                            className={`font-extrabold tabular-nums ${
+                              pct != null && pct >= 80
+                                ? "text-emerald-700 dark:text-emerald-400"
+                                : pct != null && pct >= 60
+                                ? "text-amber-700 dark:text-amber-400"
+                                : "text-red-700 dark:text-red-400"
+                            }`}
+                          >
+                            {a.score}/{a.total_score}
+                            <span className="ml-1.5 text-xs font-semibold text-slate-400">
+                              ({pct}%)
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </ClassroomCard>
     </div>
   );
 }

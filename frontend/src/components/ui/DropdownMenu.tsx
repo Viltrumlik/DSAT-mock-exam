@@ -59,7 +59,7 @@ export function DropdownMenu({
           <div
             role="menu"
             className={cn(
-              "absolute z-[250] mt-1 min-w-[168px] overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 py-1 shadow-xl shadow-slate-900/10 backdrop-blur-md transition-[opacity,transform] duration-200 animate-[ds-modal-in_0.2s_ease-out]",
+              "absolute z-[250] mt-1 min-w-[168px] overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 py-1 shadow-xl shadow-slate-900/10 transition-[opacity,transform] duration-200 animate-[ds-modal-in_0.2s_ease-out]",
               "dark:border-slate-600 dark:bg-slate-900/95 dark:shadow-black/50",
               align === "end" ? "right-0" : "left-0",
             )}

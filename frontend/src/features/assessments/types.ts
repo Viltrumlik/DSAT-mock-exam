@@ -31,6 +31,7 @@ export type AssessmentQuestion = {
   grading_config?: Record<string, unknown>;
   points: number;
   is_active: boolean;
+  explanation?: string;
 };
 
 export type HomeworkAssignmentCreateRequest = {

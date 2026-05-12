@@ -142,7 +142,7 @@ export default function AssignAssessmentContainer() {
       <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ds-gold">Admin</p>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary">Admin</p>
             <p className="mt-1 text-xl font-extrabold tracking-tight text-foreground">Assign assessment</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Flow: classroom → set → preview → assign. Backend enforces permissions and subject scope.
