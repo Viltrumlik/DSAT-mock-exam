@@ -734,6 +734,32 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                         }
                     )
 
+            # ── SAT question-type enforcement ─────────────────────────────
+            # For full SAT simulations (pastpapers + mock exams), enforce that
+            # question_type matches the section subject.  Midterms are exempt
+            # (institution-controlled, flexible authoring).
+            from .sat_rules import is_question_type_allowed, allowed_question_types_for_subject
+            is_midterm = exam is not None and exam.kind == MockExam.KIND_MIDTERM
+            if not is_midterm:
+                q_type = attrs.get("question_type")
+                if self.instance is not None and q_type is None:
+                    q_type = self.instance.question_type
+                subject = getattr(pt, "subject", None)
+                if q_type and subject and not is_question_type_allowed(q_type, subject):
+                    allowed = allowed_question_types_for_subject(subject)
+                    subj_label = (
+                        "Reading & Writing" if subject == "READING_WRITING" else "Math"
+                    )
+                    raise serializers.ValidationError(
+                        {
+                            "question_type": (
+                                f"{subj_label} modules only allow question types: "
+                                f"{', '.join(allowed)}. "
+                                f"Got '{q_type}'."
+                            )
+                        }
+                    )
+
         q = self._question_for_validation(attrs, module=module)
         try:
             # Skip unique/constraint checks: those depend on order+module assignment
@@ -828,6 +854,8 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
 
 class AdminPastpaperPackSerializer(serializers.ModelSerializer):
     sections = AdminPracticeTestSerializer(many=True, read_only=True)
+    sat_violations = serializers.SerializerMethodField()
+    publish_ready = serializers.SerializerMethodField()
 
     class Meta:
         model = PastpaperPack
@@ -838,16 +866,32 @@ class AdminPastpaperPackSerializer(serializers.ModelSerializer):
             "label",
             "form_type",
             "sections",
+            "sat_violations",
+            "publish_ready",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at", "sat_violations", "publish_ready"]
+
+    def _get_violations(self, obj):
+        cache_attr = "_sat_violations_cache"
+        if not hasattr(obj, cache_attr):
+            from .sat_rules import pastpaper_pack_publish_violations
+            setattr(obj, cache_attr, pastpaper_pack_publish_violations(obj))
+        return getattr(obj, cache_attr)
+
+    def get_sat_violations(self, obj) -> list[str]:
+        return [v.message for v in self._get_violations(obj)]
+
+    def get_publish_ready(self, obj) -> bool:
+        return len(self._get_violations(obj)) == 0
 
 
 class AdminMockExamSerializer(serializers.ModelSerializer):
     tests = AdminPracticeTestSerializer(many=True, read_only=True)
     publish_ready = serializers.SerializerMethodField()
     publish_block_reason = serializers.SerializerMethodField()
+    sat_violations = serializers.SerializerMethodField()
 
     class Meta:
         model = MockExam
@@ -867,15 +911,25 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
             "tests",
             "publish_ready",
             "publish_block_reason",
+            "sat_violations",
         ]
-        read_only_fields = ["is_published", "published_at", "publish_ready", "publish_block_reason"]
+        read_only_fields = [
+            "is_published", "published_at",
+            "publish_ready", "publish_block_reason", "sat_violations",
+        ]
+
+    def _get_violations(self, obj):
+        cache_attr = "_sat_violations_cache"
+        if not hasattr(obj, cache_attr):
+            from .sat_rules import mock_exam_publish_violations
+            setattr(obj, cache_attr, mock_exam_publish_violations(obj))
+        return getattr(obj, cache_attr)
 
     def _publish_check(self, obj):
-        cache_attr = "_publish_ready_cache"
-        if not hasattr(obj, cache_attr):
-            from .publish_service import mock_exam_publish_ready
-            setattr(obj, cache_attr, mock_exam_publish_ready(obj))
-        return getattr(obj, cache_attr)
+        violations = self._get_violations(obj)
+        if violations:
+            return False, violations[0].message
+        return True, ""
 
     def get_publish_ready(self, obj):
         ok, _ = self._publish_check(obj)
@@ -884,6 +938,9 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
     def get_publish_block_reason(self, obj):
         ok, msg = self._publish_check(obj)
         return "" if ok else msg
+
+    def get_sat_violations(self, obj) -> list[str]:
+        return [v.message for v in self._get_violations(obj)]
 
     def validate(self, attrs):
         kind = attrs.get("kind", getattr(self.instance, "kind", MockExam.KIND_MOCK_SAT))

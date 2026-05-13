@@ -30,6 +30,7 @@ import type { AdminModuleQuestion } from "@/features/questionsAdmin/types";
 import { normalizeApiError } from "@/lib/apiError";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   GripVertical,
@@ -41,6 +42,17 @@ import {
 } from "lucide-react";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
 import { StudioSpinner } from "@/components/studio/StudioSpinner";
+import { FormulaToolbar } from "@/components/FormulaToolbar";
+import { MathText } from "@/components/MathText";
+import {
+  allowedQuestionTypesForSubject,
+  getModuleProgress,
+  questionTypeWarning,
+  SAT_QUESTION_TYPE_LABEL,
+  SAT_SUBJECT_LABEL,
+  isSatSubject,
+  type SatQuestionType,
+} from "@/lib/satRules";
 
 // ─── Draft type ──────────────────────────────────────────────────────────────
 
@@ -58,9 +70,15 @@ type QuestionDraft = {
   score: number;
 };
 
-function questionToDraft(q: AdminModuleQuestion): QuestionDraft {
+function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string): QuestionDraft {
+  // Use existing type, but if it's wrong for the subject, fall back to the first allowed type.
+  const allowed = allowedQuestionTypesForSubject(sectionSubject);
+  const existingType = q.question_type ?? "MATH";
+  const resolvedType = (allowed as readonly string[]).includes(existingType)
+    ? existingType
+    : allowed[0] ?? existingType;
   return {
-    question_type: q.question_type ?? "MATH",
+    question_type: resolvedType as QuestionDraft["question_type"],
     question_text: q.question_text ?? "",
     question_prompt: q.question_prompt ?? "",
     is_math_input: q.is_math_input ?? false,
@@ -85,28 +103,31 @@ function QuestionEditor({
   question,
   testId,
   moduleId,
+  sectionSubject,
   onSaved,
   onDeleted,
 }: {
   question: AdminModuleQuestion;
   testId: number;
   moduleId: number;
+  /** PracticeTest.subject — drives SAT type restrictions */
+  sectionSubject?: string;
   onSaved: (updated: AdminModuleQuestion) => void;
   onDeleted: () => void;
 }) {
   const update = useUpdateModuleQuestion(testId, moduleId);
   const del = useDeleteModuleQuestion(testId, moduleId);
 
-  const [draft, setDraft] = React.useState<QuestionDraft>(() => questionToDraft(question));
+  const [draft, setDraft] = React.useState<QuestionDraft>(() => questionToDraft(question, sectionSubject));
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [saveOk, setSaveOk] = React.useState(false);
 
   // Reset draft when question changes
   React.useEffect(() => {
-    setDraft(questionToDraft(question));
+    setDraft(questionToDraft(question, sectionSubject));
     setSaveOk(false);
     setConfirmDelete(false);
-  }, [question.id]);
+  }, [question.id, sectionSubject]);
 
   const patch = (p: Partial<QuestionDraft>) => setDraft((d) => ({ ...d, ...p }));
 
@@ -149,37 +170,76 @@ function QuestionEditor({
   const isMC = !draft.is_math_input;
   const isBusy = update.isPending || del.isPending;
 
+  // ── SAT subject awareness ──────────────────────────────────────────────────
+  const allowedTypes = allowedQuestionTypesForSubject(sectionSubject);
+  const typeWarning = questionTypeWarning(draft.question_type, sectionSubject);
+
   const updateErr = update.isError && update.error ? normalizeApiError(update.error).message : null;
   const deleteErr = del.isError && del.error ? normalizeApiError(del.error).message : null;
 
+  // ── Formula insertion ──────────────────────────────────────────────────────
+  // Tracks whichever textarea/input currently has focus so the toolbar can
+  // insert at the correct cursor position without needing to know the field.
+  const activeFieldRef = React.useRef<{
+    el: HTMLTextAreaElement | HTMLInputElement;
+    setVal: (v: string) => void;
+  } | null>(null);
+
+  const handleFormulaInsert = React.useCallback(
+    (snippet: string, cursorOffset: number) => {
+      const active = activeFieldRef.current;
+      if (!active) return;
+      const { el, setVal } = active;
+      // Read directly from el.value (not a React state closure) to get the
+      // current value regardless of batched React updates.
+      const start = el.selectionStart ?? el.value.length;
+      const end = el.selectionEnd ?? el.value.length;
+      const newVal = el.value.slice(0, start) + snippet + el.value.slice(end);
+      const newCursorPos = start + cursorOffset;
+      setVal(newVal);
+      // Wait for React to flush the state update and repaint the DOM before
+      // restoring focus + cursor — otherwise setSelectionRange runs on stale DOM.
+      requestAnimationFrame(() => {
+        el.focus();
+        el.setSelectionRange(newCursorPos, newCursorPos);
+      });
+    },
+    [],
+  );
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-5 py-3">
-        <div className="min-w-0">
-          <p className="text-xs font-extrabold text-foreground">Q{question.order + 1} — #{question.id}</p>
-          <p className="text-[10px] text-muted-foreground">Question editor</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {saveOk && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Saved
-            </span>
-          )}
-          <button
-            type="button"
-            disabled={isBusy}
-            onClick={() => void handleSave()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {update.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5" />
+      {/* Sticky header + formula toolbar */}
+      <div className="sticky top-0 z-10 shrink-0 border-b border-border bg-card">
+        <div className="flex items-center justify-between gap-3 px-5 py-3">
+          <div className="min-w-0">
+            <p className="text-xs font-extrabold text-foreground">Q{question.order + 1} — #{question.id}</p>
+            <p className="text-[10px] text-muted-foreground">Question editor</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {saveOk && (
+              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Saved
+              </span>
             )}
-            Save
-          </button>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => void handleSave()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {update.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Save
+            </button>
+          </div>
+        </div>
+        <div className="border-t border-border/40">
+          <FormulaToolbar onInsert={handleFormulaInsert} />
         </div>
       </div>
 
@@ -203,10 +263,19 @@ function QuestionEditor({
               value={draft.question_type}
               onChange={(e) => patch({ question_type: e.target.value as QuestionDraft["question_type"] })}
             >
-              <option value="MATH">Math</option>
-              <option value="READING">Reading</option>
-              <option value="WRITING">Writing</option>
+              {allowedTypes.map((t) => (
+                <option key={t} value={t}>
+                  {SAT_QUESTION_TYPE_LABEL[t as SatQuestionType] ?? t}
+                </option>
+              ))}
             </select>
+            {/* SAT type mismatch warning */}
+            {typeWarning && (
+              <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-600" />
+                <p className="text-[11px] font-semibold leading-snug text-amber-800">{typeWarning}</p>
+              </div>
+            )}
           </div>
           <div>
             <label className={FIELD_LABEL}>Score weight</label>
@@ -239,10 +308,24 @@ function QuestionEditor({
           <label className={FIELD_LABEL}>Question text (stem)</label>
           <textarea
             className={`${INPUT} min-h-[140px] leading-relaxed`}
-            placeholder="Enter the full question text here. LaTeX math is supported: \\( x^2 + 1 = 0 \\)"
+            placeholder="Enter the full question text here. LaTeX math is supported: \( x^2 + 1 = 0 \)"
             value={draft.question_text}
             onChange={(e) => patch({ question_text: e.target.value })}
+            onFocus={(e) => {
+              activeFieldRef.current = {
+                el: e.currentTarget,
+                setVal: (v) => patch({ question_text: v }),
+              };
+            }}
           />
+          {draft.question_text.trim() && (
+            <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/50 px-3 py-2.5">
+              <p className="mb-1.5 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                Preview
+              </p>
+              <MathText text={draft.question_text} className="text-sm leading-relaxed text-foreground" />
+            </div>
+          )}
         </div>
 
         {/* Secondary prompt */}
@@ -253,6 +336,12 @@ function QuestionEditor({
             placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
             value={draft.question_prompt}
             onChange={(e) => patch({ question_prompt: e.target.value })}
+            onFocus={(e) => {
+              activeFieldRef.current = {
+                el: e.currentTarget,
+                setVal: (v) => patch({ question_prompt: v }),
+              };
+            }}
           />
         </div>
 
@@ -272,6 +361,12 @@ function QuestionEditor({
                     placeholder={`Option ${letter.toUpperCase()}`}
                     value={draft[key] as string}
                     onChange={(e) => patch({ [key]: e.target.value } as Partial<QuestionDraft>)}
+                    onFocus={(e) => {
+                      activeFieldRef.current = {
+                        el: e.currentTarget,
+                        setVal: (v) => patch({ [key]: v } as Partial<QuestionDraft>),
+                      };
+                    }}
                   />
                 </div>
               );
@@ -291,6 +386,12 @@ function QuestionEditor({
             placeholder={isMC ? "A" : "e.g. 42 or 2/3, 0.666, 0.667"}
             value={draft.correct_answer}
             onChange={(e) => patch({ correct_answer: e.target.value })}
+            onFocus={(e) => {
+              activeFieldRef.current = {
+                el: e.currentTarget,
+                setVal: (v) => patch({ correct_answer: v }),
+              };
+            }}
           />
           {isMC && (
             <p className="mt-1 text-[11px] text-muted-foreground">
@@ -307,6 +408,12 @@ function QuestionEditor({
             placeholder="Explain why the correct answer is right. Students see this after the test."
             value={draft.explanation}
             onChange={(e) => patch({ explanation: e.target.value })}
+            onFocus={(e) => {
+              activeFieldRef.current = {
+                el: e.currentTarget,
+                setVal: (v) => patch({ explanation: v }),
+              };
+            }}
           />
         </div>
 
@@ -369,12 +476,15 @@ function SortableQRow({
   index,
   selected,
   reordering,
+  hasTypeMismatch,
   onSelect,
 }: {
   q: AdminModuleQuestion;
   index: number;
   selected: boolean;
   reordering: boolean;
+  /** True when this question's type is wrong for the section subject */
+  hasTypeMismatch?: boolean;
   onSelect: () => void;
 }) {
   const {
@@ -440,6 +550,11 @@ function SortableQRow({
               INPUT
             </span>
           )}
+          {hasTypeMismatch && (
+            <span title="Wrong question type for this section">
+              <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
+            </span>
+          )}
         </div>
         <p className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">
           {q.question_text?.trim() || <em className="text-muted-foreground/50">No text yet</em>}
@@ -485,13 +600,17 @@ function DragGhostRow({ q, index }: { q: AdminModuleQuestion; index: number }) {
 export default function ModuleQuestionsPanel(props: {
   testId: number;
   moduleId: number;
-  /** Optional pack context — enriches the top-bar breadcrumb. */
+  /** Optional pack/exam context — enriches the top-bar breadcrumb. */
   packId?: number;
   packTitle?: string;
   sectionSubject?: string;
   moduleOrder?: string;
+  /** Override the "back" link destination. Default: /builder/pastpapers */
+  backHref?: string;
+  /** Override the "back" link label. Default: "Past papers" */
+  backLabel?: string;
 }) {
-  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder } = props;
+  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel } = props;
 
   const {
     data: questions = [],
@@ -585,17 +704,32 @@ export default function ModuleQuestionsPanel(props: {
 
   const mutationBusy = create.isPending || reorderBulk.isPending;
 
+  // ── SAT progress ───────────────────────────────────────────────────────────
+  const progress = getModuleProgress(questions.length, sectionSubject);
+  const moduleOrderNum = (() => {
+    const match = moduleOrder?.match(/\d+/);
+    return match ? Number(match[0]) : 1;
+  })();
+  // Count questions with wrong type for the subject
+  const allowedTypesForSubject = allowedQuestionTypesForSubject(sectionSubject);
+  const typeMismatchIds = new Set(
+    questions
+      .filter((q) => !allowedTypesForSubject.includes(q.question_type as SatQuestionType))
+      .map((q) => q.id),
+  );
+  const isSat = isSatSubject(sectionSubject ?? "");
+
   return (
     <div className="flex h-full flex-col">
       {/* Top bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <Link
-            href={`/builder/pastpapers`}
+            href={backHref ?? `/builder/pastpapers`}
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors shrink-0"
           >
             <ArrowLeft className="h-4 w-4" />
-            Pastpapers
+            {backLabel ?? "Past papers"}
           </Link>
           {packId && packTitle ? (
             <>
@@ -610,7 +744,13 @@ export default function ModuleQuestionsPanel(props: {
                   {moduleOrder ? ` · ${moduleOrder}` : ` · Module #${moduleId}`}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {isLoading ? "Loading…" : `${questions.length} question${questions.length !== 1 ? "s" : ""}`}
+                  {isLoading ? "Loading…" : (
+                    isSat
+                      ? <span className={progress.complete ? "text-emerald-600 font-bold" : progress.over ? "text-red-600 font-bold" : ""}>
+                          {progress.label} questions
+                        </span>
+                      : `${questions.length} question${questions.length !== 1 ? "s" : ""}`
+                  )}
                 </p>
               </div>
             </>
@@ -670,6 +810,79 @@ export default function ModuleQuestionsPanel(props: {
         </div>
       )}
 
+      {/* SAT module health panel */}
+      {isSat && !isLoading && (
+        <div className="mb-4 rounded-2xl border border-border bg-card px-4 py-3 space-y-2">
+          {/* Progress row */}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest shrink-0">
+                {sectionSubject ? SAT_SUBJECT_LABEL[sectionSubject as keyof typeof SAT_SUBJECT_LABEL] ?? sectionSubject : "Section"} · {moduleOrder ?? `Module ${moduleOrderNum}`}
+              </p>
+            </div>
+            <span
+              className={`text-xs font-extrabold tabular-nums shrink-0 ${
+                progress.complete
+                  ? "text-emerald-600"
+                  : progress.over
+                  ? "text-red-600"
+                  : "text-foreground"
+              }`}
+            >
+              {progress.label}
+              {progress.required !== null && " questions"}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          {progress.required !== null && (
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  progress.complete
+                    ? "bg-emerald-500"
+                    : progress.over
+                    ? "bg-red-500"
+                    : "bg-primary"
+                }`}
+                style={{ width: `${Math.min((progress.fraction ?? 0) * 100, 100)}%` }}
+              />
+            </div>
+          )}
+
+          {/* Count violation */}
+          {progress.required !== null && !progress.complete && (
+            <p className="text-[11px] font-semibold text-muted-foreground">
+              {progress.over
+                ? `${progress.current - (progress.required ?? 0)} question(s) over the required ${progress.required}. Remove extras before publishing.`
+                : `${(progress.required ?? 0) - progress.current} more question(s) needed to reach the required ${progress.required}.`}
+            </p>
+          )}
+
+          {/* Type mismatch warning */}
+          {typeMismatchIds.size > 0 && (
+            <div className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <p className="text-[11px] font-semibold leading-snug text-amber-800">
+                {typeMismatchIds.size} question{typeMismatchIds.size !== 1 ? "s have" : " has"} the wrong type for this{" "}
+                {sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing"} module.
+                Allowed types: {allowedTypesForSubject.join(", ")}.
+              </p>
+            </div>
+          )}
+
+          {/* All-good state */}
+          {progress.complete && typeMismatchIds.size === 0 && (
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+              <p className="text-[11px] font-semibold text-emerald-700">
+                Module is structurally valid — ready to publish.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Split panel */}
       {isLoading ? (
         <StudioSpinner size="lg" center />
@@ -702,6 +915,7 @@ export default function ModuleQuestionsPanel(props: {
                       index={i}
                       selected={q.id === selectedId}
                       reordering={reorderBulk.isPending}
+                      hasTypeMismatch={typeMismatchIds.has(q.id)}
                       onSelect={() => setSelectedId(q.id)}
                     />
                   ))}
@@ -733,6 +947,7 @@ export default function ModuleQuestionsPanel(props: {
                 question={selectedQ}
                 testId={testId}
                 moduleId={moduleId}
+                sectionSubject={sectionSubject}
                 onSaved={(updated) => {
                   setSelectedId(updated.id);
                 }}
