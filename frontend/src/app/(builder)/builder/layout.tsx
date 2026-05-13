@@ -13,65 +13,57 @@ import {
   Archive,
   FileText,
   BookMarked,
+  ClipboardCheck,
 } from "lucide-react";
 
 /**
  * Questions console navigation.
  *
+ * Sections:
+ *   - Core: dashboard and shared infrastructure
+ *   - Learning system: assessments, vocabulary, categories (pedagogical)
+ *   - Simulation system: pastpapers, mock exams (SAT simulation)
+ *   - Operations: publish queue, archive
+ *
  * Active-state rules:
  *   - Dashboard: exact match only
  *   - All others: prefix match (covers nested sub-pages)
  */
-const NAV = [
-  {
-    href: "/builder",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    exact: true,
-  },
-  {
-    href: "/builder/bank",
-    label: "Question Bank",
-    icon: Library,
-    exact: false,
-  },
-  {
-    href: "/builder/sets",
-    label: "Assessments",
-    icon: LayoutGrid,
-    exact: false,
-  },
-  {
-    href: "/builder/categories",
-    label: "Categories",
-    icon: Tag,
-    exact: false,
-  },
-  {
-    href: "/builder/pastpapers",
-    label: "Pastpapers",
-    icon: FileText,
-    exact: false,
-  },
-  {
-    href: "/builder/vocabulary",
-    label: "Vocabulary",
-    icon: BookMarked,
-    exact: false,
-  },
-  {
-    href: "/builder/publish-queue",
-    label: "Publish Queue",
-    icon: SendHorizonal,
-    exact: false,
-  },
-  {
-    href: "/builder/archived",
-    label: "Archived",
-    icon: Archive,
-    exact: false,
-  },
-] as const;
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ElementType;
+  exact: boolean;
+};
+
+// Learning system (pedagogical / classroom)
+const LEARNING_NAV: NavItem[] = [
+  { href: "/builder/bank",       label: "Question Bank", icon: Library,       exact: false },
+  { href: "/builder/sets",       label: "Assessments",   icon: LayoutGrid,    exact: false },
+  { href: "/builder/vocabulary", label: "Vocabulary",    icon: BookMarked,    exact: false },
+  { href: "/builder/categories", label: "Categories",    icon: Tag,           exact: false },
+];
+
+// Simulation system (SAT preparation)
+const SIMULATION_NAV: NavItem[] = [
+  { href: "/builder/pastpapers",  label: "Past papers", icon: FileText,        exact: false },
+  { href: "/builder/mock-exams",  label: "Mock exams",  icon: ClipboardCheck,  exact: false },
+];
+
+// Operations (publishing, archive)
+const OPS_NAV: NavItem[] = [
+  { href: "/builder/publish-queue", label: "Publish queue", icon: SendHorizonal, exact: false },
+  { href: "/builder/archived",      label: "Archived",      icon: Archive,       exact: false },
+];
+
+// Flat list for the editor-route check (same items, different structure)
+const ALL_NAV: NavItem[] = [
+  { href: "/builder", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  ...LEARNING_NAV,
+  ...SIMULATION_NAV,
+  ...OPS_NAV,
+];
 
 function isNavActive(pathname: string, href: string, exact: boolean): boolean {
   if (exact) return pathname === href;
@@ -82,10 +74,11 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
 
   // Editor pages get a full-screen layout — no sidebar competing for space.
-  // Covers: assessment set editor + pastpaper module editor.
+  // Covers: assessment set editor, pastpaper module editor, mock exam module editor.
   const isEditorRoute =
     /^\/builder\/sets\/\d+/.test(pathname) ||
-    /^\/builder\/pastpapers\/\d+\/\d+\/\d+/.test(pathname);
+    /^\/builder\/pastpapers\/\d+\/\d+\/\d+/.test(pathname) ||
+    /^\/builder\/mock-exams\/\d+\/\d+\/\d+/.test(pathname);
 
   if (isEditorRoute) {
     return (
@@ -94,6 +87,26 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
       </AuthGuard>
     );
   }
+
+  function NavLink({ item }: { item: NavItem }) {
+    const active = isNavActive(pathname, item.href, item.exact);
+    return (
+      <Link
+        href={item.href}
+        className={cn(
+          "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold transition-colors",
+          active
+            ? "bg-primary/10 text-primary"
+            : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+        )}
+      >
+        <item.icon className="h-4 w-4 shrink-0" aria-hidden />
+        {item.label}
+      </Link>
+    );
+  }
+
+  const dashboardActive = isNavActive(pathname, "/builder", true);
 
   return (
     <AuthGuard adminOnly>
@@ -109,26 +122,54 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
                 <p className="mt-0.5 text-base font-extrabold text-foreground">MasterSAT</p>
               </div>
 
-              <nav className="flex flex-col gap-1">
-                {NAV.map((item) => {
-                  const active = isNavActive(pathname, item.href, item.exact);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition-colors",
-                        active
-                          ? "bg-primary/10 text-primary"
-                          : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-                      )}
-                    >
-                      <item.icon className="h-4 w-4 shrink-0" aria-hidden />
-                      {item.label}
-                    </Link>
-                  );
-                })}
+              {/* Dashboard */}
+              <nav className="flex flex-col gap-0.5 mb-3">
+                <Link
+                  href="/builder"
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-bold transition-colors",
+                    dashboardActive
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+                  )}
+                >
+                  <LayoutDashboard className="h-4 w-4 shrink-0" aria-hidden />
+                  Dashboard
+                </Link>
               </nav>
+
+              {/* Learning system */}
+              <div className="mb-3">
+                <p className="mb-1 px-3 text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/60">
+                  Learning
+                </p>
+                <nav className="flex flex-col gap-0.5">
+                  {LEARNING_NAV.map((item) => (
+                    <NavLink key={item.href} item={item} />
+                  ))}
+                </nav>
+              </div>
+
+              {/* Simulation system */}
+              <div className="mb-3">
+                <p className="mb-1 px-3 text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/60">
+                  Simulation
+                </p>
+                <nav className="flex flex-col gap-0.5">
+                  {SIMULATION_NAV.map((item) => (
+                    <NavLink key={item.href} item={item} />
+                  ))}
+                </nav>
+              </div>
+
+              {/* Operations */}
+              <div className="border-t border-border pt-3">
+                <nav className="flex flex-col gap-0.5">
+                  {OPS_NAV.map((item) => (
+                    <NavLink key={item.href} item={item} />
+                  ))}
+                </nav>
+              </div>
             </aside>
 
             {/* Main content area */}

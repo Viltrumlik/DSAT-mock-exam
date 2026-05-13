@@ -14,6 +14,7 @@ import {
   ScrollText,
   ClipboardCheck,
   BookOpen,
+  GraduationCap,
 } from "lucide-react";
 
 /**
@@ -47,6 +48,12 @@ const OPS_NAV = [
     href: "/ops/users",
     label: "Users",
     icon: Users,
+    exact: false,
+  },
+  {
+    href: "/ops/midterms",
+    label: "Midterms",
+    icon: GraduationCap,
     exact: false,
   },
   {
