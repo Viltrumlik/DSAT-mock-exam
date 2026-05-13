@@ -689,13 +689,6 @@ export default function ModuleQuestionsPanel(props: {
     [localOrder, reorderBulk],
   );
 
-  const handleAdd = async () => {
-    const result = await create.mutateAsync();
-    if (result && typeof result === "object" && "id" in result) {
-      setSelectedId((result as AdminModuleQuestion).id);
-    }
-  };
-
   const listErrMsg = isError && error ? normalizeApiError(error).message : null;
   const reorderErrMsg =
     reorderBulk.isError && reorderBulk.error ? normalizeApiError(reorderBulk.error).message : null;
@@ -705,6 +698,7 @@ export default function ModuleQuestionsPanel(props: {
   const mutationBusy = create.isPending || reorderBulk.isPending;
 
   // ── SAT progress ───────────────────────────────────────────────────────────
+  // Computed before handleAdd so `atCapacity` is in scope for the guard.
   const progress = getModuleProgress(questions.length, sectionSubject);
   const moduleOrderNum = (() => {
     const match = moduleOrder?.match(/\d+/);
@@ -718,6 +712,19 @@ export default function ModuleQuestionsPanel(props: {
       .map((q) => q.id),
   );
   const isSat = isSatSubject(sectionSubject ?? "");
+  // True when the module is at or over the SAT question limit — adding is blocked.
+  const atCapacity =
+    isSat && progress.required !== null && questions.length >= progress.required;
+
+  const handleAdd = async () => {
+    // Guard: never fire when the module is already at SAT capacity.
+    // The button is disabled at this point, but this protects against stale clicks.
+    if (atCapacity) return;
+    const result = await create.mutateAsync();
+    if (result && typeof result === "object" && "id" in result) {
+      setSelectedId((result as AdminModuleQuestion).id);
+    }
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -778,19 +785,36 @@ export default function ModuleQuestionsPanel(props: {
             <RefreshCcw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
             Refresh
           </button>
-          <button
-            type="button"
-            disabled={mutationBusy}
-            onClick={() => void handleAdd()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
-          >
-            {create.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Plus className="h-3.5 w-3.5" />
-            )}
-            Add question
-          </button>
+          {atCapacity ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                Module full ({progress.required}/{progress.required})
+              </span>
+              <button
+                type="button"
+                disabled
+                title={`This module already has the maximum ${progress.required} questions for a ${sectionSubject === "MATH" ? "Mathematics" : "Reading & Writing"} module.`}
+                className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-xl bg-surface-2 px-3 py-1.5 text-xs font-bold text-muted-foreground opacity-60"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add question
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={mutationBusy}
+              onClick={() => void handleAdd()}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {create.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5" />
+              )}
+              Add question
+            </button>
+          )}
         </div>
       </div>
 
@@ -969,8 +993,9 @@ export default function ModuleQuestionsPanel(props: {
                 </p>
                 <button
                   type="button"
-                  disabled={mutationBusy}
+                  disabled={mutationBusy || atCapacity}
                   onClick={() => void handleAdd()}
+                  title={atCapacity ? `Module is at capacity (${progress.required} questions max)` : undefined}
                   className="mt-1 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 >
                   <Plus className="h-4 w-4" />

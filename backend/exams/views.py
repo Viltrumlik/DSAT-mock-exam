@@ -1336,6 +1336,35 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         module = get_object_or_404(Module, pk=self.kwargs['module_pk'], practice_test_id=self.kwargs['test_pk'])
+
+        # ── SAT question-count gate ───────────────────────────────────────────
+        # For full SAT simulations (pastpapers + mock exams), enforce the official
+        # per-module question count BEFORE insert.  Midterms are exempt.
+        from .sat_rules import SAT_MODULE_QUESTION_COUNT
+        from .models import MockExam as _MockExam
+
+        pt = module.practice_test
+        exam = getattr(pt, "mock_exam", None) or (
+            _MockExam.objects.filter(pk=pt.mock_exam_id).first() if pt.mock_exam_id else None
+        )
+        is_midterm = bool(exam and exam.kind == _MockExam.KIND_MIDTERM)
+        subject = getattr(pt, "subject", None)
+
+        if not is_midterm and subject in SAT_MODULE_QUESTION_COUNT:
+            limit = SAT_MODULE_QUESTION_COUNT[subject]
+            current = Question.objects.filter(module_id=module.pk).count()
+            if current >= limit:
+                subj_label = "Reading & Writing" if subject == "READING_WRITING" else "Math"
+                raise DRFValidationError(
+                    {
+                        "non_field_errors": [
+                            f"{subj_label} Module {module.module_order} already has "
+                            f"{current} question{'s' if current != 1 else ''} — the maximum for this module is {limit}. "
+                            f"Remove a question before adding another."
+                        ]
+                    }
+                )
+
         n = Question.objects.filter(module_id=module.pk).count()
         # ``order`` is the dense insert index (append); ``Question.save`` reindexes under a module lock.
         serializer.save(module=module, order=n)
