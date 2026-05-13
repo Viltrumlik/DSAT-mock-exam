@@ -1103,9 +1103,18 @@ class TestAttempt(TimestampedModel):
                         total_earned += question.score
             score_val = min(total_earned, 100)
         else:
-            # SAT Scoring Rules:
-            # English (READING_WRITING): M1 base 200, max 530 (gap 330); M2 max 270. Total 800.
-            # Math:                   M1 base 200, max 580 (gap 380); M2 max 220. Total 800.
+            # ── SAT Section Scoring (Proportional) ──────────────────────────
+            # Official Digital SAT score architecture:
+            #   Reading & Writing: base 200, M1 contributes up to 330 (→ 530),
+            #                      M2 contributes up to 270 (→ 800 total)
+            #   Math:              base 200, M1 contributes up to 380 (→ 580),
+            #                      M2 contributes up to 220 (→ 800 total)
+            #
+            # Scoring is PROPORTIONAL:
+            #   module_contribution = round((correct_pts / total_pts) × module_cap)
+            # This guarantees a perfect module always reaches its cap regardless
+            # of whether individual question scores are 10, 20, or 40.
+            from .sat_rules import compute_sat_module_score
             subject = self.practice_test.subject
             m1_earned = 0
             m2_earned = 0
@@ -1113,22 +1122,25 @@ class TestAttempt(TimestampedModel):
             for module_id_str, answers in self.module_answers.items():
                 try:
                     module = Module.objects.prefetch_related("questions").get(id=int(module_id_str))
-                    module_earned = 0
+                    correct_pts = 0
+                    total_pts = 0
                     for question in module.questions.all():
+                        q_score = int(question.score or 0)
+                        total_pts += q_score
                         ans = answers.get(str(question.id))
                         if question.check_answer(ans):
-                            module_earned += question.score
+                            correct_pts += q_score
 
-                    if subject == "READING_WRITING":
-                        if module.module_order == 1:
-                            m1_earned = min(module_earned, 330)
-                        else:
-                            m2_earned = min(module_earned, 270)
-                    elif subject == "MATH":
-                        if module.module_order == 1:
-                            m1_earned = min(module_earned, 380)
-                        else:
-                            m2_earned = min(module_earned, 220)
+                    contrib = compute_sat_module_score(
+                        earned_points=correct_pts,
+                        total_possible_points=total_pts,
+                        subject=subject,
+                        module_order=module.module_order,
+                    )
+                    if module.module_order == 1:
+                        m1_earned = contrib
+                    elif module.module_order == 2:
+                        m2_earned = contrib
                 except Exception:
                     pass
 
@@ -1157,7 +1169,20 @@ class TestAttempt(TimestampedModel):
         self.refresh_from_db()
 
     def get_module_results(self):
-        """Returns detailed results broken down by module for the review page."""
+        """
+        Returns detailed results broken down by module for the review page.
+
+        For SAT section scoring, ``capped_earned`` uses the same proportional
+        formula as ``complete_test()`` — so the review page always matches
+        the stored score exactly.
+
+        Fields added to each module result:
+          module_earned  — raw weighted score (sum of correct question.score values)
+          total_possible — sum of ALL question.score values in this module
+          capped_earned  — proportional SAT contribution (or raw for midterms)
+          module_cap     — the maximum this module can contribute (0 for midterms)
+        """
+        from .sat_rules import compute_sat_module_score
         results = []
         subject = self.practice_test.subject
         pt = self.practice_test
@@ -1165,27 +1190,29 @@ class TestAttempt(TimestampedModel):
         if mock is None and pt.mock_exam_id:
             mock = MockExam.objects.filter(pk=pt.mock_exam_id).first()
         is_midterm = bool(mock and mock.kind == MockExam.KIND_MIDTERM)
-        
-        # Prefetch questions for all modules in this test
+
         modules = self.practice_test.modules.prefetch_related('questions').order_by('module_order')
-        
+
         for module in modules:
             module_answers = self.module_answers.get(str(module.id), {})
             questions_data = []
-            module_earned = 0
-            
+            correct_pts = 0
+            total_pts = 0
+
             for question in module.questions.all():
                 student_ans = module_answers.get(str(question.id))
                 is_correct = question.check_answer(student_ans)
+                q_score = int(question.score or 0)
+                total_pts += q_score
                 if is_correct:
-                    module_earned += question.score
-                
+                    correct_pts += q_score
+
                 questions_data.append({
                     'id': question.id,
                     'is_correct': is_correct,
                     'student_answer': student_ans,
                     'correct_answers': question.correct_answers,
-                    'score': question.score,
+                    'score': q_score,
                     'text': question.question_text,
                     'question_prompt': question.question_prompt,
                     'image': question.question_image.url if question.question_image else None,
@@ -1193,26 +1220,32 @@ class TestAttempt(TimestampedModel):
                     'options': question.get_options(),
                     'is_math_input': question.is_math_input
                 })
-            
-            # Apply caps exactly like in complete_test (midterm: raw sum, max 100 at attempt level)
-            capped_earned = module_earned
+
             if is_midterm:
-                capped_earned = module_earned
-            elif subject == 'READING_WRITING':
-                if module.module_order == 1: capped_earned = min(module_earned, 330)
-                else: capped_earned = min(module_earned, 270)
-            elif subject == 'MATH':
-                if module.module_order == 1: capped_earned = min(module_earned, 380)
-                else: capped_earned = min(module_earned, 220)
-                
+                # Midterms: raw weighted sum, no proportional mapping
+                capped_earned = correct_pts
+                module_cap = 0
+            else:
+                # SAT: proportional — same formula as complete_test()
+                capped_earned = compute_sat_module_score(
+                    earned_points=correct_pts,
+                    total_possible_points=total_pts,
+                    subject=subject,
+                    module_order=module.module_order,
+                )
+                from .sat_rules import SAT_MODULE_SCORE_CAP
+                module_cap = SAT_MODULE_SCORE_CAP.get(subject, {}).get(module.module_order, 0)
+
             results.append({
                 'module_id': module.id,
                 'module_order': module.module_order,
-                'module_earned': module_earned,
-                'capped_earned': capped_earned,
+                'module_earned': correct_pts,   # raw weighted correct score
+                'total_possible': total_pts,     # raw weighted total possible
+                'capped_earned': capped_earned,  # proportional SAT contribution
+                'module_cap': module_cap,        # max this module can contribute
                 'questions': questions_data
             })
-            
+
         return results
 
 class AuditLog(models.Model):

@@ -50,6 +50,76 @@ export const ALLOWED_QUESTION_TYPES: Record<SatSubject, readonly SatQuestionType
 
 export const SAT_MODULES_PER_SECTION = 2;
 
+// ── Score architecture ───────────────────────────────────────────────────────
+//
+// Official Digital SAT scoring (must match backend sat_rules.py exactly):
+//
+//   Reading & Writing:
+//     Base: 200  |  M1 cap: 330 (floor 530)  |  M2 cap: 270 (ceiling 800)
+//   Math:
+//     Base: 200  |  M1 cap: 380 (floor 580)  |  M2 cap: 220 (ceiling 800)
+//
+// Scoring is PROPORTIONAL:
+//   contribution = round(correct_pts / total_pts × module_cap)
+// A perfect module always yields the full cap regardless of question score weights.
+
+export const SAT_SECTION_BASE_SCORE = 200;
+export const SAT_SECTION_MAX_SCORE = 800;
+
+/** Maximum contribution per module above the 200 base. */
+export const SAT_MODULE_SCORE_CAP: Record<SatSubject, Record<1 | 2, number>> = {
+  READING_WRITING: { 1: 330, 2: 270 },
+  MATH:            { 1: 380, 2: 220 },
+} as const;
+
+/**
+ * Maximum section score when only through Module N with perfection.
+ * E.g. Math M1 perfect alone = 580; both perfect = 800.
+ */
+export const SAT_MODULE_MAX_SECTION_SCORE: Record<SatSubject, Record<1 | 2, number>> = {
+  READING_WRITING: { 1: 530, 2: 800 },
+  MATH:            { 1: 580, 2: 800 },
+} as const;
+
+/**
+ * Compute proportional SAT module score contribution.
+ * Mirrors backend sat_rules.compute_sat_module_score().
+ *
+ * ``earnedPoints``   — weighted sum of scores for correct questions
+ * ``totalPoints``    — weighted sum of scores for all questions
+ * ``subject``        — READING_WRITING | MATH
+ * ``moduleOrder``    — 1 or 2
+ */
+export function computeSatModuleScore(
+  earnedPoints: number,
+  totalPoints: number,
+  subject: string | undefined | null,
+  moduleOrder: 1 | 2,
+): number {
+  if (!subject || !isSatSubject(subject) || !totalPoints) return 0;
+  const cap = SAT_MODULE_SCORE_CAP[subject][moduleOrder];
+  if (!cap) return 0;
+  const fraction = Math.max(0, Math.min(1, earnedPoints / totalPoints));
+  return Math.min(Math.round(fraction * cap), cap);
+}
+
+/**
+ * Compute the full SAT section score (200–800) from per-module earned points.
+ * Mirrors the logic in TestAttempt.complete_test().
+ *
+ * ``modules`` — array of {earnedPoints, totalPoints, moduleOrder}
+ */
+export function computeSatSectionScore(
+  subject: string | undefined | null,
+  modules: Array<{ earnedPoints: number; totalPoints: number; moduleOrder: 1 | 2 }>,
+): number {
+  let total = SAT_SECTION_BASE_SCORE;
+  for (const m of modules) {
+    total += computeSatModuleScore(m.earnedPoints, m.totalPoints, subject, m.moduleOrder);
+  }
+  return Math.min(total, SAT_SECTION_MAX_SCORE);
+}
+
 // ── Subject display labels ───────────────────────────────────────────────────
 
 export const SAT_SUBJECT_LABEL: Record<SatSubject, string> = {
