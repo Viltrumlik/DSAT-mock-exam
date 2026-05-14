@@ -61,6 +61,8 @@ type FormulaGroup = {
 // hunt through tabs. Mirrors the flat-button style of the old Django admin.
 
 const QUICK: FormulaItem[] = [
+  { id: "q-bold",   display: "", textLabel: "B",      insert: "****",       cursor: 2,  title: "Bold  **text**" },
+  { id: "q-italic", display: "", textLabel: "I",      insert: "**",         cursor: 1,  title: "Italic  *text*" },
   { id: "q-wrap",   display: "", textLabel: "\\(…\\)", insert: "\\(  \\)",   cursor: 3,  title: "Wrap in inline math delimiters  \\( … \\)" },
   { id: "q-pi",     display: "\\(\\pi\\)",        insert: "\\pi",       cursor: 3,  title: "Pi  \\pi" },
   { id: "q-sqrt",   display: "\\(\\sqrt{x}\\)",   insert: "\\sqrt{}",   cursor: 6,  title: "Square root  \\sqrt{}" },
@@ -216,7 +218,14 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
             className={QUICK_BTN}
           >
             {item.textLabel
-              ? <span className="pointer-events-none font-mono text-xs leading-none">{item.textLabel}</span>
+              ? <span
+                  className={[
+                    "pointer-events-none text-xs leading-none",
+                    item.id === "q-bold"   ? "font-black font-sans"   :
+                    item.id === "q-italic" ? "font-semibold italic font-sans" :
+                    "font-mono",
+                  ].join(" ")}
+                >{item.textLabel}</span>
               : <MathText text={item.display} className="pointer-events-none leading-none" />}
           </button>
         ))}

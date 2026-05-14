@@ -208,9 +208,9 @@ function QuestionEditor({
   );
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto">
-      {/* Sticky header */}
-      <div className="sticky top-0 z-10 shrink-0 border-b border-border bg-card">
+    <div className="flex h-full flex-col">
+      {/* Header — save button row (never scrolls) */}
+      <div className="shrink-0 border-b border-border bg-card">
         <div className="flex items-center justify-between gap-3 px-5 py-3">
           <div className="min-w-0">
             <p className="text-xs font-extrabold text-foreground">Q{question.order + 1} — #{question.id}</p>
@@ -240,26 +240,27 @@ function QuestionEditor({
         </div>
       </div>
 
+      {/* Formula toolbar — always visible, never scrolls away */}
+      <div className="shrink-0 border-b border-border bg-card">
+        <div className="px-3 pt-2 pb-0">
+          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
+            Formula insert — click a symbol, then type in a field below
+          </p>
+        </div>
+        <FormulaToolbar onInsert={handleFormulaInsert} />
+      </div>
+
       {/* Error banners */}
       {(updateErr || deleteErr) && (
-        <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 shrink-0">
           <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           <span>{updateErr ?? deleteErr}</span>
         </div>
       )}
 
-      {/* Form body */}
-      <div className="flex-1 space-y-5 p-5">
-
-        {/* Formula toolbar — prominent card, same style as assessment builder */}
-        <div className="rounded-xl border border-border overflow-hidden">
-          <div className="bg-surface-2/60 px-3 pt-2 pb-0">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
-              Formula insert — click a symbol, then type in a field below
-            </p>
-          </div>
-          <FormulaToolbar onInsert={handleFormulaInsert} />
-        </div>
+      {/* Scrollable form body */}
+      <div className="flex-1 overflow-y-auto">
+      <div className="space-y-5 p-5">
 
         {/* Type row */}
         <div className="grid grid-cols-2 gap-4">
@@ -479,6 +480,7 @@ function QuestionEditor({
             </button>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
