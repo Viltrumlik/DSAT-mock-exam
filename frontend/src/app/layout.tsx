@@ -26,6 +26,7 @@ export const metadata: Metadata = {
 };
 
 import Script from "next/script";
+import { KatexScripts } from "@/components/KatexScripts";
 
 export default function RootLayout({
   children,
@@ -48,13 +49,8 @@ export default function RootLayout({
             </ToastProvider>
           </QueryProvider>
         </ThemeProvider>
-        <Script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" strategy="afterInteractive" />
-        {/* onLoad fires after auto-render loads — signal MathText nodes to re-render */}
-        <Script
-          src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
-          strategy="afterInteractive"
-          onLoad={() => window.dispatchEvent(new CustomEvent("katex:ready"))}
-        />
+        {/* KatexScripts is a Client Component so it can pass onLoad to <Script> */}
+        <KatexScripts />
         <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
       </body>
     </html>
