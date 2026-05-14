@@ -939,8 +939,12 @@ function ExamPlayerInner() {
         if (mockFlow) setIsPaused(false);
     }, [mockFlow]);
 
-    // If we already have a valid active module from the backend, never keep showing
-    // the "Saving / continuing" transition overlay.
+    // If the backend delivers a valid active module while the transition overlay is
+    // showing, dismiss the overlay early so Module 2 renders immediately.
+    // NOTE: `transitioning` is intentionally NOT in the dep array — including it
+    // caused the overlay to be cancelled in the same render cycle where it was set
+    // (because attempt is still MODULE_1_ACTIVE at that point, satisfying the guard).
+    // The functional setter form reads the live value without a stale-closure issue.
     useEffect(() => {
         const st = attempt?.current_state;
         const modOrder = Number(attempt?.current_module_details?.module_order || 0);
@@ -948,9 +952,10 @@ function ExamPlayerInner() {
             (st === "MODULE_1_ACTIVE" && modOrder === 1) ||
             (st === "MODULE_2_ACTIVE" && modOrder === 2)
         ) {
-            if (transitioning) setTransitioning(false);
+            setTransitioning((prev) => (prev ? false : prev));
         }
-    }, [attempt?.current_state, attempt?.current_module_details?.module_order, transitioning]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [attempt?.current_state, attempt?.current_module_details?.module_order]);
 
     useEffect(() => {
         if (!loading) {
@@ -1279,7 +1284,6 @@ function ExamPlayerInner() {
                     setFlagged([]);
                     setEliminatedOptions({});
                     setQuestionHighlights({});
-                    setShowAnswerPreview(false);
                     if (data.current_module_details?.id) {
                         lastAnswersModuleIdRef.current = data.current_module_details.id;
                     }
