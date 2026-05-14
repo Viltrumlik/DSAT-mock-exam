@@ -1261,11 +1261,35 @@ function ExamPlayerInner() {
                 return;
             }
 
-            // Detect M1 -> M2 transition
+            // Detect M1 -> M2 transition — show overlay first, apply Module 2 data after.
+            // Applying Module 2 data in the same React batch as setTransitioning(true) causes
+            // the useEffect at line ~944 to immediately cancel the overlay (because it sees
+            // MODULE_2_ACTIVE + transitioning=true in the same render). By delaying the
+            // mergeAttemptFromServer call until after the overlay duration, the student
+            // sees the "Continuing to Module 2" screen for the full 1.8 s.
             if (didModuleChange && prevOrder === 1 && nextOrder === 2) {
                 prevModuleOrderRef.current = 2;
                 setTransitioning(true);
-                setTimeout(() => setTransitioning(false), 1800);
+                setLoading(false);
+                submitLockRef.current = false;
+                setTimeout(() => {
+                    mergeAttemptFromServer(data);
+                    setCurrentQuestionIndex(0);
+                    setAnswers({});
+                    setFlagged([]);
+                    setEliminatedOptions({});
+                    setQuestionHighlights({});
+                    setShowAnswerPreview(false);
+                    if (data.current_module_details?.id) {
+                        lastAnswersModuleIdRef.current = data.current_module_details.id;
+                    }
+                    setTransitioning(false);
+                    try {
+                        const key = `mastersat.examDraft.${attemptId}.${currentModId}`;
+                        localStorage.removeItem(key);
+                    } catch {}
+                }, 1800);
+                return;
             }
 
             // Update attempt state first (backend truth).

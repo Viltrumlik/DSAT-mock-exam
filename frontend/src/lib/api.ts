@@ -605,12 +605,15 @@ export const examsPublicApi = {
         const res = await api.get(`/exams/attempts/${attemptId}/results/`);
         return parseTestAttemptApiPayload(res.data, `GET /exams/attempts/${attemptId}/results/`);
     },
-    getReview: async (attemptId: number, moduleId?: number): Promise<TestAttempt> => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    getReview: async (attemptId: number, moduleId?: number): Promise<any> => {
         const url = moduleId
             ? `/exams/attempts/${attemptId}/review/?module_id=${moduleId}`
             : `/exams/attempts/${attemptId}/review/`;
         const res = await api.get(url);
-        return parseTestAttemptApiPayload(res.data, `GET ${url}`);
+        // The review endpoint returns {questions, module_results, total_questions, ...}
+        // — a different shape from TestAttempt. Return raw data.
+        return res.data;
     },
     /** Pastpaper pack student hub: all packs with at least one section that has questions. */
     getPastpaperPacks: async (): Promise<PastpaperPackPublic[]> => {
