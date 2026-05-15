@@ -1323,6 +1323,9 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         merged = _merge_admin_question_create_defaults(request, self.kwargs)
         serializer = self.get_serializer(data=merged)
+        # Stub creation: skip content validators (empty text, options, correct_answer
+        # cross-check) so the admin can create a blank question and fill it in.
+        serializer.context['is_stub_create'] = True
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
