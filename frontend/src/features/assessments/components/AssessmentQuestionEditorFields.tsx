@@ -31,6 +31,13 @@ type Props = {
   inputClassName: string;
   disabled?: boolean;
   fieldLabelClass?: string;
+  /**
+   * If provided, the component assigns its formula-insert handler to this ref
+   * so the parent can render <FormulaToolbar> externally (e.g. in a sticky
+   * section above the scrollable form body).
+   * When omitted, a FormulaToolbar is rendered inline at the top of the form.
+   */
+  insertHandlerRef?: React.MutableRefObject<((snippet: string, cursorOffset: number) => void) | null>;
 };
 
 export function AssessmentQuestionEditorFields({
@@ -39,6 +46,7 @@ export function AssessmentQuestionEditorFields({
   inputClassName,
   disabled,
   fieldLabelClass = "text-[11px] font-bold text-muted-foreground uppercase tracking-widest",
+  insertHandlerRef,
 }: Props) {
   const ADV_KEY = "mastersat:builder:advanced_json_open";
   const [showAdvanced, setShowAdvanced] = useState<boolean>(() => {
@@ -101,6 +109,9 @@ export function AssessmentQuestionEditorFields({
     [],
   );
 
+  // Expose handler to parent so it can render the toolbar in a sticky section.
+  if (insertHandlerRef) insertHandlerRef.current = handleFormulaInsert;
+
   // Helper to create onFocus handler for a textarea/input
   const trackFocus = useCallback(
     (setVal: (v: string) => void) =>
@@ -113,15 +124,18 @@ export function AssessmentQuestionEditorFields({
   return (
     <div className="space-y-5">
 
-      {/* ── Formula toolbar ───────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-border overflow-hidden">
-        <div className="bg-surface-2/60 px-3 pt-2 pb-0">
-          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
-            Formula insert — click a symbol, then type in a field below
-          </p>
+      {/* ── Formula toolbar (inline fallback — only shown when parent does not
+           render it externally via insertHandlerRef) ──────────────────────── */}
+      {!insertHandlerRef && (
+        <div className="rounded-xl border border-border overflow-hidden">
+          <div className="bg-surface-2/60 px-3 pt-2 pb-0">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 mb-1.5">
+              Formula insert — click a symbol, then type in a field below
+            </p>
+          </div>
+          <FormulaToolbar onInsert={handleFormulaInsert} />
         </div>
-        <FormulaToolbar onInsert={handleFormulaInsert} />
-      </div>
+      )}
 
       {/* Question type + meta row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

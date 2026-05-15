@@ -127,6 +127,7 @@ import { cn } from "@/lib/cn";
 export const ALLOWED_INLINE_TAGS = new Set([
   "b",
   "i",
+  "u",
   "em",
   "strong",
   "sup",

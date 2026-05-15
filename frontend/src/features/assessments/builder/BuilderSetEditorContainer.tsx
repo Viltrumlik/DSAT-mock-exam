@@ -27,6 +27,7 @@ import {
   useBuilderViewSet,
 } from "@/features/assessments/builder/store";
 import { PublishSlideOver } from "@/features/assessments/builder/PublishSlideOver";
+import { FormulaToolbar } from "@/components/FormulaToolbar";
 import { renderMath } from "@/lib/mathRender";
 import { MathText } from "@/components/MathText";
 import { writeStudioSession } from "@/lib/studioSession";
@@ -775,6 +776,9 @@ export default function BuilderSetEditorContainer() {
     }
   };
 
+  // ── Formula toolbar: ref receives the insert handler from AssessmentQuestionEditorFields ──
+  const formulaInsertRef = useRef<((snippet: string, cursorOffset: number) => void) | null>(null);
+
   // ── Collapse state for left panel sections ─────────────────────────────────
   const [metaOpen, setMetaOpen] = useState(false);
 
@@ -1024,7 +1028,20 @@ export default function BuilderSetEditorContainer() {
         </aside>
 
         {/* CENTER PANEL: Question editor */}
-        <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <main className="flex min-w-0 flex-1 flex-col">
+
+          {/* ── Formula toolbar — sticky, never scrolls away ─────────────── */}
+          <div className="shrink-0 border-b border-border bg-card">
+            <div className="px-3 pt-2 pb-0">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50 mb-1">
+                Formula insert — click a symbol, then type in a field below
+              </p>
+            </div>
+            <FormulaToolbar onInsert={(snippet, cursorOffset) => formulaInsertRef.current?.(snippet, cursorOffset)} />
+          </div>
+
+          {/* ── Scrollable form body ─────────────────────────────────────── */}
+          <div className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl px-8 py-8">
             {/* Panel heading — Q{n}/{total} nav + save controls */}
             <div className="mb-6 flex items-start justify-between gap-4">
@@ -1171,6 +1188,7 @@ export default function BuilderSetEditorContainer() {
               inputClassName={INPUT}
               disabled={upsertQuestion.isPending || versionOutdated}
               fieldLabelClass={LABEL}
+              insertHandlerRef={formulaInsertRef}
             />
 
             {/* Save button repeated at bottom for long forms */}
@@ -1184,6 +1202,7 @@ export default function BuilderSetEditorContainer() {
                 {upsertQuestion.isPending ? "Saving…" : editing.questionId ? "Save changes" : "Create question"}
               </button>
             </div>
+          </div>
           </div>
         </main>
 

@@ -61,8 +61,9 @@ type FormulaGroup = {
 // hunt through tabs. Mirrors the flat-button style of the old Django admin.
 
 const QUICK: FormulaItem[] = [
-  { id: "q-bold",   display: "", textLabel: "B",     insert: "****",       cursor: 2,  title: "Bold  **text**" },
-  { id: "q-italic", display: "", textLabel: "I",     insert: "**",         cursor: 1,  title: "Italic  *text*" },
+  { id: "q-bold",      display: "", textLabel: "B",     insert: "****",        cursor: 2,  title: "Bold  **text**" },
+  { id: "q-italic",    display: "", textLabel: "I",     insert: "**",          cursor: 1,  title: "Italic  *text*" },
+  { id: "q-underline", display: "", textLabel: "U",     insert: "<u></u>",     cursor: 3,  title: "Underline  <u>text</u>" },
   { id: "q-wrap",   display: "", textLabel: "\\(…\\)", insert: "\\(  \\)", cursor: 3,  title: "Wrap in inline math delimiters  \\( … \\)" },
   { id: "q-pi",     display: "", textLabel: "π",     insert: "\\pi",       cursor: 3,  title: "Pi  \\pi" },
   { id: "q-sqrt",   display: "", textLabel: "√x",    insert: "\\sqrt{}",   cursor: 6,  title: "Square root  \\sqrt{}" },
@@ -221,9 +222,10 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
               ? <span
                   className={[
                     "pointer-events-none leading-none",
-                    item.id === "q-bold"   ? "text-sm font-black font-sans"        :
-                    item.id === "q-italic" ? "text-sm font-semibold italic font-sans" :
-                    item.id === "q-wrap"   ? "text-[10px] font-mono"               :
+                    item.id === "q-bold"      ? "text-sm font-black font-sans"              :
+                    item.id === "q-italic"    ? "text-sm font-semibold italic font-sans"   :
+                    item.id === "q-underline" ? "text-sm font-semibold underline font-sans" :
+                    item.id === "q-wrap"      ? "text-[10px] font-mono"                    :
                     "text-sm",
                   ].join(" ")}
                 >{item.textLabel}</span>
