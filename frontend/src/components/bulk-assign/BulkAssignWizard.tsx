@@ -211,7 +211,13 @@ export function BulkAssignWizard({
     try {
       const dom = getSubject();
       const data = await assessmentsAdminApi.adminListSets(dom ? { subject: dom } : undefined);
-      setAssessmentSets(Array.isArray(data) ? (data as Array<Record<string, unknown>>) : []);
+      // API returns paginated { count, results: [...] } — unwrap it.
+      const arr: unknown[] = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { results?: unknown[] })?.results)
+          ? (data as { results: unknown[] }).results
+          : [];
+      setAssessmentSets(arr as Array<Record<string, unknown>>);
     } catch {
       setAssessmentSets([]);
       showToast("Could not load assessment sets.");

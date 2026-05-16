@@ -9,6 +9,7 @@ import AssignmentDrawer, {
 } from "@/components/ops/AssignmentDrawer";
 import { ClassroomOverviewPanel } from "@/components/ops/ClassroomOverviewPanel";
 import { AssignmentListSection } from "@/components/ops/AssignmentListSection";
+import { AssessmentClassroomAssignPanel } from "@/components/bulk-assign/AssessmentClassroomAssignPanel";
 import { StudentRosterSection } from "@/components/ops/StudentRosterSection";
 import { ActivityFeedSection } from "@/components/ops/ActivityFeedSection";
 import { OpsPageHeader } from "@/components/ops/ui";
@@ -218,29 +219,41 @@ function ClassroomOpsPageInner() {
         />
       )}
       {tab === "assignments" && (
-        <AssignmentListSection
-          classroomId={classroomId}
-          assignments={assignments}
-          onNewAssignment={() => setDrawer({ type: "create", classroomId })}
-          onEditAssignment={(a) =>
-            setDrawer({
-              type: "edit",
-              classroomId,
-              assignment: {
-                id: a.id,
-                title: a.title,
-                instructions: (a as AssignmentSummary & { instructions?: string }).instructions,
-                due_at: a.due_at,
-                practice_test: a.practice_test,
-                mock_exam: a.mock_exam,
-                pastpaper_pack: a.pastpaper_pack,
-              },
-            })
-          }
-          onDeleteAssignment={(aid) =>
-            setAssignments((prev) => prev.filter((a) => a.id !== aid))
-          }
-        />
+        <div className="space-y-6">
+          <AssignmentListSection
+            classroomId={classroomId}
+            assignments={assignments}
+            onNewAssignment={() => setDrawer({ type: "create", classroomId })}
+            onEditAssignment={(a) =>
+              setDrawer({
+                type: "edit",
+                classroomId,
+                assignment: {
+                  id: a.id,
+                  title: a.title,
+                  instructions: (a as AssignmentSummary & { instructions?: string }).instructions,
+                  due_at: a.due_at,
+                  practice_test: a.practice_test,
+                  mock_exam: a.mock_exam,
+                  pastpaper_pack: a.pastpaper_pack,
+                },
+              })
+            }
+            onDeleteAssignment={(aid) =>
+              setAssignments((prev) => prev.filter((a) => a.id !== aid))
+            }
+          />
+          {/* Assessment homework assignment — directly from this classroom */}
+          <AssessmentClassroomAssignPanel
+            canAssign={true}
+            defaultClassroomId={classroomId}
+            showToast={(msg) => {
+              /* simple inline feedback — assignments list reloads on success */
+              console.info("[AssessmentAssign]", msg);
+            }}
+            onAssigned={() => void load()}
+          />
+        </div>
       )}
       {tab === "students" && <StudentRosterSection people={people} />}
       {tab === "activity" && <ActivityFeedSection classroomId={classroomId} />}

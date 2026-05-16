@@ -4,14 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { bulkAssignApi } from "@/features/bulkAssign/api";
 import { getSubject } from "@/lib/permissions";
 
-const INPUT = "input-modern";
-const BTN_PRIMARY = "btn-primary text-xs";
-const BTN_GHOST = "btn-secondary text-xs !px-3 !py-2";
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{label}</label>
+      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{label}</label>
       {children}
     </div>
   );
@@ -29,13 +25,17 @@ function normalizeClassroomSubject(raw: unknown): "math" | "english" | null {
 export type AssessmentClassroomAssignPanelProps = {
   canAssign: boolean;
   showToast: (msg: string) => void;
+  /** Pre-select a specific classroom (e.g. when opened from a classroom detail page). */
+  defaultClassroomId?: number | null;
+  /** Called after a successful assignment so the parent can refresh its list. */
+  onAssigned?: () => void;
 };
 
 /**
  * Classroom homework assignment for LMS assessment sets (same API as /assessments/homework/assign/).
  * Used from Assignments tab on admin.* and from Assessments tab on questions.*.
  */
-export function AssessmentClassroomAssignPanel({ canAssign, showToast }: AssessmentClassroomAssignPanelProps) {
+export function AssessmentClassroomAssignPanel({ canAssign, showToast, defaultClassroomId, onAssigned }: AssessmentClassroomAssignPanelProps) {
   const assessmentsAdminApi = bulkAssignApi.assessments;
   const classesApi = bulkAssignApi.classes;
   const [sets, setSets] = useState<any[]>([]);
@@ -44,7 +44,7 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
 
   const [classrooms, setClassrooms] = useState<any[] | null>(null);
   const [classroomLoading, setClassroomLoading] = useState(false);
-  const [classroomId, setClassroomId] = useState<number | null>(null);
+  const [classroomId, setClassroomId] = useState<number | null>(defaultClassroomId ?? null);
 
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -59,7 +59,13 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
     try {
       const dom = getSubject();
       const data = await assessmentsAdminApi.adminListSets(dom ? { subject: dom } : undefined);
-      setSets(Array.isArray(data) ? data : []);
+      // API returns paginated { count, results: [...] } — unwrap it.
+      const arr = Array.isArray(data)
+        ? data
+        : Array.isArray((data as { results?: unknown[] })?.results)
+          ? (data as { results: unknown[] }).results
+          : [];
+      setSets(arr);
     } catch {
       setSets([]);
       showToast("Could not load assessment sets.");
@@ -162,6 +168,7 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
       idempotencyRef.current = null;
       setStatusMsg("Assigned successfully.");
       showToast("Assessment assigned");
+      onAssigned?.();
       await loadDupGuard(classroomId!, setId);
     } catch (e: any) {
       const st = e?.response?.status;
@@ -177,91 +184,105 @@ export function AssessmentClassroomAssignPanel({ canAssign, showToast }: Assessm
 
   if (!canAssign) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
-        Assessment homework assignment requires <span className="font-bold">assign access</span>.
+      <div className="rounded-2xl border border-border bg-card p-5 text-sm text-muted-foreground">
+        Assessment homework assignment requires <span className="font-bold text-foreground">assign access</span>.
       </div>
     );
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-black uppercase tracking-widest text-slate-400">Assessment homework</p>
-          <p className="mt-1 text-xs text-slate-500">
-            Assign an LMS assessment set to a classroom (same flow as pastpaper/mock access grants, but creates a homework row on the class).
-          </p>
-        </div>
-        <button type="button" className={BTN_GHOST} onClick={() => void fetchSets()}>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Assessment homework</p>
+        <button
+          type="button"
+          onClick={() => void fetchSets()}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+        >
           Refresh sets
         </button>
       </div>
 
-      {setsLoading || classroomLoading ? <p className="mt-3 text-sm text-slate-500">Loading…</p> : null}
+      {(setsLoading || classroomLoading) && (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      )}
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        <Field label="Assessment set">
-          <select
-            className={INPUT}
-            value={setId ? String(setId) : ""}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              setSetId(Number.isFinite(n) ? n : null);
-            }}
-          >
-            <option value="">Select set…</option>
-            {sets.map((s: any) => (
-              <option key={s.id} value={String(s.id)}>
-                #{s.id} · {String(s.title || "")} · {String(s.subject || "")}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Classroom">
-          <select
-            className={INPUT}
-            value={classroomId ? String(classroomId) : ""}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              setClassroomId(Number.isFinite(n) ? n : null);
-            }}
-          >
-            <option value="">Select classroom…</option>
-            {(classrooms || []).map((c: any) => (
-              <option key={c.id} value={String(c.id)}>
-                #{c.id} · {String(c.name || "Class")} · {String(c.subject || "").toLowerCase()}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Due at (optional)">
-          <input className={INPUT} type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
-        </Field>
-        <Field label="Title override (optional)">
-          <input className={INPUT} value={title} onChange={(e) => setTitle(e.target.value)} />
-        </Field>
-        <Field label="Instructions (optional)">
-          <textarea className={`${INPUT} min-h-[90px]`} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
-        </Field>
-      </div>
-
-      {dupAssignmentId ? (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          This classroom already has an assignment linked to this assessment set (assignment #{dupAssignmentId}). The server may still reject duplicates.
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Assessment set">
+            <select
+              className="input-modern"
+              value={setId ? String(setId) : ""}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                setSetId(Number.isFinite(n) && n > 0 ? n : null);
+              }}
+            >
+              <option value="">Select set…</option>
+              {sets.map((s: any) => (
+                <option key={s.id} value={String(s.id)}>
+                  #{s.id} · {String(s.title || "")} · {String(s.subject || "")}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {!defaultClassroomId && (
+            <Field label="Classroom">
+              <select
+                className="input-modern"
+                value={classroomId ? String(classroomId) : ""}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setClassroomId(Number.isFinite(n) && n > 0 ? n : null);
+                }}
+              >
+                <option value="">Select classroom…</option>
+                {(classrooms || []).map((c: any) => (
+                  <option key={c.id} value={String(c.id)}>
+                    #{c.id} · {String(c.name || "Class")} · {String(c.subject || "").toLowerCase()}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+          <Field label="Due at (optional)">
+            <input className="input-modern" type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} />
+          </Field>
+          <Field label="Title override (optional)">
+            <input className="input-modern" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="Instructions (optional)">
+              <textarea className="input-modern min-h-[80px]" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+            </Field>
+          </div>
         </div>
-      ) : null}
 
-      {statusMsg ? <p className="mt-3 text-xs font-bold text-emerald-700">{statusMsg}</p> : null}
+        {dupAssignmentId && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            This classroom already has an assignment for this set (#{dupAssignmentId}). The server will reject a duplicate.
+          </div>
+        )}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button type="button" className={BTN_PRIMARY} disabled={!canSubmit || submitting} onClick={() => void handleAssign()}>
-          {submitting ? "Assigning…" : "Assign assessment to classroom"}
-        </button>
-        {!canSubmit ? (
-          <p className="text-xs font-semibold text-slate-500">
-            Pick classroom + set, resolve subject mismatch, and clear duplicate warnings to enable.
-          </p>
-        ) : null}
+        {statusMsg && (
+          <p className="text-xs font-bold text-emerald-700">{statusMsg}</p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={!canSubmit || submitting}
+            onClick={() => void handleAssign()}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {submitting ? "Assigning…" : "Assign to classroom"}
+          </button>
+          {!canSubmit && !submitting && (
+            <p className="text-xs text-muted-foreground">
+              Select a set{!defaultClassroomId ? " and classroom" : ""}, resolve any warnings to continue.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
