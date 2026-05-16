@@ -1212,9 +1212,7 @@ export default function BuilderSetEditorContainer() {
                 gradingConfigText: editing.gradingConfigText,
               }}
               onPatch={(p) => setEditing((e) => ({ ...e, ...p }))}
-              inputClassName={INPUT}
               disabled={upsertQuestion.isPending || versionOutdated}
-              fieldLabelClass={LABEL}
               insertHandlerRef={formulaInsertRef}
             />
 

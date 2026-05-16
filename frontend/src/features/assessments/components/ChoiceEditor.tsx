@@ -60,13 +60,11 @@ export function validateChoices(
 
   if (choices.length < 2) issues.push({ type: "too_few" });
 
-  const seen = new Map<string, number>(); // normalised text → first index
+  const seen = new Map<string, number>();
   choices.forEach((c, i) => {
     if (!c.text.trim()) {
       issues.push({ type: "empty", index: i });
     } else {
-      // Do NOT lowercase — LaTeX is case-sensitive (\( A \) ≠ \( a \)).
-      // Trim only for whitespace normalisation.
       const norm = c.text.trim();
       if (seen.has(norm)) {
         issues.push({ type: "duplicate", index: i });
@@ -94,10 +92,10 @@ function ChoiceRow({
   onAddAfter,
   disabled,
   textareaRef,
-  hasEmptyError,
   hasDuplicateError,
   canRemove,
   onFocusTextarea,
+  inputClassName,
 }: {
   choice: AssessmentChoice;
   isCorrect: boolean;
@@ -106,131 +104,86 @@ function ChoiceRow({
   onRemove: () => void;
   onAddAfter: () => void;
   disabled?: boolean;
-  textareaRef?: React.Ref<HTMLTextAreaElement>;
-  hasEmptyError: boolean;
+  textareaRef?: React.Ref<HTMLInputElement>;
   hasDuplicateError: boolean;
   canRemove: boolean;
-  onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
+  onFocusTextarea?: (el: HTMLInputElement, setVal: (v: string) => void) => void;
+  inputClassName: string;
 }) {
-  const hasError = hasEmptyError || hasDuplicateError;
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Enter (without Shift) → add new choice after current
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       onAddAfter();
     }
-    // Backspace on empty → remove this row
     if (e.key === "Backspace" && choice.text === "" && canRemove) {
       e.preventDefault();
       onRemove();
     }
   };
 
-  // Auto-resize: grow with content, collapse on clear
-  const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
-    const el = e.currentTarget;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  };
-
   return (
-    <div
-      className={cn(
-        "group flex items-start gap-2 rounded-xl border px-2.5 py-2 transition-colors",
-        isCorrect
-          ? "border-emerald-300 bg-emerald-50/70"
-          : hasError
-            ? "border-amber-200 bg-amber-50/40"
-            : "border-border bg-card hover:bg-surface-2/40",
-      )}
-    >
-      {/* Letter badge */}
-      <span
-        className={cn(
-          "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-extrabold select-none",
-          isCorrect
-            ? "bg-emerald-500 text-white"
-            : "border border-border bg-surface-2 text-muted-foreground",
-        )}
-      >
-        {choice.id}
-      </span>
-
-      {/* Text input + live rendered preview */}
-      <div className="mt-0.5 flex-1 min-w-0">
-        <textarea
-          ref={textareaRef}
-          rows={1}
+    <div className="space-y-1">
+      <div className="flex items-center gap-3">
+        {/* Letter badge — click to mark correct */}
+        <button
+          type="button"
           disabled={disabled}
-          placeholder={`Option ${choice.id}… (supports LaTeX: \( x^2 \), **bold**, *italic*)`}
+          onClick={onMarkCorrect}
+          title={isCorrect ? "Correct answer" : "Mark as correct"}
+          className={cn(
+            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-extrabold transition-colors select-none",
+            isCorrect
+              ? "bg-emerald-500 text-white shadow-sm"
+              : "border border-border bg-card text-muted-foreground hover:border-emerald-400 hover:text-emerald-600",
+            disabled && "cursor-not-allowed opacity-50",
+          )}
+        >
+          {choice.id}
+        </button>
+
+        {/* Input */}
+        <input
+          ref={textareaRef}
+          type="text"
+          disabled={disabled}
+          placeholder={`Option ${choice.id}`}
           value={choice.text}
           onChange={(e) => onChangeText(e.target.value)}
           onKeyDown={handleKeyDown}
-          onInput={handleInput}
           onFocus={(e) => onFocusTextarea?.(e.currentTarget, onChangeText)}
           className={cn(
-            "w-full resize-none overflow-hidden bg-transparent py-0 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none",
-            disabled && "cursor-not-allowed opacity-50",
+            inputClassName,
+            "flex-1",
+            isCorrect && "border-emerald-400 ring-1 ring-emerald-300 focus:border-emerald-400",
+            hasDuplicateError && "border-amber-400",
           )}
         />
-        {/* Live rendered preview — shown whenever the field has content.
-            Lets the author see math / formatting as students will see it
-            without switching focus to the right-panel preview. */}
-        {choice.text.trim() && (
-          <div className="mt-1 border-t border-dashed border-border/50 pt-1">
-            <MathText
-              text={choice.text}
-              className="text-xs text-muted-foreground/70 leading-relaxed"
-            />
-          </div>
-        )}
+
+        {/* Remove */}
+        <button
+          type="button"
+          disabled={disabled || !canRemove}
+          onClick={onRemove}
+          title="Remove option"
+          className={cn(
+            "shrink-0 rounded-lg p-1 text-muted-foreground/30 transition-colors hover:text-red-500",
+            !canRemove && "invisible",
+          )}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
       </div>
 
-      {/* Duplicate badge */}
-      {hasDuplicateError && (
-        <span className="mt-1.5 shrink-0 rounded-md bg-amber-100 px-1 py-0.5 text-[9px] font-extrabold uppercase tracking-wide text-amber-700">
-          Dup
-        </span>
+      {/* Live math preview */}
+      {choice.text.trim() && (
+        <div className="ml-10 rounded-lg border border-border/50 bg-surface-2/40 px-2.5 py-1.5">
+          <MathText text={choice.text} className="text-xs leading-relaxed text-foreground" />
+        </div>
       )}
 
-      {/* Mark-correct toggle */}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={onMarkCorrect}
-        title={isCorrect ? "Correct answer (click to change)" : "Mark as correct"}
-        className={cn(
-          "mt-0.5 shrink-0 rounded-lg p-0.5 transition-colors",
-          isCorrect
-            ? "text-emerald-600"
-            : "text-muted-foreground/35 hover:text-emerald-500",
-          disabled && "cursor-not-allowed opacity-40",
-        )}
-      >
-        {isCorrect ? (
-          <CheckCircle2 className="h-4 w-4" />
-        ) : (
-          <Circle className="h-4 w-4" />
-        )}
-      </button>
-
-      {/* Remove button — always present, hidden until hover, disabled at min count */}
-      <button
-        type="button"
-        disabled={disabled || !canRemove}
-        onClick={onRemove}
-        title="Remove option"
-        className={cn(
-          "mt-0.5 shrink-0 rounded-lg p-0.5 text-muted-foreground/30 transition-colors",
-          canRemove
-            ? "opacity-0 hover:text-red-500 group-hover:opacity-100"
-            : "opacity-0 cursor-not-allowed",
-          disabled && "cursor-not-allowed",
-        )}
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
+      {hasDuplicateError && (
+        <p className="ml-10 text-[10px] font-semibold text-amber-600">Duplicate option</p>
+      )}
     </div>
   );
 }
@@ -243,24 +196,18 @@ export function ChoiceEditor({
   onChange,
   disabled,
   onFocusTextarea,
+  inputClassName,
 }: {
   choices: AssessmentChoice[];
   correctId: string;
-  /** Callback fires with normalised choices + the safe correct-answer id. */
   onChange: (choices: AssessmentChoice[], correctId: string) => void;
   disabled?: boolean;
-  onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
+  onFocusTextarea?: (el: HTMLInputElement, setVal: (v: string) => void) => void;
+  inputClassName: string;
 }) {
-  // Stable refs for focus management after add / remove
-  const rowRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
+  const rowRefs = useRef<Array<HTMLInputElement | null>>([]);
 
-  // ── Validation ─────────────────────────────────────────────────────────────
   const issues = validateChoices(choices, correctId);
-  const emptySet = new Set(
-    issues
-      .filter((i): i is { type: "empty"; index: number } => i.type === "empty")
-      .map((i) => i.index),
-  );
   const dupSet = new Set(
     issues
       .filter((i): i is { type: "duplicate"; index: number } => i.type === "duplicate")
@@ -269,7 +216,6 @@ export function ChoiceEditor({
   const noCorrect = issues.some((i) => i.type === "no_correct");
   const tooFew = issues.some((i) => i.type === "too_few");
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
   const focusRow = (idx: number) => {
     setTimeout(() => rowRefs.current[idx]?.focus(), 0);
   };
@@ -280,8 +226,6 @@ export function ChoiceEditor({
     },
     [onChange],
   );
-
-  // ── Mutations ──────────────────────────────────────────────────────────────
 
   const updateText = (idx: number, text: string) => {
     const next = choices.map((c, i) => (i === idx ? { ...c, text } : c));
@@ -302,17 +246,10 @@ export function ChoiceEditor({
         ...choices.slice(afterIdx + 1),
       ];
       const normalized = normalizeChoices(withNew);
-
-      // Remap correct id: old correct index shifts by 1 if it was after the insert point
       const oldCorrectIdx = choices.findIndex((c) => c.id === correctId);
       const newCorrectIdx =
-        oldCorrectIdx < 0
-          ? 0
-          : oldCorrectIdx <= afterIdx
-            ? oldCorrectIdx
-            : oldCorrectIdx + 1;
+        oldCorrectIdx < 0 ? 0 : oldCorrectIdx <= afterIdx ? oldCorrectIdx : oldCorrectIdx + 1;
       const newCorrectId = normalized[newCorrectIdx]?.id ?? normalized[0]?.id ?? "A";
-
       commit(normalized, newCorrectId);
       focusRow(afterIdx + 1);
     },
@@ -321,24 +258,19 @@ export function ChoiceEditor({
 
   const removeChoice = useCallback(
     (idx: number) => {
-      if (choices.length <= 2) return; // enforce minimum
+      if (choices.length <= 2) return;
       const withRemoved = choices.filter((_, i) => i !== idx);
       const normalized = normalizeChoices(withRemoved);
-
-      // Remap correct id
       const oldCorrectIdx = choices.findIndex((c) => c.id === correctId);
       let newCorrectIdx: number;
       if (oldCorrectIdx === idx) {
-        // deleted the correct choice → pick first remaining
         newCorrectIdx = 0;
       } else if (oldCorrectIdx > idx) {
-        // correct choice shifted up by one
         newCorrectIdx = oldCorrectIdx - 1;
       } else {
         newCorrectIdx = oldCorrectIdx;
       }
       const newCorrectId = normalized[newCorrectIdx]?.id ?? normalized[0]?.id ?? "A";
-
       commit(normalized, newCorrectId);
       focusRow(Math.max(0, idx - 1));
     },
@@ -346,39 +278,18 @@ export function ChoiceEditor({
   );
 
   return (
-    <div className="space-y-2">
-      {/* Section header */}
+    <div className="space-y-3">
+      {/* Header */}
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-          Answer choices
-        </span>
         {noCorrect && (
           <span className="text-[10px] font-bold text-amber-600 animate-pulse">
-            Mark one choice as correct ↑
+            Click a letter badge to mark the correct answer ↓
           </span>
         )}
       </div>
 
-      {/* Inline formatting hint — shows the complete SAT-safe syntax.
-          Non-interactive, non-modal. Documents the boundary deliberately:
-          exactly 4 items, no more. Do not add formatting here without
-          updating MathText and MATH_TEXT_BOUNDARIES.md. */}
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-        {[
-          { label: "Math", sample: "\\( x^2 \\)" },
-          { label: "Bold", sample: "**word**" },
-          { label: "Italic", sample: "*word*" },
-          { label: "Sup", sample: "x<sup>2</sup>" },
-        ].map(({ label, sample }) => (
-          <span key={label} className="text-[10px] text-muted-foreground/50">
-            <span className="font-semibold">{label}:</span>{" "}
-            <code className="rounded bg-surface-2 px-1 font-mono text-[9px]">{sample}</code>
-          </span>
-        ))}
-      </div>
-
-      {/* Choice rows */}
-      <div className="space-y-1.5">
+      {/* Rows */}
+      <div className="space-y-2">
         {choices.map((c, idx) => (
           <ChoiceRow
             key={`row-${idx}`}
@@ -389,19 +300,17 @@ export function ChoiceEditor({
             onRemove={() => removeChoice(idx)}
             onAddAfter={() => addChoiceAfter(idx)}
             disabled={disabled}
-            textareaRef={(el) => {
-              rowRefs.current[idx] = el;
-            }}
-            hasEmptyError={emptySet.has(idx)}
+            textareaRef={(el) => { rowRefs.current[idx] = el; }}
             hasDuplicateError={dupSet.has(idx)}
             canRemove={choices.length > 2}
             onFocusTextarea={onFocusTextarea}
+            inputClassName={inputClassName}
           />
         ))}
       </div>
 
-      {/* Add + validation strip */}
-      <div className="flex items-center gap-3 pt-0.5">
+      {/* Footer: add + count */}
+      <div className="flex items-center gap-3 pt-1">
         <button
           type="button"
           disabled={disabled || choices.length >= 8}
@@ -414,15 +323,11 @@ export function ChoiceEditor({
         >
           <Plus className="h-3.5 w-3.5" />
           Add option
-          <kbd className="ml-0.5 rounded bg-surface-2 px-1 py-0.5 text-[9px] font-mono text-muted-foreground/60">
-            ↵
-          </kbd>
+          <kbd className="ml-0.5 rounded bg-surface-2 px-1 py-0.5 text-[9px] font-mono text-muted-foreground/60">↵</kbd>
         </button>
 
         {tooFew && (
-          <span className="text-[10px] font-semibold text-red-500">
-            Need at least 2 options
-          </span>
+          <span className="text-[10px] font-semibold text-red-500">Need at least 2 options</span>
         )}
 
         <span className="ml-auto text-[10px] text-muted-foreground/50 tabular-nums">
