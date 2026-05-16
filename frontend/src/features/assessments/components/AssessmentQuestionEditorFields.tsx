@@ -10,6 +10,7 @@ import { ImagePlus, X } from "lucide-react";
 
 export type AssessmentQuestionEditorDraft = {
   prompt: string;
+  question_prompt: string;
   question_type: AssessmentQuestionType;
   order: number;
   points: number;
@@ -300,6 +301,19 @@ export function AssessmentQuestionEditorFields({
         onCancel={() => onSetImage("question", null, false)}
         disabled={disabled}
       />
+
+      {/* ── Stimulus / passage excerpt ── */}
+      <div>
+        <label className={LABEL}>Stimulus / passage excerpt (optional)</label>
+        <textarea
+          className={`${INPUT} min-h-[80px] leading-relaxed`}
+          disabled={disabled}
+          placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
+          value={draft.question_prompt}
+          onChange={(e) => onPatch({ question_prompt: e.target.value })}
+          onFocus={trackFocus((v) => onPatch({ question_prompt: v }))}
+        />
+      </div>
 
       {/* ── Multiple choice ── */}
       {draft.question_type === "multiple_choice" && (

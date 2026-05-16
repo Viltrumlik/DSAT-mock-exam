@@ -578,6 +578,7 @@ export default function BuilderSetEditorContainer() {
   const [editing, setEditing] = useState<{
     questionId: number | null;
     prompt: string;
+    question_prompt: string;
     question_type: string;
     order: number;
     points: number;
@@ -586,11 +587,11 @@ export default function BuilderSetEditorContainer() {
     choicesText: string;
     correctAnswerText: string;
     gradingConfigText: string;
-    /** Preview-only passage context — not persisted to the server. */
     stimulusContext: string;
   }>({
     questionId: null,
     prompt: "",
+    question_prompt: "",
     question_type: "multiple_choice",
     order: 0,
     points: 1,
@@ -616,6 +617,7 @@ export default function BuilderSetEditorContainer() {
     setEditing({
       questionId: selected.id,
       prompt: String(selected.prompt || ""),
+      question_prompt: String((selected as any).question_prompt ?? ""),
       question_type: selected.question_type,
       order: Number(selected.order ?? 0),
       points: Number(selected.points ?? 1),
@@ -624,7 +626,7 @@ export default function BuilderSetEditorContainer() {
       choicesText: JSON.stringify(rawChoices, null, 2),
       correctAnswerText: JSON.stringify(resolvedCorrect),
       gradingConfigText: JSON.stringify((selected as any).grading_config ?? {}, null, 2),
-      stimulusContext: "",
+      stimulusContext: String((selected as any).question_prompt ?? ""),
     });
   }, [selected?.id]);
 
@@ -637,6 +639,7 @@ export default function BuilderSetEditorContainer() {
       const payload: any = {
         order: Number(editing.order || 0),
         prompt: String(editing.prompt || "").trim(),
+        question_prompt: String(editing.question_prompt || ""),
         question_type: editing.question_type,
         points: Number(editing.points || 1),
         is_active: Boolean(editing.is_active),
@@ -718,6 +721,7 @@ export default function BuilderSetEditorContainer() {
     setEditing({
       questionId: null,
       prompt: "",
+      question_prompt: "",
       question_type: "multiple_choice",
       order: questions.length ? (questions[questions.length - 1].order ?? 0) + 1 : 0,
       points: 1,
@@ -1224,6 +1228,7 @@ export default function BuilderSetEditorContainer() {
             <AssessmentQuestionEditorFields
               draft={{
                 prompt: editing.prompt,
+                question_prompt: editing.question_prompt,
                 question_type: editing.question_type as AssessmentQuestionType,
                 order: editing.order,
                 points: editing.points,
@@ -1294,20 +1299,6 @@ export default function BuilderSetEditorContainer() {
             </div>
           </div>
 
-          {/* Stimulus context input (preview-only) */}
-          <div className="shrink-0 border-b border-border px-4 py-3">
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Passage / stimulus (preview only)
-            </label>
-            <textarea
-              rows={2}
-              placeholder="Paste a passage excerpt to preview context above the question…"
-              value={editing.stimulusContext}
-              onChange={(e) => setEditing((prev) => ({ ...prev, stimulusContext: e.target.value }))}
-              className="w-full resize-none rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
-            />
-          </div>
-
           {/* Preview content */}
           <div className={cn(
             "flex-1 p-4",
@@ -1320,7 +1311,7 @@ export default function BuilderSetEditorContainer() {
                 choicesText={editing.choicesText}
                 correctAnswerText={editing.correctAnswerText}
                 explanation={editing.explanation}
-                stimulusContext={editing.stimulusContext}
+                stimulusContext={editing.question_prompt}
               />
             </div>
           </div>

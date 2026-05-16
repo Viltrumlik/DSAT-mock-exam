@@ -25,6 +25,7 @@ export type AssessmentQuestion = {
   assessment_set: number;
   order: number;
   prompt: string;
+  question_prompt?: string;
   question_type: AssessmentQuestionType;
   choices: AssessmentChoice[] | any[];
   correct_answer?: any;

@@ -164,6 +164,7 @@ class AssessmentQuestion(models.Model):
     )
     order = models.PositiveIntegerField(default=0, db_index=True)
     prompt = models.TextField()
+    question_prompt = models.TextField(blank=True, default="")  # Stimulus / passage excerpt
     question_type = models.CharField(max_length=32, choices=TYPE_CHOICES, db_index=True)
 
     # For multiple choice: [{ "id": "A", "text": "..." }, ...]
