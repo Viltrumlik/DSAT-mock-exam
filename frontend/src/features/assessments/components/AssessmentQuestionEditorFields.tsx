@@ -227,6 +227,9 @@ export function AssessmentQuestionEditorFields({
               });
             }}
             disabled={disabled}
+            onFocusTextarea={(el, setVal) => {
+              activeFieldRef.current = { el, setVal };
+            }}
           />
         </div>
       )}

@@ -27,10 +27,13 @@ class AssessmentQuestionSerializer(serializers.ModelSerializer):
             "points",
             "is_active",
             "explanation",
+            "question_image",
         ]
 
 
 class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
+    clear_question_image = serializers.BooleanField(write_only=True, required=False)
+
     class Meta:
         model = AssessmentQuestion
         fields = [
@@ -45,7 +48,21 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
             "points",
             "is_active",
             "explanation",
+            "question_image",
+            "clear_question_image",
         ]
+
+    def create(self, validated_data):
+        validated_data.pop("clear_question_image", None)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        clear_question_image = validated_data.pop("clear_question_image", False)
+        if clear_question_image and "question_image" not in validated_data:
+            if instance.question_image:
+                instance.question_image.delete(save=False)
+            instance.question_image = None
+        return super().update(instance, validated_data)
 
 
 @extend_schema_serializer(component_name="AssessmentSet")

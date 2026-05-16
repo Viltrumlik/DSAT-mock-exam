@@ -1034,9 +1034,12 @@ export const assessmentsAdminApi = {
             grading_config: Record<string, unknown>;
             points: number;
             is_active: boolean;
-        }>,
+            question_image: File | null;
+            clear_question_image: boolean;
+        }> | FormData,
     ) => {
-        const r = await api.patch(`/assessments/admin/questions/${id}/`, payload);
+        const isFormData = payload instanceof FormData;
+        const r = await api.patch(`/assessments/admin/questions/${id}/`, payload, isFormData ? {} : {});
         return r.data;
     },
     adminDeleteQuestion: async (id: number) => {

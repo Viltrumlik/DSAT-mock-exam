@@ -97,6 +97,7 @@ function ChoiceRow({
   hasEmptyError,
   hasDuplicateError,
   canRemove,
+  onFocusTextarea,
 }: {
   choice: AssessmentChoice;
   isCorrect: boolean;
@@ -109,6 +110,7 @@ function ChoiceRow({
   hasEmptyError: boolean;
   hasDuplicateError: boolean;
   canRemove: boolean;
+  onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
 }) {
   const hasError = hasEmptyError || hasDuplicateError;
 
@@ -166,6 +168,7 @@ function ChoiceRow({
           onChange={(e) => onChangeText(e.target.value)}
           onKeyDown={handleKeyDown}
           onInput={handleInput}
+          onFocus={(e) => onFocusTextarea?.(e.currentTarget, onChangeText)}
           className={cn(
             "w-full resize-none overflow-hidden bg-transparent py-0 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/40 focus:outline-none",
             disabled && "cursor-not-allowed opacity-50",
@@ -239,12 +242,14 @@ export function ChoiceEditor({
   correctId,
   onChange,
   disabled,
+  onFocusTextarea,
 }: {
   choices: AssessmentChoice[];
   correctId: string;
   /** Callback fires with normalised choices + the safe correct-answer id. */
   onChange: (choices: AssessmentChoice[], correctId: string) => void;
   disabled?: boolean;
+  onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
 }) {
   // Stable refs for focus management after add / remove
   const rowRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
@@ -390,6 +395,7 @@ export function ChoiceEditor({
             hasEmptyError={emptySet.has(idx)}
             hasDuplicateError={dupSet.has(idx)}
             canRemove={choices.length > 2}
+            onFocusTextarea={onFocusTextarea}
           />
         ))}
       </div>

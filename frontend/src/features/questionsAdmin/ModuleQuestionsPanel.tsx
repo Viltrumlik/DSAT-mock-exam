@@ -34,11 +34,13 @@ import {
   ArrowLeft,
   CheckCircle2,
   GripVertical,
+  ImagePlus,
   Loader2,
   Plus,
   RefreshCcw,
   Save,
   Trash2,
+  X,
 } from "lucide-react";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
 import { StudioSpinner } from "@/components/studio/StudioSpinner";
@@ -122,35 +124,69 @@ function QuestionEditor({
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [saveOk, setSaveOk] = React.useState(false);
 
+  type ImageKey = "question" | "a" | "b" | "c" | "d";
+  const [imageFiles, setImageFiles] = React.useState<Partial<Record<ImageKey, File>>>({});
+  const [clearImages, setClearImages] = React.useState<Partial<Record<ImageKey, boolean>>>({});
+
   // Reset draft when question changes
   React.useEffect(() => {
     setDraft(questionToDraft(question, sectionSubject));
     setSaveOk(false);
     setConfirmDelete(false);
+    setImageFiles({});
+    setClearImages({});
   }, [question.id, sectionSubject]);
 
   const patch = (p: Partial<QuestionDraft>) => setDraft((d) => ({ ...d, ...p }));
 
   const handleSave = async () => {
     setSaveOk(false);
+    const hasFiles = Object.keys(imageFiles).length > 0 || Object.values(clearImages).some(Boolean);
+    let data: FormData | Record<string, unknown>;
+    if (hasFiles) {
+      const fd = new FormData();
+      fd.append("question_type", draft.question_type);
+      fd.append("question_text", draft.question_text);
+      fd.append("question_prompt", draft.question_prompt);
+      fd.append("is_math_input", String(draft.is_math_input));
+      fd.append("option_a", draft.option_a);
+      fd.append("option_b", draft.option_b);
+      fd.append("option_c", draft.option_c);
+      fd.append("option_d", draft.option_d);
+      fd.append("correct_answer", draft.correct_answer);
+      fd.append("explanation", draft.explanation);
+      fd.append("score", String(draft.score));
+      if (imageFiles.question) fd.append("question_image", imageFiles.question);
+      if (imageFiles.a) fd.append("option_a_image", imageFiles.a);
+      if (imageFiles.b) fd.append("option_b_image", imageFiles.b);
+      if (imageFiles.c) fd.append("option_c_image", imageFiles.c);
+      if (imageFiles.d) fd.append("option_d_image", imageFiles.d);
+      if (clearImages.question) fd.append("clear_question_image", "true");
+      if (clearImages.a) fd.append("clear_option_a_image", "true");
+      if (clearImages.b) fd.append("clear_option_b_image", "true");
+      if (clearImages.c) fd.append("clear_option_c_image", "true");
+      if (clearImages.d) fd.append("clear_option_d_image", "true");
+      data = fd;
+    } else {
+      data = {
+        question_type: draft.question_type,
+        question_text: draft.question_text,
+        question_prompt: draft.question_prompt,
+        is_math_input: draft.is_math_input,
+        option_a: draft.option_a,
+        option_b: draft.option_b,
+        option_c: draft.option_c,
+        option_d: draft.option_d,
+        correct_answer: draft.correct_answer,
+        explanation: draft.explanation,
+        score: draft.score,
+      };
+    }
     try {
-      const result = await update.mutateAsync({
-        questionId: question.id,
-        data: {
-          question_type: draft.question_type,
-          question_text: draft.question_text,
-          question_prompt: draft.question_prompt,
-          is_math_input: draft.is_math_input,
-          option_a: draft.option_a,
-          option_b: draft.option_b,
-          option_c: draft.option_c,
-          option_d: draft.option_d,
-          correct_answer: draft.correct_answer,
-          explanation: draft.explanation,
-          score: draft.score,
-        },
-      });
+      const result = await update.mutateAsync({ questionId: question.id, data });
       setSaveOk(true);
+      setImageFiles({});
+      setClearImages({});
       onSaved(result as AdminModuleQuestion);
       setTimeout(() => setSaveOk(false), 2000);
     } catch {
@@ -334,6 +370,49 @@ function QuestionEditor({
               <MathText text={draft.question_text} className="text-sm leading-relaxed text-foreground" />
             </div>
           )}
+          {/* Question image */}
+          <div className="mt-3">
+            <label className={FIELD_LABEL}>Question image (optional)</label>
+            <div className="mt-1 space-y-2">
+              {question.question_image && !clearImages.question && !imageFiles.question && (
+                <div className="flex items-center gap-2">
+                  <img src={question.question_image} alt="Question" className="max-h-32 rounded-xl border border-border object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => setClearImages((c) => ({ ...c, question: true }))}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+                  >
+                    <X className="h-3 w-3" /> Remove
+                  </button>
+                </div>
+              )}
+              {imageFiles.question && (
+                <div className="flex items-center gap-2">
+                  <img src={URL.createObjectURL(imageFiles.question)} alt="Preview" className="max-h-32 rounded-xl border border-border object-contain" />
+                  <button
+                    type="button"
+                    onClick={() => setImageFiles((f) => { const n = { ...f }; delete n.question; return n; })}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
+                  >
+                    <X className="h-3 w-3" /> Cancel
+                  </button>
+                </div>
+              )}
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border bg-surface-2/30 px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
+                <ImagePlus className="h-3.5 w-3.5" />
+                {imageFiles.question ? "Change image" : question.question_image && !clearImages.question ? "Replace image" : "Upload image"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) { setImageFiles((prev) => ({ ...prev, question: f })); setClearImages((c) => ({ ...c, question: false })); }
+                  }}
+                />
+              </label>
+            </div>
+          </div>
         </div>
 
         {/* Secondary prompt */}
@@ -384,6 +463,56 @@ function QuestionEditor({
                       <MathText text={val} className="text-xs leading-relaxed text-foreground" />
                     </div>
                   )}
+                  {/* Option image */}
+                  <div className="ml-9 flex flex-wrap items-center gap-2">
+                    {(() => {
+                      const imgKey = letter as ImageKey;
+                      const existingImg = question[`option_${letter}_image` as keyof typeof question] as string | null | undefined;
+                      const file = imageFiles[imgKey];
+                      const cleared = clearImages[imgKey];
+                      return (
+                        <>
+                          {existingImg && !cleared && !file && (
+                            <>
+                              <img src={existingImg} alt={`Option ${letter.toUpperCase()}`} className="max-h-16 rounded-lg border border-border object-contain" />
+                              <button
+                                type="button"
+                                onClick={() => setClearImages((c) => ({ ...c, [imgKey]: true }))}
+                                className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+                              >
+                                <X className="h-3 w-3" /> Remove
+                              </button>
+                            </>
+                          )}
+                          {file && (
+                            <>
+                              <img src={URL.createObjectURL(file)} alt="Preview" className="max-h-16 rounded-lg border border-border object-contain" />
+                              <button
+                                type="button"
+                                onClick={() => setImageFiles((f) => { const n = { ...f }; delete n[imgKey]; return n; })}
+                                className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
+                              >
+                                <X className="h-3 w-3" /> Cancel
+                              </button>
+                            </>
+                          )}
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-border bg-surface-2/30 px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
+                            <ImagePlus className="h-3 w-3" />
+                            {file ? "Change" : existingImg && !cleared ? "Replace" : "Add image"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) { setImageFiles((prev) => ({ ...prev, [imgKey]: f })); setClearImages((c) => ({ ...c, [imgKey]: false })); }
+                              }}
+                            />
+                          </label>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               );
             })}

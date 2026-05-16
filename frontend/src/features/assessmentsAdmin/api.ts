@@ -68,7 +68,7 @@ export const assessmentsAdminApi = {
   ) => {
     return (await assessmentsAdminClient.adminCreateQuestion(setId, payload as any)) as AssessmentQuestion;
   },
-  updateQuestion: async (id: number, payload: Partial<AssessmentQuestion>) => {
+  updateQuestion: async (id: number, payload: Partial<AssessmentQuestion> | FormData) => {
     return (await assessmentsAdminClient.adminUpdateQuestion(id, payload as any)) as AssessmentQuestion;
   },
   deleteQuestion: async (id: number) => {

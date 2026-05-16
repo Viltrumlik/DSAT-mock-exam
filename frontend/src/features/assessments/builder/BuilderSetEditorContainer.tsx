@@ -55,6 +55,7 @@ import {
   Copy,
   Eye,
   GripVertical,
+  ImagePlus,
   Lock,
   Monitor,
   Plus,
@@ -63,6 +64,7 @@ import {
   Save,
   Smartphone,
   Trash2,
+  X,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -663,8 +665,23 @@ export default function BuilderSetEditorContainer() {
           payload.correct_answer = idList[0];
         }
       }
-      const res = await upsertQuestion.mutateAsync({ id: editing.questionId, payload });
+      // Use FormData when a new image is attached or cleared
+      let finalPayload: any = payload;
+      if (questionImageFile || clearQuestionImage) {
+        const fd = new FormData();
+        Object.entries(payload).forEach(([k, v]) => {
+          if (v !== null && v !== undefined) {
+            fd.append(k, typeof v === "object" && !(v instanceof File) ? JSON.stringify(v) : String(v));
+          }
+        });
+        if (questionImageFile) fd.append("question_image", questionImageFile);
+        if (clearQuestionImage) fd.append("clear_question_image", "true");
+        finalPayload = fd;
+      }
+      const res = await upsertQuestion.mutateAsync({ id: editing.questionId, payload: finalPayload });
       const savedId = (res as any).id as number;
+      setQuestionImageFile(null);
+      setClearQuestionImage(false);
       toast.push({ tone: "success", message: editing.questionId ? "Question updated." : "Question created." });
 
       // Post-save navigation based on current mode
@@ -775,6 +792,16 @@ export default function BuilderSetEditorContainer() {
       toast.push({ tone: "error", message: normalizeApiError(e).message });
     }
   };
+
+  // ── Image upload state ─────────────────────────────────────────────────────
+  const [questionImageFile, setQuestionImageFile] = useState<File | null>(null);
+  const [clearQuestionImage, setClearQuestionImage] = useState(false);
+
+  // Reset image state when selected question changes
+  useEffect(() => {
+    setQuestionImageFile(null);
+    setClearQuestionImage(false);
+  }, [selected?.id]);
 
   // ── Formula toolbar: ref receives the insert handler from AssessmentQuestionEditorFields ──
   const formulaInsertRef = useRef<((snippet: string, cursorOffset: number) => void) | null>(null);
@@ -1190,6 +1217,60 @@ export default function BuilderSetEditorContainer() {
               fieldLabelClass={LABEL}
               insertHandlerRef={formulaInsertRef}
             />
+
+            {/* Question image upload */}
+            <div className="mt-6 rounded-2xl border border-border bg-surface-2/30 p-4 space-y-2">
+              <p className={LABEL}>Question image (optional)</p>
+              {selected && (selected as any).question_image && !clearQuestionImage && !questionImageFile && (
+                <div className="flex items-center gap-3">
+                  <img
+                    src={(selected as any).question_image}
+                    alt="Question"
+                    className="max-h-36 rounded-xl border border-border object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setClearQuestionImage(true)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+                  >
+                    <X className="h-3 w-3" /> Remove
+                  </button>
+                </div>
+              )}
+              {questionImageFile && (
+                <div className="flex items-center gap-3">
+                  <img
+                    src={URL.createObjectURL(questionImageFile)}
+                    alt="Preview"
+                    className="max-h-36 rounded-xl border border-border object-contain"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setQuestionImageFile(null)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 transition-colors"
+                  >
+                    <X className="h-3 w-3" /> Cancel
+                  </button>
+                </div>
+              )}
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-border bg-card px-3 py-2 text-xs font-semibold text-muted-foreground hover:bg-surface-2/60 transition-colors">
+                <ImagePlus className="h-3.5 w-3.5" />
+                {questionImageFile
+                  ? "Change image"
+                  : (selected as any)?.question_image && !clearQuestionImage
+                    ? "Replace image"
+                    : "Upload image"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) { setQuestionImageFile(f); setClearQuestionImage(false); }
+                  }}
+                />
+              </label>
+            </div>
 
             {/* Save button repeated at bottom for long forms */}
             <div className="mt-8 flex justify-end border-t border-border pt-6">

@@ -69,8 +69,9 @@ export function useCreateModuleQuestion(testId: number, moduleId: number) {
 export function useUpdateModuleQuestion(testId: number, moduleId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { questionId: number; data: Partial<AdminModuleQuestion> & Record<string, unknown> }) => {
-      return examsAdminApi.updateQuestion(testId, moduleId, args.questionId, args.data, false) as Promise<AdminModuleQuestion>;
+    mutationFn: async (args: { questionId: number; data: Partial<AdminModuleQuestion> & Record<string, unknown> | FormData }) => {
+      const isFormData = args.data instanceof FormData;
+      return examsAdminApi.updateQuestion(testId, moduleId, args.questionId, args.data, isFormData) as Promise<AdminModuleQuestion>;
     },
     onSettled: async () => {
       await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(testId, moduleId) });

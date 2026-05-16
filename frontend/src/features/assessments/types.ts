@@ -32,6 +32,7 @@ export type AssessmentQuestion = {
   points: number;
   is_active: boolean;
   explanation?: string;
+  question_image?: string | null;
 };
 
 export type HomeworkAssignmentCreateRequest = {
