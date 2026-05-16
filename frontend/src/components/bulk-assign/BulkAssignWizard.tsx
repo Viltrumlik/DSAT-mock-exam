@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Building2,
+  Check,
   CheckCircle2,
   ClipboardList,
   Layers,
@@ -15,6 +16,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { bulkAssignApi } from "@/features/bulkAssign/api";
 import type { Assignment } from "@/lib/api";
 import { getSubject } from "@/lib/permissions";
@@ -82,11 +84,6 @@ function normalizeClassroomSubject(raw: unknown): "math" | "english" | null {
 const examsAdminApi = bulkAssignApi.exams;
 const assessmentsAdminApi = bulkAssignApi.assessments;
 const classesApi = bulkAssignApi.classes;
-
-const BTN_PRIMARY =
-  "btn-primary text-sm !px-4 !py-2.5 inline-flex items-center gap-2 justify-center font-bold disabled:opacity-50";
-const BTN_GHOST = "btn-secondary text-sm !px-4 !py-2.5 font-semibold";
-const INPUT = "input-modern";
 
 const STEP_META = [
   { id: 1, title: "Assignment type", hint: "Pastpaper, timed mock, or assessments" },
@@ -755,20 +752,27 @@ export function BulkAssignWizard({
 
   return (
     <div className="space-y-8 max-w-5xl">
+      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Bulk assignment</h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+          <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">Bulk assignment</p>
+          <h2 className="text-xl font-bold text-foreground">Assign content</h2>
+          <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
             Guided five-step flow for library access (pastpaper / timed mock) or classroom homework (assessments). For
             library runs, access is enforced server-side; students without subject grants still skip sections they
             cannot receive.
           </p>
         </div>
-        <button type="button" className={BTN_GHOST} onClick={() => resetFlow()}>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+          onClick={() => resetFlow()}
+        >
           Reset wizard
         </button>
       </div>
 
+      {/* Error banner */}
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50/90 px-4 py-3 text-sm text-red-900 flex flex-wrap items-start gap-2">
           <AlertTriangle className="w-5 h-5 shrink-0 text-red-600" />
@@ -776,13 +780,15 @@ export function BulkAssignWizard({
         </div>
       ) : null}
 
+      {/* Last result banner */}
       {lastResult ? (
         <div
-          className={`rounded-xl border px-4 py-3 text-sm flex flex-col gap-2 ${
+          className={cn(
+            "rounded-xl border px-4 py-3 text-sm flex flex-col gap-2",
             lastResult.ok
               ? "border-emerald-200 bg-emerald-50/90 text-emerald-950"
-              : "border-red-200 bg-red-50/90 text-red-950"
-          }`}
+              : "border-red-200 bg-red-50/90 text-red-950",
+          )}
         >
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="flex items-start gap-2 min-w-0">
@@ -819,7 +825,7 @@ export function BulkAssignWizard({
             </div>
             <button
               type="button"
-              className="btn-secondary text-xs !px-2 !py-1 shrink-0 inline-flex items-center gap-1"
+              className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-2 py-1 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors shrink-0"
               onClick={() => setLastResult(null)}
               aria-label="Dismiss result"
             >
@@ -833,7 +839,7 @@ export function BulkAssignWizard({
                 {lastResult.skipped_users.slice(0, 50).map((s) => (
                   <li key={s.user_id}>
                     <span className="font-semibold">{s.display_name || s.username || `#${s.user_id}`}</span>
-                    {s.reason ? <span className="text-slate-700"> — {s.reason}</span> : null}
+                    {s.reason ? <span className="text-muted-foreground"> — {s.reason}</span> : null}
                   </li>
                 ))}
               </ul>
@@ -845,28 +851,48 @@ export function BulkAssignWizard({
         </div>
       ) : null}
 
-      <ol className="flex flex-wrap gap-2">
-        {STEP_META.map((s) => (
-          <li
-            key={s.id}
-            className={`flex-1 min-w-[120px] rounded-xl border px-3 py-2 text-left transition ${
-              step === s.id
-                ? "border-indigo-300 bg-indigo-50/90 shadow-sm"
-                : s.id < step
-                  ? "border-emerald-200 bg-emerald-50/40"
-                  : "border-slate-200 bg-white"
-            }`}
-          >
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Step {s.id}</p>
-            <p className="text-xs font-bold text-slate-900">{s.title}</p>
-            <p className="text-[10px] text-slate-500 mt-0.5">{s.hint}</p>
-          </li>
-        ))}
-      </ol>
+      {/* Horizontal step indicator */}
+      <div className="flex items-center gap-0">
+        {STEP_META.map((s, idx) => {
+          const isCompleted = s.id < step;
+          const isActive = s.id === step;
+          return (
+            <div key={s.id} className="flex items-center flex-1 min-w-0">
+              <div className="flex flex-col items-center gap-1.5 flex-shrink-0">
+                <div
+                  className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition-colors",
+                    isCompleted
+                      ? "border-emerald-500 bg-emerald-500 text-white"
+                      : isActive
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-card text-muted-foreground",
+                  )}
+                >
+                  {isCompleted ? <Check className="w-4 h-4" /> : s.id}
+                </div>
+                <div className="text-center hidden sm:block">
+                  <p className={cn("text-[10px] font-bold", isActive ? "text-foreground" : "text-muted-foreground")}>
+                    {s.title}
+                  </p>
+                </div>
+              </div>
+              {idx < STEP_META.length - 1 && (
+                <div
+                  className={cn(
+                    "flex-1 h-0.5 mx-2 rounded transition-colors",
+                    isCompleted ? "bg-emerald-400" : "bg-border",
+                  )}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       {loadingUsers ? (
-        <div className="flex items-center gap-2 text-sm text-slate-600 py-6">
-          <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-6">
+          <Loader2 className="w-5 h-5 animate-spin text-primary" />
           Loading directory…
         </div>
       ) : null}
@@ -879,41 +905,44 @@ export function BulkAssignWizard({
               setKind("pastpaper");
               setPastpaperScope(defaultPastpaperScope);
             }}
-            className={`rounded-2xl border p-6 text-left transition shadow-sm ${
+            className={cn(
+              "rounded-2xl border p-6 text-left transition",
               kind === "pastpaper"
-                ? "border-emerald-400 bg-emerald-50/80 ring-2 ring-emerald-200"
-                : "border-slate-200 bg-white hover:border-emerald-200"
-            }`}
+                ? "border-primary bg-card ring-2 ring-primary"
+                : "border-border bg-card hover:bg-surface-2",
+            )}
           >
-            <ClipboardList className="w-8 h-8 text-emerald-600 mb-3" />
-            <h3 className="text-lg font-bold text-slate-900">Pastpaper</h3>
-            <p className="text-sm text-slate-600 mt-1">Standalone library sections (English / Math) from a card.</p>
+            <ClipboardList className="w-8 h-8 text-primary mb-3" />
+            <h3 className="text-lg font-bold text-foreground">Pastpaper</h3>
+            <p className="text-sm text-muted-foreground mt-1">Standalone library sections (English / Math) from a card.</p>
           </button>
           <button
             type="button"
             onClick={() => setKind("timed_mock")}
-            className={`rounded-2xl border p-6 text-left transition shadow-sm ${
+            className={cn(
+              "rounded-2xl border p-6 text-left transition",
               kind === "timed_mock"
-                ? "border-indigo-400 bg-indigo-50/80 ring-2 ring-indigo-200"
-                : "border-slate-200 bg-white hover:border-indigo-200"
-            }`}
+                ? "border-primary bg-card ring-2 ring-primary"
+                : "border-border bg-card hover:bg-surface-2",
+            )}
           >
-            <Layers className="w-8 h-8 text-indigo-600 mb-3" />
-            <h3 className="text-lg font-bold text-slate-900">Timed mock</h3>
-            <p className="text-sm text-slate-600 mt-1">Published or draft mock shell — pick sections (full / math / English).</p>
+            <Layers className="w-8 h-8 text-primary mb-3" />
+            <h3 className="text-lg font-bold text-foreground">Timed mock</h3>
+            <p className="text-sm text-muted-foreground mt-1">Published or draft mock shell — pick sections (full / math / English).</p>
           </button>
           <button
             type="button"
             onClick={() => setKind("assessment_homework")}
-            className={`rounded-2xl border p-6 text-left transition shadow-sm sm:col-span-2 xl:col-span-1 ${
+            className={cn(
+              "rounded-2xl border p-6 text-left transition sm:col-span-2 xl:col-span-1",
               kind === "assessment_homework"
-                ? "border-violet-400 bg-violet-50/80 ring-2 ring-violet-200"
-                : "border-slate-200 bg-white hover:border-violet-200"
-            }`}
+                ? "border-primary bg-card ring-2 ring-primary"
+                : "border-border bg-card hover:bg-surface-2",
+            )}
           >
-            <ListChecks className="w-8 h-8 text-violet-600 mb-3" />
-            <h3 className="text-lg font-bold text-slate-900">Assessments</h3>
-            <p className="text-sm text-slate-600 mt-1">
+            <ListChecks className="w-8 h-8 text-primary mb-3" />
+            <h3 className="text-lg font-bold text-foreground">Assessments</h3>
+            <p className="text-sm text-muted-foreground mt-1">
               Published LMS assessment set → homework on a classroom (not the same as bulk student grants).
             </p>
           </button>
@@ -921,11 +950,11 @@ export function BulkAssignWizard({
       )}
 
       {step === 2 && kind === "assessment_homework" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
-          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Assessment set</label>
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
+          <label className="text-[10px] font-bold text-primary uppercase tracking-widest">Assessment set</label>
           {assessmentSetsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-slate-600 py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
               Loading sets…
             </div>
           ) : (
@@ -941,8 +970,8 @@ export function BulkAssignWizard({
       )}
 
       {step === 2 && kind === "timed_mock" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
-          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Timed mock</label>
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-3">
+          <label className="text-[10px] font-bold text-primary uppercase tracking-widest">Timed mock</label>
           <SearchableSelect
             options={mockOptions}
             value={mockExamId}
@@ -957,8 +986,8 @@ export function BulkAssignWizard({
       )}
 
       {step === 2 && kind === "pastpaper" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-          <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Pastpaper card</label>
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+          <label className="text-[10px] font-bold text-primary uppercase tracking-widest">Pastpaper card</label>
           <SearchableSelect
             options={packOptions}
             value={pastpaperPackId}
@@ -967,8 +996,8 @@ export function BulkAssignWizard({
             emptyHint="No pastpaper cards"
           />
           <div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Subject scope</span>
-            <div className="flex bg-slate-100 p-1 rounded-xl mt-2 max-w-md">
+            <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Subject scope</span>
+            <div className="flex bg-surface-2 p-1 rounded-xl mt-2 max-w-md">
               {(
                 [
                   { id: "BOTH" as const, label: "Both" },
@@ -980,15 +1009,18 @@ export function BulkAssignWizard({
                   key={opt.id}
                   type="button"
                   onClick={() => setPastpaperScope(opt.id)}
-                  className={`flex-1 py-2 px-2 rounded-lg text-[11px] font-bold transition ${
-                    pastpaperScope === opt.id ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"
-                  }`}
+                  className={cn(
+                    "flex-1 py-2 px-2 rounded-lg text-[11px] font-bold transition",
+                    pastpaperScope === opt.id
+                      ? "bg-card text-primary shadow-sm"
+                      : "text-muted-foreground",
+                  )}
                 >
                   {opt.label}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-slate-500 mt-2">
+            <p className="text-xs text-muted-foreground mt-2">
               Resolves to <strong>{resolvedPastpaperSectionIds.length}</strong> practice section(s) for this assignment
               run.
             </p>
@@ -1000,17 +1032,17 @@ export function BulkAssignWizard({
       )}
 
       {step === 3 && kind === "assessment_homework" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
           <div>
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Classroom</label>
-            <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+            <label className="text-[10px] font-bold text-primary uppercase tracking-widest">Classroom</label>
+            <p className="text-xs text-muted-foreground mt-1 max-w-2xl">
               Homework is created for the whole class. Pick the group that should see this assignment on the class
               stream.
             </p>
           </div>
           {assessmentClassroomsLoading ? (
-            <div className="flex items-center gap-2 text-sm text-slate-600 py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-violet-600" />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
               Loading classrooms…
             </div>
           ) : (
@@ -1037,21 +1069,22 @@ export function BulkAssignWizard({
       )}
 
       {step === 3 && kind !== "assessment_homework" && (
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex flex-wrap gap-3 items-end bg-slate-50/80">
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          {/* Filters toolbar */}
+          <div className="p-4 border-b border-border flex flex-wrap gap-3 items-end bg-surface-2">
             <div className="flex flex-col gap-1 min-w-[160px] flex-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Search</span>
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Search</span>
               <input
-                className={INPUT + " !text-sm"}
+                className="input-modern text-sm"
                 value={studentQuery}
                 onChange={(e) => setStudentQuery(e.target.value)}
                 placeholder="Name, username, email…"
               />
             </div>
             <div className="flex flex-col gap-1 min-w-[140px]">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Classroom</span>
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Classroom</span>
               <select
-                className={INPUT + " !text-sm"}
+                className="input-modern text-sm"
                 value={classroomFilter === "all" ? "all" : String(classroomFilter)}
                 onChange={(e) => {
                   const v = e.target.value;
@@ -1067,9 +1100,9 @@ export function BulkAssignWizard({
               </select>
             </div>
             <div className="flex flex-col gap-1 min-w-[130px]">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Subject track</span>
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Subject track</span>
               <select
-                className={INPUT + " !text-sm"}
+                className="input-modern text-sm"
                 value={trackFilter}
                 onChange={(e) => setTrackFilter(e.target.value as TrackFilter)}
               >
@@ -1079,47 +1112,50 @@ export function BulkAssignWizard({
               </select>
             </div>
             <div className="flex flex-wrap gap-2 w-full sm:w-auto sm:ml-auto">
-              <button type="button" className={BTN_GHOST} onClick={clearSelection}>
-                Clear selection
-              </button>
-              <button type="button" className={BTN_GHOST} onClick={selectAllInView}>
-                Select all in view
-              </button>
-              <button type="button" className={BTN_GHOST} onClick={selectEligibleInView}>
-                Eligible in view
-              </button>
-              <button
-                type="button"
-                className={BTN_GHOST}
-                disabled={classroomFilter === "all"}
-                title={classroomFilter === "all" ? "Pick a classroom first" : undefined}
-                onClick={selectEligibleInClassroom}
-              >
-                Eligible in classroom
-              </button>
-              <button type="button" className={BTN_GHOST} onClick={selectAllEligibleGlobally} disabled={!kind}>
-                All eligible students
-              </button>
+              {[
+                { label: "Clear selection", action: clearSelection, disabled: false },
+                { label: "Select all in view", action: selectAllInView, disabled: false },
+                { label: "Eligible in view", action: selectEligibleInView, disabled: false },
+                {
+                  label: "Eligible in classroom",
+                  action: selectEligibleInClassroom,
+                  disabled: classroomFilter === "all",
+                  title: classroomFilter === "all" ? "Pick a classroom first" : undefined,
+                },
+                { label: "All eligible students", action: selectAllEligibleGlobally, disabled: !kind },
+              ].map(({ label, action, disabled, title }) => (
+                <button
+                  key={label}
+                  type="button"
+                  disabled={disabled}
+                  title={title}
+                  onClick={action}
+                  className="rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40"
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
+          {/* Student table */}
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-[10px] font-black uppercase tracking-widest text-slate-500">
+              <thead className="bg-surface-2 text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-2 w-10">
+                  <th className="px-4 py-2.5 w-10">
                     <span className="sr-only">Select</span>
                   </th>
-                  <th className="px-4 py-2">Student</th>
-                  <th className="px-4 py-2">Subject access</th>
-                  <th className="px-4 py-2">Classrooms</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Assignment</th>
+                  <th className="px-4 py-2.5">Student</th>
+                  <th className="px-4 py-2.5">Subject access</th>
+                  <th className="px-4 py-2.5">Classrooms</th>
+                  <th className="px-4 py-2.5">Status</th>
+                  <th className="px-4 py-2.5">Assignment</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-border">
                 {filteredStudents.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500 text-sm">
+                    <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground text-sm">
                       No students match these filters.
                     </td>
                   </tr>
@@ -1129,11 +1165,11 @@ export function BulkAssignWizard({
                     const g = u.bulk_assign_profile?.subject_grants;
                     const checked = selectedUserIds.includes(u.id);
                     return (
-                      <tr key={u.id} className={meta.selectable ? "hover:bg-slate-50/80" : "bg-slate-50/50"}>
-                        <td className="px-4 py-2">
+                      <tr key={u.id} className={meta.selectable ? "hover:bg-surface-2/50" : "bg-surface-2/30"}>
+                        <td className="px-4 py-2.5">
                           <input
                             type="checkbox"
-                            className="rounded border-slate-300"
+                            className="rounded border-border"
                             checked={checked}
                             title={
                               meta.selectable
@@ -1146,22 +1182,22 @@ export function BulkAssignWizard({
                             }}
                           />
                         </td>
-                        <td className="px-4 py-2 font-semibold text-slate-900">{studentDisplayName(u)}</td>
-                        <td className="px-4 py-2 text-xs">
-                          <span className={g?.math ? "text-emerald-700 font-medium" : "text-slate-400"}>Math</span>
-                          <span className="mx-1 text-slate-300">·</span>
-                          <span className={g?.english ? "text-emerald-700 font-medium" : "text-slate-400"}>R&amp;W</span>
+                        <td className="px-4 py-2.5 font-semibold text-foreground">{studentDisplayName(u)}</td>
+                        <td className="px-4 py-2.5 text-xs">
+                          <span className={g?.math ? "text-emerald-700 font-medium" : "text-muted-foreground"}>Math</span>
+                          <span className="mx-1 text-muted-foreground/40">·</span>
+                          <span className={g?.english ? "text-emerald-700 font-medium" : "text-muted-foreground"}>R&amp;W</span>
                           {!u.bulk_assign_profile ? (
                             <span className="block text-amber-600 mt-0.5">Refresh user list for access data</span>
                           ) : null}
                         </td>
-                        <td className="px-4 py-2 text-xs text-slate-600 max-w-[200px]">
+                        <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-[200px]">
                           {(u.bulk_assign_profile?.classrooms || []).length
                             ? u.bulk_assign_profile!.classrooms.map((c) => c.name).join(", ")
                             : "—"}
                         </td>
-                        <td className="px-4 py-2 text-xs">{accountStatusLabel(u)}</td>
-                        <td className="px-4 py-2 text-xs">
+                        <td className="px-4 py-2.5 text-xs">{accountStatusLabel(u)}</td>
+                        <td className="px-4 py-2.5 text-xs">
                           {!meta.selectable ? (
                             <span className="text-red-600 font-medium">{meta.reason}</span>
                           ) : meta.partialHint ? (
@@ -1181,10 +1217,10 @@ export function BulkAssignWizard({
       )}
 
       {step === 4 && kind === "timed_mock" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-6">
           <div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sections to assign</span>
-            <div className="flex flex-wrap gap-2 mt-2 bg-slate-100 p-1 rounded-2xl max-w-xl">
+            <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Sections to assign</span>
+            <div className="flex flex-wrap gap-2 mt-2 bg-surface-2 p-1 rounded-2xl max-w-xl">
               {[
                 { id: "FULL", label: "Full exam" },
                 { id: "MATH", label: "Math only" },
@@ -1194,9 +1230,10 @@ export function BulkAssignWizard({
                   key={t.id}
                   type="button"
                   onClick={() => setAssignmentType(t.id)}
-                  className={`flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs font-bold transition ${
-                    assignmentType === t.id ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500"
-                  }`}
+                  className={cn(
+                    "flex-1 min-w-[100px] py-2.5 px-3 rounded-xl text-xs font-bold transition",
+                    assignmentType === t.id ? "bg-card text-primary shadow-sm" : "text-muted-foreground",
+                  )}
                 >
                   {t.label}
                 </button>
@@ -1204,8 +1241,8 @@ export function BulkAssignWizard({
             </div>
           </div>
           <div>
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Form filter</span>
-            <div className="flex flex-wrap gap-2 mt-2 bg-slate-100 p-1 rounded-2xl max-w-xl">
+            <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Form filter</span>
+            <div className="flex flex-wrap gap-2 mt-2 bg-surface-2 p-1 rounded-2xl max-w-xl">
               {[
                 { id: "", label: "All forms" },
                 { id: "INTERNATIONAL", label: "International" },
@@ -1215,27 +1252,28 @@ export function BulkAssignWizard({
                   key={t.id || "all"}
                   type="button"
                   onClick={() => setFormType(t.id)}
-                  className={`flex-1 min-w-[90px] py-2.5 px-3 rounded-xl text-xs font-bold transition ${
-                    formType === t.id ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500"
-                  }`}
+                  className={cn(
+                    "flex-1 min-w-[90px] py-2.5 px-3 rounded-xl text-xs font-bold transition",
+                    formType === t.id ? "bg-card text-primary shadow-sm" : "text-muted-foreground",
+                  )}
                 >
                   {t.label}
                 </button>
               ))}
             </div>
           </div>
-          <p className="text-xs text-slate-500 border border-slate-100 rounded-xl p-3 bg-slate-50/80">
+          <p className="text-xs text-muted-foreground border border-border rounded-xl p-3 bg-surface-2">
             Section mode, form filter, and selected students are stored with each dispatch on the server (see history).
           </p>
         </div>
       )}
 
       {step === 4 && kind === "pastpaper" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-          <p className="text-sm text-slate-700">
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+          <p className="text-sm text-foreground">
             Subject scope is set in step 2. Adjust there if you need only English or Math sections from this card.
           </p>
-          <p className="text-xs text-slate-500 border border-slate-100 rounded-xl p-3 bg-slate-50/80">
+          <p className="text-xs text-muted-foreground border border-border rounded-xl p-3 bg-surface-2">
             Section list, form filter, and student list are stored on the server with each dispatch (see history). The
             API does not support per-student deadlines here — use class assignments for due dates if you need them.
           </p>
@@ -1243,20 +1281,20 @@ export function BulkAssignWizard({
       )}
 
       {step === 4 && kind === "assessment_homework" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
-          <p className="text-sm text-slate-700">Optional fields shown to students on the class homework card.</p>
+        <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+          <p className="text-sm text-foreground">Optional fields shown to students on the class homework card.</p>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Due at (optional)</span>
-              <input className={INPUT} type="datetime-local" value={assessmentDue} onChange={(e) => setAssessmentDue(e.target.value)} />
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Due at (optional)</span>
+              <input className="input-modern" type="datetime-local" value={assessmentDue} onChange={(e) => setAssessmentDue(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Title override (optional)</span>
-              <input className={INPUT} value={assessmentTitle} onChange={(e) => setAssessmentTitle(e.target.value)} />
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Title override (optional)</span>
+              <input className="input-modern" value={assessmentTitle} onChange={(e) => setAssessmentTitle(e.target.value)} />
             </div>
             <div className="flex flex-col gap-1 md:col-span-2">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Instructions (optional)</span>
-              <textarea className={`${INPUT} min-h-[90px]`} value={assessmentInstructions} onChange={(e) => setAssessmentInstructions(e.target.value)} />
+              <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Instructions (optional)</span>
+              <textarea className="input-modern min-h-[90px]" value={assessmentInstructions} onChange={(e) => setAssessmentInstructions(e.target.value)} />
             </div>
           </div>
         </div>
@@ -1264,39 +1302,39 @@ export function BulkAssignWizard({
 
       {step === 5 && kind === "assessment_homework" && (
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <ListChecks className="w-4 h-4 text-violet-600" /> Assessment set
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-2">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <ListChecks className="w-4 h-4 text-primary" /> Assessment set
             </h3>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-foreground">
               {selectedAssessmentSet
                 ? `#${selectedAssessmentSet.id} · ${String(selectedAssessmentSet.title || "")}`
                 : "—"}
             </p>
-            <p className="text-xs text-slate-500">Subject: {String(selectedAssessmentSet?.subject || "—")}</p>
+            <p className="text-xs text-muted-foreground">Subject: {String(selectedAssessmentSet?.subject || "—")}</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-indigo-600" /> Classroom
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-2">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Building2 className="w-4 h-4 text-primary" /> Classroom
             </h3>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-foreground">
               {selectedAssessmentClassroom
                 ? `${String(selectedAssessmentClassroom.name || "Class")} (#${selectedAssessmentClassroom.id})`
                 : "—"}
             </p>
-            <p className="text-xs text-slate-500">Subject: {String(selectedAssessmentClassroom?.subject || "—")}</p>
+            <p className="text-xs text-muted-foreground">Subject: {String(selectedAssessmentClassroom?.subject || "—")}</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2 space-y-2">
-            <h3 className="text-sm font-bold text-slate-900">Homework details</h3>
-            <p className="text-xs text-slate-600">
-              <span className="font-semibold text-slate-800">Due:</span>{" "}
+          <div className="rounded-2xl border border-border bg-card p-5 md:col-span-2 space-y-2">
+            <h3 className="text-sm font-bold text-foreground">Homework details</h3>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">Due:</span>{" "}
               {assessmentDue ? new Date(assessmentDue).toLocaleString() : "—"}
             </p>
-            <p className="text-xs text-slate-600">
-              <span className="font-semibold text-slate-800">Title override:</span> {assessmentTitle.trim() || "—"}
+            <p className="text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">Title override:</span> {assessmentTitle.trim() || "—"}
             </p>
-            <p className="text-xs text-slate-600 whitespace-pre-wrap">
-              <span className="font-semibold text-slate-800">Instructions:</span> {assessmentInstructions.trim() || "—"}
+            <p className="text-xs text-muted-foreground whitespace-pre-wrap">
+              <span className="font-semibold text-foreground">Instructions:</span> {assessmentInstructions.trim() || "—"}
             </p>
           </div>
           {assessmentDupAssignmentId ? (
@@ -1305,9 +1343,9 @@ export function BulkAssignWizard({
               may still fail server-side.
             </div>
           ) : null}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2 space-y-2">
-            <h3 className="text-sm font-bold text-slate-900">What happens next</h3>
-            <p className="text-xs text-slate-600">
+          <div className="rounded-2xl border border-border bg-card p-5 md:col-span-2 space-y-2">
+            <h3 className="text-sm font-bold text-foreground">What happens next</h3>
+            <p className="text-xs text-muted-foreground">
               Confirm creates a homework row on the class stream (not a bulk library dispatch). Assignment history below
               stays for pastpaper / timed mock runs only.
             </p>
@@ -1317,28 +1355,28 @@ export function BulkAssignWizard({
 
       {step === 5 && kind && kind !== "assessment_homework" && (
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-2">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Content
             </h3>
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-foreground">
               {kind === "timed_mock" && selectedMock
                 ? formatMockExamAdminLabel(selectedMock)
                 : pastpaperPackId
                   ? formatPastpaperPackAdminLabel(pastpaperPacks.find((p) => Number(p.id) === pastpaperPackId))
                   : "—"}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {kind === "pastpaper"
                 ? `Scope: ${pastpaperScope} · ${resolvedPastpaperSectionIds.length} section(s)`
                 : `Sections: ${assignmentType}${formType ? ` · ${formType}` : ""}`}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <Users className="w-4 h-4 text-indigo-600" /> Students ({selectedUserIds.length})
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-2">
+            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+              <Users className="w-4 h-4 text-primary" /> Students ({selectedUserIds.length})
             </h3>
-            <p className="text-xs text-slate-600 max-h-28 overflow-y-auto">
+            <p className="text-xs text-muted-foreground max-h-28 overflow-y-auto">
               {selectedUserIds
                 .map((id) => {
                   const u = users.find((x) => x.id === id);
@@ -1347,9 +1385,9 @@ export function BulkAssignWizard({
                 .join(", ")}
             </p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2 space-y-2">
-            <h3 className="text-sm font-bold text-slate-900">What gets saved</h3>
-            <p className="text-xs text-slate-600">
+          <div className="rounded-2xl border border-border bg-card p-5 md:col-span-2 space-y-2">
+            <h3 className="text-sm font-bold text-foreground">What gets saved</h3>
+            <p className="text-xs text-muted-foreground">
               After you confirm, the server records this run (content, students, outcome, status). Use{" "}
               <strong>Use in wizard</strong> in history to reload a dispatch, or <strong>Re-run</strong> to replay the
               stored payload immediately.
@@ -1358,16 +1396,31 @@ export function BulkAssignWizard({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200">
-        <button type="button" className={BTN_GHOST} disabled={step <= 1} onClick={goBack}>
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border">
+        <button
+          type="button"
+          disabled={step <= 1}
+          onClick={goBack}
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-40"
+        >
           <ArrowLeft className="w-4 h-4" /> Back
         </button>
         {step < 5 ? (
-          <button type="button" className={BTN_PRIMARY} disabled={!canGoNext} onClick={goNext}>
+          <button
+            type="button"
+            disabled={!canGoNext}
+            onClick={goNext}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+          >
             Next <ArrowRight className="w-4 h-4" />
           </button>
         ) : (
-          <button type="button" className={BTN_PRIMARY} disabled={submitting || !canGoNext} onClick={() => void submit()}>
+          <button
+            type="button"
+            disabled={submitting || !canGoNext}
+            onClick={() => void submit()}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+          >
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
             {submitting ? (kind === "assessment_homework" ? "Assigning…" : "Granting…") : "Confirm & assign"}
           </button>

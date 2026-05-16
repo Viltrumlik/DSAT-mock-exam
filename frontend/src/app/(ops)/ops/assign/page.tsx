@@ -7,8 +7,8 @@
  * mock exams on mount, then hands them to the wizard.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { BookMarked, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { examsAdminApi } from "@/lib/api";
 import { BulkAssignWizard } from "@/components/bulk-assign/BulkAssignWizard";
 import type { BulkAssignUserRow } from "@/components/bulk-assign/types";
@@ -21,8 +21,8 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
     return () => clearTimeout(t);
   }, [onDone]);
   return (
-    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 shadow-lg">
-      <p className="text-sm font-bold text-emerald-800">{message}</p>
+    <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-2xl border border-border bg-card px-5 py-3 shadow-lg">
+      <p className="text-sm font-bold text-foreground">{message}</p>
     </div>
   );
 }
@@ -117,10 +117,10 @@ export default function OpsAssignPage() {
         </div>
       )}
 
-      {/* Loading skeleton */}
+      {/* Loading state */}
       {loading && (
         <div className="rounded-2xl border border-border bg-card p-8 flex items-center justify-center gap-3">
-          <div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
           <p className="text-sm font-semibold text-muted-foreground">Loading users and content…</p>
         </div>
       )}
