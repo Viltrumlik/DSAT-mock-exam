@@ -64,7 +64,7 @@ def set_auth_cookies(
     response.set_cookie(
         ACCESS_COOKIE,
         access,
-        max_age=int(timedelta(minutes=20).total_seconds()),
+        max_age=int(timedelta(hours=3, minutes=10).total_seconds()),
         **common,
     )
     # Refresh cookie drives session lifetime.
@@ -83,7 +83,7 @@ def set_access_cookie(*, response, request, access: str):
     response.set_cookie(
         ACCESS_COOKIE,
         access,
-        max_age=int(timedelta(minutes=20).total_seconds()),
+        max_age=int(timedelta(hours=3, minutes=10).total_seconds()),
         **common,
     )
 
