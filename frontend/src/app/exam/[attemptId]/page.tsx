@@ -1475,6 +1475,9 @@ function ExamPlayerInner() {
 
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) {
+            // Reset timer state when module is not available (e.g. retry/reload)
+            // to prevent stale timerReady=true from triggering auto-submit.
+            setTimerReady(false);
             return;
         }
         const limitSec = moduleWallClockLimitSec(attempt);
@@ -1626,6 +1629,9 @@ function ExamPlayerInner() {
                     type="button"
                     onClick={() => {
                         setLoading(true);
+                        setTimerReady(false);
+                        setTimeLeft(0);
+                        moduleTimerSubmitDoneRef.current = false;
                         setAttempt(null);
                         setReloadNonce((x) => x + 1);
                     }}
@@ -1656,6 +1662,9 @@ function ExamPlayerInner() {
                     type="button"
                     onClick={() => {
                         setLoading(true);
+                        setTimerReady(false);
+                        setTimeLeft(0);
+                        moduleTimerSubmitDoneRef.current = false;
                         setAttempt(null);
                         setReloadNonce((x) => x + 1);
                     }}
