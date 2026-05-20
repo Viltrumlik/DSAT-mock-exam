@@ -5,7 +5,7 @@ import Link from "next/link";
 import { authApi, classesApi, type Classroom, usersApi } from "@/lib/api";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
-import TelegramLoginButton, { type TelegramAuthUser } from "@/components/TelegramLoginButton";
+import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import {
   BookOpen,
   CalendarClock,
@@ -115,18 +115,18 @@ export default function ProfilePage() {
   const [lastMockResult, setLastMockResult] = useState<MeForm["last_mock_result"]>(null);
   const [homeworkProgress, setHomeworkProgress] = useState({ total: 0, submitted: 0, pending: 0, overdue: 0 });
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
-  const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null } | null>(null);
+  const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null; client_id: string | null; start_url: string | null } | null>(null);
   const [telegramLinkBusy, setTelegramLinkBusy] = useState(false);
   const [examDateOptions, setExamDateOptions] = useState<ExamDateOptionRow[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsBusyId, setSessionsBusyId] = useState<number | null>(null);
 
-  const handleTelegramLink = useCallback(async (user: TelegramAuthUser) => {
+  const handleTelegramLink = useCallback(async (result: TelegramOIDCResult) => {
     setTelegramLinkBusy(true);
     setMessage(null);
     try {
-      const updated = await usersApi.linkTelegram(user);
+      const updated = await usersApi.linkTelegram(result.id_token);
       setMe(mapMeToForm(updated));
       setMessage("Telegram connected to your account.");
       window.setTimeout(() => setMessage(null), 4000);
@@ -156,7 +156,7 @@ export default function ProfilePage() {
         const [meData, classData, tgWidget, examDatesRaw] = await Promise.all([
           usersApi.getMe(),
           classesApi.list(),
-          usersApi.getTelegramWidgetConfig().catch(() => ({ enabled: false, bot_username: null as string | null })),
+          usersApi.getTelegramWidgetConfig().catch(() => ({ enabled: false, bot_username: null as string | null, client_id: null as string | null, start_url: null as string | null })),
           usersApi.listExamDates().catch(() => []),
         ]);
         if (!cancelled) {
@@ -441,303 +441,227 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-10 lg:px-10 lg:py-12">
-      {/* Cover */}
-      <div className="hero-shell relative p-8 md:p-10 min-h-[280px]">
-        <div className="flex items-start justify-between gap-6">
-          <div className="max-w-2xl">
-            <p className="eyebrow mb-2">Profile</p>
-            <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-foreground">Futuristic profile dashboard</h1>
-            <p className="text-muted-foreground mt-3 max-w-2xl text-base">
-              Your goals, readiness, and identity — presented like a modern SaaS command center.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <button
-              type="button"
-              onClick={handleOpenEdit}
-              className="btn-primary"
-            >
-              <Pencil className="w-4 h-4" />
-              Edit profile
-            </button>
-
-            <button
-              type="button"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(me.username);
-                  setMessage("Username copied.");
-                  window.setTimeout(() => setMessage(null), 1500);
-                } catch {
-                  setMessage("Could not copy username.");
-                  window.setTimeout(() => setMessage(null), 1500);
-                }
-              }}
-              className="btn-secondary"
-            >
-              <Copy className="w-4 h-4" />
-              Copy
-            </button>
-          </div>
-        </div>
-
-        {/* Avatar inside cover */}
-        <div className="absolute bottom-6 left-8 sm:left-10">
-          <div className="relative">
-            <div className="w-28 h-28 rounded-full overflow-hidden border-[3px] border-border bg-surface-2 shadow-sm">
-              {me.profile_image_url ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={me.profile_image_url} alt={`${me.first_name} ${me.last_name}`} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-surface-2">
-                  <UserCircle className="w-16 h-16 text-label-foreground" />
-                </div>
-              )}
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full glass flex items-center justify-center border border-border shadow-sm">
-              <Sparkles className="w-4 h-4 text-primary" />
-            </div>
-          </div>
-        </div>
-
-        {/* User info */}
-        <div className="pt-16 sm:pt-18 pl-0 sm:pl-36">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <div className="text-2xl font-extrabold text-foreground">{me.first_name} {me.last_name}</div>
-                <div className="neo-chip">Student</div>
+    <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-10 lg:py-10 space-y-6">
+      {/* ── Profile header ──────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-border bg-card p-6 md:p-8">
+        <div className="flex flex-col sm:flex-row gap-6">
+          {/* Avatar */}
+          <div className="shrink-0">
+            <div className="relative">
+              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden border-2 border-border bg-surface-2 shadow-sm">
+                {me.profile_image_url ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={me.profile_image_url} alt={`${me.first_name} ${me.last_name}`} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-surface-2">
+                    <UserCircle className="w-14 h-14 text-muted-foreground/40" />
+                  </div>
+                )}
               </div>
-              <div className="text-muted-foreground mt-1 text-base">@{me.username}</div>
-              {me.phone_number?.trim() ? (
-                <div className="flex items-center gap-2 text-muted-foreground mt-2 text-sm font-semibold">
-                  <Phone className="w-4 h-4 text-primary shrink-0" />
-                  <span>{me.phone_number}</span>
-                </div>
-              ) : null}
-              {me.telegram_linked ? (
-                <div className="flex items-center gap-2 text-muted-foreground mt-2 text-sm font-semibold">
-                  <MessageCircle className="w-4 h-4 text-accent-cyan shrink-0" />
-                  <span>Telegram connected</span>
-                </div>
-              ) : null}
+              <div className="absolute -bottom-1.5 -right-1.5 w-8 h-8 rounded-full bg-primary flex items-center justify-center border-2 border-card">
+                <Sparkles className="w-3.5 h-3.5 text-primary-foreground" />
+              </div>
             </div>
-            <Link href="/classes" className="btn-secondary inline-flex items-center justify-center">
-              <Trophy className="w-4 h-4" />
-              Go to classes
-            </Link>
+          </div>
+
+          {/* User info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <h1 className="text-2xl font-extrabold text-foreground tracking-tight">{me.first_name} {me.last_name}</h1>
+                  <span className="rounded-lg bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary uppercase tracking-wide">Student</span>
+                </div>
+                <p className="text-sm text-muted-foreground mt-1 font-semibold">@{me.username}</p>
+                <div className="flex flex-wrap items-center gap-3 mt-3">
+                  {me.phone_number?.trim() && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                      <Phone className="w-3.5 h-3.5 text-primary" />
+                      {me.phone_number}
+                    </span>
+                  )}
+                  {me.telegram_linked && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      Telegram linked
+                    </span>
+                  )}
+                  {me.email && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground truncate max-w-[200px]">
+                      {me.email}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleOpenEdit}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Edit profile
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(me.username);
+                      setMessage("Username copied.");
+                      window.setTimeout(() => setMessage(null), 1500);
+                    } catch {
+                      setMessage("Could not copy username.");
+                      window.setTimeout(() => setMessage(null), 1500);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      {!loading && telegramCfg?.enabled && !me.telegram_linked && telegramCfg.bot_username ? (
-        <div className="mt-10 rounded-2xl border border-border bg-card p-6 md:p-8 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="max-w-xl">
-              <p className="text-xs font-black uppercase tracking-widest text-accent-cyan mb-1">Telegram</p>
-              <h2 className="text-xl font-extrabold text-foreground">Connect your Telegram</h2>
-              <p className="text-muted-foreground text-sm mt-2 leading-relaxed">
-                Link Telegram to sign in with one tap next time. If you approve phone access in Telegram, we can sync your
-                verified number to your profile.
-              </p>
-            </div>
-            <div className="flex flex-col items-center gap-2 shrink-0">
-              {telegramLinkBusy ? (
-                <Loader2 className="w-8 h-8 animate-spin text-accent-cyan" />
-              ) : (
-                <TelegramLoginButton botUsername={telegramCfg.bot_username} onAuth={handleTelegramLink} />
-              )}
-            </div>
+      {!loading && telegramCfg?.enabled && !me.telegram_linked && telegramCfg.start_url ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/50 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-widest text-sky-600 mb-1">Telegram</p>
+            <p className="text-sm font-extrabold text-foreground">Connect your Telegram account</p>
+            <p className="text-xs text-muted-foreground mt-1">Sign in with one tap next time.</p>
+          </div>
+          <div className="shrink-0">
+            {telegramLinkBusy ? (
+              <Loader2 className="w-6 h-6 animate-spin text-sky-500" />
+            ) : (
+              <TelegramLoginButton startUrl={telegramCfg.start_url} next="/profile" />
+            )}
           </div>
         </div>
       ) : null}
 
-      {/* Cards */}
-      <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="metric-tile p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Progress</p>
-              <div className="mt-2 flex items-end gap-2">
-                <p className="text-3xl font-extrabold text-foreground">{completion}%</p>
-                <p className="text-sm font-semibold text-muted-foreground mb-1">complete</p>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Target className="w-5 h-5 text-primary" />
-            </div>
+      {/* ── Stats grid ──────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Target className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Profile</span>
           </div>
-
-          <div className="mt-4">
-            <div className="h-2 rounded-full bg-surface-2 overflow-hidden border border-border">
-              <div
-                className="h-full bg-primary rounded-full transition-[width] duration-500"
-                style={{ width: `${completion}%` }}
-              />
-            </div>
+          <p className="text-3xl font-black tabular-nums text-foreground">{completion}%</p>
+          <div className="mt-3 h-1.5 rounded-full bg-surface-2 overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${completion}%` }} />
           </div>
-
-          <p className="mt-3 text-xs text-muted-foreground">
-            Fill your profile + goals to unlock smoother preparation.
-          </p>
+          <p className="mt-2 text-[10px] font-semibold text-muted-foreground">Profile completion</p>
         </div>
 
-        <div className="metric-tile p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Score</p>
-              <div className="mt-2 flex items-end gap-2">
-                <p className="text-3xl font-extrabold text-foreground">
-                  {targetScore != null ? targetScore : "—"}
-                </p>
-                <p className="text-sm font-semibold text-muted-foreground mb-1">/ 1600</p>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Trophy className="w-5 h-5 text-primary" />
-            </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Trophy className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Target</span>
           </div>
-
-          <div className="mt-4">
-            <div className="h-2 rounded-full bg-surface-2 overflow-hidden border border-border">
-              <div
-                className="h-full bg-primary rounded-full transition-[width] duration-500"
-                style={{ width: `${targetScore != null ? Math.round((targetScore / 1600) * 100) : 0}%` }}
-              />
-            </div>
-          </div>
-
-          <p className="mt-3 text-xs text-muted-foreground">
-            Your target score guides practice focus.
+          <p className="text-3xl font-black tabular-nums text-foreground">
+            {targetScore != null ? targetScore : "—"}
+            <span className="text-sm font-bold text-muted-foreground ml-1">/ 1600</span>
           </p>
+          <div className="mt-3 h-1.5 rounded-full bg-surface-2 overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${targetScore != null ? Math.round((targetScore / 1600) * 100) : 0}%` }} />
+          </div>
+          <p className="mt-2 text-[10px] font-semibold text-muted-foreground">Goal score</p>
         </div>
 
-        <div className="metric-tile p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Activity</p>
-              <div className="mt-2 flex items-end gap-2">
-                <p className="text-3xl font-extrabold text-foreground">
-                  {nextDays == null ? "—" : nextDays < 0 ? "Done" : nextDays}
-                </p>
-                <p className="text-sm font-semibold text-muted-foreground mb-1">
-                  {nextDays == null ? "" : nextDays < 0 ? "days" : "days"}
-                </p>
-              </div>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <CalendarClock className="w-5 h-5 text-primary" />
-            </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <CalendarClock className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Exam</span>
           </div>
-
-          <p className="mt-3 text-xs text-muted-foreground">
-            {me.sat_exam_date
-              ? `Next milestone: ${formatDate(me.sat_exam_date)}`
-              : "Set your exam date to get a live countdown."}
+          <p className="text-3xl font-black tabular-nums text-foreground">
+            {nextDays == null ? "—" : nextDays < 0 ? "0" : nextDays}
+            <span className="text-sm font-bold text-muted-foreground ml-1">days</span>
+          </p>
+          <p className="mt-2 text-[10px] font-semibold text-muted-foreground">
+            {me.sat_exam_date ? `Until ${formatDate(me.sat_exam_date)}` : "Set your exam date"}
           </p>
         </div>
       </div>
 
-      {/* Results + homework progress */}
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="metric-tile p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Last practice test</p>
-              <p className="text-3xl font-extrabold text-foreground mt-2">
-                {lastPracticeResult?.score != null ? lastPracticeResult.score : "—"}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-primary" />
-            </div>
+      {/* ── Results + homework ──────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <BookOpen className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Last Practice</span>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="text-3xl font-black tabular-nums text-foreground">
+            {lastPracticeResult?.score != null ? lastPracticeResult.score : "—"}
+          </p>
+          <p className="mt-2 text-[10px] font-semibold text-muted-foreground">
             {lastPracticeResult
               ? `${formatSubject(lastPracticeResult.practice_test_details?.subject)} · ${lastPracticeResult.submitted_at ? formatDate(lastPracticeResult.submitted_at) : "Completed"}`
-              : analyticsLoading
-              ? "Loading latest attempt..."
-              : "No completed practice test yet."}
+              : analyticsLoading ? "Loading..." : "No practice test yet"}
           </p>
         </div>
 
-        <div className="metric-tile p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Last mock result</p>
-              <p className="text-3xl font-extrabold text-foreground mt-2">
-                {lastMockResult?.score != null ? lastMockResult.score : "—"}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <Trophy className="w-5 h-5 text-primary" />
-            </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Trophy className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Last Mock</span>
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="text-3xl font-black tabular-nums text-foreground">
+            {lastMockResult?.score != null ? lastMockResult.score : "—"}
+          </p>
+          <p className="mt-2 text-[10px] font-semibold text-muted-foreground">
             {lastMockResult
-              ? `${lastMockResult.mock_exam_title || "Mock exam"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Completed"}`
-              : analyticsLoading
-              ? "Loading mock performance..."
-              : "No completed mock exam yet."}
+              ? `${lastMockResult.mock_exam_title || "Mock exam"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Done"}`
+              : analyticsLoading ? "Loading..." : "No mock exam yet"}
           </p>
         </div>
 
-        <div className="metric-tile p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Homework progress</p>
-              <p className="text-3xl font-extrabold text-foreground mt-2">
-                {analyticsLoading ? "..." : `${homeworkCompletion}%`}
-              </p>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-              <FileText className="w-5 h-5 text-primary" />
-            </div>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <FileText className="w-4 h-4 text-primary" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Homework</span>
           </div>
-          <div className="mt-4">
-            <div className="h-2 rounded-full bg-surface-2 overflow-hidden border border-border">
-              <div
-                className="h-full bg-primary rounded-full transition-[width] duration-500"
-                style={{ width: `${homeworkCompletion}%` }}
-              />
-            </div>
+          <p className="text-3xl font-black tabular-nums text-foreground">
+            {analyticsLoading ? "..." : `${homeworkCompletion}%`}
+          </p>
+          <div className="mt-2 h-1.5 rounded-full bg-surface-2 overflow-hidden">
+            <div className="h-full bg-primary rounded-full transition-[width] duration-500" style={{ width: `${homeworkCompletion}%` }} />
           </div>
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="mt-2 text-[10px] font-semibold text-muted-foreground">
             {analyticsLoading
-              ? "Calculating homework status..."
-              : `${homeworkProgress.submitted}/${homeworkProgress.total} submitted · ${homeworkProgress.pending} pending · ${homeworkProgress.overdue} overdue`}
+              ? "Calculating..."
+              : `${homeworkProgress.submitted}/${homeworkProgress.total} done · ${homeworkProgress.overdue} overdue`}
           </p>
         </div>
       </div>
 
-      {/* Classes + students information */}
-      <div className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="metric-tile p-6 xl:col-span-2">
+      {/* ── Classes + students ──────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="rounded-2xl border border-border bg-card p-5 xl:col-span-2 space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Enrolled classes</p>
-              <h3 className="text-xl font-extrabold text-foreground mt-1">Your class ecosystem</h3>
+            <div className="flex items-center gap-2">
+              <School className="w-4 h-4 text-primary" />
+              <h3 className="text-xs font-extrabold uppercase tracking-wide text-foreground">My Classes</h3>
             </div>
-            <div className="neo-chip">
-              <School className="w-3.5 h-3.5" />
-              {enrolledClasses.length} classes
-            </div>
+            <span className="rounded-lg bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary tabular-nums">
+              {enrolledClasses.length} enrolled
+            </span>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="panel-soft p-4">
-              <p className="text-[11px] uppercase tracking-widest font-black text-muted-foreground">Total classes</p>
-              <p className="text-2xl font-extrabold text-foreground mt-2">{enrolledClasses.length}</p>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-surface-2 p-3 text-center">
+              <p className="text-xl font-black tabular-nums text-foreground">{enrolledClasses.length}</p>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Classes</p>
             </div>
-            <div className="panel-soft p-4">
-              <p className="text-[11px] uppercase tracking-widest font-black text-muted-foreground">Students around you</p>
-              <p className="text-2xl font-extrabold text-foreground mt-2">{totalPeers}</p>
+            <div className="rounded-xl bg-surface-2 p-3 text-center">
+              <p className="text-xl font-black tabular-nums text-foreground">{totalPeers}</p>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Peers</p>
             </div>
-            <div className="panel-soft p-4">
-              <p className="text-[11px] uppercase tracking-widest font-black text-muted-foreground">Active view</p>
-              <p className="text-sm font-bold text-foreground mt-2 line-clamp-2">{selectedClass?.name || "Select class"}</p>
+            <div className="rounded-xl bg-surface-2 p-3 text-center">
+              <p className="text-xs font-bold text-foreground mt-1 line-clamp-2">{selectedClass?.name || "—"}</p>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">Active</p>
             </div>
           </div>
 
@@ -829,19 +753,16 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Sessions */}
-      <div className="mt-6 metric-tile p-6">
+      {/* ── Sessions ──────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Security</p>
-            <h3 className="text-xl font-extrabold text-foreground mt-1">Active sessions</h3>
-            <p className="text-sm text-muted-foreground mt-1">
-              Review where your account is signed in and revoke anything suspicious.
-            </p>
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-primary" />
+            <h3 className="text-xs font-extrabold uppercase tracking-wide text-foreground">Active Sessions</h3>
           </div>
           <button
             type="button"
-            className="btn-secondary"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors"
             disabled={sessionsLoading}
             onClick={async () => {
               setSessionsLoading(true);
@@ -853,12 +774,12 @@ export default function ProfilePage() {
               }
             }}
           >
-            {sessionsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            {sessionsLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
             Refresh
           </button>
         </div>
 
-        <div className="mt-4 space-y-2">
+        <div className="space-y-2">
           {sessionsLoading ? (
             <div className="panel-soft p-6 flex items-center justify-center">
               <Loader2 className="w-5 h-5 animate-spin text-primary" />
@@ -948,19 +869,18 @@ export default function ProfilePage() {
           />
 
           <div className="relative w-full max-w-2xl" role="dialog" aria-modal="true" aria-label="Edit profile">
-            <div className="hero-shell p-6 md:p-8">
+            <div className="rounded-2xl border border-border bg-card p-6 md:p-8 shadow-xl max-h-[90vh] overflow-y-auto">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="eyebrow mb-2">Edit profile</p>
-                  <h2 className="text-xl md:text-2xl font-extrabold text-foreground">Update your identity & goals</h2>
-                  <p className="text-muted-foreground text-sm mt-2">
-                    Photo updates are instant. Other fields save when you confirm.
+                  <h2 className="text-lg font-extrabold text-foreground">Edit Profile</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Photo updates instantly. Other fields save when you confirm.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleCloseEdit}
-                  className="btn-secondary inline-flex items-center justify-center !px-3 !py-2"
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-card p-2 text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors"
                   aria-label="Close modal"
                 >
                   <X className="w-4 h-4" />

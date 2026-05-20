@@ -42,6 +42,14 @@ SAT_MODULE_TIME_LIMIT_MINUTES: dict[str, int] = {
     "MATH": 35,
 }
 
+# ── Section order (R&W must be completed before Math) ───────────────────────
+
+SAT_SECTION_ORDER: list[str] = ["READING_WRITING", "MATH"]
+
+# ── Break between sections (official Digital SAT: 10 minutes) ───────────────
+
+SAT_BREAK_SECONDS: int = 600
+
 # ── Allowed question_type values per section subject ────────────────────────
 #
 # Reading & Writing questions must carry type READING or WRITING.

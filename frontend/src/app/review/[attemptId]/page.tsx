@@ -378,9 +378,17 @@ export default function ReviewPage() {
                             </div>
 
                             <div className="bg-foreground text-background rounded-[32px] px-12 py-8 shadow-xl flex flex-col items-center border-4 border-foreground/80 mb-8">
-                                <p className="text-[11px] font-bold uppercase tracking-[0.3em] opacity-60 mb-2">Overall SAT Score</p>
+                                <p className="text-[11px] font-bold uppercase tracking-[0.3em] opacity-60 mb-2">
+                                  {review.mock_kind === "MOCK_SAT" && review.subject === "READING_WRITING"
+                                    ? "Reading & Writing Score"
+                                    : review.mock_kind === "MOCK_SAT" && review.subject === "MATH"
+                                    ? "Math Score"
+                                    : "Score"}
+                                </p>
                                 <p className="text-7xl font-black tabular-nums">{review.total_score}</p>
-                                <p className="text-[11px] font-bold opacity-40 mt-1 italic">/ 800 Max</p>
+                                <p className="text-[11px] font-bold opacity-40 mt-1 italic">
+                                  {review.mock_kind === "MOCK_SAT" ? "/ 800 Max" : `/ ${review.total_questions} questions`}
+                                </p>
                             </div>
 
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full max-w-3xl">

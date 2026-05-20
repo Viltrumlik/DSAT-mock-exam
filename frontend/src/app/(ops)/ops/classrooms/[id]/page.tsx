@@ -1,8 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { classesApi } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { assessmentsTeacherApi } from "@/features/assessmentsStudent/api";
+import type { SubmissionQueueItem } from "@/features/assessmentsStudent/api";
 import AssignmentDrawer, {
   type DrawerMode,
   type DrawerResult,
@@ -12,6 +15,7 @@ import { AssignmentListSection } from "@/components/ops/AssignmentListSection";
 import { AssessmentClassroomAssignPanel } from "@/components/bulk-assign/AssessmentClassroomAssignPanel";
 import { StudentRosterSection } from "@/components/ops/StudentRosterSection";
 import { ActivityFeedSection } from "@/components/ops/ActivityFeedSection";
+import { InterventionPanel } from "@/components/ops/InterventionPanel";
 import { OpsPageHeader } from "@/components/ops/ui";
 import type {
   AssignmentSummary,
@@ -20,8 +24,12 @@ import type {
 } from "@/components/ops/ClassroomOverviewPanel";
 import {
   Activity,
+  AlertTriangle,
   BookOpen,
+  Check,
+  Inbox,
   Loader2,
+  MessageSquare,
   RefreshCw,
   School,
   Users,
@@ -30,7 +38,248 @@ import { cn } from "@/lib/cn";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "overview" | "assignments" | "students" | "activity";
+type Tab = "overview" | "assignments" | "students" | "activity" | "interventions" | "submissions";
+
+// ─── Submissions Panel ────────────────────────────────────────────────────────
+
+function SubmissionsPanel({ classroomId }: { classroomId: number }) {
+  const router = useRouter();
+  const [statusFilter, setStatusFilter] = useState<"all" | "submitted" | "graded">("all");
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["teacher-submission-queue", classroomId, statusFilter],
+    queryFn: () => assessmentsTeacherApi.submissionQueue({ classroom_id: classroomId, status: statusFilter }),
+    staleTime: 60_000,
+  });
+
+  const items = data?.items ?? [];
+
+  const pendingGrading = items.filter((i) => i.status === "submitted").length;
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">Failed to load submissions.</p>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Summary strip */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-sm font-bold text-foreground">{data?.count ?? 0} submissions</span>
+        {pendingGrading > 0 && (
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+            <Loader2 className="h-3 w-3" />
+            {pendingGrading} pending grading
+          </span>
+        )}
+        {/* Status filter */}
+        <div className="ml-auto flex gap-1">
+          {(["all", "submitted", "graded"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                "rounded-lg px-2.5 py-1 text-xs font-bold transition-colors capitalize",
+                statusFilter === s
+                  ? "bg-foreground text-background"
+                  : "border border-border text-muted-foreground hover:bg-surface-2",
+              )}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-12 text-center">
+          <Inbox className="mx-auto h-8 w-8 text-muted-foreground/40 mb-3" />
+          <p className="text-sm font-semibold text-foreground">No submissions yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Submissions will appear here when students complete their assessments.
+          </p>
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="divide-y divide-border">
+            {items.map((item) => (
+              <SubmissionRow
+                key={item.attempt_id}
+                item={item}
+                classroomId={classroomId}
+                onReview={() => router.push(`/assessments/review/${item.attempt_id}`)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FeedbackButton({
+  attemptId,
+  hasFeedback,
+  classroomId,
+}: {
+  attemptId: number;
+  hasFeedback: boolean;
+  classroomId: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState("");
+  const [saved, setSaved] = useState(false);
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () => assessmentsTeacherApi.setFeedback(attemptId, body),
+    onSuccess: () => {
+      setSaved(true);
+      setOpen(false);
+      setBody("");
+      // Refresh submission queue so has_feedback updates
+      queryClient.invalidateQueries({ queryKey: ["teacher-submission-queue", classroomId] });
+      setTimeout(() => setSaved(false), 3000);
+    },
+  });
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors",
+          hasFeedback || saved
+            ? "border-primary/30 bg-primary/10 text-primary"
+            : "border-border text-muted-foreground hover:bg-surface-2",
+        )}
+      >
+        {saved ? (
+          <span className="flex items-center gap-1">
+            <Check className="h-3 w-3" /> Sent
+          </span>
+        ) : (
+          <span className="flex items-center gap-1">
+            <MessageSquare className="h-3 w-3" />
+            {hasFeedback ? "Edit feedback" : "Add feedback"}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 z-20 w-72 rounded-2xl border border-border bg-card shadow-xl p-4 space-y-3">
+          <p className="text-xs font-bold text-foreground">Write feedback for student</p>
+          <textarea
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Add instructional feedback, encouragement, or guidance for this student…"
+            rows={4}
+            maxLength={2000}
+            className="w-full rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-muted-foreground">{body.length}/2000</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-surface-2 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!body.trim() || mutation.isPending}
+                onClick={() => mutation.mutate()}
+                className="rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-40 transition-colors"
+              >
+                {mutation.isPending ? "Saving…" : "Send feedback"}
+              </button>
+            </div>
+          </div>
+          {mutation.isError && (
+            <p className="text-xs text-red-600">Failed to save feedback. Please try again.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SubmissionRow({
+  item,
+  onReview,
+  classroomId,
+}: {
+  item: SubmissionQueueItem;
+  onReview: () => void;
+  classroomId: number;
+}) {
+  const isGraded = item.status === "graded";
+  const percent = item.result_percent;
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2/50 transition-colors">
+      {/* Score indicator */}
+      <div
+        className={cn(
+          "shrink-0 flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black",
+          isGraded && percent !== null
+            ? percent >= 80
+              ? "bg-emerald-100 text-emerald-700"
+              : percent >= 60
+                ? "bg-amber-100 text-amber-700"
+                : "bg-red-100 text-red-700"
+            : "bg-surface-2 text-muted-foreground",
+        )}
+      >
+        {isGraded && percent !== null ? `${Math.round(percent)}%` : "…"}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-foreground truncate">{item.student_name}</p>
+        <p className="text-xs text-muted-foreground truncate">
+          {item.assignment_title ?? "Assessment"}
+          {item.submitted_at && (
+            <span className="ml-1">
+              · {new Date(item.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
+          )}
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        {!isGraded && (
+          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 rounded-lg px-2 py-0.5">
+            Grading…
+          </span>
+        )}
+        <FeedbackButton
+          attemptId={item.attempt_id}
+          hasFeedback={item.has_feedback}
+          classroomId={classroomId}
+        />
+        <button
+          type="button"
+          onClick={onReview}
+          className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+        >
+          Review
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ─── Tab bar ──────────────────────────────────────────────────────────────────
 
@@ -207,7 +456,9 @@ function ClassroomOpsPageInner() {
           onClick={setTab}
         />
         <TabButton value="students" current={tab} icon={Users} label="Students" onClick={setTab} />
+        <TabButton value="submissions" current={tab} icon={Inbox} label="Submissions" onClick={setTab} />
         <TabButton value="activity" current={tab} icon={Activity} label="Activity" onClick={setTab} />
+        <TabButton value="interventions" current={tab} icon={AlertTriangle} label="Interventions" onClick={setTab} />
       </div>
 
       {/* Tab content */}
@@ -256,7 +507,9 @@ function ClassroomOpsPageInner() {
         </div>
       )}
       {tab === "students" && <StudentRosterSection people={people} />}
+      {tab === "submissions" && <SubmissionsPanel classroomId={classroomId} />}
       {tab === "activity" && <ActivityFeedSection classroomId={classroomId} />}
+      {tab === "interventions" && <InterventionPanel classroomId={classroomId} />}
 
       {drawer && (
         <AssignmentDrawer mode={drawer} onClose={() => setDrawer(null)} onSaved={handleSaved} />

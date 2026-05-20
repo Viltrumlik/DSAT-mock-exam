@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
 
-/** If auth is still BOOTING after this many ms, force-redirect to /login rather than spinning forever. */
 const BOOT_TIMEOUT_MS = 12_000;
+const BOOT_SLOW_MS = 5_000;
 
 function consoleFromHostname(): "admin" | "questions" | "main" {
     if (typeof window === "undefined") return "main";
@@ -54,26 +54,24 @@ export default function AuthGuard({
     const router = useRouter();
     const { bootState, me } = useMe();
     const bootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [bootSlow, setBootSlow] = useState(false);
+    const [bootTimedOut, setBootTimedOut] = useState(false);
 
-    // Safety net: if BOOTING for too long (e.g. a stuck promise), force redirect to login.
     useEffect(() => {
         if (isOptional) return;
         if (bootState === "BOOTING") {
-            bootTimerRef.current = setTimeout(() => {
-                // Still booting after timeout — something is stuck; go to login.
-                window.location.href = "/login";
-            }, BOOT_TIMEOUT_MS);
+            slowTimerRef.current = setTimeout(() => setBootSlow(true), BOOT_SLOW_MS);
+            bootTimerRef.current = setTimeout(() => setBootTimedOut(true), BOOT_TIMEOUT_MS);
         } else {
-            if (bootTimerRef.current !== null) {
-                clearTimeout(bootTimerRef.current);
-                bootTimerRef.current = null;
-            }
+            setBootSlow(false);
+            setBootTimedOut(false);
+            if (bootTimerRef.current !== null) { clearTimeout(bootTimerRef.current); bootTimerRef.current = null; }
+            if (slowTimerRef.current !== null) { clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
         }
         return () => {
-            if (bootTimerRef.current !== null) {
-                clearTimeout(bootTimerRef.current);
-                bootTimerRef.current = null;
-            }
+            if (bootTimerRef.current !== null) { clearTimeout(bootTimerRef.current); bootTimerRef.current = null; }
+            if (slowTimerRef.current !== null) { clearTimeout(slowTimerRef.current); slowTimerRef.current = null; }
         };
     }, [bootState, isOptional]);
 
@@ -126,9 +124,39 @@ export default function AuthGuard({
     }
 
     if (bootState === "BOOTING") {
+        if (bootTimedOut) {
+            return (
+                <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-6">
+                    <AlertTriangle className="h-8 w-8 text-amber-500" />
+                    <p className="text-sm font-semibold text-foreground text-center max-w-sm">
+                        Taking too long to verify your session.
+                    </p>
+                    <p className="text-xs text-muted-foreground text-center max-w-sm">
+                        This usually means the server is unreachable or your session has expired.
+                    </p>
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+                        >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Retry
+                        </button>
+                        <Link href="/login" className="text-sm font-semibold text-primary underline">
+                            Sign in
+                        </Link>
+                    </div>
+                </div>
+            );
+        }
         return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
+            <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
                 <Loader2 className="h-10 w-10 animate-spin text-primary/60" aria-label="Loading" />
+                {bootSlow && (
+                    <p className="text-xs text-muted-foreground animate-in fade-in duration-300">
+                        Verifying your session...
+                    </p>
+                )}
             </div>
         );
     }

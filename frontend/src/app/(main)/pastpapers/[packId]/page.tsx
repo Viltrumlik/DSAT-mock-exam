@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Eye,
   Play,
+  Trophy,
 } from "lucide-react";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -39,33 +40,57 @@ function subjectLabel(subject: string): string {
 }
 
 function totalMinutes(section: PastpaperPackSection): number {
-  // Section serializer returns module_count; we don't have per-module times here.
-  // Approximate: 2 modules × 32 min for R&W, 2 × 35 min for Math.
   if (isRWSubject(section.subject)) return section.module_count * 32;
   return section.module_count * 35;
 }
 
+// ─── sentinel error: server-enforced break ───────────────────────────────────
+
+class BreakRequiredError extends Error {
+  breakEndsAt: string;
+  constructor(breakEndsAt: string) {
+    super("break_required");
+    this.breakEndsAt = breakEndsAt;
+  }
+}
+
 // ─── section card ─────────────────────────────────────────────────────────────
 
-type AttemptRow = { id: number; practice_test: number; is_completed: boolean; is_expired: boolean };
+type AttemptRow = {
+  id: number;
+  practice_test: number;
+  is_completed: boolean;
+  is_expired: boolean;
+  score?: number | null;
+};
 
 function SectionCard({
   section,
   attempts,
   onStart,
   starting,
+  locked,
+  lockReason,
 }: {
   section: PastpaperPackSection;
   attempts: AttemptRow[];
   onStart: (sectionId: number) => void;
   starting: number | null;
+  locked?: boolean;
+  lockReason?: string;
 }) {
   const rw = isRWSubject(section.subject);
   const Icon = rw ? BookOpen : Calculator;
   const iconColor = rw ? "text-primary" : "text-emerald-600";
   const iconBg = rw ? "bg-primary/8" : "bg-emerald-50";
-  const borderColor = rw ? "border-primary/20" : "border-emerald-200";
-  const ctaClass = rw
+  const borderColor = locked
+    ? "border-border"
+    : rw
+    ? "border-primary/20"
+    : "border-emerald-200";
+  const ctaClass = locked
+    ? "bg-surface-2 text-muted-foreground cursor-not-allowed"
+    : rw
     ? "bg-primary text-primary-foreground hover:bg-primary/90"
     : "bg-emerald-600 text-white hover:bg-emerald-700";
 
@@ -78,7 +103,7 @@ function SectionCard({
   const isLoading = starting === section.id;
 
   return (
-    <div className={`rounded-2xl border-2 ${borderColor} bg-card p-5 flex flex-col gap-4`}>
+    <div className={`rounded-2xl border-2 ${borderColor} bg-card p-5 flex flex-col gap-4 ${locked ? "opacity-60" : ""}`}>
       {/* Icon + labels */}
       <div className="flex items-start gap-4">
         <div className={`shrink-0 rounded-2xl p-3 ${iconBg}`}>
@@ -98,12 +123,26 @@ function SectionCard({
                 In progress
               </span>
             )}
+            {locked && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold text-muted-foreground border border-border">
+                Locked
+              </span>
+            )}
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {section.module_count} module{section.module_count !== 1 ? "s" : ""} ·{" "}
             {totalMinutes(section)} min
             {section.form_type === "US" ? " · US Form" : " · International"}
           </p>
+          {isCompleted && completedAttempt?.score != null && (
+            <p className="mt-1 text-xs font-bold text-foreground">
+              Score: <span className="text-primary">{completedAttempt.score}</span>
+              <span className="font-normal text-muted-foreground"> / 800</span>
+            </p>
+          )}
+          {locked && lockReason && (
+            <p className="mt-1 text-xs text-muted-foreground">{lockReason}</p>
+          )}
         </div>
       </div>
 
@@ -120,8 +159,8 @@ function SectionCard({
             </Link>
             <button
               type="button"
-              onClick={() => onStart(section.id)}
-              disabled={isLoading}
+              onClick={() => !locked && onStart(section.id)}
+              disabled={isLoading || locked}
               className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors ${ctaClass}`}
             >
               {isLoading ? (
@@ -137,8 +176,8 @@ function SectionCard({
         ) : (
           <button
             type="button"
-            onClick={() => onStart(section.id)}
-            disabled={isLoading}
+            onClick={() => !locked && onStart(section.id)}
+            disabled={isLoading || locked}
             className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold shadow-sm transition-colors ${ctaClass}`}
           >
             {isLoading ? (
@@ -165,18 +204,35 @@ function CombinedScoreBanner({
   pack: PastpaperPackPublic;
   attempts: AttemptRow[];
 }) {
-  // Show only when every section has a completed attempt with a score
   const completedAttempts = pack.sections.map((s) =>
     attempts.find((a) => a.practice_test === s.id && a.is_completed),
   );
   if (completedAttempts.some((a) => !a)) return null;
 
+  // Compute composite score if all section scores are available.
+  const scores = completedAttempts.map((a) => a?.score ?? null);
+  const allHaveScores = scores.every((s) => s != null);
+  const composite = allHaveScores
+    ? Math.min(1600, scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0) ?? 0)
+    : null;
+
   return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
-      <p className="text-xs font-bold uppercase tracking-widest text-emerald-700 mb-1">All sections complete</p>
-      <p className="text-sm text-emerald-800 leading-relaxed">
-        You&apos;ve finished all sections of this past paper. Review each section to see your answers and explanations.
-      </p>
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-5">
+      <div className="flex items-center gap-3 mb-2">
+        <Trophy className="h-5 w-5 text-emerald-600 shrink-0" />
+        <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">All sections complete</p>
+      </div>
+      {composite != null ? (
+        <div className="flex items-baseline gap-2">
+          <span className="text-4xl font-black text-emerald-900 tabular-nums">{composite}</span>
+          <span className="text-sm font-bold text-emerald-700">/ 1600</span>
+          <span className="text-xs text-emerald-600 ml-1">composite SAT score</span>
+        </div>
+      ) : (
+        <p className="text-sm text-emerald-800 leading-relaxed">
+          Review each section to see your answers and explanations.
+        </p>
+      )}
     </div>
   );
 }
@@ -194,7 +250,7 @@ function PastpaperPackDetailInner() {
   const [attempts, setAttempts] = useState<AttemptRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [starting, setStarting] = useState<number | null>(null); // section id being started
+  const [starting, setStarting] = useState<number | null>(null);
 
   useEffect(() => {
     if (!id || !Number.isFinite(id)) return;
@@ -209,9 +265,8 @@ function PastpaperPackDetailInner() {
         if (!cancelled) {
           setPack(packData);
           setAttempts(
-            (attData.items as AttemptRow[]).filter(
-              (a) =>
-                packData.sections.some((s) => s.id === a.practice_test),
+            (attData.items as AttemptRow[]).filter((a) =>
+              packData.sections.some((s) => s.id === a.practice_test),
             ),
           );
         }
@@ -229,24 +284,60 @@ function PastpaperPackDetailInner() {
     };
   }, [id, isAuthenticated]);
 
+  // Sort: R&W first, then Math.
+  const sorted = [...(pack?.sections ?? [])].sort((a, b) => {
+    return (isRWSubject(a.subject) ? 0 : 1) - (isRWSubject(b.subject) ? 0 : 1);
+  });
+
+  // Derive locking state: Math is locked until R&W is completed.
+  const rwSection = sorted.find((s) => isRWSubject(s.subject));
+  const rwDone = !!attempts.find((a) => a.practice_test === rwSection?.id && a.is_completed);
+  // Find the last completed R&W attempt to compute break status.
+  const rwCompletedAttempt = attempts
+    .filter((a) => a.practice_test === rwSection?.id && a.is_completed)
+    .sort((a, b) => b.id - a.id)[0];
+
   const handleStart = async (sectionId: number) => {
     if (!assertCriticalAuth()) return;
     setStarting(sectionId);
     try {
-      // Re-use or create attempt for this section
       let attempt = attempts.find(
         (a) => a.practice_test === sectionId && !a.is_completed && !a.is_expired,
       );
       if (!attempt) {
-        attempt = (await examsStudentApi.startTest(sectionId)) as AttemptRow;
+        try {
+          attempt = (await examsStudentApi.startTest(sectionId)) as AttemptRow;
+        } catch (e: unknown) {
+          // Server-enforced break: backend rejects Math start until break has elapsed.
+          const resp = (e as { response?: { data?: { code?: string; break_ends_at?: string } } })?.response;
+          if (resp?.data?.code === "break_required" && resp.data.break_ends_at) {
+            throw new BreakRequiredError(resp.data.break_ends_at);
+          }
+          // Server-enforced section ordering.
+          if (resp?.data?.code === "section_order_violation") {
+            throw new Error("section_order_violation");
+          }
+          throw e;
+        }
         setAttempts((prev) => [...prev, attempt!]);
       }
-      // Bootstrap cache
       try {
         sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
       } catch {}
       router.push(`/exam/${attempt.id}`);
     } catch (e) {
+      if (e instanceof BreakRequiredError) {
+        // Redirect to the pastpaper break page with the server timestamp.
+        router.push(
+          `/pastpapers/${packId}/break?rwAttempt=${rwCompletedAttempt?.id ?? ""}&breakEndsAt=${encodeURIComponent(e.breakEndsAt)}`,
+        );
+        return;
+      }
+      if (e instanceof Error && e.message === "section_order_violation") {
+        // Silently handled — the UI already locks Math until R&W is done.
+        setStarting(null);
+        return;
+      }
       console.error("[pastpaper] start section failed", e);
       setStarting(null);
     }
@@ -273,13 +364,6 @@ function PastpaperPackDetailInner() {
     );
   }
 
-  // Sort sections: R&W first, then Math
-  const sorted = [...pack.sections].sort((a, b) => {
-    const aRW = isRWSubject(a.subject) ? 0 : 1;
-    const bRW = isRWSubject(b.subject) ? 0 : 1;
-    return aRW - bRW;
-  });
-
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
       {/* Back */}
@@ -305,7 +389,8 @@ function PastpaperPackDetailInner() {
           {formatDate(pack.practice_date)}
         </p>
         <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-          Complete each section to simulate SAT conditions — start Reading &amp; Writing, then Mathematics. After finishing a section, review every question with full explanations.
+          Simulate authentic SAT conditions — complete Reading &amp; Writing first, then take a
+          10-minute break, then Mathematics. Pacing and sequencing are enforced automatically.
         </p>
       </div>
 
@@ -323,15 +408,34 @@ function PastpaperPackDetailInner() {
         </div>
       ) : (
         <div className="grid gap-4">
-          {sorted.map((section) => (
-            <SectionCard
-              key={section.id}
-              section={section}
-              attempts={attempts}
-              onStart={handleStart}
-              starting={starting}
-            />
-          ))}
+          {sorted.map((section) => {
+            const isMath = !isRWSubject(section.subject);
+            const locked = isMath && !rwDone;
+            return (
+              <SectionCard
+                key={section.id}
+                section={section}
+                attempts={attempts}
+                onStart={handleStart}
+                starting={starting}
+                locked={locked}
+                lockReason={locked ? "Complete Reading & Writing first to unlock Mathematics." : undefined}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Break state notice */}
+      {rwDone && !attempts.find((a) => !isRWSubject(sorted.find((s) => s.id === a.practice_test)?.subject ?? "") && a.is_completed) && (
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <p className="text-xs font-bold uppercase tracking-widest text-amber-700 mb-1">
+            Reading &amp; Writing complete
+          </p>
+          <p className="text-sm text-amber-800">
+            Take a 10-minute break before starting Mathematics — the official SAT requires it.
+            The timer will start automatically when you click Start on the Mathematics section.
+          </p>
         </div>
       )}
     </div>

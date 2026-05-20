@@ -45,13 +45,31 @@ function MockExamDetailInner() {
     void fetchData();
   }, [id, isLoggedInProbe]);
 
+  // Sentinel error type for server-enforced break.
+  class BreakRequiredError extends Error {
+    breakEndsAt: string;
+    constructor(breakEndsAt: string) {
+      super("break_required");
+      this.breakEndsAt = breakEndsAt;
+    }
+  }
+
   const getOrCreateAttempt = async (testId: number) => {
     let attempt = attempts.find((a) => a.practice_test === testId && !a.is_expired && !a.is_completed);
     if (!attempt) {
       if (!assertCriticalAuth()) {
         throw new Error("AUTH_ACTION_BLOCKED");
       }
-      attempt = await examsPublicApi.startTest(testId);
+      try {
+        attempt = await examsPublicApi.startTest(testId);
+      } catch (e: unknown) {
+        // Server-enforced break: backend rejects Math start until break elapses.
+        const resp = (e as { response?: { data?: { code?: string; break_ends_at?: string } } })?.response;
+        if (resp?.data?.code === "break_required" && resp.data.break_ends_at) {
+          throw new BreakRequiredError(resp.data.break_ends_at);
+        }
+        throw e;
+      }
       setAttempts([...attempts, attempt]);
     }
     return attempt;
@@ -70,6 +88,13 @@ function MockExamDetailInner() {
       } catch {}
       router.push(`/exam/${attempt.id}${querySuffix}`);
     } catch (e) {
+      if (e instanceof BreakRequiredError) {
+        // Server says break hasn't elapsed — redirect to break page with server timestamp.
+        router.push(
+          `/mock/${mockIdStr}/break?rwAttempt=${rwAttempt?.id ?? ""}&breakEndsAt=${encodeURIComponent(e.breakEndsAt)}`
+        );
+        return;
+      }
       console.error("Failed to start module", e);
       setStartingModuleId(null);
     }

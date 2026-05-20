@@ -253,8 +253,9 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
 class PastpaperPackStudentListView(generics.ListAPIView):
     """
     Student-facing pastpaper pack hub: returns packs that have at least one
-    section with questions.  Students see only packs that have at least one
-    section explicitly assigned to them; teachers/admins/super_admins see all.
+    section with questions.  Students see only published packs that have at
+    least one section explicitly assigned to them.
+    Teachers/admins/super_admins see all packs (published or not).
     """
 
     permission_classes = [AllowAny]
@@ -274,9 +275,12 @@ class PastpaperPackStudentListView(generics.ListAPIView):
         if not user.is_authenticated:
             return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
-            # Only packs where at least one section (PracticeTest) is assigned to this student.
-            return base.filter(sections__assigned_users=user).distinct()
-        # Teachers, admins, super_admins: full catalog.
+            # Students only see published packs they are assigned to.
+            return base.filter(
+                is_published=True,
+                sections__assigned_users=user,
+            ).distinct()
+        # Teachers, admins, super_admins: full catalog (published + unpublished).
         return base
 
 
@@ -299,7 +303,8 @@ class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
         if not user.is_authenticated:
             return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
-            return base.filter(sections__assigned_users=user).distinct()
+            # Students can only access their assigned published packs.
+            return base.filter(is_published=True, sections__assigned_users=user).distinct()
         return base
 
 
@@ -525,6 +530,63 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # ── SAT section-order + break enforcement (MOCK_SAT and Pastpapers) ────
+        # R&W must be completed before Math. After R&W completes the student
+        # must wait SAT_BREAK_SECONDS before the Math section unlocks.
+        # Both MOCK_SAT exams and standalone PastpaperPacks are full SAT
+        # simulations and therefore inherit identical realism enforcement.
+        test_mock = getattr(test, "mock_exam", None)
+        test_pack = getattr(test, "pastpaper_pack", None)
+        is_sat_simulation = (
+            (test_mock is not None and test_mock.kind == MockExam.KIND_MOCK_SAT)
+            or test_pack is not None
+        )
+        if is_sat_simulation and test.subject == "MATH":
+            from .sat_rules import SAT_BREAK_SECONDS
+            from datetime import timedelta
+            # Locate the student's completed R&W attempt for the same exam context.
+            if test_mock is not None:
+                rw_filter: dict = {
+                    "practice_test__mock_exam": test_mock,
+                    "practice_test__subject": "READING_WRITING",
+                }
+            else:
+                rw_filter = {
+                    "practice_test__pastpaper_pack": test_pack,
+                    "practice_test__subject": "READING_WRITING",
+                }
+            rw_attempt = (
+                TestAttempt.objects.filter(
+                    student=user,
+                    is_completed=True,
+                    **rw_filter,
+                )
+                .order_by("-completed_at")
+                .first()
+            )
+            if rw_attempt is None:
+                return Response(
+                    {
+                        "code": "section_order_violation",
+                        "detail": "Complete the Reading & Writing section before starting Math.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            # Break timer starts when R&W module 2 was submitted (or at completion).
+            break_start = rw_attempt.module_2_submitted_at or rw_attempt.completed_at
+            if break_start is not None:
+                break_ends_at = break_start + timedelta(seconds=SAT_BREAK_SECONDS)
+                now = timezone.now()
+                if now < break_ends_at:
+                    return Response(
+                        {
+                            "code": "break_required",
+                            "detail": "break_required",
+                            "break_ends_at": break_ends_at.isoformat(),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
         # Get-or-create active attempt (concurrency-safe under DB constraint).
         # Business rule: abandoning is recoverable, so we reuse the latest abandoned attempt
         # only if there is no other canonical active (non-abandoned) attempt.
@@ -538,7 +600,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     # Important for SQLite (test runner): avoid SELECT ... FOR UPDATE on the table
                     # before attempting an insert, as it can trigger "database table is locked" under threads.
                     try:
-                        attempt = TestAttempt.objects.create(student=request.user, practice_test=test)
+                        attempt = TestAttempt.objects.create(
+                        student=request.user,
+                        practice_test=test,
+                        mock_exam=getattr(test, "mock_exam", None),
+                    )
                     except IntegrityError:
                         # Reset rollback flag after IntegrityError so we can still query in this atomic block.
                         transaction.set_rollback(False)
@@ -988,6 +1054,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         
         total_skipped = total_questions - total_answered
         
+        pt = attempt.practice_test
+        mock = getattr(pt, "mock_exam", None)
         return Response({
             'questions': questions_data,
             'module_results': attempt.get_module_results(),
@@ -997,7 +1065,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             'total_incorrect': total_questions - total_correct - total_skipped,
             'total_skipped': total_skipped,
             'total_score': attempt.score,
-            'score_percentage': (total_correct / total_questions * 100) if total_questions > 0 else 0
+            'score_percentage': (total_correct / total_questions * 100) if total_questions > 0 else 0,
+            # Section context — used by the review page to render the correct score label.
+            'subject': getattr(pt, 'subject', None),
+            'mock_kind': getattr(mock, 'kind', None),
         })
 
     @action(detail=True, methods=["get"])
@@ -1248,6 +1319,34 @@ class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
             .first()
         )
         return Response(AdminPracticeTestSerializer(pt).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def publish(self, request, pk=None):
+        """Mark a pastpaper pack as published (visible to assigned students)."""
+        from .sat_rules import pastpaper_pack_publish_violations
+        pack = self.get_object()
+        violations = pastpaper_pack_publish_violations(pack)
+        blocking = [v for v in violations if v.blocking]
+        if blocking:
+            return Response(
+                {
+                    "detail": "Cannot publish: pack has blocking SAT violations.",
+                    "violations": [{"code": v.code, "message": v.message} for v in blocking],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        pack.is_published = True
+        pack.published_at = timezone.now()
+        pack.save(update_fields=["is_published", "published_at", "updated_at"])
+        return Response(self.get_serializer(pack).data)
+
+    @action(detail=True, methods=["post"])
+    def unpublish(self, request, pk=None):
+        """Retract a pastpaper pack from student view."""
+        pack = self.get_object()
+        pack.is_published = False
+        pack.save(update_fields=["is_published", "updated_at"])
+        return Response(self.get_serializer(pack).data)
 
 
 class AdminPracticeTestViewSet(viewsets.ModelViewSet):

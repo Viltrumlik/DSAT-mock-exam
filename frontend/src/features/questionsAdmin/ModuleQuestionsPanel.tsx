@@ -323,13 +323,15 @@ function QuestionEditor({
           </div>
           <div>
             <label className={FIELD_LABEL}>Score weight</label>
-            <input
+            <select
               className={INPUT}
-              type="number"
-              min={1}
               value={draft.score}
               onChange={(e) => patch({ score: Number(e.target.value) })}
-            />
+            >
+              <option value={10}>10 ball</option>
+              <option value={20}>20 ball</option>
+              <option value={40}>40 ball</option>
+            </select>
           </div>
         </div>
 
@@ -696,6 +698,9 @@ function SortableQRow({
               INPUT
             </span>
           )}
+          <span className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-extrabold tabular-nums text-emerald-700">
+            {q.score ?? 10}b
+          </span>
           {hasTypeMismatch && (
             <span title="Wrong question type for this section">
               <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />
@@ -843,6 +848,12 @@ export default function ModuleQuestionsPanel(props: {
 
   const mutationBusy = create.isPending || reorderBulk.isPending;
 
+  // ── Score calculator ──────────────────────────────────────────────────────
+  const totalScore = React.useMemo(
+    () => questions.reduce((sum, q) => sum + (q.score ?? 10), 0),
+    [questions],
+  );
+
   // ── SAT progress ───────────────────────────────────────────────────────────
   // Computed before handleAdd so `atCapacity` is in scope for the guard.
   const progress = getModuleProgress(questions.length, sectionSubject);
@@ -977,6 +988,24 @@ export default function ModuleQuestionsPanel(props: {
       {(reorderErrMsg || createErrMsg) && (
         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800">
           {reorderErrMsg ?? createErrMsg}
+        </div>
+      )}
+
+      {/* Score calculator */}
+      {!isLoading && questions.length > 0 && (
+        <div className="mb-4 flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10">
+            <span className="text-sm font-black text-primary">Σ</span>
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-widest text-primary/70">Jami ball</p>
+            <p className="text-lg font-black tabular-nums text-primary leading-tight">
+              {totalScore}
+              <span className="ml-2 text-xs font-semibold text-muted-foreground">
+                ({questions.length} ta savol)
+              </span>
+            </p>
+          </div>
         </div>
       )}
 

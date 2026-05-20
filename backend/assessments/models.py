@@ -514,6 +514,43 @@ class AssessmentResult(models.Model):
         ordering = ["-graded_at", "-id"]
 
 
+class AssessmentAttemptFeedback(models.Model):
+    """
+    Lightweight instructional feedback written by a teacher on a student's
+    assessment attempt.
+
+    One feedback record per attempt — teachers may update it in place (this is
+    not a discussion thread; it is a single instructional note per submission).
+
+    Intentionally minimal:
+    - No threading, no reactions, no mentions.
+    - Read by students after submission via the pedagogical review bundle.
+    - Written by teachers via the ops intervention panel.
+    """
+
+    attempt = models.OneToOneField(
+        AssessmentAttempt,
+        on_delete=models.CASCADE,
+        related_name="teacher_feedback",
+    )
+    teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="assessment_feedbacks_given",
+    )
+    body = models.TextField(max_length=2000)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "assessment_attempt_feedback"
+        ordering = ["-updated_at"]
+
+    def __str__(self) -> str:
+        return f"Feedback on attempt #{self.attempt_id} by {self.teacher_id}"
+
+
 class GovernanceEvent(models.Model):
     """
     Immutable, append-only audit event store for all governance actions.

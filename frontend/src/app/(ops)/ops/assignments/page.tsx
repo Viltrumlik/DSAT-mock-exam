@@ -46,14 +46,64 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ClassroomWithRole = Classroom & { my_role?: string; subject?: string };
+type ClassroomWithRole = Classroom & { my_role?: string; subject?: string; members_count?: number };
 
 type AssignmentRow = Assignment & {
   classroomId: number;
   classroomName: string;
   subject?: string;
   lifecycleState: AssignmentLifecycleState;
+  /** Total members in the classroom (includes teacher — used as denominator for progress). */
+  classroomMemberCount?: number;
 };
+
+// ─── Submission progress component ───────────────────────────────────────────
+
+function SubmissionProgress({
+  submitted,
+  total,
+  isOverdue,
+}: {
+  submitted: number;
+  total: number | null;
+  isOverdue: boolean;
+}) {
+  // When total is unknown, fall back to raw count
+  if (!total || total <= 0) {
+    return (
+      <span className={cn("font-semibold tabular-nums", isOverdue && submitted === 0 ? "text-red-600" : "text-foreground")}>
+        {submitted} submission{submitted !== 1 ? "s" : ""}
+      </span>
+    );
+  }
+
+  // Treat members_count - 1 as student count (subtract teacher)
+  const studentCount = Math.max(1, total - 1);
+  const pct = Math.min(100, Math.round((submitted / studentCount) * 100));
+
+  const barColor =
+    isOverdue && submitted === 0
+      ? "bg-red-400"
+      : pct >= 80
+        ? "bg-emerald-400"
+        : pct >= 50
+          ? "bg-amber-400"
+          : "bg-border";
+
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <div className="flex-1 min-w-[60px] max-w-[80px] h-1.5 rounded-full bg-border overflow-hidden">
+        <div
+          className={cn("h-full rounded-full transition-all", barColor)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className={cn("text-xs font-bold tabular-nums shrink-0", isOverdue && submitted === 0 ? "text-red-600" : "text-muted-foreground")}>
+        {submitted}/{studentCount}
+      </span>
+    </div>
+  );
+}
 
 // ─── Lifecycle filter config ──────────────────────────────────────────────────
 
@@ -69,6 +119,7 @@ const LIFECYCLE_FILTERS: {
   { value: "OVERDUE",     label: "Overdue",    icon: AlertTriangle,  activeClasses: "border-red-300 bg-red-100 text-red-800" },
   { value: "DUE_SOON",    label: "Due soon",   icon: Timer,          activeClasses: "border-orange-300 bg-orange-100 text-orange-800" },
   { value: "ACTIVE",      label: "Active",     icon: Zap,            activeClasses: "border-emerald-300 bg-emerald-100 text-emerald-800" },
+  { value: "SCHEDULED",   label: "Scheduled",  icon: Calendar,       activeClasses: "border-violet-300 bg-violet-100 text-violet-800" },
   { value: "COMPLETED",   label: "Completed",  icon: CheckCircle2,   activeClasses: "border-teal-300 bg-teal-100 text-teal-800" },
   { value: "NO_DEADLINE", label: "No deadline",icon: InfinityIcon,   activeClasses: "border-sky-300 bg-sky-100 text-sky-800" },
 ];
@@ -184,6 +235,7 @@ export default function OpsAssignmentsPage() {
           classroomName: classroom?.name ?? `Class #${classroomId}`,
           subject: classroom?.subject,
           lifecycleState: deriveAssignmentLifecycleState(a),
+          classroomMemberCount: (classroom as ClassroomWithRole)?.members_count,
         }));
         setAssignments(sortByLifecyclePriority(rows));
       } catch {
@@ -210,6 +262,7 @@ export default function OpsAssignmentsPage() {
   const filterCounts = useMemo(
     () => ({
       ALL: assignments.length,
+      SCHEDULED: summary.scheduled,
       OVERDUE: summary.overdue,
       DUE_SOON: summary.dueSoon,
       ACTIVE: summary.active,
@@ -499,16 +552,11 @@ export default function OpsAssignmentsPage() {
                           <Calendar className="h-3 w-3 shrink-0" />
                           {dueFull}
                         </span>
-                        <span
-                          className={cn(
-                            "font-semibold",
-                            a.lifecycleState === "OVERDUE" && a.submissions_count === 0
-                              ? "text-red-600"
-                              : "text-foreground",
-                          )}
-                        >
-                          {a.submissions_count ?? 0} submission{(a.submissions_count ?? 0) === 1 ? "" : "s"}
-                        </span>
+                        <SubmissionProgress
+                          submitted={a.submissions_count ?? 0}
+                          total={a.classroomMemberCount ?? null}
+                          isOverdue={a.lifecycleState === "OVERDUE"}
+                        />
                         {a.lifecycleState === "OVERDUE" || a.lifecycleState === "DUE_SOON" ? (
                           <span
                             className={cn(

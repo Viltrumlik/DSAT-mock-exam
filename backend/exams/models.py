@@ -292,6 +292,17 @@ class PastpaperPack(TimestampedModel):
         default="INTERNATIONAL",
         db_index=True,
     )
+    # Publish gate: only published packs are visible to students.
+    # Admins/teachers always see all packs regardless of this flag.
+    is_published = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "Only published packs are shown to students. "
+            "A pack must be structurally valid (sat_violations empty) before publishing."
+        ),
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "pastpaper_packs"
@@ -422,15 +433,17 @@ from django.dispatch import receiver
 def create_default_modules(sender, instance, created, **kwargs):
     if not created or instance.skip_default_modules:
         return
+    from .sat_rules import SAT_MODULE_TIME_LIMIT_MINUTES
+    minutes = SAT_MODULE_TIME_LIMIT_MINUTES.get(instance.subject, 35)
     Module.objects.create(
         practice_test=instance,
         module_order=1,
-        time_limit_minutes=32 if instance.subject == "READING_WRITING" else 35,
+        time_limit_minutes=minutes,
     )
     Module.objects.create(
         practice_test=instance,
         module_order=2,
-        time_limit_minutes=32 if instance.subject == "READING_WRITING" else 35,
+        time_limit_minutes=minutes,
     )
 
 class Module(TimestampedModel):
@@ -498,7 +511,8 @@ def ensure_full_mock_practice_test_modules(practice_test: PracticeTest) -> None:
     existing_orders = set(practice_test.modules.values_list("module_order", flat=True))
 
     def _default_minutes() -> int:
-        return 32 if practice_test.subject == "READING_WRITING" else 35
+        from .sat_rules import SAT_MODULE_TIME_LIMIT_MINUTES
+        return SAT_MODULE_TIME_LIMIT_MINUTES.get(practice_test.subject, 35)
 
     for order in required_orders:
         if order in existing_orders:
@@ -525,6 +539,16 @@ def ensure_full_mock_practice_test_modules(practice_test: PracticeTest) -> None:
 class TestAttempt(TimestampedModel):
     practice_test = models.ForeignKey(PracticeTest, on_delete=models.CASCADE, related_name='attempts')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='test_attempts')
+    # Tracks which MockExam this section attempt belongs to (set when the section's
+    # PracticeTest is part of a MOCK_SAT or MIDTERM). Used for cross-section ordering
+    # enforcement, break enforcement, and aggregated exam-level scoring.
+    mock_exam = models.ForeignKey(
+        "MockExam",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="section_attempts",
+    )
     
     # Legacy timestamps (kept for backward compatibility with existing clients/admin views).
     started_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -1141,8 +1165,21 @@ class TestAttempt(TimestampedModel):
                         m1_earned = contrib
                     elif module.module_order == 2:
                         m2_earned = contrib
-                except Exception:
-                    pass
+                except Module.DoesNotExist:
+                    import logging as _logging
+                    _logging.getLogger(__name__).error(
+                        "complete_test: module %s not found for attempt %s — scoring anomaly",
+                        module_id_str,
+                        self.pk,
+                    )
+                except Exception as _exc:  # noqa: BLE001
+                    import logging as _logging
+                    _logging.getLogger(__name__).exception(
+                        "complete_test: unexpected error scoring module %s for attempt %s: %s",
+                        module_id_str,
+                        self.pk,
+                        _exc,
+                    )
 
             score_val = min(200 + m1_earned + m2_earned, 800)
 

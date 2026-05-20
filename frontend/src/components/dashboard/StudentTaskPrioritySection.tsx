@@ -39,11 +39,21 @@ import {
 type ClassroomWithRole = Classroom & { my_role?: string };
 
 type PendingAssignment = {
-  assignment: Assignment;
+  assignment: Assignment & { assessment_homework?: { homework_id?: number } | null };
   classroomId: number;
   classroomName: string;
   state: AssignmentLifecycleState;
 };
+
+/** Returns the correct student-facing URL for an assignment. */
+function assignmentHref(p: PendingAssignment): string {
+  // Assessment-type assignments are handled by the assessment workspace,
+  // NOT by the generic classroom assignment view.
+  if (p.assignment.assessment_homework) {
+    return `/assessments/${p.assignment.id}`;
+  }
+  return `/classes/${p.classroomId}/assignments/${p.assignment.id}`;
+}
 
 // Card-level colour scheme per lifecycle state
 const CARD_STYLES: Partial<Record<AssignmentLifecycleState, { border: string; bg: string }>> = {
@@ -197,7 +207,7 @@ export function StudentTaskPrioritySection({ dashboardLoaded }: Props) {
             return (
               <Link
                 key={`${p.classroomId}-${p.assignment.id}`}
-                href={`/classes/${p.classroomId}/assignments/${p.assignment.id}`}
+                href={assignmentHref(p)}
                 className={cn(
                   "group flex flex-col gap-2 rounded-2xl border p-4 transition-colors hover:border-primary/30 hover:bg-primary/5",
                   cardStyle.border,

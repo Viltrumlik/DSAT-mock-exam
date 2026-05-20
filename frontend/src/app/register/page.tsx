@@ -4,7 +4,7 @@ import { authApi, usersApi } from "@/lib/api";
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Loader2, UserPlus } from 'lucide-react';
 import Link from 'next/link';
-import TelegramLoginButton, { type TelegramAuthUser } from '@/components/TelegramLoginButton';
+import TelegramLoginButton, { type TelegramOIDCResult } from '@/components/TelegramLoginButton';
 
 declare global {
     interface Window {
@@ -22,24 +22,25 @@ export default function RegisterPage() {
     const [loading, setLoading] = useState(false);
     const googleButtonRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
-    const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null } | null>(null);
+    const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null; client_id: string | null; start_url: string | null } | null>(null);
 
     useEffect(() => {
         usersApi
             .getTelegramWidgetConfig()
             .then(setTelegramCfg)
-            .catch(() => setTelegramCfg({ enabled: false, bot_username: null }));
+            .catch(() => setTelegramCfg({ enabled: false, bot_username: null, client_id: null, start_url: null }));
     }, []);
 
     const handleTelegramAuth = useCallback(
-        async (user: TelegramAuthUser) => {
+        async (result: TelegramOIDCResult) => {
             setLoading(true);
             setError('');
             try {
-                await authApi.telegramAuth(user, true);
+                await authApi.telegramAuth(result.id_token, true);
                 router.push('/');
-            } catch (err: any) {
-                setError(err?.response?.data?.detail || 'Telegram signup failed.');
+            } catch (err: unknown) {
+                const ax = err as { response?: { data?: { detail?: string } } };
+                setError(ax?.response?.data?.detail || 'Telegram signup failed. Check your connection and try again.');
             } finally {
                 setLoading(false);
             }
@@ -61,18 +62,26 @@ export default function RegisterPage() {
             // Auto login after registration
             await authApi.login(email, password);
             router.push('/');
-        } catch (err: any) {
+        } catch (err: unknown) {
+            const ax = err as { response?: { status?: number; data?: Record<string, unknown> }; code?: string; message?: string };
             let msg = 'Registration failed. Please check your details.';
-            if (err.response?.data) {
-                if (err.response.data.detail) msg = err.response.data.detail;
-                else if (err.response.data.email) msg = err.response.data.email[0];
-                else if (err.response.data.username) msg = err.response.data.username[0];
-                else if (err.response.data.first_name) msg = err.response.data.first_name[0];
-                else if (err.response.data.last_name) msg = err.response.data.last_name[0];
-                else if (err.response.data.password) msg = err.response.data.password[0];
-                else if (typeof err.response.data === 'object' && Object.keys(err.response.data).length > 0) {
-                    const firstError = Object.values(err.response.data)[0];
-                    if (Array.isArray(firstError)) msg = firstError[0];
+            if (!ax.response) {
+                msg = ax.code === "ECONNABORTED" || ax.message?.includes("timeout")
+                    ? "Request timed out. Check your connection and try again."
+                    : "Cannot connect to the server. Check your internet connection.";
+            } else if (ax.response.status === 429) {
+                msg = "Too many attempts. Please wait a minute before trying again.";
+            } else if (ax.response.data) {
+                const d = ax.response.data;
+                if (typeof d.detail === "string") msg = d.detail;
+                else if (Array.isArray(d.email)) msg = d.email[0] as string;
+                else if (Array.isArray(d.username)) msg = d.username[0] as string;
+                else if (Array.isArray(d.first_name)) msg = d.first_name[0] as string;
+                else if (Array.isArray(d.last_name)) msg = d.last_name[0] as string;
+                else if (Array.isArray(d.password)) msg = d.password[0] as string;
+                else if (typeof d === 'object' && Object.keys(d).length > 0) {
+                    const firstError = Object.values(d)[0];
+                    if (Array.isArray(firstError)) msg = firstError[0] as string;
                 }
             }
             setError(msg);
@@ -82,29 +91,53 @@ export default function RegisterPage() {
     };
 
     useEffect(() => {
-        if (!window.google || !googleButtonRef.current) return;
         const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-        if (!clientId) return;
-        window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: async (response: any) => {
-                if (!response?.credential) return;
-                try {
-                    await authApi.googleAuth(response.credential, undefined, true);
-                    router.push('/');
-                } catch (err: any) {
-                    setError(err?.response?.data?.detail || 'Google sign up failed.');
-                }
-            },
-        });
-        googleButtonRef.current.innerHTML = "";
-        window.google.accounts.id.renderButton(googleButtonRef.current, {
-            theme: "outline",
-            size: "large",
-            shape: "pill",
-            width: 360,
-            text: "signup_with",
-        });
+        if (!clientId || clientId.includes("your-google-web-client-id")) return;
+
+        let cancelled = false;
+        let pollTimer: number | null = null;
+
+        const tryInit = () => {
+            if (cancelled) return;
+            const el = googleButtonRef.current;
+            if (!window.google?.accounts?.id || !el) {
+                // GSI script loaded with afterInteractive; may not be ready at mount. Poll briefly.
+                pollTimer = window.setTimeout(tryInit, 200);
+                return;
+            }
+            try {
+                window.google.accounts.id.initialize({
+                    client_id: clientId,
+                    callback: async (response: { credential?: string }) => {
+                        if (!response?.credential) return;
+                        try {
+                            await authApi.googleAuth(response.credential, undefined, true);
+                            router.push('/');
+                        } catch (err: unknown) {
+                            const ax = err as { response?: { data?: { detail?: string } } };
+                            setError(ax?.response?.data?.detail || 'Google sign up failed. Check your connection and try again.');
+                        }
+                    },
+                });
+                el.innerHTML = "";
+                window.google.accounts.id.renderButton(el, {
+                    theme: "outline",
+                    size: "large",
+                    shape: "pill",
+                    width: 360,
+                    text: "signup_with",
+                });
+            } catch (err) {
+                console.warn("Google Sign-Up init failed", err);
+            }
+        };
+
+        tryInit();
+        return () => {
+            cancelled = true;
+            if (pollTimer !== null) window.clearTimeout(pollTimer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [router]);
 
     return (
@@ -236,11 +269,8 @@ export default function RegisterPage() {
                                 </span>
                                 {telegramCfg === null ? (
                                     <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-                                ) : telegramCfg.enabled && telegramCfg.bot_username ? (
-                                    <TelegramLoginButton
-                                        botUsername={telegramCfg.bot_username}
-                                        onAuth={handleTelegramAuth}
-                                    />
+                                ) : telegramCfg.enabled && telegramCfg.start_url ? (
+                                    <TelegramLoginButton startUrl={telegramCfg.start_url} next="/" />
                                 ) : (
                                     <p className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-sm px-2">
                                         Telegram signup is not configured yet. An administrator must set{" "}

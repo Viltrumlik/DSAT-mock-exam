@@ -11,6 +11,9 @@ from .views import (
     AssignAssessmentHomeworkView,
     StartAttemptView,
     AttemptBundleView,
+    AttemptPedagogicalReviewView,
+    AttemptTeacherFeedbackView,
+    TeacherSubmissionQueueView,
     SaveAnswerView,
     SubmitAttemptView,
     AbandonAttemptView,
@@ -64,6 +67,10 @@ urlpatterns = [
     # Student attempt flow
     path("attempts/start/", StartAttemptView.as_view(), name="assessment-attempt-start"),
     path("attempts/<int:attempt_id>/bundle/", AttemptBundleView.as_view(), name="assessment-attempt-bundle"),
+    path("attempts/<int:attempt_id>/review/", AttemptPedagogicalReviewView.as_view(), name="assessment-attempt-pedagogical-review"),
+    path("attempts/<int:attempt_id>/feedback/", AttemptTeacherFeedbackView.as_view(), name="assessment-attempt-feedback"),
+    # Teacher submission queue (all classrooms where user is teacher)
+    path("teacher/submission-queue/", TeacherSubmissionQueueView.as_view(), name="assessment-teacher-submission-queue"),
     path("attempts/answer/", SaveAnswerView.as_view(), name="assessment-attempt-answer"),
     path("attempts/submit/", SubmitAttemptView.as_view(), name="assessment-attempt-submit"),
     path("attempts/abandon/", AbandonAttemptView.as_view(), name="assessment-attempt-abandon"),

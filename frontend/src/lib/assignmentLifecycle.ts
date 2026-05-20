@@ -21,11 +21,16 @@
 
 /**
  * Lifecycle states for assignments.
- * Derived from `due_at` and `submissions_count`.
+ * Derived from `due_at`, `submissions_count`, and optionally `visible_from`.
  *
  * NOT backed by a backend enum — derived purely on the client.
  */
 export type AssignmentLifecycleState =
+  /**
+   * `visible_from` is set to a future date — the assignment exists but is not
+   * yet visible to students. Teacher/admin only.
+   */
+  | "SCHEDULED"
   /** Has a future due date more than 48 hours away; accepting submissions. */
   | "ACTIVE"
   /** Due within the next 48 hours. Needs teacher/admin attention. */
@@ -58,8 +63,17 @@ const DUE_SOON_HORIZON_HOURS = 48;
 export function deriveAssignmentLifecycleState(assignment: {
   due_at?: string | null;
   submissions_count?: number | null;
+  /** Optional: ISO string. If in the future, the assignment is SCHEDULED (not yet visible to students). */
+  visible_from?: string | null;
 }): AssignmentLifecycleState {
   const now = Date.now();
+
+  // SCHEDULED: exists but not yet released to students
+  if (assignment.visible_from) {
+    const visibleMs = new Date(assignment.visible_from).getTime();
+    if (visibleMs > now) return "SCHEDULED";
+  }
+
   const dueMs = assignment.due_at ? new Date(assignment.due_at).getTime() : null;
   const submissions = assignment.submissions_count ?? 0;
 
@@ -94,6 +108,7 @@ export const LIFECYCLE_PRIORITY: Record<AssignmentLifecycleState, number> = {
   ACTIVE: 2,
   COMPLETED: 3,
   NO_DEADLINE: 4,
+  SCHEDULED: 5, // Lowest urgency — not yet visible to students
 };
 
 /** Sort assignments by operational urgency (most urgent first). */
@@ -123,6 +138,12 @@ type LifecycleSpec = {
 };
 
 export const LIFECYCLE_DISPLAY: Record<AssignmentLifecycleState, LifecycleSpec> = {
+  SCHEDULED: {
+    label: "Scheduled",
+    description: "Not yet visible to students. Will release automatically.",
+    badgeClasses: "bg-violet-100 text-violet-700",
+    needsAttention: false,
+  },
   ACTIVE: {
     label: "Active",
     description: "Accepting submissions. Due in more than 48 hours.",
@@ -164,6 +185,7 @@ type AssignmentInput = {
 
 export type AssignmentLifecycleSummary = {
   total: number;
+  scheduled: number;
   overdue: number;
   dueSoon: number;
   active: number;
@@ -176,10 +198,11 @@ export type AssignmentLifecycleSummary = {
 export function summarizeAssignmentLifecycle(
   assignments: AssignmentInput[],
 ): AssignmentLifecycleSummary {
-  const counts = { overdue: 0, dueSoon: 0, active: 0, completed: 0, noDeadline: 0 };
+  const counts = { scheduled: 0, overdue: 0, dueSoon: 0, active: 0, completed: 0, noDeadline: 0 };
   for (const a of assignments) {
     const state = deriveAssignmentLifecycleState(a);
-    if (state === "OVERDUE") counts.overdue++;
+    if (state === "SCHEDULED") counts.scheduled++;
+    else if (state === "OVERDUE") counts.overdue++;
     else if (state === "DUE_SOON") counts.dueSoon++;
     else if (state === "ACTIVE") counts.active++;
     else if (state === "COMPLETED") counts.completed++;

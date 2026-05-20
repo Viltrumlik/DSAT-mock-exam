@@ -10,14 +10,25 @@ import { ArrowLeft, Timer } from "lucide-react";
 
 const BREAK_SECONDS = 10 * 60;
 
+function computeInitialLeft(breakEndsAt: string | null): number {
+  if (!breakEndsAt) return BREAK_SECONDS;
+  try {
+    const ms = new Date(breakEndsAt).getTime() - Date.now();
+    return Math.max(0, Math.round(ms / 1000));
+  } catch {
+    return BREAK_SECONDS;
+  }
+}
+
 function BreakInner() {
   const { assertCriticalAuth } = useAuthCriticalGate();
   const { id } = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
   const rwAttempt = searchParams.get("rwAttempt") || "";
+  const breakEndsAt = searchParams.get("breakEndsAt") || null;
   const mockId = String(id);
-  const [left, setLeft] = useState(BREAK_SECONDS);
+  const [left, setLeft] = useState(() => computeInitialLeft(breakEndsAt));
   const [startingMath, setStartingMath] = useState(false);
   const mathAutostartStarted = useRef(false);
 
@@ -25,6 +36,10 @@ function BreakInner() {
     if (!rwAttempt) {
       router.replace(`/mock/${mockId}`);
       return;
+    }
+    // Re-sync from server timestamp if provided (handles page reload mid-break).
+    if (breakEndsAt) {
+      setLeft(computeInitialLeft(breakEndsAt));
     }
     const t = setInterval(() => {
       setLeft((s) => {
@@ -36,6 +51,7 @@ function BreakInner() {
       });
     }, 1000);
     return () => clearInterval(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mockId, rwAttempt, router]);
 
   useEffect(() => {

@@ -36,6 +36,7 @@ from .serializers import (
 )
 from .permissions import IsAuthenticatedAndNotFrozen
 from django.conf import settings
+from django.http import HttpResponseRedirect
 import re
 import time
 from datetime import timedelta
@@ -44,7 +45,13 @@ from time import monotonic
 
 from .security_audit import log_security_event
 from .security_risk import clear_security_step_up, record_failed_refresh_attempt
-from .telegram_auth import verify_telegram_login
+from .telegram_oidc import (
+    TelegramOIDCError,
+    build_authorize_url,
+    exchange_code_for_tokens,
+    telegram_user_id_from_claims,
+    verify_telegram_id_token,
+)
 from .phone_utils import normalize_phone
 from .telegram_bot_info import telegram_bot_username_for_token
 from .authentication import CookieOrHeaderJWTAuthentication
@@ -109,6 +116,58 @@ def _effective_telegram_bot_username() -> str:
         return ""
     return telegram_bot_username_for_token(token)
 
+
+def _telegram_oidc_client_id() -> str:
+    """The OIDC ``client_id`` (== Telegram bot id). Prefers explicit setting, falls back to bot token prefix."""
+    explicit = (getattr(settings, "TELEGRAM_OIDC_CLIENT_ID", "") or "").strip()
+    if explicit:
+        return explicit
+    token = (getattr(settings, "TELEGRAM_BOT_TOKEN", "") or "").strip().strip('"').strip("'")
+    if not token or ":" not in token:
+        return ""
+    bot_id = token.split(":", 1)[0].strip()
+    return bot_id if bot_id.isdigit() else ""
+
+
+def _telegram_oidc_client_secret() -> str:
+    return (getattr(settings, "TELEGRAM_OIDC_CLIENT_SECRET", "") or "").strip()
+
+
+def _telegram_oidc_redirect_uri() -> str:
+    return (getattr(settings, "TELEGRAM_OIDC_REDIRECT_URI", "") or "").strip()
+
+
+def _verified_telegram_oidc_payload(request_data):
+    # type: (object) -> tuple
+    """Verify the ``id_token`` from the request body. Returns (claims, None) on success
+    or (None, error_response) on failure. Caller can then read tg_id / name / phone from claims.
+    """
+    client_id = _telegram_oidc_client_id()
+    if not client_id:
+        return None, Response(
+            {"detail": "Telegram sign-in is not configured on the server."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    id_token = str(request_data.get("id_token") or "").strip()
+    if not id_token:
+        return None, Response({"detail": "Missing id_token."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        claims = verify_telegram_id_token(id_token, expected_audience=client_id)
+    except TelegramOIDCError as exc:
+        return None, Response(
+            {"detail": "Invalid or expired Telegram sign-in.", "code": "oidc_invalid"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return claims, None
+
+
+def _apply_telegram_phone_from_claims(user, claims) -> Response | None:
+    """OIDC variant of _apply_telegram_phone. Reads phone_number directly from verified claims."""
+    raw_phone = claims.get("phone_number") if claims else None
+    if raw_phone is None or not str(raw_phone).strip():
+        return None
+    return _apply_telegram_phone(user, {"phone_number": raw_phone})
+
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     throttle_scope = 'sustained'
@@ -143,7 +202,10 @@ def _revoke_refresh(refresh: str) -> None:
         ttl = max(1, exp - int(time.time()))
         cache.set(_revoked_key(jti), "1", timeout=ttl)
     except Exception:
-        return
+        # Log the failure — silent swallow here meant a successful logout could leave the
+        # refresh token usable if the cache was unreachable. We still don't re-raise
+        # (logout endpoints should remain idempotent and best-effort).
+        logger.exception("refresh_revoke_failed")
 
 
 def _jti_of_refresh(refresh: str) -> str:
@@ -472,9 +534,10 @@ class ClientAuthTelemetryIngestView(APIView):
     Payload is aggregates + recent client events — no persisted PII requirement.
     """
 
-    authentication_classes = [
-        CookieOrHeaderJWTAuthentication,
-    ]
+    # Truly anonymous best-effort ingest. Stale JWT cookies generated thousands of
+    # 401 log entries on every page navigation while logged-out users had the SPA open
+    # — auth provides no value here (no user identity used downstream).
+    authentication_classes = []
     permission_classes = []
     parser_classes = [JSONParser]
     throttle_classes = [ScopedRateThrottle]
@@ -671,7 +734,9 @@ class UserDeleteView(generics.DestroyAPIView):
 
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserSerializer
-    permission_classes = [] # Allow any
+    # Truly public: stale/invalid JWT cookies must not 401 this — the /register page polls it.
+    authentication_classes = []
+    permission_classes = []
 
 
 class UserMeView(generics.RetrieveUpdateAPIView):
@@ -734,6 +799,8 @@ class ExamDateOptionAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class GoogleAuthView(APIView):
+    # Truly public: must not 401 on stale JWT (the /login page polls this).
+    authentication_classes = []
     permission_classes = []
 
     def post(self, request):
@@ -805,7 +872,7 @@ class GoogleAuthView(APIView):
                 first_name=first_name,
                 last_name=last_name,
                 role=acc_const.ROLE_STUDENT,
-                password=User.objects.make_random_password(),
+                password=__import__("secrets").token_urlsafe(32),
             )
         else:
             updated = False
@@ -849,38 +916,48 @@ class GoogleAuthView(APIView):
 
 
 class TelegramWidgetConfigView(APIView):
-    """Public: whether Telegram login is configured and which bot username the widget needs."""
+    """Public: tells the frontend whether Telegram OIDC login is configured and
+    exposes the ``client_id`` (== Telegram bot id) and ``start_url`` for the OAuth flow.
 
+    Truly public — must not 401 on stale cookies (the /login page polls this and an old
+    JWT cookie would otherwise put the page into a refresh loop).
+    """
+
+    authentication_classes = []
     permission_classes = []
 
     def get(self, request):
         token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
         if not token:
-            return Response({"enabled": False, "bot_username": None})
+            return Response({"enabled": False, "bot_username": None, "client_id": None, "start_url": None})
+        client_id = _telegram_oidc_client_id()
+        client_secret = _telegram_oidc_client_secret()
+        if not client_id:
+            return Response({"enabled": False, "bot_username": None, "client_id": None, "start_url": None})
         username = _effective_telegram_bot_username()
-        if not username:
-            return Response({"enabled": False, "bot_username": None})
-        return Response({"enabled": True, "bot_username": username})
+        # If the client_secret + redirect_uri are configured, server-mediated OAuth is available.
+        start_url = "/api/users/telegram/start/" if (client_secret and _telegram_oidc_redirect_uri()) else None
+        return Response({
+            "enabled": True,
+            "bot_username": username or None,
+            "client_id": client_id,
+            "start_url": start_url,
+        })
 
 
 class TelegramLinkView(APIView):
-    """Link Telegram to the currently logged-in account (profile «Connect Telegram»)."""
+    """Link Telegram to the currently logged-in account (profile «Connect Telegram»).
+    Accepts ``{id_token}`` from the new OIDC SDK."""
 
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request):
-        token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
-        if not token:
-            return Response(
-                {"detail": "Telegram is not configured on the server."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-        data = request.data
-        if not verify_telegram_login(data, token):
-            return Response({"detail": "Invalid or expired Telegram sign-in."}, status=status.HTTP_400_BAD_REQUEST)
+        claims, err = _verified_telegram_oidc_payload(request.data)
+        if err is not None:
+            return err
         try:
-            tg_id = int(data.get("id"))
-        except (TypeError, ValueError):
+            tg_id = telegram_user_id_from_claims(claims)
+        except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
         domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
@@ -896,7 +973,7 @@ class TelegramLinkView(APIView):
                 {"detail": "Your account is already linked to a different Telegram account."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        phone_err = _apply_telegram_phone(user, data)
+        phone_err = _apply_telegram_phone_from_claims(user, claims)
         if phone_err is not None:
             return phone_err
         user.telegram_id = tg_id
@@ -905,38 +982,39 @@ class TelegramLinkView(APIView):
 
 
 class TelegramAuthView(APIView):
-    """Telegram Login (oauth embed): verify HMAC, optional verified ``phone_number`` from Telegram, issue JWT."""
+    """Telegram OIDC login: verify ``id_token`` (oauth.telegram.org JWT), upsert user, issue JWT cookies."""
 
+    # Truly public: must not 401 on stale JWT — same reason as the other auth-entry endpoints.
+    authentication_classes = []
     permission_classes = []
 
     def post(self, request):
-        token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
-        if not token:
-            return Response(
-                {"detail": "Telegram sign-in is not configured on the server."},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
-
-        data = request.data
-        if not verify_telegram_login(data, token):
-            return Response({"detail": "Invalid or expired Telegram sign-in."}, status=status.HTTP_400_BAD_REQUEST)
+        # New OIDC path: verify the id_token signed by oauth.telegram.org against JWKS.
+        claims, err = _verified_telegram_oidc_payload(request.data)
+        if err is not None:
+            return err
 
         try:
-            tg_id = int(data.get("id"))
-        except (TypeError, ValueError):
+            tg_id = telegram_user_id_from_claims(claims)
+        except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
         domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
         email = f"tg{tg_id}@{domain}".lower()
 
-        raw_fn = (str(data.get("first_name") or "")).strip()
-        raw_ln = (str(data.get("last_name") or "")).strip()
+        # OIDC claims: "name" is the display name, "preferred_username" is the @handle.
+        raw_name = (str(claims.get("name") or "")).strip()
+        if " " in raw_name:
+            raw_fn, raw_ln = raw_name.split(" ", 1)
+            raw_fn, raw_ln = raw_fn.strip(), raw_ln.strip()
+        else:
+            raw_fn, raw_ln = raw_name, ""
         first_name = raw_fn if len(raw_fn) >= 3 else "Telegram"
         last_name = raw_ln if len(raw_ln) >= 3 else (first_name if len(first_name) >= 3 else "User")
         if len(last_name) < 3:
             last_name = "User"
 
-        tg_username = (str(data.get("username") or "")).strip()
+        tg_username = (str(claims.get("preferred_username") or "")).strip()
         username = (request.data.get("username") or "").strip()
         if username and len(username) < 3:
             return Response({"detail": "Username must be at least 3 characters."}, status=status.HTTP_400_BAD_REQUEST)
@@ -964,7 +1042,7 @@ class TelegramAuthView(APIView):
                 first_name=first_name,
                 last_name=last_name,
                 role=acc_const.ROLE_STUDENT,
-                password=User.objects.make_random_password(),
+                password=__import__("secrets").token_urlsafe(32),
             )
         else:
             updated = False
@@ -977,7 +1055,7 @@ class TelegramAuthView(APIView):
             if updated:
                 user.save(update_fields=["first_name", "last_name"])
 
-        phone_err = _apply_telegram_phone(user, data)
+        phone_err = _apply_telegram_phone_from_claims(user, claims)
         if phone_err is not None:
             return phone_err
         user.telegram_id = tg_id
@@ -1010,4 +1088,274 @@ class TelegramAuthView(APIView):
                 resp.data.pop("refresh", None)
         except Exception:
             pass
+        return resp
+
+
+# ─── Telegram OIDC authorization-code flow (server-mediated) ──────────────────
+
+_TELEGRAM_OAUTH_STATE_COOKIE = "tg_oauth_state"
+_TELEGRAM_OAUTH_STATE_TTL_S = 300  # 5 minutes
+
+
+def _upsert_user_from_telegram_claims(claims, request):
+    """Shared logic for TelegramAuthView.post and TelegramOAuthCallbackView.get.
+
+    Returns (user, None) on success or (None, error_response) on failure.
+    """
+    try:
+        tg_id = telegram_user_id_from_claims(claims)
+    except TelegramOIDCError:
+        return None, Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
+
+    domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
+    email = f"tg{tg_id}@{domain}".lower()
+
+    raw_name = (str(claims.get("name") or "")).strip()
+    if " " in raw_name:
+        raw_fn, raw_ln = raw_name.split(" ", 1)
+        raw_fn, raw_ln = raw_fn.strip(), raw_ln.strip()
+    else:
+        raw_fn, raw_ln = raw_name, ""
+    first_name = raw_fn if len(raw_fn) >= 3 else "Telegram"
+    last_name = raw_ln if len(raw_ln) >= 3 else (first_name if len(first_name) >= 3 else "User")
+    if len(last_name) < 3:
+        last_name = "User"
+
+    tg_username = (str(claims.get("preferred_username") or "")).strip()
+    user = User.objects.filter(telegram_id=tg_id).first() or User.objects.filter(email__iexact=email).first()
+    if not user:
+        if tg_username and len(tg_username) >= 3:
+            base = tg_username[:30]
+        else:
+            base = f"tg{tg_id}"[:25]
+        candidate = base
+        i = 1
+        while User.objects.filter(username__iexact=candidate).exists():
+            suffix = str(i)
+            candidate = (base[: max(1, 30 - len(suffix))] + suffix)[:30]
+            i += 1
+        user = User.objects.create_user(
+            email=email,
+            username=candidate,
+            first_name=first_name,
+            last_name=last_name,
+            role=acc_const.ROLE_STUDENT,
+            password=__import__("secrets").token_urlsafe(32),
+        )
+    else:
+        updated = False
+        if not user.first_name.strip() and raw_fn and len(raw_fn) >= 3:
+            user.first_name = raw_fn
+            updated = True
+        if not user.last_name.strip() and raw_ln and len(raw_ln) >= 3:
+            user.last_name = raw_ln
+            updated = True
+        if updated:
+            user.save(update_fields=["first_name", "last_name"])
+
+    phone_err = _apply_telegram_phone_from_claims(user, claims)
+    if phone_err is not None:
+        return None, phone_err
+    user.telegram_id = tg_id
+    user.save(update_fields=["telegram_id"])
+    clear_security_step_up(user_id=user.pk)
+    return user, None
+
+
+class TelegramOAuthStartView(APIView):
+    """Server-mediated OIDC start: redirect the browser to oauth.telegram.org with our client_id.
+
+    If the request is already authenticated, the current user's id is embedded into the
+    short-lived state cookie. The callback will then *link* Telegram to that account
+    instead of creating a brand-new synthetic ``tg<id>@…`` user.
+    """
+
+    # Truly public — do not let a stale/invalid JWT cookie 401 the start endpoint.
+    # The view soft-detects an authenticated user below via try/except so that anonymous
+    # browsers still get redirected to Telegram without an error.
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        client_id = _telegram_oidc_client_id()
+        client_secret = _telegram_oidc_client_secret()
+        redirect_uri = _telegram_oidc_redirect_uri()
+        if not (client_id and client_secret and redirect_uri):
+            return Response(
+                {"detail": "Telegram OIDC is not configured on the server."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        import secrets as _secrets
+        from django.core import signing
+
+        state = _secrets.token_urlsafe(24)
+        nonce = _secrets.token_urlsafe(24)
+        next_path = request.GET.get("next") or "/"
+        if not isinstance(next_path, str) or not next_path.startswith("/") or next_path.startswith("//"):
+            next_path = "/"
+
+        # Soft-detect an existing session WITHOUT raising on invalid cookies.
+        # If valid → link mode (attach Telegram to that user).
+        # If invalid/missing → login mode (find/create via Telegram id).
+        link_user_id = None
+        try:
+            auth_result = CookieOrHeaderJWTAuthentication().authenticate(request)
+            if auth_result is not None:
+                u, _ = auth_result
+                if u is not None and getattr(u, "is_authenticated", False):
+                    link_user_id = int(u.pk)
+        except Exception:
+            link_user_id = None
+
+        url = build_authorize_url(
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            state=state,
+            nonce=nonce,
+        )
+        resp = HttpResponseRedirect(url)
+        # Signed payload so the callback can trust link_user_id (and detect tampering).
+        signed = signing.dumps(
+            {"s": state, "n": nonce, "next": next_path, "link_user_id": link_user_id},
+            salt="telegram-oauth",
+        )
+        resp.set_cookie(
+            _TELEGRAM_OAUTH_STATE_COOKIE,
+            signed,
+            max_age=_TELEGRAM_OAUTH_STATE_TTL_S,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="Lax",
+            path="/",
+        )
+        return resp
+
+
+class TelegramOAuthCallbackView(APIView):
+    """Server-mediated OIDC callback: exchange code → id_token, upsert user, set JWT cookies, redirect."""
+
+    authentication_classes = []
+    permission_classes = []
+
+    def get(self, request):
+        from django.core import signing
+
+        cookie_val = request.COOKIES.get(_TELEGRAM_OAUTH_STATE_COOKIE) or ""
+        try:
+            saved = signing.loads(cookie_val, salt="telegram-oauth", max_age=_TELEGRAM_OAUTH_STATE_TTL_S) if cookie_val else {}
+        except signing.BadSignature:
+            saved = {}
+        except Exception:
+            saved = {}
+        saved_state = str(saved.get("s") or "")
+        next_path = saved.get("next") or "/"
+        link_user_id = saved.get("link_user_id")
+        if not isinstance(next_path, str) or not next_path.startswith("/") or next_path.startswith("//"):
+            next_path = "/"
+
+        if request.GET.get("error"):
+            err_resp = HttpResponseRedirect(f"/login?tg_error={request.GET.get('error')}")
+            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return err_resp
+
+        got_state = str(request.GET.get("state") or "")
+        code = str(request.GET.get("code") or "")
+        if not got_state or not saved_state or got_state != saved_state:
+            err_resp = HttpResponseRedirect("/login?tg_error=state_mismatch")
+            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return err_resp
+        if not code:
+            err_resp = HttpResponseRedirect("/login?tg_error=missing_code")
+            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return err_resp
+
+        client_id = _telegram_oidc_client_id()
+        client_secret = _telegram_oidc_client_secret()
+        redirect_uri = _telegram_oidc_redirect_uri()
+        if not (client_id and client_secret and redirect_uri):
+            err_resp = HttpResponseRedirect("/login?tg_error=server_misconfigured")
+            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return err_resp
+
+        try:
+            tokens = exchange_code_for_tokens(
+                code=code,
+                client_id=client_id,
+                client_secret=client_secret,
+                redirect_uri=redirect_uri,
+            )
+            claims = verify_telegram_id_token(
+                str(tokens.get("id_token") or ""),
+                expected_audience=client_id,
+            )
+        except TelegramOIDCError as exc:
+            logger.warning("telegram_oidc_callback_failed reason=%s", str(exc)[:200])
+            err_resp = HttpResponseRedirect("/login?tg_error=token_exchange_failed")
+            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return err_resp
+
+        # Link mode: started while already authenticated → attach Telegram to existing account
+        # instead of creating/finding a synthetic tg-user.
+        if link_user_id is not None:
+            try:
+                tg_id = telegram_user_id_from_claims(claims)
+            except TelegramOIDCError:
+                err_resp = HttpResponseRedirect("/login?tg_error=invalid_tg_id")
+                err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+                return err_resp
+
+            existing_owner = User.objects.filter(telegram_id=tg_id).exclude(pk=int(link_user_id)).first()
+            if existing_owner:
+                err_resp = HttpResponseRedirect(f"{next_path}?tg_error=already_linked_to_another_account")
+                err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+                return err_resp
+
+            user = User.objects.filter(pk=int(link_user_id)).first()
+            if not user:
+                err_resp = HttpResponseRedirect("/login?tg_error=session_lost")
+                err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+                return err_resp
+            if user.telegram_id is not None and user.telegram_id != tg_id:
+                err_resp = HttpResponseRedirect(f"{next_path}?tg_error=account_already_linked")
+                err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+                return err_resp
+
+            phone_err = _apply_telegram_phone_from_claims(user, claims)
+            # Don't bail on phone collisions in link mode — just skip phone update.
+            user.telegram_id = tg_id
+            user.save(update_fields=["telegram_id"])
+            resp = HttpResponseRedirect(f"{next_path}?tg_linked=1")
+            resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return resp
+
+        # Login mode: no current session — find or create the synthetic user.
+        user, err = _upsert_user_from_telegram_claims(claims, request)
+        if err is not None or user is None:
+            err_resp = HttpResponseRedirect("/login?tg_error=user_upsert_failed")
+            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return err_resp
+
+        refresh = RefreshToken.for_user(user)
+        access = str(refresh.access_token)
+        refresh_str = str(refresh)
+
+        resp = HttpResponseRedirect(next_path)
+        try:
+            set_auth_cookies(
+                response=resp,
+                request=request,
+                access=access,
+                refresh=refresh_str,
+                remember_me=True,
+            )
+            jti = _jti_of_refresh(refresh_str)
+            if jti:
+                ip, ua = _session_fingerprint(request)
+                RefreshSession.objects.update_or_create(
+                    refresh_jti=jti,
+                    defaults={"user": user, "revoked_at": None, "ip": ip, "user_agent": ua},
+                )
+        except Exception:
+            pass
+        resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
         return resp

@@ -6,36 +6,42 @@
  * Pedagogical framing: "What am I learning and improving?"
  * NOT simulation framing: "How do I perform under SAT conditions?"
  *
- * Shows all assessment-type assignments across all enrolled classrooms,
- * grouped by student-facing lifecycle state.
+ * Layout (top → bottom):
+ *   1. "Continue Learning" — pinned in-progress assignments with direct resume links
+ *   2. Attention banner (overdue/due-soon counts)
+ *   3. Filter tabs (all / pending / in-progress / completed)
+ *   4. Assignment list
+ *   5. Domain separator
  *
  * Domain: Learning system (Assessment / Homework)
  * NOT: Simulation system (Pastpapers / Mock Exams)
  *
- * Data sources:
- *   - classesApi.list()          → enrolled classrooms
- *   - classesApi.listAssignments(id) → assignments per classroom
- *   Filter: assignments with `assessment_homework != null`
- *   Status: `workflow_status` field on assignment
+ * Data source: GET /api/classes/my-assignments/ (single endpoint, no N+1)
+ * Fields used: workflow_status, assessment_homework, classroom_id, classroom_name,
+ *              attempt_id (present when workflow_status == "in_progress")
  */
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { classesApi } from "@/lib/api";
-import type { Classroom, Assignment, NormalizedList } from "@/lib/criticalApiContract";
+import { classesApi, assessmentsAdminApi } from "@/lib/api";
+import type { Assignment } from "@/lib/criticalApiContract";
 import {
   AlertTriangle,
   ArrowRight,
   BookOpen,
   CheckCircle2,
   ClipboardList,
+  ExternalLink,
   Loader2,
   PlayCircle,
+  Plus,
   RefreshCw,
+  Settings2,
   Timer,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import AuthGuard from "@/components/AuthGuard";
+import { useMe } from "@/hooks/useMe";
 import {
   deriveAssignmentLifecycleState,
   formatAssignmentDue,
@@ -43,8 +49,6 @@ import {
 } from "@/lib/assignmentLifecycle";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-type ClassroomWithRole = Classroom & { my_role?: string };
 
 type AssessmentSet = {
   id: number;
@@ -62,6 +66,8 @@ type AssessmentHomework = {
 type AssignmentWithStatus = Assignment & {
   assessment_homework?: AssessmentHomework | null;
   workflow_status?: string | null;
+  /** Present when workflow_status == "in_progress". Enables direct resume link. */
+  attempt_id?: number | null;
 };
 
 type AssessmentEntry = {
@@ -69,6 +75,8 @@ type AssessmentEntry = {
   classroomId: number;
   classroomName: string;
   subject?: string;
+  /** Direct runner link when the assignment is in-progress. */
+  resumeHref?: string;
 };
 
 // ─── Student-facing assessment state ─────────────────────────────────────────
@@ -169,6 +177,83 @@ function sortEntries(entries: AssessmentEntry[]): AssessmentEntry[] {
 
 type FilterValue = "all" | "pending" | "in_progress" | "completed";
 
+// ─── Continue Learning section ────────────────────────────────────────────────
+
+/**
+ * Pinned at the top of the workspace. Shows only in-progress assignments.
+ * Designed to feel like "resume your work" — not a progress dashboard.
+ *
+ * Direct resume link: when attempt_id is known, goes straight to the runner.
+ * No interstitial. One click to pick up where you left off.
+ */
+function ContinueLearningSection({ entries }: { entries: AssessmentEntry[] }) {
+  const inProgress = entries.filter((e) => deriveStudentState(e) === "IN_PROGRESS");
+  if (inProgress.length === 0) return null;
+
+  return (
+    <section aria-label="Continue learning">
+      <div className="flex items-center gap-2 mb-2">
+        <PlayCircle className="h-3.5 w-3.5 text-primary shrink-0" />
+        <h2 className="text-xs font-extrabold uppercase tracking-wide text-foreground">
+          Continue learning
+        </h2>
+        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black text-amber-800 tabular-nums">
+          {inProgress.length} in progress
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {inProgress.map((entry) => {
+          const href = entry.resumeHref ?? `/assessments/${entry.assignment.id}`;
+          const set = entry.assignment.assessment_homework?.set;
+          const title = entry.assignment.title ?? set?.title ?? "Assignment";
+          const subject = set?.subject ?? entry.subject;
+          const subjectLabel =
+            subject === "MATH" ? "Math" :
+            subject === "READING_WRITING" || subject === "ENGLISH" ? "Reading & Writing" :
+            subject ?? null;
+          const dueRelative = formatAssignmentDue(entry.assignment.due_at);
+          const isOverdue = deriveAssignmentLifecycleState(entry.assignment) === "OVERDUE";
+
+          return (
+            <Link
+              key={`resume-${entry.classroomId}-${entry.assignment.id}`}
+              href={href}
+              className="group flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50/60 p-4 transition-colors hover:border-primary/30 hover:bg-primary/5"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="font-extrabold text-foreground truncate text-sm">{title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{entry.classroomName}</p>
+                </div>
+                {subjectLabel && (
+                  <span className={cn(
+                    "rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide shrink-0",
+                    subjectLabel === "Math" ? "bg-purple-100 text-purple-700" : "bg-teal-100 text-teal-700",
+                  )}>
+                    {subjectLabel}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className={cn(
+                  "text-xs font-bold",
+                  isOverdue ? "text-red-700" : "text-amber-700",
+                )}>
+                  {dueRelative}
+                </p>
+                <span className="inline-flex items-center gap-1 rounded-xl bg-primary px-3 py-1.5 text-xs font-extrabold text-primary-foreground group-hover:bg-primary/90 transition-colors">
+                  <PlayCircle className="h-3.5 w-3.5" />
+                  Resume
+                </span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function StateChip({ state }: { state: AssessmentStudentState }) {
@@ -187,14 +272,45 @@ function StateChip({ state }: { state: AssessmentStudentState }) {
 }
 
 function ActionButton({ entry, state }: { entry: AssessmentEntry; state: AssessmentStudentState }) {
-  const href = `/assessments/${entry.assignment.id}`;
+  const aid = entry.assignment.id;
+
+  // COMPLETED: primary action = review results; secondary = try again
+  if (state === "COMPLETED" || state === "SUBMITTED") {
+    return (
+      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+        <Link
+          href={`/assessments/result/${aid}`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {state === "SUBMITTED" ? "View" : "Review"}
+        </Link>
+        {state === "COMPLETED" && (
+          <Link
+            href={`/assessments/${aid}`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-surface-2 transition-colors"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Try again
+          </Link>
+        )}
+      </div>
+    );
+  }
+
+  // For in-progress assignments, deep-link directly to the runner when attempt_id
+  // is known (skips the start-page interstitial — one-click resume).
+  const href =
+    state === "IN_PROGRESS" && entry.resumeHref
+      ? entry.resumeHref
+      : `/assessments/${aid}`;
   const config = {
-    IN_PROGRESS: { label: "Resume",      icon: PlayCircle,  primary: true },
-    NOT_STARTED: { label: "Start",       icon: PlayCircle,  primary: true },
+    IN_PROGRESS: { label: "Resume",      icon: PlayCircle,    primary: true },
+    NOT_STARTED: { label: "Start",       icon: PlayCircle,    primary: true },
     OVERDUE:     { label: "Submit now",  icon: AlertTriangle, primary: true },
-    DUE_SOON:    { label: "Start",       icon: Timer,       primary: true },
-    SUBMITTED:   { label: "View",        icon: ArrowRight,  primary: false },
-    COMPLETED:   { label: "Review",      icon: CheckCircle2, primary: false },
+    DUE_SOON:    { label: "Start",       icon: Timer,         primary: true },
+    SUBMITTED:   { label: "View",        icon: ArrowRight,    primary: false },
+    COMPLETED:   { label: "Review",      icon: CheckCircle2,  primary: false },
   }[state];
 
   const Icon = config.icon;
@@ -291,12 +407,138 @@ function AssessmentRow({ entry }: { entry: AssessmentEntry }) {
   );
 }
 
+// ─── Admin assessment management section ─────────────────────────────────────
+
+type AdminSetRow = {
+  id: number;
+  title: string;
+  subject: string;
+  category: string;
+  description: string;
+  is_active: boolean;
+  question_count?: number;
+};
+
+function AdminAssessmentSection() {
+  const [sets, setSets] = useState<AdminSetRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    assessmentsAdminApi
+      .adminListSets({ limit: 50 })
+      .then((data: { results?: AdminSetRow[] }) => {
+        setSets(Array.isArray(data.results) ? data.results : Array.isArray(data) ? data as unknown as AdminSetRow[] : []);
+      })
+      .catch(() => setSets([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Settings2 className="h-4 w-4 text-primary shrink-0" />
+          <h2 className="text-xs font-extrabold uppercase tracking-wide text-foreground">
+            Assessment Management
+          </h2>
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black text-primary tabular-nums">
+            Admin
+          </span>
+        </div>
+        <Link
+          href="/ops/assessments"
+          className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
+        >
+          Full builder
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+      </div>
+
+      {loading ? (
+        <div className="h-20 rounded-2xl border border-border bg-card animate-pulse" />
+      ) : sets.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card px-4 py-6 text-center">
+          <p className="text-sm text-muted-foreground">No assessment sets created yet.</p>
+          <Link
+            href="/ops/assessments"
+            className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline"
+          >
+            <Plus className="h-3 w-3" />
+            Create assessment set
+          </Link>
+        </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {sets.map((s) => (
+            <div
+              key={s.id}
+              className="flex items-start gap-3 rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/20"
+            >
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-extrabold text-foreground text-sm truncate">{s.title}</p>
+                  {!s.is_active && (
+                    <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-800 uppercase">
+                      Draft
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span
+                    className={cn(
+                      "rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide",
+                      s.subject === "math" || s.subject === "MATH"
+                        ? "bg-purple-100 text-purple-700"
+                        : "bg-teal-100 text-teal-700",
+                    )}
+                  >
+                    {s.subject === "math" || s.subject === "MATH" ? "Math" : "R&W"}
+                  </span>
+                  {s.category && (
+                    <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-semibold text-muted-foreground">
+                      {s.category}
+                    </span>
+                  )}
+                  {s.question_count != null && (
+                    <span className="text-muted-foreground font-semibold">
+                      {s.question_count} questions
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Link
+                href={`/ops/assessments/${s.id}`}
+                className="shrink-0 inline-flex items-center gap-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors"
+              >
+                Edit
+                <ExternalLink className="h-2.5 w-2.5" />
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 function AssessmentWorkspace() {
+  const { me } = useMe();
+  const roleRaw = String(me?.role ?? "").trim().toLowerCase();
+  const perms = Array.isArray((me as Record<string, unknown> | undefined)?.permissions)
+    ? ((me as Record<string, unknown>).permissions as string[])
+    : [];
+  const isStaff =
+    perms.includes("*") ||
+    perms.includes("manage_users") ||
+    perms.includes("assign_access") ||
+    perms.includes("manage_tests") ||
+    roleRaw === "admin" ||
+    roleRaw === "teacher";
+
   const [entries, setEntries] = useState<AssessmentEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadingSignal, setLoadingSignal] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterValue>("all");
 
@@ -305,41 +547,31 @@ function AssessmentWorkspace() {
     setError(null);
     setEntries([]);
     try {
-      setLoadingSignal("Loading your classrooms…");
-      const classroomList = await classesApi.list();
-      const enrolled = (classroomList.items as ClassroomWithRole[]).filter(
-        (c) => c.my_role === "STUDENT" || c.my_role == null,
-      );
 
-      if (enrolled.length === 0) {
-        setLoading(false);
-        return;
-      }
-
-      setLoadingSignal(`Loading assignments from ${enrolled.length} classroom${enrolled.length !== 1 ? "s" : ""}…`);
+      // Single endpoint: all assignments across all enrolled classrooms
+      const { items } = await classesApi.myAssignments();
 
       const collected: AssessmentEntry[] = [];
-
-      await Promise.allSettled(
-        enrolled.slice(0, 15).map(async (classroom) => {
-          try {
-            const list: NormalizedList<Assignment> = await classesApi.listAssignments(classroom.id);
-            for (const a of list.items) {
-              const rich = a as AssignmentWithStatus;
-              // Only show assessment-type assignments (have `assessment_homework`)
-              if (!rich.assessment_homework) continue;
-              collected.push({
-                assignment: rich,
-                classroomId: classroom.id,
-                classroomName: classroom.name ?? `Class #${classroom.id}`,
-                subject: (classroom as ClassroomWithRole & { subject?: string }).subject,
-              });
-            }
-          } catch {
-            // Individual classroom failures are non-fatal
-          }
-        }),
-      );
+      for (const a of items) {
+        const rich = a as AssignmentWithStatus & { classroom_id?: number; classroom_name?: string };
+        // Only show assessment-type assignments (have `assessment_homework`)
+        if (!rich.assessment_homework) continue;
+        const classroomId = rich.classroom_id ?? 0;
+        const classroomName = rich.classroom_name ?? `Class #${classroomId}`;
+        // Direct resume link: if in-progress and attempt_id is known,
+        // skip the start-page interstitial and go straight to the runner.
+        const resumeHref =
+          rich.workflow_status === "in_progress" && rich.attempt_id
+            ? `/assessments/attempt/${rich.attempt_id}`
+            : undefined;
+        collected.push({
+          assignment: rich,
+          classroomId,
+          classroomName,
+          subject: rich.assessment_homework?.set?.subject,
+          resumeHref,
+        });
+      }
 
       setEntries(sortEntries(collected));
     } catch (e: unknown) {
@@ -347,7 +579,6 @@ function AssessmentWorkspace() {
       setError(typeof msg === "string" ? msg : "Could not load your assessments.");
     } finally {
       setLoading(false);
-      setLoadingSignal("");
     }
   };
 
@@ -417,6 +648,12 @@ function AssessmentWorkspace() {
         )}
       </div>
 
+      {/* Admin: assessment set management */}
+      {isStaff && <AdminAssessmentSection />}
+
+      {/* Continue Learning — pinned in-progress section */}
+      {!loading && <ContinueLearningSection entries={entries} />}
+
       {/* Attention banner */}
       {!loading && (counts.overdue > 0 || counts.dueSoon > 0) && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -482,7 +719,7 @@ function AssessmentWorkspace() {
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-            {loadingSignal || "Loading…"}
+            Loading your assessments…
           </div>
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-24 rounded-2xl border border-border bg-card animate-pulse" />

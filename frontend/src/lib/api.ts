@@ -1,5 +1,5 @@
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
-import type { TelegramAuthUser } from "@/types/telegramAuth";
+import type { TelegramOIDCResult } from "@/types/telegramAuth";
 import { buildSanitizedAuthCorrelationHeaders } from "@/lib/auth/authCorrelation";
 import { evaluateAuthCircuitBreaker, noteTemporalStaleRejection } from "@/lib/auth/authCircuitBreaker";
 import {
@@ -240,9 +240,47 @@ function urlSkipsTemporalStaleCheck(relUrl: string): boolean {
     );
 }
 
-api.interceptors.request.use((config) => {
+// CSRF token source of truth for the X-CSRFToken header.
+//
+// We deliberately do NOT read `Cookies.get("csrftoken")` from document.cookie:
+// if the browser has multiple csrftoken cookies (e.g. a legacy per-subdomain copy
+// from a past DEBUG=True period alongside the current Domain=.mastersat.uz copy),
+// js-cookie returns the FIRST and Django reads the LAST, producing a permanent
+// CSRF mismatch ("CSRF token from the 'X-CSRFToken' HTTP header incorrect.").
+//
+// Instead we cache the masked token from GET /auth/csrf/ JSON body. Django's CSRF
+// middleware unmasks it on each request and compares against the cookie SECRET it
+// happens to read — both sides converge on the same cookie value, eliminating the
+// JS-vs-Django parser-order disagreement.
+let _maskedCsrfToken: string | null = null;
+let _maskedCsrfFetch: Promise<string> | null = null;
+
+async function getMaskedCsrfToken(): Promise<string> {
+    if (_maskedCsrfToken) return _maskedCsrfToken;
+    if (_maskedCsrfFetch) return _maskedCsrfFetch;
+    _maskedCsrfFetch = (async () => {
+        try {
+            const r = await api.get("/auth/csrf/");
+            const payload = parseCsrfPayload(r.data, "GET /auth/csrf/");
+            const tok = String((payload as any)?.csrfToken || "");
+            _maskedCsrfToken = tok || null;
+            return _maskedCsrfToken || "";
+        } finally {
+            _maskedCsrfFetch = null;
+        }
+    })();
+    return _maskedCsrfFetch;
+}
+
+/** Invalidate the cached CSRF token; the next mutation re-fetches a fresh one. */
+function invalidateMaskedCsrfToken(): void {
+    _maskedCsrfToken = null;
+}
+
+api.interceptors.request.use(async (config) => {
     // Auth is cookie-based (HttpOnly access token). Do not attach Authorization header.
-    // CSRF hardening: send X-CSRFToken for unsafe methods when csrftoken cookie exists.
+    // CSRF hardening: send X-CSRFToken for unsafe methods using the cached MASKED token
+    // (sourced from /auth/csrf/ JSON body, NOT from document.cookie — see above).
     try {
         (config as unknown as Record<string, unknown>).__mastersatEnqueueLossVer = getAuthLossVersion();
         const method = String(config.method || "get").toLowerCase();
@@ -257,9 +295,25 @@ api.interceptors.request.use((config) => {
 
         const unsafe = method !== "get" && method !== "head" && method !== "options";
         if (unsafe) {
-            const csrf = Cookies.get("csrftoken");
-            if (csrf) {
-                (config.headers as any)["X-CSRFToken"] = csrf;
+            const url = String(config.url || "");
+            // Never await the CSRF fetch for the CSRF endpoint itself (chicken-and-egg).
+            // Also skip for the very first auth endpoints where the cookie may not exist yet —
+            // Django marks them CSRF-exempt anyway, but we still emit the header if we have it.
+            const isAuthBootstrap =
+                url.includes("/auth/csrf/") ||
+                url.includes("/auth/login/") ||
+                url.includes("/auth/refresh/");
+            try {
+                const tok = isAuthBootstrap
+                    ? (_maskedCsrfToken || Cookies.get("csrftoken") || "")
+                    : await getMaskedCsrfToken();
+                if (tok) {
+                    (config.headers as any)["X-CSRFToken"] = tok;
+                }
+            } catch {
+                // Fall back to cookie value to avoid blocking the request entirely.
+                const fallback = Cookies.get("csrftoken");
+                if (fallback) (config.headers as any)["X-CSRFToken"] = fallback;
             }
         }
     } catch {
@@ -313,6 +367,25 @@ api.interceptors.response.use(
                 // Avoid blocking alerts (and leaking backend detail strings) in production UX.
                 console.warn("Forbidden:", error.response.data.detail);
             }
+            // CSRF mismatch self-heal: if Django rejected the token (common after stale
+            // legacy cookies are cleared, or after the masked-token cache went out of sync),
+            // drop the cached token, fetch a fresh one, and retry the original request once.
+            const original = error.config as any;
+            const detail = String(error.response.data.detail || "").toLowerCase();
+            const looksLikeCsrf =
+                detail.includes("csrf") ||
+                detail === "csrf failed." ||
+                detail.includes("origin");
+            if (looksLikeCsrf && original && !original.__csrfRetryAttempted) {
+                original.__csrfRetryAttempted = true;
+                try {
+                    invalidateMaskedCsrfToken();
+                    await getMaskedCsrfToken();
+                    return api(original);
+                } catch {
+                    // fall through to normal 403 rejection
+                }
+            }
         }
 
         // Auth hardening for long-running sessions (exams):
@@ -332,6 +405,21 @@ api.interceptors.response.use(
                 originalUrl.includes("/auth/refresh/") ||
                 originalUrl.includes("/auth/csrf/") ||
                 originalUrl.includes("/auth/login/");
+            // Known-public endpoints. A stale JWT must NEVER trigger a refresh/redirect cycle on these
+            // — they are reachable while logged-out and the page (especially /login itself) polls them
+            // on every render. A 401 here historically caused: refresh → fail → redirect to /login →
+            // re-render → poll public endpoint → 401 → ... (visible as "page constantly reloading").
+            const isPublicEndpoint =
+                originalUrl.includes("/users/telegram/config/") ||
+                originalUrl.includes("/users/telegram/start/") ||
+                originalUrl.includes("/users/telegram/callback/") ||
+                originalUrl.includes("/users/register/") ||
+                originalUrl.includes("/users/google/") ||
+                originalUrl.includes("/users/telegram/") ||
+                originalUrl.includes("/health/");
+            if (isPublicEndpoint) {
+                return Promise.reject(error);
+            }
 
             if (original && !original.__isRetryRequest && !isAuthEndpoint) {
                 original.__isRetryRequest = true;
@@ -361,11 +449,20 @@ api.interceptors.response.use(
                 if (url.includes("users/me")) {
                     return Promise.reject(error);
                 }
-                const inExamRunner = String(window.location?.pathname || "").startsWith("/exam/");
+                const path = String(window.location?.pathname || "");
+                const inExamRunner = path.startsWith("/exam/");
                 if (inExamRunner) {
                     const e: any = error;
                     e.__mastersatAuthRequired = true;
                     return Promise.reject(e);
+                }
+                // If we're already on a public auth page, do NOT redirect — that would reload the
+                // current page in a tight loop the moment the user has any stale JWT cookie. Just
+                // clear the bad cookies and let the page render normally.
+                const onAuthPage = path === "/login" || path === "/register" || path.startsWith("/login/") || path.startsWith("/register/");
+                if (onAuthPage) {
+                    clearAuthCookiesEverywhere();
+                    return Promise.reject(error);
                 }
                 (globalThis as any).__mastersatLogoutInProgress = true;
             }
@@ -397,14 +494,19 @@ export const usersApi = {
         const r = await api.patch('/users/me/', data);
         return parseUserMePayload(r.data, "PATCH /users/me/");
     },
-    /** Public: Telegram widget bot username when TELEGRAM_BOT_TOKEN is set (uses getMe if TELEGRAM_BOT_USERNAME unset). */
-    getTelegramWidgetConfig: async (): Promise<{ enabled: boolean; bot_username: string | null }> => {
+    /** Public: Telegram OIDC config. ``start_url`` is the server-mediated OAuth entry point. */
+    getTelegramWidgetConfig: async (): Promise<{
+        enabled: boolean;
+        bot_username: string | null;
+        client_id: string | null;
+        start_url: string | null;
+    }> => {
         const r = await api.get('/users/telegram/config/');
         return r.data;
     },
-    /** Link Telegram to the logged-in user (profile). */
-    linkTelegram: async (payload: TelegramAuthUser): Promise<UserMe> => {
-        const r = await api.post('/users/telegram/link/', payload);
+    /** Link Telegram to the logged-in user (profile). Pass the ``id_token`` from Telegram.Login.auth. */
+    linkTelegram: async (idToken: string): Promise<UserMe> => {
+        const r = await api.post('/users/telegram/link/', { id_token: idToken });
         return parseUserMePayload(r.data, "POST /users/telegram/link/");
     },
     /** Active SAT/exam dates for profile dropdown (admin-managed). */
@@ -434,8 +536,18 @@ export const usersApi = {
 export const authApi = {
     csrf: async () => {
         // Must be called before login/refresh/logout on hardened CSRF flows.
+        // Also refreshes the in-memory masked-token cache used by the request interceptor.
         const r = await api.get("/auth/csrf/");
-        return parseCsrfPayload(r.data, "GET /auth/csrf/");
+        const payload = parseCsrfPayload(r.data, "GET /auth/csrf/");
+        try {
+            const tok = String((payload as any)?.csrfToken || "");
+            if (tok) {
+                _maskedCsrfToken = tok;
+            }
+        } catch {
+            /* ignore */
+        }
+        return payload;
     },
     register: async (firstName: string, lastName: string, username: string, email: string, password: string) => {
         const response = await api.post('/users/register/', { 
@@ -462,17 +574,10 @@ export const authApi = {
         await persistMeCookie(rememberMe);
         return parseAuthSessionPayload(response.data, "POST /users/google/");
     },
-    telegramAuth: async (
-        payload: Record<string, unknown> & {
-            id: number;
-            auth_date: number;
-            hash: string;
-        },
-        rememberMe = true
-    ) => {
+    telegramAuth: async (idToken: string, rememberMe = true) => {
         clearAuthCookiesEverywhere();
         await authApi.csrf();
-        const response = await api.post('/users/telegram/', payload);
+        const response = await api.post('/users/telegram/', { id_token: idToken });
         await persistMeCookie(rememberMe);
         return parseAuthSessionPayload(response.data, "POST /users/telegram/");
     },
@@ -763,6 +868,28 @@ export const classesApi = {
     },
     getSubmissionAuditLog: async (submissionId: number) => {
         const r = await api.get(`/classes/submissions/${submissionId}/audit-log/`);
+        return r.data;
+    },
+    /**
+     * Single fast endpoint: all assignments across every classroom the student is enrolled in.
+     * Returns { count, items: Assignment[] } with `workflow_status`, `assessment_homework`,
+     * `classroom_id`, `classroom_name` fields populated server-side.
+     * Replaces the N+1 pattern of calling listAssignments per classroom.
+     */
+    myAssignments: async (): Promise<{ count: number; items: Assignment[] }> => {
+        const r = await api.get('/classes/my-assignments/');
+        const data = r.data as { count?: number; items?: unknown[] };
+        return {
+            count: data.count ?? 0,
+            items: (data.items ?? []) as Assignment[],
+        };
+    },
+    /**
+     * Teacher/admin: intervention signals for a classroom.
+     * Returns overdue_students, inactive_students, low_score_students, completion_summary, class_stats.
+     */
+    getInterventions: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/interventions/`);
         return r.data;
     },
 };

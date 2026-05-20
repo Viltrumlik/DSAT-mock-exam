@@ -1,8 +1,10 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import { useMyAssessmentResult } from "@/features/assessments/hooks";
+import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
 import {
   ArrowLeft,
   BookOpen,
@@ -335,6 +337,9 @@ export default function AssessmentResultPage() {
   const aid = Number(assignmentId);
   const { data, isLoading, error, refetch } = useMyAssessmentResult(aid);
 
+  const [retryLoading, setRetryLoading] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
   const richData = data as MyResultData | undefined;
   const attempt = richData?.attempt ?? null;
   const result = richData?.result ?? null;
@@ -353,6 +358,26 @@ export default function AssessmentResultPage() {
   // Per-question breakdown (if answers are in the attempt data)
   const answers = attempt?.answers ?? [];
   const hasBreakdown = answers.length > 0;
+
+  // Retry incorrect questions only
+  const handleRetryIncorrect = async () => {
+    const incorrectIds = answers
+      .filter((a) => a.is_correct === false)
+      .map((a) => a.question_id);
+    if (!incorrectIds.length || !aid) return;
+    setRetryLoading(true);
+    setRetryError(null);
+    try {
+      const newAttempt = await assessmentsStudentApi.start({
+        assignment_id: aid,
+        focus_question_ids: incorrectIds,
+      });
+      router.push(`/assessments/attempt/${newAttempt.id}`);
+    } catch {
+      setRetryError("Could not start retry. Please try again.");
+      setRetryLoading(false);
+    }
+  };
 
   // Learning interpretation
   const insight = result
@@ -448,9 +473,17 @@ export default function AssessmentResultPage() {
             {/* Header + score */}
             <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
               <div className="border-b border-border px-6 py-5">
-                <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1">
-                  Results
-                </p>
+                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                  <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
+                    Results
+                  </p>
+                  {meta?.classroom_name && (
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      <BookOpen className="h-3 w-3" />
+                      {meta.classroom_name}
+                    </span>
+                  )}
+                </div>
                 <h1 className="text-xl font-extrabold text-foreground tracking-tight">
                   {displayTitle}
                 </h1>
@@ -573,23 +606,41 @@ export default function AssessmentResultPage() {
             {/* Per-question breakdown (if available) */}
             {hasBreakdown && attempt && (
               <div className="rounded-2xl border border-border bg-card overflow-hidden">
-                <div className="border-b border-border px-5 py-3 flex items-center justify-between gap-3">
+                <div className="border-b border-border px-5 py-3 flex items-center justify-between gap-2 flex-wrap">
                   <p className="text-sm font-bold text-foreground">Question breakdown</p>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/review/${attempt.id}`)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    Review all
-                  </button>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {answers.some((a) => a.is_correct === false) && (
+                      <button
+                        type="button"
+                        disabled={retryLoading}
+                        onClick={handleRetryIncorrect}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                      >
+                        {retryLoading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        )}
+                        Retry incorrect
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/assessments/review/${attempt.id}`)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Review all
+                    </button>
+                  </div>
                 </div>
+                {retryError && <p className="px-5 py-2 text-xs text-red-600">{retryError}</p>}
                 <div className="divide-y divide-border">
                   {answers.map((ans, i) => (
                     <button
                       key={ans.question_id}
                       type="button"
-                      onClick={() => router.push(`/review/${attempt.id}?q=${i + 1}`)}
+                      onClick={() => router.push(`/assessments/review/${attempt.id}?q=${i + 1}`)}
                       className="w-full flex items-center gap-3 px-5 py-3 hover:bg-surface-2 transition-colors text-left"
                     >
                       <span className="text-xs font-bold text-muted-foreground w-6 text-right shrink-0">

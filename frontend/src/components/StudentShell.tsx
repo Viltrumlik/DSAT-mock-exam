@@ -190,11 +190,11 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
   const navLinkClass = (active: boolean) =>
     cn(
-      "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150",
       sidebarCollapsed && "md:justify-center md:px-2",
       active
-        ? "bg-primary/10 text-primary"
-        : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+        ? "bg-primary/10 text-primary shadow-sm border border-primary/15"
+        : "text-muted-foreground hover:bg-surface-2 hover:text-foreground border border-transparent",
     );
 
   return (

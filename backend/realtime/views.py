@@ -11,8 +11,27 @@ from django.db.models import Case, IntegerField, When
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.renderers import BaseRenderer
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+
+class EventStreamRenderer(BaseRenderer):
+    """Renderer used so DRF's content negotiation does not return 406 when a client
+    advertises ``Accept: text/event-stream``. The actual streaming response is built
+    manually via ``StreamingHttpResponse`` so this renderer is only here to satisfy
+    DRF's content-type matching.
+    """
+
+    media_type = "text/event-stream"
+    format = "txt"
+    charset = "utf-8"
+    render_style = "text"
+
+    def render(self, data, accepted_media_type=None, renderer_context=None):  # pragma: no cover - never called
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data)
+        return str(data).encode("utf-8")
 
 from .alerts import evaluate_realtime_thresholds
 from .constants import PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM
@@ -85,6 +104,11 @@ class RealtimeEventsSSEView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    # Accept "text/event-stream" without 406'ing on DRF content negotiation.
+    # The actual response is built via StreamingHttpResponse below; this renderer is
+    # only here so DRF's negotiator sees a matching renderer for the SSE Accept header.
+    from rest_framework.renderers import JSONRenderer as _JSONRenderer
+    renderer_classes = [EventStreamRenderer, _JSONRenderer]
 
     def get(self, request):
         user = request.user

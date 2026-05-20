@@ -870,13 +870,18 @@ class AdminPastpaperPackSerializer(serializers.ModelSerializer):
             "practice_date",
             "label",
             "form_type",
+            "is_published",
+            "published_at",
             "sections",
             "sat_violations",
             "publish_ready",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["created_at", "updated_at", "sat_violations", "publish_ready"]
+        read_only_fields = [
+            "created_at", "updated_at", "sat_violations", "publish_ready",
+            "published_at",
+        ]
 
     def _get_violations(self, obj):
         cache_attr = "_sat_violations_cache"

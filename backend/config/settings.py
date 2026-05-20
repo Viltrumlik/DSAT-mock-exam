@@ -47,10 +47,19 @@ LMS_AUTHZ_DEBUG_FILTERS = _env_bool('LMS_AUTHZ_DEBUG_FILTERS', default_when_unse
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID', '')
-# Telegram Login Widget: bot token (server only) + bot username for the widget (public).
+# Telegram bot HTTP API token (used for getMe to discover bot username, and as the default OIDC client_id source).
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '')
 # Optional: bot username without @. If empty, the API may call Telegram getMe once (cached) to discover it.
 TELEGRAM_BOT_USERNAME = os.getenv('TELEGRAM_BOT_USERNAME', '').strip().lstrip('@')
+# Telegram OIDC (https://core.telegram.org/bots/telegram-login) confidential-client credentials.
+# client_id is the bot id (digits before ":" in TELEGRAM_BOT_TOKEN) unless overridden.
+TELEGRAM_OIDC_CLIENT_ID = os.getenv('TELEGRAM_OIDC_CLIENT_ID', '').strip()
+TELEGRAM_OIDC_CLIENT_SECRET = os.getenv('TELEGRAM_OIDC_CLIENT_SECRET', '').strip()
+# Absolute https URL registered with Telegram OIDC as redirect_uri.
+TELEGRAM_OIDC_REDIRECT_URI = os.getenv(
+    'TELEGRAM_OIDC_REDIRECT_URI',
+    'https://mastersat.uz/api/users/telegram/callback/',
+).strip()
 # Synthetic email domain for users without email (must stay unique per Telegram user id).
 TELEGRAM_SYNTHETIC_EMAIL_DOMAIN = os.getenv(
     'TELEGRAM_SYNTHETIC_EMAIL_DOMAIN',
@@ -97,6 +106,11 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
+    # Detect legacy per-subdomain csrftoken/JWT cookies left over from a DEBUG=True period.
+    # Listed BEFORE CsrfViewMiddleware so it runs LAST in the response phase — Django CSRF
+    # middleware first writes its csrftoken Set-Cookie with Domain=.mastersat.uz, then this
+    # middleware overrides it with a no-Domain deletion only when a duplicate was detected.
+    'core.cookie_cleanup.LegacyCookieCleanupMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     # Enforce CSRF for cookie-authenticated API requests (DRF APIViews are CSRF-exempt by default).
     'config.csrf_api.APICSRFEnforceMiddleware',
@@ -439,6 +453,16 @@ CSRF_TRUSTED_ORIGINS = [
     'http://65.109.100.104',
 ]
 
+# Allow extra trusted origins from env (e.g. http://localhost:3000 in dev)
+_extra_csrf = os.getenv('CSRF_TRUSTED_ORIGINS_EXTRA', '')
+if _extra_csrf:
+    CSRF_TRUSTED_ORIGINS += [o.strip() for o in _extra_csrf.split(',') if o.strip()]
+
+# Always trust localhost in DEBUG mode so `npm run dev` works without extra config
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS += ['http://localhost:3000', 'http://127.0.0.1:3000',
+                              'http://localhost:8000', 'http://127.0.0.1:8000']
+
 # Cookie-based JWT auth still requires CSRF defenses for unsafe requests.
 # Lax is more resilient across subdomain navigations while still preventing most CSRF vectors.
 CSRF_COOKIE_SAMESITE = "Lax"
@@ -577,6 +601,10 @@ if not DEBUG:
         SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "31536000"))
         SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("SECURE_HSTS_INCLUDE_SUBDOMAINS", "False").lower() == "true"
         SECURE_HSTS_PRELOAD = os.getenv("SECURE_HSTS_PRELOAD", "False").lower() == "true"
+
+# Telegram OIDC login opens a popup at oauth.telegram.org and posts back via window.opener.
+# Django defaults to "same-origin" which blocks cross-origin opener access — break the popup callback.
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin-allow-popups"
 
 
 # ─── Logging ──────────────────────────────────────────────────────────────────

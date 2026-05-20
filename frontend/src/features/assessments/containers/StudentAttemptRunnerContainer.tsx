@@ -55,9 +55,11 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Loader2,
   Monitor,
   Send,
+  Timer,
   Wifi,
   WifiOff,
 } from "lucide-react";
@@ -66,7 +68,7 @@ import { cn } from "@/lib/cn";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type SaveState = "idle" | "saving" | "saved" | "offline" | "error";
-type Stage = "exam" | "confirm-submit" | "submitting" | "complete";
+type Stage = "exam" | "confirm-submit" | "submitting" | "complete" | "review";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -328,6 +330,110 @@ function SubmitConfirmScreen({
   );
 }
 
+// ─── Elapsed time formatter ──────────────────────────────────────────────────
+
+function fmtElapsed(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// ─── Review screen (post-submit time summary) ────────────────────────────────
+
+function ReviewScreen({
+  title,
+  assignmentId,
+  attemptId,
+  questionIds,
+  questionTimes,
+  totalElapsed,
+}: {
+  title: string;
+  assignmentId: number | null;
+  attemptId: number;
+  questionIds: number[];
+  questionTimes: Record<number, number>;
+  totalElapsed: number;
+}) {
+  const totalTracked = Object.values(questionTimes).reduce((a, b) => a + b, 0);
+  return (
+    <div className="mx-auto w-full max-w-2xl space-y-4">
+      <div className="rounded-2xl border border-border bg-card p-8 text-center space-y-4">
+        <div className="rounded-full bg-emerald-100 p-4 w-20 h-20 mx-auto flex items-center justify-center">
+          <CheckCircle2 className="h-10 w-10 text-emerald-600" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-extrabold text-foreground">Submitted!</h2>
+          <p className="text-muted-foreground mt-1">{title}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-surface-2 px-4 py-3 text-center">
+            <p className="text-2xl font-extrabold text-primary tabular-nums">{fmtElapsed(totalElapsed)}</p>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Total time</p>
+          </div>
+          <div className="rounded-xl bg-surface-2 px-4 py-3 text-center">
+            <p className="text-2xl font-extrabold text-foreground tabular-nums">{questionIds.length}</p>
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Questions</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Per-question time breakdown */}
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+        <h3 className="text-sm font-extrabold text-foreground uppercase tracking-wide">
+          Time per question
+        </h3>
+        <div className="space-y-1.5">
+          {questionIds.map((qid, i) => {
+            const sec = questionTimes[qid] || 0;
+            const pct = totalTracked > 0 ? Math.round((sec / totalTracked) * 100) : 0;
+            return (
+              <div key={qid} className="flex items-center gap-3 rounded-xl bg-surface-2 px-3 py-2">
+                <span className="text-xs font-bold text-muted-foreground w-6 text-right shrink-0">
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="h-1.5 rounded-full bg-border overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary/60 transition-all"
+                      style={{ width: `${Math.max(pct, 2)}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-foreground tabular-nums w-12 text-right shrink-0">
+                  {fmtElapsed(sec)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div className="flex justify-center gap-3">
+        {assignmentId ? (
+          <a
+            href={`/assessments/result/${assignmentId}`}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            View results
+            <ChevronRight className="h-4 w-4" />
+          </a>
+        ) : (
+          <a
+            href="/classes"
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-6 py-3 text-sm font-extrabold text-foreground hover:bg-surface-2 transition-colors"
+          >
+            Back to classes
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Complete screen ──────────────────────────────────────────────────────────
 
 function CompleteScreen({
@@ -395,6 +501,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     | number
     | null
     | undefined;
+  // Pedagogical context: classroom + assignment title from the bundle meta block.
+  // Renders in the runner header so students always know which classroom this
+  // assessment belongs to. Gracefully absent for older bundles without meta.
+  const runnerMeta = (data as Record<string, unknown> | undefined)?.meta as
+    | { classroom_name?: string | null; assignment_title?: string | null; due_at?: string | null }
+    | undefined;
 
   const ordered = useMemo(() => normalizeQuestionList(questions), [questions]);
   const questionIds = useMemo(
@@ -430,8 +542,40 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // Auto-hide "saved" dot after 2s
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Count-up timer & per-question time tracking ────────────────────────────
+  const examStartRef = useRef(Date.now());
+  const [elapsedSec, setElapsedSec] = useState(0);
+  // Accumulated seconds per question id
+  const questionTimesRef = useRef<Record<number, number>>({});
+  // Timestamp when the student entered the current question
+  const currentQuestionStartRef = useRef(Date.now());
+
+  // Count-up timer: tick every second while the exam stage is active
+  useEffect(() => {
+    if (stage !== "exam") return;
+    const iv = setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - examStartRef.current) / 1000));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [stage]);
+
   const current = ordered[currentIdx] as Record<string, unknown> | undefined;
   const currentQuestionId = Number(current?.id || 0);
+
+  // Track per-question time when switching questions
+  const prevIdxRef = useRef(currentIdx);
+  useEffect(() => {
+    if (prevIdxRef.current !== currentIdx) {
+      // Accumulate time for the previous question
+      const prevQid = questionIds[prevIdxRef.current];
+      if (prevQid) {
+        const spent = Math.floor((Date.now() - currentQuestionStartRef.current) / 1000);
+        questionTimesRef.current[prevQid] = (questionTimesRef.current[prevQid] || 0) + spent;
+      }
+      currentQuestionStartRef.current = Date.now();
+      prevIdxRef.current = currentIdx;
+    }
+  }, [currentIdx, questionIds]);
 
   const draftRef = useRef(draftById);
   draftRef.current = draftById;
@@ -925,6 +1069,11 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       return;
     }
     submitInflightRef.current = true;
+    // Finalize the current question's time before submitting
+    if (currentQuestionId) {
+      const spent = Math.floor((Date.now() - currentQuestionStartRef.current) / 1000);
+      questionTimesRef.current[currentQuestionId] = (questionTimesRef.current[currentQuestionId] || 0) + spent;
+    }
     setStage("submitting");
     setSubmitError(null);
     try {
@@ -939,7 +1088,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       clearAttemptDraftStorage(attemptId);
       clearDraftMirror(attemptId);
       writeSubmitReceipt(attemptId, assignmentId ?? null, serverSubmittedAt);
-      setStage("complete");
+      setStage("review");
       // Notify parent page (backward compat for any listeners)
       window.dispatchEvent(
         new CustomEvent("assessment:submitted", { detail: { attemptId } }),
@@ -1055,7 +1204,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 
         {/* Header */}
         <div className="rounded-2xl border border-border bg-card px-5 py-4 flex items-center justify-between gap-4">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
+            {runnerMeta?.classroom_name && (
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] truncate mb-0.5">
+                {runnerMeta.classroom_name}
+              </p>
+            )}
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary truncate">
               {set?.subject ? String(set.subject) : "Assessment"}
             </p>
@@ -1177,6 +1331,20 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const answeredCount = answeredIds.size;
   const answerValue = currentQuestionId ? draftById[currentQuestionId] : null;
 
+  // ── Stage: review (time summary after submit) ──────────────────────────────
+  if (stage === "review") {
+    return (
+      <ReviewScreen
+        title={setTitle}
+        assignmentId={assignmentId ?? null}
+        attemptId={attemptId}
+        questionIds={questionIds}
+        questionTimes={{ ...questionTimesRef.current }}
+        totalElapsed={elapsedSec}
+      />
+    );
+  }
+
   // ── Stage: complete ─────────────────────────────────────────────────────────
   if (stage === "complete") {
     return (
@@ -1285,7 +1453,13 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card px-5 py-4 flex items-center justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
+          {/* Classroom context line — only rendered when meta is available */}
+          {runnerMeta?.classroom_name && (
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] truncate mb-0.5">
+              {runnerMeta.classroom_name}
+            </p>
+          )}
           <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-primary truncate">
             {set?.subject ? String(set.subject) : "Assessment"}
           </p>
@@ -1293,7 +1467,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
             {setTitle}
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Elapsed timer */}
+          <div className="flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1">
+            <Timer className="h-3.5 w-3.5 text-primary/70" aria-hidden />
+            <span className="text-sm font-bold text-foreground tabular-nums">{fmtElapsed(elapsedSec)}</span>
+          </div>
           {/* Connectivity dot (only when online and working) */}
           {online && <Wifi className="h-3.5 w-3.5 text-muted-foreground/40" aria-hidden />}
           {/* Save state dot */}
@@ -1317,11 +1496,25 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 
       {/* ── Question card ─────────────────────────────────────────────────── */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
-          Question {currentIdx + 1} of {totalCount}
-        </p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            Question {currentIdx + 1} of {totalCount}
+          </p>
+          <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            <span className="tabular-nums">
+              {fmtElapsed(
+                (questionTimesRef.current[currentQuestionId] || 0) +
+                Math.floor((Date.now() - currentQuestionStartRef.current) / 1000)
+              )}
+            </span>
+          </div>
+        </div>
         {Boolean(current?.question_prompt) && (
-          <div className="mb-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
+          // On mobile: cap the passage height and make it scrollable so the
+          // question stem + answer choices stay reachable without full-page scroll.
+          // On wider screens: remove the cap (full passage visible).
+          <div className="mb-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl max-h-48 overflow-y-auto sm:max-h-none sm:overflow-visible">
             <MathText
               text={String(current!.question_prompt)}
               block

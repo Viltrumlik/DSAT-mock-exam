@@ -4,9 +4,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { authApi, usersApi } from "@/lib/api";
 import { invalidateMe } from "@/hooks/useMe";
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Loader2, LogIn } from 'lucide-react';
+import { AlertCircle, Loader2, LogIn, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
-import TelegramLoginButton, { type TelegramAuthUser } from '@/components/TelegramLoginButton';
+import TelegramLoginButton, { type TelegramOIDCResult } from '@/components/TelegramLoginButton';
 import type { AuthNoticeRecord } from "@/lib/auth/authTabSync";
 import { consumeAuthNotice } from "@/lib/auth/authTabSync";
 
@@ -16,11 +16,45 @@ declare global {
     }
 }
 
+function classifyLoginError(err: unknown): { message: string; retryable: boolean } {
+    const ax = err as { response?: { status?: number; data?: { detail?: string; missing_fields?: string[] } }; code?: string; message?: string };
+    const status = ax.response?.status;
+    const detail = ax.response?.data?.detail;
+
+    if (!ax.response) {
+        if (ax.code === "ECONNABORTED" || ax.message?.includes("timeout")) {
+            return { message: "Request timed out. Please check your connection and try again.", retryable: true };
+        }
+        return { message: "Cannot connect to the server. Check your internet connection and try again.", retryable: true };
+    }
+    if (status === 401 || status === 400) {
+        return { message: detail || "The email or password you entered is incorrect.", retryable: false };
+    }
+    if (status === 403) {
+        return { message: detail || "Your account has been restricted. Contact support.", retryable: false };
+    }
+    if (status === 429) {
+        return { message: "Too many login attempts. Please wait a minute before trying again.", retryable: false };
+    }
+    if (status !== undefined && status >= 500) {
+        return { message: "Server error. Please try again in a moment.", retryable: true };
+    }
+    return { message: detail || "Sign-in failed. Please try again.", retryable: true };
+}
+
+function getRedirectTarget(): string {
+    const host = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
+    if (host.startsWith("admin.")) return "/ops";
+    if (host.startsWith("questions.")) return "/builder";
+    return "/";
+}
+
 export default function LoginPage() {
     const queryClient = useQueryClient();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [isRetryable, setIsRetryable] = useState(false);
     const [loading, setLoading] = useState(false);
     const [rememberMe, setRememberMe] = useState(true);
     const [googleCredential, setGoogleCredential] = useState('');
@@ -31,7 +65,10 @@ export default function LoginPage() {
     const [telegramCfg, setTelegramCfg] = useState<{
         enabled: boolean;
         bot_username: string | null;
+        client_id: string | null;
+        start_url: string | null;
     } | null>(null);
+    const lastSubmitRef = useRef<(() => void) | null>(null);
 
     const [authRouteNotice, setAuthRouteNotice] = useState<AuthNoticeRecord | null>(null);
 
@@ -44,92 +81,133 @@ export default function LoginPage() {
         usersApi
             .getTelegramWidgetConfig()
             .then(setTelegramCfg)
-            .catch(() => setTelegramCfg({ enabled: false, bot_username: null }));
+            .catch(() => setTelegramCfg({ enabled: false, bot_username: null, client_id: null, start_url: null }));
     }, []);
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const completeLogin = useCallback(async () => {
+        try {
+            await usersApi.getMe().catch(() => null);
+        } catch { /* identity probe is best-effort */ }
+        void invalidateMe(queryClient);
+        router.push(getRedirectTarget());
+    }, [queryClient, router]);
+
+    const handleSubmit = async (e?: React.FormEvent) => {
+        e?.preventDefault();
+        if (!email.trim() || !password) return;
         setLoading(true);
         setError('');
+        setIsRetryable(false);
+        lastSubmitRef.current = () => void handleSubmit();
         try {
             await authApi.login(email, password, rememberMe);
-            await usersApi.getMe().catch(() => null);
-            void invalidateMe(queryClient);
-            const host = (typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "");
-            if (host.startsWith("admin.")) {
-                router.push("/ops");
-            } else if (host.startsWith("questions.")) {
-                router.push("/builder");
-            } else {
-                // main domain: student/teacher portal
-                router.push("/");
-            }
-        } catch {
-            setError('The email or password you entered is incorrect. Please try again.');
+            await completeLogin();
+        } catch (err: unknown) {
+            const { message, retryable } = classifyLoginError(err);
+            setError(message);
+            setIsRetryable(retryable);
         } finally {
             setLoading(false);
         }
     };
 
     const handleTelegramAuth = useCallback(
-        async (user: TelegramAuthUser) => {
+        async (result: TelegramOIDCResult) => {
             setLoading(true);
             setError('');
+            setIsRetryable(false);
+            lastSubmitRef.current = () => void handleTelegramAuth(result);
             try {
-                await authApi.telegramAuth(user, rememberMe);
-                void invalidateMe(queryClient);
-                router.push('/');
-            } catch (err: any) {
-                setError(err?.response?.data?.detail || 'Telegram sign-in failed.');
+                await authApi.telegramAuth(result.id_token, rememberMe);
+                await completeLogin();
+            } catch (err: unknown) {
+                const { message, retryable } = classifyLoginError(err);
+                setError(message);
+                setIsRetryable(retryable);
             } finally {
                 setLoading(false);
             }
         },
-        [rememberMe, router],
+        [rememberMe, completeLogin],
     );
 
     const handleGoogleCredential = async (credential: string, profile?: { first_name?: string; last_name?: string; username?: string }) => {
         setLoading(true);
         setError('');
+        setIsRetryable(false);
+        lastSubmitRef.current = () => void handleGoogleCredential(credential, profile);
         try {
             await authApi.googleAuth(credential, profile, rememberMe);
-            void invalidateMe(queryClient);
-            router.push('/');
-        } catch (err: any) {
-            const missing = err?.response?.data?.missing_fields;
+            await completeLogin();
+        } catch (err: unknown) {
+            const ax = err as { response?: { data?: { missing_fields?: string[] } } };
+            const missing = ax.response?.data?.missing_fields;
             if (Array.isArray(missing) && missing.length) {
                 setGoogleCredential(credential);
                 setGoogleMissing(missing);
                 setError('Please complete missing profile fields to continue.');
+                setIsRetryable(false);
             } else {
-                setError(err?.response?.data?.detail || 'Google sign in failed.');
+                const { message, retryable } = classifyLoginError(err);
+                setError(message);
+                setIsRetryable(retryable);
             }
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        if (!window.google || !googleButtonRef.current) return;
-        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
-        if (!clientId) return;
+    const handleRetry = () => {
+        if (lastSubmitRef.current) lastSubmitRef.current();
+    };
 
-        window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: (response: any) => {
-                if (response?.credential) {
-                    handleGoogleCredential(response.credential);
-                }
-            },
-        });
-        googleButtonRef.current.innerHTML = "";
-        window.google.accounts.id.renderButton(googleButtonRef.current, {
-            theme: "outline",
-            size: "large",
-            shape: "pill",
-            width: 360,
-            text: "continue_with",
-        });
+    useEffect(() => {
+        const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+        if (!clientId || clientId.includes("your-google-web-client-id")) return;
+
+        let cancelled = false;
+        let pollTimer: number | null = null;
+
+        const tryInit = () => {
+            if (cancelled) return;
+            const el = googleButtonRef.current;
+            if (!window.google?.accounts?.id || !el) {
+                // GSI script (https://accounts.google.com/gsi/client) is loaded with
+                // strategy="afterInteractive"; it may not be ready yet at mount. Poll
+                // for up to ~10s so the button still renders after the script lands.
+                pollTimer = window.setTimeout(tryInit, 200);
+                return;
+            }
+            try {
+                window.google.accounts.id.initialize({
+                    client_id: clientId,
+                    callback: (response: { credential?: string }) => {
+                        if (response?.credential) {
+                            void handleGoogleCredential(response.credential);
+                        }
+                    },
+                });
+                // Replace any prior button (e.g. on hot-reload) before re-rendering.
+                el.innerHTML = "";
+                window.google.accounts.id.renderButton(el, {
+                    theme: "outline",
+                    size: "large",
+                    shape: "pill",
+                    width: 360,
+                    text: "continue_with",
+                });
+            } catch (err) {
+                // Surface init failures (e.g. invalid client_id) instead of a silent dead button.
+                console.warn("Google Sign-In init failed", err);
+            }
+        };
+
+        tryInit();
+        return () => {
+            cancelled = true;
+            if (pollTimer !== null) window.clearTimeout(pollTimer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     return (
@@ -181,8 +259,21 @@ export default function LoginPage() {
                         )}
                         {error && (
                             <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">
-                                <AlertCircle className="w-5 h-5 shrink-0" />
-                                <span>{error}</span>
+                                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                                <div className="flex-1 min-w-0">
+                                    <span>{error}</span>
+                                    {isRetryable && (
+                                        <button
+                                            type="button"
+                                            onClick={handleRetry}
+                                            disabled={loading}
+                                            className="mt-2 flex items-center gap-1.5 text-xs font-bold text-red-700 dark:text-red-300 hover:underline disabled:opacity-50"
+                                        >
+                                            <RefreshCw className="w-3 h-3" />
+                                            Retry
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         )}
 
@@ -261,18 +352,16 @@ export default function LoginPage() {
                                 </span>
                                 {telegramCfg === null ? (
                                     <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-                                ) : telegramCfg.enabled && telegramCfg.bot_username ? (
-                                    <TelegramLoginButton
-                                        botUsername={telegramCfg.bot_username}
-                                        onAuth={handleTelegramAuth}
-                                    />
+                                ) : telegramCfg.enabled && telegramCfg.start_url ? (
+                                    <TelegramLoginButton startUrl={telegramCfg.start_url} next="/" />
                                 ) : (
                                     <p className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-sm px-2">
                                         Telegram login is not configured yet. An administrator must set{" "}
                                         <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">
                                             TELEGRAM_BOT_TOKEN
                                         </code>{" "}
-                                        and configure the Web Login domain in BotFather.
+                                        and register the bot with @BotFather for OIDC login on{" "}
+                                        <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">mastersat.uz</code>.
                                     </p>
                                 )}
                             </div>

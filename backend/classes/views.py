@@ -254,6 +254,147 @@ class ClassroomViewSet(ModelViewSet):
             return ClassroomCreateSerializer
         return ClassroomSerializer
 
+    @action(detail=False, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="my-assignments")
+    def my_assignments(self, request):
+        """
+        Returns ALL assignments across ALL classrooms the current user is enrolled in,
+        with ``workflow_status`` and ``assessment_homework`` hydrated.
+
+        This replaces the previous N+1 per-classroom fetch pattern on the student
+        assessment workspace and dashboard. One request → full assignment surface.
+
+        Response: { count, items: [ { ...assignment, classroom_id, classroom_name,
+                                      workflow_status, assessment_homework } ] }
+        """
+        user = request.user
+        enrolled = list(
+            Classroom.objects.filter(memberships__user=user)
+            .only("id", "name", "subject")
+            .distinct()
+        )
+        if not enrolled:
+            return Response({"count": 0, "items": []})
+
+        classroom_ids = [c.id for c in enrolled]
+        classroom_map = {c.id: c for c in enrolled}
+
+        # Single query: all assignments across enrolled classrooms.
+        assignments = list(
+            Assignment.objects.filter(classroom_id__in=classroom_ids)
+            .select_related(
+                "classroom",
+                "created_by",
+                "assessment_homework__assessment_set",
+            )
+            .order_by("classroom_id", "-created_at")
+        )
+
+        # Build submission map for this student (one query).
+        subs_map = {
+            s.assignment_id: s
+            for s in Submission.objects.filter(
+                student=user,
+                assignment__classroom_id__in=classroom_ids,
+            ).select_related("review")
+        }
+
+        # Build assessment attempt map (one query via HomeworkAssignment → AssessmentAttempt).
+        assessment_wf_map: dict[int, str] = {}  # assignment_id → workflow_status string
+        # attempt_id for in-progress assessment attempts (enables one-click resume)
+        assessment_attempt_id_map: dict[int, int] = {}  # assignment_id → attempt_id
+        try:
+            from assessments.models import HomeworkAssignment as AssessHW, AssessmentAttempt, AssessmentResult
+
+            hw_rows = list(
+                AssessHW.objects.filter(classroom_id__in=classroom_ids).select_related("assignment")
+            )
+            if hw_rows:
+                hw_by_assignment = {h.assignment_id: h for h in hw_rows}
+                latest_by_hw: dict[int, AssessmentAttempt] = {}
+                for att in AssessmentAttempt.objects.filter(
+                    student=user,
+                    homework_id__in=[h.id for h in hw_rows],
+                ).order_by("-started_at", "-id"):
+                    if att.homework_id not in latest_by_hw:
+                        latest_by_hw[att.homework_id] = att
+
+                res_by_attempt = {
+                    r.attempt_id: r
+                    for r in AssessmentResult.objects.filter(
+                        attempt_id__in=[a.id for a in latest_by_hw.values()]
+                    )
+                }
+
+                for assign_id, h in hw_by_assignment.items():
+                    att = latest_by_hw.get(h.id)
+                    res = res_by_attempt.get(att.id) if att else None
+                    if att is None:
+                        assessment_wf_map[assign_id] = "not_started"
+                    elif res is not None:
+                        assessment_wf_map[assign_id] = "graded"
+                    elif att.status == "submitted":
+                        assessment_wf_map[assign_id] = "submitted"
+                    elif att.status == "in_progress":
+                        assessment_wf_map[assign_id] = "in_progress"
+                        # Surface the attempt ID so the frontend can deep-link
+                        # directly to the runner, skipping the start-page interstitial.
+                        assessment_attempt_id_map[assign_id] = att.id
+                    else:
+                        assessment_wf_map[assign_id] = att.status or "not_started"
+        except Exception:
+            logger.exception("my_assignments: assessment hydration failed user_id=%s", user.pk)
+
+        items = []
+        for a in assignments:
+            hw = getattr(a, "assessment_homework", None)
+            hw_set = getattr(hw, "assessment_set", None) if hw else None
+
+            # Determine workflow_status: assessment path takes precedence.
+            if hw is not None:
+                wf = assessment_wf_map.get(a.id, "not_started")
+            else:
+                wf = submission_workflow_status(subs_map.get(a.id))
+
+            assessment_homework_payload = None
+            if hw is not None:
+                assessment_homework_payload = {
+                    "homework_id": hw.id,
+                    "set": (
+                        {
+                            "id": hw_set.id,
+                            "subject": hw_set.subject,
+                            "category": hw_set.category,
+                            "title": hw_set.title,
+                            "description": getattr(hw_set, "description", ""),
+                        }
+                        if hw_set
+                        else None
+                    ),
+                }
+
+            classroom = classroom_map.get(a.classroom_id)
+            items.append({
+                "id": a.id,
+                "title": a.title,
+                "due_at": a.due_at.isoformat() if a.due_at else None,
+                "created_at": a.created_at.isoformat(),
+                "classroom_id": a.classroom_id,
+                "classroom_name": classroom.name if classroom else f"Class #{a.classroom_id}",
+                "classroom_subject": classroom.subject if classroom else None,
+                "workflow_status": wf,
+                "assessment_homework": assessment_homework_payload,
+                # attempt_id is present only when workflow_status == "in_progress".
+                # Enables the frontend to deep-link directly to the runner
+                # (/assessments/attempt/{attempt_id}), bypassing the start-page
+                # interstitial for one-click resume UX.
+                "attempt_id": assessment_attempt_id_map.get(a.id),
+                "has_practice_content": bool(
+                    assignment_target_practice_test_ids(a) or hw is not None
+                ),
+            })
+
+        return Response({"count": len(items), "items": items})
+
     @action(detail=False, methods=["get"], url_path="directory")
     def directory(self, request):
         """Directory-wide classroom list (super_admin/superuser only)."""
@@ -429,7 +570,20 @@ class ClassroomViewSet(ModelViewSet):
                 }
             )
 
-        return Response({"practice_tests": practice_tests})
+        # Assessment sets
+        from assessments.models import AssessmentSet
+        assessment_sets = []
+        for aset in AssessmentSet.objects.filter(is_active=True).order_by("-created_at"):
+            assessment_sets.append({
+                "id": aset.id,
+                "title": aset.title,
+                "subject": aset.subject,
+                "category": aset.category or "",
+                "description": aset.description or "",
+                "question_count": aset.questions.filter(is_active=True).count(),
+            })
+
+        return Response({"practice_tests": practice_tests, "assessment_sets": assessment_sets})
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="leaderboard")
     def leaderboard(self, request, pk=None):
@@ -672,6 +826,242 @@ class ClassroomViewSet(ModelViewSet):
                 },
             }
         )
+
+    @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="interventions")
+    def interventions(self, request, pk=None):
+        """
+        Teacher/admin intervention signals for a classroom.
+
+        Returns actionable signals the teacher can act on immediately:
+          - overdue_students:   students with ≥1 overdue assignment not submitted
+          - inactive_students:  students with no submission activity in 7 days
+          - low_score_students: students whose average assessment score is below 60%
+          - completion_summary: per-assignment completion rates
+          - class_stats:        overall health metrics
+
+        Access: teachers and admins of the classroom only.
+        """
+        classroom = self.get_object()
+        user = request.user
+        membership = classroom.memberships.filter(user=user).first()
+        if not membership:
+            return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
+        if membership.role not in (ClassroomMembership.ROLE_ADMIN, "TEACHER"):
+            return Response({"detail": "Teacher or admin access required."}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        seven_days_ago = now - timedelta(days=7)
+
+        # All students in the classroom.
+        students = list(
+            ClassroomMembership.objects.filter(
+                classroom=classroom,
+                role=ClassroomMembership.ROLE_STUDENT,
+            ).select_related("user").order_by("user__last_name", "user__first_name")
+        )
+        student_ids = [m.user_id for m in students]
+        student_map = {m.user_id: m.user for m in students}
+
+        if not student_ids:
+            return Response({
+                "overdue_students": [],
+                "inactive_students": [],
+                "low_score_students": [],
+                "completion_summary": [],
+                "class_stats": {
+                    "student_count": 0,
+                    "assignment_count": 0,
+                    "overall_completion_pct": 0,
+                    "avg_assessment_score_pct": None,
+                },
+            })
+
+        # All assignments in the classroom.
+        assignments = list(
+            Assignment.objects.filter(classroom=classroom)
+            .select_related("assessment_homework__assessment_set")
+            .order_by("due_at", "-created_at")
+        )
+        assignment_ids = [a.id for a in assignments]
+
+        # All submissions by students in this classroom.
+        submissions = list(
+            Submission.objects.filter(
+                assignment__classroom=classroom,
+                student_id__in=student_ids,
+            ).values("student_id", "assignment_id", "status", "updated_at")
+        )
+        # submitted_set[assignment_id] = set of student_ids who submitted
+        submitted_set: dict[int, set] = defaultdict(set)
+        last_activity: dict[int, object] = {}  # student_id → latest submission updated_at
+        for s in submissions:
+            if s["status"] in ("submitted", "reviewed", "returned"):
+                submitted_set[s["assignment_id"]].add(s["student_id"])
+            ts = s["updated_at"]
+            prev = last_activity.get(s["student_id"])
+            if prev is None or ts > prev:
+                last_activity[s["student_id"]] = ts
+
+        # Assessment attempt activity.
+        try:
+            from assessments.models import HomeworkAssignment as AssessHW, AssessmentAttempt, AssessmentResult
+
+            hw_rows = list(
+                AssessHW.objects.filter(classroom=classroom).select_related("assignment")
+            )
+            hw_by_id = {h.id: h for h in hw_rows}
+            hw_assign_by_id = {h.assignment_id: h for h in hw_rows}
+
+            assess_attempts = list(
+                AssessmentAttempt.objects.filter(
+                    homework_id__in=[h.id for h in hw_rows],
+                    student_id__in=student_ids,
+                ).values("student_id", "homework_id", "status", "started_at", "submitted_at")
+            )
+            assess_results = {
+                r.attempt_id: r
+                for r in AssessmentResult.objects.filter(
+                    attempt__homework_id__in=[h.id for h in hw_rows],
+                    attempt__student_id__in=student_ids,
+                ).select_related("attempt")
+            }
+
+            # submitted_set update for assessment assignments.
+            for att in assess_attempts:
+                h = hw_by_id.get(att["homework_id"])
+                if h and att["status"] in ("submitted", "graded"):
+                    submitted_set[h.assignment_id].add(att["student_id"])
+                ts = att.get("submitted_at") or att.get("started_at")
+                if ts:
+                    prev = last_activity.get(att["student_id"])
+                    if prev is None or ts > prev:
+                        last_activity[att["student_id"]] = ts
+
+            # Average score per student across all assessment results.
+            score_sum: dict[int, list[float]] = defaultdict(list)
+            for r in assess_results.values():
+                sid = r.attempt.student_id
+                try:
+                    score_sum[sid].append(float(r.percent))
+                except (TypeError, ValueError):
+                    pass
+            avg_assess_score: dict[int, float] = {
+                sid: sum(scores) / len(scores)
+                for sid, scores in score_sum.items()
+                if scores
+            }
+        except Exception:
+            logger.exception("interventions: assessment hydration failed classroom_id=%s", classroom.pk)
+            hw_assign_by_id = {}
+            avg_assess_score = {}
+
+        # ── Overdue students ──────────────────────────────────────────────────
+        overdue_assignments = [
+            a for a in assignments
+            if a.due_at and a.due_at < now
+        ]
+        overdue_students: list[dict] = []
+        seen_overdue: set[int] = set()
+        for a in overdue_assignments:
+            submitted = submitted_set.get(a.id, set())
+            for sid in student_ids:
+                if sid not in submitted and sid not in seen_overdue:
+                    u = student_map[sid]
+                    overdue_students.append({
+                        "student_id": sid,
+                        "email": u.email,
+                        "first_name": u.first_name,
+                        "last_name": u.last_name,
+                        "overdue_count": sum(
+                            1 for oa in overdue_assignments
+                            if sid not in submitted_set.get(oa.id, set())
+                        ),
+                        "oldest_overdue_due_at": min(
+                            (oa.due_at.isoformat() for oa in overdue_assignments
+                             if oa.due_at and sid not in submitted_set.get(oa.id, set())),
+                            default=None,
+                        ),
+                    })
+                    seen_overdue.add(sid)
+        # Sort by overdue_count descending.
+        overdue_students.sort(key=lambda x: -x["overdue_count"])
+
+        # ── Inactive students (no submission or attempt activity in 7 days) ───
+        inactive_students: list[dict] = []
+        for sid in student_ids:
+            last = last_activity.get(sid)
+            is_inactive = last is None or last < seven_days_ago
+            if is_inactive:
+                u = student_map[sid]
+                inactive_students.append({
+                    "student_id": sid,
+                    "email": u.email,
+                    "first_name": u.first_name,
+                    "last_name": u.last_name,
+                    "last_activity_at": last.isoformat() if last else None,
+                    "days_inactive": (
+                        (now - last).days if last else None
+                    ),
+                })
+        inactive_students.sort(key=lambda x: (x["last_activity_at"] or "") )
+
+        # ── Low-score students (avg assessment score < 60%) ───────────────────
+        low_score_students: list[dict] = []
+        for sid in student_ids:
+            avg = avg_assess_score.get(sid)
+            if avg is not None and avg < 60.0:
+                u = student_map[sid]
+                low_score_students.append({
+                    "student_id": sid,
+                    "email": u.email,
+                    "first_name": u.first_name,
+                    "last_name": u.last_name,
+                    "avg_score_pct": round(avg, 1),
+                })
+        low_score_students.sort(key=lambda x: x["avg_score_pct"])
+
+        # ── Completion summary per assignment ─────────────────────────────────
+        n_students = len(student_ids)
+        completion_summary = []
+        for a in assignments:
+            submitted = submitted_set.get(a.id, set())
+            n_submitted = len(submitted & set(student_ids))
+            completion_summary.append({
+                "assignment_id": a.id,
+                "title": a.title,
+                "due_at": a.due_at.isoformat() if a.due_at else None,
+                "is_overdue": bool(a.due_at and a.due_at < now),
+                "is_assessment": a.id in hw_assign_by_id,
+                "submitted_count": n_submitted,
+                "student_count": n_students,
+                "completion_pct": round(100.0 * n_submitted / n_students, 1) if n_students else 0.0,
+            })
+
+        # ── Class-level stats ─────────────────────────────────────────────────
+        total_possible = n_students * len(assignments) if assignments else 0
+        total_submitted = sum(
+            len(submitted_set.get(a.id, set()) & set(student_ids))
+            for a in assignments
+        )
+        overall_completion = (
+            round(100.0 * total_submitted / total_possible, 1)
+            if total_possible else 0.0
+        )
+        all_avg_scores = list(avg_assess_score.values())
+        class_avg_score = round(mean(all_avg_scores), 1) if all_avg_scores else None
+
+        return Response({
+            "overdue_students": overdue_students,
+            "inactive_students": inactive_students,
+            "low_score_students": low_score_students,
+            "completion_summary": completion_summary,
+            "class_stats": {
+                "student_count": n_students,
+                "assignment_count": len(assignments),
+                "overall_completion_pct": overall_completion,
+                "avg_assessment_score_pct": class_avg_score,
+            },
+        })
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="stream")
     def stream(self, request, pk=None):
@@ -964,6 +1354,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         assignment = serializer.save(classroom=classroom, created_by=request.user)
+
+        # Handle file uploads (multiple files supported)
         files = list(request.FILES.getlist("attachment_file"))
         if not files:
             files = list(request.FILES.getlist("attachment_files"))
@@ -976,6 +1368,37 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             assignment.save(update_fields=["attachment_file", "updated_at"])
             for f in files[1:]:
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
+
+        # Auto-assign pastpaper/practice test access to students
+        try:
+            grant_practice_test_library_access_for_assignment(assignment)
+        except Exception:
+            pass
+
+        # Handle assessment_set_id — create linked HomeworkAssignment
+        assessment_set_id = request.data.get("assessment_set_id")
+        if assessment_set_id:
+            try:
+                from assessments.models import AssessmentSet, AssessmentSetVersion, HomeworkAssignment as AssessHW
+                aset = AssessmentSet.objects.get(pk=int(assessment_set_id))
+                pinned_version = (
+                    AssessmentSetVersion.objects.filter(assessment_set=aset)
+                    .order_by("-version_number")
+                    .first()
+                )
+                with transaction.atomic():
+                    AssessHW.objects.create(
+                        classroom=classroom,
+                        assessment_set=aset,
+                        assignment=assignment,
+                        assigned_by=request.user,
+                        set_version=pinned_version,
+                    )
+            except IntegrityError:
+                pass
+            except Exception:
+                pass
+
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
