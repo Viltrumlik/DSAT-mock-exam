@@ -190,10 +190,10 @@ export default function StudentShell({ children }: { children: React.ReactNode }
 
   const navLinkClass = (active: boolean) =>
     cn(
-      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150",
+      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-200",
       sidebarCollapsed && "md:justify-center md:px-2",
       active
-        ? "bg-primary/10 text-primary shadow-sm border border-primary/15"
+        ? "bg-primary/10 text-primary shadow-sm border border-primary/15 font-bold"
         : "text-muted-foreground hover:bg-surface-2 hover:text-foreground border border-transparent",
     );
 
@@ -492,8 +492,8 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                     href="/profile"
                     aria-label="Profile"
                     className={cn(
-                      "relative ms-icon-btn inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-card text-foreground shadow-sm transition-colors hover:border-primary/30 hover:bg-surface-2",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/90 focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] dark:focus-visible:ring-amber-400/55 dark:focus-visible:ring-offset-black",
+                      "relative inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-primary/20 bg-card text-foreground shadow-sm transition-all hover:border-primary/40 hover:shadow-md",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     )}
                   >
                     {profileImageUrl && !profileAvatarFailed ? (
@@ -513,7 +513,7 @@ export default function StudentShell({ children }: { children: React.ReactNode }
                 <button
                   type="button"
                   onClick={() => router.push("/login")}
-                  className="ms-btn-primary ms-cta-fill inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold md:px-4 md:text-sm"
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-colors md:px-4 md:text-sm"
                 >
                   <LogIn className="h-4 w-4" />
                   <span className="hidden sm:inline">Sign in</span>

@@ -6,13 +6,33 @@ import { useRouter } from "next/navigation";
 import { classesApi, emptyNormalizedExamList, emptyNormalizedList, type UserMe, usersApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { examsStudentApi } from "@/features/examsStudent/api";
-import { ArrowRight, BarChart3, Calendar, Loader2, Pencil, PlayCircle, Target, TrendingUp } from "lucide-react";
-import { ClassroomButton } from "@/components/classroom";
-import { DashboardCard, DashboardEyebrow, DashboardTitle } from "./DashboardCard";
-import { GoalScoreModal, initialSectionsFromTarget } from "./GoalScoreModal";
-import { LearningRoadmap, type RoadmapStep } from "./LearningRoadmap";
+import {
+  ArrowRight,
+  BarChart3,
+  BookOpen,
+  Calendar,
+  ChevronRight,
+  Clock,
+  Flame,
+  GraduationCap,
+  Loader2,
+  Pencil,
+  PlayCircle,
+  Target,
+  TrendingUp,
+  Trophy,
+  Zap,
+} from "lucide-react";
 import { cn } from "@/lib/cn";
 import { platformSubjectIsMath, platformSubjectIsReadingWriting } from "@/lib/permissions";
+import { StatCard } from "@/components/ui/StatCard";
+import { ProgressRing } from "@/components/ui/ProgressRing";
+import { MiniBarChart } from "@/components/ui/MiniBarChart";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { ActivityItem } from "@/components/ui/ActivityItem";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { GoalScoreModal, initialSectionsFromTarget } from "./GoalScoreModal";
+import { LearningRoadmap, type RoadmapStep } from "./LearningRoadmap";
 import { StudentTaskPrioritySection } from "./StudentTaskPrioritySection";
 
 type Attempt = {
@@ -49,11 +69,7 @@ const SECTION_GOALS_KEY = (userId: number) => `mastersat.sectionGoals.${userId}`
 function formatExamDateLabel(d: string) {
   if (!d) return "";
   try {
-    return new Date(d).toLocaleDateString("en-US", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+    return new Date(d).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
   } catch {
     return d;
   }
@@ -76,9 +92,38 @@ function readStoredSectionGoals(
   }
 }
 
-/** Avoid hanging forever if a non-critical API stalls (``useMe`` already loaded ``/users/me/``). */
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 const DASHBOARD_AGGREGATE_TIMEOUT_MS = 45_000;
 
+/* ─────────────────────────────── Skeleton ────────────────────────────── */
+function DashboardSkeleton() {
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-8 lg:px-6">
+      <div className="mb-8 h-10 max-w-xs ds-skeleton rounded-xl" />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-32 rounded-2xl ds-skeleton" />
+        ))}
+      </div>
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 h-48 rounded-2xl ds-skeleton" />
+        <div className="h-48 rounded-2xl ds-skeleton" />
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════ MAIN ═══════════════════════════════════ */
 export function HomeDashboard() {
   const router = useRouter();
   const { bootState, me: sessionMe } = useMe();
@@ -92,6 +137,7 @@ export function HomeDashboard() {
   const [savingExamDate, setSavingExamDate] = useState(false);
   const [examDateError, setExamDateError] = useState<string | null>(null);
 
+  /* ── Data loading ───────────────────────────────────────────────────── */
   useEffect(() => {
     if (bootState !== "AUTHENTICATED" || !sessionMe) {
       setLoading(false);
@@ -133,12 +179,20 @@ export function HomeDashboard() {
     };
   }, [bootState, sessionMe]);
 
+  /* ── Derived data ───────────────────────────────────────────────────── */
   const incomplete = useMemo(
     () => attempts.find((a) => !a.is_completed) || null,
     [attempts],
   );
 
-  const weeklyBuckets = useMemo(() => {
+  const completedAttempts = useMemo(
+    () => attempts.filter((a) => a.is_completed),
+    [attempts],
+  );
+
+  const totalCompleted = completedAttempts.length;
+
+  const weeklyData = useMemo(() => {
     const days = [0, 0, 0, 0, 0, 0, 0];
     const now = startOfDay(new Date());
     const dayMs = 86400000;
@@ -148,9 +202,18 @@ export function HomeDashboard() {
       const diff = Math.round((now - t) / dayMs);
       if (diff >= 0 && diff < 7) days[6 - diff] += 1;
     }
-    const max = Math.max(1, ...days);
-    return days.map((n) => ({ n, h: Math.round((n / max) * 100) }));
+    return days;
   }, [attempts]);
+
+  const weeklyTotal = weeklyData.reduce((s, n) => s + n, 0);
+  const weekLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const recentActivity = useMemo(() => {
+    return completedAttempts
+      .filter((a) => a.submitted_at)
+      .sort((a, b) => new Date(b.submitted_at!).getTime() - new Date(a.submitted_at!).getTime())
+      .slice(0, 5);
+  }, [completedAttempts]);
 
   const firstName = me?.first_name?.trim() || "there";
   const examDays = daysUntil(me?.sat_exam_date ?? null);
@@ -165,37 +228,31 @@ export function HomeDashboard() {
     if (fromStore) return fromStore;
     return initialSectionsFromTarget(target);
   }, [me?.id, target]);
-  const trend =
-    target != null && mockScore != null
-      ? mockScore >= target
-        ? { label: "On or above target", up: true }
-        : { label: `${target - mockScore} pts to goal`, up: false }
-      : { label: "Set target in Profile", up: null as boolean | null };
+
+  const scoreProgress = target && mockScore ? Math.min(100, Math.round((mockScore / target) * 100)) : 0;
 
   const profileFieldsFilled = useMemo(() => {
     if (!me) return 0;
     let n = 0;
-    const t = 4;
     if (me.first_name) n++;
     if (me.last_name) n++;
     if (me.sat_exam_date) n++;
     if (me.target_score != null) n++;
-    return Math.round((n / t) * 100);
+    return Math.round((n / 4) * 100);
   }, [me]);
 
+  /* ── Handlers ───────────────────────────────────────────────────────── */
   async function handleExamDateChange(value: string) {
     if (me?.id == null) return;
     setSavingExamDate(true);
     setExamDateError(null);
     try {
-      const updated = await usersApi.patchMe({
-        sat_exam_date: value.trim() ? value : null,
-      });
+      const updated = await usersApi.patchMe({ sat_exam_date: value.trim() ? value : null });
       setMe((prev) => (prev ? { ...prev, ...updated } : prev));
     } catch (err: unknown) {
       const d = (err as { response?: { data?: Record<string, unknown> } })?.response?.data;
       const text =
-        typeof d === "object" && d && d !== null
+        typeof d === "object" && d
           ? Object.entries(d)
               .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
               .join(" ")
@@ -226,203 +283,149 @@ export function HomeDashboard() {
 
   const roadmapSteps: RoadmapStep[] = useMemo(
     () => [
-      {
-        id: "profile",
-        label: "Profile & goals",
-        description: "Exam date and target score",
-        href: "/profile",
-        done: profileFieldsFilled >= 75,
-      },
-      {
-        id: "practice",
-        label: "Pastpaper practice",
-        description: "Untimed sections from your library",
-        href: "/practice-tests",
-        done: attempts.some((a) => a.is_completed),
-      },
-      {
-        id: "mock",
-        label: "Timed mock",
-        description: "Full diagnostic under test rules",
-        href: "/mock-exam",
-        done: !!me?.last_mock_result,
-      },
-      {
-        id: "classes",
-        label: "Classes",
-        description: "Homework and cohort progress",
-        href: "/classes",
-        done: classCount > 0,
-      },
+      { id: "profile", label: "Profile & goals", description: "Exam date and target score", href: "/profile", done: profileFieldsFilled >= 75 },
+      { id: "practice", label: "Pastpaper practice", description: "Untimed sections from your library", href: "/practice-tests", done: attempts.some((a) => a.is_completed) },
+      { id: "mock", label: "Timed mock", description: "Full diagnostic under test rules", href: "/mock-exam", done: !!me?.last_mock_result },
+      { id: "classes", label: "Classes", description: "Homework and cohort progress", href: "/classes", done: classCount > 0 },
     ],
     [attempts, classCount, me?.last_mock_result, profileFieldsFilled],
   );
 
-  if (bootState === "BOOTING") {
-    return (
-      <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
-        <div className="mb-8 h-10 max-w-md ds-skeleton rounded-xl" />
-        <div className="mb-4 h-28 rounded-2xl ds-skeleton" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-44 rounded-2xl ds-skeleton" />
-          ))}
-        </div>
-      </div>
-    );
+  /* ── Guard states ───────────────────────────────────────────────────── */
+  if (bootState === "BOOTING" || (bootState === "AUTHENTICATED" && loading)) {
+    return <DashboardSkeleton />;
   }
 
   if (bootState !== "AUTHENTICATED") {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <DashboardCard accent="gold" padding="lg">
-          <DashboardEyebrow>MasterSAT</DashboardEyebrow>
-          <DashboardTitle className="mt-2">Sign in for your dashboard</DashboardTitle>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Track countdown, resume tests, and see weekly activity in one place.
+        <div className="rounded-2xl border border-border bg-card p-10 shadow-sm">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+            <GraduationCap className="h-8 w-8 text-primary" />
+          </div>
+          <h1 className="text-xl font-black text-foreground">Welcome to MasterSAT</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sign in to track your progress, resume tests, and see weekly analytics.
           </p>
-          <ClassroomButton variant="primary" size="md" className="mt-6 w-full" onClick={() => router.push("/login")}>
-            Sign in
-          </ClassroomButton>
-        </DashboardCard>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6">
-        <div className="mb-8 h-10 max-w-md ds-skeleton rounded-xl" />
-        <div className="mb-4 h-28 rounded-2xl ds-skeleton" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-44 rounded-2xl ds-skeleton" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  const totalCompleted = attempts.filter((a) => a.is_completed).length;
-
-  return (
-    <div className="mx-auto max-w-6xl px-3 py-6 md:px-4 lg:px-6 space-y-6">
-
-      {/* ── Hero greeting ──────────────────────────────────────────────────── */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-foreground md:text-3xl">
-            Welcome back, {firstName} 👋
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Here&apos;s your SAT prep at a glance.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => setGoalModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+            onClick={() => router.push("/login")}
+            className="mt-6 w-full rounded-xl bg-primary px-6 py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            <Target className="h-3.5 w-3.5" />
-            {target != null ? "Update goal" : "Set goal"}
+            Sign in
           </button>
-          <Link
-            href="/profile"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Profile
-          </Link>
-        </div>
-      </header>
-
-      {/* ── Metric cards row ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {/* Countdown */}
-        <div className="relative overflow-hidden rounded-2xl bg-primary p-4 text-white">
-          <div className="flex items-center gap-2 mb-2">
-            <Calendar className="h-4 w-4 opacity-80" />
-            <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">SAT Exam</span>
-          </div>
-          <p className="text-3xl font-black tabular-nums md:text-4xl">
-            {examDays == null ? "—" : examDays < 0 ? "0" : examDays}
-          </p>
-          <p className="text-xs font-bold uppercase tracking-wider opacity-90 mt-0.5">days left</p>
-          {me?.sat_exam_date && (
-            <p className="text-[10px] font-medium opacity-75 mt-1">{formatExamDateLabel(me.sat_exam_date)}</p>
-          )}
-        </div>
-
-        {/* Target score */}
-        <button
-          type="button"
-          onClick={() => setGoalModalOpen(true)}
-          className="rounded-2xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/30 group"
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <Target className="h-4 w-4 text-primary" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Target</span>
-          </div>
-          <p className="text-3xl font-black tabular-nums text-foreground md:text-4xl">
-            {target != null ? target : "—"}
-          </p>
-          <p className="text-xs font-bold text-muted-foreground mt-0.5">/ 1600</p>
-          {sectionGoals && (
-            <p className="text-[10px] font-semibold text-muted-foreground mt-1">
-              M:{sectionGoals.math} · E:{sectionGoals.english}
-            </p>
-          )}
-        </button>
-
-        {/* Last mock */}
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <BarChart3 className="h-4 w-4 text-primary" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Last Mock</span>
-          </div>
-          <p className="text-3xl font-black tabular-nums text-foreground md:text-4xl">
-            {mockScore != null ? mockScore : "—"}
-          </p>
-          <div className={cn(
-            "inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[10px] font-bold mt-1",
-            trend.up === true && "bg-emerald-100 text-emerald-700",
-            trend.up === false && "bg-amber-100 text-amber-700",
-            trend.up === null && "bg-surface-2 text-muted-foreground",
-          )}>
-            {trend.up === true ? <TrendingUp className="h-3 w-3" /> : <Target className="h-3 w-3" />}
-            {trend.label}
-          </div>
-        </div>
-
-        {/* Completed tests */}
-        <div className="rounded-2xl border border-border bg-card p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <PlayCircle className="h-4 w-4 text-primary" />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Completed</span>
-          </div>
-          <p className="text-3xl font-black tabular-nums text-foreground md:text-4xl">
-            {totalCompleted}
-          </p>
-          <p className="text-xs font-bold text-muted-foreground mt-0.5">tests done</p>
-          {classCount > 0 && (
-            <p className="text-[10px] font-semibold text-muted-foreground mt-1">
-              {classCount} class{classCount !== 1 ? "es" : ""} enrolled
-            </p>
-          )}
         </div>
       </div>
+    );
+  }
 
-      {/* ── Exam date picker (compact) ─────────────────────────────────────── */}
+  return (
+    <div className="mx-auto max-w-7xl px-4 py-6 lg:px-6 space-y-6">
+
+      {/* ═══ Header ══════════════════════════════════════════════════════ */}
+      <PageHeader
+        eyebrow="Dashboard"
+        title={`Welcome back, ${firstName}`}
+        description="Your SAT prep analytics and progress at a glance."
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setGoalModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Target className="h-3.5 w-3.5" />
+              {target != null ? "Update goal" : "Set goal"}
+            </button>
+            <Link
+              href="/profile"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Profile
+            </Link>
+          </div>
+        }
+      />
+
+      {/* ═══ Top Metric Row (4 stat cards) ═══════════════════════════════ */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* SAT Countdown — hero accent card */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-primary/80 p-5 text-white">
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-white/10" />
+          <div className="absolute -bottom-6 -right-6 h-20 w-20 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex items-center gap-2 mb-3">
+              <Calendar className="h-4 w-4 opacity-80" />
+              <span className="text-[10px] font-bold uppercase tracking-widest opacity-80">SAT Countdown</span>
+            </div>
+            <p className="text-4xl font-black tabular-nums leading-none">
+              {examDays == null ? "--" : examDays < 0 ? "0" : examDays}
+            </p>
+            <p className="text-xs font-bold uppercase tracking-wider opacity-90 mt-1">days remaining</p>
+            {me?.sat_exam_date && (
+              <p className="text-[10px] font-medium opacity-70 mt-2">{formatExamDateLabel(me.sat_exam_date)}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Target Score with progress ring */}
+        <StatCard
+          label="Target Score"
+          value={target != null ? target : "--"}
+          sub={sectionGoals ? `M: ${sectionGoals.math} | E: ${sectionGoals.english}` : "/ 1600"}
+          icon={Target}
+          accent="text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40"
+          onClick={() => setGoalModalOpen(true)}
+        />
+
+        {/* Last Mock with trend */}
+        <StatCard
+          label="Last Mock"
+          value={mockScore != null ? mockScore : "--"}
+          icon={BarChart3}
+          accent="text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950/40"
+          sub={
+            target != null && mockScore != null
+              ? mockScore >= target
+                ? "On or above target"
+                : `${target - mockScore} pts to goal`
+              : "Take a mock to see score"
+          }
+          trend={
+            target != null && mockScore != null
+              ? mockScore >= target
+                ? "up"
+                : "down"
+              : undefined
+          }
+          change={
+            target != null && mockScore != null
+              ? Math.round(Math.abs(((mockScore - target) / target) * 100))
+              : undefined
+          }
+        />
+
+        {/* Tests Completed */}
+        <StatCard
+          label="Tests Done"
+          value={totalCompleted}
+          icon={Trophy}
+          accent="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
+          sub={classCount > 0 ? `${classCount} class${classCount !== 1 ? "es" : ""} enrolled` : "Keep practicing!"}
+        />
+      </div>
+
+      {/* ═══ Exam Date Picker (inline) ═══════════════════════════════════ */}
       {(() => {
         const allowed = new Set(examDateOptions.map((o) => o.exam_date));
         const sat = me?.sat_exam_date?.trim() || "";
         const orphan = !!sat && !allowed.has(sat);
         if (examDateOptions.length === 0 && sat) return null;
         return (
-          <div className="rounded-2xl border border-border bg-card px-4 py-3 flex flex-wrap items-center gap-3">
+          <div className="rounded-2xl border border-border bg-card px-5 py-3 flex flex-wrap items-center gap-3">
             <Calendar className="h-4 w-4 text-primary shrink-0" />
-            <span className="text-xs font-bold text-foreground">SAT Date:</span>
+            <span className="text-xs font-bold text-foreground">SAT Exam Date:</span>
             <select
               disabled={savingExamDate}
               value={sat}
@@ -447,117 +450,237 @@ export function HomeDashboard() {
         );
       })()}
 
-      {/* ── Task-first: pending assignments ─────────────────────────────────── */}
+      {/* ═══ Pending Tasks (priority zone) ═══════════════════════════════ */}
       <StudentTaskPrioritySection dashboardLoaded={!loading} />
 
-      {/* ── Two-column grid: Resume + Activity ─────────────────────────────── */}
-      <div className="grid gap-4 md:grid-cols-5">
+      {/* ═══ Main Analytics Grid ═════════════════════════════════════════ */}
+      <div className="grid gap-4 lg:grid-cols-3">
 
-        {/* Continue learning — prominent resume card */}
-        <div className="md:col-span-3 rounded-2xl border border-border bg-card p-5 space-y-4">
-          <div className="flex items-center gap-2">
-            <PlayCircle className="h-4 w-4 text-primary" />
-            <h2 className="text-xs font-extrabold uppercase tracking-wide text-foreground">Continue learning</h2>
-          </div>
-          {incomplete ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 flex-1">
-                <p className="font-extrabold text-foreground truncate">
-                  {incomplete.practice_test_details?.title || "Practice test"}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {platformSubjectIsMath(incomplete.practice_test_details?.subject)
-                    ? "Math"
-                    : platformSubjectIsReadingWriting(incomplete.practice_test_details?.subject)
-                      ? "Reading & Writing"
-                      : "In progress"}
-                  {" · Pick up where you stopped"}
-                </p>
+        {/* ── Left column: Score Progress + Resume ────────────────────── */}
+        <div className="lg:col-span-2 space-y-4">
+
+          {/* Score Progress Panel */}
+          {target != null && (
+            <div className="rounded-2xl border border-border bg-card p-6">
+              <div className="flex items-center justify-between mb-5">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-extrabold uppercase tracking-wide text-foreground">Score Progress</h2>
+                </div>
+                <span className="text-xs font-bold text-muted-foreground tabular-nums">
+                  {mockScore ?? 0} / {target}
+                </span>
               </div>
-              <Link
-                href={`/exam/${incomplete.id}`}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors shrink-0"
-              >
-                <PlayCircle className="h-4 w-4" />
-                Resume
-              </Link>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                No active attempt. Start a pastpaper or mock exam when you&apos;re ready.
-              </p>
-              <Link
-                href="/practice-tests"
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors shrink-0"
-              >
-                Browse tests
-                <ArrowRight className="h-4 w-4" />
-              </Link>
+              <div className="flex items-center gap-8">
+                <ProgressRing
+                  value={scoreProgress}
+                  size={96}
+                  strokeWidth={8}
+                  color={scoreProgress >= 100 ? "text-emerald-500" : "text-primary"}
+                >
+                  <div className="text-center">
+                    <span className="text-lg font-black tabular-nums text-foreground">{scoreProgress}%</span>
+                  </div>
+                </ProgressRing>
+                <div className="flex-1 space-y-3">
+                  {sectionGoals && (
+                    <>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-muted-foreground">Math</span>
+                          <span className="text-xs font-bold tabular-nums text-foreground">{sectionGoals.math}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-blue-500 transition-all duration-700"
+                            style={{ width: `${Math.min(100, (sectionGoals.math / 800) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-muted-foreground">Reading & Writing</span>
+                          <span className="text-xs font-bold tabular-nums text-foreground">{sectionGoals.english}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-violet-500 transition-all duration-700"
+                            style={{ width: `${Math.min(100, (sectionGoals.english / 800) * 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {!sectionGoals && (
+                    <p className="text-sm text-muted-foreground">
+                      Set section goals to see per-subject progress bars.
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
+
+          {/* Continue Learning / Resume Card */}
+          <div className="rounded-2xl border border-border bg-card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <PlayCircle className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-extrabold uppercase tracking-wide text-foreground">Continue Learning</h2>
+            </div>
+            {incomplete ? (
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <p className="font-extrabold text-foreground truncate text-lg">
+                    {incomplete.practice_test_details?.title || "Practice test"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {platformSubjectIsMath(incomplete.practice_test_details?.subject)
+                      ? "Math"
+                      : platformSubjectIsReadingWriting(incomplete.practice_test_details?.subject)
+                        ? "Reading & Writing"
+                        : "In progress"}
+                    {" · Pick up where you stopped"}
+                  </p>
+                </div>
+                <Link
+                  href={`/exam/${incomplete.id}`}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors shrink-0 shadow-sm"
+                >
+                  <PlayCircle className="h-4 w-4" />
+                  Resume Test
+                </Link>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">No active attempts right now.</p>
+                  <p className="text-xs text-muted-foreground/70 mt-0.5">Start a practice test or mock exam to see it here.</p>
+                </div>
+                <Link
+                  href="/practice-tests"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-3 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors shrink-0"
+                >
+                  Browse Tests
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Weekly activity chart */}
-        <div className="md:col-span-2 rounded-2xl border border-border bg-card p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-primary" />
-              <h2 className="text-xs font-extrabold uppercase tracking-wide text-foreground">This week</h2>
+        {/* ── Right column: Weekly Activity + Recent ──────────────────── */}
+        <div className="space-y-4">
+
+          {/* Weekly Activity Chart */}
+          <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Flame className="h-4 w-4 text-orange-500" />
+                <h2 className="text-sm font-extrabold uppercase tracking-wide text-foreground">This Week</h2>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-1 text-xs font-bold tabular-nums text-foreground">
+                <Zap className="h-3 w-3 text-primary" />
+                {weeklyTotal} tests
+              </span>
             </div>
-            <span className="text-xs font-bold text-muted-foreground tabular-nums">
-              {weeklyBuckets.reduce((s, d) => s + d.n, 0)} tests
-            </span>
+            <MiniBarChart
+              data={weeklyData}
+              labels={weekLabels}
+              height={80}
+              barClass={cn("bg-primary rounded-t-md")}
+            />
           </div>
-          <div className="flex h-24 items-end justify-between gap-1.5">
-            {weeklyBuckets.map((d, i) => {
-              const labels = ["M", "T", "W", "T", "F", "S", "S"];
-              return (
-                <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
-                  <div className="flex h-20 w-full items-end justify-center">
-                    <div
-                      className={cn(
-                        "w-full max-w-[1.5rem] rounded-t-md transition-all duration-300",
-                        d.n > 0 ? "bg-primary" : "bg-surface-2",
-                      )}
-                      style={{ height: `${Math.max(8, d.h)}%` }}
-                    />
-                  </div>
-                  <span className="text-[9px] font-bold text-muted-foreground">{labels[i]}</span>
-                </div>
-              );
-            })}
+
+          {/* Recent Activity Feed */}
+          <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-primary" />
+                <h2 className="text-sm font-extrabold uppercase tracking-wide text-foreground">Recent</h2>
+              </div>
+              {recentActivity.length > 0 && (
+                <Link href="/practice-tests" className="text-[11px] font-bold text-primary hover:underline">
+                  View all
+                </Link>
+              )}
+            </div>
+            {recentActivity.length > 0 ? (
+              <div className="divide-y divide-border">
+                {recentActivity.map((a) => (
+                  <ActivityItem
+                    key={a.id}
+                    icon={
+                      platformSubjectIsMath(a.practice_test_details?.subject)
+                        ? BarChart3
+                        : BookOpen
+                    }
+                    iconColor={
+                      platformSubjectIsMath(a.practice_test_details?.subject)
+                        ? "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950/40"
+                        : "text-violet-600 bg-violet-50 dark:text-violet-400 dark:bg-violet-950/40"
+                    }
+                    title={a.practice_test_details?.title || "Practice test"}
+                    meta={a.score != null ? `Score: ${a.score}` : "Completed"}
+                    time={a.submitted_at ? timeAgo(a.submitted_at) : undefined}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="py-6 text-center">
+                <BookOpen className="mx-auto h-6 w-6 text-muted-foreground/30 mb-2" />
+                <p className="text-xs text-muted-foreground">No recent activity yet.</p>
+              </div>
+            )}
           </div>
+
+          {/* Profile Completion */}
+          {profileFieldsFilled < 100 && (
+            <Link
+              href="/profile"
+              className="group flex items-center gap-4 rounded-2xl border border-border bg-card p-5 transition-all hover:border-primary/25"
+            >
+              <ProgressRing value={profileFieldsFilled} size={48} strokeWidth={4} color="text-amber-500" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-foreground">Complete your profile</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Add exam date and goals for better analytics</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+            </Link>
+          )}
         </div>
       </div>
 
-      {/* ── Quick actions ──────────────────────────────────────────────────── */}
+      {/* ═══ Quick Actions Grid ══════════════════════════════════════════ */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { href: "/practice-tests", icon: PlayCircle, label: "Practice Tests", desc: "Untimed sections" },
-          { href: "/mock-exam", icon: Target, label: "Mock Exam", desc: "Full timed test" },
-          { href: "/assessments", icon: BarChart3, label: "Assessments", desc: "Class homework" },
-          { href: "/classes", icon: Calendar, label: "My Classes", desc: `${classCount} enrolled` },
+          { href: "/practice-tests", icon: PlayCircle, label: "Practice Tests", desc: "Untimed sections", accent: "text-blue-600 bg-blue-50 dark:bg-blue-950/40" },
+          { href: "/mock-exam", icon: Target, label: "Mock Exam", desc: "Full timed test", accent: "text-red-600 bg-red-50 dark:bg-red-950/40" },
+          { href: "/assessments", icon: BarChart3, label: "Assessments", desc: "Class homework", accent: "text-violet-600 bg-violet-50 dark:bg-violet-950/40" },
+          { href: "/classes", icon: GraduationCap, label: "My Classes", desc: `${classCount} enrolled`, accent: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" },
         ].map((action) => (
           <Link
             key={action.href}
             href={action.href}
-            className="group flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/30 hover:shadow-sm"
+            className="group flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 transition-all hover:border-primary/25 hover:shadow-sm"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
-              <action.icon className="h-4.5 w-4.5" />
+            <div className={cn("flex h-10 w-10 items-center justify-center rounded-xl transition-colors", action.accent)}>
+              <action.icon className="h-5 w-5" />
             </div>
             <div>
               <p className="text-sm font-extrabold text-foreground">{action.label}</p>
               <p className="text-[10px] font-semibold text-muted-foreground">{action.desc}</p>
             </div>
+            <span className="text-[11px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+              Open <ArrowRight className="h-3 w-3" />
+            </span>
           </Link>
         ))}
       </div>
 
-      {/* ── Roadmap ────────────────────────────────────────────────────────── */}
+      {/* ═══ Learning Roadmap ════════════════════════════════════════════ */}
       <LearningRoadmap steps={roadmapSteps} />
 
+      {/* ═══ Goal Modal ══════════════════════════════════════════════════ */}
       <GoalScoreModal
         open={goalModalOpen}
         onOpenChange={setGoalModalOpen}

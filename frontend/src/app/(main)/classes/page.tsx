@@ -10,17 +10,31 @@ import {
   ClassroomButton,
   ClassroomCard,
   ClassroomClassListSkeleton,
-  ClassroomEmptyState,
   ClassroomField,
   ClassroomModal,
-  ClassroomPageHeader,
   crInputClass,
   crSelectClass,
 } from "@/components/classroom";
-import { ArrowRight, MoreHorizontal, Plus, RefreshCcw, Search, Users } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  Clock,
+  GraduationCap,
+  MoreHorizontal,
+  Plus,
+  RefreshCcw,
+  Search,
+  Users,
+  X,
+} from "lucide-react";
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/DropdownMenu";
 import { IconButton } from "@/components/ui/IconButton";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { StatCard } from "@/components/ui/StatCard";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { cn } from "@/lib/cn";
 
+/* ── Helpers ──────────────────────────────────────────────────────────── */
 function isoDateToInput(value: string | null | undefined): string {
   if (!value) return "";
   const s = String(value);
@@ -43,18 +57,12 @@ function parseApiError(e: unknown, fallback: string): string {
   const raw = (e as { response?: { data?: unknown } })?.response?.data;
   if (raw == null || raw === "") return fallback;
   if (typeof raw === "string") return raw.trim() || fallback;
-  if (Array.isArray(raw)) {
-    return raw.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
-  }
+  if (Array.isArray(raw)) return raw.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
   if (typeof raw !== "object") return String(raw);
   const d = raw as Record<string, unknown>;
   if (typeof d.detail === "string") return d.detail;
-  if (Array.isArray(d.detail)) {
-    return d.detail.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
-  }
-  if (d.detail != null && typeof d.detail === "object") {
-    return JSON.stringify(d.detail);
-  }
+  if (Array.isArray(d.detail)) return d.detail.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ");
+  if (d.detail != null && typeof d.detail === "object") return JSON.stringify(d.detail);
   const parts: string[] = [];
   for (const [k, v] of Object.entries(d)) {
     if (k === "detail") continue;
@@ -65,12 +73,7 @@ function parseApiError(e: unknown, fallback: string): string {
   return parts.length ? parts.join(" ") : fallback;
 }
 
-const groupTileClass =
-  "group relative w-full overflow-hidden text-left transition-all duration-200 ease-out hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background";
-
-const groupTileAccent =
-  "pointer-events-none absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-primary via-accent-cyan to-accent-cyan opacity-90";
-
+/* ═══════════════════════════════ MAIN ═══════════════════════════════════ */
 export default function ClassesPage() {
   const router = useRouter();
   const canCreateClassroom = typeof window !== "undefined" && can("create_classroom");
@@ -87,30 +90,15 @@ export default function ClassesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [teachers, setTeachers] = useState<any[]>([]);
   const [newClass, setNewClass] = useState({
-    name: "",
-    subject: "ENGLISH",
-    lesson_days: "ODD",
-    lesson_time: "",
-    lesson_hours: "2",
-    start_date: "",
-    room_number: "",
-    telegram_chat_url: "",
-    teacher: "",
-    max_students: "",
+    name: "", subject: "ENGLISH", lesson_days: "ODD", lesson_time: "",
+    lesson_hours: "2", start_date: "", room_number: "", telegram_chat_url: "",
+    teacher: "", max_students: "",
   });
   const [classFilter, setClassFilter] = useState("");
-
   const [editClass, setEditClass] = useState({
-    name: "",
-    subject: "ENGLISH",
-    lesson_days: "ODD",
-    lesson_time: "",
-    lesson_hours: "2",
-    start_date: "",
-    room_number: "",
-    telegram_chat_id: "",
-    teacher: "",
-    max_students: "",
+    name: "", subject: "ENGLISH", lesson_days: "ODD", lesson_time: "",
+    lesson_hours: "2", start_date: "", room_number: "", telegram_chat_id: "",
+    teacher: "", max_students: "",
   });
 
   const fetchClasses = async () => {
@@ -165,16 +153,9 @@ export default function ClassesPage() {
         max_students: newClass.max_students ? Number(newClass.max_students) : undefined,
       });
       setNewClass({
-        name: "",
-        subject: "ENGLISH",
-        lesson_days: "ODD",
-        lesson_time: "",
-        lesson_hours: "2",
-        start_date: "",
-        room_number: "",
-        telegram_chat_url: "",
-        teacher: "",
-        max_students: "",
+        name: "", subject: "ENGLISH", lesson_days: "ODD", lesson_time: "",
+        lesson_hours: "2", start_date: "", room_number: "", telegram_chat_url: "",
+        teacher: "", max_students: "",
       });
       setCreateOpen(false);
       await fetchClasses();
@@ -189,15 +170,10 @@ export default function ClassesPage() {
   const beginEdit = (c: any) => {
     setEditingId(c.id);
     setEditClass({
-      name: c.name || "",
-      subject: c.subject || "ENGLISH",
-      lesson_days: c.lesson_days || "ODD",
-      lesson_time: c.lesson_time || "",
-      lesson_hours: c.lesson_hours != null ? String(c.lesson_hours) : "2",
-      start_date: isoDateToInput(c.start_date),
-      room_number: c.room_number || "",
-      telegram_chat_id: c.telegram_chat_id || "",
-      teacher: teacherIdFromClass(c),
+      name: c.name || "", subject: c.subject || "ENGLISH", lesson_days: c.lesson_days || "ODD",
+      lesson_time: c.lesson_time || "", lesson_hours: c.lesson_hours != null ? String(c.lesson_hours) : "2",
+      start_date: isoDateToInput(c.start_date), room_number: c.room_number || "",
+      telegram_chat_id: c.telegram_chat_id || "", teacher: teacherIdFromClass(c),
       max_students: c.max_students != null ? String(c.max_students) : "",
     });
   };
@@ -208,13 +184,10 @@ export default function ClassesPage() {
     setSavingEdit(true);
     try {
       await classesApi.update(editingId, {
-        name: editClass.name.trim(),
-        subject: editClass.subject,
-        lesson_days: editClass.lesson_days,
-        lesson_time: editClass.lesson_time.trim(),
+        name: editClass.name.trim(), subject: editClass.subject,
+        lesson_days: editClass.lesson_days, lesson_time: editClass.lesson_time.trim(),
         lesson_hours: editClass.lesson_hours ? Number(editClass.lesson_hours) : 2,
-        start_date: editClass.start_date || null,
-        room_number: editClass.room_number.trim(),
+        start_date: editClass.start_date || null, room_number: editClass.room_number.trim(),
         telegram_chat_id: editClass.telegram_chat_id.trim(),
         teacher: editClass.teacher ? Number(editClass.teacher) : null,
         max_students: editClass.max_students ? Number(editClass.max_students) : null,
@@ -229,7 +202,6 @@ export default function ClassesPage() {
   };
 
   const editingClass = editingId ? classes.find((c) => c.id === editingId) : null;
-
   const filteredClasses = useMemo(() => {
     const q = classFilter.trim().toLowerCase();
     if (!q) return classes;
@@ -239,31 +211,19 @@ export default function ClassesPage() {
       return name.includes(q) || sub.includes(q);
     });
   }, [classes, classFilter]);
+
   const editTeacherOptions = useMemo(() => {
     if (!editingClass) return teachers;
     const tid = teacherIdFromClass(editingClass);
     const td = editingClass.teacher_details;
-    if (!tid || !td || teachers.some((t) => String(t.id) === String(tid))) {
-      return teachers;
-    }
-    return [
-      ...teachers,
-      {
-        id: td.id,
-        email: td.email,
-        first_name: td.first_name,
-        last_name: td.last_name,
-      },
-    ];
+    if (!tid || !td || teachers.some((t) => String(t.id) === String(tid))) return teachers;
+    return [...teachers, { id: td.id, email: td.email, first_name: td.first_name, last_name: td.last_name }];
   }, [editingClass, teachers]);
 
   useEffect(() => {
     if (!createOpen && !editingId) return;
     const onKeyDown = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        setCreateOpen(false);
-        setEditingId(null);
-      }
+      if (ev.key === "Escape") { setCreateOpen(false); setEditingId(null); }
     };
     window.addEventListener("keydown", onKeyDown);
     const prevOverflow = document.body.style.overflow;
@@ -274,57 +234,128 @@ export default function ClassesPage() {
     };
   }, [createOpen, editingId]);
 
+  /* ── Derived stats ──────────────────────────────────────────────────── */
+  const totalMembers = classes.reduce((s, c) => s + (c.members_count ?? 0), 0);
+  const mathClasses = classes.filter((c) => c.subject === "MATH").length;
+  const engClasses = classes.filter((c) => c.subject === "ENGLISH").length;
+
   return (
-    <div className="relative mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-      <div className="pointer-events-none absolute inset-0 -z-10 cr-classroom-bg" aria-hidden />
+    <div className="mx-auto max-w-7xl px-4 py-8 lg:px-6">
 
-      <div className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-        <ClassroomPageHeader
-          className="flex-1"
-          eyebrow="Groups"
-          title="Your learning spaces"
-          description="Join with a code, open a space for homework, submissions, and grades."
-        />
-        <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto lg:shrink-0">
-          <div className="relative min-w-[200px] flex-1 lg:max-w-xs">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground" />
-            <input
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              placeholder="Search groups…"
-              className={`${crInputClass} !py-2.5 pl-9`}
-              aria-label="Filter groups by name or subject"
-            />
+      {/* ═══ Header ══════════════════════════════════════════════════════ */}
+      <PageHeader
+        eyebrow="Classes"
+        title="Your Learning Spaces"
+        description="Join with a code, open a space for homework, submissions, and grades."
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchClasses()}
+              disabled={loading}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5 text-xs font-bold text-foreground shadow-sm transition-colors hover:border-primary/30 hover:bg-surface-2 disabled:opacity-50"
+            >
+              <RefreshCcw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+              Refresh
+            </button>
+            {canCreateClassroom && (
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New group
+              </button>
+            )}
           </div>
-          <ClassroomButton variant="secondary" size="md" onClick={fetchClasses} disabled={loading} loading={loading} className="w-full sm:w-auto">
-            {!loading ? <RefreshCcw className="h-4 w-4" /> : null}
-            Refresh
-          </ClassroomButton>
-        </div>
-      </div>
+        }
+      />
 
-      {error ? (
+      {/* ═══ Error ═══════════════════════════════════════════════════════ */}
+      {error && (
         <div className="mb-6">
           <ClassroomAlert tone="error">{error}</ClassroomAlert>
         </div>
-      ) : null}
+      )}
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+      {/* ═══ Stats Row ═══════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4">
+        <StatCard
+          label="Total Classes"
+          value={classes.length}
+          icon={GraduationCap}
+          accent="text-primary bg-primary/10"
+        />
+        <StatCard
+          label="Total Members"
+          value={totalMembers}
+          icon={Users}
+          accent="text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950/40"
+        />
+        <StatCard
+          label="Math Classes"
+          value={mathClasses}
+          icon={BookOpen}
+          accent="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
+        />
+        <StatCard
+          label="English Classes"
+          value={engClasses}
+          icon={BookOpen}
+          accent="text-violet-600 bg-violet-50 dark:text-violet-400 dark:bg-violet-950/40"
+        />
+      </div>
+
+      {/* ═══ Main Layout ═════════════════════════════════════════════════ */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+
+        {/* ── Classes Grid ────────────────────────────────────────────── */}
+        <div className="lg:col-span-2 space-y-4">
+
+          {/* Search bar */}
+          <div className="group relative w-full max-w-md">
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
+            <input
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.target.value)}
+              placeholder="Search classes..."
+              className="w-full rounded-xl border border-border bg-card py-2.5 pl-11 pr-10 text-sm font-medium shadow-sm outline-none transition-all focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+              aria-label="Filter groups by name or subject"
+            />
+            {classFilter && (
+              <button
+                type="button"
+                onClick={() => setClassFilter("")}
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
           {loading ? (
             <ClassroomClassListSkeleton />
           ) : classes.length === 0 ? (
-            <ClassroomEmptyState
+            <EmptyState
               icon={Users}
-              title="No groups yet"
-              description="Enter a group code from your teacher, or wait until an admin creates a space for you."
+              title="No classes yet"
+              description="Enter a group code from your teacher, or wait until an admin creates one."
             />
           ) : filteredClasses.length === 0 ? (
-            <ClassroomEmptyState
+            <EmptyState
               icon={Search}
               title="No matches"
-              description="Try a different search, or clear the filter to see all groups."
-              action={{ label: "Clear search", onClick: () => setClassFilter("") }}
+              description="Try a different search term."
+              action={
+                <button
+                  type="button"
+                  onClick={() => setClassFilter("")}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground"
+                >
+                  Clear search
+                </button>
+              }
             />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -333,12 +364,11 @@ export default function ClassesPage() {
                   key={c.id}
                   type="button"
                   onClick={() => router.push(`/classes/${c.id}`)}
-                  className={`relative cr-surface rounded-2xl p-6 pl-6 text-left ${groupTileClass}`}
+                  className="group relative flex flex-col rounded-2xl border border-border bg-card p-5 text-left transition-all hover:border-primary/25 hover:shadow-md"
                 >
-                  <span className={groupTileAccent} aria-hidden />
-                  {canCreateClassroom ? (
+                  {canCreateClassroom && (
                     <div
-                      className="absolute right-4 top-4 z-10"
+                      className="absolute right-3 top-3 z-10"
                       onClick={(e) => e.stopPropagation()}
                       onKeyDown={(e) => e.stopPropagation()}
                     >
@@ -357,28 +387,45 @@ export default function ClassesPage() {
                         <DropdownMenuItem onClick={() => beginEdit(c)}>Edit details</DropdownMenuItem>
                       </DropdownMenu>
                     </div>
-                  ) : null}
-                  <div className="relative flex items-start justify-between gap-4 pl-2 pr-10">
-                    <div className="min-w-0">
-                      <p className="truncate text-lg font-bold text-foreground">{c.name}</p>
-                      <p className="mt-1 truncate text-sm text-muted-foreground">
-                        {c.subject || "—"}
+                  )}
+
+                  <div className="flex items-start gap-4 pr-10">
+                    <div className={cn(
+                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                      c.subject === "MATH"
+                        ? "bg-blue-50 text-blue-600 dark:bg-blue-950/40 dark:text-blue-400"
+                        : "bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-400",
+                    )}>
+                      <GraduationCap className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-base font-extrabold text-foreground group-hover:text-primary transition-colors">
+                        {c.name}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground truncate">
+                        {c.subject || "--"}
                         {lessonDaysMetaSuffix(c.lesson_days)}
                         {c.lesson_time ? ` · ${c.lesson_time}` : ""}
                       </p>
                     </div>
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-105">
-                      <Users className="h-5 w-5" />
-                    </div>
                   </div>
-                  <div className="relative mt-5 flex items-center justify-between border-t border-border pt-4 pl-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    <span>
-                      {c.members_count ?? 0} members
-                      {c.max_students ? ` / ${c.max_students} max` : ""}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-primary transition-transform duration-200 group-hover:translate-x-0.5">
-                      Open
-                      <ArrowRight className="h-4 w-4" />
+
+                  <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1 font-bold">
+                        <Users className="h-3.5 w-3.5" />
+                        {c.members_count ?? 0}
+                        {c.max_students ? ` / ${c.max_students}` : ""}
+                      </span>
+                      {c.room_number && (
+                        <span className="inline-flex items-center gap-1 font-semibold">
+                          <Clock className="h-3 w-3" />
+                          Room {c.room_number}
+                        </span>
+                      )}
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                      Open <ArrowRight className="h-3 w-3" />
                     </span>
                   </div>
                 </button>
@@ -387,50 +434,63 @@ export default function ClassesPage() {
           )}
         </div>
 
+        {/* ── Sidebar ─────────────────────────────────────────────────── */}
         <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
-          <ClassroomCard padding="md">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Join a group</p>
-            <p className="mt-1 text-sm text-muted-foreground">Paste the code your teacher shared.</p>
+
+          {/* Join a group */}
+          <div className="rounded-2xl border border-border bg-card p-5">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Users className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground">Join a group</p>
+                <p className="text-[11px] text-muted-foreground">Paste the code your teacher shared</p>
+              </div>
+            </div>
             <input
               value={joinCode}
               onChange={(e) => setJoinCode(e.target.value)}
               placeholder="e.g. ABC12XY"
-              className={`${crInputClass} mt-4 font-semibold tracking-wide`}
+              className="w-full rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-sm font-semibold tracking-wide outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
               autoComplete="off"
             />
-            <ClassroomButton
-              variant="primary"
-              size="md"
-              className="mt-4 w-full"
-              onClick={handleJoin}
+            <button
+              type="button"
+              onClick={() => void handleJoin()}
               disabled={!joinCode.trim() || joining}
+              className="mt-3 w-full rounded-xl bg-primary py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
-              {joining ? "Joining…" : "Join group"}
-            </ClassroomButton>
-          </ClassroomCard>
+              {joining ? "Joining..." : "Join group"}
+            </button>
+          </div>
 
-          {canCreateClassroom ? (
-            <ClassroomCard padding="md" className="border-primary/20">
-              <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          {/* Create group (admin) */}
+          {canCreateClassroom && (
+            <div className="rounded-2xl border border-primary/20 bg-card p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Plus className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                    Teacher
-                  </p>
-                  <p className="text-sm font-semibold text-foreground">Create a group</p>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Teacher</p>
+                  <p className="text-sm font-bold text-foreground">Create a group</p>
                 </div>
               </div>
-              <ClassroomButton variant="primary" size="md" className="mt-4 w-full" onClick={() => setCreateOpen(true)}>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="w-full rounded-xl bg-primary py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
                 New group
-              </ClassroomButton>
-            </ClassroomCard>
-          ) : null}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {canCreateClassroom ? (
+      {/* ═══ Create Modal ════════════════════════════════════════════════ */}
+      {canCreateClassroom && (
         <ClassroomModal
           open={createOpen}
           onClose={() => setCreateOpen(false)}
@@ -439,132 +499,62 @@ export default function ClassesPage() {
           title="New group"
           description="Add a group for your students. You can finish optional fields later."
         >
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void handleCreate();
-            }}
-          >
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void handleCreate(); }}>
             <ClassroomField label="Group name" htmlFor="cg-name">
-              <input
-                id="cg-name"
-                value={newClass.name}
-                onChange={(e) => setNewClass((p) => ({ ...p, name: e.target.value }))}
-                className={crInputClass}
-                required
-              />
+              <input id="cg-name" value={newClass.name} onChange={(e) => setNewClass((p) => ({ ...p, name: e.target.value }))} className={crInputClass} required />
             </ClassroomField>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <ClassroomField label="Subject" htmlFor="cg-subject">
-                <select
-                  id="cg-subject"
-                  value={newClass.subject}
-                  onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))}
-                  className={crSelectClass}
-                >
+                <select id="cg-subject" value={newClass.subject} onChange={(e) => setNewClass((p) => ({ ...p, subject: e.target.value }))} className={crSelectClass}>
                   <option value="ENGLISH">English</option>
                   <option value="MATH">Math</option>
                 </select>
               </ClassroomField>
               <ClassroomField label="Lesson days" htmlFor="cg-days">
-                <select
-                  id="cg-days"
-                  value={newClass.lesson_days}
-                  onChange={(e) => setNewClass((p) => ({ ...p, lesson_days: e.target.value }))}
-                  className={crSelectClass}
-                >
+                <select id="cg-days" value={newClass.lesson_days} onChange={(e) => setNewClass((p) => ({ ...p, lesson_days: e.target.value }))} className={crSelectClass}>
                   <option value="ODD">Odd days</option>
                   <option value="EVEN">Even days</option>
                 </select>
               </ClassroomField>
               <ClassroomField label="Lesson time" htmlFor="cg-time" hint="e.g. 18:00">
-                <input
-                  id="cg-time"
-                  value={newClass.lesson_time}
-                  onChange={(e) => setNewClass((p) => ({ ...p, lesson_time: e.target.value }))}
-                  className={crInputClass}
-                />
+                <input id="cg-time" value={newClass.lesson_time} onChange={(e) => setNewClass((p) => ({ ...p, lesson_time: e.target.value }))} className={crInputClass} />
               </ClassroomField>
               <ClassroomField label="Lesson hours" htmlFor="cg-hours">
-                <input
-                  id="cg-hours"
-                  value={newClass.lesson_hours}
-                  onChange={(e) => setNewClass((p) => ({ ...p, lesson_hours: e.target.value }))}
-                  className={crInputClass}
-                />
+                <input id="cg-hours" value={newClass.lesson_hours} onChange={(e) => setNewClass((p) => ({ ...p, lesson_hours: e.target.value }))} className={crInputClass} />
               </ClassroomField>
               <ClassroomField label="Start date" htmlFor="cg-start">
-                <input
-                  id="cg-start"
-                  type="date"
-                  value={newClass.start_date}
-                  onChange={(e) => setNewClass((p) => ({ ...p, start_date: e.target.value }))}
-                  className={crInputClass}
-                />
+                <input id="cg-start" type="date" value={newClass.start_date} onChange={(e) => setNewClass((p) => ({ ...p, start_date: e.target.value }))} className={crInputClass} />
               </ClassroomField>
               <ClassroomField label="Room number" htmlFor="cg-room">
-                <input
-                  id="cg-room"
-                  value={newClass.room_number}
-                  onChange={(e) => setNewClass((p) => ({ ...p, room_number: e.target.value }))}
-                  placeholder="Optional"
-                  className={crInputClass}
-                />
+                <input id="cg-room" value={newClass.room_number} onChange={(e) => setNewClass((p) => ({ ...p, room_number: e.target.value }))} placeholder="Optional" className={crInputClass} />
               </ClassroomField>
             </div>
             <ClassroomField label="Telegram chat ID" htmlFor="cg-tg">
-              <input
-                id="cg-tg"
-                value={newClass.telegram_chat_url}
-                onChange={(e) => setNewClass((p) => ({ ...p, telegram_chat_url: e.target.value }))}
-                placeholder="Optional"
-                className={crInputClass}
-              />
+              <input id="cg-tg" value={newClass.telegram_chat_url} onChange={(e) => setNewClass((p) => ({ ...p, telegram_chat_url: e.target.value }))} placeholder="Optional" className={crInputClass} />
             </ClassroomField>
             <ClassroomField label="Teacher" htmlFor="cg-teacher">
-              <select
-                id="cg-teacher"
-                value={newClass.teacher}
-                onChange={(e) => setNewClass((p) => ({ ...p, teacher: e.target.value }))}
-                className={crSelectClass}
-              >
+              <select id="cg-teacher" value={newClass.teacher} onChange={(e) => setNewClass((p) => ({ ...p, teacher: e.target.value }))} className={crSelectClass}>
                 <option value="">Default (you)</option>
                 {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.first_name || t.email} {t.last_name || ""}
-                  </option>
+                  <option key={t.id} value={t.id}>{t.first_name || t.email} {t.last_name || ""}</option>
                 ))}
               </select>
             </ClassroomField>
             <ClassroomField label="Max students" htmlFor="cg-max">
-              <input
-                id="cg-max"
-                value={newClass.max_students}
-                onChange={(e) => setNewClass((p) => ({ ...p, max_students: e.target.value }))}
-                placeholder="Optional"
-                className={crInputClass}
-                inputMode="numeric"
-              />
+              <input id="cg-max" value={newClass.max_students} onChange={(e) => setNewClass((p) => ({ ...p, max_students: e.target.value }))} placeholder="Optional" className={crInputClass} inputMode="numeric" />
             </ClassroomField>
             <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row">
-              <ClassroomButton type="button" variant="secondary" className="flex-1" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </ClassroomButton>
-              <ClassroomButton
-                type="submit"
-                variant="primary"
-                className="flex-1"
-                disabled={!newClass.name.trim() || creating}
-              >
-                {creating ? "Creating…" : "Create group"}
+              <ClassroomButton type="button" variant="secondary" className="flex-1" onClick={() => setCreateOpen(false)}>Cancel</ClassroomButton>
+              <ClassroomButton type="submit" variant="primary" className="flex-1" disabled={!newClass.name.trim() || creating}>
+                {creating ? "Creating..." : "Create group"}
               </ClassroomButton>
             </div>
           </form>
         </ClassroomModal>
-      ) : null}
+      )}
 
-      {canCreateClassroom && editingId ? (
+      {/* ═══ Edit Modal ══════════════════════════════════════════════════ */}
+      {canCreateClassroom && editingId && (
         <ClassroomModal
           open={!!editingId}
           onClose={() => setEditingId(null)}
@@ -573,115 +563,58 @@ export default function ClassesPage() {
           title="Update group"
           description="Changes apply as soon as you save."
         >
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void saveEdit();
-            }}
-          >
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void saveEdit(); }}>
             <ClassroomField label="Group name" htmlFor="eg-name">
-              <input
-                id="eg-name"
-                value={editClass.name}
-                onChange={(e) => setEditClass((p) => ({ ...p, name: e.target.value }))}
-                className={crInputClass}
-                required
-              />
+              <input id="eg-name" value={editClass.name} onChange={(e) => setEditClass((p) => ({ ...p, name: e.target.value }))} className={crInputClass} required />
             </ClassroomField>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <ClassroomField label="Subject" htmlFor="eg-subject">
-                <select
-                  id="eg-subject"
-                  value={editClass.subject}
-                  onChange={(e) => setEditClass((p) => ({ ...p, subject: e.target.value }))}
-                  className={crSelectClass}
-                >
+                <select id="eg-subject" value={editClass.subject} onChange={(e) => setEditClass((p) => ({ ...p, subject: e.target.value }))} className={crSelectClass}>
                   <option value="ENGLISH">English</option>
                   <option value="MATH">Math</option>
                 </select>
               </ClassroomField>
               <ClassroomField label="Room number" htmlFor="eg-room">
-                <input
-                  id="eg-room"
-                  value={editClass.room_number}
-                  onChange={(e) => setEditClass((p) => ({ ...p, room_number: e.target.value }))}
-                  className={crInputClass}
-                />
+                <input id="eg-room" value={editClass.room_number} onChange={(e) => setEditClass((p) => ({ ...p, room_number: e.target.value }))} className={crInputClass} />
               </ClassroomField>
               <ClassroomField label="Start date" htmlFor="eg-start">
-                <input
-                  id="eg-start"
-                  type="date"
-                  value={editClass.start_date}
-                  onChange={(e) => setEditClass((p) => ({ ...p, start_date: e.target.value }))}
-                  className={crInputClass}
-                />
+                <input id="eg-start" type="date" value={editClass.start_date} onChange={(e) => setEditClass((p) => ({ ...p, start_date: e.target.value }))} className={crInputClass} />
               </ClassroomField>
               <ClassroomField label="Teacher" htmlFor="eg-teacher">
-                <select
-                  id="eg-teacher"
-                  value={editClass.teacher}
-                  onChange={(e) => setEditClass((p) => ({ ...p, teacher: e.target.value }))}
-                  className={crSelectClass}
-                >
+                <select id="eg-teacher" value={editClass.teacher} onChange={(e) => setEditClass((p) => ({ ...p, teacher: e.target.value }))} className={crSelectClass}>
                   <option value="">Not assigned</option>
                   {editTeacherOptions.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.first_name || t.email} {t.last_name || ""}
-                    </option>
+                    <option key={t.id} value={t.id}>{t.first_name || t.email} {t.last_name || ""}</option>
                   ))}
                 </select>
               </ClassroomField>
             </div>
             <ClassroomField label="Telegram chat ID" htmlFor="eg-tg">
-              <input
-                id="eg-tg"
-                value={editClass.telegram_chat_id}
-                onChange={(e) => setEditClass((p) => ({ ...p, telegram_chat_id: e.target.value }))}
-                className={crInputClass}
-              />
+              <input id="eg-tg" value={editClass.telegram_chat_id} onChange={(e) => setEditClass((p) => ({ ...p, telegram_chat_id: e.target.value }))} className={crInputClass} />
             </ClassroomField>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <ClassroomField label="Lesson days" htmlFor="eg-days">
-                <select
-                  id="eg-days"
-                  value={editClass.lesson_days}
-                  onChange={(e) => setEditClass((p) => ({ ...p, lesson_days: e.target.value }))}
-                  className={crSelectClass}
-                >
+                <select id="eg-days" value={editClass.lesson_days} onChange={(e) => setEditClass((p) => ({ ...p, lesson_days: e.target.value }))} className={crSelectClass}>
                   <option value="ODD">Odd days</option>
                   <option value="EVEN">Even days</option>
                 </select>
               </ClassroomField>
               <ClassroomField label="Lesson time" htmlFor="eg-time">
-                <input
-                  id="eg-time"
-                  value={editClass.lesson_time}
-                  onChange={(e) => setEditClass((p) => ({ ...p, lesson_time: e.target.value }))}
-                  className={crInputClass}
-                />
+                <input id="eg-time" value={editClass.lesson_time} onChange={(e) => setEditClass((p) => ({ ...p, lesson_time: e.target.value }))} className={crInputClass} />
               </ClassroomField>
               <ClassroomField label="Lesson hours" htmlFor="eg-hours">
-                <input
-                  id="eg-hours"
-                  value={editClass.lesson_hours}
-                  onChange={(e) => setEditClass((p) => ({ ...p, lesson_hours: e.target.value }))}
-                  className={crInputClass}
-                />
+                <input id="eg-hours" value={editClass.lesson_hours} onChange={(e) => setEditClass((p) => ({ ...p, lesson_hours: e.target.value }))} className={crInputClass} />
               </ClassroomField>
             </div>
             <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row">
-              <ClassroomButton type="button" variant="secondary" className="flex-1" onClick={() => setEditingId(null)}>
-                Cancel
-              </ClassroomButton>
+              <ClassroomButton type="button" variant="secondary" className="flex-1" onClick={() => setEditingId(null)}>Cancel</ClassroomButton>
               <ClassroomButton type="submit" variant="primary" className="flex-1" disabled={savingEdit}>
-                {savingEdit ? "Saving…" : "Save changes"}
+                {savingEdit ? "Saving..." : "Save changes"}
               </ClassroomButton>
             </div>
           </form>
         </ClassroomModal>
-      ) : null}
+      )}
     </div>
   );
 }
