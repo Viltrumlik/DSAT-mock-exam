@@ -461,6 +461,7 @@ function ExamPlayerInner() {
     assertCritRef.current = assertCriticalAuth;
 
     const [timeLeft, setTimeLeft] = useState<number>(0);
+    const timerInitializedRef = useRef(false);
     const lastAnswersModuleIdRef = useRef<number | null>(null);
     const lastRenderedSecRef = useRef<number>(-1);
     const virtualModuleStartMsRef = useRef<number>(0);
@@ -1494,6 +1495,7 @@ function ExamPlayerInner() {
         lastRenderedSecRef.current = remaining;
         moduleTimerSubmitDoneRef.current = false;
         wasTimerPausedRef.current = false;
+        timerInitializedRef.current = true;
         setTimeLeft(remaining);
     }, [
         attempt?.current_module_details?.id,
@@ -1566,9 +1568,12 @@ function ExamPlayerInner() {
     ]);
 
     // Timer auto-submit effect
+    // Guard: timerInitializedRef prevents auto-submit on initial render when timeLeft
+    // is still at its default value (0). Without this, Module 1 gets auto-submitted
+    // in ~0.3s before the timer init effect has a chance to set the real remaining time.
     useEffect(() => {
         const isCompleted = !!attempt?.is_completed;
-        if (timeLeft <= 0 && !moduleTimerSubmitDoneRef.current && !isPaused && !loading && !isCompleted && !transitioning) {
+        if (timeLeft <= 0 && timerInitializedRef.current && !moduleTimerSubmitDoneRef.current && !isPaused && !loading && !isCompleted && !transitioning) {
             moduleTimerSubmitDoneRef.current = true;
             void handleSubmitModule();
         }
