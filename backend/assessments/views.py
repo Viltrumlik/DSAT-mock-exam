@@ -1588,8 +1588,16 @@ class MyAssessmentResultForAssignmentView(APIView):
         ).filter(assignment_id=assignment_id).first()
         if not hw:
             return Response({"detail": "Assessment homework not found."}, status=status.HTTP_404_NOT_FOUND)
-        if not hw.classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_STUDENT).exists():
-            return Response({"detail": "Only students can view this result."}, status=status.HTTP_403_FORBIDDEN)
+        membership = hw.classroom.memberships.filter(user=request.user).first()
+        if not membership:
+            return Response({"detail": "You are not a member of this classroom."}, status=status.HTTP_403_FORBIDDEN)
+        # Admins see the assignment meta but have no student attempt
+        if membership.role == ClassroomMembership.ROLE_ADMIN:
+            return Response({
+                "attempt": None,
+                "result": None,
+                "meta": _build_hw_meta(hw),
+            })
         att = (
             AssessmentAttempt.objects.filter(homework=hw, student=request.user)
             .order_by("-started_at", "-id")
