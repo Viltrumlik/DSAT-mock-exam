@@ -557,9 +557,13 @@ export default function ClassDetailPage() {
                   setEditingAssignment(null);
                 }}
                 onSuccess={async () => {
-                  const ws = await classesApi.getStudentWorkspace(id);
-                  setWorkspace(ws && typeof ws === "object" ? ws : null);
-                  setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
+                  try {
+                    const ws = await classesApi.getStudentWorkspace(id);
+                    setWorkspace(ws && typeof ws === "object" ? ws : null);
+                    setAssignments(Array.isArray(ws?.your_assignments) ? ws.your_assignments : []);
+                  } catch {
+                    // Assignment was already created; refresh silently
+                  }
                   setTab("classwork");
                   setEditingAssignment(null);
                 }}
