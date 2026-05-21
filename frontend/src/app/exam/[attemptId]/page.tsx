@@ -958,37 +958,42 @@ function ExamPlayerInner() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [attempt?.current_state, attempt?.current_module_details?.module_order]);
 
+    // ── Persistent math rendering ────────────────────────────────────────────
+    // Uses a MutationObserver to detect DOM changes and re-render KaTeX math.
+    // This replaces the fragile dependency-array approach — any DOM mutation
+    // (question navigation, highlights, zoom, etc.) triggers a debounced render.
     useEffect(() => {
-        if (!loading) {
-            // KaTeX sweep — document-body scope is intentional for the exam page.
-            // SafeHtml does not trigger per-element KaTeX (it uses MathJax for the admin
-            // surface; here we supplement with KaTeX for any question math). Called twice
-            // at 0ms and 60ms to handle React's two-pass commit for large DOM trees.
-            // This is the correct rendering pattern for this legacy surface — do NOT
-            // replace with per-element MathText until SafeHtml is fully removed here.
-            renderMath({ root: document.body });
-            const t = setTimeout(() => renderMath({ root: document.body }), 60);
-            return () => clearTimeout(t);
-        }
-    }, [
-        currentQuestionIndex, 
-        loading, 
-        attempt?.current_module_details?.id, 
-        showAnswerPreview, 
-        answers[currentQuestion?.id],
-        zoomLevel,
-        highlighterActive,
-        flagged,
-        eliminatedOptions,
-        passageHighlights[currentQuestion?.id],
-        questionHighlights[currentQuestion?.id],
-        questionPromptHighlights[currentQuestion?.id],
-        optionHighlights[currentQuestion?.id],
-        showCalculator,
-        showReferenceSheet,
-        showNavigation,
-        isEliminationMode
-    ]);
+        if (loading) return;
+
+        let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+        const scheduleRender = () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => renderMath({ root: document.body }), 40);
+        };
+
+        // Initial render + short-delay follow-up for React two-pass commit
+        renderMath({ root: document.body });
+        const initTimer = setTimeout(() => renderMath({ root: document.body }), 80);
+
+        // Watch for any DOM subtree changes (question switch, highlight, etc.)
+        const observer = new MutationObserver(scheduleRender);
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+        });
+
+        // Re-render when KaTeX scripts finish loading (race condition fix)
+        const onKatexReady = () => scheduleRender();
+        window.addEventListener("katex:ready", onKatexReady);
+
+        return () => {
+            if (debounceTimer) clearTimeout(debounceTimer);
+            clearTimeout(initTimer);
+            observer.disconnect();
+            window.removeEventListener("katex:ready", onKatexReady);
+        };
+    }, [loading, attempt?.current_module_details?.id]);
 
     // Fullscreen behavior listeners
     useEffect(() => {
@@ -2390,13 +2395,6 @@ function ExamPlayerInner() {
                         )}
 
                         {currentQuestionIndex < questions.length - 1 ? (
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setShowAnswerPreview(true)}
-                                    className="flex items-center gap-1 font-bold px-4 py-1.5 rounded-full border border-slate-300 text-slate-600 hover:bg-slate-50 transition-all text-[10px] uppercase tracking-wider"
-                                >
-                                    Finish Module
-                                </button>
                                 <button
                                     onClick={goNext}
                                     disabled={isNavigating}
@@ -2404,13 +2402,12 @@ function ExamPlayerInner() {
                                 >
                                     Next
                                 </button>
-                            </div>
                         ) : (
                             <button
                                 onClick={() => setShowAnswerPreview(true)}
                                 className={`bg-[#2563eb] text-white font-bold px-6 py-1.5 rounded-full hover:bg-blue-700 transition-all shadow text-xs active:scale-[0.92] ${isNavigating ? 'opacity-50 pointer-events-none' : ''}`}
                             >
-                                Finish Module
+                                Submit
                             </button>
                         )}
 
