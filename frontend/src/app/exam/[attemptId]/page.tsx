@@ -598,10 +598,31 @@ function ExamPlayerInner() {
                     } catch {
                         /* ignore */
                     }
-                    snapshot = await examsPublicApi.startAttemptEngine(attemptIdNum, idem);
-                    mergeAttemptFromServer(snapshot);
+                    try {
+                        snapshot = await examsPublicApi.startAttemptEngine(attemptIdNum, idem);
+                        mergeAttemptFromServer(snapshot);
+                    } catch (startErr) {
+                        // Engine start failed — fall through to a status re-fetch
+                        // which may show the attempt has been started by another
+                        // request, or surface a recoverable error.
+                        console.error("[exam] startAttemptEngine failed", startErr);
+                    }
                     snapshot = await examsPublicApi.getAttemptStatus(attemptIdNum);
                     mergeAttemptFromServer(snapshot);
+                    // If we are STILL in NOT_STARTED after the engine call,
+                    // retry once more with a fresh idempotency key. This unsticks
+                    // attempts where the first start call hit a transient race.
+                    if (snapshot.current_state === "NOT_STARTED") {
+                        const retryIdem = `start.${attemptIdNum}.retry.${Date.now()}`;
+                        try {
+                            snapshot = await examsPublicApi.startAttemptEngine(attemptIdNum, retryIdem);
+                            mergeAttemptFromServer(snapshot);
+                            snapshot = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                            mergeAttemptFromServer(snapshot);
+                        } catch (retryErr) {
+                            console.error("[exam] startAttemptEngine retry failed", retryErr);
+                        }
+                    }
                 }
                 // Set uniform zoom level to 100% (1.0) for both Math and English
                 setZoomLevel(1.0);
@@ -1748,6 +1769,59 @@ function ExamPlayerInner() {
     }
 
     if (loading || !attempt || !attempt.current_module_details) {
+        // Escape hatch: when we've stopped loading but still have no module
+        // payload (e.g. a fresh NOT_STARTED attempt where the engine-start
+        // call silently failed), give the student a manual "Start" button
+        // instead of an infinite spinner.
+        const stuckOnEmptyAttempt = !loading && !!attempt && !attempt.current_module_details;
+        if (stuckOnEmptyAttempt) {
+            return (
+                <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 px-10 text-center">
+                    <div className="max-w-md w-full">
+                        <div className="bg-white p-10 rounded-2xl shadow-lg border border-slate-200">
+                            <BookOpen className="w-12 h-12 text-blue-600 mx-auto mb-5" />
+                            <h2 className="text-2xl font-extrabold text-slate-900 mb-3 tracking-tight">Ready to start?</h2>
+                            <p className="text-slate-500 font-medium mb-6">
+                                Press the button below to begin Module 1.
+                            </p>
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    if (!assertCriticalAuth()) return;
+                                    setLoading(true);
+                                    try {
+                                        const attemptIdNum = Number(attemptId);
+                                        const idem = `start.${attemptIdNum}.manual.${Date.now()}`;
+                                        const fresh = await examsPublicApi.startAttemptEngine(attemptIdNum, idem);
+                                        mergeAttemptFromServer(fresh);
+                                        const status = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                                        mergeAttemptFromServer(status);
+                                    } catch (e) {
+                                        console.error("[exam] manual start failed", e);
+                                    } finally {
+                                        setLoading(false);
+                                    }
+                                }}
+                                className="w-full bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold py-4 rounded-xl shadow transition-all"
+                            >
+                                Start exam
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setLoading(true);
+                                    setAttempt(null);
+                                    setReloadNonce((x) => x + 1);
+                                }}
+                                className="w-full mt-3 text-sm font-bold text-slate-500 hover:text-slate-700 py-2"
+                            >
+                                Reload
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-white">
                 <div className="animate-spin text-blue-600 w-12 h-12 mb-6">
