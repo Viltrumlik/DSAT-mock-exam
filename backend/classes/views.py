@@ -1366,12 +1366,13 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         classroom = self.get_classroom()
         if not classroom.memberships.filter(user=request.user, role="ADMIN").exists():
             return Response({"detail": "Only class admins can create assignments."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        assignment = serializer.save(classroom=classroom, created_by=request.user)
 
-        # Handle file uploads (multiple files supported)
-        # Save extra attachments BEFORE the primary so temp files stay alive.
+        # Gather uploaded files BEFORE running the serializer. The serializer has
+        # `attachment_file` as a writable FileField — if we let it run, DRF will
+        # consume ONE of the multi-uploaded files (and move its temp file to
+        # storage) which then breaks the extras loop below when it tries to read
+        # that same file's already-deleted temp path. We strip the field from
+        # request.data and handle every file manually.
         files = list(request.FILES.getlist("attachment_file"))
         if not files:
             files = list(request.FILES.getlist("attachment_files"))
@@ -1379,6 +1380,26 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             files = list(request.FILES.getlist("attachment_file[]"))
         for f in files:
             validate_submission_upload(f)
+
+        # Make a mutable copy of request.data with attachment_file removed so
+        # the serializer doesn't consume any uploaded file.
+        data = request.data
+        if hasattr(data, "_mutable"):
+            data._mutable = True
+        data_copy = data.copy() if hasattr(data, "copy") else dict(data)
+        for key in ("attachment_file", "attachment_files", "attachment_file[]"):
+            try:
+                if hasattr(data_copy, "pop"):
+                    data_copy.pop(key, None)
+            except Exception:
+                pass
+
+        serializer = self.get_serializer(data=data_copy)
+        serializer.is_valid(raise_exception=True)
+        assignment = serializer.save(classroom=classroom, created_by=request.user)
+
+        # Save all attachment files manually (primary + extras) so we control
+        # the order and avoid the serializer touching any temp file.
         if files:
             for f in files[1:]:
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
@@ -1418,18 +1439,40 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
-        super().update(request, *args, **kwargs)
-        assignment = self.get_object()
-        replace_all = str(request.query_params.get("replace_attachments", "")).lower() in ("1", "true", "yes", "on")
+        # Same multi-upload issue as create — strip attachment_file from
+        # request.data so the serializer doesn't consume one of the files.
         files = list(request.FILES.getlist("attachment_file"))
         if not files:
             files = list(request.FILES.getlist("attachment_files"))
         if not files:
             files = list(request.FILES.getlist("attachment_file[]"))
-        if replace_all:
-            _clear_assignment_teacher_attachments(assignment)
         for f in files:
             validate_submission_upload(f)
+
+        # Make a sanitized copy of request.data without attachment_file fields,
+        # and temporarily swap it in so the super().update() serializer call
+        # doesn't see them.
+        original_data = request.data
+        if hasattr(original_data, "_mutable"):
+            original_data._mutable = True
+        sanitized = original_data.copy() if hasattr(original_data, "copy") else dict(original_data)
+        for key in ("attachment_file", "attachment_files", "attachment_file[]"):
+            try:
+                if hasattr(sanitized, "pop"):
+                    sanitized.pop(key, None)
+            except Exception:
+                pass
+        # Override request._full_data so DRF reads our sanitized version
+        try:
+            request._full_data = sanitized
+        except Exception:
+            pass
+
+        super().update(request, *args, **kwargs)
+        assignment = self.get_object()
+        replace_all = str(request.query_params.get("replace_attachments", "")).lower() in ("1", "true", "yes", "on")
+        if replace_all:
+            _clear_assignment_teacher_attachments(assignment)
         if files:
             for f in files[1:]:
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
