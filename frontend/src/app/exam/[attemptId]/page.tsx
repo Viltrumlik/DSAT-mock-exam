@@ -612,7 +612,38 @@ function ExamPlayerInner() {
                     return;
                 }
                 if (snapshot.is_expired) {
-                    setLoadError("This module has expired. Please click Retry to sync.");
+                    // Module deadline passed. Trigger a submit which the backend
+                    // will force-transition using autosaved answers. This unsticks
+                    // students who came back after their timer ran out.
+                    setLoading(false);
+                    // Submit via the standard handler (the backend ignores the body
+                    // when the deadline has passed and uses autosaved answers).
+                    setTimeout(() => {
+                        try {
+                            void (async () => {
+                                try {
+                                    const resp = await examsPublicApi.submitModule(
+                                        attemptIdNum,
+                                        {},
+                                        [],
+                                        { idempotencyKey: `expired.${attemptIdNum}.${Date.now()}` },
+                                    );
+                                    mergeAttemptFromServer(resp);
+                                    if (resp.is_completed && resp.current_state === "COMPLETED") {
+                                        router.push(`/review/${attemptId}`);
+                                    }
+                                } catch (e) {
+                                    if (isAxiosError(e) && e.response?.status === 409) {
+                                        // Race: another tab already transitioned. Re-fetch.
+                                        try {
+                                            const refreshed = await examsPublicApi.getAttemptStatus(attemptIdNum);
+                                            mergeAttemptFromServer(refreshed);
+                                        } catch {}
+                                    }
+                                }
+                            })();
+                        } catch {}
+                    }, 100);
                     return;
                 }
 
@@ -713,24 +744,54 @@ function ExamPlayerInner() {
         return () => clearTimeout(t);
     }, [loading]);
 
-    // Minimal multi-tab guard: block UI if another tab is active for this attempt.
+    // Multi-tab guard with heartbeats: block UI only when another tab is actively
+    // present (last heartbeat within ~6s). If the other tab closes, the block clears.
     useEffect(() => {
         const aid = String(attemptId || "");
         if (!aid) return;
         const myId = `${aid}.${Date.now()}.${Math.random().toString(16).slice(2)}`;
         const ch = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("mastersat.examAttempt") : null;
         multiTabRef.current = { bc: ch || undefined, id: myId };
-        try {
-            ch?.postMessage({ t: "hello", attemptId: aid, from: myId });
-        } catch {}
+
+        // Track the last time we heard from any other tab.
+        let lastOtherTabBeatAt = 0;
+        const STALE_MS = 6000;
+
+        const sendBeat = () => {
+            try {
+                ch?.postMessage({ t: "beat", attemptId: aid, from: myId });
+            } catch {}
+        };
 
         const onMessage = (ev: MessageEvent) => {
             const m = ev.data as ExamAttemptBcPayload | undefined;
             if (!m || m.attemptId !== aid) return;
-            if (m.from && m.from !== myId) setMultiTabBlocked(true);
+            if (!m.from || m.from === myId) return;
+            // Another tab is alive — record the timestamp and block.
+            lastOtherTabBeatAt = Date.now();
+            setMultiTabBlocked(true);
+            // If the other tab is saying hello, respond so they know we're here too.
+            if (m.t === "hello") sendBeat();
         };
         ch?.addEventListener("message", onMessage);
+
+        // Announce ourselves and start heartbeats.
+        try {
+            ch?.postMessage({ t: "hello", attemptId: aid, from: myId });
+        } catch {}
+        const beatInterval = setInterval(sendBeat, 2000);
+
+        // Periodically check if other tabs have gone stale → clear the block.
+        const staleCheck = setInterval(() => {
+            if (lastOtherTabBeatAt && Date.now() - lastOtherTabBeatAt > STALE_MS) {
+                lastOtherTabBeatAt = 0;
+                setMultiTabBlocked(false);
+            }
+        }, 1500);
+
         return () => {
+            clearInterval(beatInterval);
+            clearInterval(staleCheck);
             try {
                 ch?.removeEventListener("message", onMessage);
             } catch {}
@@ -1228,6 +1289,7 @@ function ExamPlayerInner() {
             // Only route to review when backend explicitly says COMPLETED.
             if (data.is_completed && data.current_state === "COMPLETED") {
                 submitLockRef.current = false;
+                setLoading(false);
                 const meid = searchParams.get("mockExamId");
                 const subj = data.practice_test_details?.subject;
                 if (mockFlow && meid && platformSubjectIsReadingWriting(subj)) {
@@ -1418,6 +1480,8 @@ function ExamPlayerInner() {
                                 : 0;
                         if (st === "MODULE_1_ACTIVE" && mo === 1) {
                             if (!assertCriticalAuth()) {
+                                setLoading(false);
+                                submitLockRef.current = false;
                                 return;
                             }
                             const newV = conflict.version_number;
@@ -1432,7 +1496,9 @@ function ExamPlayerInner() {
                             applyParsedSubmitResult(resp2);
                         }
                     } catch {
-                        // If retry fails, fall through to allow user retry manually.
+                        // If retry fails, release the lock so the user can try again.
+                        setLoading(false);
+                        submitLockRef.current = false;
                     }
                     return;
                 }

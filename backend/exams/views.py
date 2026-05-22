@@ -916,12 +916,26 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                         return Response({'error': 'No active module to submit'}, status=status.HTTP_400_BAD_REQUEST)
 
                     timing = get_active_module_timing(attempt)
-                    if timing and timing.is_expired:
-                        metric_incr("exam_module_deadline_blocked_submit_total")
-                        return _exam_deadline_hit_response(self, attempt_pk=attempt.pk)
-
-                    module_answers = request.data.get('answers', {})
-                    flagged = request.data.get('flagged', [])
+                    deadline_passed = bool(timing and timing.is_expired)
+                    if deadline_passed:
+                        # Deadline passed: force-transition the module using the
+                        # already-autosaved answers (ignore the request body so a
+                        # late submit cannot inject post-deadline edits). This
+                        # prevents students from getting stuck on an expired module
+                        # when they come back after the timer ran out.
+                        metric_incr("exam_module_deadline_force_transition_total")
+                        logger.info(
+                            "[FORENSIC] submit_module_force_transition_after_deadline attempt_id=%s",
+                            attempt.id,
+                        )
+                        mid_key = str(int(getattr(attempt.current_module, "id", 0) or 0))
+                        existing_answers = (attempt.module_answers or {}).get(mid_key, {}) or {}
+                        existing_flagged = (attempt.flagged_questions or {}).get(mid_key, []) or []
+                        module_answers = existing_answers
+                        flagged = existing_flagged
+                    else:
+                        module_answers = request.data.get('answers', {})
+                        flagged = request.data.get('flagged', [])
                     
                     submitting_module_order = int(getattr(attempt.current_module, "module_order", 0) or 0)
 
