@@ -642,6 +642,13 @@ class TestAttempt(TimestampedModel):
     module_1_submitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
     module_2_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
     module_2_submitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Pause bookkeeping — total seconds spent paused while in each module, plus
+    # the timestamp the current pause started (null when not paused). The
+    # deadline check subtracts these from elapsed time so a student who pauses
+    # to take a break doesn't have the timer keep counting against them.
+    module_1_paused_seconds = models.PositiveIntegerField(default=0)
+    module_2_paused_seconds = models.PositiveIntegerField(default=0)
+    pause_started_at = models.DateTimeField(null=True, blank=True)
     scoring_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
     completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     abandoned_checkpoint_state = models.CharField(

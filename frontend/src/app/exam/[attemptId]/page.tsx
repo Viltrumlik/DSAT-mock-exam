@@ -2043,7 +2043,27 @@ function ExamPlayerInner() {
                                 <div className="flex items-center gap-2 mt-0.5">
                                     {!mockFlow && (
                                     <button
-                                        onClick={() => setIsPaused(!isPaused)}
+                                        onClick={async () => {
+                                            const next = !isPaused;
+                                            setIsPaused(next);
+                                            try {
+                                                if (next) {
+                                                    const upd = await examsPublicApi.pauseAttempt(Number(attemptId));
+                                                    mergeAttemptFromServer(upd);
+                                                } else {
+                                                    const upd = await examsPublicApi.resumePauseAttempt(Number(attemptId));
+                                                    mergeAttemptFromServer(upd);
+                                                    // After resume, force the timer to recompute from
+                                                    // the now-banked pause window so the displayed
+                                                    // remaining time matches the server's.
+                                                    lastRenderedSecRef.current = -1;
+                                                }
+                                            } catch (e) {
+                                                // Roll back the visual state if the server call failed
+                                                setIsPaused(!next);
+                                                console.error("[exam] pause/resume failed", e);
+                                            }
+                                        }}
                                         className="text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors flex items-center gap-1"
                                     >
                                         {isPaused ? <><Play className="w-2.5 h-2.5 inline" /> Resume</> : <><Pause className="w-2.5 h-2.5 inline" /> Pause</>}

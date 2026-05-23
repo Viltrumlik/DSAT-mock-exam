@@ -999,6 +999,48 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         return consume_idempotency(attempt=attempt0, endpoint="submit_module", request=request, compute=_compute)
 
 
+    @action(detail=True, methods=['post'], url_path='pause')
+    def pause(self, request, pk=None):
+        """Mark the attempt as paused so the deadline timer stops counting."""
+        attempt = self.get_object()
+        _enforce_attempt_student(request, attempt)
+        if attempt.is_completed or attempt.current_state == TestAttempt.STATE_COMPLETED:
+            return Response({"error": "Attempt already completed."}, status=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            locked = TestAttempt.objects.select_for_update().get(pk=attempt.pk)
+            if locked.pause_started_at is not None:
+                # Already paused — idempotent.
+                return Response(self.get_serializer(locked).data)
+            locked.pause_started_at = timezone.now()
+            locked.save(update_fields=["pause_started_at", "updated_at"])
+        return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+
+    @action(detail=True, methods=['post'], url_path='resume_pause')
+    def resume_pause(self, request, pk=None):
+        """Clear the paused state, banking the elapsed pause window."""
+        attempt = self.get_object()
+        _enforce_attempt_student(request, attempt)
+        with transaction.atomic():
+            locked = TestAttempt.objects.select_for_update().select_related("current_module").get(pk=attempt.pk)
+            if locked.pause_started_at is None:
+                # Not paused — idempotent.
+                return Response(self.get_serializer(locked).data)
+            now = timezone.now()
+            elapsed = max(0, int((now - locked.pause_started_at).total_seconds()))
+            mod = locked.current_module
+            order = int(getattr(mod, "module_order", 0) or 0) if mod else 0
+            update_fields = ["pause_started_at", "updated_at"]
+            if order == 1:
+                locked.module_1_paused_seconds = int(locked.module_1_paused_seconds or 0) + elapsed
+                update_fields.append("module_1_paused_seconds")
+            elif order == 2:
+                locked.module_2_paused_seconds = int(locked.module_2_paused_seconds or 0) + elapsed
+                update_fields.append("module_2_paused_seconds")
+            locked.pause_started_at = None
+            locked.save(update_fields=update_fields)
+        return Response(self.get_serializer(TestAttempt.objects.get(pk=attempt.pk)).data)
+
+
     @action(detail=True, methods=['post'])
     def save_attempt(self, request, pk=None):
         attempt0 = self.get_object()

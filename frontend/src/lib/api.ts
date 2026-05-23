@@ -667,6 +667,14 @@ export const examsPublicApi = {
         );
         return parseTestAttemptApiPayload(res.data, `POST /exams/attempts/${attemptId}/resume/`);
     },
+    pauseAttempt: async (attemptId: number): Promise<TestAttempt> => {
+        const res = await api.post(`/exams/attempts/${attemptId}/pause/`, {});
+        return parseTestAttemptApiPayload(res.data, `POST /exams/attempts/${attemptId}/pause/`);
+    },
+    resumePauseAttempt: async (attemptId: number): Promise<TestAttempt> => {
+        const res = await api.post(`/exams/attempts/${attemptId}/resume_pause/`, {});
+        return parseTestAttemptApiPayload(res.data, `POST /exams/attempts/${attemptId}/resume_pause/`);
+    },
     submitModule: async (attemptId: number, answers: object, flagged: number[] = [], options?: { idempotencyKey?: string; expectedVersionNumber?: number }): Promise<TestAttempt> => {
         const headers: Record<string, string> = {};
         if (options?.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
