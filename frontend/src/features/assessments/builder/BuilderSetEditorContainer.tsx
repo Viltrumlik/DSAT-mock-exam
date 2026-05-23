@@ -606,17 +606,10 @@ export default function BuilderSetEditorContainer() {
   useEffect(() => {
     if (!selected) return;
     const rawChoices: Array<{ id?: unknown }> = (selected as any).choices ?? [];
-    const choiceIds = rawChoices.map((c) => String(c?.id ?? "").trim()).filter(Boolean);
     const rawCorrect = (selected as any).correct_answer;
-    // Normalise: for multiple_choice only, if correct_answer is null/undefined
-    // or doesn't match any choice, fall back to the first choice ID.
-    // For numeric/short_text/boolean, keep the raw value as-is.
-    const resolvedCorrect =
-      selected.question_type === "multiple_choice"
-        ? (rawCorrect != null && choiceIds.includes(String(rawCorrect))
-            ? rawCorrect
-            : (choiceIds[0] ?? null))
-        : rawCorrect;
+    // Show whatever the DB says — never silently mutate it. The earlier
+    // fallback to choices[0] was turning "D" into "A" on every reload.
+    const resolvedCorrect = rawCorrect;
     setEditing({
       questionId: selected.id,
       prompt: String(selected.prompt || ""),
@@ -660,14 +653,25 @@ export default function BuilderSetEditorContainer() {
         const ids = new Set(idList);
         const ca = payload.correct_answer;
         const cStr = typeof ca === "string" ? ca : ca != null ? String(ca) : "";
-        if (!cStr || !ids.has(cStr)) {
-          // correct_answer is stale or null — auto-select the first available choice
-          if (idList.length === 0) {
-            toast.push({ tone: "error", message: "Add at least one answer choice before saving." });
-            return;
-          }
-          payload.correct_answer = idList[0];
+        if (idList.length === 0) {
+          toast.push({ tone: "error", message: "Add at least one answer choice before saving." });
+          return;
         }
+        if (!cStr) {
+          toast.push({ tone: "error", message: "Pick which choice is correct before saving." });
+          return;
+        }
+        if (!ids.has(cStr)) {
+          // DO NOT silently fall back to choices[0] — that turned the user's
+          // pick of "D" into "A". Instead, surface the mismatch so they can
+          // re-click the correct badge.
+          toast.push({
+            tone: "error",
+            message: `Selected answer "${cStr}" no longer matches any choice. Re-select the correct badge and try again.`,
+          });
+          return;
+        }
+        payload.correct_answer = cStr;
       } else if (payload.question_type === "numeric") {
         // Coerce raw string ("5", "3.14") to a number so the backend stores
         // it as a JSON number instead of a string. Empty/invalid stays null

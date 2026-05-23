@@ -97,12 +97,27 @@ function syncFpFromAttempt(attempt: unknown): string {
   return fingerprintAnswersFromAttempt(attempt as Parameters<typeof fingerprintAnswersFromAttempt>[0]);
 }
 
-// Insert U+2060 WORD JOINER between consecutive underscores so a fill-in-the-
-// blank like "______" cannot break across lines. The joiner is zero-width and
-// invisible, so the rendered length and appearance of the blank are preserved.
-function preventUnderscoreBreaks(text: string): string {
-  if (!text) return text;
-  return text.replace(/_{2,}/g, (run) => run.split("").join("⁠"));
+// Highlighter helper: copy of the pastpaper /exam approach.
+// Uses extractContents + insertNode (NOT surroundContents) so selections that
+// cross inline elements still highlight without throwing.
+function handleAnnotateMouseUp(e: React.MouseEvent, _target: string) {
+  try {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    const range = sel.getRangeAt(0);
+    // Only highlight inside the element we attached the handler to.
+    const container = e.currentTarget as HTMLElement;
+    if (!container.contains(range.commonAncestorContainer)) return;
+    const mark = document.createElement("mark");
+    mark.style.cssText =
+      "background-color: #faed7d; color: #000; text-decoration: none;";
+    const fragment = range.extractContents();
+    mark.appendChild(fragment);
+    range.insertNode(mark);
+    sel.removeAllRanges();
+  } catch {
+    /* ignore — extractContents on detached ranges, etc. */
+  }
 }
 
 // ─── Save indicator ───────────────────────────────────────────────────────────
@@ -1727,30 +1742,6 @@ function ExamSimulationView({
         <div
           className={`mx-auto w-full max-w-3xl px-8 py-10 ${highlighterActive ? "ms-highlighter-cursor" : ""}`}
           style={{ fontSize: `${zoomLevel}rem` }}
-          onMouseUp={() => {
-            if (!highlighterActive) return;
-            try {
-              const sel = window.getSelection();
-              if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
-              const range = sel.getRangeAt(0);
-              // Only highlight if selection is fully inside the question area.
-              const area = (range.commonAncestorContainer as Node) || null;
-              if (!area) return;
-              const mark = document.createElement("mark");
-              mark.style.backgroundColor = "#fef08a"; // tailwind yellow-200
-              mark.style.padding = "0 1px";
-              mark.style.borderRadius = "2px";
-              try {
-                range.surroundContents(mark);
-                sel.removeAllRanges();
-              } catch {
-                // surroundContents fails when selection crosses element
-                // boundaries; ignore silently and let the user retry.
-              }
-            } catch {
-              /* ignore */
-            }
-          }}
         >
           {/* Question header line (question N of M + per-question time) */}
           <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200">
@@ -1765,21 +1756,28 @@ function ExamSimulationView({
 
           {/* Question prompt context (passage/stimulus) if any */}
           {Boolean(current?.question_prompt) && (
-            <div className="mb-6 border-l-4 border-slate-300 pl-5 py-1 ms-no-break-underscores">
+            <div
+              id="assessment-passage-content"
+              className="mb-6 border-l-4 border-slate-300 pl-5 py-1"
+              onMouseUp={(e) => highlighterActive && handleAnnotateMouseUp(e, "passage")}
+            >
               <MathText
-                text={preventUnderscoreBreaks(String(current!.question_prompt))}
+                text={String(current!.question_prompt)}
                 block
                 className="text-base text-slate-700 leading-relaxed font-[Georgia,serif]"
               />
             </div>
           )}
 
-          {/* The question itself */}
-          <div className="ms-no-break-underscores">
+          {/* The question itself — regular weight; bold lives inline via **...** */}
+          <div
+            id="assessment-question-content"
+            onMouseUp={(e) => highlighterActive && handleAnnotateMouseUp(e, "question")}
+          >
             <MathText
-              text={preventUnderscoreBreaks(String(current?.prompt || "").trim() || "—")}
+              text={String(current?.prompt || "").trim() || "—"}
               block
-              className="text-lg font-semibold text-slate-900 leading-relaxed"
+              className="text-lg font-normal text-slate-900 leading-relaxed"
             />
           </div>
 

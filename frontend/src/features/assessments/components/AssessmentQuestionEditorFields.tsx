@@ -161,11 +161,15 @@ export function AssessmentQuestionEditorFields({
   };
 
   const correctMcId = useMemo(() => {
+    // Preserve the user's actual pick — even if it's currently empty, do not
+    // fall back to choices[0] silently. The previous fallback caused the UI
+    // to show "A" as selected whenever the user re-opened a question they
+    // had set to "D", because the round-trip computed "no selection" briefly
+    // and then snapped to A.
     const ca = parseJson<unknown>(draft.correctAnswerText, null);
-    if (ca == null || ca === "") return choices[0]?.id ?? "A";
-    const s = String(ca);
-    return choices.some((c) => c.id === s) ? s : (choices[0]?.id ?? "A");
-  }, [draft.correctAnswerText, choices]);
+    if (ca == null || ca === "") return "";
+    return String(ca);
+  }, [draft.correctAnswerText]);
 
   // ── Formula insertion ──────────────────────────────────────────────────────
   const activeFieldRef = useRef<{
