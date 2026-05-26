@@ -511,6 +511,7 @@ function ExamPlayerInner() {
     const [isNavigating, setIsNavigating] = useState(false);
     const [showFiveMinuteWarning, setShowFiveMinuteWarning] = useState(false);
     const [warningShownForModule, setWarningShownForModule] = useState<number | null>(null);
+    const [pauseResumeError, setPauseResumeError] = useState<string | null>(null);
     const warningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const current_module_details = attempt?.current_module_details ?? null;
@@ -2058,12 +2059,18 @@ function ExamPlayerInner() {
                                             const next = !isPaused;
                                             // Optimistic UI toggle first.
                                             setIsPaused(next);
+                                            setPauseResumeError(null);
                                             try {
                                                 if (next) {
                                                     // Going INTO pause: hit the server so the
                                                     // deadline freezes there too.
+                                                    console.log('[exam] pause: calling server...');
                                                     const upd = await examsPublicApi.pauseAttempt(Number(attemptId));
+                                                    console.log('[exam] pause: server ok', { is_paused: upd.is_paused, remaining: upd.remaining_seconds });
                                                     mergeAttemptFromServer(upd);
+                                                    // Sync from server — if server says not actually
+                                                    // paused (race), correct it.
+                                                    setIsPaused(upd.is_paused);
                                                 } else {
                                                     // Coming OUT of pause: explicitly realign the
                                                     // virtual timer anchor BEFORE the await so the
@@ -2082,7 +2089,9 @@ function ExamPlayerInner() {
                                                     }
                                                     lastRenderedSecRef.current = -1;
                                                     wasTimerPausedRef.current = false;
+                                                    console.log('[exam] resume: calling server...', { rem, limitSec });
                                                     const upd = await examsPublicApi.resumePauseAttempt(Number(attemptId));
+                                                    console.log('[exam] resume: server ok', { is_paused: upd.is_paused, remaining: upd.remaining_seconds });
                                                     mergeAttemptFromServer(upd);
                                                     // Re-anchor again using the server's authoritative
                                                     // remaining_seconds (handles any clock drift).
@@ -2094,10 +2103,27 @@ function ExamPlayerInner() {
                                                         setTimeLeft(serverRem);
                                                     }
                                                     lastRenderedSecRef.current = -1;
+                                                    // Sync authoritative pause state from server.
+                                                    setIsPaused(upd.is_paused);
                                                 }
                                             } catch (e) {
-                                                setIsPaused(!next);
                                                 console.error("[exam] pause/resume failed", e);
+                                                if (next) {
+                                                    // Failed to pause → revert to running.
+                                                    setIsPaused(false);
+                                                }
+                                                // For resume (next=false): do NOT revert isPaused to
+                                                // true. Keeping the timer running is far better than
+                                                // freezing it. The server will re-sync on next poll.
+                                                const errDetail =
+                                                    (e as { response?: { data?: { detail?: string; message?: string } } })
+                                                        ?.response?.data?.detail ??
+                                                    (e as { response?: { data?: { detail?: string; message?: string } } })
+                                                        ?.response?.data?.message ??
+                                                    (e as { message?: string })?.message ??
+                                                    'Unknown error';
+                                                console.error('[exam] pause/resume error detail:', errDetail, e);
+                                                setPauseResumeError(next ? 'Pause failed — timer is still running.' : `Resume sync failed (${errDetail}). Timer continues.`);
                                             }
                                         }}
                                         className="text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors flex items-center gap-1"
@@ -2112,6 +2138,11 @@ function ExamPlayerInner() {
                                         Hide
                                     </button>
                                 </div>
+                                {pauseResumeError && (
+                                    <p className="text-[10px] text-red-500 mt-1 max-w-[160px] text-center leading-tight">
+                                        {pauseResumeError}
+                                    </p>
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center">
