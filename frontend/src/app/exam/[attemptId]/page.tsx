@@ -1577,7 +1577,12 @@ function ExamPlayerInner() {
         // Align virtual start to the displayed remaining time so rAF timer is stable.
         virtualModuleStartMsRef.current = nowMs - (limitSec - remaining) * 1000;
 
-        lastRenderedSecRef.current = remaining;
+        // Use -1 sentinel so the rAF loop always calls setTimeLeft on its very first
+        // tick after (re)starting. Setting it to `remaining` here would cause the rAF
+        // to silently skip the first setTimeLeft call whenever it restarts right after
+        // this effect runs (e.g. after a poll fires mid-resume), leaving the display
+        // frozen for up to 1 s.
+        lastRenderedSecRef.current = -1;
         moduleTimerSubmitDoneRef.current = false;
         wasTimerPausedRef.current = false;
         setTimerReady(true);
@@ -1613,6 +1618,12 @@ function ExamPlayerInner() {
     ]);
 
     // rAF-driven timer: checks every frame, updates React only when the whole-second display changes.
+    // DEPS NOTE: handleSubmitModule is intentionally omitted — the loop body does not call it
+    // (auto-submit was moved to its own effect). Including it would restart the rAF on every
+    // 10-second poll (because handleSubmitModule closes over `attempt`), which combined with
+    // the timer-init effect overwriting lastRenderedSecRef caused the display to freeze for
+    // ≥ 1 s after every poll — manifesting as "timer stuck after resume".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => {
         if (!attempt?.current_module_details || !attempt?.current_module_start_time) return;
         if (isPaused && !mockFlow) return;
@@ -1631,11 +1642,8 @@ function ExamPlayerInner() {
             }
 
             if (remaining <= 0) {
-                if (!moduleTimerSubmitDoneRef.current && !transitioning && !loading) {
-                }
                 return;
             }
-
 
             rafId = requestAnimationFrame(loop);
         };
@@ -1649,7 +1657,7 @@ function ExamPlayerInner() {
         attempt?.module_duration_seconds,
         isPaused,
         mockFlow,
-        handleSubmitModule,
+        // handleSubmitModule deliberately excluded — see comment above
     ]);
 
     // Timer auto-submit: only fires after timerReady (state, not ref) so React
