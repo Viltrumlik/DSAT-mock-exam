@@ -616,16 +616,46 @@ export default function BuilderSetEditorContainer() {
   // in React's dep-diffing work correctly for all value types.
   const _selectedCorrectAnswerKey = JSON.stringify((selected as any)?.correct_answer ?? null);
 
+  // Guard: after saving a question we record the authoritative correct_answer
+  // that the server accepted. React's effect system fires [selected?.id,
+  // _selectedCorrectAnswerKey] using the VALUES from the render in which it
+  // fires — which may still see correct_answer=null if the Zustand store
+  // hasn't yet been updated by the [setRow] effect that runs just before it.
+  // The guard prevents that stale hydration from silently wiping the answer
+  // the user just saved. It is cleared once the store catches up with a
+  // non-null correct_answer, or when the user navigates to a different question.
+  const lastSavedAnswerRef = useRef<{ questionId: number; correctAnswerText: string } | null>(null);
+
   useEffect(() => {
-    if (!selected) return;
+    if (!selected) {
+      lastSavedAnswerRef.current = null;
+      return;
+    }
+    // Clear the guard when navigating to a different question.
+    if (lastSavedAnswerRef.current && lastSavedAnswerRef.current.questionId !== selected.id) {
+      lastSavedAnswerRef.current = null;
+    }
+
     const rawChoices: Array<{ id?: unknown }> = (selected as any).choices ?? [];
     const rawCorrect = (selected as any).correct_answer;
-    // Show whatever the DB says — never silently mutate it. The earlier
-    // fallback to choices[0] was turning "D" into "A" on every reload.
-    // Guard: JSON.stringify(undefined) returns the JS value `undefined` (not a
-    // string), which breaks parseJson later. Use null as a safe sentinel instead.
-    const correctAnswerText =
-      rawCorrect !== undefined ? JSON.stringify(rawCorrect) : JSON.stringify(null);
+
+    let correctAnswerText: string;
+    if (rawCorrect != null) {
+      // Fresh server data with a real value — use it and clear the guard.
+      correctAnswerText = JSON.stringify(rawCorrect);
+      lastSavedAnswerRef.current = null;
+    } else if (lastSavedAnswerRef.current?.questionId === selected.id) {
+      // Store has null (stale / background-refetch not yet settled) but we
+      // just saved a real answer — use the saved value to avoid a flash of
+      // "no answer selected".
+      correctAnswerText = lastSavedAnswerRef.current.correctAnswerText;
+    } else {
+      // No guard and no server value — show null (honest state).
+      // Guard: JSON.stringify(undefined) returns the JS value `undefined`
+      // (not a string), which breaks parseJson later. Use null as safe sentinel.
+      correctAnswerText = JSON.stringify(null);
+    }
+
     setEditing({
       questionId: selected.id,
       prompt: String(selected.prompt || ""),
@@ -740,13 +770,21 @@ export default function BuilderSetEditorContainer() {
       // effect) will fire later and confirm the same values; this call just
       // eliminates any flash where the UI would show "no answer selected".
       const savedRes = res as any;
+      const newCorrectAnswerText =
+        savedRes.correct_answer != null
+          ? JSON.stringify(savedRes.correct_answer)
+          : null;
+
+      // Arm the guard ref so the hydration useEffect can't wipe this value
+      // with a stale null from the background refetch before the store catches up.
+      if (newCorrectAnswerText != null) {
+        lastSavedAnswerRef.current = { questionId: savedId, correctAnswerText: newCorrectAnswerText };
+      }
+
       setEditing((prev) => ({
         ...prev,
         questionId: savedId,
-        correctAnswerText:
-          savedRes.correct_answer !== undefined
-            ? JSON.stringify(savedRes.correct_answer)
-            : prev.correctAnswerText,
+        correctAnswerText: newCorrectAnswerText ?? prev.correctAnswerText,
         choicesText:
           Array.isArray(savedRes.choices)
             ? JSON.stringify(savedRes.choices, null, 2)
