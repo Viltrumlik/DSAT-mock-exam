@@ -1587,12 +1587,17 @@ function ExamPlayerInner() {
         wasTimerPausedRef.current = false;
         setTimerReady(true);
         setTimeLeft(remaining);
+    // NOTE: attempt?.remaining_seconds is intentionally NOT a dep here.
+    // Pause/resume API responses update remaining_seconds, which would re-trigger this
+    // effect and call setTimeLeft(serverValue), causing the display to jump on pause.
+    // The button handler and wasTimerPausedRef effect already handle resume realignment.
+    // This effect should only fire when the MODULE itself changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         attempt?.current_module_details?.id,
         attempt?.current_module_start_time,
         attempt?.current_module_details?.time_limit_minutes,
         attempt?.module_duration_seconds,
-        attempt?.remaining_seconds,
     ]);
 
 
