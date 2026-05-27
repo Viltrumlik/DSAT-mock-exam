@@ -1507,6 +1507,42 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 // count-up timer (no deadline), single-column question layout, no calculator/
 // highlighter (assessment questions are simpler than SAT modules).
 
+// Renders pre-processed HTML and triggers KaTeX after each change.
+// Mirrors MathText's useEffect([text]) pattern but accepts HTML + onMouseUp.
+function MathHtml({
+  html,
+  className,
+  id,
+  onMouseUp,
+}: {
+  html: string;
+  className?: string;
+  id?: string;
+  onMouseUp?: (e: React.MouseEvent<HTMLDivElement>) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    if (typeof (window as unknown as Record<string, unknown>).renderMathInElement === "function") {
+      renderMath({ root: ref.current });
+    } else {
+      const el = ref.current;
+      const onReady = () => renderMath({ root: el });
+      window.addEventListener("katex:ready", onReady, { once: true });
+      return () => window.removeEventListener("katex:ready", onReady);
+    }
+  }, [html]);
+  return (
+    <div
+      ref={ref}
+      id={id}
+      className={className}
+      onMouseUp={onMouseUp}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
 type ExamSimulationProps = {
   setTitle: string;
   subject: string;
@@ -1703,35 +1739,6 @@ function ExamSimulationView({
     setAnnotationPopover((prev) => ({ ...prev, visible: false }));
   };
 
-  // Re-render KaTeX whenever the displayed question changes (covers initial mount
-  // and navigation). Runs AFTER React commits the new innerHTML to the DOM.
-  useEffect(() => {
-    renderMath({ root: document.body });
-    // Retry once after a short delay in case KaTeX loads slightly after mount.
-    const t = setTimeout(() => renderMath({ root: document.body }), 150);
-    return () => clearTimeout(t);
-  }, [current?.id, questionHighlightHtml, passageHighlightHtml]);
-
-  // Listen for KaTeX becoming available (first page load race) and re-run on
-  // any DOM mutation (e.g. highlight marks injected after initial render).
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const schedule = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => renderMath({ root: document.body }), 40);
-    };
-    const onKatexReady = () => {
-      renderMath({ root: document.body });
-    };
-    window.addEventListener("katex:ready", onKatexReady);
-    const observer = new MutationObserver(schedule);
-    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-    return () => {
-      if (timer) clearTimeout(timer);
-      observer.disconnect();
-      window.removeEventListener("katex:ready", onKatexReady);
-    };
-  }, []);
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col font-sans text-slate-900 overflow-hidden">
@@ -1881,28 +1888,24 @@ function ExamSimulationView({
 
           {/* Question prompt context (passage/stimulus) if any */}
           {Boolean(current?.question_prompt) && (
-            <div
+            <MathHtml
               id="assessment-passage-content"
               className={`mb-6 border-l-4 border-slate-300 pl-5 py-1 text-base text-slate-700 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
               onMouseUp={(e) => highlighterActive && handleShowPopover("passage", e)}
-              dangerouslySetInnerHTML={{
-                __html: passageHighlightHtml
-                  ? sanitizeHighlight(passageHighlightHtml)
-                  : processQuestionText(String(current!.question_prompt)),
-              }}
+              html={passageHighlightHtml
+                ? sanitizeHighlight(passageHighlightHtml)
+                : processQuestionText(String(current!.question_prompt))}
             />
           )}
 
           {/* The question itself */}
-          <div
+          <MathHtml
             id="assessment-question-content"
             className={`text-lg font-normal text-slate-900 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
             onMouseUp={(e) => highlighterActive && handleShowPopover("question", e)}
-            dangerouslySetInnerHTML={{
-              __html: questionHighlightHtml
-                ? sanitizeHighlight(questionHighlightHtml)
-                : processQuestionText(String(current?.prompt || "").trim() || "—"),
-            }}
+            html={questionHighlightHtml
+              ? sanitizeHighlight(questionHighlightHtml)
+              : processQuestionText(String(current?.prompt || "").trim() || "—")}
           />
 
           {/* Answer input */}
