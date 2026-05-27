@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 };
 
 import Script from "next/script";
-import { KatexScripts } from "@/components/KatexScripts";
+import "katex/dist/katex.min.css";
 
 export default function RootLayout({
   children,
@@ -35,9 +35,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" />
-      </head>
+      <head />
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
@@ -49,8 +47,6 @@ export default function RootLayout({
             </ToastProvider>
           </QueryProvider>
         </ThemeProvider>
-        {/* KatexScripts is a Client Component so it can pass onLoad to <Script> */}
-        <KatexScripts />
         <Script src="https://accounts.google.com/gsi/client" strategy="afterInteractive" />
       </body>
     </html>

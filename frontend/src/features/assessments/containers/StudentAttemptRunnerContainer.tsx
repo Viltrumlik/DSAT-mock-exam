@@ -1522,15 +1522,7 @@ function MathHtml({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!ref.current) return;
-    if (typeof (window as unknown as Record<string, unknown>).renderMathInElement === "function") {
-      renderMath({ root: ref.current });
-    } else {
-      const el = ref.current;
-      const onReady = () => renderMath({ root: el });
-      window.addEventListener("katex:ready", onReady, { once: true });
-      return () => window.removeEventListener("katex:ready", onReady);
-    }
+    if (ref.current) renderMath({ root: ref.current });
   }, [html]);
   return (
     <div
