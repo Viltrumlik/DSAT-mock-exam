@@ -30,8 +30,11 @@ function buildPattern(): RegExp {
   const parts = DELIMITERS.map(({ left, right }) => {
     const l = escRe(left);
     const r = escRe(right);
-    // Use [\s\S] to allow multi-line math. Non-greedy.
-    return `(?:${l})([\s\S]*?)(?:${r})`;
+    // Use [\\s\\S] (double-escaped) to allow multi-line math — non-greedy.
+    // NOTE: template literals strip lone backslashes in unrecognised escape
+    // sequences (e.g. \s → s) when bundlers minify. Use \\ to get a literal
+    // backslash in the compiled string so the character class is [\s\S].
+    return "(?:" + l + ")([\\s\\S]*?)(?:" + r + ")";
   });
   return new RegExp(parts.join("|"), "g");
 }
