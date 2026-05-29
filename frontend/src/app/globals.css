@@ -508,6 +508,26 @@ body {
   white-space: normal;
 }
 
+/* Fill-in-the-blank rendering for English assessment questions.
+   Authored runs of underscores (`____`) become a real underline blank: the
+   underscore glyphs are hidden (transparent) but keep their width, and a solid
+   baseline rule of that width is drawn. Reads as a proper blank on desktop and
+   mobile instead of a row of underscore characters. */
+.ms-blank {
+  display: inline-block;
+  min-width: 2.5em;
+  color: transparent;
+  border-bottom: 2px solid currentColor;
+  line-height: 1;
+  margin: 0 2px;
+  vertical-align: baseline;
+  /* keep the blank on one line so it never wraps mid-rule */
+  white-space: nowrap;
+  /* underscores already sit at the baseline; nudge the rule down slightly so
+     it reads as an empty line rather than a strike under text */
+  transform: translateY(0.15em);
+}
+
 /* Glass — simplified, no blur */
 .glass {
   background: var(--card);

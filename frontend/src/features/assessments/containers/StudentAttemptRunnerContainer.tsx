@@ -28,13 +28,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import DOMPurify from "dompurify";
 import { useAttemptBundle, useSaveAnswer, useSubmitAttempt } from "@/features/assessments/hooks";
 import { normalizeApiError } from "@/lib/apiError";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import { AnswerInput } from "@/features/assessments/components/QuestionInputs";
-import { MathText, prepareRichText } from "@/components/MathText";
-import { renderMath, renderMathInString } from "@/lib/mathRender";
+import { MathText } from "@/components/MathText";
+import { renderMath } from "@/lib/mathRender";
+import { processInstructionalText, sanitizeHighlightHtml } from "@/lib/assessmentText";
+import {
+  readHighlightStore,
+  saveHighlight,
+} from "@/features/assessments/attemptHighlightStorage";
 import {
   answersMapFromAttempt,
   detectAnswerConflicts,
@@ -566,6 +570,19 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const [highlightsByQid, setHighlightsByQid] = useState<Record<number, string>>({});
   // Per-question saved highlight HTML for passage/context (question_prompt).
   const [passageHighlightsByQid, setPassageHighlightsByQid] = useState<Record<number, string>>({});
+
+  // ── Highlight persistence (frontend-only, Phase 1) ──────────────────────────
+  // Restore saved highlights on mount so they survive refresh / navigation /
+  // disconnect / browser reopen. Scoped by attemptId (key) + questionId (inner
+  // map). Writes happen on change (in the onChange handlers below) via
+  // saveHighlight, not via an effect — this avoids an effect-ordering race where
+  // the write could clobber storage with empty state before hydration applied.
+  // Not cleared on submit — the pedagogical review page reads them back read-only.
+  useEffect(() => {
+    const stored = readHighlightStore(attemptId);
+    setHighlightsByQid(stored.question);
+    setPassageHighlightsByQid(stored.passage);
+  }, [attemptId]);
 
   // Count-up timer: tick every second while the exam stage is active
   useEffect(() => {
@@ -1479,13 +1496,15 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       highlighterActive={highlighterActive}
       onToggleHighlighter={() => setHighlighterActive((v) => !v)}
       questionHighlightHtml={highlightsByQid[currentQuestionId] ?? null}
-      onQuestionHighlightChange={(html) =>
-        setHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }))
-      }
+      onQuestionHighlightChange={(html) => {
+        setHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }));
+        saveHighlight(attemptId, "question", currentQuestionId, html);
+      }}
       passageHighlightHtml={passageHighlightsByQid[currentQuestionId] ?? null}
-      onPassageHighlightChange={(html) =>
-        setPassageHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }))
-      }
+      onPassageHighlightChange={(html) => {
+        setPassageHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }));
+        saveHighlight(attemptId, "passage", currentQuestionId, html);
+      }}
       // Navigation
       onPrevious={() => setCurrentIdx((i) => Math.max(0, i - 1))}
       onNext={() => setCurrentIdx((i) => Math.min(totalCount - 1, i + 1))}
@@ -1635,16 +1654,14 @@ function ExamSimulationView({
     markElement?: HTMLElement | null;
   }>({ visible: false, x: 0, y: 0 });
 
-  // Convert sequences of 4+ underscores to <u> for blank display, sanitize,
-  // then render any LaTeX delimiters to KaTeX HTML synchronously.
-  const processQuestionText = (text: string) => {
-    const withBlanks = text.replace(/_{4,}/g, (m) => `<u>${m}</u>`);
-    return renderMathInString(prepareRichText(withBlanks));
-  };
+  // Shared instructional pipeline: sanitize + markdown (prepareRichText),
+  // underline fill-in blanks (.ms-blank), then KaTeX. Reused by the review page
+  // so the runner and review render math + blanks identically.
+  const processQuestionText = processInstructionalText;
 
   // Sanitize saved highlight HTML (preserves <mark> with inline styles).
-  const sanitizeHighlight = (html: string) =>
-    DOMPurify.sanitize(html, { ADD_TAGS: ["mark"], ADD_ATTR: ["style", "class"] });
+  // Shared with the read-only review renderer so the pipeline isn't duplicated.
+  const sanitizeHighlight = sanitizeHighlightHtml;
 
   const handleShowPopover = (targetId: string, e?: React.MouseEvent) => {
     const selection = window.getSelection();

@@ -35,6 +35,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { AssessmentText, HighlightedText } from "@/lib/assessmentText";
+import { readHighlightStore, type HighlightStore } from "@/features/assessments/attemptHighlightStorage";
 import { useState, useEffect, useRef } from "react";
 
 // ─── Filter mode ──────────────────────────────────────────────────────────────
@@ -178,7 +180,7 @@ function ChoiceRow({
       >
         {label}
       </span>
-      <span className="text-sm leading-relaxed">{text}</span>
+      <AssessmentText text={text} className="text-sm leading-relaxed" />
       {reviewMode && isCorrectChoice && (
         <CheckCircle2 className="ml-auto shrink-0 mt-0.5 h-4 w-4 text-emerald-500" />
       )}
@@ -195,10 +197,16 @@ function QuestionCard({
   q,
   index,
   total,
+  questionHighlight,
+  passageHighlight,
 }: {
   q: PedagogicalReviewQuestion;
   index: number;
   total: number;
+  /** Saved highlight HTML for the stem (read-only); falls back to AssessmentText. */
+  questionHighlight?: string | null;
+  /** Saved highlight HTML for the passage (read-only); falls back to AssessmentText. */
+  passageHighlight?: string | null;
 }) {
   const outcome = getQuestionOutcome(q);
   const choices: Choice[] = Array.isArray(q.choices) ? q.choices : [];
@@ -250,13 +258,26 @@ function QuestionCard({
       <div className="p-5 space-y-4">
         {/* Passage / stimulus (if present) */}
         {q.question_prompt && q.question_prompt.trim().length > 0 && (
-          <div className="rounded-xl border-l-4 border-primary/40 bg-surface-2/50 pl-4 pr-4 py-3 text-sm leading-relaxed text-foreground max-h-40 overflow-y-auto sm:max-h-none sm:overflow-visible">
-            {q.question_prompt}
-          </div>
+          passageHighlight ? (
+            <HighlightedText
+              html={passageHighlight}
+              className="rounded-xl border-l-4 border-primary/40 bg-surface-2/50 pl-4 pr-4 py-3 text-sm leading-relaxed text-foreground max-h-40 overflow-y-auto sm:max-h-none sm:overflow-visible"
+            />
+          ) : (
+            <AssessmentText
+              text={q.question_prompt}
+              block
+              className="rounded-xl border-l-4 border-primary/40 bg-surface-2/50 pl-4 pr-4 py-3 text-sm leading-relaxed text-foreground max-h-40 overflow-y-auto sm:max-h-none sm:overflow-visible"
+            />
+          )
         )}
 
         {/* Question stem */}
-        <p className="text-sm font-medium leading-relaxed text-foreground">{q.prompt}</p>
+        {questionHighlight ? (
+          <HighlightedText html={questionHighlight} className="text-sm font-medium leading-relaxed text-foreground" />
+        ) : (
+          <AssessmentText text={q.prompt} block className="text-sm font-medium leading-relaxed text-foreground" />
+        )}
 
         {/* MCQ choices */}
         {isMCQ && choices.length > 0 && (
@@ -284,13 +305,22 @@ function QuestionCard({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="rounded-xl border border-border bg-surface-2/50 px-4 py-3">
               <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Your answer</p>
-              <p className={cn("text-sm font-medium", outcome === "correct" ? "text-emerald-700" : "text-red-700")}>
-                {studentKey ?? <span className="text-muted-foreground italic">No answer</span>}
-              </p>
+              {studentKey ? (
+                <AssessmentText
+                  text={studentKey}
+                  className={cn("text-sm font-medium", outcome === "correct" ? "text-emerald-700" : "text-red-700")}
+                />
+              ) : (
+                <p className="text-sm font-medium"><span className="text-muted-foreground italic">No answer</span></p>
+              )}
             </div>
             <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3">
               <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 mb-1">Correct answer</p>
-              <p className="text-sm font-medium text-emerald-800">{correctKey ?? "—"}</p>
+              {correctKey ? (
+                <AssessmentText text={correctKey} className="text-sm font-medium text-emerald-800" />
+              ) : (
+                <p className="text-sm font-medium text-emerald-800">—</p>
+              )}
             </div>
           </div>
         )}
@@ -301,7 +331,7 @@ function QuestionCard({
             <Lightbulb className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">Why this answer works</p>
-              <p className="text-sm leading-relaxed text-amber-900">{q.explanation}</p>
+              <AssessmentText text={q.explanation} block className="text-sm leading-relaxed text-amber-900" />
             </div>
           </div>
         )}
@@ -325,6 +355,13 @@ function PedagogicalReviewContent() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
+
+  // Saved highlights for this attempt (frontend-only persistence, read-only here).
+  // Loaded after mount to avoid SSR/hydration mismatch on localStorage access.
+  const [highlights, setHighlights] = useState<HighlightStore | null>(null);
+  useEffect(() => {
+    if (!isNaN(attemptId) && attemptId > 0) setHighlights(readHighlightStore(attemptId));
+  }, [attemptId]);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["pedagogical-review", attemptId],
@@ -619,7 +656,13 @@ function PedagogicalReviewContent() {
               </button>
             </div>
           ) : current ? (
-            <QuestionCard q={current} index={safeIndex} total={filteredQuestions.length} />
+            <QuestionCard
+              q={current}
+              index={safeIndex}
+              total={filteredQuestions.length}
+              questionHighlight={highlights?.question[current.id] ?? null}
+              passageHighlight={highlights?.passage[current.id] ?? null}
+            />
           ) : null}
         </div>
 
