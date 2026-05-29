@@ -1653,6 +1653,85 @@ function ExamSimulationView({
     targetId?: string;
     markElement?: HTMLElement | null;
   }>({ visible: false, x: 0, y: 0 });
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Dismiss a stale popover on scroll / outside-pointer / Escape. The popover is
+  // position:fixed at the selection's viewport rect; inside the scrollable exam
+  // body it would otherwise stay pinned to an old spot after the content scrolls,
+  // which reads as "the highlighter is stuck". Additive only — never touches the
+  // apply/persist path. We listen on pointerdown (capture) but ignore pointers
+  // inside the popover so swatch clicks still register.
+  useEffect(() => {
+    if (!annotationPopover.visible) return;
+    const hide = () => setAnnotationPopover((p) => ({ ...p, visible: false }));
+    const onPointerDown = (e: Event) => {
+      if (popoverRef.current && popoverRef.current.contains(e.target as Node)) return;
+      hide();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") hide();
+    };
+    // capture so we catch scrolls on the inner overflow container too
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [annotationPopover.visible]);
+
+  // ── Touch/mobile selection trigger (the real fix) ─────────────────────────
+  // onMouseUp does NOT reliably fire for native text selection on iOS Safari /
+  // Android Chrome (long-press + drag-handle selection emits no mouseup; touchend
+  // fires before the OS finalizes the range, so it reads collapsed). The
+  // cross-platform signal is document `selectionchange`, debounced until the
+  // selection settles. When it lands inside a highlight container we open the
+  // popover with the CLONED range (tapping a swatch collapses the native
+  // selection, but applyAnnotation works off the clone). Desktop keeps onMouseUp
+  // for instant precision; this listener is additive and gated on highlighter on.
+  useEffect(() => {
+    if (!highlighterActive) return;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
+    const onSelectionChange = () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      // Wait for the selection to stop changing (handles still being dragged on
+      // mobile) before reading it — avoids the collapsed/partial-range race.
+      settleTimer = setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        const node = range.commonAncestorContainer;
+        const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+        const targetId = el?.closest("#assessment-question-content")
+          ? "question"
+          : el?.closest("#assessment-passage-content")
+            ? "passage"
+            : null;
+        if (!targetId) return; // selection outside the highlightable content
+        const rect = range.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return;
+        // Clamp into the viewport so the popover is never off-screen on small
+        // mobile widths. Positioning is viewport-relative (matches position:fixed).
+        const x = Math.min(Math.max(rect.left + rect.width / 2, 16), window.innerWidth - 16);
+        const y = Math.max(rect.top - 10, 56);
+        setAnnotationPopover({
+          visible: true,
+          x,
+          y,
+          range: range.cloneRange(),
+          targetId,
+          markElement: null,
+        });
+      }, 350);
+    };
+    document.addEventListener("selectionchange", onSelectionChange);
+    return () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      document.removeEventListener("selectionchange", onSelectionChange);
+    };
+  }, [highlighterActive]);
 
   // Shared instructional pipeline: sanitize + markdown (prepareRichText),
   // underline fill-in blanks (.ms-blank), then KaTeX. Reused by the review page
@@ -1935,6 +2014,7 @@ function ExamSimulationView({
       {/* ── Annotation popover (highlight colour / underline / clear) ──────── */}
       {annotationPopover.visible && highlighterActive && (
         <div
+          ref={popoverRef}
           onMouseDown={(e) => e.preventDefault()}
           className="fixed z-[100] bg-[#ebf0f7] p-2 rounded-xl shadow-[0_5px_20px_rgba(0,0,0,0.15)] flex items-center gap-2 border border-slate-300"
           style={{

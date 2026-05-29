@@ -18,6 +18,9 @@
   --color-ds-accent: var(--ds-accent);
   --color-ds-gold: var(--ds-gold);
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  /* Academic, editorial reading face. Used as the document default for
+     long-form/reading text; UI controls stay on --font-sans (see below). */
+  --font-serif: Georgia, "Times New Roman", "Noto Serif", serif;
 }
 
 /*
@@ -123,11 +126,26 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  /* Georgia-led serif gives the platform an academic, reading-oriented feel.
+     Slightly taller line-height aids long-form passage reading. */
+  font-family: var(--font-serif);
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Keep interactive controls on the sans stack: serif form controls change
+   metrics/density and read as less "UI". Buttons, inputs, the question map,
+   admin-dense surfaces, etc. that opt into `font-sans` are unaffected by the
+   serif body default. KaTeX (.katex) and the Django admin set their own fonts,
+   so math alignment and admin density are untouched. */
+button,
+input,
+select,
+textarea,
+optgroup {
+  font-family: var(--font-sans);
 }
 
 /* Typography scale */

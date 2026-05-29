@@ -3,6 +3,7 @@
 import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assessments/types";
 import { MathText } from "@/components/MathText";
 import { MinusCircle, Undo2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 export function MultipleChoiceInput({
   choices,
@@ -97,20 +98,54 @@ export function NumericInput({
   value: number | null;
   onChange: (next: number | null) => void;
 }) {
+  // Hold the raw keystroke string locally so the student can type intermediate,
+  // not-yet-numeric states ("-", ".", "1.", "0.0") without the controlled value
+  // reformatting them away. We commit a finite number upward (the backend grades
+  // via Decimal(str(answer)) so a number is canonical); transient tokens leave
+  // the committed value untouched until they parse.
+  //
+  // Regression fixed: the previous controlled input bound to String(Number(v)),
+  // which dropped a trailing "." and a lone "-", making decimals/negatives
+  // impossible to type and clobbering in-progress edits.
+  const [raw, setRaw] = useState<string>(value == null ? "" : String(value));
+  // Track the last value we committed so we can tell an external change
+  // (draft restore / conflict resolution) apart from our own echo.
+  const lastCommitted = useRef<number | null>(value);
+
+  useEffect(() => {
+    if (value !== lastCommitted.current) {
+      // Value changed from outside this input (e.g. restored draft) — adopt it.
+      setRaw(value == null ? "" : String(value));
+      lastCommitted.current = value;
+    }
+  }, [value]);
+
+  const handle = (next: string) => {
+    setRaw(next);
+    const t = next.trim();
+    if (t === "") {
+      lastCommitted.current = null;
+      onChange(null);
+      return;
+    }
+    // Transient tokens that are not yet a complete number — keep typing, don't
+    // commit (so the controlled value never snaps them back).
+    if (t === "-" || t === "." || t === "-." || /[.\-+eE]$/.test(t)) return;
+    const n = Number(t);
+    if (Number.isFinite(n)) {
+      lastCommitted.current = n;
+      onChange(n);
+    }
+  };
+
   return (
     <input
       className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 min-h-[52px] text-base shadow-sm focus:border-primary focus:outline-none"
       type="text"
       inputMode="decimal"
-      pattern="[0-9.-]*"
-      value={value == null ? "" : String(value)}
-      onChange={(e) => {
-        const s = e.target.value.trim();
-        if (!s) return onChange(null);
-        const n = Number(s);
-        if (!Number.isFinite(n)) return;
-        onChange(n);
-      }}
+      pattern="-?[0-9]*\.?[0-9]*"
+      value={raw}
+      onChange={(e) => handle(e.target.value)}
       placeholder="Enter a number…"
     />
   );
