@@ -637,7 +637,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                         transaction.set_rollback(False)
                         metric_incr("active_attempt_duplicates_prevented")
                         attempt = (
-                            TestAttempt.objects.select_for_update()
+                            TestAttempt.objects.select_for_update(of=("self",))
                             .select_related("practice_test", "current_module")
                             .filter(student=request.user, practice_test=test, is_completed=False)
                             .exclude(current_state=TestAttempt.STATE_ABANDONED)
@@ -646,7 +646,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                         )
                         if attempt is None:
                             attempt = (
-                                TestAttempt.objects.select_for_update()
+                                TestAttempt.objects.select_for_update(of=("self",))
                                 .select_related("practice_test", "current_module")
                                 .filter(
                                     student=request.user,
@@ -734,7 +734,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 healed_to_scoring = False
                 with transaction.atomic():
                     locked = (
-                        TestAttempt.objects.select_for_update()
+                        TestAttempt.objects.select_for_update(of=("self",))
                         .select_related("practice_test", "current_module")
                         .get(pk=attempt0.pk)
                     )
@@ -839,7 +839,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             try:
                 with transaction.atomic():
                     locked_pre = (
-                        TestAttempt.objects.select_for_update()
+                        TestAttempt.objects.select_for_update(of=("self",))
                         .select_related("practice_test", "current_module")
                         .get(pk=attempt.pk)
                     )
@@ -1021,7 +1021,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         attempt = self.get_object()
         _enforce_attempt_student(request, attempt)
         with transaction.atomic():
-            locked = TestAttempt.objects.select_for_update().select_related("current_module").get(pk=attempt.pk)
+            locked = TestAttempt.objects.select_for_update(of=("self",)).select_related("current_module").get(pk=attempt.pk)
             if locked.pause_started_at is None:
                 # Not paused — idempotent.
                 return Response(self.get_serializer(locked).data)
@@ -1053,7 +1053,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             try:
                 with transaction.atomic():
                     attempt = (
-                        TestAttempt.objects.select_for_update()
+                        TestAttempt.objects.select_for_update(of=("self",))
                         .select_related("current_module")
                         .get(pk=attempt0.pk)
                     )

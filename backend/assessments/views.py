@@ -429,7 +429,7 @@ class AssignAssessmentHomeworkView(APIView):
         # does not invalidate the outer transaction under PostgreSQL.
         with transaction.atomic():
             hw = (
-                HomeworkAssignment.objects.select_for_update()
+                HomeworkAssignment.objects.select_for_update(of=("self",))
                 .select_related("assignment")
                 .filter(classroom=classroom, assessment_set=aset)
                 .order_by("id")
@@ -466,7 +466,7 @@ class AssignAssessmentHomeworkView(APIView):
                     assessments_metric_incr("homework_duplicate_prevented")
                     Assignment.objects.filter(pk=assignment.pk).delete()
                     hw = (
-                        HomeworkAssignment.objects.select_for_update()
+                        HomeworkAssignment.objects.select_for_update(of=("self",))
                         .select_related("assignment")
                         .filter(classroom=classroom, assessment_set=aset)
                         .order_by("id")
@@ -1161,7 +1161,7 @@ class SaveAnswerView(APIView):
         data = ser.validated_data
         client_seq = int(data.get("client_seq") or 0)
 
-        att = AssessmentAttempt.objects.select_for_update().select_related("homework").filter(
+        att = AssessmentAttempt.objects.select_for_update(of=("self",)).select_related("homework").filter(
             pk=data["attempt_id"], student=request.user
         ).first()
         if not att:
@@ -1284,7 +1284,7 @@ class SubmitAttemptView(APIView):
         attempt_id = int(ser.validated_data["attempt_id"])
 
         att = (
-            AssessmentAttempt.objects.select_for_update()
+            AssessmentAttempt.objects.select_for_update(of=("self",))
             .select_related("homework", "homework__assessment_set", "homework__assignment", "homework__classroom")
             .filter(pk=attempt_id, student=request.user)
             .first()

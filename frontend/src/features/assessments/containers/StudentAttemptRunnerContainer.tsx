@@ -1671,12 +1671,28 @@ function ExamSimulationView({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") hide();
     };
+    // On scroll, REPOSITION the popover from its stored range rather than hiding
+    // it. Hiding-on-scroll broke mobile: finishing a touch selection fires scroll
+    // events (native callout / viewport nudge) that would dismiss the popover the
+    // instant selectionchange showed it. Repositioning keeps it attached to the
+    // selection and still avoids the "stuck in a stale spot" desktop problem.
+    const onScroll = () => {
+      setAnnotationPopover((p) => {
+        if (!p.visible) return p;
+        if (!p.range) return { ...p, visible: false }; // mark-based popover: hide
+        const rect = p.range.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return { ...p, visible: false };
+        const x = Math.min(Math.max(rect.left + rect.width / 2, 16), window.innerWidth - 16);
+        const y = Math.max(rect.top - 10, 56);
+        return { ...p, x, y };
+      });
+    };
     // capture so we catch scrolls on the inner overflow container too
-    window.addEventListener("scroll", hide, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("pointerdown", onPointerDown, true);
       window.removeEventListener("keydown", onKey);
     };
@@ -1802,10 +1818,28 @@ function ExamSimulationView({
       }
     } else if (annotationPopover.range) {
       if (style === "clear") return;
-      const range = annotationPopover.range;
-      if (!container.contains(range.commonAncestorContainer)) {
-        setAnnotationPopover((prev) => ({ ...prev, visible: false }));
-        return;
+      let range = annotationPopover.range;
+      // Resilience: the cloned range can go stale if the DOM inside the container
+      // was replaced between selection and apply (a re-render or KaTeX text-node
+      // replacement detaches the cloned boundary nodes). When that happens, fall
+      // back to the LIVE selection if it still sits inside this container —
+      // otherwise the highlight would silently never apply.
+      const staleClone =
+        !range.startContainer.isConnected ||
+        !container.contains(range.commonAncestorContainer);
+      if (staleClone) {
+        const live = window.getSelection();
+        if (
+          live &&
+          live.rangeCount > 0 &&
+          !live.isCollapsed &&
+          container.contains(live.getRangeAt(0).commonAncestorContainer)
+        ) {
+          range = live.getRangeAt(0);
+        } else {
+          setAnnotationPopover((prev) => ({ ...prev, visible: false }));
+          return;
+        }
       }
       const mark = document.createElement("mark");
       mark.className = `annot-${style}`;

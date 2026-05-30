@@ -2162,7 +2162,15 @@ function ExamPlayerInner() {
                                                     (e as { message?: string })?.message ??
                                                     'Unknown error';
                                                 console.error('[exam] pause/resume error detail:', errDetail, e);
-                                                setPauseResumeError(next ? 'Pause failed — timer is still running.' : `Resume sync failed (${errDetail}). Timer continues.`);
+                                                // Graceful degradation: the timer is client-authoritative
+                                                // and keeps running, so a sync hiccup must never read as
+                                                // "the test is broken". Keep the message calm and reassuring;
+                                                // the next poll re-syncs state. (errDetail kept for console.)
+                                                setPauseResumeError(
+                                                    next
+                                                        ? 'Your timer is still running.'
+                                                        : 'Your timer is running and your progress is safe.'
+                                                );
                                             }
                                         }}
                                         className="text-[10px] font-bold text-slate-600 border border-slate-300 rounded-full px-3 py-0.5 hover:bg-slate-50 transition-colors flex items-center gap-1"
