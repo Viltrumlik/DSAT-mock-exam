@@ -534,8 +534,11 @@ optgroup {
 .ms-blank {
   display: inline-block;
   min-width: 2.5em;
+  /* Hide the underscore glyphs but keep their width as the blank length. */
   color: transparent;
-  border-bottom: 2px solid currentColor;
+  /* Explicit underline color — NOT currentColor, which is transparent here and
+     made the rule invisible (the blank showed as empty space). */
+  border-bottom: 2px solid #334155;
   line-height: 1;
   margin: 0 2px;
   vertical-align: baseline;
