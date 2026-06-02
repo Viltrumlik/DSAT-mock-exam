@@ -27,6 +27,8 @@ export type HighlightStore = {
   question: Record<number, string>;
   /** qid → sanitized highlight HTML for the passage / stimulus. */
   passage: Record<number, string>;
+  /** qid → { choiceId → sanitized highlight HTML } for answer choices. */
+  options: Record<number, Record<string, string>>;
 };
 
 function lsKey(attemptId: number) {
@@ -34,7 +36,25 @@ function lsKey(attemptId: number) {
 }
 
 function emptyStore(): HighlightStore {
-  return { v: 1, question: {}, passage: {} };
+  return { v: 1, question: {}, passage: {}, options: {} };
+}
+
+function normalizeOptions(raw: unknown): Record<number, Record<string, string>> {
+  const out: Record<number, Record<string, string>> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const qid = Number(k);
+      if (!Number.isFinite(qid)) continue;
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        const inner: Record<string, string> = {};
+        for (const [cid, html] of Object.entries(v as Record<string, unknown>)) {
+          if (typeof html === "string" && html.length > 0) inner[cid] = html;
+        }
+        if (Object.keys(inner).length) out[qid] = inner;
+      }
+    }
+  }
+  return out;
 }
 
 function normalizeMap(raw: unknown): Record<number, string> {
@@ -59,6 +79,7 @@ export function readHighlightStore(attemptId: number): HighlightStore {
       v: 1,
       question: normalizeMap((parsed as Record<string, unknown>).question),
       passage: normalizeMap((parsed as Record<string, unknown>).passage),
+      options: normalizeOptions((parsed as Record<string, unknown>).options),
     };
   } catch {
     return emptyStore();
@@ -68,7 +89,7 @@ export function readHighlightStore(attemptId: number): HighlightStore {
 export function writeHighlightStore(attemptId: number, store: HighlightStore): void {
   if (typeof window === "undefined") return;
   const key = lsKey(attemptId);
-  const payload = JSON.stringify({ v: 1, question: store.question, passage: store.passage });
+  const payload = JSON.stringify({ v: 1, question: store.question, passage: store.passage, options: store.options });
   try {
     localStorage.setItem(key, payload);
   } catch (e) {
@@ -106,6 +127,20 @@ export function saveHighlight(
   if (!Number.isFinite(questionId) || questionId <= 0) return;
   const store = readHighlightStore(attemptId);
   store[field] = { ...store[field], [questionId]: html };
+  writeHighlightStore(attemptId, store);
+}
+
+/** Persist a single answer-choice's highlight HTML for one question. */
+export function saveOptionHighlight(
+  attemptId: number,
+  questionId: number,
+  choiceId: string,
+  html: string,
+): void {
+  if (!Number.isFinite(questionId) || questionId <= 0 || !choiceId) return;
+  const store = readHighlightStore(attemptId);
+  const prev = store.options[questionId] ?? {};
+  store.options = { ...store.options, [questionId]: { ...prev, [choiceId]: html } };
   writeHighlightStore(attemptId, store);
 }
 

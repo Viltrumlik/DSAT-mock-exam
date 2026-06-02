@@ -2,8 +2,42 @@
 
 import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assessments/types";
 import { MathText } from "@/components/MathText";
+import { processInstructionalText, sanitizeHighlightHtml } from "@/lib/assessmentText";
+import { renderMath } from "@/lib/mathRender";
 import { MinusCircle, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+
+// Mark-preserving HTML renderer for answer-choice text, mirroring the runner's
+// MathHtml. Used only when the highlighter is wired in (onOptionMouseUp present):
+// it keeps the <mark> spans that MathText strips, carries the per-option id the
+// highlight engine targets, and tags the element via data-assessment-option so
+// the cross-platform selectionchange detector can resolve which choice was hit.
+function OptionHtml({
+  html,
+  className,
+  choiceId,
+  onMouseUp,
+}: {
+  html: string;
+  className?: string;
+  choiceId: string;
+  onMouseUp?: (e: React.MouseEvent<HTMLDivElement>) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ref.current) renderMath({ root: ref.current });
+  }, [html]);
+  return (
+    <div
+      ref={ref}
+      id={`assessment-option-content-${choiceId}`}
+      data-assessment-option={choiceId}
+      className={className}
+      onMouseUp={onMouseUp}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
 
 export function MultipleChoiceInput({
   choices,
@@ -11,14 +45,23 @@ export function MultipleChoiceInput({
   onChange,
   eliminated,
   onToggleElim,
+  highlighterActive = false,
+  optionHighlights,
+  onOptionMouseUp,
 }: {
   choices: AssessmentChoice[];
   value: string | null;
   onChange: (next: string | null) => void;
   eliminated?: Set<string>;
   onToggleElim?: (id: string) => void;
+  /** Highlighter wiring (optional): when onOptionMouseUp is provided, choice text
+   *  becomes selectable + highlightable (mirrors the pastpaper simulation). */
+  highlighterActive?: boolean;
+  optionHighlights?: Record<string, string>;
+  onOptionMouseUp?: (choiceId: string, e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const elim = eliminated ?? new Set<string>();
+  const highlightable = Boolean(onOptionMouseUp);
   return (
     <div className="grid gap-3">
       {choices.map((c) => {
@@ -35,10 +78,15 @@ export function MultipleChoiceInput({
               type="button"
               onClick={() => {
                 if (isEliminated) return;
+                // While highlighting, a click that finished a text selection must
+                // not also toggle the answer — let the highlighter own that drag.
+                if (highlighterActive && (window.getSelection()?.toString() ?? "").length > 0) return;
                 onChange(checked ? null : c.id);
               }}
               disabled={isEliminated}
-              className={`select-none flex-1 min-h-[64px] rounded-2xl border-2 px-4 py-3 text-left transition-all ${
+              className={`flex-1 min-h-[64px] rounded-2xl border-2 px-4 py-3 text-left transition-all ${
+                highlightable && highlighterActive ? "" : "select-none"
+              } ${
                 checked
                   ? "border-primary bg-primary/8 shadow-sm"
                   : "border-slate-200 bg-white hover:border-primary/50 hover:bg-slate-50"
@@ -58,12 +106,27 @@ export function MultipleChoiceInput({
                   {c.id}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <MathText
-                    text={c.text}
-                    className={`text-base text-slate-900 leading-snug ${
-                      isEliminated ? "line-through decoration-2 decoration-slate-500" : ""
-                    }`}
-                  />
+                  {highlightable ? (
+                    <OptionHtml
+                      choiceId={c.id}
+                      onMouseUp={(e) => highlighterActive && onOptionMouseUp?.(c.id, e)}
+                      className={`text-base text-slate-900 leading-snug ${
+                        highlighterActive ? "cursor-text" : ""
+                      } ${isEliminated ? "line-through decoration-2 decoration-slate-500" : ""}`}
+                      html={
+                        optionHighlights?.[c.id]
+                          ? sanitizeHighlightHtml(optionHighlights[c.id])
+                          : processInstructionalText(c.text)
+                      }
+                    />
+                  ) : (
+                    <MathText
+                      text={c.text}
+                      className={`text-base text-slate-900 leading-snug ${
+                        isEliminated ? "line-through decoration-2 decoration-slate-500" : ""
+                      }`}
+                    />
+                  )}
                 </div>
               </div>
             </button>
@@ -175,6 +238,9 @@ export function AnswerInput({
   onChange,
   eliminated,
   onToggleElim,
+  highlighterActive,
+  optionHighlights,
+  onOptionMouseUp,
 }: {
   type: AssessmentQuestionType;
   choices?: AssessmentChoice[];
@@ -182,6 +248,9 @@ export function AnswerInput({
   onChange: (next: any) => void;
   eliminated?: Set<string>;
   onToggleElim?: (id: string) => void;
+  highlighterActive?: boolean;
+  optionHighlights?: Record<string, string>;
+  onOptionMouseUp?: (choiceId: string, e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   if (type === "multiple_choice") {
     return (
@@ -191,6 +260,9 @@ export function AnswerInput({
         onChange={onChange}
         eliminated={eliminated}
         onToggleElim={onToggleElim}
+        highlighterActive={highlighterActive}
+        optionHighlights={optionHighlights}
+        onOptionMouseUp={onOptionMouseUp}
       />
     );
   }

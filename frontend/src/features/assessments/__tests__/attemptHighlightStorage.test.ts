@@ -48,6 +48,7 @@ describe("attemptHighlightStorage", () => {
       v: 1,
       question: { 10: "<mark>a</mark>" },
       passage: { 10: "<mark>p</mark>" },
+      options: {},
     };
     writeHighlightStore(1, store);
     const out = readHighlightStore(1);
@@ -83,13 +84,13 @@ describe("attemptHighlightStorage", () => {
     localStorage.setItem(KEY(1), "{not valid json::");
     expect(() => readHighlightStore(1)).not.toThrow();
     const out = readHighlightStore(1);
-    expect(out).toEqual({ v: 1, question: {}, passage: {} });
+    expect(out).toEqual({ v: 1, question: {}, passage: {}, options: {} });
   });
 
   // 5 ─────────────────────────────────────────────────────────────────────────
   it("returns an empty store when nothing has been saved", () => {
     const out = readHighlightStore(999);
-    expect(out).toEqual({ v: 1, question: {}, passage: {} });
+    expect(out).toEqual({ v: 1, question: {}, passage: {}, options: {} });
   });
 
   // 6 ─────────────────────────────────────────────────────────────────────────
@@ -115,7 +116,7 @@ describe("attemptHighlightStorage", () => {
   // 7 ─────────────────────────────────────────────────────────────────────────
   it("evicts other attempts' highlights on quota error, then retries", () => {
     // Seed a highlight for a DIFFERENT attempt — it is the eviction candidate.
-    writeHighlightStore(2, { v: 1, question: { 1: "<mark>other</mark>" }, passage: {} });
+    writeHighlightStore(2, { v: 1, question: { 1: "<mark>other</mark>" }, passage: {}, options: {} });
 
     const real = Storage.prototype.setItem;
     let calls = 0;
@@ -133,7 +134,7 @@ describe("attemptHighlightStorage", () => {
     });
 
     expect(() =>
-      writeHighlightStore(1, { v: 1, question: { 1: "<mark>target</mark>" }, passage: {} }),
+      writeHighlightStore(1, { v: 1, question: { 1: "<mark>target</mark>" }, passage: {}, options: {} }),
     ).not.toThrow();
 
     // Other attempt evicted to make room; target written on retry.
@@ -147,7 +148,7 @@ describe("attemptHighlightStorage", () => {
     saveHighlight(1, "question", 5, "<mark>second</mark>");
     expect(readHighlightStore(1).question[5]).toBe("<mark>second</mark>");
     // A full writeHighlightStore replaces the whole envelope, not merges.
-    writeHighlightStore(1, { v: 1, question: { 9: "<mark>fresh</mark>" }, passage: {} });
+    writeHighlightStore(1, { v: 1, question: { 9: "<mark>fresh</mark>" }, passage: {}, options: {} });
     const out = readHighlightStore(1);
     expect(out.question[5]).toBeUndefined();
     expect(out.question[9]).toBe("<mark>fresh</mark>");
@@ -176,7 +177,7 @@ describe("attemptHighlightStorage", () => {
     expect(hydrated.passage[3]).toBe("<mark>kept-passage</mark>");
     // clearHighlightStore removes it entirely
     clearHighlightStore(42);
-    expect(readHighlightStore(42)).toEqual({ v: 1, question: {}, passage: {} });
+    expect(readHighlightStore(42)).toEqual({ v: 1, question: {}, passage: {}, options: {} });
   });
 
   // 11 ────────────────────────────────────────────────────────────────────────
@@ -187,7 +188,7 @@ describe("attemptHighlightStorage", () => {
       throw new Error("storage disabled");
     });
     expect(() =>
-      writeHighlightStore(1, { v: 1, question: { 1: "<mark>x</mark>" }, passage: {} }),
+      writeHighlightStore(1, { v: 1, question: { 1: "<mark>x</mark>" }, passage: {}, options: {} }),
     ).not.toThrow();
     expect(() => saveHighlight(1, "question", 2, "<mark>y</mark>")).not.toThrow();
   });

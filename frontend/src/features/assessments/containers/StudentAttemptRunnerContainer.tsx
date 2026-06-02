@@ -38,6 +38,7 @@ import { processInstructionalText, sanitizeHighlightHtml } from "@/lib/assessmen
 import {
   readHighlightStore,
   saveHighlight,
+  saveOptionHighlight,
 } from "@/features/assessments/attemptHighlightStorage";
 import {
   answersMapFromAttempt,
@@ -577,6 +578,8 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const [highlightsByQid, setHighlightsByQid] = useState<Record<number, string>>({});
   // Per-question saved highlight HTML for passage/context (question_prompt).
   const [passageHighlightsByQid, setPassageHighlightsByQid] = useState<Record<number, string>>({});
+  // Per-question saved highlight HTML for answer choices: qid → { choiceId → html }.
+  const [optionHighlightsByQid, setOptionHighlightsByQid] = useState<Record<number, Record<string, string>>>({});
 
   // ── Highlight persistence (frontend-only, Phase 1) ──────────────────────────
   // Restore saved highlights on mount so they survive refresh / navigation /
@@ -589,6 +592,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     const stored = readHighlightStore(attemptId);
     setHighlightsByQid(stored.question);
     setPassageHighlightsByQid(stored.passage);
+    setOptionHighlightsByQid(stored.options);
   }, [attemptId]);
 
   // Count-up timer: tick every second while the exam stage is active
@@ -1512,6 +1516,14 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         setPassageHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }));
         saveHighlight(attemptId, "passage", currentQuestionId, html);
       }}
+      optionHighlights={optionHighlightsByQid[currentQuestionId] ?? EMPTY_OPTION_HIGHLIGHTS}
+      onOptionHighlightChange={(choiceId, html) => {
+        setOptionHighlightsByQid((prev) => ({
+          ...prev,
+          [currentQuestionId]: { ...(prev[currentQuestionId] ?? {}), [choiceId]: html },
+        }));
+        saveOptionHighlight(attemptId, currentQuestionId, choiceId, html);
+      }}
       // Navigation
       onPrevious={() => setCurrentIdx((i) => Math.max(0, i - 1))}
       onNext={() => setCurrentIdx((i) => Math.min(totalCount - 1, i + 1))}
@@ -1532,6 +1544,10 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 // clean question card, bottom nav bar) but specialised for assessment runs:
 // count-up timer (no deadline), single-column question layout, no calculator/
 // highlighter (assessment questions are simpler than SAT modules).
+
+// Stable empty reference so questions with no option highlights don't hand the
+// memoized answer renderer a fresh object every render (which would defeat memo).
+const EMPTY_OPTION_HIGHLIGHTS: Record<string, string> = {};
 
 // Renders pre-processed HTML and triggers KaTeX after each change.
 // Mirrors MathText's useEffect([text]) pattern but accepts HTML + onMouseUp.
@@ -1601,6 +1617,9 @@ type ExamSimulationProps = {
   onQuestionHighlightChange: (html: string) => void;
   passageHighlightHtml: string | null;
   onPassageHighlightChange: (html: string) => void;
+  /** choiceId → saved highlight HTML for that answer choice. */
+  optionHighlights: Record<string, string>;
+  onOptionHighlightChange: (choiceId: string, html: string) => void;
 
   onPrevious: () => void;
   onNext: () => void;
@@ -1641,6 +1660,8 @@ function ExamSimulationView({
   onQuestionHighlightChange,
   passageHighlightHtml,
   onPassageHighlightChange,
+  optionHighlights,
+  onOptionHighlightChange,
   onPrevious,
   onNext,
   onSubmitClick,
@@ -1727,11 +1748,14 @@ function ExamSimulationView({
         const range = sel.getRangeAt(0);
         const node = range.commonAncestorContainer;
         const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-        const targetId = el?.closest("#assessment-question-content")
-          ? "question"
-          : el?.closest("#assessment-passage-content")
-            ? "passage"
-            : null;
+        const optionEl = el?.closest<HTMLElement>("[data-assessment-option]");
+        const targetId = optionEl
+          ? `option-${optionEl.dataset.assessmentOption}`
+          : el?.closest("#assessment-question-content")
+            ? "question"
+            : el?.closest("#assessment-passage-content")
+              ? "passage"
+              : null;
         if (!targetId) return; // selection outside the highlightable content
         const rect = range.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) return;
@@ -1796,10 +1820,14 @@ function ExamSimulationView({
 
   const applyAnnotation = (style: "yellow" | "blue" | "pink" | "underline" | "clear") => {
     if (!annotationPopover.targetId) return;
+    const tid = annotationPopover.targetId;
+    const optionChoiceId = tid.startsWith("option-") ? tid.slice("option-".length) : null;
     const containerId =
-      annotationPopover.targetId === "passage"
-        ? "assessment-passage-content"
-        : "assessment-question-content";
+      optionChoiceId !== null
+        ? `assessment-option-content-${optionChoiceId}`
+        : tid === "passage"
+          ? "assessment-passage-content"
+          : "assessment-question-content";
     const container = document.getElementById(containerId);
     if (!container) return;
 
@@ -1861,7 +1889,9 @@ function ExamSimulationView({
     }
 
     window.getSelection()?.removeAllRanges();
-    if (annotationPopover.targetId === "passage") {
+    if (optionChoiceId !== null) {
+      onOptionHighlightChange(optionChoiceId, container.innerHTML);
+    } else if (tid === "passage") {
       onPassageHighlightChange(container.innerHTML);
     } else {
       onQuestionHighlightChange(container.innerHTML);
@@ -1999,8 +2029,13 @@ function ExamSimulationView({
         </div>
       )}
 
-      {/* ── Question area ───────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto bg-white">
+      {/* ── Question area ───────────────────────────────────────────────────────
+          min-h-0 is REQUIRED: without it a flex child's min-height defaults to
+          its content height, so a tall question+answers column grows past the
+          viewport and pushes the fixed footer out of the overflow-hidden overlay
+          (the footer "disappears"). With min-h-0 the column scrolls internally and
+          the header/footer stay pinned. */}
+      <main className="flex-1 min-h-0 overflow-y-auto bg-white">
         <div
           className={`mx-auto w-full max-w-3xl px-8 py-10 ${highlighterActive ? "ms-highlighter-cursor" : ""}`}
           style={{ fontSize: `${zoomLevel}rem` }}
@@ -2047,6 +2082,9 @@ function ExamSimulationView({
               onChange={onAnswer}
               eliminated={eliminatedChoices}
               onToggleElim={onToggleElim}
+              highlighterActive={highlighterActive}
+              optionHighlights={optionHighlights}
+              onOptionMouseUp={(choiceId, e) => handleShowPopover(`option-${choiceId}`, e)}
             />
           </div>
         </div>
