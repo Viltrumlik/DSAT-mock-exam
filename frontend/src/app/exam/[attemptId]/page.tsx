@@ -2074,7 +2074,7 @@ function ExamPlayerInner() {
     return (
         <AuthGuard>
             {/* Removed zoom: 1.5 to prevent layout breaking/scrolling, scaling fonts via Tailwind instead */}
-            <div className={`min-h-screen bg-white flex flex-col font-sans text-slate-900 overflow-hidden relative ${highlighterActive ? 'annotate-mode' : ''}`}>
+            <div className={`h-screen bg-white flex flex-col font-sans text-slate-900 overflow-hidden relative ${highlighterActive ? 'annotate-mode' : ''}`}>
                 {/* 5-minute warning popup (15 seconds) */}
                 {showFiveMinuteWarning && (
                     <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[80] w-full max-w-md px-6">
@@ -2099,7 +2099,7 @@ function ExamPlayerInner() {
                         </div>
                     </div>
                 )}
-                <header className="flex items-start justify-between px-6 py-2 bg-white relative z-10 w-full shadow-sm" style={{ zoom: 1.15 }}>
+                <header className="shrink-0 flex items-start justify-between px-6 py-2 bg-white relative z-10 w-full shadow-sm" style={{ zoom: 1.15 }}>
                     {!isOnline ? (
                         <div className="absolute top-0 left-0 right-0 bg-amber-50 border-b border-amber-200 text-amber-900 text-[11px] font-bold py-1 px-3 text-center">
                             Offline. Your answers are kept locally and will sync when you reconnect.
@@ -2351,11 +2351,12 @@ function ExamPlayerInner() {
                   return (
                     <main
                         ref={mainAreaRef}
-                        className={`flex-1 flex overflow-hidden relative transition-all duration-300 ${isNavigating ? 'opacity-0 scale-[0.99]' : 'opacity-100 scale-100'}`}
+                        className={`flex-1 min-h-0 flex overflow-hidden relative transition-all duration-300 ${isNavigating ? 'opacity-0 scale-[0.99]' : 'opacity-100 scale-100'}`}
                     >
 
-                        {/* LEFT PANE — "question content". Non-scrolling by design
-                            (overflow hidden); use the divider to give it more room.
+                        {/* LEFT PANE — "question content". Scrolls independently
+                            when a passage is taller than the viewport; drag the
+                            divider to trade width with the answers pane.
                             - Reading/Writing: passage text
                             - SPR (Math input): directions panel
                             - Plain Math: no left pane
@@ -2367,7 +2368,7 @@ function ExamPlayerInner() {
                                 highlighterActive={highlighterActive}
                                 passageHtml={passageHighlights[currentQuestion.id]}
                                 handleShowPopover={handleShowPopover}
-                                paneStyle={{ width: `${splitPct}%`, flex: '0 0 auto', overflow: 'hidden' }}
+                                paneStyle={{ width: `${splitPct}%`, flex: '0 0 auto', overflowY: 'auto' }}
                             />
                         ) : currentQuestion.is_math_input ? (
                             <div
@@ -2377,7 +2378,7 @@ function ExamPlayerInner() {
                                 <div className="p-4 bg-slate-50 border-b border-slate-200">
                                     <h3 className="text-sm font-bold text-slate-900">Student-Produced Response Directions</h3>
                                 </div>
-                                <div className="flex-1 overflow-hidden p-6">
+                                <div className="flex-1 min-h-0 overflow-y-auto p-6">
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src="/images/spr_directions.png" alt="SPR Directions" className="max-w-full h-auto" />
                                 </div>
@@ -2671,7 +2672,7 @@ function ExamPlayerInner() {
                 )}
 
                 {/* Footer Controls */}
-                <footer className="h-11 bg-white relative px-8 flex items-center justify-between border-t border-slate-200 sticky bottom-0 z-10 w-full overflow-hidden" style={{ zoom: 1.15 }}>
+                <footer className="shrink-0 h-11 bg-white relative px-8 flex items-center justify-between border-t border-slate-200 z-10 w-full overflow-hidden" style={{ zoom: 1.15 }}>
                     {/* Decorative Color Bar - Dashed Pattern */}
                     <div 
                         className="absolute top-0 left-0 right-0 h-[3px] w-full" 
