@@ -11,6 +11,7 @@ import {
   ClipboardList,
   Clock,
   GraduationCap,
+  KeyRound,
   School,
   Users,
   Zap,
@@ -164,6 +165,12 @@ const QUICK_LINKS = [
     href: "/ops/assignments",
     icon: ClipboardList,
     title: "Assignments",
+    cta: "Manage",
+  },
+  {
+    href: "/ops/access",
+    icon: KeyRound,
+    title: "Access",
     cta: "Manage",
   },
   {

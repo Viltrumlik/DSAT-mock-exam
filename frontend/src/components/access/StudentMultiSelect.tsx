@@ -36,7 +36,7 @@ export function StudentMultiSelect({
       try {
         const r = await api.get("/users/");
         const raw: StudentRow[] = Array.isArray(r.data) ? r.data : (r.data?.results ?? []);
-        if (alive) setUsers(raw.filter((u) => (u.role ?? "student") === "student"));
+        if (alive) setUsers(raw.filter((u) => String(u.role ?? "student").toLowerCase() === "student"));
       } finally {
         if (alive) setLoading(false);
       }
@@ -50,7 +50,11 @@ export function StudentMultiSelect({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const base = q
-      ? users.filter((u) => label(u).toLowerCase().includes(q) || (u.email ?? "").toLowerCase().includes(q))
+      ? users.filter((u) =>
+          label(u).toLowerCase().includes(q) ||
+          (u.email ?? "").toLowerCase().includes(q) ||
+          (u.username ?? "").toLowerCase().includes(q),
+        )
       : users;
     return base.slice(0, 50);
   }, [users, search]);
@@ -89,7 +93,7 @@ export function StudentMultiSelect({
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search students by name or email…"
+          placeholder="Search students by name, username, or email…"
           className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40"
         />
       </div>
