@@ -4,13 +4,21 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from rest_framework import status
+from django.db.models import Q
+from rest_framework import generics, status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access import constants as C
-from access.models import UserAccess
+from access import resources
+from access.models import AccessGrantEvent, ResourceAccessGrant, UserAccess
+from access.permissions import HasManageUsersOrAssignTestAccess
+from access.serializers import (
+    AccessGrantEventSerializer,
+    ResourceAccessGrantSerializer,
+)
 from access.services import (
     authorize,
     has_access_for_classroom,
@@ -146,3 +154,249 @@ class GrantAccessView(APIView):
             },
             status=status.HTTP_201_CREATED if was_created else status.HTTP_200_OK,
         )
+
+
+# ===========================================================================
+# Access engine admin API (Phase 2). Operates directly on ResourceAccessGrant
+# via the engine services; independent of the ACCESS_ENGINE_* read flags (the
+# admin populates grants before any read cutover). See docs/access-redesign/.
+# ===========================================================================
+
+from access.engine import AssignmentService, ClassroomAccessService  # noqa: E402
+from access.engine.access_service import AccessService  # noqa: E402
+
+
+class GrantsPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = "page_size"
+    max_page_size = 200
+
+
+def _resource_label(rt, instance) -> str:
+    if instance is None:
+        return f"{rt.key}#?"
+    title = (getattr(instance, "title", None) or getattr(instance, "name", None) or "").strip()
+    if rt.key == resources.RT_PRACTICE_TEST:
+        subj = getattr(instance, "subject", "")
+        form = getattr(instance, "form_type", "")
+        date = getattr(instance, "practice_date", "") or ""
+        bits = [b for b in [title, subj, form, str(date) if date else ""] if b]
+        return " · ".join(bits) or f"Practice test #{instance.pk}"
+    return title or f"{rt.key} #{instance.pk}"
+
+
+class EngineGrantListView(generics.ListAPIView):
+    """GET /api/access/grants/ — search/filter grants for the admin console."""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+    serializer_class = ResourceAccessGrantSerializer
+    pagination_class = GrantsPagination
+
+    def get_queryset(self):
+        qs = ResourceAccessGrant.objects.select_related("user", "classroom", "granted_by")
+        p = self.request.query_params
+        if p.get("user"):
+            qs = qs.filter(user_id=p["user"])
+        if p.get("scope"):
+            qs = qs.filter(scope=p["scope"])
+        if p.get("status"):
+            qs = qs.filter(status=p["status"])
+        if p.get("source"):
+            qs = qs.filter(source=p["source"])
+        if p.get("resource_type"):
+            qs = qs.filter(resource_type=p["resource_type"])
+        if p.get("classroom"):
+            qs = qs.filter(classroom_id=p["classroom"])
+        q = (p.get("q") or "").strip()
+        if q:
+            qs = qs.filter(
+                Q(user__email__icontains=q)
+                | Q(user__username__icontains=q)
+                | Q(user__first_name__icontains=q)
+                | Q(user__last_name__icontains=q)
+            )
+        return qs.order_by("-created_at", "-id")
+
+
+class EngineGrantEventsView(generics.ListAPIView):
+    """GET /api/access/grants/<id>/events/ — immutable audit trail for one grant."""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+    serializer_class = AccessGrantEventSerializer
+
+    def get_queryset(self):
+        return AccessGrantEvent.objects.filter(
+            grant_id=self.kwargs["grant_id"]
+        ).select_related("actor").order_by("-created_at", "-id")
+
+
+def _int_list(raw) -> list[int]:
+    out: list[int] = []
+    for x in raw or []:
+        try:
+            out.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+class EngineGrantSubjectView(APIView):
+    """POST /api/access/grants/subject/ — grant a SUBJECT to one or many users."""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+
+    def post(self, request):
+        data = request.data or {}
+        user_ids = _int_list(data.get("user_ids")) or _int_list([data.get("user_id")])
+        subject = str(data.get("subject") or "").strip().lower()
+        if not user_ids:
+            return Response({"detail": "user_ids is required."}, status=400)
+        if subject not in C.ALL_DOMAIN_SUBJECTS:
+            return Response({"detail": "Invalid subject (math/english)."}, status=400)
+        users = list(User.objects.filter(pk__in=user_ids))
+        try:
+            result = AssignmentService.bulk_assign_subject(
+                users, subject, actor=request.user,
+                source=ResourceAccessGrant.SOURCE_MANUAL,
+                expires_at=data.get("expires_at") or None,
+            )
+        except Exception as exc:  # validation etc.
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result, status=201)
+
+
+class EngineGrantResourceView(APIView):
+    """POST /api/access/grants/resource/ — grant a RESOURCE to one or many users."""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+
+    def post(self, request):
+        data = request.data or {}
+        user_ids = _int_list(data.get("user_ids")) or _int_list([data.get("user_id")])
+        resource_type = str(data.get("resource_type") or "").strip()
+        try:
+            resource_id = int(data.get("resource_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "resource_id is required."}, status=400)
+        if not user_ids:
+            return Response({"detail": "user_ids is required."}, status=400)
+        if not resources.is_registered(resource_type):
+            return Response({"detail": f"Unknown resource_type {resource_type!r}."}, status=400)
+        users = list(User.objects.filter(pk__in=user_ids))
+        try:
+            result = AssignmentService.bulk_assign_resource(
+                users, resource_type, resource_id, actor=request.user,
+                source=ResourceAccessGrant.SOURCE_MANUAL,
+                expires_at=data.get("expires_at") or None,
+            )
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result, status=201)
+
+
+class EngineGrantClassroomView(APIView):
+    """POST /api/access/grants/classroom/ — transactional resource grant to a whole class."""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+
+    def post(self, request):
+        from classes.models import Classroom
+
+        data = request.data or {}
+        try:
+            classroom_id = int(data.get("classroom_id"))
+            resource_id = int(data.get("resource_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "classroom_id and resource_id are required."}, status=400)
+        resource_type = str(data.get("resource_type") or "").strip()
+        if not resources.is_registered(resource_type):
+            return Response({"detail": f"Unknown resource_type {resource_type!r}."}, status=400)
+        classroom = Classroom.objects.filter(pk=classroom_id).first()
+        if not classroom:
+            return Response({"detail": "Classroom not found."}, status=404)
+        try:
+            result = ClassroomAccessService.assign_resource_to_classroom(
+                classroom, resource_type, resource_id, actor=request.user,
+                expires_at=data.get("expires_at") or None,
+            )
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(result, status=201)
+
+
+class EngineGrantRevokeView(APIView):
+    """POST /api/access/grants/<id>/revoke/"""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+
+    def post(self, request, grant_id):
+        grant = ResourceAccessGrant.objects.filter(pk=grant_id).first()
+        if not grant:
+            return Response({"detail": "Grant not found."}, status=404)
+        AccessService.revoke(grant, actor=request.user, note=str(request.data.get("note") or ""))
+        grant.refresh_from_db()
+        return Response(ResourceAccessGrantSerializer(grant).data, status=200)
+
+
+class EngineGrantExtendView(APIView):
+    """POST /api/access/grants/<id>/extend/ — body: {expires_at: iso|null}"""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+
+    def post(self, request, grant_id):
+        grant = ResourceAccessGrant.objects.filter(pk=grant_id).first()
+        if not grant:
+            return Response({"detail": "Grant not found."}, status=404)
+        AccessService.extend(
+            grant, expires_at=request.data.get("expires_at") or None,
+            actor=request.user, note=str(request.data.get("note") or ""),
+        )
+        grant.refresh_from_db()
+        return Response(ResourceAccessGrantSerializer(grant).data, status=200)
+
+
+class EngineResourceSearchView(APIView):
+    """GET /api/access/resources/?type=<rt>&q=<text>&limit=30 — resource picker."""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+
+    def get(self, request):
+        rt_key = str(request.query_params.get("type") or "").strip()
+        rt = resources.get(rt_key)
+        if rt is None:
+            return Response({"detail": "Unknown or missing ?type."}, status=400)
+        q = (request.query_params.get("q") or "").strip()
+        try:
+            limit = min(int(request.query_params.get("limit", 30)), 100)
+        except (TypeError, ValueError):
+            limit = 30
+
+        qs = rt.model().objects.all()
+        if q:
+            cond = Q()
+            for field in ("title", "name"):
+                if any(f.name == field for f in rt.model()._meta.get_fields() if hasattr(f, "name")):
+                    cond |= Q(**{f"{field}__icontains": q})
+            if str(q).isdigit():
+                cond |= Q(pk=int(q))
+            if cond:
+                qs = qs.filter(cond)
+        items = []
+        for obj in qs.order_by("-id")[:limit]:
+            items.append({
+                "resource_type": rt.key,
+                "resource_id": obj.pk,
+                "label": _resource_label(rt, obj),
+                "subjects": sorted(rt.domain_subjects(obj)),
+                "published": rt.is_published(obj),
+            })
+        return Response({"results": items, "resource_type": rt.key})
+
+
+class EngineResourceTypesView(APIView):
+    """GET /api/access/resource-types/ — registry keys for the picker dropdown."""
+
+    permission_classes = [HasManageUsersOrAssignTestAccess]
+
+    def get(self, request):
+        return Response({"results": sorted(rt.key for rt in resources.all_types())})
