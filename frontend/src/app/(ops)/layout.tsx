@@ -15,7 +15,6 @@ import {
   ClipboardCheck,
   BookOpen,
   GraduationCap,
-  BookMarked,
   KeyRound,
 } from "lucide-react";
 
@@ -44,12 +43,6 @@ const OPS_NAV = [
     href: "/ops/assignments",
     label: "Assignments",
     icon: ClipboardList,
-    exact: false,
-  },
-  {
-    href: "/ops/assign",
-    label: "Assign",
-    icon: BookMarked,
     exact: false,
   },
   {
