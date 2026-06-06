@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Search } from "lucide-react";
-import { accessApi, resourceTypeLabel, type ResourcePickerItem } from "@/lib/accessApi";
+import { accessApi, resourceTypeLabel, HIDDEN_PICKER_TYPES, type ResourcePickerItem } from "@/lib/accessApi";
 import { cn } from "@/lib/cn";
 
 export type SelectedResource = { resource_type: string; resource_id: number; label: string };
@@ -22,7 +22,7 @@ export function ResourcePicker({
 
   useEffect(() => {
     (async () => {
-      const t = await accessApi.resourceTypes();
+      const t = (await accessApi.resourceTypes()).filter((k) => !HIDDEN_PICKER_TYPES.has(k));
       setTypes(t);
       if (t.length && !type) setType(t.includes("practice_test") ? "practice_test" : t[0]);
     })();

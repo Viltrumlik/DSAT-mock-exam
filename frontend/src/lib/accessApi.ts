@@ -8,6 +8,13 @@
 import api from "@/lib/api";
 
 export type GrantScope = "SUBJECT" | "RESOURCE";
+/** Math / Reading / Both choice for Past Paper / Practice-test packs. */
+export type SubjectScope = "math" | "reading" | "both";
+
+/** Resource types that expand to subject sections, so a Math/Reading/Both choice applies. */
+export const SUBJECT_SCOPED_TYPES = new Set(["pastpaper_pack", "practice_test_pack"]);
+/** Resource types intentionally hidden from the access-console picker. */
+export const HIDDEN_PICKER_TYPES = new Set(["module", "assessment_set"]);
 export type GrantStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
 export type GrantSource = "MANUAL" | "BULK" | "CLASSROOM" | "PURCHASE" | "SYSTEM";
 
@@ -113,6 +120,7 @@ export const accessApi = {
     user_ids: number[];
     resource_type: string;
     resource_id: number;
+    subject_scope?: SubjectScope;
     expires_at?: string | null;
   }): Promise<BulkResult> => {
     const r = await api.post("/access/grants/resource/", payload);
@@ -123,6 +131,7 @@ export const accessApi = {
     classroom_id: number;
     resource_type: string;
     resource_id: number;
+    subject_scope?: SubjectScope;
     expires_at?: string | null;
   }): Promise<BulkResult> => {
     const r = await api.post("/access/grants/classroom/", payload);

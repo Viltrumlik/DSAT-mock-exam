@@ -1,19 +1,31 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookMarked, GraduationCap, Loader2, School, Users } from "lucide-react";
-import { accessApi, type BulkResult } from "@/lib/accessApi";
+import { BookMarked, Loader2, School, Users } from "lucide-react";
+import {
+  accessApi,
+  SUBJECT_SCOPED_TYPES,
+  type BulkResult,
+  type SubjectScope,
+} from "@/lib/accessApi";
 import { classesApi } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { StudentMultiSelect } from "./StudentMultiSelect";
 import { ResourcePicker, type SelectedResource } from "./ResourcePicker";
 
-type Mode = "resource_students" | "subject_students" | "resource_classroom";
+// Resource-centric only: access is always granted through a resource, to students
+// or to a whole classroom. (Subject-only and module-choice assignment were removed.)
+type Mode = "resource_students" | "resource_classroom";
 
 const MODES: { key: Mode; label: string; icon: React.ElementType; hint: string }[] = [
   { key: "resource_students", label: "Resource → students", icon: BookMarked, hint: "Grant one resource to one or many students." },
-  { key: "subject_students", label: "Subject → students", icon: GraduationCap, hint: "Grant a whole subject (Math/English) to students." },
   { key: "resource_classroom", label: "Resource → classroom", icon: School, hint: "Grant a resource to every enrolled student (transactional)." },
+];
+
+const SCOPES: { key: SubjectScope; label: string }[] = [
+  { key: "math", label: "Math" },
+  { key: "reading", label: "Reading" },
+  { key: "both", label: "Both" },
 ];
 
 type ClassroomRow = { id: number; name: string; subject?: string };
@@ -21,14 +33,17 @@ type ClassroomRow = { id: number; name: string; subject?: string };
 export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
   const [mode, setMode] = useState<Mode>("resource_students");
   const [userIds, setUserIds] = useState<number[]>([]);
-  const [subject, setSubject] = useState("math");
   const [resource, setResource] = useState<SelectedResource | null>(null);
+  const [subjectScope, setSubjectScope] = useState<SubjectScope>("both");
   const [classroomId, setClassroomId] = useState<number | "">("");
   const [classrooms, setClassrooms] = useState<ClassroomRow[]>([]);
   const [expiresAt, setExpiresAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<BulkResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Math/Reading/Both only applies to pack resources that expand to subject sections.
+  const showScope = !!resource && SUBJECT_SCOPED_TYPES.has(resource.resource_type);
 
   useEffect(() => {
     (async () => {
@@ -44,39 +59,40 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
   const reset = () => {
     setUserIds([]);
     setResource(null);
+    setSubjectScope("both");
     setClassroomId("");
     setExpiresAt("");
   };
 
   const canSubmit = (() => {
-    if (submitting) return false;
-    const exp = expiresAt ? true : true;
-    if (mode === "subject_students") return userIds.length > 0 && !!subject && exp;
-    if (mode === "resource_students") return userIds.length > 0 && !!resource;
-    return classroomId !== "" && !!resource;
+    if (submitting || !resource) return false;
+    if (mode === "resource_students") return userIds.length > 0;
+    return classroomId !== "";
   })();
 
   const submit = async () => {
+    if (!resource) return;
     setSubmitting(true);
     setError(null);
     setResult(null);
     const expires_at = expiresAt ? new Date(expiresAt).toISOString() : null;
+    const scope = showScope ? subjectScope : undefined;
     try {
       let res: BulkResult;
-      if (mode === "subject_students") {
-        res = await accessApi.grantSubject({ user_ids: userIds, subject, expires_at });
-      } else if (mode === "resource_students") {
+      if (mode === "resource_students") {
         res = await accessApi.grantResource({
           user_ids: userIds,
-          resource_type: resource!.resource_type,
-          resource_id: resource!.resource_id,
+          resource_type: resource.resource_type,
+          resource_id: resource.resource_id,
+          subject_scope: scope,
           expires_at,
         });
       } else {
         res = await accessApi.grantClassroom({
           classroom_id: Number(classroomId),
-          resource_type: resource!.resource_type,
-          resource_id: resource!.resource_id,
+          resource_type: resource.resource_type,
+          resource_id: resource.resource_id,
+          subject_scope: scope,
           expires_at,
         });
       }
@@ -93,7 +109,7 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
   return (
     <div className="space-y-5 rounded-2xl border border-border bg-card p-5 shadow-sm">
       {/* Mode selector */}
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         {MODES.map((m) => {
           const active = mode === m.key;
           const Icon = m.icon;
@@ -145,27 +161,32 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
           </Field>
         )}
 
-        {mode === "subject_students" ? (
-          <Field label="Subject" icon={GraduationCap}>
+        <Field label="Resource" icon={BookMarked}>
+          <ResourcePicker value={resource} onChange={setResource} />
+        </Field>
+
+        {showScope && (
+          <Field label="Sections">
             <div className="flex gap-2">
-              {["math", "english"].map((s) => (
+              {SCOPES.map((s) => (
                 <button
-                  key={s}
+                  key={s.key}
                   type="button"
-                  onClick={() => setSubject(s)}
+                  onClick={() => setSubjectScope(s.key)}
                   className={cn(
-                    "rounded-xl border px-4 py-2 text-sm font-bold capitalize transition-colors",
-                    subject === s ? "border-primary bg-primary/10 text-primary" : "border-border bg-card text-foreground hover:bg-surface-2",
+                    "rounded-xl border px-4 py-2 text-sm font-bold transition-colors",
+                    subjectScope === s.key
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-foreground hover:bg-surface-2",
                   )}
                 >
-                  {s}
+                  {s.label}
                 </button>
               ))}
             </div>
-          </Field>
-        ) : (
-          <Field label="Resource" icon={BookMarked}>
-            <ResourcePicker value={resource} onChange={setResource} />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Math grants only the Math section, Reading only the Reading &amp; Writing section.
+            </p>
           </Field>
         )}
 
