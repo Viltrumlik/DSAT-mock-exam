@@ -13,8 +13,11 @@ export type SubjectScope = "math" | "reading" | "both";
 
 /** Resource types that expand to subject sections, so a Math/Reading/Both choice applies. */
 export const SUBJECT_SCOPED_TYPES = new Set(["pastpaper_pack", "practice_test_pack"]);
-/** Resource types intentionally hidden from the access-console picker. */
-export const HIDDEN_PICKER_TYPES = new Set(["module", "assessment_set"]);
+/** Resource types intentionally hidden from the access-console picker.
+ *  practice_test is hidden: individual past-paper tests are granted via their
+ *  Pastpaper pack (with the Math/Reading/Both scope), so the standalone type is
+ *  redundant. It stays registered for pack expansion + enforcement. */
+export const HIDDEN_PICKER_TYPES = new Set(["module", "assessment_set", "practice_test"]);
 export type GrantStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
 export type GrantSource = "MANUAL" | "BULK" | "CLASSROOM" | "PURCHASE" | "SYSTEM";
 
@@ -167,6 +170,7 @@ export const accessApi = {
 export const RESOURCE_TYPE_LABELS: Record<string, string> = {
   practice_test: "Practice / Past paper test",
   mock_exam: "Mock exam",
+  midterm: "Midterm",
   pastpaper_pack: "Pastpaper pack",
   practice_test_pack: "Practice test pack",
   assessment_set: "Assessment set",

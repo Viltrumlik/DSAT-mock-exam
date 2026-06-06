@@ -25,10 +25,15 @@ from .subject_mapping import platform_subject_to_domain
 # Stable resource_type keys (persisted — do not rename without a data migration).
 RT_PRACTICE_TEST = "practice_test"
 RT_MOCK_EXAM = "mock_exam"
+RT_MIDTERM = "midterm"
 RT_PASTPAPER_PACK = "pastpaper_pack"
 RT_PRACTICE_TEST_PACK = "practice_test_pack"
 RT_ASSESSMENT_SET = "assessment_set"
 RT_MODULE = "module"
+
+# MockExam.kind values (string literals to avoid importing exams.models at load).
+_MOCK_KIND_FULL = "MOCK_SAT"
+_MOCK_KIND_MIDTERM = "MIDTERM"
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,10 @@ class ResourceType:
     #: those domains. Used by VisibilityService.filter_visible for subject-grant coverage.
     #: None => subject grants never widen a queryset for this type (resource grants only).
     subject_queryset_resolver: Optional[Callable[[object, frozenset], object]] = None
+    #: optional ORM filter narrowing which model rows this type represents (e.g. a
+    #: MockExam ``kind``). Applied to the resource-picker search queryset so two types
+    #: can share one model (full ``mock_exam`` vs ``midterm``). ``None`` => all rows.
+    queryset_filter: Optional[dict] = None
 
     def model(self):
         app_label, model_name = self.model_label.split(".")
@@ -238,6 +247,17 @@ register(
         _mock_exam_domains,
         is_published_resolver=lambda e: bool(getattr(e, "is_published", True)),
         subject_queryset_resolver=_mock_exam_subject_qs,
+        queryset_filter={"kind": _MOCK_KIND_FULL},
+    )
+)
+register(
+    ResourceType(
+        RT_MIDTERM,
+        "exams.MockExam",
+        _mock_exam_domains,
+        is_published_resolver=lambda e: bool(getattr(e, "is_published", True)),
+        subject_queryset_resolver=_mock_exam_subject_qs,
+        queryset_filter={"kind": _MOCK_KIND_MIDTERM},
     )
 )
 register(

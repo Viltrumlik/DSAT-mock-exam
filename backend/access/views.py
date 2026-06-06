@@ -380,6 +380,8 @@ class EngineResourceSearchView(APIView):
             limit = 30
 
         qs = rt.model().objects.all()
+        if rt.queryset_filter:
+            qs = qs.filter(**rt.queryset_filter)
         if q:
             cond = Q()
             for field in ("title", "name"):

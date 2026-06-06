@@ -72,7 +72,8 @@ def apply_resource(resource_type: str, resource_id: int, users: Iterable, *, act
         return
     if resource_type == resources.RT_PRACTICE_TEST:
         _apply_practice_test(resource_id, students, actor)
-    elif resource_type == resources.RT_MOCK_EXAM:
+    elif resource_type in (resources.RT_MOCK_EXAM, resources.RT_MIDTERM):
+        # A midterm is a MockExam(kind=MIDTERM); identical student gate.
         _apply_mock_exam(resource_id, students, actor)
     else:
         logger.debug("enforcement: no legacy gate for resource_type=%s", resource_type)
@@ -123,7 +124,7 @@ def unverified_students(resource_type: str, resource_id: int, users: Iterable) -
                 pk=resource_id, assigned_users__in=student_ids
             ).values_list("assigned_users", flat=True)
         )
-    elif resource_type == resources.RT_MOCK_EXAM:
+    elif resource_type in (resources.RT_MOCK_EXAM, resources.RT_MIDTERM):
         from exams.models import PortalMockExam
 
         ok = set(

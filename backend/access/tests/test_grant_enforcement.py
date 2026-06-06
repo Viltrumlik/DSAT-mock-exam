@@ -27,7 +27,7 @@ from access.engine import AssignmentService, ClassroomAccessService
 from access.engine import enforcement
 from access.models import ResourceAccessGrant, UserAccess
 from classes.models import Classroom, ClassroomMembership
-from exams.models import PastpaperPack, PracticeTest
+from exams.models import MockExam, PastpaperPack, PortalMockExam, PracticeTest
 
 User = get_user_model()
 
@@ -151,6 +151,39 @@ class ClassroomWriteThroughTests(TestCase):
         )
         for s in self.students:
             self.assertTrue(can_see_practice_test(s, self.pt))
+
+
+class MidtermWriteThroughTests(TestCase):
+    """A midterm is a MockExam(kind=MIDTERM); granting it must reach the mock gate."""
+
+    def setUp(self):
+        self.actor = User.objects.create_user(email="adm5@e.com", password="x", role=C.ROLE_ADMIN)
+        self.student = make_student("mt@e.com")
+        self.midterm = MockExam.objects.create(
+            title="Midterm A", kind=MockExam.KIND_MIDTERM,
+            midterm_subject="MATH", is_published=True, is_active=True,
+        )
+        PracticeTest.objects.create(
+            subject="MATH", mock_exam=self.midterm, skip_default_modules=True
+        )
+
+    def test_midterm_grant_writes_mock_gate(self):
+        targets = resources.expand_subject_targets(resources.RT_MIDTERM, self.midterm.pk)
+        # midterm is not a pack -> grants the midterm itself.
+        self.assertEqual(targets, [(resources.RT_MIDTERM, self.midterm.pk)])
+        AssignmentService.bulk_assign_targets([self.student], targets, actor=self.actor)
+        self.assertTrue(self.midterm.assigned_users.filter(pk=self.student.pk).exists())
+        self.assertTrue(
+            PortalMockExam.objects.filter(
+                mock_exam=self.midterm, assigned_users=self.student
+            ).exists()
+        )
+        self.assertTrue(
+            ResourceAccessGrant.objects.filter(
+                user=self.student, resource_type=resources.RT_MIDTERM,
+                resource_id=self.midterm.pk, status=ResourceAccessGrant.STATUS_ACTIVE,
+            ).exists()
+        )
 
 
 class VerificationRollbackTests(TestCase):
