@@ -685,3 +685,13 @@ html:not(.dark) .shell-sidebar-gold {
     opacity: 0.95;
   }
 }
+
+/* Testing Simulation — highlighter marks (SAT Experience tools).
+   Engine-isolated styling; applied by features/testing-simulation/tools/highlight. */
+mark.ts-highlight {
+  background-color: #fde68a; /* amber-200 */
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
