@@ -3,13 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { examsStudentApi } from "@/features/examsStudent/api";
-import { ArrowRight, Clock, FileText, Search, Target, Trophy, X } from "lucide-react";
+import { ArrowRight, Clock, FileText, Search, Target, Trophy } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { StatCard } from "@/components/ui/StatCard";
-import { ProgressRing } from "@/components/ui/ProgressRing";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { cn } from "@/lib/cn";
+import { Card, CardContent, Badge, Button, Input, Select, Stat, ProgressRing, Progress, EmptyState } from "@/components/ui";
 
 type ExamKindFilter = "ALL" | "MOCK_SAT" | "MIDTERM";
 
@@ -23,13 +19,16 @@ type MockExamsListProps = {
 
 const examsPublicApi = examsStudentApi;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function routeMockId(group: any) {
   return group.mock_exam_id ?? group.id;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function sectionTestIds(group: any): number[] {
   if (Array.isArray(group.section_test_ids)) return group.section_test_ids;
   const tests = group.tests || [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return tests.map((t: any) => t.id).filter(Boolean);
 }
 
@@ -40,7 +39,9 @@ export default function MockExamsList({
   mockQuerySuffix = "",
   examKindFilter = "ALL",
 }: MockExamsListProps) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [mockExams, setMockExams] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [attempts, setAttempts] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [dateFilter, setDateFilter] = useState<string>("");
@@ -66,6 +67,7 @@ export default function MockExamsList({
 
   const getAvailableDates = () => {
     const dates = new Set<string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockExams.forEach((exam: any) => {
       if (exam.practice_date) dates.add(exam.practice_date.substring(0, 7));
     });
@@ -79,6 +81,7 @@ export default function MockExamsList({
 
   const groupedExams = useMemo(() => {
     if (examKindFilter === "ALL") return mockExams;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return (mockExams || []).filter((g: any) => {
       if (examKindFilter === "MOCK_SAT") return g.kind !== "MIDTERM";
       if (examKindFilter === "MIDTERM") return g.kind === "MIDTERM";
@@ -87,7 +90,7 @@ export default function MockExamsList({
   }, [mockExams, examKindFilter]);
 
   const formatDate = (dateStr: string) => {
-    if (!dateStr) return "No Date";
+    if (!dateStr) return "No date";
     try {
       return new Date(dateStr).toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
     } catch {
@@ -95,216 +98,115 @@ export default function MockExamsList({
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const progressForGroup = (group: any) => {
     const ids = sectionTestIds(group);
     if (ids.length === 0) return 0;
     const done = ids.filter((tid) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       attempts.some((a) => a.practice_test === tid && a.is_completed)
     ).length;
     return Math.round((done / ids.length) * 100);
   };
 
   const filtered = groupedExams
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .filter((group: any) =>
       (group.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
       (group.practice_date && group.practice_date.includes(searchQuery))
     )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .filter((group: any) =>
       !dateFilter || (group.practice_date && group.practice_date.startsWith(dateFilter))
     );
 
-  /* ── Computed stats ─────────────────────────────────────────────────── */
   const totalMocks = groupedExams.length;
   const completedMocks = groupedExams.filter((g) => progressForGroup(g) === 100).length;
   const inProgressMocks = groupedExams.filter((g) => { const p = progressForGroup(g); return p > 0 && p < 100; }).length;
   const avgProgress = totalMocks > 0 ? Math.round(groupedExams.reduce((s, g) => s + progressForGroup(g), 0) / totalMocks) : 0;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 lg:px-6">
-
-      {/* ═══ Header ══════════════════════════════════════════════════════ */}
-      <PageHeader
-        eyebrow={eyebrow}
-        title={title}
-        description={description}
-      />
-
-      {/* ═══ Stats Row ═══════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4">
-        <StatCard
-          label="Total Mocks"
-          value={totalMocks}
-          icon={FileText}
-          accent="text-primary bg-primary/10"
-        />
-        <StatCard
-          label="Completed"
-          value={completedMocks}
-          icon={Trophy}
-          accent="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
-        />
-        <StatCard
-          label="In Progress"
-          value={inProgressMocks}
-          icon={Clock}
-          accent="text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40"
-        />
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 flex items-center gap-4">
-          <ProgressRing
-            value={avgProgress}
-            size={48}
-            strokeWidth={5}
-            color={avgProgress >= 80 ? "text-emerald-500" : "text-primary"}
-          />
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Avg Progress</p>
-            <p className="text-xl font-black tabular-nums text-foreground">{avgProgress}%</p>
-          </div>
-        </div>
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
+      <div>
+        <p className="ds-overline text-primary">{eyebrow}</p>
+        <h1 className="ds-h1 mt-1">{title}</h1>
+        {description ? <p className="ds-lead mt-1.5 max-w-3xl">{description}</p> : null}
       </div>
 
-      {/* ═══ Filters ═════════════════════════════════════════════════════ */}
-      <div className="mb-8 flex flex-col items-center justify-between gap-4 md:flex-row">
-        <div className="flex w-full items-center gap-2 md:w-auto">
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium shadow-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-          >
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat label="Total" value={totalMocks} icon={FileText} />
+        <Stat label="Completed" value={completedMocks} icon={Trophy} />
+        <Stat label="In progress" value={inProgressMocks} icon={Clock} />
+        <Card><CardContent className="flex items-center gap-4">
+          <ProgressRing value={avgProgress} size={48} strokeWidth={5} color={avgProgress >= 80 ? "text-success" : "text-primary"} />
+          <div><p className="ds-overline">Avg progress</p><p className="ds-num text-xl font-extrabold text-foreground">{avgProgress}%</p></div>
+        </CardContent></Card>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="sm:w-56">
+          <Select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} aria-label="Filter by date">
             <option value="">All dates</option>
             {getAvailableDates().map((dateStr) => (
               <option key={dateStr} value={dateStr}>{formatDateLabel(dateStr)}</option>
             ))}
-          </select>
-          {dateFilter && (
-            <button type="button" onClick={() => setDateFilter("")} className="rounded-xl border border-border bg-card p-2.5 text-muted-foreground hover:text-foreground transition-colors" aria-label="Clear date filter">
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          </Select>
         </div>
-        <div className="group relative w-full md:w-80">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
-          <input
-            type="text"
-            placeholder="Search mock exams..."
+        <div className="sm:w-80">
+          <Input
+            placeholder="Search exams…"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full rounded-xl border border-border bg-card py-2.5 pl-11 pr-10 text-sm font-medium shadow-sm outline-none transition-all focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+            leftIcon={<Search />}
           />
-          {searchQuery && (
-            <button type="button" onClick={() => setSearchQuery("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
-              <X className="h-4 w-4" />
-            </button>
-          )}
         </div>
       </div>
 
-      {/* ═══ Cards Grid ══════════════════════════════════════════════════ */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((group: any) => {
-          const pct = progressForGroup(group);
-          const mid = routeMockId(group);
-          const completed = pct === 100;
-          return (
-            <div
-              key={group.id ?? mid}
-              className="group flex flex-col overflow-hidden rounded-2xl border border-border bg-card transition-all hover:border-primary/25 hover:shadow-md"
-            >
-              <div className="p-5 pb-3">
-                <div className="mb-4 flex items-center justify-between">
-                  <div>
-                    <span className={cn(
-                      "text-[10px] font-bold uppercase tracking-widest",
-                      group.kind === "MIDTERM" ? "text-amber-600 dark:text-amber-400" : "text-primary",
-                    )}>
-                      {group.kind === "MIDTERM" ? "Midterm" : "Timed SAT Mock"}
-                    </span>
-                    <p className="text-xs font-semibold text-muted-foreground mt-0.5">{formatDate(group.practice_date)}</p>
+      {/* Cards */}
+      {groupedExams.length === 0 ? (
+        <EmptyState icon={Target} title="No exams yet" description="These appear once your instructor publishes them. Practice with past papers first to build up your skills." />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Search} title="No matching exams" description="Try adjusting your search or date filter." action={<Button variant="secondary" onClick={() => { setSearchQuery(""); setDateFilter(""); }}>Clear filters</Button>} />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((group) => {
+            const pct = progressForGroup(group);
+            const mid = routeMockId(group);
+            const completed = pct === 100;
+            return (
+              <Card key={group.id ?? mid} variant="interactive" className="flex flex-col">
+                <CardContent className="flex flex-1 flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Badge variant={group.kind === "MIDTERM" ? "warning" : "primary"}>{group.kind === "MIDTERM" ? "Midterm" : "Timed SAT mock"}</Badge>
+                      <p className="mt-1.5 text-[12px] font-semibold text-muted-foreground">{formatDate(group.practice_date)}</p>
+                    </div>
+                    <ProgressRing value={pct} size={42} strokeWidth={4} color={completed ? "text-success" : "text-primary"} showLabel={false}>
+                      <span className="ds-num text-[10px] font-bold text-foreground">{pct}%</span>
+                    </ProgressRing>
                   </div>
-                  <ProgressRing
-                    value={pct}
-                    size={40}
-                    strokeWidth={3}
-                    color={completed ? "text-emerald-500" : "text-primary"}
+                  <h3 className="ds-h4 leading-snug">{group.title}</h3>
+                  {completed ? <Badge variant="success"><Trophy className="h-3 w-3" /> Completed</Badge> : null}
+                  <Progress value={pct} tone={completed ? "success" : "primary"} size="sm" className="mt-auto" />
+                  <Button
+                    fullWidth
+                    variant={completed ? "secondary" : "primary"}
+                    rightIcon={<ArrowRight />}
+                    onClick={() => {
+                      if (!isLoggedIn) { router.push("/login"); return; }
+                      router.push(`/mock/${mid}${mockQuerySuffix}`);
+                    }}
                   >
-                    <span className="text-[9px] font-black tabular-nums text-foreground">{pct}%</span>
-                  </ProgressRing>
-                </div>
-
-                <h3 className="text-lg font-extrabold leading-snug tracking-tight text-foreground group-hover:text-primary transition-colors">
-                  {group.title}
-                </h3>
-
-                {completed && (
-                  <span className="mt-2 inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-                    <Trophy className="h-3 w-3" />
-                    Completed
-                  </span>
-                )}
-
-                <div className="mt-3 flex items-center gap-2">
-                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-2">
-                    <div
-                      className={cn(
-                        "h-full rounded-full transition-all duration-700",
-                        completed ? "bg-emerald-500" : "bg-primary",
-                      )}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-auto p-5 pt-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isLoggedIn) { router.push("/login"); return; }
-                    router.push(`/mock/${mid}${mockQuerySuffix}`);
-                  }}
-                  className={cn(
-                    "flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold transition-colors active:scale-[0.98]",
-                    completed
-                      ? "border border-border bg-card text-foreground hover:bg-surface-2"
-                      : "bg-primary text-primary-foreground hover:bg-primary/90",
-                  )}
-                >
-                  {completed ? "Review" : "Enter Timed Mock"}
-                  <ArrowRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-
-        {groupedExams.length === 0 && (
-          <div className="col-span-full">
-            <EmptyState
-              icon={Target}
-              title="No mock exams yet"
-              description="Mock exams will appear here when your admin publishes them. Practice with past papers first to build up your skills."
-            />
-          </div>
-        )}
-        {groupedExams.length > 0 && filtered.length === 0 && (
-          <div className="col-span-full">
-            <EmptyState
-              icon={Search}
-              title="No matching exams"
-              description="Try adjusting your search or date filter."
-              action={
-                <button
-                  type="button"
-                  onClick={() => { setSearchQuery(""); setDateFilter(""); }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground"
-                >
-                  Clear filters
-                </button>
-              }
-            />
-          </div>
-        )}
-      </div>
+                    {completed ? "Review" : "Enter timed mock"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
