@@ -1,10 +1,11 @@
 "use client";
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { authApi, usersApi } from "@/lib/api";
-import { useRouter } from 'next/navigation';
-import { AlertCircle, Loader2, UserPlus } from 'lucide-react';
-import Link from 'next/link';
-import TelegramLoginButton, { type TelegramOIDCResult } from '@/components/TelegramLoginButton';
+import { useRouter } from "next/navigation";
+import { UserPlus, GraduationCap, Sparkles, ShieldCheck, LineChart } from "lucide-react";
+import Link from "next/link";
+import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
+import { Button, Input, Field, Alert, Spinner } from "@/components/ui";
 
 declare global {
     interface Window {
@@ -13,12 +14,12 @@ declare global {
 }
 
 export default function RegisterPage() {
-    const [firstName, setFirstName] = useState('');
-    const [lastName, setLastName] = useState('');
-    const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
+    const [firstName, setFirstName] = useState("");
+    const [lastName, setLastName] = useState("");
+    const [username, setUsername] = useState("");
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
     const googleButtonRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
@@ -34,13 +35,13 @@ export default function RegisterPage() {
     const handleTelegramAuth = useCallback(
         async (result: TelegramOIDCResult) => {
             setLoading(true);
-            setError('');
+            setError("");
             try {
                 await authApi.telegramAuth(result.id_token, true);
-                router.push('/');
+                router.push("/");
             } catch (err: unknown) {
                 const ax = err as { response?: { data?: { detail?: string } } };
-                setError(ax?.response?.data?.detail || 'Telegram signup failed. Check your connection and try again.');
+                setError(ax?.response?.data?.detail || "Telegram signup failed. Check your connection and try again.");
             } finally {
                 setLoading(false);
             }
@@ -51,9 +52,9 @@ export default function RegisterPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
-        setError('');
+        setError("");
         if (firstName.trim().length < 3 || lastName.trim().length < 3 || username.trim().length < 3) {
-            setError('First name, last name, and username must be at least 3 characters.');
+            setError("First name, last name, and username must be at least 3 characters.");
             setLoading(false);
             return;
         }
@@ -61,10 +62,10 @@ export default function RegisterPage() {
             await authApi.register(firstName, lastName, username, email, password);
             // Auto login after registration
             await authApi.login(email, password);
-            router.push('/');
+            router.push("/");
         } catch (err: unknown) {
             const ax = err as { response?: { status?: number; data?: Record<string, unknown> }; code?: string; message?: string };
-            let msg = 'Registration failed. Please check your details.';
+            let msg = "Registration failed. Please check your details.";
             if (!ax.response) {
                 msg = ax.code === "ECONNABORTED" || ax.message?.includes("timeout")
                     ? "Request timed out. Check your connection and try again."
@@ -79,7 +80,7 @@ export default function RegisterPage() {
                 else if (Array.isArray(d.first_name)) msg = d.first_name[0] as string;
                 else if (Array.isArray(d.last_name)) msg = d.last_name[0] as string;
                 else if (Array.isArray(d.password)) msg = d.password[0] as string;
-                else if (typeof d === 'object' && Object.keys(d).length > 0) {
+                else if (typeof d === "object" && Object.keys(d).length > 0) {
                     const firstError = Object.values(d)[0];
                     if (Array.isArray(firstError)) msg = firstError[0] as string;
                 }
@@ -101,7 +102,6 @@ export default function RegisterPage() {
             if (cancelled) return;
             const el = googleButtonRef.current;
             if (!window.google?.accounts?.id || !el) {
-                // GSI script loaded with afterInteractive; may not be ready at mount. Poll briefly.
                 pollTimer = window.setTimeout(tryInit, 200);
                 return;
             }
@@ -112,10 +112,10 @@ export default function RegisterPage() {
                         if (!response?.credential) return;
                         try {
                             await authApi.googleAuth(response.credential, undefined, true);
-                            router.push('/');
+                            router.push("/");
                         } catch (err: unknown) {
                             const ax = err as { response?: { data?: { detail?: string } } };
-                            setError(ax?.response?.data?.detail || 'Google sign up failed. Check your connection and try again.');
+                            setError(ax?.response?.data?.detail || "Google sign up failed. Check your connection and try again.");
                         }
                     },
                 });
@@ -141,159 +141,115 @@ export default function RegisterPage() {
     }, [router]);
 
     return (
-        <div className="min-h-screen app-bg flex items-center justify-center p-6 transition-colors duration-500">
-            <div className="w-full max-w-md">
-                <div className="flex flex-col items-center mb-8">
-                    <img src="/images/logo.png" alt="Master SAT" className="w-20 h-20 object-contain mb-4 drop-shadow-xl" />
-                    <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Create Account</h1>
-                    <p className="mt-2 text-slate-500 font-medium text-center">Join MasterSAT Program</p>
+        <div className="ds-app flex min-h-screen bg-background text-foreground">
+            {/* Brand panel — desktop only */}
+            <aside className="relative hidden w-[44%] max-w-xl flex-col justify-between overflow-hidden bg-primary p-12 text-primary-foreground lg:flex">
+                <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
+                        <GraduationCap className="h-6 w-6" />
+                    </span>
+                    <div>
+                        <p className="text-lg font-extrabold tracking-tight">MasterSAT</p>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-80">Learning OS</p>
+                    </div>
                 </div>
 
-                <div className="hero-shell p-8 transition-colors duration-300">
-                    <form className="space-y-5" onSubmit={handleSubmit}>
-                        {error && (
-                            <div className="flex items-start gap-3 text-red-600 dark:text-red-400 text-sm font-medium bg-red-50 dark:bg-red-900/20 p-4 rounded-xl border border-red-100 dark:border-red-900/50 animate-in fade-in slide-in-from-top-2 duration-200">
-                                <AlertCircle className="w-5 h-5 shrink-0" />
-                                <span>{error}</span>
-                            </div>
-                        )}
-
-                        <div className="space-y-4">
-                            <div className="flex gap-4">
-                                <div className="w-1/2">
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="firstName">
-                                        First Name
-                                    </label>
-                                    <input
-                                        id="firstName"
-                                        type="text"
-                                        required
-                                        className="input-modern font-medium sm:text-sm"
-                                        placeholder="John"
-                                        value={firstName}
-                                        onChange={(e) => setFirstName(e.target.value)}
-                                        disabled={loading}
-                                    />
-                                </div>
-                                <div className="w-1/2">
-                                    <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="lastName">
-                                        Last Name
-                                    </label>
-                                    <input
-                                        id="lastName"
-                                        type="text"
-                                        required
-                                        className="input-modern font-medium sm:text-sm"
-                                        placeholder="Doe"
-                                        value={lastName}
-                                        onChange={(e) => setLastName(e.target.value)}
-                                        disabled={loading}
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="username">
-                                    Username
-                                </label>
-                                <input
-                                    id="username"
-                                    type="text"
-                                    required
-                                    className="input-modern font-medium sm:text-sm"
-                                    placeholder="johndoe123"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                    disabled={loading}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="email-address">
-                                    Email Address
-                                </label>
-                                <input
-                                    id="email-address"
-                                    type="email"
-                                    required
-                                    className="input-modern font-medium sm:text-sm"
-                                    placeholder="name@example.com"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    disabled={loading}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2 ml-1" htmlFor="password">
-                                    Password
-                                </label>
-                                <input
-                                    id="password"
-                                    type="password"
-                                    required
-                                    className="input-modern font-medium sm:text-sm"
-                                    placeholder="••••••••"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    disabled={loading}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="pt-2">
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full btn-primary disabled:opacity-70 disabled:cursor-not-allowed group"
-                            >
-                                {loading ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    <>
-                                        Register Now
-                                        <UserPlus className="w-4 h-4 ml-2 opacity-70 group-hover:opacity-100 transition-opacity" />
-                                    </>
-                                )}
-                            </button>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
-                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">or</span>
-                            <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1" />
-                        </div>
-                        <div className="flex flex-col items-center gap-4">
-                            <div className="flex justify-center bg-white dark:bg-white rounded-full mx-auto w-fit p-1">
-                                <div ref={googleButtonRef} className="dark:mix-blend-normal" />
-                            </div>
-                            <div className="w-full flex flex-col items-center gap-2">
-                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                                    Sign up with Telegram
+                <div className="max-w-sm">
+                    <h2 className="text-4xl font-extrabold leading-[1.1] tracking-tight">Start your climb to a higher score.</h2>
+                    <p className="mt-4 text-[15px] leading-relaxed opacity-90">
+                        Set a goal, build a streak, and watch your readiness rise with every practice set.
+                    </p>
+                    <ul className="mt-8 flex flex-col gap-4">
+                        {[
+                            { icon: LineChart, text: "Track progress toward your target score" },
+                            { icon: Sparkles, text: "A plan that adapts as you improve" },
+                            { icon: ShieldCheck, text: "Full-length, test-day-realistic mocks" },
+                        ].map(({ icon: Icon, text }) => (
+                            <li key={text} className="flex items-center gap-3 text-[15px] font-medium">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15">
+                                    <Icon className="h-4 w-4" />
                                 </span>
+                                {text}
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+
+                <p className="text-xs opacity-70">© {new Date().getFullYear()} MasterSAT Center</p>
+            </aside>
+
+            {/* Form panel */}
+            <main className="flex flex-1 items-center justify-center px-5 py-10">
+                <div className="w-full max-w-md">
+                    <div className="mb-8 text-center lg:hidden">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src="/images/logo.png" alt="" className="mx-auto h-16 w-16 object-contain" />
+                        <h1 className="ds-h2 mt-3">Create account</h1>
+                    </div>
+
+                    <div className="mb-6 hidden lg:block">
+                        <h1 className="ds-h1">Create your account</h1>
+                        <p className="ds-small mt-1">Join the MasterSAT program.</p>
+                    </div>
+
+                    <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+                        {error ? <Alert tone="danger">{error}</Alert> : null}
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label="First name" htmlFor="firstName">
+                                <Input id="firstName" required placeholder="John" value={firstName} onChange={(e) => setFirstName(e.target.value)} disabled={loading} autoComplete="given-name" />
+                            </Field>
+                            <Field label="Last name" htmlFor="lastName">
+                                <Input id="lastName" required placeholder="Doe" value={lastName} onChange={(e) => setLastName(e.target.value)} disabled={loading} autoComplete="family-name" />
+                            </Field>
+                        </div>
+                        <Field label="Username" htmlFor="username">
+                            <Input id="username" required placeholder="johndoe123" value={username} onChange={(e) => setUsername(e.target.value)} disabled={loading} autoComplete="username" />
+                        </Field>
+                        <Field label="Email address" htmlFor="email-address">
+                            <Input id="email-address" type="email" required placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} autoComplete="email" />
+                        </Field>
+                        <Field label="Password" htmlFor="password">
+                            <Input id="password" type="password" required placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={loading} autoComplete="new-password" />
+                        </Field>
+
+                        <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<UserPlus />}>
+                            Create account
+                        </Button>
+
+                        <div className="flex items-center gap-3 py-1">
+                            <span className="h-px flex-1 bg-border" />
+                            <span className="ds-overline">or</span>
+                            <span className="h-px flex-1 bg-border" />
+                        </div>
+
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="mx-auto w-fit rounded-full bg-white p-1">
+                                <div ref={googleButtonRef} />
+                            </div>
+                            <div className="flex w-full flex-col items-center gap-2">
+                                <span className="ds-overline">Sign up with Telegram</span>
                                 {telegramCfg === null ? (
-                                    <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
+                                    <Spinner className="h-6 w-6 text-muted-foreground" />
                                 ) : telegramCfg.enabled && telegramCfg.start_url ? (
                                     <TelegramLoginButton startUrl={telegramCfg.start_url} next="/" />
                                 ) : (
-                                    <p className="text-center text-xs text-slate-500 dark:text-slate-400 max-w-sm px-2">
-                                        Telegram signup is not configured yet. An administrator must set{" "}
-                                        <code className="text-[10px] bg-slate-100 dark:bg-slate-800 px-1 rounded">
-                                            TELEGRAM_BOT_TOKEN
-                                        </code>{" "}
-                                        and configure the Web Login domain in BotFather.
+                                    <p className="max-w-sm px-2 text-center text-xs text-muted-foreground">
+                                        Telegram signup is not configured yet.
                                     </p>
                                 )}
                             </div>
                         </div>
                     </form>
-                    
-                    <div className="mt-5 text-center">
-                        <span className="text-sm text-slate-500 dark:text-slate-400 font-medium">Already have an account? </span>
-                        <Link href="/login" className="text-sm font-bold text-primary hover:opacity-90 transition-opacity">
-                            Sign In
-                        </Link>
-                    </div>
-                </div>
 
-            </div>
-            <p className="absolute bottom-6 text-center text-xs text-slate-400 font-medium">© {new Date().getFullYear()} MasterSAT Center</p>
+                    <p className="mt-6 text-center text-sm text-muted-foreground">
+                        Already have an account?{" "}
+                        <Link href="/login" className="font-bold text-primary hover:underline">
+                            Sign in
+                        </Link>
+                    </p>
+                </div>
+            </main>
         </div>
     );
 }
