@@ -43,10 +43,10 @@ export function LineChart({
   return (
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer width="100%" height="100%">
-        <RLineChart data={data} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+        <RLineChart data={data} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
           <CartesianGrid stroke={CHART_GRID} vertical={false} />
           <XAxis dataKey={xKey} tick={axisTick} axisLine={false} tickLine={false} dy={6} />
-          <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} domain={yDomain} />
+          <YAxis tick={axisTick} axisLine={false} tickLine={false} width={52} domain={yDomain} />
           <Tooltip
             content={<ChartTooltip valueFormatter={valueFormatter} />}
             cursor={{ stroke: CHART_GRID, strokeWidth: 1 }}
