@@ -5,7 +5,9 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
-import { ArrowLeft, BookOpen, Calculator, Loader2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Calculator } from "lucide-react";
+import { Card, CardContent, Badge, Button, EmptyState, Skeleton } from "@/components/ui";
+import { cn } from "@/lib/cn";
 
 type PackSection = {
   id: number;
@@ -101,19 +103,22 @@ export default function PracticeTestPackDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+      <div className="mx-auto flex max-w-2xl flex-col gap-4">
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="h-10 w-64" />
+        {[0, 1].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
       </div>
     );
   }
 
   if (!pack) {
     return (
-      <div className="mx-auto max-w-xl px-4 py-16 text-center">
-        <p className="font-bold text-foreground">{error ?? "Practice test not found."}</p>
-        <Link href="/practice-tests" className="text-sm font-semibold text-primary hover:underline">
-          Back to practice tests
-        </Link>
+      <div className="mx-auto max-w-xl py-16">
+        <EmptyState
+          title={error ?? "Practice test not found"}
+          description="It may have been unpublished."
+          action={<Link href="/practice-tests"><Button variant="secondary">Back to practice tests</Button></Link>}
+        />
       </div>
     );
   }
@@ -123,99 +128,56 @@ export default function PracticeTestPackDetailPage() {
   );
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      <Link
-        href="/practice-tests"
-        className="mb-6 inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to practice tests
+    <div className="mx-auto flex max-w-2xl flex-col gap-6 pb-12">
+      <Link href="/practice-tests" className="ds-ring inline-flex w-fit items-center gap-1.5 rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Back to practice tests
       </Link>
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-black tracking-tight text-foreground">
-          {pack.title || `Practice Test #${pack.id}`}
-        </h1>
-        {pack.description && (
-          <p className="mt-2 text-sm text-muted-foreground">{pack.description}</p>
-        )}
-        <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-          Start any section in any order. No time restrictions between sections.
-        </p>
+      <div>
+        <h1 className="ds-h1">{pack.title || `Practice test #${pack.id}`}</h1>
+        {pack.description ? <p className="ds-lead mt-2">{pack.description}</p> : null}
+        <p className="ds-small mt-1">Start any section in any order — no time limit between sections.</p>
       </div>
 
       {sorted.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          No sections available yet.
-        </div>
+        <EmptyState compact title="No sections yet" description="Sections appear here once added." />
       ) : (
         <div className="grid gap-4">
           {sorted.map((section) => {
             const rw = isRWSubject(section.subject);
             const Icon = rw ? BookOpen : Calculator;
-            const iconColor = rw ? "text-primary" : "text-emerald-600";
-            const iconBg = rw ? "bg-primary/8" : "bg-emerald-50";
-            const borderColor = rw ? "border-primary/20" : "border-emerald-200";
-            const ctaClass = rw
-              ? "bg-primary text-primary-foreground hover:bg-primary/90"
-              : "bg-emerald-600 text-white hover:bg-emerald-700";
-
-            const sectionAttempts = attempts
-              .filter((a) => a.practice_test === section.id)
-              .sort((a, b) => b.id - a.id);
+            const sectionAttempts = attempts.filter((a) => a.practice_test === section.id).sort((a, b) => b.id - a.id);
             const completedAttempt = sectionAttempts.find((a) => a.is_completed);
             const activeAttempt = sectionAttempts.find((a) => !a.is_completed && !a.is_expired);
             const isCompleted = !!completedAttempt;
             const isLoading = starting === section.id;
+            const label = isCompleted ? "Retake" : activeAttempt ? "Resume" : "Start";
 
             return (
-              <div key={section.id} className={`rounded-2xl border-2 ${borderColor} bg-card p-5 flex flex-col gap-4`}>
-                <div className="flex items-start gap-4">
-                  <div className={`shrink-0 rounded-2xl p-3 ${iconBg}`}>
-                    <Icon className={`h-6 w-6 ${iconColor}`} />
+              <Card key={section.id}>
+                <CardContent className="flex flex-col gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl", rw ? "bg-info-soft text-info-foreground" : "bg-success-soft text-success-foreground")}>
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="ds-h4">{subjectLabel(section.subject)}</h3>
+                      <p className="mt-0.5 text-[12px] text-muted-foreground">{section.module_count} module{section.module_count !== 1 ? "s" : ""}</p>
+                      {isCompleted ? (
+                        <span className="mt-1.5 inline-block"><Badge variant="success">Completed{completedAttempt?.score != null ? ` · ${completedAttempt.score}` : ""}</Badge></span>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-extrabold text-foreground">{subjectLabel(section.subject)}</h3>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {section.module_count} module{section.module_count !== 1 ? "s" : ""}
-                    </p>
-                    {isCompleted && (
-                      <span className="mt-1 inline-block rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700">
-                        Completed{completedAttempt?.score != null ? ` · ${completedAttempt.score}` : ""}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {isCompleted ? (
-                  <button
-                    type="button"
+                  <Button
+                    fullWidth
+                    variant={isCompleted ? "secondary" : "primary"}
+                    loading={isLoading}
                     onClick={() => handleStart(section.id)}
-                    disabled={isLoading}
-                    className="w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
                   >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Retake"}
-                  </button>
-                ) : activeAttempt ? (
-                  <button
-                    type="button"
-                    onClick={() => handleStart(section.id)}
-                    disabled={isLoading}
-                    className={`w-full rounded-xl px-4 py-2.5 text-sm font-bold transition-colors disabled:opacity-50 ${ctaClass}`}
-                  >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Resume"}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleStart(section.id)}
-                    disabled={isLoading}
-                    className={`w-full rounded-xl px-4 py-2.5 text-sm font-bold transition-colors disabled:opacity-50 ${ctaClass}`}
-                  >
-                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : "Start"}
-                  </button>
-                )}
-              </div>
+                    {label}
+                  </Button>
+                </CardContent>
+              </Card>
             );
           })}
         </div>
