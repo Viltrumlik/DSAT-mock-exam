@@ -364,15 +364,6 @@ export function AppShell({
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
         title="Notifications"
-        footer={
-          <Link
-            href="/notifications"
-            onClick={() => setNotifOpen(false)}
-            className="ds-ring inline-flex w-full items-center justify-center rounded-xl bg-surface-2 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-surface-3"
-          >
-            View all notifications
-          </Link>
-        }
       >
         <EmptyState
           compact

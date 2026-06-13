@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { ClipboardList, TrendingDown, AlertTriangle, ClipboardCheck } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Card, CardContent, Badge, EmptyState, Skeleton, Progress, SegmentedControl, type Segment } from "@/components/ui";
@@ -67,7 +68,8 @@ export function TeacherHomework({ previewModel }: { previewModel?: TeacherAnalyt
           {filtered.map((a) => {
             const eb = effBadge[a.effectiveness];
             return (
-              <Card key={`${a.classId}-${a.id}`} variant="interactive">
+              <Link key={`${a.classId}-${a.id}`} href="/teacher/grading" className="ds-ring block rounded-2xl">
+              <Card variant="interactive">
                 <CardContent className="flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0"><p className="truncate text-sm font-bold text-foreground">{a.title}</p><p className="truncate text-[12px] text-muted-foreground">{a.className}</p></div>
@@ -87,6 +89,7 @@ export function TeacherHomework({ previewModel }: { previewModel?: TeacherAnalyt
                   </div>
                 </CardContent>
               </Card>
+              </Link>
             );
           })}
         </div>

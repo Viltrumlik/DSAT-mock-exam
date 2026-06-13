@@ -65,11 +65,11 @@ export function TeacherDashboard({ previewModel }: { previewModel?: TeacherDashb
             ) : (
               <div className="grid gap-2 sm:grid-cols-2">
                 {m.needsAttention.map((s) => (
-                  <div key={s.id} className="flex items-center gap-3 rounded-xl border border-border p-3">
+                  <Link key={s.id} href="/teacher/students" className="ds-ring flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-border-strong hover:bg-surface-2">
                     <Avatar name={s.name} size={34} />
                     <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{s.name}</p><p className="truncate text-[12px] text-muted-foreground">{s.reason}</p></div>
-                    <span className={cn("h-2 w-2 shrink-0 rounded-full", s.tone === "danger" ? "bg-danger" : "bg-warning")} />
-                  </div>
+                    <span className={cn("h-2 w-2 shrink-0 rounded-full", s.tone === "danger" ? "bg-warning" : "bg-info")} />
+                  </Link>
                 ))}
               </div>
             )}
@@ -91,9 +91,15 @@ export function TeacherDashboard({ previewModel }: { previewModel?: TeacherDashb
         <Card><CardContent>
           <p className="ds-h4 mb-3">Lagging submissions</p>
           {m.missing.length === 0 ? <EmptyState compact title="Submissions look healthy" description="No assignments below 70% completion." /> : (
-            <ul className="flex flex-col gap-2.5">
+            <ul className="flex flex-col gap-1.5">
               {m.missing.map((a) => (
-                <li key={a.id}><div className="mb-1 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-sm font-semibold text-foreground">{a.title}</span><span className="ds-num shrink-0 text-[12px] font-bold text-muted-foreground">{a.completion}%</span></div><Progress value={a.completion} tone={a.completion < 40 ? "warning" : "primary"} size="sm" /><p className="mt-0.5 text-[11px] text-label-foreground">{a.className}</p></li>
+                <li key={a.id}>
+                  <Link href="/teacher/homework" className="ds-ring -mx-1 block rounded-lg px-1 py-1 transition-colors hover:bg-surface-2">
+                    <div className="mb-1 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-sm font-semibold text-foreground">{a.title}</span><span className="ds-num shrink-0 text-[12px] font-bold text-muted-foreground">{a.completion}%</span></div>
+                    <Progress value={a.completion} tone={a.completion < 40 ? "warning" : "primary"} size="sm" />
+                    <p className="mt-0.5 text-[11px] text-label-foreground">{a.className}</p>
+                  </Link>
+                </li>
               ))}
             </ul>
           )}

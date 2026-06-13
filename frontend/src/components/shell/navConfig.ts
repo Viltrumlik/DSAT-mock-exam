@@ -9,8 +9,6 @@ import {
   FileText,
   Languages,
   UserCircle,
-  Settings,
-  GraduationCap,
   ClipboardPen,
   Table2,
 } from "lucide-react";
@@ -64,7 +62,7 @@ export const studentNav: NavSection[] = [
     section: "Account",
     items: [
       { href: "/profile", label: "Profile", icon: UserCircle },
-      { href: "/settings", label: "Settings", icon: Settings, isNew: true },
+      // Settings is a planned future page — not linked until built (no dead-ends).
     ],
   },
 ];
@@ -81,7 +79,8 @@ export const teacherNav: NavSection[] = [
   {
     section: "Classroom",
     items: [
-      { href: "/teacher/classes", label: "Classes", icon: GraduationCap },
+      // Dedicated teacher Classes page is future work; class health lives on the
+      // Dashboard today. Students is the live roster surface.
       { href: "/teacher/students", label: "Students", icon: Users },
     ],
   },
