@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import CursorRing from "@/components/CursorRing";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import QueryProvider from "@/components/QueryProvider";
 import { ToastProvider } from "@/components/ToastProvider";
@@ -42,7 +41,6 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <QueryProvider>
             <ToastProvider>
-              <CursorRing />
               {children}
             </ToastProvider>
           </QueryProvider>

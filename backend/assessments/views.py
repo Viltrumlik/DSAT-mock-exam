@@ -13,7 +13,6 @@ from drf_spectacular.utils import extend_schema
 from drf_spectacular.types import OpenApiTypes
 from django.http import HttpResponse
 
-import secrets
 from time import monotonic
 
 from django.conf import settings as dj_settings
@@ -609,7 +608,9 @@ class StartAttemptView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            secrets.SystemRandom().shuffle(qids)
+            # Preserve the configured (ops console) order — qids are already
+            # sorted by (order, id) above. No shuffle: students see questions in
+            # the exact sequence the assessment was authored in.
             att = AssessmentAttempt.objects.create(
                 homework=hw,
                 student=request.user,

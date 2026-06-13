@@ -24,7 +24,7 @@ import { AnswerPane } from "../components/AnswerPane";
 import { ExamFooter } from "../components/ExamFooter";
 import { QuestionNavigator } from "../components/QuestionNavigator";
 import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
-import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusScreens";
+import { ErrorScreen, FullscreenGate, LoadingScreen, OffscreenOverlay, ScoringScreen } from "../components/StatusScreens";
 
 import { useExamTools, ExamToolsLayer, MultiTabOverlay, useKeyboardShortcuts } from "../tools";
 import { useMultiTabGuard } from "../tools/useMultiTabGuard";
@@ -149,6 +149,57 @@ export function ExamRunnerPage() {
 
   const mathQuestions = isMath(attempt);
   useMathRendering(!loading && Boolean(attempt?.current_module_details), `${moduleId}:${currentIndex}`);
+
+  // ── Always-on full screen + off-screen guards (anti-cheating) ────────────────
+  // The simulation must stay in full screen. If the student leaves, a 10s grace
+  // period lets them return; otherwise their answers are saved and they are
+  // removed. While the tab/window is hidden, all question content is covered.
+  const fs = tools.fullscreen;
+  const [fsCountdown, setFsCountdown] = useState<number | null>(null);
+  const [windowHidden, setWindowHidden] = useState(false);
+  const enteredFullscreenRef = useRef(false);
+  const kickedRef = useRef(false);
+
+  const saveAndKick = useCallback(async () => {
+    if (kickedRef.current) return;
+    kickedRef.current = true;
+    try {
+      await examApi.saveAttempt(attemptId, answers, flagged, { expectedVersionNumber: attempt?.version_number });
+    } catch {
+      /* best-effort: still remove the student even if the save failed */
+    } finally {
+      router.push("/");
+    }
+  }, [attemptId, answers, flagged, attempt?.version_number, router]);
+
+  // Start / clear the return-to-fullscreen countdown as fullscreen state changes.
+  useEffect(() => {
+    if (fs.isFullscreen) {
+      enteredFullscreenRef.current = true;
+      setFsCountdown(null);
+    } else if (enteredFullscreenRef.current) {
+      setFsCountdown((c) => (c === null ? 10 : c));
+    }
+  }, [fs.isFullscreen]);
+
+  // Tick the countdown; on expiry, autosave then remove the student.
+  useEffect(() => {
+    if (fsCountdown === null) return;
+    if (fsCountdown <= 0) {
+      void saveAndKick();
+      return;
+    }
+    const t = setTimeout(() => setFsCountdown((c) => (c === null ? c : c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [fsCountdown, saveAndKick]);
+
+  // Hide content whenever the tab/window is not visible.
+  useEffect(() => {
+    const onVisibility = () => setWindowHidden(document.hidden);
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
 
   // ── Timer warnings: 5 min, 1 min, expiry (per module; read-only on the clock) ─
   const [timerToast, setTimerToast] = useState<string | null>(null);
@@ -350,10 +401,19 @@ export function ExamRunnerPage() {
     return <LoadingScreen />;
   }
 
+  // Anti-cheating gate: the simulation must stay in full screen. While outside
+  // full screen no question content is shown; a mid-exam exit shows a countdown
+  // that autosaves and removes the student if they don't return in time.
+  if (fs.supported && !fs.isFullscreen && !isCompleted(attempt)) {
+    return <FullscreenGate countdown={fsCountdown} onEnter={() => void fs.enter()} />;
+  }
+
   const warning = timerReady && secondsLeft <= FIVE_MINUTE_WARNING_SECONDS && secondsLeft > 0;
 
   return (
     <div className="flex h-screen flex-col bg-white">
+      {/* Off-screen guard: hide all content while the window is not in focus. */}
+      {windowHidden && <OffscreenOverlay />}
       <ExamHeader
         moduleTitle={moduleLabel(attempt)}
         secondsLeft={secondsLeft}
