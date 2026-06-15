@@ -29,6 +29,7 @@ import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusS
 
 import { useExamTools, ExamToolsLayer, MultiTabOverlay, useKeyboardShortcuts } from "../tools";
 import { useMultiTabGuard } from "../tools/useMultiTabGuard";
+import { DesmosCalculator } from "../tools/calculator/DesmosCalculator";
 
 /** Reflects browser connectivity so the runner can surface an offline state. */
 function useOnlineStatus(): boolean {
@@ -431,21 +432,34 @@ export function ExamRunnerPage() {
             />
           </>
         ) : (
-          <AnswerPane
-            question={currentQuestion}
-            displayNumber={currentIndex + 1}
-            zoom={zoom}
-            isMath={mathQuestions}
-            flagged={flagged.includes(currentQuestion.id)}
-            onToggleFlag={() => toggleFlag(currentQuestion.id)}
-            eliminationMode={eliminationMode}
-            onToggleEliminationMode={() => setEliminationMode((v) => !v)}
-            answer={answers[currentQuestion.id]}
-            eliminated={eliminated[currentQuestion.id] ?? []}
-            onSelect={(v) => selectAnswer(currentQuestion.id, v)}
-            onEliminate={(k) => toggleEliminate(currentQuestion.id, k)}
-            style={{ width: "100%", flex: "none" }}
-          />
+          <>
+            {/* Docked calculator — a reserved column that shifts the question
+                content right rather than floating over it (item: Calculator
+                Layout). Math-only; toggled from the header. */}
+            {tools.calculatorOpen && (
+              <div
+                className="h-full shrink-0 overflow-hidden transition-[width] duration-300 ease-out"
+                style={{ width: "min(46%, 560px)" }}
+              >
+                <DesmosCalculator docked onClose={tools.toggleCalculator} />
+              </div>
+            )}
+            <AnswerPane
+              question={currentQuestion}
+              displayNumber={currentIndex + 1}
+              zoom={zoom}
+              isMath={mathQuestions}
+              flagged={flagged.includes(currentQuestion.id)}
+              onToggleFlag={() => toggleFlag(currentQuestion.id)}
+              eliminationMode={eliminationMode}
+              onToggleEliminationMode={() => setEliminationMode((v) => !v)}
+              answer={answers[currentQuestion.id]}
+              eliminated={eliminated[currentQuestion.id] ?? []}
+              onSelect={(v) => selectAnswer(currentQuestion.id, v)}
+              onEliminate={(k) => toggleEliminate(currentQuestion.id, k)}
+              style={{ flex: "1 1 0%", minWidth: 0 }}
+            />
+          </>
         )}
       </main>
 

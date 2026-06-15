@@ -1,5 +1,4 @@
 "use client";
-import { DesmosCalculator } from "./calculator/DesmosCalculator";
 import { ReferenceSheet } from "./ReferenceSheet";
 import { NotesPanel } from "./notes/NotesPanel";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
@@ -14,11 +13,14 @@ interface ExamToolsLayerProps {
 /**
  * Renders every floating/overlay tool. Single mount point so the page only needs
  * one line. Each child is independent and self-persisting.
+ *
+ * NOTE: the calculator is NOT here — it is docked into the question layout by
+ * the runner (reserved area, never overlapping content). See item: Calculator
+ * Layout and `ExamRunnerPage`.
  */
 export function ExamToolsLayer({ tools, attemptId }: ExamToolsLayerProps) {
   return (
     <>
-      {tools.calculatorOpen && <DesmosCalculator onClose={tools.toggleCalculator} />}
       {tools.referenceOpen && <ReferenceSheet onClose={tools.toggleReference} />}
       {tools.notesOpen && <NotesPanel attemptId={attemptId} onClose={tools.toggleNotes} />}
       {tools.helpOpen && <KeyboardShortcutsHelp onClose={tools.closeHelp} />}
