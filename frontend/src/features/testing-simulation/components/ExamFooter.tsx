@@ -10,12 +10,13 @@ interface ExamFooterProps {
   onNext: () => void;
   onSubmitModule: () => void;
   submitting: boolean;
-  /** Autosave / connectivity status (empty string hides it). */
-  saveLabel?: string;
-  saveTone?: "muted" | "warn" | "ok";
+  /** Student identity — shown at the bottom-left throughout the test. */
+  studentName?: string;
+  /** When true, Back/Next are briefly locked (anti double-click). */
+  navLocked?: boolean;
 }
 
-/** Bottom bar: question-grid toggle + Back / Next / Submit. */
+/** Bottom bar: student identity + question-grid toggle + Back / Next / Submit. */
 export function ExamFooter({
   navLabel,
   onToggleNavigator,
@@ -25,16 +26,15 @@ export function ExamFooter({
   onNext,
   onSubmitModule,
   submitting,
-  saveLabel,
-  saveTone = "muted",
+  studentName,
+  navLocked = false,
 }: ExamFooterProps) {
-  const toneClass = saveTone === "warn" ? "text-amber-600" : saveTone === "ok" ? "text-emerald-600" : "text-slate-400";
   return (
     <footer className="flex shrink-0 items-center justify-between border-t border-slate-200 bg-white px-6 py-3">
       <div className="flex flex-1 items-center">
-        {saveLabel ? (
-          <span className={`text-xs font-semibold ${toneClass}`} role="status" aria-live="polite">
-            {saveLabel}
+        {studentName ? (
+          <span className="truncate text-sm font-bold text-slate-700" title={studentName}>
+            {studentName}
           </span>
         ) : null}
       </div>
@@ -50,8 +50,8 @@ export function ExamFooter({
         <button
           type="button"
           onClick={onBack}
-          disabled={!canGoBack}
-          className="rounded-full px-5 py-2 text-sm font-bold text-blue-700 disabled:opacity-30"
+          disabled={!canGoBack || navLocked}
+          className="rounded-full px-5 py-2 text-sm font-bold text-blue-700 transition-opacity disabled:opacity-30"
         >
           Back
         </button>
@@ -59,7 +59,7 @@ export function ExamFooter({
           <button
             type="button"
             onClick={onSubmitModule}
-            disabled={submitting}
+            disabled={submitting || navLocked}
             className="rounded-full bg-blue-700 px-6 py-2 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Submit"}
@@ -68,7 +68,8 @@ export function ExamFooter({
           <button
             type="button"
             onClick={onNext}
-            className="rounded-full bg-blue-700 px-6 py-2 text-sm font-bold text-white hover:bg-blue-800"
+            disabled={navLocked}
+            className="rounded-full bg-blue-700 px-6 py-2 text-sm font-bold text-white transition-opacity hover:bg-blue-800 disabled:opacity-60"
           >
             Next
           </button>

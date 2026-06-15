@@ -19,6 +19,7 @@ import { clamp } from "../utils/time";
 import { parseOptions } from "../utils/options";
 
 import { ExamHeader } from "../components/ExamHeader";
+import { SatColorRule } from "../components/SatColorRule";
 import { PassagePane } from "../components/PassagePane";
 import { AnswerPane } from "../components/AnswerPane";
 import { ExamFooter } from "../components/ExamFooter";
@@ -62,6 +63,11 @@ export function ExamRunnerPage() {
   const { me } = useMe();
   const role = String((me as { role?: string } | undefined)?.role ?? "").toLowerCase();
   const isAdmin = role !== "" && role !== "student";
+  // Student identity for the persistent footer (item: Student Identity Footer).
+  const studentName = (() => {
+    const u = me as { first_name?: string; last_name?: string } | undefined;
+    return [u?.first_name, u?.last_name].filter(Boolean).join(" ").trim();
+  })();
 
   // Multi-tab guard is resolved BEFORE the engine hooks so a blocked duplicate
   // tab can actually suspend polling/autosave/timer (not just show an overlay).
@@ -97,11 +103,33 @@ export function ExamRunnerPage() {
   const [transitionTo, setTransitionTo] = useState<number | null>(null);
   const zoom = tools.zoom;
 
+  // ── Navigation freeze (item: Next / Back Freeze Protection) ──────────────────
+  // After Next/Back, lock navigation for 500ms so a double-click (or held key)
+  // can't skip a question or race the autosave/answer state. Visual feedback is
+  // the disabled (dimmed) Back/Next buttons in the footer.
+  const [navLocked, setNavLocked] = useState(false);
+  const navLockTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (navLockTimer.current) clearTimeout(navLockTimer.current);
+  }, []);
+  const withNavLock = useCallback(
+    (fn: () => void) => {
+      if (navLocked) return;
+      fn();
+      setNavLocked(true);
+      if (navLockTimer.current) clearTimeout(navLockTimer.current);
+      navLockTimer.current = setTimeout(() => setNavLocked(false), 500);
+    },
+    [navLocked],
+  );
+  const guardedNext = useCallback(() => withNavLock(next), [withNavLock, next]);
+  const guardedPrev = useCallback(() => withNavLock(prev), [withNavLock, prev]);
+
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
     enabled: !loading && Boolean(currentQuestion) && transitionTo === null && !multiTab.blocked,
-    onPrev: prev,
-    onNext: next,
+    onPrev: guardedPrev,
+    onNext: guardedNext,
     onToggleMark: () => currentQuestion && toggleFlag(currentQuestion.id),
     onToggleNavigator: () => setNavigatorOpen((v) => !v),
     onToggleHelp: tools.toggleHelp,
@@ -368,7 +396,10 @@ export function ExamRunnerPage() {
         paused={paused}
         onTogglePause={handlePauseToggle}
         onSaveAndExit={handleSaveAndExit}
+        saveLabel={saveLabel}
+        saveTone={saveTone}
       />
+      <SatColorRule />
 
       <main
         ref={mainRef}
@@ -418,17 +449,18 @@ export function ExamRunnerPage() {
         )}
       </main>
 
+      <SatColorRule />
       <ExamFooter
         navLabel={`Question ${currentIndex + 1} of ${questions.length}`}
         onToggleNavigator={() => setNavigatorOpen((v) => !v)}
         canGoBack={currentIndex > 0}
-        onBack={prev}
+        onBack={guardedPrev}
         isLastQuestion={currentIndex === questions.length - 1}
-        onNext={next}
+        onNext={guardedNext}
         onSubmitModule={() => void submit()}
         submitting={submitting}
-        saveLabel={saveLabel}
-        saveTone={saveTone}
+        studentName={studentName}
+        navLocked={navLocked}
       />
 
       <QuestionNavigator
