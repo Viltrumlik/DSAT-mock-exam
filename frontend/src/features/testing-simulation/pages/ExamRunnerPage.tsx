@@ -26,6 +26,9 @@ import { ExamFooter } from "../components/ExamFooter";
 import { QuestionNavigator } from "../components/QuestionNavigator";
 import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
 import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusScreens";
+import { WelcomeScreen } from "../components/WelcomeScreen";
+import { FullscreenWarning } from "../components/FullscreenWarning";
+import { ATTEMPT_STATE } from "../types";
 
 import { useExamTools, ExamToolsLayer, MultiTabOverlay, useKeyboardShortcuts } from "../tools";
 import { useMultiTabGuard } from "../tools/useMultiTabGuard";
@@ -75,10 +78,14 @@ export function ExamRunnerPage() {
   const multiTab = useMultiTabGuard(attemptId);
   const online = useOnlineStatus();
 
-  const { attempt, loading, error, clock, applyAttempt, reload } = useExamAttempt({
+  const { attempt, loading, error, clock, applyAttempt, reload, start } = useExamAttempt({
     attemptId,
     assertCriticalAuth,
     pollingEnabled: !multiTab.blocked,
+    // Pastpapers hold the timer until the student clicks Start on the Welcome
+    // screen; mock-exam flow keeps its existing auto-start (it has its own
+    // break/intro orchestration upstream).
+    autoStart: mockFlow,
   });
 
   const { answers, flagged, eliminated, currentIndex, moduleId, selectAnswer, toggleFlag, toggleEliminate, goTo, next, prev } =
@@ -125,6 +132,26 @@ export function ExamRunnerPage() {
   );
   const guardedNext = useCallback(() => withNavLock(next), [withNavLock, next]);
   const guardedPrev = useCallback(() => withNavLock(prev), [withNavLock, prev]);
+
+  // ── Welcome / start gate (items: Pastpaper Welcome Screen + Forced Fullscreen) ─
+  // Start is the single user gesture that (a) enters fullscreen and (b) tells the
+  // server to begin the module — so the timer genuinely doesn't run until now.
+  const [starting, setStarting] = useState(false);
+  const handleStart = useCallback(async () => {
+    setStarting(true);
+    try {
+      if (tools.fullscreen.supported) {
+        try {
+          await tools.fullscreen.enter();
+        } catch {
+          /* user denied / unsupported — proceed without fullscreen */
+        }
+      }
+      await start();
+    } finally {
+      setStarting(false);
+    }
+  }, [tools.fullscreen, start]);
 
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
@@ -366,6 +393,24 @@ export function ExamRunnerPage() {
   if (isScoring(attempt)) {
     return <ScoringScreen notice={null} />;
   }
+  // Welcome / Start screen — shown only before the module begins (NOT_STARTED).
+  // Resumes (already MODULE_x_ACTIVE) skip it so the running clock isn't gated.
+  if (!mockFlow && !loading && attempt && attempt.current_state === ATTEMPT_STATE.NOT_STARTED) {
+    const startMinutes =
+      attempt.current_module_details?.time_limit_minutes ??
+      attempt.practice_test_details.modules.find((m) => m.module_order === 1)?.time_limit_minutes;
+    return (
+      <WelcomeScreen
+        moduleTitle={moduleLabel(attempt)}
+        subjectLabel={subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing"}
+        minutes={startMinutes}
+        questionCount={attempt.current_module_details?.questions.length}
+        starting={starting}
+        fullscreenSupported={tools.fullscreen.supported}
+        onStart={() => void handleStart()}
+      />
+    );
+  }
   if (loading || !attempt || !attempt.current_module_details || !currentQuestion) {
     if (isModulePayloadMissing(attempt)) {
       return (
@@ -491,6 +536,13 @@ export function ExamRunnerPage() {
       {/* All SAT-experience tool overlays (calculator, reference, notes, help,
           highlight popover). Single mount point; each is engine-isolated. */}
       <ExamToolsLayer tools={tools} attemptId={attemptId} />
+
+      {/* Forced fullscreen — if the student leaves fullscreen mid-test, block the
+          UI until they re-enter (the only path is a user-gesture button). Browsers
+          without fullscreen support never see this. */}
+      {tools.fullscreen.supported && !tools.fullscreen.isFullscreen && (
+        <FullscreenWarning onReturn={() => void tools.fullscreen.enter()} />
+      )}
 
       {/* Timer warnings (5 min / 1 min / expiry) — announced to screen readers. */}
       {timerToast && (

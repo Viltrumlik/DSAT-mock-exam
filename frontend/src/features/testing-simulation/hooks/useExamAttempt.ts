@@ -12,6 +12,12 @@ interface UseExamAttemptArgs {
   assertCriticalAuth: () => boolean;
   /** When false, the background polling loop is suspended (e.g. a blocked duplicate tab). */
   pollingEnabled?: boolean;
+  /**
+   * When false, a NOT_STARTED attempt is NOT auto-started on load — the timer
+   * stays unstarted until `start()` is called (driven by the Welcome screen's
+   * Start button). Defaults to true to preserve the legacy auto-start flow.
+   */
+  autoStart?: boolean;
 }
 
 export interface UseExamAttemptResult {
@@ -24,6 +30,8 @@ export interface UseExamAttemptResult {
   /** Hard reload from the server (used by the Retry button). */
   reload: () => void;
   setError: (msg: string | null) => void;
+  /** Transition NOT_STARTED → MODULE_1_ACTIVE on demand (Welcome screen Start). */
+  start: () => Promise<void>;
 }
 
 /**
@@ -32,7 +40,7 @@ export interface UseExamAttemptResult {
  * go through `applyAttempt`, which enforces the forward-only merge guard and
  * recalibrates the server clock.
  */
-export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled = true }: UseExamAttemptArgs): UseExamAttemptResult {
+export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled = true, autoStart = true }: UseExamAttemptArgs): UseExamAttemptResult {
   const clock = useServerClock();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +65,24 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
     setReloadNonce((n) => n + 1);
   }, []);
 
+  // On-demand engine start (Welcome screen). Idempotent via the start key, so a
+  // double click can't create two starts; the timer anchors from the server's
+  // post-start snapshot.
+  const start = useCallback(async () => {
+    if (!assertCriticalAuth()) return;
+    try {
+      const snap = await examApi.start(attemptId, startKey(attemptId));
+      applyAttempt(snap);
+    } catch (e) {
+      if (e instanceof InvalidAttemptPayloadError) console.error(e);
+    }
+    try {
+      applyAttempt(await examApi.getStatus(attemptId));
+    } catch {
+      /* background polling will reconcile */
+    }
+  }, [attemptId, assertCriticalAuth, applyAttempt]);
+
   // ── Initial load (+ engine start for NOT_STARTED) ──────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +93,7 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
         if (cancelled) return;
         applyAttempt(snap);
 
-        if (snap.current_state === ATTEMPT_STATE.NOT_STARTED) {
+        if (autoStart && snap.current_state === ATTEMPT_STATE.NOT_STARTED) {
           if (!assertCriticalAuth()) {
             setLoading(false);
             return;
@@ -137,5 +163,5 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt?.current_state, attemptId, pollingEnabled]);
 
-  return { attempt, loading, error, clock, applyAttempt, reload, setError };
+  return { attempt, loading, error, clock, applyAttempt, reload, setError, start };
 }
