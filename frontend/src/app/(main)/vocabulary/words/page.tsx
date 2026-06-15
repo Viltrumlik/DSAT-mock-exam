@@ -3,10 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { vocabularyApi } from "@/lib/api";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { BookOpen, Search, X } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { BookOpen, Search } from "lucide-react";
+import { Card, CardContent, Badge, Button, Input, EmptyState, Skeleton, type BadgeVariant } from "@/components/ui";
 
 type VocabWord = {
   id: number;
@@ -18,11 +16,8 @@ type VocabWord = {
   created_at: string;
 };
 
-const difficultyColor = (d: number) => {
-  if (d <= 1) return "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40";
-  if (d <= 2) return "text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40";
-  return "text-red-700 bg-red-50 dark:text-red-400 dark:bg-red-950/40";
-};
+// Higher difficulty = harder, not "bad" — non-red, positive/neutral tones.
+const difficultyVariant = (d: number): BadgeVariant => (d <= 1 ? "success" : d <= 2 ? "warning" : "info");
 
 export default function VocabularyWordsPage() {
   const [q, setQ] = useState("");
@@ -39,110 +34,55 @@ export default function VocabularyWordsPage() {
     }
   };
 
-  useEffect(() => {
-    void load("");
-  }, []);
+  useEffect(() => { void load(""); }, []);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 lg:px-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-12">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="ds-overline text-primary">Vocabulary</p>
+          <h1 className="ds-h1 mt-1">Word list</h1>
+          <p className="ds-small mt-1">Search and preview words — learning happens in Daily.</p>
+        </div>
+        <Link href="/vocabulary/daily"><Button leftIcon={<BookOpen />}>Go to Daily</Button></Link>
+      </div>
 
-      {/* ═══ Header ══════════════════════════════════════════════════════ */}
-      <PageHeader
-        eyebrow="Vocabulary"
-        title="Word List"
-        description="Search and preview words — learning happens in Daily."
-        actions={
-          <Link
-            href="/vocabulary/daily"
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <BookOpen className="h-4 w-4" />
-            Go to Daily
-          </Link>
-        }
-      />
-
-      {/* ═══ Search ═════════════════════════════════════════════════════ */}
-      <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-center">
-        <div className="group relative flex-1">
-          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-primary" />
-          <input
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex-1">
+          <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void load(q.trim()); }}
             placeholder="Search by word or meaning…"
-            className="w-full rounded-xl border border-border bg-card py-2.5 pl-11 pr-10 text-sm font-medium shadow-sm outline-none transition-all focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+            leftIcon={<Search />}
           />
-          {q && (
-            <button
-              type="button"
-              onClick={() => { setQ(""); void load(""); }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label="Clear search"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
         </div>
-        <button
-          type="button"
-          onClick={() => void load(q.trim())}
-          className="rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
-        >
-          Search
-        </button>
+        <Button variant="secondary" onClick={() => void load(q.trim())}>Search</Button>
       </div>
 
-      {/* ═══ Words Grid ════════════════════════════════════════════════ */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        </div>
+        <div className="grid gap-4 sm:grid-cols-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
       ) : words.length === 0 ? (
         <EmptyState
           icon={Search}
           title="No matching words"
           description="Try adjusting your search or ask an admin to add more vocabulary."
-          action={
-            q ? (
-              <button
-                type="button"
-                onClick={() => { setQ(""); void load(""); }}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground"
-              >
-                Clear search
-              </button>
-            ) : undefined
-          }
+          action={q ? <Button variant="secondary" onClick={() => { setQ(""); void load(""); }}>Clear search</Button> : undefined}
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {words.map((w) => (
-            <div
-              key={w.id}
-              className="group rounded-2xl border border-border bg-card p-5 shadow-sm transition-all hover:border-primary/20 hover:shadow-md"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="text-lg font-extrabold text-foreground group-hover:text-primary transition-colors">
-                  {w.word}
-                </h3>
-                <span className={cn(
-                  "shrink-0 rounded-lg px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                  difficultyColor(w.difficulty),
-                )}>
-                  Lvl {w.difficulty}
-                </span>
-              </div>
-              <p className="mt-1.5 text-sm font-semibold text-muted-foreground">{w.meaning || "—"}</p>
-              {w.example && (
-                <p className="mt-3 rounded-xl bg-surface-2/60 px-3 py-2 text-sm italic text-muted-foreground">
-                  &ldquo;{w.example}&rdquo;
-                </p>
-              )}
-              <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">
-                {w.part_of_speech}
-              </p>
-            </div>
+            <Card key={w.id} variant="interactive">
+              <CardContent>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="ds-h4">{w.word}</h3>
+                  <Badge variant={difficultyVariant(w.difficulty)}>Lvl {w.difficulty}</Badge>
+                </div>
+                <p className="mt-1.5 text-sm font-semibold text-muted-foreground">{w.meaning || "—"}</p>
+                {w.example ? <p className="mt-3 rounded-xl bg-surface-2 px-3 py-2 text-sm italic text-muted-foreground">&ldquo;{w.example}&rdquo;</p> : null}
+                <p className="ds-overline mt-3">{w.part_of_speech}</p>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}

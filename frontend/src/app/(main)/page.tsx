@@ -1,5 +1,5 @@
-import { HomeDashboard } from "@/components/dashboard";
+import { StudentDashboard } from "@/features/dashboard/StudentDashboard";
 
 export default function DashboardPage() {
-  return <HomeDashboard />;
+  return <StudentDashboard />;
 }

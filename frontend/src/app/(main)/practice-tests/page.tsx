@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { FlaskConical, ChevronRight, BookOpen, Calculator } from "lucide-react";
+import { Card, CardContent, Badge, EmptyState, Alert, Skeleton } from "@/components/ui";
 
 type PracticeTestPackSection = {
   id: number;
@@ -48,77 +49,52 @@ export default function PracticeTestsListPage() {
     return () => { cancelled = true; };
   }, []);
 
-  if (loading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="mx-auto max-w-xl px-4 py-16 text-center">
-        <p className="font-bold text-foreground">{error}</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8 md:px-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-black tracking-tight text-foreground">Practice Tests</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Custom practice tests — start any section in any order.
-        </p>
+    <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-12">
+      <div>
+        <p className="ds-overline text-primary">Practice</p>
+        <h1 className="ds-h1 mt-1">Practice tests</h1>
+        <p className="ds-small mt-1">Untimed practice — start any section in any order.</p>
       </div>
 
-      {packs.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-12 text-center">
-          <FlaskConical className="mx-auto h-12 w-12 text-muted-foreground/30" />
-          <p className="mt-4 font-bold text-foreground">No practice tests available</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Practice test packs will appear here once they are published by your teacher.
-          </p>
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-36 rounded-2xl" />)}
         </div>
+      ) : error ? (
+        <Alert tone="danger" title={error}>Please refresh to try again.</Alert>
+      ) : packs.length === 0 ? (
+        <EmptyState
+          icon={FlaskConical}
+          title="No practice tests yet"
+          description="Practice test packs appear here once your teacher publishes them."
+        />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {packs.map((pack) => (
-            <Link
-              key={pack.id}
-              href={`/practice-tests/${pack.id}`}
-              className="group rounded-2xl border border-border bg-card p-5 shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-extrabold text-foreground group-hover:text-primary transition-colors">
-                    {pack.title || `Practice Test #${pack.id}`}
-                  </h3>
-                  {pack.description && (
-                    <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{pack.description}</p>
-                  )}
-                </div>
-                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {pack.sections.map((s) => {
-                  const isRW = s.subject === "READING_WRITING";
-                  return (
-                    <span
-                      key={s.id}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[10px] font-bold ${
-                        isRW
-                          ? "bg-primary/10 text-primary"
-                          : "bg-emerald-100 text-emerald-700"
-                      }`}
-                    >
-                      {isRW ? <BookOpen className="h-3 w-3" /> : <Calculator className="h-3 w-3" />}
-                      {subjectLabel(s.subject)}
-                    </span>
-                  );
-                })}
-              </div>
+            <Link key={pack.id} href={`/practice-tests/${pack.id}`} className="ds-ring block rounded-2xl">
+              <Card variant="interactive" className="h-full">
+                <CardContent className="flex h-full flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="ds-h4 truncate">{pack.title || `Practice test #${pack.id}`}</h3>
+                      {pack.description ? <p className="mt-1 line-clamp-2 text-[13px] text-muted-foreground">{pack.description}</p> : null}
+                    </div>
+                    <ChevronRight className="h-5 w-5 shrink-0 text-label-foreground" />
+                  </div>
+                  <div className="mt-auto flex flex-wrap gap-1.5">
+                    {pack.sections.map((s) => {
+                      const isRW = s.subject === "READING_WRITING";
+                      return (
+                        <Badge key={s.id} variant={isRW ? "info" : "success"}>
+                          {isRW ? <BookOpen className="h-3 w-3" /> : <Calculator className="h-3 w-3" />}
+                          {subjectLabel(s.subject)}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
             </Link>
           ))}
         </div>

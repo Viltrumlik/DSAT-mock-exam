@@ -1,18 +1,44 @@
 import { cn } from "@/lib/cn";
 import type { HTMLAttributes, ReactNode } from "react";
 
-export type BadgeVariant = "brand" | "neutral" | "success" | "warning" | "live";
+/** Legacy names (brand/live) kept for back-compat with pre-rebuild pages;
+ *  semantic names are preferred going forward. */
+export type BadgeVariant =
+  | "brand"
+  | "primary"
+  | "neutral"
+  | "outline"
+  | "success"
+  | "warning"
+  | "danger"
+  | "info"
+  | "accent"
+  | "live";
 
 const variantClass: Record<BadgeVariant, string> = {
-  brand:
-    "border-primary/30 bg-gradient-to-r from-primary/12 via-primary/8 to-amber-500/15 text-foreground",
+  brand: "border-primary/20 bg-primary-soft text-primary",
+  primary: "border-primary/20 bg-primary-soft text-primary",
   neutral: "border-border bg-surface-2 text-muted-foreground",
-  success:
-    "border-emerald-500/35 bg-emerald-500/10 text-foreground dark:border-emerald-400/30 dark:bg-emerald-500/15 dark:text-emerald-100",
-  warning:
-    "border-amber-500/35 bg-amber-500/10 text-foreground dark:border-amber-400/28 dark:bg-amber-500/12 dark:text-amber-100",
-  live:
-    "border-accent-cyan/35 bg-accent-cyan/10 text-foreground dark:border-accent-cyan/30 dark:bg-accent-cyan/12 dark:text-accent-cyan",
+  outline: "border-border bg-transparent text-muted-foreground",
+  success: "border-success/20 bg-success-soft text-success-foreground",
+  warning: "border-warning/20 bg-warning-soft text-warning-foreground",
+  danger: "border-danger/20 bg-danger-soft text-danger-foreground",
+  info: "border-info/20 bg-info-soft text-info-foreground",
+  accent: "border-accent/20 bg-accent-soft text-accent",
+  live: "border-info/20 bg-info-soft text-info-foreground",
+};
+
+const dotClass: Record<BadgeVariant, string> = {
+  brand: "bg-primary",
+  primary: "bg-primary",
+  neutral: "bg-muted-foreground",
+  outline: "bg-muted-foreground",
+  success: "bg-success",
+  warning: "bg-warning",
+  danger: "bg-danger",
+  info: "bg-info",
+  accent: "bg-accent",
+  live: "bg-info",
 };
 
 export function Badge({
@@ -24,13 +50,13 @@ export function Badge({
 }: HTMLAttributes<HTMLSpanElement> & {
   children: ReactNode;
   variant?: BadgeVariant;
-  /** Pulsing status dot */
+  /** Leading status dot (pulses on `live`) */
   dot?: boolean;
 }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold leading-5",
         variantClass[variant],
         className,
       )}
@@ -38,8 +64,10 @@ export function Badge({
     >
       {dot ? (
         <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-50" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+          {variant === "live" ? (
+            <span className={cn("absolute inline-flex h-full w-full animate-ping rounded-full opacity-60", dotClass[variant])} />
+          ) : null}
+          <span className={cn("relative inline-flex h-1.5 w-1.5 rounded-full", dotClass[variant])} />
         </span>
       ) : null}
       {children}

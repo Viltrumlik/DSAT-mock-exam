@@ -1,5 +1,5 @@
-import StudentShell from "@/components/StudentShell";
+import StudentAppShell from "@/components/shell/StudentAppShell";
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
-  return <StudentShell>{children}</StudentShell>;
+  return <StudentAppShell>{children}</StudentAppShell>;
 }

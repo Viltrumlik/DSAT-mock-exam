@@ -6,17 +6,20 @@ import AuthGuard from "@/components/AuthGuard";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { pastpaperPackDisplayTitle, singleDisplayTitle } from "@/lib/practiceTestCards";
 import { platformSubjectIsReadingWriting } from "@/lib/permissions";
-import { ArrowLeft, BookOpen, Calculator, CheckCircle2, Clock, Eye, Layers, Loader2, Play } from "lucide-react";
+import { ArrowLeft, BookOpen, Calculator, Clock, Eye, Layers, Play } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { cn } from "@/lib/cn";
+import { Card, CardContent, Badge, Button, EmptyState, Spinner } from "@/components/ui";
 
 const examsPublicApi = examsStudentApi;
 
 function PracticeTestDetailInner() {
   const { id } = useParams();
   const testId = Number(id);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [test, setTest] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [attempts, setAttempts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -54,19 +57,13 @@ function PracticeTestDetailInner() {
     if (!assertCriticalAuth()) return;
     setStarting(true);
     try {
-      // Always call startTest — the backend creates a new attempt or returns the
-      // canonical active one. Don't short-circuit with stale frontend attempt data,
-      // which could resume a days-old MODULE_2_ACTIVE instead of starting fresh.
       const attempt = await examsPublicApi.startTest(testId);
       setAttempts((prev) => {
         const exists = prev.some((a) => a.id === attempt.id);
         return exists ? prev : [...prev, attempt];
       });
       try {
-        sessionStorage.setItem(
-          `mastersat.attempt.bootstrap.${attempt.id}`,
-          JSON.stringify(attempt),
-        );
+        sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
       } catch {}
       router.push(`/exam/${attempt.id}`);
     } catch (e) {
@@ -76,34 +73,18 @@ function PracticeTestDetailInner() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary/40" />
-      </div>
-    );
+    return <div className="flex min-h-[50vh] items-center justify-center"><Spinner className="h-8 w-8 text-primary" /></div>;
   }
 
   if (!test) {
     return (
       <AuthGuard>
-        <div className="mx-auto max-w-xl px-4 py-16 text-center">
-          {fetchError ? (
-            <>
-              <p className="font-extrabold text-foreground mb-2">Could not load this practice test.</p>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto mb-4">{fetchError}</p>
-            </>
-          ) : (
-            <p className="font-extrabold text-foreground mb-4">
-              Practice test not found or not assigned to you.
-            </p>
-          )}
-          <button
-            type="button"
-            className="text-sm font-bold text-primary hover:underline"
-            onClick={() => router.push("/practice-tests")}
-          >
-            Back to practice tests
-          </button>
+        <div className="mx-auto max-w-xl py-16">
+          <EmptyState
+            title={fetchError ? "Could not load this practice test" : "Practice test not found"}
+            description={fetchError || "It may not be assigned to you."}
+            action={<Button variant="secondary" onClick={() => router.push("/practice-tests")}>Back to practice tests</Button>}
+          />
         </div>
       </AuthGuard>
     );
@@ -112,156 +93,76 @@ function PracticeTestDetailInner() {
   const isRW = platformSubjectIsReadingWriting(test.subject);
   const Icon = isRW ? BookOpen : Calculator;
   const label = isRW ? "Reading & Writing" : "Mathematics";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const modules: any[] = Array.isArray(test.modules) ? test.modules : [];
   const apiTitle = typeof test.title === "string" ? test.title.trim() : "";
   const packTitle = pastpaperPackDisplayTitle(test);
-  const cardSubtitle =
-    apiTitle || (packTitle ? `Past paper pack: ${packTitle}` : singleDisplayTitle(test));
-  const attempt = attempts
-    .filter((a) => a.practice_test === test.id)
-    .sort((a, b) => (b.id || 0) - (a.id || 0))[0];
+  const cardSubtitle = apiTitle || (packTitle ? `Past paper pack: ${packTitle}` : singleDisplayTitle(test));
+  const attempt = attempts.filter((a) => a.practice_test === test.id).sort((a, b) => (b.id || 0) - (a.id || 0))[0];
   const isCompleted = attempt?.is_completed;
-  const hasInProgressAttempt =
-    attempt && !attempt.is_completed && !attempt.is_expired;
-  const totalMinutes = modules.reduce((acc: number, m: any) => acc + (m.time_limit_minutes ?? 0), 0);
+  const hasInProgressAttempt = attempt && !attempt.is_completed && !attempt.is_expired;
+  const totalMinutes = modules.reduce((acc: number, m) => acc + (m.time_limit_minutes ?? 0), 0);
 
   return (
     <AuthGuard>
-      <div className="mx-auto max-w-2xl px-4 py-8 lg:px-6">
-        {/* Back */}
-        <button
-          type="button"
-          onClick={() => router.push("/practice-tests")}
-          className="mb-6 inline-flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" /> Back to Practice Tests
+      <div className="mx-auto flex max-w-2xl flex-col gap-6 pb-12">
+        <button type="button" onClick={() => router.push("/practice-tests")} className="ds-ring inline-flex w-fit items-center gap-2 rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Back to practice tests
         </button>
 
-        {/* Info note */}
-        <p className="mb-8 text-sm text-muted-foreground leading-relaxed max-w-xl">
-          Sectional practice — you can pause the timer. This is not the full mock; for one
-          continuous SAT run with a break and no pause, use <strong className="text-foreground">Mock Exam</strong>.
+        <p className="ds-small max-w-xl">
+          Sectional practice — you can pause the timer. For one continuous SAT run with a break and no pause, use <strong className="text-foreground">Mock exam</strong>.
         </p>
 
-        {/* ═══ Test Card ═══════════════════════════════════════════════ */}
-        <div className={cn(
-          "rounded-2xl border-2 p-6 shadow-sm transition-all",
-          isRW
-            ? "border-primary/20 bg-card dark:border-primary/30"
-            : "border-emerald-500/20 bg-card dark:border-emerald-500/30",
-        )}>
-          {isCompleted && (
-            <span className="mb-4 inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-white">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              Completed
-            </span>
-          )}
+        <Card>
+          <CardContent className="flex flex-col gap-6">
+            {isCompleted ? <span className="w-fit"><Badge variant="success">Completed</Badge></span> : null}
 
-          {/* Test header */}
-          <div className="flex items-start gap-5">
-            <div className={cn(
-              "shrink-0 rounded-2xl p-4 shadow-sm border",
-              isRW
-                ? "bg-primary/5 border-primary/10 text-primary dark:bg-primary/10"
-                : "bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-950/40 dark:border-emerald-900/30",
-            )}>
-              <Icon className="h-8 w-8" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-extrabold tracking-tight text-foreground">{label}</h2>
-              <p className="mt-1 text-sm font-semibold text-muted-foreground">{cardSubtitle}</p>
-              {test.label && (
-                <span className="mt-2 inline-block rounded-lg bg-foreground px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-background">
-                  {test.label}
-                </span>
-              )}
-              <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                {test.form_type === "US" ? "US Form" : "International"} ·{" "}
-                {modules.length} module{modules.length !== 1 ? "s" : ""} · {totalMinutes} min
-              </p>
-            </div>
-          </div>
-
-          {/* Module breakdown */}
-          {modules.length > 0 && (
-            <div className="mt-6 rounded-2xl border border-border bg-surface-2/50 dark:bg-surface-2/30 divide-y divide-border overflow-hidden">
-              {modules.map((m: any, mIdx: number) => {
-                const questionCount = m.question_count ?? m.questions?.length ?? null;
-                return (
-                  <div key={m.id} className="flex items-center gap-3 px-4 py-3">
-                    <div className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-black",
-                      isRW
-                        ? "bg-primary/10 text-primary"
-                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
-                    )}>
-                      {mIdx + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-foreground">
-                        Module {mIdx + 1}
-                        {mIdx > 0 && (
-                          <span className="ml-2 text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-                            Adaptive
-                          </span>
-                        )}
-                      </p>
-                      {questionCount != null && (
-                        <p className="text-xs text-muted-foreground">
-                          {questionCount} question{questionCount !== 1 ? "s" : ""}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1 text-xs font-semibold text-muted-foreground shrink-0">
-                      <Clock className="h-3.5 w-3.5" />
-                      {m.time_limit_minutes} min
-                    </div>
-                  </div>
-                );
-              })}
-              <div className="flex items-center gap-3 px-4 py-2.5 bg-surface-2/60 dark:bg-surface-2/20">
-                <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
-                <p className="text-xs font-bold text-muted-foreground">
-                  Modules run in sequence — the exam runner continues automatically after each module.
-                </p>
+            <div className="flex items-start gap-5">
+              <div className={cn("flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl", isRW ? "bg-info-soft text-info-foreground" : "bg-success-soft text-success-foreground")}>
+                <Icon className="h-8 w-8" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="ds-h2">{label}</h2>
+                <p className="mt-1 text-sm font-semibold text-muted-foreground">{cardSubtitle}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {test.label ? <Badge variant="neutral">{test.label}</Badge> : null}
+                  <span className="ds-overline">{test.form_type === "US" ? "US form" : "International"} · {modules.length} module{modules.length !== 1 ? "s" : ""} · {totalMinutes} min</span>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* CTA */}
-          <div className="mt-6">
+            {modules.length > 0 ? (
+              <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
+                {modules.map((m, mIdx) => {
+                  const questionCount = m.question_count ?? m.questions?.length ?? null;
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 px-4 py-3">
+                      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", isRW ? "bg-info-soft text-info-foreground" : "bg-success-soft text-success-foreground")}>{mIdx + 1}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-foreground">Module {mIdx + 1}{mIdx > 0 ? <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Adaptive</span> : null}</p>
+                        {questionCount != null ? <p className="text-[12px] text-muted-foreground">{questionCount} question{questionCount !== 1 ? "s" : ""}</p> : null}
+                      </div>
+                      <span className="flex shrink-0 items-center gap-1 text-[12px] font-semibold text-muted-foreground"><Clock className="h-3.5 w-3.5" />{m.time_limit_minutes} min</span>
+                    </div>
+                  );
+                })}
+                <div className="flex items-center gap-3 bg-surface-2 px-4 py-2.5">
+                  <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <p className="text-[12px] font-semibold text-muted-foreground">Modules run in sequence — the runner continues automatically after each.</p>
+                </div>
+              </div>
+            ) : null}
+
             {isCompleted ? (
-              <button
-                type="button"
-                onClick={() => router.push(`/review/${attempt.id}`)}
-                className="flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-card py-3.5 text-sm font-extrabold text-foreground hover:bg-surface-2 transition-colors"
-              >
-                <Eye className="h-4 w-4" /> Review Answers
-              </button>
+              <Button fullWidth variant="secondary" size="lg" leftIcon={<Eye />} onClick={() => router.push(`/review/${attempt.id}`)}>Review answers</Button>
             ) : (
-              <button
-                type="button"
-                onClick={() => void handleStart()}
-                disabled={starting || !criticalAuthReady}
-                className={cn(
-                  "flex w-full items-center justify-center gap-3 rounded-xl py-4 text-sm font-extrabold shadow-sm disabled:opacity-50 transition-all active:scale-[0.98]",
-                  isRW
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "bg-emerald-600 text-white hover:bg-emerald-700",
-                )}
-              >
-                {starting ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    <Play className="h-5 w-5 fill-current" />
-                    {hasInProgressAttempt ? "Resume" : "Start Test"}
-                  </>
-                )}
-              </button>
+              <Button fullWidth size="lg" loading={starting} disabled={!criticalAuthReady} leftIcon={<Play className="fill-current" />} onClick={() => void handleStart()}>
+                {hasInProgressAttempt ? "Resume" : "Start test"}
+              </Button>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </AuthGuard>
   );
@@ -269,13 +170,7 @@ function PracticeTestDetailInner() {
 
 export default function PracticeTestDetailPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[50vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary/40" />
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center"><Spinner className="h-8 w-8 text-primary" /></div>}>
       <PracticeTestDetailInner />
     </Suspense>
   );

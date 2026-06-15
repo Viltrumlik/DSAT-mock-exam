@@ -1586,6 +1586,9 @@ def _build_hw_meta(hw) -> dict:
         "assignment_title": assignment.title if assignment else None,
         "set_title": aset.title if aset else None,
         "set_category": aset.category if aset else None,
+        # Read-only exposure of the existing AssessmentSet.subject so the student
+        # analytics page can group SAT strands by section. No logic/DB change.
+        "set_subject": aset.subject if aset else None,
         "due_at": assignment.due_at.isoformat() if assignment and assignment.due_at else None,
         "question_count": active_q_count,
         "classroom_name": hw.classroom.name if hw.classroom else None,

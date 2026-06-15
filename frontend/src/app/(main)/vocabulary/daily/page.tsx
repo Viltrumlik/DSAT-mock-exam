@@ -5,16 +5,11 @@ import Link from "next/link";
 import { vocabularyApi } from "@/lib/api";
 import { Flashcard, type VocabWord } from "@/components/vocabulary/Flashcard";
 import { QuizPractice } from "@/components/vocabulary/QuizPractice";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { StatCard } from "@/components/ui/StatCard";
-import { ProgressRing } from "@/components/ui/ProgressRing";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { BookOpen, Flame, RefreshCcw, Target, Trophy } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { Card, CardContent, Badge, Button, Stat, ProgressRing, Progress, EmptyState, SegmentedControl, Spinner, type Segment } from "@/components/ui";
 
-type DailyItem =
-  | { kind: "new"; word: VocabWord; progress: null }
-  | { kind: "review"; word: VocabWord; progress: any };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type DailyItem = { kind: "new"; word: VocabWord; progress: null } | { kind: "review"; word: VocabWord; progress: any };
 
 type DailyPayload = {
   target: number;
@@ -44,9 +39,7 @@ export default function VocabularyDailyPage() {
     }
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
   const submit = async (result: "correct" | "wrong") => {
     if (!current) return;
@@ -62,173 +55,66 @@ export default function VocabularyDailyPage() {
   const done = idx >= items.length && items.length > 0;
   const progressPct = items.length > 0 ? Math.round((Math.min(idx, items.length) / items.length) * 100) : 0;
 
+  const modeOpts: Segment<"flashcards" | "quiz">[] = [{ value: "flashcards", label: "Flashcards" }, { value: "quiz", label: "Practice quiz" }];
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8 lg:px-6">
-
-      {/* ═══ Header ══════════════════════════════════════════════════════ */}
-      <PageHeader
-        eyebrow="Vocabulary"
-        title="Daily Practice"
-        description="Reviews come first (spaced repetition), then new words. A little every day adds up."
-      />
-
-      {/* ═══ Stats Row ═══════════════════════════════════════════════════ */}
-      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard
-          label="Words Learned"
-          value={payload?.stats.total_learned ?? "—"}
-          icon={BookOpen}
-          accent="text-primary bg-primary/10"
-        />
-        <StatCard
-          label="Accuracy"
-          value={`${payload?.stats.accuracy_percent ?? "—"}%`}
-          icon={Target}
-          accent="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
-        />
-        <StatCard
-          label="Streak"
-          value={`${payload?.stats.streak_days ?? "—"}d`}
-          icon={Flame}
-          accent="text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40"
-        />
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 flex items-center gap-4">
-          <ProgressRing
-            value={progressPct}
-            size={48}
-            strokeWidth={5}
-            color={done ? "text-emerald-500" : "text-primary"}
-          />
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Session</p>
-            <p className="text-xl font-black tabular-nums text-foreground">
-              {Math.min(idx, items.length)}/{items.length}
-            </p>
-          </div>
+    <div className="mx-auto flex max-w-4xl flex-col gap-6 pb-12">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="ds-overline text-primary">Vocabulary</p>
+          <h1 className="ds-h1 mt-1">Daily practice</h1>
+          <p className="ds-small mt-1">Reviews first (spaced repetition), then new words. A little every day adds up.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/vocabulary/words"><Button variant="secondary">Browse words</Button></Link>
+          <Button variant="secondary" leftIcon={<RefreshCcw />} onClick={() => void load()}>Refresh</Button>
         </div>
       </div>
 
-      {/* ═══ Mode + Actions ═════════════════════════════════════════════ */}
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setMode("flashcards")}
-          className={cn(
-            "rounded-xl border px-4 py-2.5 text-sm font-bold transition-colors",
-            mode === "flashcards"
-              ? "border-primary/40 bg-primary/10 text-primary"
-              : "border-border bg-card text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-          )}
-        >
-          Flashcards
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("quiz")}
-          className={cn(
-            "rounded-xl border px-4 py-2.5 text-sm font-bold transition-colors",
-            mode === "quiz"
-              ? "border-primary/40 bg-primary/10 text-primary"
-              : "border-border bg-card text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-          )}
-        >
-          Practice Quiz
-        </button>
-        <div className="ms-auto flex items-center gap-2">
-          <Link
-            href="/vocabulary/words"
-            className="rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
-          >
-            Browse Words
-          </Link>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
-          >
-            <RefreshCcw className="h-3.5 w-3.5" />
-            Refresh
-          </button>
-        </div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Stat label="Words learned" value={payload?.stats.total_learned ?? "—"} icon={BookOpen} />
+        <Stat label="Accuracy" value={`${payload?.stats.accuracy_percent ?? "—"}%`} icon={Target} />
+        <Stat label="Streak" value={`${payload?.stats.streak_days ?? "—"}d`} icon={Flame} />
+        <Card><CardContent className="flex items-center gap-4">
+          <ProgressRing value={progressPct} size={48} strokeWidth={5} color={done ? "text-success" : "text-primary"} />
+          <div><p className="ds-overline">Session</p><p className="ds-num text-xl font-extrabold text-foreground">{Math.min(idx, items.length)}/{items.length}</p></div>
+        </CardContent></Card>
       </div>
 
-      {/* ═══ Main Content ═══════════════════════════════════════════════ */}
-      <div className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          </div>
-        ) : items.length === 0 ? (
-          <EmptyState
-            icon={BookOpen}
-            title="No vocabulary words yet"
-            description="Ask an admin to add words, then come back here for your daily session."
-          />
-        ) : done ? (
-          <div className="text-center py-8">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-950/40">
-              <Trophy className="h-8 w-8 text-emerald-500" />
+      <SegmentedControl options={modeOpts} value={mode} onChange={setMode} />
+
+      <Card>
+        <CardContent>
+          {loading ? (
+            <div className="flex justify-center py-12"><Spinner className="h-8 w-8 text-primary" /></div>
+          ) : items.length === 0 ? (
+            <EmptyState icon={BookOpen} title="No vocabulary words yet" description="Ask an admin to add words, then come back for your daily session." />
+          ) : done ? (
+            <div className="flex flex-col items-center py-8 text-center">
+              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-success-soft"><Trophy className="h-8 w-8 text-success" /></div>
+              <h3 className="ds-h3">Session complete</h3>
+              <p className="mt-2 text-sm text-muted-foreground">Come back tomorrow for new items and scheduled reviews.</p>
+              <Button className="mt-6" variant="secondary" leftIcon={<RefreshCcw />} onClick={() => setIdx(0)}>Review again</Button>
             </div>
-            <h3 className="text-xl font-extrabold text-foreground">Session Complete</h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Come back tomorrow for new items and scheduled reviews.
-            </p>
-            <button
-              type="button"
-              onClick={() => setIdx(0)}
-              className="mt-6 inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
-            >
-              <RefreshCcw className="h-4 w-4" />
-              Review Again
-            </button>
-          </div>
-        ) : current ? (
-          <div>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <p className="text-sm font-bold text-muted-foreground">
-                  Item {idx + 1} / {items.length}
-                </p>
-                <span className={cn(
-                  "rounded-lg px-2.5 py-1 text-[10px] font-black uppercase tracking-wider",
-                  current.kind === "review"
-                    ? "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400"
-                    : "bg-primary/10 text-primary",
-                )}>
-                  {current.kind === "review" ? "Review" : "New"}
-                </span>
+          ) : current ? (
+            <div>
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <p className="text-sm font-bold text-muted-foreground">Item {idx + 1} / {items.length}</p>
+                  <Badge variant={current.kind === "review" ? "warning" : "primary"}>{current.kind === "review" ? "Review" : "New"}</Badge>
+                </div>
+                {submitting ? <p className="animate-pulse text-xs font-bold text-muted-foreground">Saving…</p> : null}
               </div>
-              {submitting && <p className="text-xs font-bold text-muted-foreground animate-pulse">Saving…</p>}
+              <Progress value={progressPct} tone={done ? "success" : "primary"} size="sm" className="mb-6" />
+              {mode === "flashcards" ? (
+                <Flashcard word={current.word} onCorrect={() => void submit("correct")} onWrong={() => void submit("wrong")} autoFocusActions />
+              ) : (
+                <QuizPractice word={current.word} pool={pool} onAnswer={(r) => void submit(r)} />
+              )}
             </div>
-
-            {/* Progress bar */}
-            <div className="mb-6 h-1.5 overflow-hidden rounded-full bg-surface-2">
-              <div
-                className={cn(
-                  "h-full rounded-full transition-all duration-500",
-                  done ? "bg-emerald-500" : "bg-primary",
-                )}
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-
-            {mode === "flashcards" ? (
-              <Flashcard
-                word={current.word}
-                onCorrect={() => void submit("correct")}
-                onWrong={() => void submit("wrong")}
-                autoFocusActions
-              />
-            ) : (
-              <QuizPractice
-                word={current.word}
-                pool={pool}
-                onAnswer={(r) => void submit(r)}
-              />
-            )}
-          </div>
-        ) : null}
-      </div>
+          ) : null}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -6,28 +6,13 @@ import AuthGuard from "@/components/AuthGuard";
 import { normalizeApiError } from "@/lib/apiError";
 import { useMyAssessmentResult, useStartAttempt } from "@/features/assessments/hooks";
 import {
-  ArrowLeft,
-  BookOpen,
-  CheckCircle2,
-  ChevronRight,
-  Clock,
-  FileQuestion,
-  Loader2,
-  PlayCircle,
-  RefreshCw,
-  School,
+  ArrowLeft, BookOpen, CheckCircle2, ChevronRight, Clock, FileQuestion, Loader2, PlayCircle, School,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useState } from "react";
-import {
-  deriveAssignmentLifecycleState,
-  formatAssignmentDue,
-} from "@/lib/assignmentLifecycle";
+import { deriveAssignmentLifecycleState, formatAssignmentDue } from "@/lib/assignmentLifecycle";
+import { Card, CardContent, Badge, Button, Alert, EmptyState, Spinner } from "@/components/ui";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-// The backend now returns a `meta` block alongside attempt/result.
-// Typed locally here; matches _build_hw_meta() in assessments/views.py.
 type HwMeta = {
   assignment_title: string | null;
   set_title: string | null;
@@ -43,23 +28,14 @@ type MyResultData = {
   meta?: HwMeta;
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function formatDueDate(iso: string | null | undefined): string {
   if (!iso) return "";
   try {
-    return new Date(iso).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   } catch {
     return iso;
   }
 }
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AssessmentStartPage() {
   const router = useRouter();
@@ -69,7 +45,6 @@ export default function AssessmentStartPage() {
   const start = useStartAttempt();
   const { data, isLoading, error, refetch } = useMyAssessmentResult(aid);
 
-  // Cast to richer type (backend now includes `meta`)
   const richData = data as MyResultData | undefined;
   const attempt = richData?.attempt ?? null;
   const result = richData?.result ?? null;
@@ -84,7 +59,6 @@ export default function AssessmentStartPage() {
   const canViewResult = hasResult || isGraded || isSubmitted;
 
   const dueDateStr = formatDueDate(meta?.due_at);
-  // Derive lifecycle state using shared utility (treat any attempt as 1 submission for COMPLETED detection)
   const lifecycleState = deriveAssignmentLifecycleState({
     due_at: meta?.due_at,
     submissions_count: (isGraded || isSubmitted || hasResult) ? 1 : 0,
@@ -103,234 +77,108 @@ export default function AssessmentStartPage() {
     }
   };
 
-  // ── Resolved title: prefer the real assignment title, fall back gracefully ──
-  const displayTitle =
-    meta?.assignment_title?.trim() ||
-    meta?.set_title?.trim() ||
-    "Assessment";
+  const displayTitle = meta?.assignment_title?.trim() || meta?.set_title?.trim() || "Assessment";
 
   return (
     <AuthGuard>
-      <div className="mx-auto w-full max-w-2xl space-y-4">
-        {/* ── Back navigation ─────────────────────────────────────────────── */}
-        <Link
-          href="/assessments"
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Assessments
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4 pb-12">
+        <Link href="/assessments" className="ds-ring inline-flex w-fit items-center gap-1.5 rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Assessments
         </Link>
 
-        {/* ── Loading ─────────────────────────────────────────────────────── */}
-        {isLoading && (
-          <div className="rounded-2xl border border-border bg-card p-10 flex justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          </div>
-        )}
-
-        {/* ── Load error ──────────────────────────────────────────────────── */}
-        {error && !isLoading && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
-            <p className="text-sm font-bold text-red-800">Could not load assignment</p>
-            <p className="text-sm text-red-700 mt-1">
-              {String((error as { message?: string })?.message || "Unknown error")}
-            </p>
-            <button
-              type="button"
-              onClick={() => void refetch()}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-100"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Retry
-            </button>
-          </div>
-        )}
-
-        {/* ── Main card ───────────────────────────────────────────────────── */}
-        {!isLoading && !error && (
-          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
-            {/* Header */}
+        {isLoading ? (
+          <Card><CardContent className="flex justify-center py-12"><Spinner className="h-8 w-8 text-primary" /></CardContent></Card>
+        ) : error ? (
+          <EmptyState
+            title="Could not load assignment"
+            description={String((error as { message?: string })?.message || "Unknown error")}
+            action={<Button variant="secondary" leftIcon={<Loader2 />} onClick={() => void refetch()}>Retry</Button>}
+          />
+        ) : (
+          <Card>
             <div className="border-b border-border px-6 py-5">
-              <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                <p className="text-[10px] font-bold text-primary uppercase tracking-widest">
-                  Assessment
-                </p>
-                {meta?.classroom_name && (
-                  <span className="inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                    <School className="h-3 w-3" />
-                    {meta.classroom_name}
-                  </span>
-                )}
+              <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                <span className="ds-overline text-primary">Assessment</span>
+                {meta?.classroom_name ? <Badge variant="neutral"><School className="h-3 w-3" /> {meta.classroom_name}</Badge> : null}
               </div>
-              <h1 className="text-xl font-extrabold text-foreground tracking-tight leading-snug">
-                {displayTitle}
-              </h1>
-              {meta?.set_title && meta.set_title !== meta.assignment_title && (
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  {meta.set_title}
-                </p>
-              )}
+              <h1 className="ds-h2">{displayTitle}</h1>
+              {meta?.set_title && meta.set_title !== meta.assignment_title ? <p className="mt-0.5 text-sm text-muted-foreground">{meta.set_title}</p> : null}
             </div>
 
-            {/* Meta grid */}
-            <div className="grid grid-cols-2 gap-0 sm:grid-cols-3 divide-x divide-y divide-border border-b border-border">
-              {meta?.set_category && (
-                <div className="px-5 py-3 flex items-center gap-2">
-                  <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <div className="grid grid-cols-2 divide-x divide-y divide-border border-b border-border sm:grid-cols-3">
+              {meta?.set_category ? (
+                <MetaCell icon={BookOpen} label="Category" value={meta.set_category} />
+              ) : null}
+              {meta?.question_count != null ? (
+                <MetaCell icon={FileQuestion} label="Questions" value={String(meta.question_count)} />
+              ) : null}
+              {dueDateStr ? (
+                <div className="flex items-center gap-2 px-5 py-3">
+                  <Clock className={cn("h-3.5 w-3.5 shrink-0", overdue || dueSoon ? "text-warning" : "text-muted-foreground")} />
                   <div>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                      Category
-                    </p>
-                    <p className="text-sm font-semibold text-foreground">{meta.set_category}</p>
+                    <p className="ds-overline">Due</p>
+                    <p className={cn("text-sm font-semibold", overdue || dueSoon ? "text-warning-foreground" : "text-foreground")}>{dueDateStr}</p>
+                    {relDueLabel ? <p className={cn("text-[11px] font-bold", overdue || dueSoon ? "text-warning-foreground" : "text-muted-foreground")}>{relDueLabel}</p> : null}
                   </div>
                 </div>
-              )}
-              {meta?.question_count != null && (
-                <div className="px-5 py-3 flex items-center gap-2">
-                  <FileQuestion className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                      Questions
-                    </p>
-                    <p className="text-sm font-semibold text-foreground">{meta.question_count}</p>
-                  </div>
-                </div>
-              )}
-              {dueDateStr && (
-                <div className="px-5 py-3 flex items-center gap-2">
-                  <Clock
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0",
-                      overdue
-                        ? "text-red-500"
-                        : dueSoon
-                        ? "text-amber-500"
-                        : "text-muted-foreground",
-                    )}
-                  />
-                  <div>
-                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                      Due
-                    </p>
-                    <p
-                      className={cn(
-                        "text-sm font-semibold",
-                        overdue
-                          ? "text-red-600"
-                          : dueSoon
-                          ? "text-orange-600"
-                          : "text-foreground",
-                      )}
-                    >
-                      {dueDateStr}
-                    </p>
-                    {relDueLabel && (
-                      <p className={cn(
-                        "text-[11px] font-bold tabular-nums",
-                        overdue ? "text-red-600" : dueSoon ? "text-orange-600" : "text-muted-foreground",
-                      )}>
-                        {relDueLabel}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
+              ) : null}
             </div>
 
-            {/* Status / result summary */}
-            <div className="px-6 py-5 space-y-4">
-              {/* Already has a result */}
-              {hasResult && (
-                <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />
+            <div className="space-y-4 px-6 py-5">
+              {hasResult ? (
+                <div className="flex items-center gap-3 rounded-xl border border-success/25 bg-success-soft px-4 py-3">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-success" />
                   <div>
-                    <p className="text-sm font-bold text-emerald-900">Completed</p>
-                    <p className="text-sm text-emerald-800">
-                      {result.correct_count} / {result.total_questions} correct
-                      {" · "}
-                      {Number(result.percent).toFixed(0)}%
-                    </p>
+                    <p className="text-sm font-bold text-success-foreground">Completed</p>
+                    <p className="text-sm text-success-foreground">{result.correct_count} / {result.total_questions} correct · {Number(result.percent).toFixed(0)}%</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/assessments/result/${aid}`)}
-                    className="ml-auto inline-flex items-center gap-1 text-sm font-bold text-emerald-700 hover:underline whitespace-nowrap"
-                  >
+                  <button type="button" onClick={() => router.push(`/assessments/result/${aid}`)} className="ds-ring ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-lg text-sm font-bold text-success-foreground hover:underline">
                     See results <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
-              )}
+              ) : null}
 
-              {/* In progress */}
-              {canResume && !hasResult && (
-                <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
-                  <p className="text-sm font-bold text-amber-900">In progress</p>
-                  <p className="text-sm text-amber-800">
-                    You have an unfinished attempt. Resume to continue where you left off.
-                  </p>
+              {canResume && !hasResult ? (
+                <Alert tone="warning" title="In progress">You have an unfinished attempt. Resume to continue where you left off.</Alert>
+              ) : null}
+
+              {isSubmitted && !hasResult ? (
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-3">
+                  <Spinner className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-semibold text-foreground">Submitted — grading in progress…</p>
                 </div>
-              )}
+              ) : null}
 
-              {/* Submitted, waiting for grading */}
-              {isSubmitted && !hasResult && (
-                <div className="rounded-xl bg-surface-2 border border-border px-4 py-3 flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-                  <p className="text-sm font-semibold text-foreground">
-                    Submitted — grading in progress…
-                  </p>
-                </div>
-              )}
+              {startErr ? <Alert tone="danger">{startErr}</Alert> : null}
 
-              {/* Start error */}
-              {startErr && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
-                  {startErr}
-                </div>
-              )}
-
-              {/* Actions */}
               <div className="flex flex-wrap gap-2 pt-1">
-                {!isGraded && !isSubmitted && (
-                  <button
-                    type="button"
+                {!isGraded && !isSubmitted ? (
+                  <Button
+                    loading={start.isPending}
+                    disabled={!Number.isFinite(aid) || aid <= 0}
+                    leftIcon={<PlayCircle />}
                     onClick={() => void begin()}
-                    disabled={!Number.isFinite(aid) || aid <= 0 || start.isPending}
-                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
                   >
-                    {start.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Starting…
-                      </>
-                    ) : canResume ? (
-                      <>
-                        <PlayCircle className="h-4 w-4" />
-                        Resume
-                      </>
-                    ) : (
-                      <>
-                        <PlayCircle className="h-4 w-4" />
-                        Start assessment
-                      </>
-                    )}
-                  </button>
-                )}
-
-                {canViewResult && (
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/assessments/result/${aid}`)}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-extrabold text-foreground hover:bg-surface-2 transition-colors"
-                  >
-                    View results
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                )}
+                    {start.isPending ? "Starting…" : canResume ? "Resume" : "Start assessment"}
+                  </Button>
+                ) : null}
+                {canViewResult ? (
+                  <Button variant="secondary" rightIcon={<ChevronRight />} onClick={() => router.push(`/assessments/result/${aid}`)}>View results</Button>
+                ) : null}
               </div>
             </div>
-          </div>
+          </Card>
         )}
       </div>
     </AuthGuard>
+  );
+}
+
+function MetaCell({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 px-5 py-3">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <div><p className="ds-overline">{label}</p><p className="text-sm font-semibold text-foreground">{value}</p></div>
+    </div>
   );
 }

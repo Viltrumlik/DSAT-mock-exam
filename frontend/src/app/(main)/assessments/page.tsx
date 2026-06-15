@@ -20,7 +20,6 @@ import {
   ClipboardList,
   Clock,
   ExternalLink,
-  Loader2,
   PlayCircle,
   Plus,
   RefreshCw,
@@ -31,10 +30,10 @@ import {
 import { cn } from "@/lib/cn";
 import AuthGuard from "@/components/AuthGuard";
 import { useMe } from "@/hooks/useMe";
-import { PageHeader } from "@/components/ui/PageHeader";
-import { StatCard } from "@/components/ui/StatCard";
-import { ProgressRing } from "@/components/ui/ProgressRing";
-import { EmptyState } from "@/components/ui/EmptyState";
+import {
+  Card, CardContent, Badge, Button, Stat, ProgressRing, EmptyState, Alert, Skeleton,
+  type BadgeVariant,
+} from "@/components/ui";
 import {
   deriveAssignmentLifecycleState,
   formatAssignmentDue,
@@ -65,7 +64,7 @@ type AssessmentEntry = {
   resumeHref?: string;
 };
 
-// ─── Student-facing assessment state ─────────────────────────────────────────
+// ─── Student-facing assessment state (logic preserved) ───────────────────────
 
 type AssessmentStudentState =
   | "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "OVERDUE" | "DUE_SOON" | "NOT_STARTED";
@@ -81,34 +80,17 @@ function deriveStudentState(entry: AssessmentEntry): AssessmentStudentState {
   return "NOT_STARTED";
 }
 
+// Growth-oriented labels + positive/neutral tones (no "Overdue"/red).
 const STUDENT_STATE_DISPLAY: Record<
   AssessmentStudentState,
-  { label: string; badgeClasses: string; rowClasses: string; description: string; priority: number }
+  { label: string; variant: BadgeVariant; description: string; priority: number }
 > = {
-  IN_PROGRESS: {
-    label: "In progress", badgeClasses: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-400",
-    rowClasses: "bg-amber-50/40 border-amber-200 dark:bg-amber-950/20 dark:border-amber-800/40", description: "Resume where you left off.", priority: 0,
-  },
-  OVERDUE: {
-    label: "Overdue", badgeClasses: "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-400",
-    rowClasses: "bg-red-50/30 border-red-200 dark:bg-red-950/20 dark:border-red-800/40", description: "Past the due date.", priority: 1,
-  },
-  DUE_SOON: {
-    label: "Due soon", badgeClasses: "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-400",
-    rowClasses: "bg-orange-50/20 border-orange-200 dark:bg-orange-950/20 dark:border-orange-800/40", description: "Due within 48 hours.", priority: 2,
-  },
-  NOT_STARTED: {
-    label: "Not started", badgeClasses: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400",
-    rowClasses: "border-border", description: "Not started yet.", priority: 3,
-  },
-  SUBMITTED: {
-    label: "Submitted", badgeClasses: "bg-blue-100 text-blue-800 dark:bg-blue-950/40 dark:text-blue-400",
-    rowClasses: "border-border", description: "Grading in progress.", priority: 4,
-  },
-  COMPLETED: {
-    label: "Completed", badgeClasses: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-400",
-    rowClasses: "border-border", description: "Graded and reviewed.", priority: 5,
-  },
+  IN_PROGRESS: { label: "In progress", variant: "warning", description: "Resume where you left off.", priority: 0 },
+  OVERDUE: { label: "Needs attention", variant: "warning", description: "Past the due date.", priority: 1 },
+  DUE_SOON: { label: "Due soon", variant: "info", description: "Due within 48 hours.", priority: 2 },
+  NOT_STARTED: { label: "Not started", variant: "neutral", description: "Not started yet.", priority: 3 },
+  SUBMITTED: { label: "Submitted", variant: "info", description: "Grading in progress.", priority: 4 },
+  COMPLETED: { label: "Completed", variant: "success", description: "Graded and reviewed.", priority: 5 },
 };
 
 function sortEntries(entries: AssessmentEntry[]): AssessmentEntry[] {
@@ -124,6 +106,12 @@ function sortEntries(entries: AssessmentEntry[]): AssessmentEntry[] {
 
 type FilterValue = "all" | "pending" | "in_progress" | "completed";
 
+function subjectMeta(subject?: string): { label: string; variant: BadgeVariant } | null {
+  if (subject === "MATH") return { label: "Math", variant: "success" };
+  if (subject === "READING_WRITING" || subject === "ENGLISH") return { label: "Reading & Writing", variant: "info" };
+  return subject ? { label: subject, variant: "neutral" } : null;
+}
+
 // ─── Continue Learning ──────────────────────────────────────────────────────
 
 function ContinueLearningSection({ entries }: { entries: AssessmentEntry[] }) {
@@ -132,44 +120,36 @@ function ContinueLearningSection({ entries }: { entries: AssessmentEntry[] }) {
 
   return (
     <section aria-label="Continue learning">
-      <div className="flex items-center gap-2 mb-3">
-        <PlayCircle className="h-4 w-4 text-primary shrink-0" />
-        <h2 className="text-sm font-extrabold uppercase tracking-wide text-foreground">Continue Learning</h2>
-        <span className="rounded-full bg-amber-100 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-black text-amber-800 dark:text-amber-400 tabular-nums">
-          {inProgress.length} in progress
-        </span>
+      <div className="mb-3 flex items-center gap-2">
+        <PlayCircle className="h-4 w-4 shrink-0 text-primary" />
+        <h2 className="ds-h4">Continue learning</h2>
+        <Badge variant="warning">{inProgress.length} in progress</Badge>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {inProgress.map((entry) => {
           const href = entry.resumeHref ?? `/assessments/${entry.assignment.id}`;
           const set = entry.assignment.assessment_homework?.set;
           const title = entry.assignment.title ?? set?.title ?? "Assignment";
-          const subject = set?.subject ?? entry.subject;
-          const subjectLabel = subject === "MATH" ? "Math" : subject === "READING_WRITING" || subject === "ENGLISH" ? "Reading & Writing" : subject ?? null;
+          const subj = subjectMeta(set?.subject ?? entry.subject);
           const dueRelative = formatAssignmentDue(entry.assignment.due_at);
-          const isOverdue = deriveAssignmentLifecycleState(entry.assignment) === "OVERDUE";
 
           return (
-            <Link key={`resume-${entry.classroomId}-${entry.assignment.id}`} href={href}
-              className="group flex flex-col gap-3 rounded-2xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/60 dark:bg-amber-950/20 p-4 transition-all hover:border-primary/30 hover:shadow-sm">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="font-extrabold text-foreground truncate text-sm">{title}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{entry.classroomName}</p>
-                </div>
-                {subjectLabel && (
-                  <span className={cn("rounded-lg px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide shrink-0",
-                    subjectLabel === "Math" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" : "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400")}>
-                    {subjectLabel}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between gap-2">
-                <p className={cn("text-xs font-bold", isOverdue ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400")}>{dueRelative}</p>
-                <span className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground group-hover:bg-primary/90 transition-colors">
-                  <PlayCircle className="h-3.5 w-3.5" /> Resume
-                </span>
-              </div>
+            <Link key={`resume-${entry.classroomId}-${entry.assignment.id}`} href={href} className="ds-ring block rounded-2xl">
+              <Card variant="interactive" className="h-full">
+                <CardContent className="flex h-full flex-col gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-foreground">{title}</p>
+                      <p className="mt-0.5 text-[12px] text-muted-foreground">{entry.classroomName}</p>
+                    </div>
+                    {subj ? <Badge variant={subj.variant}>{subj.label}</Badge> : null}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-2">
+                    <p className="text-[12px] font-bold text-muted-foreground">{dueRelative}</p>
+                    <Badge variant="primary"><PlayCircle className="h-3.5 w-3.5" /> Resume</Badge>
+                  </div>
+                </CardContent>
+              </Card>
             </Link>
           );
         })}
@@ -182,11 +162,7 @@ function ContinueLearningSection({ entries }: { entries: AssessmentEntry[] }) {
 
 function StateChip({ state }: { state: AssessmentStudentState }) {
   const spec = STUDENT_STATE_DISPLAY[state];
-  return (
-    <span title={spec.description} className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide shrink-0", spec.badgeClasses)}>
-      {spec.label}
-    </span>
-  );
+  return <span title={spec.description}><Badge variant={spec.variant}>{spec.label}</Badge></span>;
 }
 
 function ActionButton({ entry, state }: { entry: AssessmentEntry; state: AssessmentStudentState }) {
@@ -194,17 +170,11 @@ function ActionButton({ entry, state }: { entry: AssessmentEntry; state: Assessm
 
   if (state === "COMPLETED" || state === "SUBMITTED") {
     return (
-      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-        <Link href={`/assessments/result/${aid}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors">
-          <CheckCircle2 className="h-3.5 w-3.5" /> {state === "SUBMITTED" ? "View" : "Review"}
-        </Link>
-        {state === "COMPLETED" && (
-          <Link href={`/assessments/${aid}`}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-muted-foreground hover:bg-surface-2 transition-colors">
-            <RefreshCw className="h-3 w-3" /> Retry
-          </Link>
-        )}
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        <Link href={`/assessments/result/${aid}`}><Button variant="secondary" size="sm" leftIcon={<CheckCircle2 />}>{state === "SUBMITTED" ? "View" : "Review"}</Button></Link>
+        {state === "COMPLETED" ? (
+          <Link href={`/assessments/${aid}`}><Button variant="ghost" size="sm" leftIcon={<RefreshCw />}>Retry</Button></Link>
+        ) : null}
       </div>
     );
   }
@@ -221,57 +191,45 @@ function ActionButton({ entry, state }: { entry: AssessmentEntry; state: Assessm
 
   const Icon = config.icon;
   return (
-    <Link href={href}
-      className={cn("inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-colors shrink-0",
-        config.primary ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border border-border bg-card text-foreground hover:bg-surface-2")}>
-      <Icon className="h-3.5 w-3.5" /> {config.label}
+    <Link href={href} className="shrink-0">
+      <Button variant={config.primary ? "primary" : "secondary"} size="sm" leftIcon={<Icon />}>{config.label}</Button>
     </Link>
   );
 }
 
 function AssessmentRow({ entry }: { entry: AssessmentEntry }) {
   const state = deriveStudentState(entry);
-  const spec = STUDENT_STATE_DISPLAY[state];
   const set = entry.assignment.assessment_homework?.set;
   const title = entry.assignment.title ?? set?.title ?? "Assignment";
   const category = set?.category;
-  const subject = set?.subject ?? entry.subject;
+  const subj = subjectMeta(set?.subject ?? entry.subject);
   const dueFull = formatAssignmentDueFull(entry.assignment.due_at);
   const dueRelative = formatAssignmentDue(entry.assignment.due_at);
-  const subjectLabel = subject === "MATH" ? "Math" : subject === "READING_WRITING" || subject === "ENGLISH" ? "Reading & Writing" : subject ?? null;
+  const attention = state === "OVERDUE" || state === "DUE_SOON";
 
   return (
-    <div className={cn("flex items-start gap-4 rounded-2xl border p-4 transition-colors", spec.rowClasses)}>
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-extrabold text-foreground text-sm leading-snug">{title}</p>
-          <StateChip state={state} />
+    <Card>
+      <CardContent className="flex items-start gap-4">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-bold leading-snug text-foreground">{title}</p>
+            <StateChip state={state} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1"><BookOpen className="h-3 w-3 shrink-0" /><span className="font-semibold text-foreground/80">{entry.classroomName}</span></span>
+            {subj ? <Badge variant={subj.variant}>{subj.label}</Badge> : null}
+            {category ? <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{category}</span> : null}
+          </div>
+          {entry.assignment.due_at ? (
+            <p className={cn("text-[12px] font-semibold", attention ? "text-warning-foreground" : "text-muted-foreground")}>
+              {dueFull}
+              {attention ? <span className="ml-1.5 font-bold"> · {dueRelative}</span> : null}
+            </p>
+          ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <BookOpen className="h-3 w-3 shrink-0" />
-            <span className="font-semibold text-foreground/80">{entry.classroomName}</span>
-          </span>
-          {subjectLabel && (
-            <span className={cn("rounded-lg px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-              subjectLabel === "Math" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" : "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400")}>
-              {subjectLabel}
-            </span>
-          )}
-          {category && <span className="rounded-lg bg-surface-2 px-2 py-0.5 text-[9px] font-semibold text-muted-foreground">{category}</span>}
-        </div>
-        {entry.assignment.due_at && (
-          <p className={cn("text-xs font-semibold",
-            state === "OVERDUE" ? "text-red-700 dark:text-red-400 font-bold" :
-            state === "DUE_SOON" ? "text-orange-700 dark:text-orange-400 font-bold" :
-            "text-muted-foreground")}>
-            {dueFull}
-            {(state === "OVERDUE" || state === "DUE_SOON") && <span className="ml-1.5 font-black tabular-nums"> · {dueRelative}</span>}
-          </p>
-        )}
-      </div>
-      <ActionButton entry={entry} state={state} />
-    </div>
+        <ActionButton entry={entry} state={state} />
+      </CardContent>
+    </Card>
   );
 }
 
@@ -294,49 +252,50 @@ function AdminAssessmentSection() {
   }, []);
 
   return (
-    <section className="rounded-2xl border border-primary/20 bg-card p-5 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Settings2 className="h-4 w-4 text-primary shrink-0" />
-          <h2 className="text-sm font-extrabold uppercase tracking-wide text-foreground">Assessment Management</h2>
-          <span className="rounded-lg bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">Admin</span>
+    <Card>
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4 shrink-0 text-primary" />
+            <h2 className="ds-h4">Assessment management</h2>
+            <Badge variant="primary">Admin</Badge>
+          </div>
+          <Link href="/ops/assessments" className="ds-ring inline-flex items-center gap-1 rounded-lg text-xs font-bold text-primary hover:underline">
+            Full builder <ExternalLink className="h-3 w-3" />
+          </Link>
         </div>
-        <Link href="/ops/assessments" className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline">
-          Full builder <ExternalLink className="h-3 w-3" />
-        </Link>
-      </div>
-      {loading ? (
-        <div className="h-20 rounded-xl bg-surface-2 animate-pulse" />
-      ) : sets.length === 0 ? (
-        <EmptyState icon={ClipboardList} title="No assessment sets" description="Create your first assessment set to get started."
-          action={<Link href="/ops/assessments" className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground"><Plus className="h-3.5 w-3.5" /> Create set</Link>} />
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-2">
-          {sets.map((s) => (
-            <div key={s.id} className="flex items-start gap-3 rounded-xl border border-border bg-surface-2/50 p-4 transition-colors hover:border-primary/20">
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-bold text-foreground text-sm truncate">{s.title}</p>
-                  {!s.is_active && <span className="rounded-lg bg-amber-100 dark:bg-amber-950/40 px-2 py-0.5 text-[9px] font-bold text-amber-800 dark:text-amber-400 uppercase">Draft</span>}
+        {loading ? (
+          <Skeleton className="h-20 rounded-xl" />
+        ) : sets.length === 0 ? (
+          <EmptyState compact icon={ClipboardList} title="No assessment sets" description="Create your first assessment set to get started."
+            action={<Link href="/ops/assessments"><Button size="sm" leftIcon={<Plus />}>Create set</Button></Link>} />
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {sets.map((s) => {
+              const subj = subjectMeta(s.subject === "math" ? "MATH" : s.subject === "english" ? "ENGLISH" : s.subject?.toUpperCase());
+              return (
+                <div key={s.id} className="flex items-start gap-3 rounded-xl border border-border bg-surface-1 p-4">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-sm font-bold text-foreground">{s.title}</p>
+                      {!s.is_active ? <Badge variant="warning">Draft</Badge> : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      {subj ? <Badge variant={subj.variant}>{subj.label === "Reading & Writing" ? "R&W" : subj.label}</Badge> : null}
+                      {s.category ? <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{s.category}</span> : null}
+                      {s.question_count != null ? <span className="font-semibold text-muted-foreground">{s.question_count}q</span> : null}
+                    </div>
+                  </div>
+                  <Link href={`/ops/assessments/${s.id}`} className="shrink-0">
+                    <Button variant="ghost" size="sm" rightIcon={<ExternalLink className="h-3 w-3" />}>Edit</Button>
+                  </Link>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className={cn("rounded-lg px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-                    s.subject === "math" || s.subject === "MATH" ? "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" : "bg-violet-50 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400")}>
-                    {s.subject === "math" || s.subject === "MATH" ? "Math" : "R&W"}
-                  </span>
-                  {s.category && <span className="rounded-lg bg-surface-2 px-2 py-0.5 text-[9px] font-semibold text-muted-foreground">{s.category}</span>}
-                  {s.question_count != null && <span className="text-muted-foreground font-semibold">{s.question_count}q</span>}
-                </div>
-              </div>
-              <Link href={`/ops/assessments/${s.id}`}
-                className="shrink-0 inline-flex items-center gap-1 rounded-xl border border-border bg-card px-2.5 py-1.5 text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors">
-                Edit <ExternalLink className="h-2.5 w-2.5" />
-              </Link>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -397,64 +356,41 @@ function AssessmentWorkspace() {
   const completionPct = entries.length > 0 ? Math.round((counts.completed / entries.length) * 100) : 0;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 lg:px-6">
-
-      {/* Header */}
-      <PageHeader
-        eyebrow="Learning"
-        title="My Assessments"
-        description="Homework and assessments assigned by your teachers."
-        actions={!loading ? (
-          <button type="button" onClick={() => void load()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors">
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </button>
-        ) : undefined}
-      />
-
-      {/* Stats Row */}
-      {!loading && entries.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard label="Total" value={entries.length} icon={ClipboardCheck}
-            accent="text-primary bg-primary/10" />
-          <StatCard label="Pending" value={counts.pending} icon={Clock}
-            accent="text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40" />
-          <StatCard label="Completed" value={counts.completed} icon={Trophy}
-            accent="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40" />
-          <div className="rounded-2xl border border-border bg-card p-5 flex items-center gap-4">
-            <ProgressRing value={completionPct} size={48} strokeWidth={5}
-              color={completionPct >= 80 ? "text-emerald-500" : "text-primary"} />
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Done</p>
-              <p className="text-xl font-black tabular-nums text-foreground">{completionPct}%</p>
-            </div>
-          </div>
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 pb-12">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="ds-overline text-primary">Learn</p>
+          <h1 className="ds-h1 mt-1">My assessments</h1>
+          <p className="ds-small mt-1">Homework and assessments assigned by your teachers.</p>
         </div>
-      )}
+        {!loading ? <Button variant="secondary" leftIcon={<RefreshCw />} onClick={() => void load()}>Refresh</Button> : null}
+      </div>
 
-      {/* Admin section */}
-      {isStaff && <AdminAssessmentSection />}
-
-      {/* Continue Learning */}
-      {!loading && <ContinueLearningSection entries={entries} />}
-
-      {/* Attention banner */}
-      {!loading && (counts.overdue > 0 || counts.dueSoon > 0) && (
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/20 px-5 py-4">
-          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <p className="text-sm font-bold text-amber-900 dark:text-amber-100">Work needs attention</p>
-            <p className="text-xs text-amber-700 dark:text-amber-300">
-              {counts.overdue > 0 && <span className="font-bold text-red-800 dark:text-red-400">{counts.overdue} overdue</span>}
-              {counts.overdue > 0 && counts.dueSoon > 0 && <span> · </span>}
-              {counts.dueSoon > 0 && <span className="font-bold text-orange-800 dark:text-orange-400">{counts.dueSoon} due within 48h</span>}
-            </p>
-          </div>
+      {!loading && entries.length > 0 ? (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Stat label="Total" value={entries.length} icon={ClipboardCheck} />
+          <Stat label="Pending" value={counts.pending} icon={Clock} />
+          <Stat label="Completed" value={counts.completed} icon={Trophy} />
+          <Card><CardContent className="flex items-center gap-4">
+            <ProgressRing value={completionPct} size={48} strokeWidth={5} color={completionPct >= 80 ? "text-success" : "text-primary"} />
+            <div><p className="ds-overline">Done</p><p className="ds-num text-xl font-extrabold text-foreground">{completionPct}%</p></div>
+          </CardContent></Card>
         </div>
-      )}
+      ) : null}
 
-      {/* Filters */}
-      {!loading && entries.length > 0 && (
+      {isStaff ? <AdminAssessmentSection /> : null}
+
+      {!loading ? <ContinueLearningSection entries={entries} /> : null}
+
+      {!loading && (counts.overdue > 0 || counts.dueSoon > 0) ? (
+        <Alert tone="warning" title="Work needs attention">
+          {counts.overdue > 0 ? <span className="font-bold">{counts.overdue} past due</span> : null}
+          {counts.overdue > 0 && counts.dueSoon > 0 ? <span> · </span> : null}
+          {counts.dueSoon > 0 ? <span className="font-bold">{counts.dueSoon} due within 48h</span> : null}
+        </Alert>
+      ) : null}
+
+      {!loading && entries.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {([
             { value: "all" as FilterValue, label: `All (${entries.length})` },
@@ -463,57 +399,42 @@ function AssessmentWorkspace() {
             { value: "completed" as FilterValue, label: `Completed (${counts.completed})` },
           ]).map((f) => (
             <button key={f.value} type="button" onClick={() => setFilter(f.value)}
-              className={cn("rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors",
-                filter === f.value ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-card text-muted-foreground hover:bg-surface-2 hover:text-foreground")}>
+              className={cn("ds-ring rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-colors",
+                filter === f.value ? "border-primary/30 bg-primary-soft text-primary" : "border-border bg-card text-muted-foreground hover:bg-surface-2 hover:text-foreground")}>
               {f.label}
             </button>
           ))}
         </div>
-      )}
+      ) : null}
 
-      {/* Error */}
-      {error && <div className="rounded-2xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 p-4 text-sm font-semibold text-red-700 dark:text-red-400">{error}</div>}
+      {error ? <Alert tone="danger" title={error}>Please refresh to try again.</Alert> : null}
 
-      {/* Loading */}
-      {loading && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin shrink-0" /> Loading assessments...
-          </div>
-          {[1, 2, 3].map((i) => <div key={i} className="h-24 rounded-2xl ds-skeleton" />)}
-        </div>
-      )}
+      {loading ? (
+        <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div>
+      ) : null}
 
-      {/* Empty */}
-      {!loading && !error && entries.length === 0 && (
+      {!loading && !error && entries.length === 0 ? (
         <EmptyState icon={ClipboardList} title="No assessments yet"
           description="Your teacher will assign assessments to your classroom. Check back after your next lesson."
-          action={<Link href="/classes" className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors">View your classes</Link>} />
-      )}
+          action={<Link href="/classes"><Button variant="secondary">View your classes</Button></Link>} />
+      ) : null}
 
-      {!loading && !error && entries.length > 0 && filtered.length === 0 && (
-        <div className="rounded-2xl border border-border bg-card p-8 text-center">
-          <p className="font-semibold text-muted-foreground">No {filter === "pending" ? "pending" : filter === "in_progress" ? "in-progress" : "completed"} assessments.</p>
-          <button type="button" onClick={() => setFilter("all")} className="mt-2 text-xs font-bold text-primary hover:underline">Show all</button>
-        </div>
-      )}
+      {!loading && !error && entries.length > 0 && filtered.length === 0 ? (
+        <EmptyState compact title="Nothing here right now" description="No assessments match this filter." action={<Button variant="ghost" size="sm" onClick={() => setFilter("all")}>Show all</Button>} />
+      ) : null}
 
-      {/* List */}
-      {!loading && filtered.length > 0 && (
-        <div className="space-y-2.5">
+      {!loading && filtered.length > 0 ? (
+        <div className="flex flex-col gap-2.5">
           {filtered.map((entry) => <AssessmentRow key={`${entry.classroomId}-${entry.assignment.id}`} entry={entry} />)}
         </div>
-      )}
+      ) : null}
 
-      {/* Domain separator */}
-      {!loading && (
-        <div className="rounded-2xl border border-border bg-card px-5 py-3 flex items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">Assessments</span> are classroom homework — not SAT simulation.
-          </p>
-          <Link href="/mock-exam" className="shrink-0 text-xs font-bold text-primary hover:underline">Go to mock exams</Link>
-        </div>
-      )}
+      {!loading ? (
+        <Card variant="soft"><CardContent className="flex items-center justify-between gap-3 py-3">
+          <p className="text-[12px] text-muted-foreground"><span className="font-semibold text-foreground">Assessments</span> are classroom homework — not SAT simulation.</p>
+          <Link href="/mock-exam" className="ds-ring shrink-0 rounded-lg text-[12px] font-bold text-primary hover:underline">Go to mock exams</Link>
+        </CardContent></Card>
+      ) : null}
     </div>
   );
 }

@@ -7,12 +7,7 @@
  * Purpose: help students understand their mistakes and consolidate learning.
  *
  * DOMAIN BOUNDARY: This route lives under /assessments/* (classroom domain).
- * It must never import from exam/*, review/*, mock/*, or pastpapers/*, and
- * must never reference SAT-simulation concepts (score bands, performance
- * tiers, benchmarks, etc.).
- *
- * Language guide: "improve", "understand", "learn from" — not "score", "perform",
- * "benchmark", "percentile".
+ * Language guide: "improve", "understand", "learn from".
  */
 
 import { useParams, useSearchParams, useRouter } from "next/navigation";
@@ -21,29 +16,19 @@ import AuthGuard from "@/components/AuthGuard";
 import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
 import type { PedagogicalReviewQuestion, TeacherFeedback } from "@/features/assessmentsStudent/api";
 import {
-  ArrowLeft,
-  BookOpen,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Circle,
-  Filter,
-  Lightbulb,
-  Loader2,
-  MessageSquare,
-  RefreshCw,
-  XCircle,
+  ArrowLeft, BookOpen, CheckCircle2, ChevronLeft, ChevronRight, Circle, Filter, Lightbulb, MessageSquare, RefreshCw, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { AssessmentText, HighlightedText } from "@/lib/assessmentText";
 import { readHighlightStore, type HighlightStore } from "@/features/assessments/attemptHighlightStorage";
 import { useState, useEffect, useRef } from "react";
+import { Card, CardContent, Badge, Button, IconButton, ProgressRing, EmptyState, Spinner } from "@/components/ui";
 
 // ─── Filter mode ──────────────────────────────────────────────────────────────
 
 type FilterMode = "all" | "incorrect" | "correct" | "unanswered";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers (business logic preserved verbatim) ─────────────────────────────
 
 function choiceLabel(key: unknown): string {
   if (typeof key === "string") return key.toUpperCase();
@@ -68,7 +53,6 @@ function getQuestionOutcome(q: PedagogicalReviewQuestion): "correct" | "incorrec
   if (q.student_answer === null || q.student_answer === undefined) return "unanswered";
   if (q.is_correct === true) return "correct";
   if (q.is_correct === false) return "incorrect";
-  // Fallback if grading not complete
   return isAnswerMatch(q.student_answer, q.correct_answer) ? "correct" : "incorrect";
 }
 
@@ -83,56 +67,22 @@ function filterQuestions(questions: PedagogicalReviewQuestion[], mode: FilterMod
   });
 }
 
-// ─── Score ring ───────────────────────────────────────────────────────────────
-
-// ─── Teacher feedback card ────────────────────────────────────────────────────
+// ─── Teacher feedback ────────────────────────────────────────────────────────
 
 function TeacherFeedbackCard({ feedback }: { feedback: TeacherFeedback }) {
   return (
-    <div className="rounded-2xl border border-primary/20 bg-primary/5 px-5 py-4 flex gap-3">
-      <MessageSquare className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between gap-2 mb-1">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-primary">
-            {feedback.teacher_name ? `Feedback from ${feedback.teacher_name}` : "Teacher feedback"}
-          </p>
-          <span className="text-[10px] text-muted-foreground shrink-0">
-            {new Date(feedback.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-          </span>
+    <Card className="border-primary/20 bg-primary-soft">
+      <CardContent className="flex gap-3">
+        <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <p className="ds-overline text-primary">{feedback.teacher_name ? `Feedback from ${feedback.teacher_name}` : "Teacher feedback"}</p>
+            <span className="shrink-0 text-[10px] text-muted-foreground">{new Date(feedback.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+          </div>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">{feedback.body}</p>
         </div>
-        <p className="text-sm leading-relaxed text-foreground whitespace-pre-line">{feedback.body}</p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Score ring ───────────────────────────────────────────────────────────────
-
-function ScoreRing({ percent }: { percent: number }) {
-  const r = 36;
-  const circ = 2 * Math.PI * r;
-  const filled = circ * Math.min(1, Math.max(0, percent / 100));
-  const color = percent >= 80 ? "#10b981" : percent >= 60 ? "#f59e0b" : "#ef4444";
-
-  return (
-    <svg width="96" height="96" viewBox="0 0 96 96" className="shrink-0">
-      <circle cx="48" cy="48" r={r} fill="none" stroke="currentColor" strokeWidth="8" className="text-border" />
-      <circle
-        cx="48"
-        cy="48"
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="8"
-        strokeDasharray={`${filled} ${circ}`}
-        strokeLinecap="round"
-        transform="rotate(-90 48 48)"
-        style={{ transition: "stroke-dasharray 0.6s ease" }}
-      />
-      <text x="48" y="53" textAnchor="middle" fill={color} fontSize="18" fontWeight="700">
-        {Math.round(percent)}%
-      </text>
-    </svg>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -141,52 +91,32 @@ function ScoreRing({ percent }: { percent: number }) {
 type Choice = { key: string; text: string } | string;
 
 function ChoiceRow({
-  choice,
-  choiceKey,
-  isSelected,
-  isCorrect: isCorrectChoice,
-  reviewMode,
+  choice, choiceKey, isSelected, isCorrect: isCorrectChoice, reviewMode,
 }: {
-  choice: Choice;
-  choiceKey: string;
-  isSelected: boolean;
-  isCorrect: boolean;
-  reviewMode: boolean;
+  choice: Choice; choiceKey: string; isSelected: boolean; isCorrect: boolean; reviewMode: boolean;
 }) {
   const text = typeof choice === "object" && "text" in choice ? choice.text : String(choice);
   const label = choiceLabel(choiceKey);
 
   let ring = "border-border bg-card text-foreground";
   if (reviewMode) {
-    if (isCorrectChoice) ring = "border-emerald-400 bg-emerald-50 text-emerald-900";
-    else if (isSelected && !isCorrectChoice) ring = "border-red-400 bg-red-50 text-red-900";
+    if (isCorrectChoice) ring = "border-success/50 bg-success-soft text-success-foreground";
+    else if (isSelected && !isCorrectChoice) ring = "border-danger/50 bg-danger-soft text-danger-foreground";
   } else if (isSelected) {
-    ring = "border-primary bg-primary/5 text-foreground";
+    ring = "border-primary bg-primary-soft text-foreground";
   }
 
   return (
     <div className={cn("flex items-start gap-3 rounded-xl border px-4 py-3 transition-colors", ring)}>
-      <span
-        className={cn(
-          "shrink-0 mt-0.5 flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
-          reviewMode && isCorrectChoice
-            ? "bg-emerald-500 text-white"
-            : reviewMode && isSelected && !isCorrectChoice
-              ? "bg-red-500 text-white"
-              : isSelected
-                ? "bg-primary text-primary-foreground"
-                : "bg-surface-2 text-muted-foreground",
-        )}
-      >
+      <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+        reviewMode && isCorrectChoice ? "bg-success text-white"
+          : reviewMode && isSelected && !isCorrectChoice ? "bg-danger text-white"
+            : isSelected ? "bg-primary text-primary-foreground" : "bg-surface-2 text-muted-foreground")}>
         {label}
       </span>
       <AssessmentText text={text} className="text-sm leading-relaxed" />
-      {reviewMode && isCorrectChoice && (
-        <CheckCircle2 className="ml-auto shrink-0 mt-0.5 h-4 w-4 text-emerald-500" />
-      )}
-      {reviewMode && isSelected && !isCorrectChoice && (
-        <XCircle className="ml-auto shrink-0 mt-0.5 h-4 w-4 text-red-500" />
-      )}
+      {reviewMode && isCorrectChoice ? <CheckCircle2 className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-success" /> : null}
+      {reviewMode && isSelected && !isCorrectChoice ? <XCircle className="ml-auto mt-0.5 h-4 w-4 shrink-0 text-danger" /> : null}
     </div>
   );
 }
@@ -194,149 +124,84 @@ function ChoiceRow({
 // ─── Question card ────────────────────────────────────────────────────────────
 
 function QuestionCard({
-  q,
-  index,
-  total,
-  questionHighlight,
-  passageHighlight,
+  q, index, total, questionHighlight, passageHighlight,
 }: {
-  q: PedagogicalReviewQuestion;
-  index: number;
-  total: number;
-  /** Saved highlight HTML for the stem (read-only); falls back to AssessmentText. */
-  questionHighlight?: string | null;
-  /** Saved highlight HTML for the passage (read-only); falls back to AssessmentText. */
-  passageHighlight?: string | null;
+  q: PedagogicalReviewQuestion; index: number; total: number;
+  questionHighlight?: string | null; passageHighlight?: string | null;
 }) {
   const outcome = getQuestionOutcome(q);
   const choices: Choice[] = Array.isArray(q.choices) ? q.choices : [];
   const correctKey = normalizeAnswer(q.correct_answer);
   const studentKey = normalizeAnswer(q.student_answer);
-
-  // Determine if this question is multiple choice
   const isMCQ = q.question_type === "multiple_choice";
 
+  const outcomeVariant = outcome === "correct" ? "success" : outcome === "incorrect" ? "danger" : "neutral";
+  const headerTint = outcome === "correct" ? "bg-success-soft" : outcome === "incorrect" ? "bg-danger-soft" : "bg-surface-2";
+
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      {/* Question header bar */}
-      <div
-        className={cn(
-          "flex items-center justify-between gap-3 px-5 py-3 border-b border-border",
-          outcome === "correct"
-            ? "bg-emerald-50/60"
-            : outcome === "incorrect"
-              ? "bg-red-50/60"
-              : "bg-surface-2/50",
-        )}
-      >
+    <Card>
+      <div className={cn("flex items-center justify-between gap-3 border-b border-border px-5 py-3", headerTint)}>
         <div className="flex items-center gap-2">
-          {outcome === "correct" ? (
-            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-          ) : outcome === "incorrect" ? (
-            <XCircle className="h-4 w-4 text-red-500 shrink-0" />
-          ) : (
-            <Circle className="h-4 w-4 text-muted-foreground shrink-0" />
-          )}
-          <span className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
-            Question {index + 1} of {total}
-          </span>
+          {outcome === "correct" ? <CheckCircle2 className="h-4 w-4 shrink-0 text-success" /> : outcome === "incorrect" ? <XCircle className="h-4 w-4 shrink-0 text-danger" /> : <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />}
+          <span className="ds-overline">Question {index + 1} of {total}</span>
         </div>
-        <span
-          className={cn(
-            "text-xs font-bold px-2 py-0.5 rounded-lg",
-            outcome === "correct"
-              ? "bg-emerald-100 text-emerald-700"
-              : outcome === "incorrect"
-                ? "bg-red-100 text-red-700"
-                : "bg-surface-2 text-muted-foreground",
-          )}
-        >
-          {outcome === "correct" ? "Correct" : outcome === "incorrect" ? "Incorrect" : "Not answered"}
-        </span>
+        <Badge variant={outcomeVariant}>{outcome === "correct" ? "Correct" : outcome === "incorrect" ? "Incorrect" : "Not answered"}</Badge>
       </div>
 
-      <div className="p-5 space-y-4">
-        {/* Passage / stimulus (if present) */}
-        {q.question_prompt && q.question_prompt.trim().length > 0 && (
+      <CardContent className="space-y-4">
+        {q.question_prompt && q.question_prompt.trim().length > 0 ? (
           passageHighlight ? (
-            <HighlightedText
-              html={passageHighlight}
-              className="rounded-xl border-l-4 border-primary/40 bg-surface-2/50 pl-4 pr-4 py-3 text-sm leading-relaxed text-foreground max-h-40 overflow-y-auto sm:max-h-none sm:overflow-visible"
-            />
+            <HighlightedText html={passageHighlight} className="max-h-40 overflow-y-auto rounded-xl border-l-4 border-primary/40 bg-surface-2 py-3 pl-4 pr-4 text-sm leading-relaxed text-foreground sm:max-h-none sm:overflow-visible" />
           ) : (
-            <AssessmentText
-              text={q.question_prompt}
-              block
-              className="rounded-xl border-l-4 border-primary/40 bg-surface-2/50 pl-4 pr-4 py-3 text-sm leading-relaxed text-foreground max-h-40 overflow-y-auto sm:max-h-none sm:overflow-visible"
-            />
+            <AssessmentText text={q.question_prompt} block className="max-h-40 overflow-y-auto rounded-xl border-l-4 border-primary/40 bg-surface-2 py-3 pl-4 pr-4 text-sm leading-relaxed text-foreground sm:max-h-none sm:overflow-visible" />
           )
-        )}
+        ) : null}
 
-        {/* Question stem */}
         {questionHighlight ? (
           <HighlightedText html={questionHighlight} className="text-sm font-medium leading-relaxed text-foreground" />
         ) : (
           <AssessmentText text={q.prompt} block className="text-sm font-medium leading-relaxed text-foreground" />
         )}
 
-        {/* MCQ choices */}
-        {isMCQ && choices.length > 0 && (
+        {isMCQ && choices.length > 0 ? (
           <div className="space-y-2">
             {choices.map((choice, ci) => {
               const key = typeof choice === "object" && "key" in choice ? choice.key : String.fromCharCode(65 + ci);
               const isSelected = key === studentKey || String(ci) === studentKey;
               const isCorrectChoice = key === correctKey || String(ci) === correctKey;
-              return (
-                <ChoiceRow
-                  key={key}
-                  choice={choice}
-                  choiceKey={key}
-                  isSelected={isSelected}
-                  isCorrect={isCorrectChoice}
-                  reviewMode
-                />
-              );
+              return <ChoiceRow key={key} choice={choice} choiceKey={key} isSelected={isSelected} isCorrect={isCorrectChoice} reviewMode />;
             })}
           </div>
-        )}
+        ) : null}
 
-        {/* Short answer / numeric */}
-        {!isMCQ && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="rounded-xl border border-border bg-surface-2/50 px-4 py-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-1">Your answer</p>
+        {!isMCQ ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border bg-surface-2 px-4 py-3">
+              <p className="ds-overline mb-1">Your answer</p>
               {studentKey ? (
-                <AssessmentText
-                  text={studentKey}
-                  className={cn("text-sm font-medium", outcome === "correct" ? "text-emerald-700" : "text-red-700")}
-                />
+                <AssessmentText text={studentKey} className={cn("text-sm font-medium", outcome === "correct" ? "text-success-foreground" : "text-danger-foreground")} />
               ) : (
-                <p className="text-sm font-medium"><span className="text-muted-foreground italic">No answer</span></p>
+                <p className="text-sm font-medium"><span className="italic text-muted-foreground">No answer</span></p>
               )}
             </div>
-            <div className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 mb-1">Correct answer</p>
-              {correctKey ? (
-                <AssessmentText text={correctKey} className="text-sm font-medium text-emerald-800" />
-              ) : (
-                <p className="text-sm font-medium text-emerald-800">—</p>
-              )}
+            <div className="rounded-xl border border-success/30 bg-success-soft px-4 py-3">
+              <p className="ds-overline mb-1 text-success-foreground">Correct answer</p>
+              {correctKey ? <AssessmentText text={correctKey} className="text-sm font-medium text-success-foreground" /> : <p className="text-sm font-medium text-success-foreground">—</p>}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Explanation */}
-        {q.explanation && q.explanation.trim().length > 0 && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 flex gap-3">
-            <Lightbulb className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+        {q.explanation && q.explanation.trim().length > 0 ? (
+          <div className="flex gap-3 rounded-xl border border-warning/25 bg-warning-soft px-4 py-3">
+            <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1">Why this answer works</p>
-              <AssessmentText text={q.explanation} block className="text-sm leading-relaxed text-amber-900" />
+              <p className="ds-overline mb-1 text-warning-foreground">Why this answer works</p>
+              <AssessmentText text={q.explanation} block className="text-sm leading-relaxed text-warning-foreground" />
             </div>
           </div>
-        )}
-      </div>
-    </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -349,15 +214,13 @@ function PedagogicalReviewContent() {
   const queryClient = useQueryClient();
 
   const attemptId = Number(params.attemptId);
-  const initialQ = Number(searchParams.get("q") ?? "1") - 1; // 0-indexed
+  const initialQ = Number(searchParams.get("q") ?? "1") - 1;
 
   const [filter, setFilter] = useState<FilterMode>("all");
   const [currentIndex, setCurrentIndex] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
 
-  // Saved highlights for this attempt (frontend-only persistence, read-only here).
-  // Loaded after mount to avoid SSR/hydration mismatch on localStorage access.
   const [highlights, setHighlights] = useState<HighlightStore | null>(null);
   useEffect(() => {
     if (!isNaN(attemptId) && attemptId > 0) setHighlights(readHighlightStore(attemptId));
@@ -371,17 +234,12 @@ function PedagogicalReviewContent() {
     retry: 1,
   });
 
-  // Retry mutation — starts a new attempt, optionally focused on incorrect questions
   const retryMutation = useMutation({
     mutationFn: async ({ focusIds }: { focusIds?: number[] }) => {
       const assignmentId = data?.meta?.assignment_id;
       if (!assignmentId) throw new Error("Assignment not found");
-      const payload: Parameters<typeof assessmentsStudentApi.start>[0] = {
-        assignment_id: assignmentId,
-      };
-      if (focusIds && focusIds.length > 0) {
-        payload.focus_question_ids = focusIds;
-      }
+      const payload: Parameters<typeof assessmentsStudentApi.start>[0] = { assignment_id: assignmentId };
+      if (focusIds && focusIds.length > 0) payload.focus_question_ids = focusIds;
       const attempt = await assessmentsStudentApi.start(payload);
       return attempt;
     },
@@ -392,64 +250,44 @@ function PedagogicalReviewContent() {
     onError: () => setRetryError("Could not start retry. Please try again."),
   });
 
-  // Initialise to the question from the ?q= param once data loads
   useEffect(() => {
     if (data && initialQ >= 0 && initialQ < data.questions.length) {
       const filtered = filterQuestions(data.questions, filter);
-      // Try to find the same question in filtered view
       const targetQ = data.questions[initialQ];
       if (targetQ) {
         const idx = filtered.findIndex((q) => q.id === targetQ.id);
         setCurrentIndex(idx >= 0 ? idx : 0);
       }
     }
-    // Only run once on load
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
   if (isLoading) {
-    return (
-      <div className="flex h-dvh items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <div className="flex h-dvh items-center justify-center"><Spinner className="h-6 w-6 text-muted-foreground" /></div>;
   }
 
   if (isError || !data) {
     return (
-      <div className="flex h-dvh flex-col items-center justify-center gap-4 px-6 text-center">
-        <p className="text-base font-semibold text-foreground">Review not available</p>
-        <p className="text-sm text-muted-foreground max-w-xs">
-          This review is only accessible after submitting your work. If you believe this is an error, please contact
-          your teacher.
-        </p>
-        <button
-          type="button"
-          onClick={() => router.push("/assessments")}
-          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to assignments
-        </button>
+      <div className="flex h-dvh items-center justify-center px-6">
+        <EmptyState
+          title="Review not available"
+          description="This review is only accessible after submitting your work. If you believe this is an error, please contact your teacher."
+          action={<Button leftIcon={<ArrowLeft />} onClick={() => router.push("/assessments")}>Back to assignments</Button>}
+        />
       </div>
     );
   }
 
   const { meta, result, questions } = data;
-
   const filteredQuestions = filterQuestions(questions, filter);
   const safeIndex = Math.min(currentIndex, Math.max(0, filteredQuestions.length - 1));
   const current = filteredQuestions[safeIndex] ?? null;
 
-  // Counts for filter tabs
   const incorrectCount = questions.filter((q) => getQuestionOutcome(q) === "incorrect").length;
   const correctCount = questions.filter((q) => getQuestionOutcome(q) === "correct").length;
   const unansweredCount = questions.filter((q) => getQuestionOutcome(q) === "unanswered").length;
 
-  const handleFilterChange = (mode: FilterMode) => {
-    setFilter(mode);
-    setCurrentIndex(0);
-  };
+  const handleFilterChange = (mode: FilterMode) => { setFilter(mode); setCurrentIndex(0); };
 
   const navigate = (delta: number) => {
     setCurrentIndex((prev) => {
@@ -460,255 +298,135 @@ function PedagogicalReviewContent() {
     cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const pct = result ? Number(result.percent) : 0;
+  const ringColor = pct >= 75 ? "text-success" : pct >= 50 ? "text-primary" : "text-warning";
+
   return (
-    <div className="min-h-dvh bg-background">
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur-sm">
-        <div className="mx-auto max-w-2xl px-4 py-3 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border hover:bg-surface-2 transition-colors"
-            aria-label="Go back"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div className="flex-1 min-w-0">
-            {meta.classroom_name && (
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] truncate">
-                {meta.classroom_name}
-              </p>
-            )}
-            <p className="text-sm font-bold text-foreground truncate leading-tight">
-              {meta.assignment_title ?? meta.set_title ?? "Assignment review"}
-            </p>
+    <div className="ds-app min-h-dvh bg-background">
+      {/* Header */}
+      <header className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur">
+        <div className="mx-auto flex max-w-2xl items-center gap-3 px-4 py-3">
+          <IconButton variant="default" size="sm" aria-label="Go back" onClick={() => router.back()}><ArrowLeft className="h-4 w-4" /></IconButton>
+          <div className="min-w-0 flex-1">
+            {meta.classroom_name ? <p className="ds-overline truncate">{meta.classroom_name}</p> : null}
+            <p className="truncate text-sm font-bold leading-tight text-foreground">{meta.assignment_title ?? meta.set_title ?? "Assignment review"}</p>
           </div>
-          {meta.set_category && (
-            <span className="hidden sm:inline-flex items-center gap-1 rounded-lg bg-surface-2 px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wide shrink-0">
-              <BookOpen className="h-3 w-3" />
-              {meta.set_category}
-            </span>
-          )}
+          {meta.set_category ? <span className="hidden shrink-0 sm:inline-flex"><Badge variant="neutral"><BookOpen className="h-3 w-3" /> {meta.set_category}</Badge></span> : null}
         </div>
       </header>
 
-      <div className="mx-auto max-w-2xl px-4 py-6 space-y-6">
-        {/* ── Summary card ── */}
+      <div className="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-6">
+        {/* Summary */}
         {result ? (
-          <div className="rounded-2xl border border-border bg-card p-5">
-            <div className="flex items-center gap-5">
-              <ScoreRing percent={Number(result.percent)} />
-              <div className="flex-1 min-w-0 space-y-1">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Your results</p>
-                <p className="text-2xl font-black text-foreground leading-none">
-                  {result.correct_count}
-                  <span className="text-base font-semibold text-muted-foreground">/{result.total_questions}</span>
-                  <span className="ml-2 text-sm font-semibold text-muted-foreground">correct</span>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {result.score_points} of {result.max_points} points
-                </p>
+          <Card>
+            <CardContent>
+              <div className="flex items-center gap-5">
+                <ProgressRing value={pct} size={96} strokeWidth={8} color={ringColor} showLabel={false}>
+                  <span className={cn("ds-num text-lg font-extrabold", ringColor)}>{Math.round(pct)}%</span>
+                </ProgressRing>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="ds-overline">Your results</p>
+                  <p className="ds-num text-2xl font-extrabold leading-none text-foreground">
+                    {result.correct_count}<span className="text-base font-semibold text-muted-foreground">/{result.total_questions}</span>
+                    <span className="ml-2 text-sm font-semibold text-muted-foreground">correct</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">{result.score_points} of {result.max_points} points</p>
+                </div>
               </div>
-            </div>
 
-            {/* Mini stat pills */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              {correctCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-700">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {correctCount} correct
-                </span>
-              )}
-              {incorrectCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-xl bg-red-100 px-3 py-1.5 text-xs font-bold text-red-700">
-                  <XCircle className="h-3.5 w-3.5" />
-                  {incorrectCount} to improve
-                </span>
-              )}
-              {unansweredCount > 0 && (
-                <span className="inline-flex items-center gap-1.5 rounded-xl bg-surface-2 px-3 py-1.5 text-xs font-bold text-muted-foreground">
-                  <Circle className="h-3.5 w-3.5" />
-                  {unansweredCount} unanswered
-                </span>
-              )}
-            </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {correctCount > 0 ? <Badge variant="success"><CheckCircle2 className="h-3.5 w-3.5" /> {correctCount} correct</Badge> : null}
+                {incorrectCount > 0 ? <Badge variant="danger"><XCircle className="h-3.5 w-3.5" /> {incorrectCount} to improve</Badge> : null}
+                {unansweredCount > 0 ? <Badge variant="neutral"><Circle className="h-3.5 w-3.5" /> {unansweredCount} unanswered</Badge> : null}
+              </div>
 
-            {/* Retry actions */}
-            <div className="mt-4 flex flex-col sm:flex-row gap-2">
-              {incorrectCount > 0 && (
-                <button
-                  type="button"
-                  disabled={retryMutation.isPending}
-                  onClick={() => {
-                    const incorrectIds = questions
-                      .filter((q) => getQuestionOutcome(q) === "incorrect")
-                      .map((q) => q.id);
-                    retryMutation.mutate({ focusIds: incorrectIds });
-                  }}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                >
-                  {retryMutation.isPending ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  )}
-                  Try the {incorrectCount} missed question{incorrectCount !== 1 ? "s" : ""} again
-                </button>
-              )}
-              {data?.meta?.assignment_id && (
-                <button
-                  type="button"
-                  disabled={retryMutation.isPending}
-                  onClick={() => retryMutation.mutate({})}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                  Try all questions again
-                </button>
-              )}
-            </div>
-            {retryError && <p className="mt-2 text-xs text-red-600">{retryError}</p>}
-          </div>
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                {incorrectCount > 0 ? (
+                  <Button
+                    variant="secondary" fullWidth loading={retryMutation.isPending} leftIcon={<RefreshCw />}
+                    onClick={() => {
+                      const incorrectIds = questions.filter((q) => getQuestionOutcome(q) === "incorrect").map((q) => q.id);
+                      retryMutation.mutate({ focusIds: incorrectIds });
+                    }}
+                  >
+                    Try the {incorrectCount} missed question{incorrectCount !== 1 ? "s" : ""} again
+                  </Button>
+                ) : null}
+                {data?.meta?.assignment_id ? (
+                  <Button variant="secondary" fullWidth leftIcon={<RefreshCw />} disabled={retryMutation.isPending} onClick={() => retryMutation.mutate({})}>Try all questions again</Button>
+                ) : null}
+              </div>
+              {retryError ? <p className="mt-2 text-xs text-danger-foreground">{retryError}</p> : null}
+            </CardContent>
+          </Card>
         ) : (
-          <div className="rounded-2xl border border-border bg-card px-5 py-4 flex items-center gap-3">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
-            <p className="text-sm text-muted-foreground">Grading in progress — check back shortly.</p>
-          </div>
+          <Card><CardContent className="flex items-center gap-3"><Spinner className="h-4 w-4 text-muted-foreground" /><p className="text-sm text-muted-foreground">Grading in progress — check back shortly.</p></CardContent></Card>
         )}
 
-        {/* ── Teacher feedback ── */}
-        {data?.teacher_feedback && <TeacherFeedbackCard feedback={data.teacher_feedback} />}
+        {data?.teacher_feedback ? <TeacherFeedbackCard feedback={data.teacher_feedback} /> : null}
 
-        {/* ── Filter bar ── */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          {(
-            [
-              { mode: "all" as FilterMode, label: `All (${questions.length})` },
-              { mode: "incorrect" as FilterMode, label: `Improve (${incorrectCount})`, disabled: incorrectCount === 0 },
-              { mode: "correct" as FilterMode, label: `Correct (${correctCount})`, disabled: correctCount === 0 },
-              { mode: "unanswered" as FilterMode, label: `Skipped (${unansweredCount})`, disabled: unansweredCount === 0 },
-            ] as { mode: FilterMode; label: string; disabled?: boolean }[]
-          ).map(({ mode, label, disabled }) => (
-            <button
-              key={mode}
-              type="button"
-              disabled={disabled}
-              onClick={() => handleFilterChange(mode)}
-              className={cn(
-                "shrink-0 rounded-xl px-3 py-1.5 text-xs font-bold transition-colors whitespace-nowrap",
-                filter === mode
-                  ? "bg-foreground text-background"
-                  : "border border-border bg-card text-muted-foreground hover:bg-surface-2 disabled:opacity-40",
-              )}
-            >
+        {/* Filter bar */}
+        <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1">
+          <Filter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          {([
+            { mode: "all" as FilterMode, label: `All (${questions.length})` },
+            { mode: "incorrect" as FilterMode, label: `Improve (${incorrectCount})`, disabled: incorrectCount === 0 },
+            { mode: "correct" as FilterMode, label: `Correct (${correctCount})`, disabled: correctCount === 0 },
+            { mode: "unanswered" as FilterMode, label: `Skipped (${unansweredCount})`, disabled: unansweredCount === 0 },
+          ] as { mode: FilterMode; label: string; disabled?: boolean }[]).map(({ mode, label, disabled }) => (
+            <button key={mode} type="button" disabled={disabled} onClick={() => handleFilterChange(mode)}
+              className={cn("ds-ring shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
+                filter === mode ? "border-primary/30 bg-primary-soft text-primary" : "border-border bg-card text-muted-foreground hover:bg-surface-2 disabled:opacity-40")}>
               {label}
             </button>
           ))}
         </div>
 
-        {/* ── Question navigator (dot row) ── */}
-        {filteredQuestions.length > 0 && (
+        {/* Dot navigator */}
+        {filteredQuestions.length > 0 ? (
           <div className="flex items-center gap-1 overflow-x-auto pb-1">
             {filteredQuestions.map((q, i) => {
               const outcome = getQuestionOutcome(q);
+              const active = i === safeIndex;
               return (
-                <button
-                  key={q.id}
-                  type="button"
-                  onClick={() => {
-                    setCurrentIndex(i);
-                    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className={cn(
-                    "shrink-0 rounded-full transition-all",
-                    i === safeIndex ? "w-6 h-6" : "w-5 h-5",
-                    outcome === "correct"
-                      ? i === safeIndex
-                        ? "bg-emerald-500"
-                        : "bg-emerald-200 hover:bg-emerald-300"
-                      : outcome === "incorrect"
-                        ? i === safeIndex
-                          ? "bg-red-500"
-                          : "bg-red-200 hover:bg-red-300"
-                        : i === safeIndex
-                          ? "bg-muted-foreground"
-                          : "bg-border hover:bg-muted-foreground/30",
-                  )}
-                  aria-label={`Go to question ${i + 1}`}
+                <button key={q.id} type="button" aria-label={`Go to question ${i + 1}`}
+                  onClick={() => { setCurrentIndex(i); cardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                  className={cn("ds-ring shrink-0 rounded-full transition-all", active ? "h-6 w-6" : "h-5 w-5",
+                    outcome === "correct" ? (active ? "bg-success" : "bg-success/40 hover:bg-success/60")
+                      : outcome === "incorrect" ? (active ? "bg-danger" : "bg-danger/40 hover:bg-danger/60")
+                        : (active ? "bg-muted-foreground" : "bg-border hover:bg-muted-foreground/40"))}
                 />
               );
             })}
           </div>
-        )}
+        ) : null}
 
-        {/* ── Question card ── */}
+        {/* Question card */}
         <div ref={cardRef}>
           {filteredQuestions.length === 0 ? (
-            <div className="rounded-2xl border border-border bg-card px-5 py-12 text-center">
-              <p className="text-sm font-semibold text-foreground">No questions in this view</p>
-              <button
-                type="button"
-                onClick={() => handleFilterChange("all")}
-                className="mt-3 text-xs text-primary underline underline-offset-2"
-              >
-                Show all questions
-              </button>
-            </div>
+            <EmptyState compact title="No questions in this view" action={<Button variant="ghost" size="sm" onClick={() => handleFilterChange("all")}>Show all questions</Button>} />
           ) : current ? (
-            <QuestionCard
-              q={current}
-              index={safeIndex}
-              total={filteredQuestions.length}
-              questionHighlight={highlights?.question[current.id] ?? null}
-              passageHighlight={highlights?.passage[current.id] ?? null}
-            />
+            <QuestionCard q={current} index={safeIndex} total={filteredQuestions.length} questionHighlight={highlights?.question[current.id] ?? null} passageHighlight={highlights?.passage[current.id] ?? null} />
           ) : null}
         </div>
 
-        {/* ── Prev / Next navigation ── */}
-        {filteredQuestions.length > 1 && (
+        {/* Prev / Next */}
+        {filteredQuestions.length > 1 ? (
           <div className="flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              disabled={safeIndex === 0}
-              className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-30 transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Previous
-            </button>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {safeIndex + 1} / {filteredQuestions.length}
-            </span>
-            <button
-              type="button"
-              onClick={() => navigate(1)}
-              disabled={safeIndex === filteredQuestions.length - 1}
-              className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-30 transition-colors"
-            >
-              Next
-              <ChevronRight className="h-4 w-4" />
-            </button>
+            <Button variant="secondary" leftIcon={<ChevronLeft />} disabled={safeIndex === 0} onClick={() => navigate(-1)}>Previous</Button>
+            <span className="ds-num text-xs text-muted-foreground">{safeIndex + 1} / {filteredQuestions.length}</span>
+            <Button variant="secondary" rightIcon={<ChevronRight />} disabled={safeIndex === filteredQuestions.length - 1} onClick={() => navigate(1)}>Next</Button>
           </div>
-        )}
+        ) : null}
 
-        {/* ── Bottom CTA ── */}
-        <div className="rounded-2xl border border-border bg-card px-5 py-4 flex flex-col sm:flex-row items-center gap-3 justify-between">
-          <p className="text-sm text-muted-foreground text-center sm:text-left">
-            Ready to move on? Head back to your assignments.
-          </p>
-          <button
-            type="button"
-            onClick={() => router.push("/assessments")}
-            className="shrink-0 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            My assignments
-          </button>
-        </div>
+        {/* Bottom CTA */}
+        <Card variant="soft">
+          <CardContent className="flex flex-col items-center justify-between gap-3 sm:flex-row">
+            <p className="text-center text-sm text-muted-foreground sm:text-left">Ready to move on? Head back to your assignments.</p>
+            <Button className="shrink-0" leftIcon={<ArrowLeft />} onClick={() => router.push("/assessments")}>My assignments</Button>
+          </CardContent>
+        </Card>
 
-        {/* Bottom safe-area padding for mobile */}
         <div className="h-8 sm:hidden" />
       </div>
     </div>

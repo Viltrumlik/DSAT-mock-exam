@@ -7,18 +7,11 @@ import { examsPublicApi, type PastpaperPackPublic, type PastpaperPackSection } f
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { useMe } from "@/hooks/useMe";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
-import {
-  ArrowLeft,
-  BookOpen,
-  Calculator,
-  Calendar,
-  CheckCircle2,
-  Eye,
-  Play,
-  Trophy,
-} from "lucide-react";
+import { ArrowLeft, BookOpen, Calculator, Calendar, Eye, Play, Trophy } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { Card, CardContent, Badge, Button, EmptyState, Spinner } from "@/components/ui";
 
-// ─── helpers ─────────────────────────────────────────────────────────────────
+// ─── helpers (preserved) ─────────────────────────────────────────────────────
 
 function formatDate(s: string | null): string {
   if (!s) return "Undated";
@@ -44,195 +37,99 @@ function totalMinutes(section: PastpaperPackSection): number {
   return section.module_count * 35;
 }
 
+type AttemptRow = { id: number; practice_test: number; is_completed: boolean; is_expired: boolean; score?: number | null };
+
 // ─── section card ─────────────────────────────────────────────────────────────
 
-type AttemptRow = {
-  id: number;
-  practice_test: number;
-  is_completed: boolean;
-  is_expired: boolean;
-  score?: number | null;
-};
-
 function SectionCard({
-  section,
-  attempts,
-  onStart,
-  starting,
-  startError,
-  locked,
-  lockReason,
+  section, attempts, onStart, starting, startError, locked, lockReason,
 }: {
   section: PastpaperPackSection;
   attempts: AttemptRow[];
   onStart: (sectionId: number) => void;
   starting: number | null;
-  startError?: string | null;  // error message for THIS section only
+  startError?: string | null;
   locked?: boolean;
   lockReason?: string;
 }) {
   const rw = isRWSubject(section.subject);
   const Icon = rw ? BookOpen : Calculator;
-  const iconColor = rw ? "text-primary" : "text-emerald-600";
-  const iconBg = rw ? "bg-primary/8" : "bg-emerald-50";
-  const borderColor = locked
-    ? "border-border"
-    : rw
-    ? "border-primary/20"
-    : "border-emerald-200";
-  const ctaClass = locked
-    ? "bg-surface-2 text-muted-foreground cursor-not-allowed"
-    : rw
-    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-    : "bg-emerald-600 text-white hover:bg-emerald-700";
-
-  const sectionAttempts = attempts
-    .filter((a) => a.practice_test === section.id)
-    .sort((a, b) => b.id - a.id);
+  const sectionAttempts = attempts.filter((a) => a.practice_test === section.id).sort((a, b) => b.id - a.id);
   const activeAttempt = sectionAttempts.find((a) => !a.is_completed && !a.is_expired);
   const completedAttempt = sectionAttempts.find((a) => a.is_completed);
   const isCompleted = !!completedAttempt;
   const isLoading = starting === section.id;
 
   return (
-    <div className={`rounded-2xl border-2 ${borderColor} bg-card p-5 flex flex-col gap-4 ${locked ? "opacity-60" : ""}`}>
-      {/* Icon + labels */}
-      <div className="flex items-start gap-4">
-        <div className={`shrink-0 rounded-2xl p-3 ${iconBg}`}>
-          <Icon className={`h-6 w-6 ${iconColor}`} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-extrabold text-foreground">{subjectLabel(section.subject)}</h3>
-            {isCompleted && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                <CheckCircle2 className="h-3 w-3" />
-                Done
-              </span>
-            )}
-            {activeAttempt && !isCompleted && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                In progress
-              </span>
-            )}
-            {locked && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold text-muted-foreground border border-border">
-                Locked
-              </span>
-            )}
+    <Card className={locked ? "opacity-60" : undefined}>
+      <CardContent className="flex flex-col gap-4">
+        <div className="flex items-start gap-4">
+          <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl", rw ? "bg-info-soft text-info-foreground" : "bg-success-soft text-success-foreground")}>
+            <Icon className="h-6 w-6" />
           </div>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {section.module_count} module{section.module_count !== 1 ? "s" : ""} ·{" "}
-            {totalMinutes(section)} min
-            {section.form_type === "US" ? " · US Form" : " · International"}
-          </p>
-          {isCompleted && completedAttempt?.score != null && (
-            <p className="mt-1 text-xs font-bold text-foreground">
-              Score: <span className="text-primary">{completedAttempt.score}</span>
-              <span className="font-normal text-muted-foreground"> / 800</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="ds-h4">{subjectLabel(section.subject)}</h3>
+              {isCompleted ? <Badge variant="success">Done</Badge> : null}
+              {activeAttempt && !isCompleted ? <Badge variant="warning">In progress</Badge> : null}
+              {locked ? <Badge variant="neutral">Locked</Badge> : null}
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {section.module_count} module{section.module_count !== 1 ? "s" : ""} · {totalMinutes(section)} min{section.form_type === "US" ? " · US form" : " · International"}
             </p>
-          )}
-          {locked && lockReason && (
-            <p className="mt-1 text-xs text-muted-foreground">{lockReason}</p>
+            {isCompleted && completedAttempt?.score != null ? (
+              <p className="mt-1 text-xs font-bold text-foreground">Score: <span className="text-primary">{completedAttempt.score}</span><span className="font-normal text-muted-foreground"> / 800</span></p>
+            ) : null}
+            {locked && lockReason ? <p className="mt-1 text-xs text-muted-foreground">{lockReason}</p> : null}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {startError ? <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs font-semibold text-danger-foreground">{startError}</p> : null}
+          {isCompleted ? (
+            <div className="flex gap-2">
+              <Link href={`/review/${completedAttempt!.id}`} className="flex-1"><Button variant="secondary" fullWidth leftIcon={<Eye />}>Review answers</Button></Link>
+              <Button variant={rw ? "primary" : "primary"} loading={isLoading} disabled={locked} leftIcon={<Play className="fill-current" />} onClick={() => !locked && onStart(section.id)}>Retry</Button>
+            </div>
+          ) : (
+            <Button fullWidth size="lg" loading={isLoading} disabled={locked} leftIcon={<Play className="fill-current" />} onClick={() => !locked && onStart(section.id)}>
+              {activeAttempt ? "Continue" : "Start"}
+            </Button>
           )}
         </div>
-      </div>
-
-      {/* CTA */}
-      <div className="flex flex-col gap-2">
-      {startError && (
-        <p className="text-xs font-semibold text-red-600 bg-red-50 rounded-lg px-3 py-2">
-          {startError}
-        </p>
-      )}
-      <div className="flex gap-2">
-        {isCompleted ? (
-          <>
-            <Link
-              href={`/review/${completedAttempt!.id}`}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border bg-surface-2 px-4 py-2.5 text-xs font-bold text-foreground hover:bg-card transition-colors"
-            >
-              <Eye className="h-4 w-4" />
-              Review answers
-            </Link>
-            <button
-              type="button"
-              onClick={() => !locked && onStart(section.id)}
-              disabled={isLoading || locked}
-              className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-colors ${ctaClass}`}
-            >
-              {isLoading ? (
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-              ) : (
-                <>
-                  <Play className="h-4 w-4 fill-current" />
-                  Retry
-                </>
-              )}
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => !locked && onStart(section.id)}
-            disabled={isLoading || locked}
-            className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold shadow-sm transition-colors ${ctaClass}`}
-          >
-            {isLoading ? (
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            ) : (
-              <>
-                <Play className="h-5 w-5 fill-current" />
-                {activeAttempt ? "Continue" : "Start"}
-              </>
-            )}
-          </button>
-        )}
-      </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }
 
 // ─── combined score banner ────────────────────────────────────────────────────
 
-function CombinedScoreBanner({
-  pack,
-  attempts,
-}: {
-  pack: PastpaperPackPublic;
-  attempts: AttemptRow[];
-}) {
-  const completedAttempts = pack.sections.map((s) =>
-    attempts.find((a) => a.practice_test === s.id && a.is_completed),
-  );
+function CombinedScoreBanner({ pack, attempts }: { pack: PastpaperPackPublic; attempts: AttemptRow[] }) {
+  const completedAttempts = pack.sections.map((s) => attempts.find((a) => a.practice_test === s.id && a.is_completed));
   if (completedAttempts.some((a) => !a)) return null;
 
-  // Compute composite score if all section scores are available.
   const scores = completedAttempts.map((a) => a?.score ?? null);
   const allHaveScores = scores.every((s) => s != null);
-  const composite = allHaveScores
-    ? Math.min(1600, scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0) ?? 0)
-    : null;
+  const composite = allHaveScores ? Math.min(1600, scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0) ?? 0) : null;
 
   return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-5">
-      <div className="flex items-center gap-3 mb-2">
-        <Trophy className="h-5 w-5 text-emerald-600 shrink-0" />
-        <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">All sections complete</p>
-      </div>
-      {composite != null ? (
-        <div className="flex items-baseline gap-2">
-          <span className="text-4xl font-black text-emerald-900 tabular-nums">{composite}</span>
-          <span className="text-sm font-bold text-emerald-700">/ 1600</span>
-          <span className="text-xs text-emerald-600 ml-1">composite SAT score</span>
+    <Card className="border-success/25 bg-success-soft">
+      <CardContent>
+        <div className="mb-2 flex items-center gap-3">
+          <Trophy className="h-5 w-5 shrink-0 text-success" />
+          <p className="ds-overline text-success-foreground">All sections complete</p>
         </div>
-      ) : (
-        <p className="text-sm text-emerald-800 leading-relaxed">
-          Review each section to see your answers and explanations.
-        </p>
-      )}
-    </div>
+        {composite != null ? (
+          <div className="flex items-baseline gap-2">
+            <span className="ds-num text-4xl font-extrabold text-success-foreground">{composite}</span>
+            <span className="text-sm font-bold text-success-foreground">/ 1600</span>
+            <span className="ml-1 text-xs text-success-foreground/80">composite SAT score</span>
+          </div>
+        ) : (
+          <p className="text-sm text-success-foreground">Review each section to see your answers and explanations.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -264,11 +161,7 @@ function PastpaperPackDetailInner() {
         ]);
         if (!cancelled) {
           setPack(packData);
-          setAttempts(
-            (attData.items as AttemptRow[]).filter((a) =>
-              packData.sections.some((s) => s.id === a.practice_test),
-            ),
-          );
+          setAttempts((attData.items as AttemptRow[]).filter((a) => packData.sections.some((s) => s.id === a.practice_test)));
         }
       } catch (e: unknown) {
         if (!cancelled) {
@@ -279,24 +172,17 @@ function PastpaperPackDetailInner() {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [id, isAuthenticated]);
 
-  // Sort: R&W first, then Math.
-  const sorted = [...(pack?.sections ?? [])].sort((a, b) => {
-    return (isRWSubject(a.subject) ? 0 : 1) - (isRWSubject(b.subject) ? 0 : 1);
-  });
+  const sorted = [...(pack?.sections ?? [])].sort((a, b) => (isRWSubject(a.subject) ? 0 : 1) - (isRWSubject(b.subject) ? 0 : 1));
 
   const handleStart = async (sectionId: number) => {
     if (!assertCriticalAuth()) return;
     setStarting(sectionId);
-    setStartError(null);  // Clear any previous error when retrying
+    setStartError(null);
     try {
-      let attempt = attempts.find(
-        (a) => a.practice_test === sectionId && !a.is_completed && !a.is_expired,
-      );
+      let attempt = attempts.find((a) => a.practice_test === sectionId && !a.is_completed && !a.is_expired);
       if (!attempt) {
         attempt = (await examsStudentApi.startTest(sectionId)) as AttemptRow;
         setAttempts((prev) => [...prev, attempt!]);
@@ -307,7 +193,6 @@ function PastpaperPackDetailInner() {
       router.push(`/exam/${attempt.id}`);
     } catch (e: unknown) {
       console.error("[pastpaper] start section failed", e);
-      // Extract a human-readable message from the API error.
       const data = (e as { response?: { data?: unknown } })?.response?.data;
       let msg = "Could not start the test. Please try again.";
       if (data && typeof data === "object") {
@@ -323,78 +208,38 @@ function PastpaperPackDetailInner() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
+    return <div className="flex min-h-[40vh] items-center justify-center"><Spinner className="h-10 w-10 text-primary" /></div>;
   }
 
   if (!pack) {
     return (
-      <div className="mx-auto max-w-xl px-4 py-16 text-center">
-        <p className="font-bold text-foreground mb-2">
-          {fetchError ?? "Past paper not found."}
-        </p>
-        <Link href="/pastpapers" className="text-sm font-semibold text-primary hover:underline">
-          ← Back to past papers
-        </Link>
+      <div className="mx-auto max-w-xl py-16">
+        <EmptyState title={fetchError ?? "Past paper not found"} description="It may have been unpublished." action={<Link href="/pastpapers"><Button variant="secondary">Back to past papers</Button></Link>} />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-8 md:px-8">
-      {/* Back */}
-      <Link
-        href="/pastpapers"
-        className="mb-6 inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Past papers
+    <div className="mx-auto flex max-w-2xl flex-col gap-6 pb-12">
+      <Link href="/pastpapers" className="ds-ring inline-flex w-fit items-center gap-1.5 rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground">
+        <ArrowLeft className="h-4 w-4" /> Past papers
       </Link>
 
-      {/* Pack header */}
-      <div className="mb-8">
-        <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-primary">
-          {pack.form_type === "US" ? "US Form" : "International Form"}
-          {pack.label ? ` · Form ${pack.label}` : ""}
-        </p>
-        <h1 className="text-2xl font-black tracking-tight text-foreground">
-          {pack.title || `SAT Past Paper — ${formatDate(pack.practice_date)}`}
-        </h1>
-        <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Calendar className="h-4 w-4 shrink-0" />
-          {formatDate(pack.practice_date)}
-        </p>
-        <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-          Practice SAT sections — start with either Reading &amp; Writing or Mathematics in any order.
-        </p>
+      <div>
+        <p className="ds-overline text-primary">{pack.form_type === "US" ? "US form" : "International form"}{pack.label ? ` · Form ${pack.label}` : ""}</p>
+        <h1 className="ds-h1 mt-1">{pack.title || `SAT past paper — ${formatDate(pack.practice_date)}`}</h1>
+        <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground"><Calendar className="h-4 w-4 shrink-0" /> {formatDate(pack.practice_date)}</p>
+        <p className="ds-small mt-2">Practice SAT sections — start with either Reading &amp; Writing or Mathematics, in any order.</p>
       </div>
 
-      {/* Combined score banner */}
-      {isAuthenticated && (
-        <div className="mb-6">
-          <CombinedScoreBanner pack={pack} attempts={attempts} />
-        </div>
-      )}
+      {isAuthenticated ? <CombinedScoreBanner pack={pack} attempts={attempts} /> : null}
 
-      {/* Section cards */}
       {sorted.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          No sections available yet.
-        </div>
+        <EmptyState compact title="No sections yet" description="Sections appear here once added." />
       ) : (
         <div className="grid gap-4">
           {sorted.map((section) => (
-              <SectionCard
-                key={section.id}
-                section={section}
-                attempts={attempts}
-                onStart={handleStart}
-                starting={starting}
-                startError={startError?.sectionId === section.id ? startError.msg : null}
-              />
+            <SectionCard key={section.id} section={section} attempts={attempts} onStart={handleStart} starting={starting} startError={startError?.sectionId === section.id ? startError.msg : null} />
           ))}
         </div>
       )}
@@ -404,13 +249,7 @@ function PastpaperPackDetailInner() {
 
 export default function PastpaperPackDetailPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[40vh] items-center justify-center">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        </div>
-      }
-    >
+    <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center"><Spinner className="h-10 w-10 text-primary" /></div>}>
       <PastpaperPackDetailInner />
     </Suspense>
   );

@@ -7,16 +7,58 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-foreground: var(--success-foreground);
+
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-foreground: var(--warning-foreground);
+
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-foreground: var(--danger-foreground);
+
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-foreground: var(--info-foreground);
+
   --color-muted-foreground: var(--text-secondary);
   --color-label-foreground: var(--text-label);
+  --color-surface-1: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-accent-cyan: var(--accent-cyan);
+
+  /* Legacy ds-* aliases (kept so pre-migration pages still resolve) */
   --color-ds-primary: var(--ds-primary);
   --color-ds-secondary: var(--ds-secondary);
   --color-ds-accent: var(--ds-accent);
   --color-ds-gold: var(--ds-gold);
+
+  /* Categorical chart ramp — theme-aware via CSS vars */
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+
+  --shadow-card: var(--ds-shadow-sm);
+  --shadow-pop: var(--ds-shadow-md);
+  --shadow-modal: var(--ds-shadow-lg);
+
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   /* Academic, editorial reading face. Used as the document default for
      long-form/reading text; UI controls stay on --font-sans (see below). */
@@ -33,94 +75,149 @@
   --bg: #ffffff;
   --surface: #f8fafc;
   --surface-2: #f1f5f9;
+  --surface-3: #e2e8f0;
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-label: #64748b;
-  --border-subtle: rgba(15, 23, 42, 0.1);
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.16);
   --accent-cyan: #0ea5e9;
-  --overlay-scrim: rgba(15, 23, 42, 0.4);
+  --overlay-scrim: rgba(15, 23, 42, 0.45);
 
   --background: var(--bg);
   --foreground: var(--text-primary);
   --card: var(--surface);
   --border: var(--border-subtle);
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --muted: var(--text-secondary);
-  --ring: rgba(37, 99, 235, 0.2);
 
-  /* Legacy ds-* tokens kept for compatibility */
-  --ds-primary: #2563eb;
-  --ds-primary-hover: #1d4ed8;
-  --ds-primary-soft: rgba(37, 99, 235, 0.08);
-  --ds-gold: #2563eb;
-  --ds-gold-bright: #2563eb;
-  --ds-gold-soft: rgba(37, 99, 235, 0.06);
-  --ds-secondary: #2563eb;
-  --ds-secondary-soft: rgba(37, 99, 235, 0.08);
-  --ds-accent: #2563eb;
-  --ds-accent-amber: #2563eb;
+  /* Brand */
+  --primary: #4338ca;
+  --primary-hover: #3730a3;
+  --primary-soft: rgba(67, 56, 202, 0.10);
+  --primary-foreground: #ffffff;
+
+  --accent: #0ea5e9;
+  --accent-soft: rgba(14, 165, 233, 0.12);
+  --accent-foreground: #ffffff;
+
+  /* Semantic — growth-oriented usage; never punishing copy */
+  --success: #059669;
+  --success-soft: #ecfdf5;
+  --success-foreground: #047857;
+
+  --warning: #d97706;
+  --warning-soft: #fffbeb;
+  --warning-foreground: #b45309;
+
+  --danger: #dc2626;
+  --danger-soft: #fef2f2;
+  --danger-foreground: #b91c1c;
+
+  --info: #0284c7;
+  --info-soft: #f0f9ff;
+  --info-foreground: #0369a1;
+
+  --muted: var(--text-secondary);
+  --ring: rgba(67, 56, 202, 0.40);
+
+  /* Chart ramp */
+  --chart-1: #4338ca;
+  --chart-2: #0ea5e9;
+  --chart-3: #059669;
+  --chart-4: #d97706;
+  --chart-5: #db2777;
+  --chart-6: #7c3aed;
+  --chart-grid: rgba(15, 23, 42, 0.08);
+  --chart-axis: #64748b;
+
+  /* Legacy ds-* aliases — repointed onto the new system */
+  --ds-primary: var(--primary);
+  --ds-primary-hover: var(--primary-hover);
+  --ds-primary-soft: var(--primary-soft);
+  --ds-gold: var(--primary);
+  --ds-gold-bright: var(--accent);
+  --ds-gold-soft: var(--primary-soft);
+  --ds-secondary: var(--accent);
+  --ds-secondary-soft: var(--accent-soft);
+  --ds-accent: var(--accent);
+  --ds-accent-amber: var(--warning);
   --gold-rail: transparent;
   --gold-rail-soft: transparent;
   --gold-rail-glow: transparent;
   --ds-surface-0: var(--background);
   --ds-surface-1: var(--card);
   --ds-surface-2: var(--surface-2);
-  --ds-border-strong: rgba(37, 99, 235, 0.2);
+  --ds-border-strong: var(--border-strong);
   --ds-text-muted: var(--text-secondary);
   --ds-radius-sm: 0.5rem;
   --ds-radius-md: 0.75rem;
   --ds-radius-lg: 1rem;
   --ds-radius-xl: 1.25rem;
-  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
-  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
-  --ds-transition: 150ms ease;
-  --ds-transition-fast: 100ms ease;
-  --ds-ease-premium: ease;
+  --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
+  --ds-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --ds-shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+  --ds-transition: 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ds-transition-fast: 100ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ds-ease-premium: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .dark {
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --surface-2: #0f172a;
+  --bg: #0b1120;
+  --surface: #111827;
+  --surface-2: #1e293b;
+  --surface-3: #334155;
   --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-label: #64748b;
+  --text-secondary: #cbd5e1;
+  --text-label: #94a3b8;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
   --accent-cyan: #38bdf8;
-  --overlay-scrim: rgba(0, 0, 0, 0.6);
-  --border-subtle: rgba(255, 255, 255, 0.1);
-
-  --ds-primary: #3b82f6;
-  --ds-primary-hover: #60a5fa;
-  --ds-primary-soft: rgba(59, 130, 246, 0.12);
-  --ds-gold: #3b82f6;
-  --ds-gold-bright: #3b82f6;
-  --ds-gold-soft: rgba(59, 130, 246, 0.1);
-  --ds-secondary: #3b82f6;
-  --ds-secondary-soft: rgba(59, 130, 246, 0.1);
-  --ds-accent: #60a5fa;
-  --ds-accent-amber: #3b82f6;
-  --gold-rail: transparent;
-  --gold-rail-soft: transparent;
-  --gold-rail-glow: transparent;
+  --overlay-scrim: rgba(2, 6, 23, 0.7);
 
   --background: var(--bg);
   --foreground: var(--text-primary);
   --card: var(--surface);
   --border: var(--border-subtle);
-  --primary: #3b82f6;
-  --primary-hover: #60a5fa;
+
+  --primary: #6366f1;
+  --primary-hover: #818cf8;
+  --primary-soft: rgba(99, 102, 241, 0.18);
+  --primary-foreground: #ffffff;
+
+  --accent: #38bdf8;
+  --accent-soft: rgba(56, 189, 248, 0.16);
+  --accent-foreground: #04293b;
+
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.14);
+  --success-foreground: #6ee7b7;
+
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+  --warning-foreground: #fcd34d;
+
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
+  --danger-foreground: #fca5a5;
+
+  --info: #38bdf8;
+  --info-soft: rgba(56, 189, 248, 0.14);
+  --info-foreground: #7dd3fc;
+
   --muted: var(--text-secondary);
-  --ring: rgba(59, 130, 246, 0.3);
-  --ds-surface-0: var(--background);
-  --ds-surface-1: var(--card);
-  --ds-surface-2: var(--surface-2);
-  --ds-border-strong: rgba(59, 130, 246, 0.25);
-  --ds-text-muted: var(--text-secondary);
-  --ds-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.25);
-  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
-  --ds-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --ring: rgba(129, 140, 248, 0.5);
+
+  --chart-1: #818cf8;
+  --chart-2: #38bdf8;
+  --chart-3: #34d399;
+  --chart-4: #fbbf24;
+  --chart-5: #f472b6;
+  --chart-6: #a78bfa;
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-axis: #94a3b8;
+
+  --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --ds-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
 }
 
 body {
@@ -683,6 +780,124 @@ html:not(.dark) .shell-sidebar-gold {
   100% {
     transform: translate3d(0, 110vh, 0) rotate(540deg);
     opacity: 0.95;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   MasterSAT 2.0 — design system layer
+   New tokens live in :root/.dark above; this section adds the
+   typography scale, motion, and a11y helpers the new components use.
+   ════════════════════════════════════════════════════════════════ */
+
+/* Surfaces driven by the new shell use the sans UI stack; the serif
+   body default is preserved for long-form reading passages. */
+.ds-app {
+  /* Reference the next/font variable directly (it's defined on <body>, not
+     :root) with a concrete fallback so the declaration is always valid —
+     keeps the new shell on the sans UI stack over the serif body default. */
+  font-family: var(--font-geist-sans, ui-sans-serif), ui-sans-serif, system-ui,
+    -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.ds-display {
+  font-size: clamp(2.25rem, 5vw, 3.25rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  color: var(--foreground);
+}
+.ds-h1 {
+  font-size: clamp(1.5rem, 2.5vw, 1.875rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--foreground);
+}
+.ds-h2 {
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--foreground);
+}
+.ds-h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+.ds-h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--foreground);
+}
+.ds-lead {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+.ds-small {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.ds-overline {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+/* Tabular figures for metrics/scores so digits don't jitter */
+.ds-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Shared focus ring */
+.ds-ring {
+  outline: none;
+}
+.ds-ring:focus-visible {
+  box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--ring);
+}
+
+/* Recharts tooltip surface */
+.ds-chart-tooltip {
+  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: 0.625rem;
+  box-shadow: var(--ds-shadow-md);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+@keyframes ds-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ds-pop-in {
+  from { opacity: 0; transform: scale(0.97) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes ds-slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.ds-anim-fade { animation: ds-fade-in 160ms ease both; }
+.ds-anim-pop { animation: ds-pop-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.ds-anim-slide-right { animation: ds-slide-in-right 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
   }
 }
 
