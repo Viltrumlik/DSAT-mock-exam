@@ -3,6 +3,7 @@ import SafeHtml from "@/components/SafeHtml";
 import type { ExamQuestion } from "../types";
 import { parseOptions } from "../utils/options";
 import { resolveImageUrl } from "../utils/image";
+import { renderExamHtml } from "../utils/richContent";
 
 interface ChoiceListProps {
   question: ExamQuestion;
@@ -52,7 +53,7 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={img} alt={`Option ${key}`} className="max-h-[200px] max-w-full rounded-lg border border-slate-100 object-contain shadow-sm" />
                 ) : (
-                  <SafeHtml className="mathjax-process w-full" html={text.replace(/\n/g, "<br/>")} />
+                  <SafeHtml className="mathjax-process w-full" html={renderExamHtml(text)} />
                 )}
               </span>
             </button>

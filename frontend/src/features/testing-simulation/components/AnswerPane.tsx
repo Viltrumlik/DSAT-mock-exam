@@ -5,6 +5,7 @@ import SafeHtml from "@/components/SafeHtml";
 import type { ExamQuestion } from "../types";
 import { ChoiceList } from "./ChoiceList";
 import { SprInput } from "./SprInput";
+import { renderExamHtml } from "../utils/richContent";
 
 interface AnswerPaneProps {
   question: ExamQuestion;
@@ -86,14 +87,14 @@ export const AnswerPane = memo(function AnswerPane({
           <SafeHtml
             className="mathjax-process mb-8 font-[Georgia] font-medium leading-relaxed text-slate-900"
             style={{ fontSize: `${16 * zoom * 1.2}px` }}
-            html={question.question_prompt.replace(/\n/g, "<br/>")}
+            html={renderExamHtml(question.question_prompt)}
           />
         )}
         {isMath && (
           <SafeHtml
             className="mathjax-process mb-8 font-[Georgia] font-medium leading-relaxed text-slate-900"
             style={{ fontSize: `${16 * zoom * 1.2}px` }}
-            html={question.question_text?.replace(/\n/g, "<br/>") || ""}
+            html={renderExamHtml(question.question_text)}
           />
         )}
 

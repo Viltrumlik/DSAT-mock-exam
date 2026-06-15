@@ -3,6 +3,7 @@ import { memo } from "react";
 import SafeHtml from "@/components/SafeHtml";
 import type { ExamQuestion } from "../types";
 import { resolveImageUrl } from "../utils/image";
+import { renderExamHtml } from "../utils/richContent";
 
 interface PassagePaneProps {
   question: ExamQuestion;
@@ -27,7 +28,7 @@ export const PassagePane = memo(function PassagePane({ question, zoom, style }: 
         )}
         <SafeHtml
           className="mathjax-process font-[Georgia] font-medium leading-relaxed"
-          html={question.question_text?.replace(/\n/g, "<br/>") || ""}
+          html={renderExamHtml(question.question_text)}
         />
       </div>
     </div>
