@@ -183,6 +183,8 @@ function PastpaperPackDetailInner() {
     setStartError(null);
     try {
       let attempt = attempts.find((a) => a.practice_test === sectionId && !a.is_completed && !a.is_expired);
+      // Fresh start (no in-progress attempt) → show the welcome screen; resumes skip it.
+      const isFreshStart = !attempt;
       if (!attempt) {
         attempt = (await examsStudentApi.startTest(sectionId)) as AttemptRow;
         setAttempts((prev) => [...prev, attempt!]);
@@ -190,7 +192,7 @@ function PastpaperPackDetailInner() {
       try {
         sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
       } catch {}
-      router.push(`/exam/${attempt.id}`);
+      router.push(`/exam/${attempt.id}${isFreshStart ? "?welcome=1" : ""}`);
     } catch (e: unknown) {
       console.error("[pastpaper] start section failed", e);
       const data = (e as { response?: { data?: unknown } })?.response?.data;

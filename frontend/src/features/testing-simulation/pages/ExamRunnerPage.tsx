@@ -63,6 +63,9 @@ export function ExamRunnerPage() {
   const search = useSearchParams();
   const attemptId = Number(params.attemptId);
   const mockFlow = search.get("mockFlow") === "1";
+  // Fresh pastpaper starts arrive with ?welcome=1 (set by the pastpaper card);
+  // resumes don't, so they skip the welcome screen.
+  const welcomeParam = search.get("welcome") === "1";
 
   const { assertCriticalAuth } = useAuthCriticalGate();
   // Load-error recovery actions are admin-only; students never see a Retry button.
@@ -110,6 +113,26 @@ export function ExamRunnerPage() {
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
+  // Welcome screen — shown once per fresh pastpaper start, acknowledged via the
+  // Start button (persisted per attempt for the tab session so a refresh on the
+  // running exam doesn't re-show it).
+  const [welcomeAck, setWelcomeAck] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.sessionStorage.getItem(`ts.welcomeAck.${attemptId}`) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const ackWelcome = useCallback(() => {
+    setWelcomeAck(true);
+    try {
+      window.sessionStorage.setItem(`ts.welcomeAck.${attemptId}`, "1");
+    } catch {
+      /* sessionStorage unavailable — keep in-memory */
+    }
+  }, [attemptId]);
+  const showWelcome = !mockFlow && welcomeParam && !welcomeAck;
   // SPR directions panel collapse state — persisted for the tab session so it is
   // remembered while navigating between Student-Produced Response questions.
   const [sprGuideExpanded, setSprGuideExpanded] = useState(() => {
@@ -172,11 +195,17 @@ export function ExamRunnerPage() {
           /* user denied / unsupported — proceed without fullscreen */
         }
       }
-      await start();
+      // Only call the engine start when the attempt genuinely hasn't begun
+      // (forward-compatible with a future server-side timer hold). When the
+      // backend already auto-started on create, Start just enters fullscreen.
+      if (attempt?.current_state === ATTEMPT_STATE.NOT_STARTED) {
+        await start();
+      }
+      ackWelcome();
     } finally {
       setStarting(false);
     }
-  }, [tools.fullscreen, start]);
+  }, [tools.fullscreen, start, attempt?.current_state, ackWelcome]);
 
   // Close the Check Your Work page whenever the module changes (after a submit
   // advances M1→M2, or a fresh module loads) so it never lingers over new work.
@@ -194,6 +223,7 @@ export function ExamRunnerPage() {
   const fsSupported = tools.fullscreen.supported;
   const fsEnforced =
     !mockFlow &&
+    !showWelcome &&
     !multiTab.blocked &&
     transitionTo === null &&
     !reviewOpen &&
@@ -491,9 +521,10 @@ export function ExamRunnerPage() {
   if (isScoring(attempt)) {
     return <ScoringScreen notice={null} />;
   }
-  // Welcome / Start screen — shown only before the module begins (NOT_STARTED).
-  // Resumes (already MODULE_x_ACTIVE) skip it so the running clock isn't gated.
-  if (!mockFlow && !loading && attempt && attempt.current_state === ATTEMPT_STATE.NOT_STARTED) {
+  // Welcome / Start screen for a NOT_STARTED attempt (forward-compatible with a
+  // future server-side timer hold). Today the backend auto-starts on create, so
+  // the active-attempt branch below is the one that fires.
+  if (showWelcome && !loading && attempt && attempt.current_state === ATTEMPT_STATE.NOT_STARTED) {
     const startMinutes =
       attempt.current_module_details?.time_limit_minutes ??
       attempt.practice_test_details.modules.find((m) => m.module_order === 1)?.time_limit_minutes;
@@ -520,6 +551,23 @@ export function ExamRunnerPage() {
       );
     }
     return <LoadingScreen />;
+  }
+
+  // Fresh-start welcome (active attempt). The backend auto-starts on create, so
+  // by now the module is loaded; show the welcome until the student clicks Start
+  // (which enters fullscreen + acknowledges it). Resumes have no ?welcome=1.
+  if (showWelcome) {
+    return (
+      <WelcomeScreen
+        moduleTitle={moduleLabel(attempt)}
+        subjectLabel={subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing"}
+        minutes={attempt.current_module_details.time_limit_minutes}
+        questionCount={attempt.current_module_details.questions.length}
+        starting={starting}
+        fullscreenSupported={tools.fullscreen.supported}
+        onStart={() => void handleStart()}
+      />
+    );
   }
 
   const warning = timerReady && secondsLeft <= FIVE_MINUTE_WARNING_SECONDS && secondsLeft > 0;
