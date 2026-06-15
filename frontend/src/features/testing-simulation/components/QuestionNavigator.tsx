@@ -11,6 +11,8 @@ interface QuestionNavigatorProps {
   answers: Record<string, string>;
   flagged: number[];
   onJump: (index: number) => void;
+  /** Opens the Check Your Work review page. */
+  onGoToReview: () => void;
 }
 
 /** Modal grid for jumping between questions (current / unanswered / for-review). */
@@ -23,6 +25,7 @@ export function QuestionNavigator({
   answers,
   flagged,
   onJump,
+  onGoToReview,
 }: QuestionNavigatorProps) {
   if (!open) return null;
   return (
@@ -65,6 +68,18 @@ export function QuestionNavigator({
               </button>
             );
           })}
+        </div>
+        <div className="mt-5 flex justify-center border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              onGoToReview();
+            }}
+            className="rounded-full border-2 border-blue-600 px-6 py-2 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-50"
+          >
+            Go to Review Page
+          </button>
         </div>
       </div>
     </div>

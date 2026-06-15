@@ -28,6 +28,7 @@ import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
 import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusScreens";
 import { WelcomeScreen } from "../components/WelcomeScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
+import { CheckYourWorkPage } from "../components/CheckYourWorkPage";
 import { ATTEMPT_STATE } from "../types";
 
 import { useExamTools, ExamToolsLayer, MultiTabOverlay, useKeyboardShortcuts } from "../tools";
@@ -106,6 +107,7 @@ export function ExamRunnerPage() {
   const [eliminationMode, setEliminationMode] = useState(false);
   const [timerHidden, setTimerHidden] = useState(false);
   const [navigatorOpen, setNavigatorOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
   const [splitPct, setSplitPct] = useState(50);
   const [transitionTo, setTransitionTo] = useState<number | null>(null);
@@ -152,6 +154,12 @@ export function ExamRunnerPage() {
       setStarting(false);
     }
   }, [tools.fullscreen, start]);
+
+  // Close the Check Your Work page whenever the module changes (after a submit
+  // advances M1→M2, or a fresh module loads) so it never lingers over new work.
+  useEffect(() => {
+    setReviewOpen(false);
+  }, [attempt?.current_module_details?.id]);
 
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
@@ -426,6 +434,29 @@ export function ExamRunnerPage() {
 
   const warning = timerReady && secondsLeft <= FIVE_MINUTE_WARNING_SECONDS && secondsLeft > 0;
 
+  // Check Your Work review page — shown before the module is submitted.
+  if (reviewOpen) {
+    const moduleOrder = attempt.current_module_details?.module_order ?? 1;
+    const isLastModule = moduleOrder >= (attempt.practice_test_details.modules.length || 2);
+    return (
+      <CheckYourWorkPage
+        moduleTitle={moduleLabel(attempt)}
+        questions={questions}
+        answers={answers}
+        flagged={flagged}
+        onJump={(i) => {
+          goTo(i);
+          setReviewOpen(false);
+        }}
+        onBack={() => setReviewOpen(false)}
+        onSubmit={() => void submit()}
+        submitting={submitting}
+        isLastModule={isLastModule}
+        studentName={studentName}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col bg-white">
       <ExamHeader
@@ -516,7 +547,7 @@ export function ExamRunnerPage() {
         onBack={guardedPrev}
         isLastQuestion={currentIndex === questions.length - 1}
         onNext={guardedNext}
-        onSubmitModule={() => void submit()}
+        onSubmitModule={() => setReviewOpen(true)}
         submitting={submitting}
         studentName={studentName}
         navLocked={navLocked}
@@ -531,6 +562,7 @@ export function ExamRunnerPage() {
         answers={answers}
         flagged={flagged}
         onJump={goTo}
+        onGoToReview={() => setReviewOpen(true)}
       />
 
       {/* All SAT-experience tool overlays (calculator, reference, notes, help,
