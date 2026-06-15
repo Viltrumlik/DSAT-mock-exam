@@ -184,20 +184,35 @@ export function ExamRunnerPage() {
     setReviewOpen(false);
   }, [attempt?.current_module_details?.id]);
 
-  // ── Fullscreen-warning visibility (regression fix) ───────────────────────────
-  // Show the "return to fullscreen" overlay only after the user has stayed OUT of
-  // fullscreen for a short grace window — so the native enter/exit transition and
-  // the brief Start→enter gap never flash the modal. Hidden instantly on re-entry.
-  const [showFsWarning, setShowFsWarning] = useState(false);
-  const fsWarnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── Forced-fullscreen enforcement ────────────────────────────────────────────
+  // Only enforce while the student is ACTIVELY in a pastpaper module — never on
+  // the welcome/loading/scoring/transition/review screens, and never for mock
+  // flow (which auto-starts with no Start gesture to establish fullscreen). This
+  // prevents the countdown from ever firing where the student isn't actually
+  // taking the test.
   const fsIsFull = tools.fullscreen.isFullscreen;
   const fsSupported = tools.fullscreen.supported;
+  const fsEnforced =
+    !mockFlow &&
+    !multiTab.blocked &&
+    transitionTo === null &&
+    !reviewOpen &&
+    !loading &&
+    Boolean(currentQuestion) &&
+    (attempt?.current_state === ATTEMPT_STATE.MODULE_1_ACTIVE ||
+      attempt?.current_state === ATTEMPT_STATE.MODULE_2_ACTIVE);
+
+  // Show the "return to fullscreen" overlay only after the student has stayed OUT
+  // of fullscreen for a short grace window — so the native enter/exit transition
+  // and the brief Start→enter gap never flash the modal. Hidden on re-entry.
+  const [showFsWarning, setShowFsWarning] = useState(false);
+  const fsWarnTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (fsWarnTimer.current) {
       clearTimeout(fsWarnTimer.current);
       fsWarnTimer.current = null;
     }
-    if (!fsSupported || fsIsFull) {
+    if (!fsSupported || !fsEnforced || fsIsFull) {
       setShowFsWarning(false);
       return;
     }
@@ -205,7 +220,30 @@ export function ExamRunnerPage() {
     return () => {
       if (fsWarnTimer.current) clearTimeout(fsWarnTimer.current);
     };
-  }, [fsIsFull, fsSupported]);
+  }, [fsIsFull, fsSupported, fsEnforced]);
+
+  // Off-fullscreen kick: once the warning is showing (student stayed out of
+  // fullscreen past the grace window), count down 10s; if they don't return,
+  // save their progress and remove them from the test (resumable via Save & Exit).
+  const [fsCountdown, setFsCountdown] = useState<number | null>(null);
+  const fsKickRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (!showFsWarning) {
+      setFsCountdown(null);
+      return;
+    }
+    let remaining = 10;
+    setFsCountdown(remaining);
+    const iv = setInterval(() => {
+      remaining -= 1;
+      setFsCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(iv);
+        fsKickRef.current?.();
+      }
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [showFsWarning]);
 
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
@@ -418,6 +456,12 @@ export function ExamRunnerPage() {
     }
   }, [attempt, mockFlow, attemptId, answers, flagged, applyAttempt, router]);
 
+  // Keep the off-fullscreen kick action current without restarting the countdown
+  // when handleSaveAndExit's identity changes (e.g. on autosave).
+  useEffect(() => {
+    fsKickRef.current = handleSaveAndExit;
+  }, [handleSaveAndExit]);
+
   // ── Render gates ────────────────────────────────────────────────────────────
   const questions = liveQuestions;
   const twoPane = !mathQuestions; // RW shows passage + answers; Math is single column
@@ -621,7 +665,9 @@ export function ExamRunnerPage() {
           UI until they re-enter (the only path is a user-gesture button). Gated on
           a short grace window (showFsWarning) so it never flickers during the
           native fullscreen transition. Unsupported browsers never see this. */}
-      {showFsWarning && <FullscreenWarning onReturn={() => void tools.fullscreen.enter()} />}
+      {showFsWarning && (
+        <FullscreenWarning secondsLeft={fsCountdown ?? undefined} onReturn={() => void tools.fullscreen.enter()} />
+      )}
 
       {/* Timer warnings (5 min / 1 min / expiry) — announced to screen readers. */}
       {timerToast && (
