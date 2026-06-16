@@ -103,10 +103,13 @@ export function ExamRunnerPage() {
   const tools = useExamTools({
     attemptId,
     questionId: currentQuestion?.id,
-    // RW highlights the passage pane; math/SPR has no passage, so fall back to
-    // the question stem container (#ts-question). Only one exists per layout, so
-    // offsets never collide.
-    getPassageContainer: () => document.getElementById("ts-passage") ?? document.getElementById("ts-question"),
+    // Highlightable regions — passage, question prompt/stem, and answer choices.
+    // Each has its own offset space + storage, so annotations don't collide.
+    getContainers: () => [
+      { key: "passage", el: document.getElementById("ts-passage") },
+      { key: "question", el: document.getElementById("ts-question") },
+      { key: "choices", el: document.getElementById("ts-choices") },
+    ],
   });
 
   // ── Local UI state ─────────────────────────────────────────────────────────
@@ -621,7 +624,7 @@ export function ExamRunnerPage() {
 
       <main
         ref={mainRef}
-        className={`flex min-h-0 flex-1 overflow-hidden ${tools.highlighterActive ? "[&_#ts-passage]:cursor-text [&_#ts-question]:cursor-text" : ""}`}
+        className={`flex min-h-0 flex-1 overflow-hidden ${tools.highlighterActive ? "ts-annotating [&_#ts-passage]:cursor-text [&_#ts-question]:cursor-text [&_#ts-choices]:cursor-text" : ""}`}
       >
         {twoPane ? (
           <>

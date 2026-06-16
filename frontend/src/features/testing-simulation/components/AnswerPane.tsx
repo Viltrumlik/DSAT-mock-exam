@@ -111,14 +111,16 @@ export const AnswerPane = memo(function AnswerPane({
         {isSpr ? (
           <SprInput value={answer ?? ""} onChange={onSelect} />
         ) : (
-          <ChoiceList
-            question={question}
-            selected={answer}
-            eliminated={eliminated}
-            eliminationMode={eliminationMode}
-            onSelect={onSelect}
-            onEliminate={onEliminate}
-          />
+          <div id="ts-choices">
+            <ChoiceList
+              question={question}
+              selected={answer}
+              eliminated={eliminated}
+              eliminationMode={eliminationMode}
+              onSelect={onSelect}
+              onEliminate={onEliminate}
+            />
+          </div>
         )}
       </div>
     </div>

@@ -1,18 +1,19 @@
 /**
- * Annotation persistence — per (attempt, question), in localStorage. Purely a
- * study annotation; independent of the exam engine and never synced to backend.
+ * Annotation persistence — per (attempt, question, container), in localStorage.
+ * Purely a study annotation; independent of the exam engine, never synced.
  *
- * Stored under `ts.annot.<attempt>.<question>`. On read, legacy data from the
- * old `ts.hl.<attempt>.<question>` key (pre-rebuild `{start,end,style}` shape)
- * is migrated forward so existing highlights survive.
+ * A "container" is a highlightable region (passage / question / choices), each
+ * with its own character-offset space, so the same question can carry separate
+ * annotations on its passage, prompt and answer choices.
+ *
+ * Stored under `ts.annot.<attempt>.<question>.<container>`. On read, the
+ * passage container migrates forward any legacy single-region data
+ * (`ts.annot.<attempt>.<question>` and the older `ts.hl.<...>` shape).
  */
 import { type Annotation, mergeAnnotations } from "./annotations";
 
-function key(attemptId: number | string, questionId: number): string {
-  return `ts.annot.${attemptId}.${questionId}`;
-}
-function legacyKey(attemptId: number | string, questionId: number): string {
-  return `ts.hl.${attemptId}.${questionId}`;
+function key(attemptId: number | string, questionId: number, container: string): string {
+  return `ts.annot.${attemptId}.${questionId}.${container}`;
 }
 
 function isAnnotation(v: unknown): v is Annotation {
@@ -34,10 +35,11 @@ function migrateLegacy(raw: unknown): Annotation[] {
     if (!r || typeof r !== "object") continue;
     const o = r as Record<string, unknown>;
     if (typeof o.start !== "number" || typeof o.end !== "number" || o.end <= o.start) continue;
-    const style = o.style;
-    if (style === "blue" || style === "pink" || style === "yellow") {
-      out.push({ start: o.start, end: o.end, kind: "highlight", color: style });
-    } else if (style === "underline") {
+    if (o.kind === "highlight" || o.kind === "underline") {
+      out.push(o as unknown as Annotation);
+    } else if (o.style === "blue" || o.style === "pink" || o.style === "yellow") {
+      out.push({ start: o.start, end: o.end, kind: "highlight", color: o.style });
+    } else if (o.style === "underline") {
       out.push({ start: o.start, end: o.end, kind: "underline", underline: "solid" });
     } else {
       out.push({ start: o.start, end: o.end, kind: "highlight", color: "yellow" });
@@ -46,34 +48,50 @@ function migrateLegacy(raw: unknown): Annotation[] {
   return out;
 }
 
-export function readAnnotations(attemptId: number | string, questionId: number): Annotation[] {
-  if (typeof window === "undefined") return [];
+function readKey(k: string): Annotation[] | null {
   try {
-    const raw = localStorage.getItem(key(attemptId, questionId));
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return mergeAnnotations(parsed.filter(isAnnotation));
-      return [];
-    }
-    // No new-format entry → migrate any legacy highlights once.
-    const legacy = localStorage.getItem(legacyKey(attemptId, questionId));
-    if (legacy) {
-      const migrated = mergeAnnotations(migrateLegacy(JSON.parse(legacy)));
-      if (migrated.length) writeAnnotations(attemptId, questionId, migrated);
-      return migrated;
-    }
-    return [];
+    const raw = localStorage.getItem(k);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? mergeAnnotations(parsed.filter(isAnnotation)) : [];
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function writeAnnotations(attemptId: number | string, questionId: number, anns: Annotation[]): Annotation[] {
+export function readAnnotations(attemptId: number | string, questionId: number, container: string): Annotation[] {
+  if (typeof window === "undefined") return [];
+  const direct = readKey(key(attemptId, questionId, container));
+  if (direct) return direct;
+  // Passage migrates legacy single-region data once.
+  if (container === "passage") {
+    try {
+      const legacy =
+        localStorage.getItem(`ts.annot.${attemptId}.${questionId}`) ??
+        localStorage.getItem(`ts.hl.${attemptId}.${questionId}`);
+      if (legacy) {
+        const migrated = mergeAnnotations(migrateLegacy(JSON.parse(legacy)));
+        if (migrated.length) writeAnnotations(attemptId, questionId, container, migrated);
+        return migrated;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return [];
+}
+
+export function writeAnnotations(
+  attemptId: number | string,
+  questionId: number,
+  container: string,
+  anns: Annotation[],
+): Annotation[] {
   const merged = mergeAnnotations(anns);
   if (typeof window !== "undefined") {
     try {
-      if (merged.length === 0) localStorage.removeItem(key(attemptId, questionId));
-      else localStorage.setItem(key(attemptId, questionId), JSON.stringify(merged));
+      if (merged.length === 0) localStorage.removeItem(key(attemptId, questionId, container));
+      else localStorage.setItem(key(attemptId, questionId, container), JSON.stringify(merged));
     } catch {
       /* ignore quota / unavailable */
     }

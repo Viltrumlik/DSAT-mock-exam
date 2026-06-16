@@ -18,26 +18,33 @@ import {
 } from "./annotations";
 import { readAnnotations, writeAnnotations } from "./annotationStore";
 
+/** A highlightable region with a stable key + its own offset space. */
+export interface AnnotatableContainer {
+  key: string;
+  el: HTMLElement | null;
+}
+
 interface UseAnnotatorArgs {
-  /** Resolve the annotatable container live from the DOM. */
-  getContainer: () => HTMLElement | null;
+  /** Live resolver for all annotatable regions (passage / question / choices). */
+  getContainers: () => AnnotatableContainer[];
   attemptId: number | string;
   questionId: number | undefined;
   active: boolean;
 }
 
 export interface AnnotatorToolbar {
-  /** Anchor point (selection centre x; top/bottom of the selection rect). */
   x: number;
   top: number;
   bottom: number;
-  /** The text range this toolbar acts on. */
+  /** Which container the range lives in. */
+  container: string;
   range: OffsetRange;
-  /** Styles currently covering the whole range (drives the active buttons). */
   current: { color?: HighlightColor; underline?: UnderlineStyle };
 }
 
-/** Styles that cover the entire range (used to mark active toolbar buttons). */
+const DEFAULT_COLOR: HighlightColor = "yellow";
+
+/** Styles covering the entire range (drives the active toolbar buttons). */
 function stylesOver(anns: Annotation[], range: OffsetRange) {
   const color = anns.find((a) => a.kind === "highlight" && a.start <= range.start && a.end >= range.end)?.color;
   const underline = anns.find((a) => a.kind === "underline" && a.start <= range.start && a.end >= range.end)?.underline;
@@ -45,46 +52,53 @@ function stylesOver(anns: Annotation[], range: OffsetRange) {
 }
 
 /**
- * Bluebook-style text annotator. Selecting text (or clicking an existing
- * annotation) opens a toolbar to apply/edit highlight colours and underline
- * styles or delete. Fully isolated: persists to localStorage, paints by
- * wrapping text nodes, never touches answers/autosave/timer.
+ * Bluebook-style text annotator across multiple regions (passage, question
+ * prompt/stem, answer choices). Selecting text immediately highlights it in the
+ * active colour (default yellow) and opens a toolbar to recolour, underline or
+ * delete. Clicking an existing annotation re-opens the toolbar to edit it.
  *
- * `getContainer` is held in a ref so its (often inline, per-render) identity
- * never re-runs the effects — otherwise a routine re-render (e.g. the 1s timer)
- * would clear the toolbar before the student could use it.
+ * Each region has its own character-offset space and localStorage entry, so
+ * annotations on the passage, prompt and choices are independent. Marks are
+ * repainted after every commit (the regions render via dangerouslySetInnerHTML,
+ * which React resets on re-render) — restored before the browser paints.
  */
-export function useAnnotator({ getContainer, attemptId, questionId, active }: UseAnnotatorArgs) {
+export function useAnnotator({ getContainers, attemptId, questionId, active }: UseAnnotatorArgs) {
   const [toolbar, setToolbar] = useState<AnnotatorToolbar | null>(null);
+  const [activeColor, setActiveColor] = useState<HighlightColor>(DEFAULT_COLOR);
 
-  const getContainerRef = useRef(getContainer);
+  const containersRef = useRef(getContainers);
+  const activeColorRef = useRef(activeColor);
   useEffect(() => {
-    getContainerRef.current = getContainer;
+    containersRef.current = getContainers;
+    activeColorRef.current = activeColor;
   });
-  const resolve = useCallback(() => getContainerRef.current(), []);
 
-  // Paint stored annotations into the container — skipping while the user has a
-  // live selection there, so we never disrupt an in-progress drag.
+  const containers = useCallback(() => containersRef.current().filter((c) => c.el), []);
+  const elFor = useCallback((k: string) => containersRef.current().find((c) => c.key === k)?.el ?? null, []);
+
+  // Paint every region from its stored annotations, skipping a region the user
+  // is actively selecting in (so a drag isn't disrupted).
   const paint = useCallback(() => {
     if (questionId == null) return;
-    const c = resolve();
-    if (!c) return;
     const sel = window.getSelection();
-    if (sel && !sel.isCollapsed && sel.anchorNode && c.contains(sel.anchorNode)) return;
-    applyAnnotations(c, readAnnotations(attemptId, questionId));
-  }, [resolve, attemptId, questionId]);
+    const activeNode = sel && !sel.isCollapsed ? sel.anchorNode : null;
+    for (const { key, el } of containers()) {
+      if (!el) continue;
+      if (activeNode && el.contains(activeNode)) continue;
+      applyAnnotations(el, readAnnotations(attemptId, questionId, key));
+    }
+  }, [containers, attemptId, questionId]);
 
-  // Drop the toolbar on question change; repaint once more after KaTeX settles.
+  // Drop the toolbar on question change; repaint once after KaTeX settles.
   useEffect(() => {
     setToolbar(null);
     const t = setTimeout(paint, 150);
     return () => clearTimeout(t);
   }, [questionId, attemptId, paint]);
 
-  // Re-apply after EVERY commit. The passage/stem is rendered via
-  // dangerouslySetInnerHTML (SafeHtml), so a routine re-render (timer tick,
-  // toolbar update, navigation) resets its HTML and wipes the marks. A layout
-  // effect restores them before the browser paints — no flicker.
+  // Re-apply after EVERY commit — the regions render via dangerouslySetInnerHTML,
+  // so routine re-renders (timer, toolbar, navigation) reset their HTML and would
+  // otherwise wipe the marks. Layout effect → restored before the browser paints.
   useLayoutEffect(() => {
     paint();
   });
@@ -93,27 +107,31 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
     if (!active || questionId == null) return;
 
     const onMouseUp = (e: MouseEvent) => {
-      // Clicks inside the toolbar are handled by its own buttons.
       if ((e.target as HTMLElement | null)?.closest?.("[data-annot-toolbar]")) return;
-
-      const c = resolve();
-      if (!c) return;
+      const list = containers();
       const sel = window.getSelection();
-      const anns = readAnnotations(attemptId, questionId);
 
-      // New selection inside the container → open the toolbar (no auto-apply).
-      if (sel && !sel.isCollapsed && sel.rangeCount > 0 && c.contains(sel.anchorNode) && c.contains(sel.focusNode)) {
-        const range = sel.getRangeAt(0);
-        const off = rangeToOffsets(c, range);
-        if (off) {
-          const rect = range.getBoundingClientRect();
-          setToolbar({
-            x: rect.left + rect.width / 2,
-            top: rect.top,
-            bottom: rect.bottom,
-            range: off,
-            current: stylesOver(anns, off),
-          });
+      // New selection inside a single region → auto-apply the active colour.
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const c = list.find((c) => c.el!.contains(sel.anchorNode) && c.el!.contains(sel.focusNode));
+        if (c && c.el) {
+          const range = sel.getRangeAt(0);
+          const off = rangeToOffsets(c.el, range);
+          if (off) {
+            const color = activeColorRef.current;
+            const next = addHighlight(readAnnotations(attemptId, questionId, c.key), off, color);
+            applyAnnotations(c.el, writeAnnotations(attemptId, questionId, c.key, next));
+            const rect = range.getBoundingClientRect();
+            setToolbar({
+              x: rect.left + rect.width / 2,
+              top: rect.top,
+              bottom: rect.bottom,
+              container: c.key,
+              range: off,
+              current: { color },
+            });
+            sel.removeAllRanges();
+          }
         }
         return;
       }
@@ -121,16 +139,18 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
       // Click on an existing annotation → open the toolbar to edit it.
       const mark = markFromEvent(e.target);
       if (mark) {
-        const markRange = offsetsOfMark(c, mark);
-        if (markRange) {
-          const covering = annotationsAt(anns, markRange.start);
-          const range = boundingRange(covering) ?? markRange;
-          setToolbar({ x: e.clientX, top: e.clientY, bottom: e.clientY, range, current: stylesOver(anns, range) });
+        const c = list.find((c) => c.el!.contains(mark));
+        if (c && c.el) {
+          const markRange = offsetsOfMark(c.el, mark);
+          if (markRange) {
+            const anns = readAnnotations(attemptId, questionId, c.key);
+            const range = boundingRange(annotationsAt(anns, markRange.start)) ?? markRange;
+            setToolbar({ x: e.clientX, top: e.clientY, bottom: e.clientY, container: c.key, range, current: stylesOver(anns, range) });
+          }
         }
         return;
       }
 
-      // Clicked elsewhere → dismiss.
       setToolbar(null);
     };
 
@@ -144,35 +164,36 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
       document.removeEventListener("mouseup", onMouseUp);
       document.removeEventListener("keydown", onKey);
     };
-  }, [active, questionId, attemptId, resolve]);
+  }, [active, questionId, attemptId, containers]);
 
-  const repaint = useCallback(
-    (next: Annotation[]) => {
+  const commit = useCallback(
+    (container: string, next: Annotation[]) => {
       if (questionId == null) return;
-      const c = resolve();
-      const saved = writeAnnotations(attemptId, questionId, next);
-      if (c) applyAnnotations(c, saved);
+      const el = elFor(container);
+      const saved = writeAnnotations(attemptId, questionId, container, next);
+      if (el) applyAnnotations(el, saved);
       window.getSelection()?.removeAllRanges();
     },
-    [resolve, attemptId, questionId],
+    [elFor, attemptId, questionId],
   );
 
   const applyColor = useCallback(
     (color: HighlightColor) => {
+      setActiveColor(color);
       if (!toolbar || questionId == null) return;
-      repaint(addHighlight(readAnnotations(attemptId, questionId), toolbar.range, color));
+      commit(toolbar.container, addHighlight(readAnnotations(attemptId, questionId, toolbar.container), toolbar.range, color));
       setToolbar((t) => (t ? { ...t, current: { ...t.current, color } } : t));
     },
-    [toolbar, attemptId, questionId, repaint],
+    [toolbar, attemptId, questionId, commit],
   );
 
   const applyUnderline = useCallback(
     (underline: UnderlineStyle) => {
       if (!toolbar || questionId == null) return;
-      repaint(addUnderline(readAnnotations(attemptId, questionId), toolbar.range, underline));
+      commit(toolbar.container, addUnderline(readAnnotations(attemptId, questionId, toolbar.container), toolbar.range, underline));
       setToolbar((t) => (t ? { ...t, current: { ...t.current, underline } } : t));
     },
-    [toolbar, attemptId, questionId, repaint],
+    [toolbar, attemptId, questionId, commit],
   );
 
   const deleteAnnotation = useCallback(() => {
@@ -180,16 +201,18 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
       setToolbar(null);
       return;
     }
-    repaint(removeRange(readAnnotations(attemptId, questionId), toolbar.range));
+    commit(toolbar.container, removeRange(readAnnotations(attemptId, questionId, toolbar.container), toolbar.range));
     setToolbar(null);
-  }, [toolbar, attemptId, questionId, repaint]);
+  }, [toolbar, attemptId, questionId, commit]);
 
   const clearAll = useCallback(() => {
-    const c = resolve();
-    if (c) clearAnnotations(c);
-    if (questionId != null) writeAnnotations(attemptId, questionId, []);
+    if (questionId == null) return;
+    for (const { key, el } of containers()) {
+      if (el) clearAnnotations(el);
+      writeAnnotations(attemptId, questionId, key, []);
+    }
     setToolbar(null);
-  }, [resolve, attemptId, questionId]);
+  }, [containers, attemptId, questionId]);
 
   return { toolbar, applyColor, applyUnderline, deleteAnnotation, dismiss: () => setToolbar(null), clearAll };
 }

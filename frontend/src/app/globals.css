@@ -909,3 +909,18 @@ mark.ts-annot {
   border-radius: 2px;
   cursor: pointer;
 }
+
+/* While the highlighter is active, tint the live selection yellow so text looks
+   marked AS you drag (the real highlight lands on release). */
+.ts-annotating #ts-passage ::selection,
+.ts-annotating #ts-question ::selection,
+.ts-annotating #ts-choices ::selection {
+  background-color: #fde047;
+  color: inherit;
+}
+.ts-annotating #ts-passage ::-moz-selection,
+.ts-annotating #ts-question ::-moz-selection,
+.ts-annotating #ts-choices ::-moz-selection {
+  background-color: #fde047;
+  color: inherit;
+}

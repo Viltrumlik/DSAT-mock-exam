@@ -4,34 +4,10 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAnnotator } from "../highlight/useAnnotator";
 
-// Mimics SafeHtml + PassagePane: text rendered via dangerouslySetInnerHTML, with
-// a parent that re-renders (e.g. the 1s timer) passing a NEW but value-equal html
-// string each render. Reproduces whether a re-render wipes painted marks.
-let bump: () => void;
-let latestApp: ReturnType<typeof useAnnotator>;
-function App() {
-  const [tick, setTick] = useState(0);
-  bump = () => setTick((t) => t + 1);
-  latestApp = useAnnotator({
-    getContainer: () => document.getElementById("ts-passage"),
-    attemptId: 2,
-    questionId: 2,
-    active: true,
-  });
-  const html = "The quick brown fox jumps"; // stable content
-  const safe = useMemo(() => `${html}`, [html]); // like SafeHtml's sanitize memo
-  return (
-    <div data-tick={tick}>
-      <div id="ts-passage" dangerouslySetInnerHTML={{ __html: safe }} />
-    </div>
-  );
-}
-
-// Harness exposes the latest hook return so the test can drive it.
 let latest: ReturnType<typeof useAnnotator>;
 function Harness() {
   latest = useAnnotator({
-    getContainer: () => document.getElementById("ts-passage"),
+    getContainers: () => [{ key: "passage", el: document.getElementById("ts-passage") }],
     attemptId: 1,
     questionId: 1,
     active: true,
@@ -39,11 +15,30 @@ function Harness() {
   return null;
 }
 
+// Mimics SafeHtml + PassagePane: text via dangerouslySetInnerHTML, parent re-renders.
+let bump: () => void;
+function App() {
+  const [tick, setTick] = useState(0);
+  bump = () => setTick((t) => t + 1);
+  useAnnotator({
+    getContainers: () => [{ key: "passage", el: document.getElementById("ts-passage") }],
+    attemptId: 2,
+    questionId: 2,
+    active: true,
+  });
+  const html = "The quick brown fox jumps";
+  const safe = useMemo(() => `${html}`, [html]);
+  return (
+    <div data-tick={tick}>
+      <div id="ts-passage" dangerouslySetInnerHTML={{ __html: safe }} />
+    </div>
+  );
+}
+
 function mockSelectionOver(textNode: Text, start: number, end: number) {
   const range = document.createRange();
   range.setStart(textNode, start);
   range.setEnd(textNode, end);
-  // jsdom doesn't implement Range layout — stub it (real browsers have it).
   range.getBoundingClientRect = () =>
     ({ left: 100, top: 200, width: 50, height: 16, right: 150, bottom: 216, x: 100, y: 200, toJSON: () => ({}) }) as DOMRect;
   vi.spyOn(window, "getSelection").mockReturnValue({
@@ -64,7 +59,6 @@ describe("useAnnotator integration (real hook → DOM)", () => {
     localStorage.clear();
     passage = document.createElement("div");
     passage.id = "ts-passage";
-    // Mimic SafeHtml: text lives in a nested element inside #ts-passage.
     passage.innerHTML = "<div>The quick brown fox jumps</div>";
     document.body.appendChild(passage);
     rootEl = document.createElement("div");
@@ -76,7 +70,7 @@ describe("useAnnotator integration (real hook → DOM)", () => {
     vi.restoreAllMocks();
   });
 
-  it("opens the toolbar on selection and paints a mark when a colour is applied", async () => {
+  it("auto-highlights yellow on selection, then recolours via the toolbar", async () => {
     const root = createRoot(rootEl);
     await act(async () => {
       root.render(<Harness />);
@@ -89,25 +83,26 @@ describe("useAnnotator integration (real hook → DOM)", () => {
       document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     });
 
-    expect(latest.toolbar).not.toBeNull();
-    expect(latest.toolbar?.range).toEqual({ start: 4, end: 9 });
-
-    await act(async () => {
-      latest.applyColor("yellow");
-    });
-
-    const mark = passage.querySelector("mark.ts-annot") as HTMLElement | null;
-    expect(mark).not.toBeNull();
+    // Selecting alone applied a yellow highlight (no colour click needed).
+    let mark = passage.querySelector("mark.ts-annot") as HTMLElement | null;
     expect(mark?.textContent).toBe("quick");
     expect(mark?.dataset.color).toBe("yellow");
+    expect(latest.toolbar?.container).toBe("passage");
+    expect(latest.toolbar?.current.color).toBe("yellow");
+
+    await act(async () => {
+      latest.applyColor("blue");
+    });
+    mark = passage.querySelector("mark.ts-annot") as HTMLElement | null;
+    expect(mark?.dataset.color).toBe("blue");
 
     await act(async () => {
       root.unmount();
     });
   });
 
-  it("keeps painted marks after a parent re-render of a dangerouslySetInnerHTML passage", async () => {
-    document.body.innerHTML = ""; // App renders its own #ts-passage
+  it("keeps marks after a parent re-render of a dangerouslySetInnerHTML passage", async () => {
+    document.body.innerHTML = "";
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -116,16 +111,12 @@ describe("useAnnotator integration (real hook → DOM)", () => {
     });
 
     const textNode = document.querySelector("#ts-passage")!.firstChild as Text;
-    mockSelectionOver(textNode, 4, 9); // "quick"
+    mockSelectionOver(textNode, 4, 9);
     await act(async () => {
       document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     });
-    await act(async () => {
-      latestApp.applyColor("yellow");
-    });
     expect(document.querySelector("#ts-passage mark.ts-annot")).not.toBeNull();
 
-    // Force a parent re-render (like the 1s timer tick).
     await act(async () => {
       bump();
     });

@@ -2,13 +2,13 @@
 import { useCallback, useState } from "react";
 import { clamp } from "../utils/time";
 import { useFullscreen } from "./useFullscreen";
-import { useAnnotator } from "./highlight/useAnnotator";
+import { useAnnotator, type AnnotatableContainer } from "./highlight/useAnnotator";
 
 interface UseExamToolsArgs {
   attemptId: number | string;
   questionId: number | undefined;
-  /** Live resolver for the highlightable passage container. */
-  getPassageContainer: () => HTMLElement | null;
+  /** Live resolver for all highlightable regions (passage / question / choices). */
+  getContainers: () => AnnotatableContainer[];
 }
 
 /**
@@ -16,7 +16,7 @@ interface UseExamToolsArgs {
  * thin composition. Every member here is UI-only and isolated from the exam
  * engine (timer/autosave/submit/scoring).
  */
-export function useExamTools({ attemptId, questionId, getPassageContainer }: UseExamToolsArgs) {
+export function useExamTools({ attemptId, questionId, getContainers }: UseExamToolsArgs) {
   const [calculatorOpen, setCalculatorOpen] = useState(false);
   const [referenceOpen, setReferenceOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -25,7 +25,7 @@ export function useExamTools({ attemptId, questionId, getPassageContainer }: Use
   const [zoom, setZoom] = useState(1);
 
   const fullscreen = useFullscreen();
-  const highlighter = useAnnotator({ getContainer: getPassageContainer, attemptId, questionId, active: highlighterActive });
+  const highlighter = useAnnotator({ getContainers, attemptId, questionId, active: highlighterActive });
 
   const zoomIn = useCallback(() => setZoom((z) => clamp(Number((z + 0.1).toFixed(2)), 0.8, 1.6)), []);
   const zoomOut = useCallback(() => setZoom((z) => clamp(Number((z - 0.1).toFixed(2)), 0.8, 1.6)), []);
