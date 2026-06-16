@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addHighlight,
   addUnderline,
@@ -49,9 +49,19 @@ function stylesOver(anns: Annotation[], range: OffsetRange) {
  * annotation) opens a toolbar to apply/edit highlight colours and underline
  * styles or delete. Fully isolated: persists to localStorage, paints by
  * wrapping text nodes, never touches answers/autosave/timer.
+ *
+ * `getContainer` is held in a ref so its (often inline, per-render) identity
+ * never re-runs the effects — otherwise a routine re-render (e.g. the 1s timer)
+ * would clear the toolbar before the student could use it.
  */
 export function useAnnotator({ getContainer, attemptId, questionId, active }: UseAnnotatorArgs) {
   const [toolbar, setToolbar] = useState<AnnotatorToolbar | null>(null);
+
+  const getContainerRef = useRef(getContainer);
+  useEffect(() => {
+    getContainerRef.current = getContainer;
+  });
+  const resolve = useCallback(() => getContainerRef.current(), []);
 
   // Repaint stored annotations whenever the question changes (and shortly after,
   // to win against the post-commit KaTeX re-render). Drops any open toolbar.
@@ -59,13 +69,13 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
     if (questionId == null) return;
     setToolbar(null);
     const paint = () => {
-      const c = getContainer();
+      const c = resolve();
       if (c) applyAnnotations(c, readAnnotations(attemptId, questionId));
     };
     paint();
     const t = setTimeout(paint, 140);
     return () => clearTimeout(t);
-  }, [questionId, attemptId, getContainer]);
+  }, [questionId, attemptId, resolve]);
 
   useEffect(() => {
     if (!active || questionId == null) return;
@@ -74,7 +84,7 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
       // Clicks inside the toolbar are handled by its own buttons.
       if ((e.target as HTMLElement | null)?.closest?.("[data-annot-toolbar]")) return;
 
-      const c = getContainer();
+      const c = resolve();
       if (!c) return;
       const sel = window.getSelection();
       const anns = readAnnotations(attemptId, questionId);
@@ -122,17 +132,17 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
       document.removeEventListener("mouseup", onMouseUp);
       document.removeEventListener("keydown", onKey);
     };
-  }, [active, questionId, attemptId, getContainer]);
+  }, [active, questionId, attemptId, resolve]);
 
   const repaint = useCallback(
     (next: Annotation[]) => {
       if (questionId == null) return;
-      const c = getContainer();
+      const c = resolve();
       const saved = writeAnnotations(attemptId, questionId, next);
       if (c) applyAnnotations(c, saved);
       window.getSelection()?.removeAllRanges();
     },
-    [getContainer, attemptId, questionId],
+    [resolve, attemptId, questionId],
   );
 
   const applyColor = useCallback(
@@ -163,11 +173,11 @@ export function useAnnotator({ getContainer, attemptId, questionId, active }: Us
   }, [toolbar, attemptId, questionId, repaint]);
 
   const clearAll = useCallback(() => {
-    const c = getContainer();
+    const c = resolve();
     if (c) clearAnnotations(c);
     if (questionId != null) writeAnnotations(attemptId, questionId, []);
     setToolbar(null);
-  }, [getContainer, attemptId, questionId]);
+  }, [resolve, attemptId, questionId]);
 
   return { toolbar, applyColor, applyUnderline, deleteAnnotation, dismiss: () => setToolbar(null), clearAll };
 }

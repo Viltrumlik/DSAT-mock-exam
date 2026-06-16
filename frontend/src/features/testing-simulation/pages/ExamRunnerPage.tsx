@@ -103,7 +103,10 @@ export function ExamRunnerPage() {
   const tools = useExamTools({
     attemptId,
     questionId: currentQuestion?.id,
-    getPassageContainer: () => document.getElementById("ts-passage"),
+    // RW highlights the passage pane; math/SPR has no passage, so fall back to
+    // the question stem container (#ts-question). Only one exists per layout, so
+    // offsets never collide.
+    getPassageContainer: () => document.getElementById("ts-passage") ?? document.getElementById("ts-question"),
   });
 
   // ── Local UI state ─────────────────────────────────────────────────────────
@@ -618,7 +621,7 @@ export function ExamRunnerPage() {
 
       <main
         ref={mainRef}
-        className={`flex min-h-0 flex-1 overflow-hidden ${tools.highlighterActive ? "[&_#ts-passage]:cursor-text" : ""}`}
+        className={`flex min-h-0 flex-1 overflow-hidden ${tools.highlighterActive ? "[&_#ts-passage]:cursor-text [&_#ts-question]:cursor-text" : ""}`}
       >
         {twoPane ? (
           <>

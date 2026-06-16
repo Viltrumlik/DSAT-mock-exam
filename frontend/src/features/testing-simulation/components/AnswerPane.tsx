@@ -89,21 +89,24 @@ export const AnswerPane = memo(function AnswerPane({
           }}
         />
 
-        {/* Math questions render their stem on the right; RW shows only the prompt. */}
-        {question.question_prompt && !isSpr && (
-          <SafeHtml
-            className="mathjax-process mb-8 font-[Georgia] font-medium leading-relaxed text-slate-900"
-            style={{ fontSize: `${16 * zoom * 1.2}px` }}
-            html={renderExamHtml(question.question_prompt)}
-          />
-        )}
-        {isMath && (
-          <SafeHtml
-            className="mathjax-process mb-8 font-[Georgia] font-medium leading-relaxed text-slate-900"
-            style={{ fontSize: `${16 * zoom * 1.2}px` }}
-            html={renderExamHtml(question.question_text)}
-          />
-        )}
+        {/* Highlightable question content (prompt for RW, stem for math). The
+            annotator targets this container when there is no passage pane. */}
+        <div id="ts-question">
+          {question.question_prompt && !isSpr && (
+            <SafeHtml
+              className="mathjax-process mb-8 font-[Georgia] font-medium leading-relaxed text-slate-900"
+              style={{ fontSize: `${16 * zoom * 1.2}px` }}
+              html={renderExamHtml(question.question_prompt)}
+            />
+          )}
+          {isMath && (
+            <SafeHtml
+              className="mathjax-process mb-8 font-[Georgia] font-medium leading-relaxed text-slate-900"
+              style={{ fontSize: `${16 * zoom * 1.2}px` }}
+              html={renderExamHtml(question.question_text)}
+            />
+          )}
+        </div>
 
         {isSpr ? (
           <SprInput value={answer ?? ""} onChange={onSelect} />
