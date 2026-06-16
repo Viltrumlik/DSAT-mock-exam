@@ -3,7 +3,7 @@ import { DesmosCalculator } from "./calculator/DesmosCalculator";
 import { ReferenceSheet } from "./ReferenceSheet";
 import { NotesPanel } from "./notes/NotesPanel";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
-import { HighlightPopover } from "./highlight/HighlightPopover";
+import { AnnotationToolbar } from "./highlight/AnnotationToolbar";
 import type { ExamTools } from "./useExamTools";
 
 interface ExamToolsLayerProps {
@@ -23,12 +23,13 @@ export function ExamToolsLayer({ tools, attemptId }: ExamToolsLayerProps) {
       {tools.referenceOpen && <ReferenceSheet onClose={tools.toggleReference} />}
       {tools.notesOpen && <NotesPanel attemptId={attemptId} onClose={tools.toggleNotes} />}
       {tools.helpOpen && <KeyboardShortcutsHelp onClose={tools.closeHelp} />}
-      {tools.highlighter.popover && (
-        <HighlightPopover
-          popover={tools.highlighter.popover}
-          onPick={tools.highlighter.setStyle}
-          onRemove={tools.highlighter.removeHighlight}
-          onClose={tools.highlighter.dismissPopover}
+      {tools.highlighter.toolbar && (
+        <AnnotationToolbar
+          toolbar={tools.highlighter.toolbar}
+          onColor={tools.highlighter.applyColor}
+          onUnderline={tools.highlighter.applyUnderline}
+          onDelete={tools.highlighter.deleteAnnotation}
+          onClose={tools.highlighter.dismiss}
         />
       )}
     </>

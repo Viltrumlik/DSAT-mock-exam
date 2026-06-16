@@ -2,7 +2,7 @@
 import { useCallback, useState } from "react";
 import { clamp } from "../utils/time";
 import { useFullscreen } from "./useFullscreen";
-import { useHighlighter } from "./highlight/useHighlighter";
+import { useAnnotator } from "./highlight/useAnnotator";
 
 interface UseExamToolsArgs {
   attemptId: number | string;
@@ -25,7 +25,7 @@ export function useExamTools({ attemptId, questionId, getPassageContainer }: Use
   const [zoom, setZoom] = useState(1);
 
   const fullscreen = useFullscreen();
-  const highlighter = useHighlighter({ getContainer: getPassageContainer, attemptId, questionId, active: highlighterActive });
+  const highlighter = useAnnotator({ getContainer: getPassageContainer, attemptId, questionId, active: highlighterActive });
 
   const zoomIn = useCallback(() => setZoom((z) => clamp(Number((z + 0.1).toFixed(2)), 0.8, 1.6)), []);
   const zoomOut = useCallback(() => setZoom((z) => clamp(Number((z - 0.1).toFixed(2)), 0.8, 1.6)), []);
