@@ -50,13 +50,16 @@ export function DesmosCalculator({ onClose, enlarged, onToggleEnlarge }: DesmosC
     };
   }, [mode]);
 
+  // Tabs live in the dark title bar; stopPropagation keeps a tap from starting a
+  // window drag.
   const tab = (m: Mode, label: string) => (
     <button
       type="button"
+      onMouseDown={(e) => e.stopPropagation()}
       onClick={() => setMode(m)}
       aria-pressed={mode === m}
-      className={`flex-1 px-3 py-1.5 text-xs font-bold transition-colors ${
-        mode === m ? "border-b-2 border-blue-600 text-blue-700" : "text-slate-500 hover:text-slate-800"
+      className={`rounded-md px-3 py-1 text-xs font-bold transition-colors ${
+        mode === m ? "bg-white text-slate-900" : "text-slate-300 hover:text-white"
       }`}
     >
       {label}
@@ -67,42 +70,42 @@ export function DesmosCalculator({ onClose, enlarged, onToggleEnlarge }: DesmosC
     <FloatingPanel
       title="Calculator"
       onClose={onClose}
+      dark
       initial={{ x: 16, y: 80, w: enlarged ? 720 : 460, h: enlarged ? 700 : 560 }}
       minW={360}
       minH={420}
+      headerLeft={
+        <div className="flex items-center gap-1">
+          {tab("graphing", "Graphing")}
+          {tab("scientific", "Scientific")}
+        </div>
+      }
       headerExtra={
         <button
           type="button"
+          onMouseDown={(e) => e.stopPropagation()}
           onClick={onToggleEnlarge}
           aria-label={enlarged ? "Shrink calculator" : "Enlarge calculator"}
           title={enlarged ? "Shrink" : "Enlarge"}
-          className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+          className="rounded p-0.5 text-slate-300 hover:bg-white/10 hover:text-white"
         >
           {enlarged ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
         </button>
       }
     >
-      <div className="flex h-full flex-col">
-        {/* Graphing / Scientific tabs */}
-        <div className="flex shrink-0 border-b border-slate-200">
-          {tab("graphing", "Graphing")}
-          {tab("scientific", "Scientific")}
-        </div>
-
-        <div className="relative min-h-0 flex-1">
-          {status === "error" ? (
-            <ScientificCalculator />
-          ) : (
-            <>
-              <div ref={mountRef} className="h-full w-full" />
-              {status === "loading" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/70">
-                  <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
-                </div>
-              )}
-            </>
-          )}
-        </div>
+      <div className="relative h-full w-full">
+        {status === "error" ? (
+          <ScientificCalculator />
+        ) : (
+          <>
+            <div ref={mountRef} className="h-full w-full" />
+            {status === "loading" && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/70">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+              </div>
+            )}
+          </>
+        )}
       </div>
     </FloatingPanel>
   );

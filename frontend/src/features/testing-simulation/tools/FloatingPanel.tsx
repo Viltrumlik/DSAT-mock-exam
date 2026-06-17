@@ -12,6 +12,10 @@ interface FloatingPanelProps {
   resizable?: boolean;
   /** Extra controls rendered in the title bar, left of the close button. */
   headerExtra?: React.ReactNode;
+  /** Replaces the title text on the left of the bar (e.g. tabs). */
+  headerLeft?: React.ReactNode;
+  /** Dark (navy) title bar. */
+  dark?: boolean;
 }
 
 /**
@@ -28,6 +32,8 @@ export function FloatingPanel({
   minH = 200,
   resizable = true,
   headerExtra,
+  headerLeft,
+  dark = false,
 }: FloatingPanelProps) {
   const [pos, setPos] = useState({ x: initial.x, y: initial.y });
   const [size, setSize] = useState({ w: initial.w, h: initial.h });
@@ -84,12 +90,19 @@ export function FloatingPanel({
     >
       <div
         onMouseDown={onHeaderDown}
-        className="flex shrink-0 cursor-move items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2 select-none"
+        className={`flex shrink-0 cursor-move items-center justify-between border-b px-3 py-2 select-none ${
+          dark ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-slate-50"
+        }`}
       >
-        <span className="text-sm font-bold text-slate-700">{title}</span>
+        {headerLeft ?? <span className={`text-sm font-bold ${dark ? "text-white" : "text-slate-700"}`}>{title}</span>}
         <div className="flex items-center gap-1">
           {headerExtra}
-          <button type="button" onClick={onClose} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700" aria-label={`Close ${title}`}>
+          <button
+            type="button"
+            onClick={onClose}
+            className={`rounded p-0.5 ${dark ? "text-slate-300 hover:bg-white/10 hover:text-white" : "text-slate-400 hover:bg-slate-200 hover:text-slate-700"}`}
+            aria-label={`Close ${title}`}
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
