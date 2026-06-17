@@ -1,5 +1,5 @@
 "use client";
-import { Calculator, ChevronDown, Highlighter } from "lucide-react";
+import { Calculator, ChevronDown, Highlighter, StickyNote } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -89,26 +89,17 @@ export function ExamHeader({
             </ToolButton>
           </>
         )}
-        {/* Combined Highlights & Notes (Bluebook-style). Toggles the highlighter;
-            Notes lives in the More menu. */}
-        <button
-          type="button"
-          onClick={tools.toggleHighlighter}
-          aria-pressed={tools.highlighterActive}
-          className={`flex flex-col items-center rounded-md px-2 py-1 text-xs font-semibold transition-colors ${
-            tools.highlighterActive ? "bg-amber-100 text-amber-900" : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
+        <ToolButton label="Highlights" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
           <Highlighter className="h-5 w-5" />
-          Highlights &amp; Notes
-        </button>
+        </ToolButton>
+        <ToolButton label="Notes" active={tools.notesOpen} onClick={tools.toggleNotes}>
+          <StickyNote className="h-5 w-5" />
+        </ToolButton>
         <MoreMenu
           isFullscreen={tools.fullscreen.isFullscreen}
           onToggleFullscreen={tools.fullscreen.toggle}
           highlighterActive={tools.highlighterActive}
           onToggleHighlighter={tools.toggleHighlighter}
-          notesOpen={tools.notesOpen}
-          onToggleNotes={tools.toggleNotes}
           onZoomIn={tools.zoomIn}
           onZoomOut={tools.zoomOut}
           onToggleHelp={tools.toggleHelp}
