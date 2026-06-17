@@ -1,5 +1,5 @@
 "use client";
-import { Calculator, ChevronDown, Highlighter, StickyNote } from "lucide-react";
+import { Calculator, ChevronDown, Highlighter } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -19,9 +19,6 @@ interface ExamHeaderProps {
   paused: boolean;
   onTogglePause: () => void;
   onSaveAndExit: () => void;
-  /** Autosave / connectivity status — shown beside the module title. */
-  saveLabel?: string;
-  saveTone?: "muted" | "warn" | "ok";
 }
 
 function ToolButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -53,23 +50,11 @@ export function ExamHeader({
   paused,
   onTogglePause,
   onSaveAndExit,
-  saveLabel,
-  saveTone = "muted",
 }: ExamHeaderProps) {
-  const saveToneClass = saveTone === "warn" ? "text-amber-600" : saveTone === "ok" ? "text-emerald-600" : "text-slate-400";
   return (
     <header className="grid shrink-0 grid-cols-3 items-center bg-white px-6 py-3">
       <div className="flex flex-col items-start">
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-bold tracking-tight text-slate-900">{moduleTitle}</h1>
-          {/* Saved / connectivity status moved beside the module title (item:
-              Student Identity Footer — "move saved message to left header"). */}
-          {saveLabel ? (
-            <span className={`text-xs font-semibold ${saveToneClass}`} role="status" aria-live="polite">
-              {saveLabel}
-            </span>
-          ) : null}
-        </div>
+        <h1 className="text-base font-bold tracking-tight text-slate-900">{moduleTitle}</h1>
         <button
           type="button"
           onClick={onToggleDirections}
@@ -104,18 +89,26 @@ export function ExamHeader({
             </ToolButton>
           </>
         )}
-        <ToolButton label="Highlights" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
+        {/* Combined Highlights & Notes (Bluebook-style). Toggles the highlighter;
+            Notes lives in the More menu. */}
+        <button
+          type="button"
+          onClick={tools.toggleHighlighter}
+          aria-pressed={tools.highlighterActive}
+          className={`flex flex-col items-center rounded-md px-2 py-1 text-xs font-semibold transition-colors ${
+            tools.highlighterActive ? "bg-amber-100 text-amber-900" : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
           <Highlighter className="h-5 w-5" />
-        </ToolButton>
-        {/* Notes moved out of the More menu into the header (item: Notes in Header). */}
-        <ToolButton label="Notes" active={tools.notesOpen} onClick={tools.toggleNotes}>
-          <StickyNote className="h-5 w-5" />
-        </ToolButton>
+          Highlights &amp; Notes
+        </button>
         <MoreMenu
           isFullscreen={tools.fullscreen.isFullscreen}
           onToggleFullscreen={tools.fullscreen.toggle}
           highlighterActive={tools.highlighterActive}
           onToggleHighlighter={tools.toggleHighlighter}
+          notesOpen={tools.notesOpen}
+          onToggleNotes={tools.toggleNotes}
           onZoomIn={tools.zoomIn}
           onZoomOut={tools.zoomOut}
           onToggleHelp={tools.toggleHelp}

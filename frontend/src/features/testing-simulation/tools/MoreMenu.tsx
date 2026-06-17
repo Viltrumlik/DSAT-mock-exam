@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Highlighter, Keyboard, LogOut, Maximize, Minimize, MoreVertical, Pause, Play, ZoomIn, ZoomOut } from "lucide-react";
+import { Highlighter, Keyboard, LogOut, Maximize, Minimize, MoreVertical, Pause, Play, StickyNote, ZoomIn, ZoomOut } from "lucide-react";
 
 export interface MoreMenuProps {
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   highlighterActive: boolean;
   onToggleHighlighter: () => void;
+  notesOpen: boolean;
+  onToggleNotes: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onToggleHelp: () => void;
@@ -60,6 +62,7 @@ export function MoreMenu(props: MoreMenuProps) {
         <div role="menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
           {item(props.isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />, props.isFullscreen ? "Exit full screen" : "Full screen", props.onToggleFullscreen)}
           {item(<Highlighter className="h-4 w-4" />, props.highlighterActive ? "Highlighter: On" : "Highlighter: Off", props.onToggleHighlighter, props.highlighterActive)}
+          {item(<StickyNote className="h-4 w-4" />, props.notesOpen ? "Notes: Open" : "Notes", props.onToggleNotes, props.notesOpen)}
           {item(<ZoomIn className="h-4 w-4" />, "Zoom in", props.onZoomIn)}
           {item(<ZoomOut className="h-4 w-4" />, "Zoom out", props.onZoomOut)}
           {props.pauseAllowed && item(props.paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />, props.paused ? "Resume" : "Pause", props.onTogglePause)}

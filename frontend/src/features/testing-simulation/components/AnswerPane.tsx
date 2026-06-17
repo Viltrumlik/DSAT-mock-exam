@@ -1,6 +1,6 @@
 "use client";
 import { memo } from "react";
-import { Bookmark } from "lucide-react";
+import { Bookmark, Flag } from "lucide-react";
 import SafeHtml from "@/components/SafeHtml";
 import type { ExamQuestion } from "../types";
 import { ChoiceList } from "./ChoiceList";
@@ -56,12 +56,16 @@ export const AnswerPane = memo(function AnswerPane({
             <button
               type="button"
               onClick={onToggleFlag}
-              className={`flex items-center text-xs font-bold transition-colors ${flagged ? "text-slate-900" : "text-slate-500 hover:text-slate-900"}`}
+              className={`flex items-center text-xs font-bold underline-offset-2 transition-colors ${flagged ? "text-red-600 underline" : "text-slate-500 hover:text-slate-900"}`}
             >
-              <span className="mr-1.5 flex h-5 w-5 items-center justify-center rounded-sm border border-slate-400">
-                <Bookmark className={`h-3.5 w-3.5 ${flagged ? "fill-slate-900 text-slate-900" : "text-slate-400"}`} />
+              <span className={`mr-1.5 flex h-5 w-5 items-center justify-center rounded-sm border ${flagged ? "border-red-300" : "border-slate-400"}`}>
+                {flagged ? (
+                  <Flag className="h-3.5 w-3.5 fill-red-600 text-red-600" />
+                ) : (
+                  <Bookmark className="h-3.5 w-3.5 text-slate-400" />
+                )}
               </span>
-              Mark for Review
+              {flagged ? "Marked for Review" : "Mark for Review"}
             </button>
           </div>
           {/* Answer-elimination toggle is meaningless for SPR (no choices). */}

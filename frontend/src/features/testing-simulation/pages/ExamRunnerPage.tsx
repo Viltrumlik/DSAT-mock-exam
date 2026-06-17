@@ -319,8 +319,9 @@ export function ExamRunnerPage() {
   });
 
   // Autosave only while genuinely interactive (not submitting / transitioning /
-  // paused, and never from a blocked duplicate tab).
-  const saveState = useAutosave({
+  // paused, and never from a blocked duplicate tab). Runs for its side effect;
+  // the header no longer surfaces a save indicator (work is also locally drafted).
+  useAutosave({
     attempt,
     attemptId,
     answers,
@@ -360,28 +361,6 @@ export function ExamRunnerPage() {
     return () => clearTimeout(t);
   }, [timerToast]);
 
-  // ── Autosave / connectivity status label (P0 visibility) ─────────────────────
-  // Every label reflects the autosave hook's *actual* state — "Reconnecting…"
-  // means a retry is genuinely in flight, "Save failed" only after retries are
-  // exhausted, and the local draft always backs the work in either case.
-  const saveLabel =
-    !online || saveState.status === "offline"
-      ? "Offline — saved on this device"
-      : saveState.status === "saving"
-        ? "Saving…"
-        : saveState.status === "retrying"
-          ? "Reconnecting…"
-          : saveState.status === "error"
-            ? "Save failed — saved on this device"
-            : saveState.status === "saved"
-              ? "Saved"
-              : "";
-  const saveTone: "muted" | "warn" | "ok" =
-    !online || saveState.status === "offline" || saveState.status === "error" || saveState.status === "retrying"
-      ? "warn"
-      : saveState.status === "saved"
-        ? "ok"
-        : "muted";
 
   // ── Sync pause state from server, once per attempt load (mocks never pause) ───
   const syncedPauseRef = useRef<number | null>(null);
@@ -617,8 +596,6 @@ export function ExamRunnerPage() {
         paused={paused}
         onTogglePause={handlePauseToggle}
         onSaveAndExit={handleSaveAndExit}
-        saveLabel={saveLabel}
-        saveTone={saveTone}
       />
       <SatColorRule />
 
