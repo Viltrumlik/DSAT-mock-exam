@@ -48,10 +48,10 @@ export const AnswerPane = memo(function AnswerPane({
   // Math is single-pane (no PassagePane), so the question figure is rendered here.
   const figure = isMath ? resolveImageUrl(question.question_image) : undefined;
   return (
-    <div className="min-w-0 overflow-y-auto overflow-x-hidden bg-white pb-8" style={{ fontSize: `${15 * zoom}px`, ...style }}>
-      {/* Full-width question header band (number + Mark for Review + eliminate). */}
-      <div className="bg-stone-100/80 px-10 py-3">
-        <div className="mx-auto flex max-w-3xl items-center justify-between">
+    <div className="min-w-0 overflow-y-auto overflow-x-hidden bg-white p-10 pb-8" style={{ fontSize: `${15 * zoom}px`, ...style }}>
+      <div className={`mx-auto w-full max-w-3xl transition-transform duration-300 ease-out ${shiftRight ? "translate-x-40" : ""}`}>
+        {/* Question header band — coloured block, kept within the centred content. */}
+        <div className="mb-4 flex items-center justify-between rounded-lg bg-stone-100 px-4 py-2.5">
           <div className="flex items-center gap-6">
             <span className="flex items-center justify-center rounded-md bg-slate-900 px-3 py-1.5 text-sm font-bold tracking-tight text-white">
               {displayNumber}
@@ -82,18 +82,15 @@ export const AnswerPane = memo(function AnswerPane({
             </button>
           )}
         </div>
-      </div>
 
-      {/* Decorative SAT rule (full width, under the header band). */}
-      <div
-        className="h-[3px] w-full"
-        style={{
-          background:
-            "repeating-linear-gradient(to right, #b91c1c 0, #b91c1c 48px, transparent 48px, transparent 54px, #ca8a04 54px, #ca8a04 102px, transparent 102px, transparent 108px, #15803d 108px, #15803d 156px, transparent 156px, transparent 162px, #0f172a 162px, #0f172a 210px, transparent 210px, transparent 216px)",
-        }}
-      />
-
-      <div className={`mx-auto w-full max-w-3xl px-10 pt-8 transition-transform duration-300 ease-out ${shiftRight ? "translate-x-40" : ""}`}>
+        {/* Decorative SAT rule */}
+        <div
+          className="mb-8 h-[3px] w-full"
+          style={{
+            background:
+              "repeating-linear-gradient(to right, #b91c1c 0, #b91c1c 48px, transparent 48px, transparent 54px, #ca8a04 54px, #ca8a04 102px, transparent 102px, transparent 108px, #15803d 108px, #15803d 156px, transparent 156px, transparent 162px, #0f172a 162px, #0f172a 210px, transparent 210px, transparent 216px)",
+          }}
+        />
         {/* Math question figure (single-pane layout has no PassagePane). */}
         {figure && (
           <div className="mb-6 flex justify-center">
