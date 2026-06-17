@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 // Console detection
 // ---------------------------------------------------------------------------
 
-function consoleFromHost(host: string | null): "admin" | "questions" | null {
+function consoleFromHost(host: string | null): "admin" | "questions" | "teacher" | null {
   if (!host) return null;
   const h = host.split(":")[0].toLowerCase();
   const labels = h.split(".").filter(Boolean);
@@ -12,6 +12,7 @@ function consoleFromHost(host: string | null): "admin" | "questions" | null {
   if (labels[0] === "admin" || h.startsWith("admin.")) return "admin";
   if (labels[0] === "questions" || h.startsWith("questions.")) return "questions";
   if (labels.length >= 2 && labels[1] === "questions") return "questions";
+  if (labels[0] === "teacher" || h.startsWith("teacher.")) return "teacher";
   return null;
 }
 
@@ -92,18 +93,30 @@ function isAllowedOnQuestions(pathname: string): boolean {
  * Only operational/management surfaces are allowed; everything else redirects to /ops.
  * /admin is kept for the legacy monolith during the decomposition transition period.
  * /ops is the new dedicated operations route group.
- * /teacher is kept for homework grading workflows.
+ * NOTE: /teacher is intentionally NOT allowed here — the teacher workspace now lives
+ * exclusively on teacher.mastersat.uz (see the teacher console branch below).
  */
 const ADMIN_ALLOWED: string[] = [
   "/admin",
   "/ops",
-  "/teacher",
   "/assessments", // includes /assessments/assign
   "/classes",     // assignment/classroom detail pages
 ];
 
 function isAllowedOnAdmin(pathname: string): boolean {
   return ADMIN_ALLOWED.some((p) => startsWith(pathname, p));
+}
+
+/**
+ * teacher.mastersat.uz (teacher portal)
+ * Only the teacher workspace is allowed; everything else redirects to /teacher.
+ * Access is restricted to teacher + super_admin roles — enforced in AuthGuard
+ * (client) and host_guard (server); this layer only scopes the URL surface.
+ */
+const TEACHER_ALLOWED: string[] = ["/teacher"];
+
+function isAllowedOnTeacher(pathname: string): boolean {
+  return TEACHER_ALLOWED.some((p) => startsWith(pathname, p));
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +186,25 @@ export function middleware(req: NextRequest) {
   }
 
   // ------------------------------------------------------------------
-  // 5. Main domain (mastersat.uz) — student portal
+  // 5. teacher.mastersat.uz — teacher portal
+  //    Only the teacher workspace is served; everything else lands on /teacher.
+  // ------------------------------------------------------------------
+  if (console === "teacher") {
+    if (pathname === "/") {
+      const url = req.nextUrl.clone();
+      url.pathname = "/teacher";
+      return NextResponse.redirect(url, { headers: res.headers });
+    }
+    if (!isAllowedOnTeacher(pathname)) {
+      const url = req.nextUrl.clone();
+      url.pathname = "/teacher";
+      return NextResponse.redirect(url, { headers: res.headers });
+    }
+    return res;
+  }
+
+  // ------------------------------------------------------------------
+  // 6. Main domain (mastersat.uz) — student portal
   //    Block staff/authoring routes; redirect to student home.
   // ------------------------------------------------------------------
   if (isBlockedOnMain(pathname)) {

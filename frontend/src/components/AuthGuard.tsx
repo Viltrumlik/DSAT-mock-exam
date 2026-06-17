@@ -9,7 +9,7 @@ import { useMe } from "@/hooks/useMe";
 const BOOT_TIMEOUT_MS = 12_000;
 const BOOT_SLOW_MS = 5_000;
 
-function consoleFromHostname(): "admin" | "questions" | "main" {
+function consoleFromHostname(): "admin" | "questions" | "teacher" | "main" {
     if (typeof window === "undefined") return "main";
     const h = String(window.location.hostname || "").toLowerCase();
     const labels = h.split(".").filter(Boolean);
@@ -17,8 +17,13 @@ function consoleFromHostname(): "admin" | "questions" | "main" {
     if (labels[0] === "admin" || h.startsWith("admin.")) return "admin";
     if (labels[0] === "questions" || h.startsWith("questions.")) return "questions";
     if (labels.length >= 2 && labels[1] === "questions") return "questions";
+    if (labels[0] === "teacher" || h.startsWith("teacher.")) return "teacher";
     return "main";
 }
+
+/** Absolute URL of the main student site, used to bounce unauthorized users off the teacher portal. */
+const MAIN_SITE_URL =
+    process.env.NEXT_PUBLIC_MAIN_SITE_URL || "https://mastersat.uz";
 
 function permissionList(me: Record<string, unknown> | undefined | null): string[] {
     if (!me) return [];
@@ -83,9 +88,18 @@ export default function AuthGuard({
     const isTester = roleRaw === "test_admin";
     const isStudent = roleRaw === "student";
     const hasStaff = staffAccess(perms);
+    // Teacher portal access is role-based (NOT permission-based): only teacher + super_admin.
+    // This deliberately excludes admin/test_admin, unlike the perm-based admin console gate.
+    const teacherPortalAllowed = roleRaw === "teacher" || roleRaw === "super_admin";
 
     useEffect(() => {
         if (bootState !== "AUTHENTICATED" || !me) return;
+        // Teacher portal: only teacher + super_admin. Everyone else is bounced
+        // cross-origin to the main site with the permission notice.
+        if (consoleMode === "teacher" && !teacherPortalAllowed) {
+            window.location.replace(`${MAIN_SITE_URL}/?denied=teacher-portal`);
+            return;
+        }
         if (frozen && !hasStaff) {
             router.replace("/frozen");
             return;
@@ -109,6 +123,7 @@ export default function AuthGuard({
         hasStaff,
         isStudent,
         isTester,
+        teacherPortalAllowed,
         adminOnly,
         consoleMode,
         router,
@@ -183,6 +198,7 @@ export default function AuthGuard({
     }
 
     const willRedirectAway =
+        (consoleMode === "teacher" && !teacherPortalAllowed) ||
         (frozen && !hasStaff) ||
         (consoleMode === "questions" && isStudent) ||
         (consoleMode === "admin" && (isStudent || isTester)) ||

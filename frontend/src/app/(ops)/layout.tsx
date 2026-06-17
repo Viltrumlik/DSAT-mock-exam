@@ -12,7 +12,6 @@ import {
   School,
   AlertOctagon,
   ScrollText,
-  ClipboardCheck,
   BookOpen,
   GraduationCap,
   KeyRound,
@@ -22,10 +21,12 @@ import {
  * Operational console navigation.
  * Serves admin.mastersat.uz.
  *
- * Nav is split into two sections:
- *   - Admin operations: always shown to all staff
- *   - Teacher workspace: shown to teacher-role users and admins; links into /teacher/* routes
+ * Admin operations nav is shown to all staff. The teacher workspace no longer lives
+ * here — it moved to teacher.mastersat.uz — so we surface a single external link to the
+ * Teacher Portal for users who can actually access it (teacher + super_admin).
  */
+const TEACHER_PORTAL_URL =
+  process.env.NEXT_PUBLIC_TEACHER_PORTAL_URL || "https://teacher.mastersat.uz";
 const OPS_NAV = [
   {
     href: "/ops",
@@ -77,27 +78,6 @@ const OPS_NAV = [
   },
 ] as const;
 
-const TEACHER_NAV = [
-  {
-    href: "/teacher",
-    label: "My Classes",
-    icon: BookOpen,
-    exact: true,
-  },
-  {
-    href: "/teacher/homework",
-    label: "Homework",
-    icon: ClipboardCheck,
-    exact: false,
-  },
-  {
-    href: "/teacher/students",
-    label: "Students",
-    icon: Users,
-    exact: false,
-  },
-] as const;
-
 function isNavActive(pathname: string, href: string, exact: boolean): boolean {
   if (exact) return pathname === href;
   return pathname === href || pathname.startsWith(href + "/");
@@ -138,9 +118,8 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
   const { me } = useMe();
 
   const role = String(me?.role ?? "").trim().toLowerCase();
-  // Show teacher section for teacher-role users and full admins.
-  const showTeacherSection =
-    role === "teacher" || role === "admin" || role === "super_admin";
+  // Link to the Teacher Portal only for roles allowed there (teacher + super_admin).
+  const showTeacherPortalLink = role === "teacher" || role === "super_admin";
 
   return (
     <AuthGuard adminOnly>
@@ -164,17 +143,20 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
                 ))}
               </nav>
 
-              {/* Teacher workspace section */}
-              {showTeacherSection && (
+              {/* Teacher Portal — external link to teacher.mastersat.uz */}
+              {showTeacherPortalLink && (
                 <div className="mt-3 border-t border-border pt-3">
                   <p className="mb-1.5 px-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                     Teacher
                   </p>
-                  <nav className="flex flex-col gap-0.5" aria-label="Teacher workspace">
-                    {TEACHER_NAV.map((item) => (
-                      <NavItem key={item.href} {...item} pathname={pathname} />
-                    ))}
-                  </nav>
+                  <a
+                    href={TEACHER_PORTAL_URL}
+                    className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                  >
+                    <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
+                    Teacher Portal
+                    <span aria-hidden className="ml-auto text-xs text-muted-foreground">↗</span>
+                  </a>
                 </div>
               )}
             </aside>
