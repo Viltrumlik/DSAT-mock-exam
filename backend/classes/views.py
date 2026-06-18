@@ -10,6 +10,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Q
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -287,7 +288,8 @@ class ClassroomViewSet(ModelViewSet):
                 "created_by",
                 "assessment_homework__assessment_set",
             )
-            .order_by("classroom_id", "-created_at")
+            .annotate(_given_at=Coalesce("published_at", "created_at"))
+            .order_by("classroom_id", "-_given_at", "-id")
         )
 
         # Build submission map for this student (one query).
@@ -1391,8 +1393,14 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             user=user, role__in=ClassroomMembership.STAFF_ROLES
         ).exists()
         if not is_staff:
-            # Students never see DRAFT or ARCHIVED assignments.
-            return qs.filter(status=Assignment.STATUS_PUBLISHED)
+            # Students never see DRAFT or ARCHIVED assignments. Order newest-GIVEN first
+            # (when it was published, falling back to creation) so freshly assigned work
+            # is always at the top — re-publishing an old draft floats it up.
+            return (
+                qs.filter(status=Assignment.STATUS_PUBLISHED)
+                .annotate(_given_at=Coalesce("published_at", "created_at"))
+                .order_by("-_given_at", "-id")
+            )
         include_archived = str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
         return qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
 

@@ -77,6 +77,40 @@ export const KIND_LABEL: Record<AssignmentKind, string> = {
   FILE: "Homework",
 };
 
+/**
+ * A single openable content within an assignment. An assignment can bundle several
+ * (a past paper + an assessment + a practice test), each opened independently by the student.
+ */
+export interface ContentAction {
+  kind: AssignmentKind;
+  label: string;
+  href: string;
+}
+
+/**
+ * All openable learning contents attached to an assignment, in a stable order. Reuses the
+ * same per-kind routes as `startHref`. Files/links stay in the "Details" card (downloads),
+ * so this returns only the contents a student "opens" (assessment, mock, past paper, practice,
+ * module). Length > 1 → the assignment is a multi-content bundle.
+ */
+export function contentActions(a: AssignmentDetail): ContentAction[] {
+  const out: ContentAction[] = [];
+  if (a.assessment_homework != null) out.push({ kind: "QUIZ", label: "Open Assessment", href: `/assessments/${a.id}` });
+  if (a.mock_exam != null) out.push({ kind: "MOCK", label: "Open Mock Exam", href: `/mock/${a.mock_exam}` });
+  if (a.pastpaper_pack != null) out.push({ kind: "PASTPAPER", label: "Open Past Paper", href: `/pastpapers/${a.pastpaper_pack}` });
+  if (a.practice_test_pack != null) {
+    out.push({ kind: "PRACTICE", label: "Open Practice Test", href: `/practice-tests/${a.practice_test_pack}` });
+  } else if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) {
+    const tid = a.practice_test ?? a.practice_test_ids?.[0];
+    if (tid != null) out.push({ kind: "PRACTICE", label: "Open Practice Test", href: `/practice-test/${tid}` });
+  }
+  if (a.module != null) {
+    const tid = a.practice_test ?? a.practice_test_ids?.[0];
+    if (tid != null) out.push({ kind: "MODULE", label: "Open Module Test", href: `/practice-test/${tid}` });
+  }
+  return out;
+}
+
 /** Where the "Start …" action routes for auto-graded work. */
 export function startHref(classId: number, a: AssignmentDetail): string | null {
   const kind = assignmentKind(a);

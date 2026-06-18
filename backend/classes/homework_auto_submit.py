@@ -162,6 +162,11 @@ def sync_practice_submission_for_assignment(student, assignment: Assignment) -> 
     If every practice-test target for ``assignment`` has a completed attempt for ``student``,
     ensure the class submission is SUBMITTED with a linked attempt.
     """
+    # Multi-content bundles are instructional: each part scores in its own engine, but the
+    # classroom submission is not auto-finalized from a single signal (the practice-sync and
+    # assessment-sync paths would otherwise race on one SubmissionReview).
+    if assignment.is_multi_content:
+        return False
     targets = assignment_target_practice_test_ids(assignment)
     if not targets:
         return False
@@ -235,6 +240,10 @@ def sync_assessment_submission(assessment_attempt) -> bool:
 
     assignment = getattr(hw, "assignment", None)
     if assignment is None:
+        return False
+
+    # Multi-content bundles are instructional — do not auto-finalize from the assessment signal.
+    if assignment.is_multi_content:
         return False
 
     student = assessment_attempt.student

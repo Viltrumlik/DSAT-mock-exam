@@ -13,7 +13,7 @@ import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui"
 import { useClassroom } from "../hooks";
 import { capabilitiesFor } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
-import { assignmentKind, KIND_LABEL, startHref, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
+import { assignmentKind, contentActions, KIND_LABEL, startHref, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
 import { SubmissionStatusPill } from "./statusPill";
 
 function dueLine(due: string | null, done: boolean): { text: string; tone: "neutral" | "warning" | "info" } {
@@ -93,6 +93,8 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
 
   const action = resolveAction(kind, status);
   const href = startHref(classId, assignment);
+  const actions = contentActions(assignment);
+  const multi = actions.length > 1;
 
   function runAction() {
     if (action.mode === "upload") { setUploadOpen(true); return; }
@@ -107,7 +109,7 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
       {/* 1. What is this? */}
       <header>
         <div className="flex flex-wrap items-center gap-2">
-          <Pill tone="primary">{KIND_LABEL[kind]}</Pill>
+          <Pill tone="primary">{multi ? "Bundle" : KIND_LABEL[kind]}</Pill>
           <SubmissionStatusPill status={status} />
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">{assignment.title}</h1>
@@ -118,8 +120,30 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
         </p>
       </header>
 
-      {/* 5. What should I do next? — the single obvious action */}
-      {done ? (
+      {/* 5. What should I do next? */}
+      {multi ? (
+        /* Multi-content bundle: open each attached activity separately. */
+        <Card>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Activities</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This assignment includes several activities. Open each one — your score for each is recorded automatically.
+          </p>
+          <div className="mt-4 space-y-2">
+            {actions.map((c) => (
+              <Link
+                key={`${c.kind}-${c.href}`}
+                href={c.href}
+                className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 transition-colors hover:bg-surface-2"
+              >
+                <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                  <Play className="h-4 w-4 text-primary" /> {c.label}
+                </span>
+                <Pill tone="neutral">{KIND_LABEL[c.kind]}</Pill>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : done ? (
         <Card className="border-emerald-500/30 bg-emerald-500/5">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
@@ -146,7 +170,7 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
       )}
 
       {/* File upload panel (FILE kind) */}
-      {uploadOpen && kind === "FILE" && (
+      {uploadOpen && kind === "FILE" && !multi && (
         <UploadPanel classId={classId} assignmentId={assignment.id} my={my} onClose={() => setUploadOpen(false)} />
       )}
 

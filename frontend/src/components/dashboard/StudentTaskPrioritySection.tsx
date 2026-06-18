@@ -47,11 +47,9 @@ type PendingAssignment = {
 
 /** Returns the correct student-facing URL for an assignment. */
 function assignmentHref(p: PendingAssignment): string {
-  // Assessment-type assignments are handled by the assessment workspace,
-  // NOT by the generic classroom assignment view.
-  if (p.assignment.assessment_homework) {
-    return `/assessments/${p.assignment.id}`;
-  }
+  // Always land on the in-class assignment detail page so the student sees the instructions
+  // and every attached activity (an assignment may bundle several). The detail page
+  // deep-links into each activity (assessment, past paper, practice test, …).
   return `/classes/${p.classroomId}/assignments/${p.assignment.id}`;
 }
 

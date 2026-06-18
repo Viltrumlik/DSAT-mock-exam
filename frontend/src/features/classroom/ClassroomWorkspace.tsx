@@ -28,12 +28,22 @@ export function ClassroomWorkspace({
   classId,
   backHref,
   backLabel,
+  consumer = false,
 }: {
   classId: number;
   backHref?: string;
   backLabel?: string;
+  /**
+   * Force the consumer (student) view regardless of the viewer's classroom role. Used on the
+   * student site (mastersat.uz) so teacher/admin accounts never see management controls there —
+   * all teacher management lives on the teacher portal. Derives capabilities as STUDENT, which
+   * cascades to every tab/page (they each read `classroom.my_role`).
+   */
+  consumer?: boolean;
 }) {
-  const { data: classroom, isLoading, isError, refetch } = useClassroom(classId);
+  const { data: rawClassroom, isLoading, isError, refetch } = useClassroom(classId);
+  const classroom =
+    consumer && rawClassroom ? { ...rawClassroom, my_role: "STUDENT" } : rawClassroom;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

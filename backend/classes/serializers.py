@@ -301,6 +301,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.BooleanField(read_only=True))
     def get_locks_file_upload(self, obj):
         """True when this homework includes assigned practice/mock sections (auto turn-in when tests finish)."""
+        # Multi-content bundles are instructional — keep file upload available so a bundle
+        # that includes a file deliverable can still be turned in.
+        if getattr(obj, "is_multi_content", False):
+            return False
         # Also lock for assessment homework (no file submissions / manual grading).
         return bool(assignment_target_practice_test_ids(obj) or getattr(obj, "assessment_homework", None))
 
@@ -411,29 +415,23 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 if v in (None, "", []):
                     attrs["practice_test_ids"] = None
         else:
-            pp = attrs.get("pastpaper_pack")
-            pids = attrs.get("practice_test_ids")
-            pt = attrs.get("practice_test")
-
-            if pp == "":
-                pp = None
-            if pt == "":
-                pt = None
-
-            if pp is not None:
-                attrs["pastpaper_pack"] = pp
+            # CREATE: multi-content is allowed — a single assignment may bundle a file,
+            # a past paper, an assessment and a practice test at once. Normalize each
+            # field independently ("" -> None) and only collapse WITHIN the pastpaper/
+            # practice slot (pack vs legacy ids vs single describe the same rows). Do NOT
+            # null one content type because another is present.
+            if attrs.get("pastpaper_pack") == "":
+                attrs["pastpaper_pack"] = None
+            if attrs.get("practice_test") == "":
                 attrs["practice_test"] = None
+            pids = attrs.get("practice_test_ids")
+            if pids in (None, "", []):
                 attrs["practice_test_ids"] = None
-            elif pids:
-                attrs["pastpaper_pack"] = None
-                attrs["practice_test_ids"] = pids
-                if len(pids) == 1:
-                    attrs["practice_test"] = PracticeTest.objects.filter(pk=pids[0], mock_exam__isnull=True).first()
-                else:
-                    attrs["practice_test"] = None
-            else:
-                attrs["pastpaper_pack"] = None
-                attrs["practice_test_ids"] = None
+            elif len(pids) == 1 and not attrs.get("practice_test"):
+                # Mirror a single-id legacy bundle to the canonical practice_test FK.
+                attrs["practice_test"] = PracticeTest.objects.filter(
+                    pk=pids[0], mock_exam__isnull=True
+                ).first()
 
         attrs = super().validate(attrs)
 

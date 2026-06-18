@@ -15,7 +15,8 @@ export default function ClassDetailPage() {
         </div>
       }
     >
-      <ClassroomWorkspace classId={classId} />
+      {/* mastersat.uz is the student site — force the consumer view (no teacher management). */}
+      <ClassroomWorkspace classId={classId} consumer />
     </Suspense>
   );
 }

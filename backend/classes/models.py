@@ -339,10 +339,53 @@ class Assignment(models.Model):
         return self.status == self.STATUS_PUBLISHED
 
     @property
+    def content_count(self) -> int:
+        """How many distinct openable contents are attached (file, pastpaper, assessment,
+        practice test, etc.). Drives the 'bundle'/instructional behavior: an assignment can
+        bundle several contents at once and students open each one separately."""
+        n = 0
+        if self.mock_exam_id:
+            n += 1
+        if self.pastpaper_pack_id:
+            n += 1
+        if self.practice_test_pack_id:
+            n += 1
+        if self.module_id:
+            n += 1
+        if self.practice_test_id or self.practice_test_ids:
+            n += 1
+        # File / link deliverable counts as one slot.
+        if self.attachment_file or self.external_url:
+            n += 1
+        else:
+            try:
+                if self.extra_attachments.exists():
+                    n += 1
+            except Exception:
+                pass
+        try:
+            if self.assessment_homework is not None:
+                n += 1
+        except Exception:
+            pass
+        return n
+
+    @property
+    def is_multi_content(self) -> bool:
+        """A 'bundle': several contents attached at once (e.g. a file + a past paper + an
+        assessment). Bundles are instructional — students open each resource and each
+        auto-graded part still records its own score in its own engine, but the classroom
+        assignment is NOT auto-finalized into one combined grade (graded manually)."""
+        return self.content_count >= 2
+
+    @property
     def is_auto_graded(self) -> bool:
         """Auto-graded = objective work (practice tests, past papers, mock exams, module
         tests, quizzes/assessments). These are scored + graded automatically and never
-        enter the teacher's manual grading queue. Manual = file/instructions only."""
+        enter the teacher's manual grading queue. Manual = file/instructions only, OR a
+        multi-content bundle (instructional — graded manually)."""
+        if self.is_multi_content:
+            return False
         if (
             self.mock_exam_id
             or self.practice_test_id
@@ -360,6 +403,8 @@ class Assignment(models.Model):
     @property
     def auto_source_label(self) -> str:
         """Human label for the auto-grading source shown in the gradebook."""
+        if self.is_multi_content:
+            return "Bundle"
         if self.mock_exam_id:
             return "Mock Exam"
         if self.pastpaper_pack_id:

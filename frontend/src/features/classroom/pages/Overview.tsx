@@ -45,7 +45,9 @@ function dueLabel(due?: string | null): string {
 }
 
 function assignmentHref(classId: number, a: WorkspaceAssignment): string {
-  if (a.assessment_homework != null) return `/assessments/${a.id}`;
+  // Always land on the in-class assignment detail page so the student sees the instructions
+  // and all attached activities (an assignment may bundle several — past paper, assessment,
+  // practice test). The detail page deep-links into each activity.
   return `/classes/${classId}/assignments/${a.id}`;
 }
 
