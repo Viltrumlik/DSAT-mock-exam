@@ -84,11 +84,13 @@ class SubdomainAPIGuardMiddleware:
         if path.startswith("/api/csp-report/"):
             return self.get_response(request)
 
-        # Assessment homework POST is assignment-console only (never questions.* or apex/main API host).
-        if path.startswith("/api/assessments/homework/assign/") and method == "POST" and kind != "admin":
+        # Assessment homework POST is allowed on the assignment consoles only:
+        # admin (legacy ops) and teacher (teacher portal owns classroom assignment).
+        # Never on questions.* or the apex/main API host.
+        if path.startswith("/api/assessments/homework/assign/") and method == "POST" and kind not in ("admin", "teacher"):
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
-                {"detail": "Assessment homework assignment is available on the admin subdomain only."},
+                {"detail": "Assessment homework assignment is available on the admin or teacher console only."},
                 status=403,
             )
 
@@ -203,6 +205,10 @@ class SubdomainAPIGuardMiddleware:
             if path.startswith("/api/exams/"):
                 return self.get_response(request)
             if path.startswith("/api/users/admin/exam-dates/"):
+                return self.get_response(request)
+            # Assessment HOMEWORK surface (assign + per-classroom results/gradebook).
+            # Assessment authoring (``/api/assessments/admin/``) stays on the questions console.
+            if path.startswith("/api/assessments/homework/"):
                 return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
