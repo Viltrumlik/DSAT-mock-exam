@@ -754,6 +754,37 @@ export const classesApi = {
         const r = await api.patch(`/classes/${classId}/`, data);
         return r.data;
     },
+    /** Archive (soft) / restore a classroom — reuses is_active. */
+    setArchived: async (classId: number, archived: boolean) => {
+        const r = await api.patch(`/classes/${classId}/`, { is_active: !archived });
+        return r.data;
+    },
+    // Materials (downloadable PDF/DOCX)
+    listMaterials: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/materials/`);
+        return r.data;
+    },
+    uploadMaterial: async (classId: number, formData: FormData) => {
+        const r = await api.post(`/classes/${classId}/materials/`, formData);
+        return r.data;
+    },
+    deleteMaterial: async (classId: number, materialId: number) => {
+        await api.delete(`/classes/${classId}/materials/${materialId}/`);
+    },
+    // Teacher: assign an existing interactive midterm to the whole classroom
+    assignMidterm: async (classId: number, mockExamId: number) => {
+        const r = await api.post(`/classes/${classId}/assign-midterm/`, { mock_exam_id: mockExamId });
+        return r.data;
+    },
+    // Admin governance
+    assignTeacher: async (classId: number, userId: number) => {
+        const r = await api.post(`/classes/${classId}/assign-teacher/`, { user_id: userId });
+        return r.data;
+    },
+    transferOwnership: async (classId: number, userId: number) => {
+        const r = await api.post(`/classes/${classId}/transfer-ownership/`, { user_id: userId });
+        return r.data;
+    },
     join: async (join_code: string) => {
         const r = await api.post('/classes/join/', { join_code });
         return r.data;
