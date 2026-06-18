@@ -10,6 +10,7 @@ import {
   Settings,
   FolderOpen,
   Timer,
+  ListChecks,
 } from "lucide-react";
 import type { Capabilities } from "../capabilities";
 
@@ -18,6 +19,7 @@ export type ClassroomTabId =
   | "assignments"
   | "materials"
   | "midterms"
+  | "results"
   | "stream"
   | "people"
   | "rankings"
@@ -39,6 +41,7 @@ export const CLASSROOM_TABS: ClassroomTabDef[] = [
   { id: "assignments", label: "Assignments", icon: ClipboardList, show: () => true },
   { id: "midterms", label: "Midterms", icon: Timer, show: (c) => c.canManageAssignments },
   { id: "materials", label: "Materials", icon: FolderOpen, show: (c) => c.isMember },
+  { id: "results", label: "Results", icon: ListChecks, show: (c) => c.isStaff },
   { id: "stream", label: "Stream", icon: MessageSquare, show: () => true },
   { id: "people", label: "People", icon: Users, show: () => true },
   { id: "rankings", label: "Rankings", icon: Trophy, show: () => true },

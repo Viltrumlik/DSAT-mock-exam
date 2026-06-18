@@ -785,6 +785,15 @@ export const classesApi = {
         const r = await api.post(`/classes/${classId}/transfer-ownership/`, { user_id: userId });
         return r.data;
     },
+    // Results (read-only aggregation)
+    midtermResults: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/midterm-results/`);
+        return r.data;
+    },
+    unifiedResults: async (classId: number, params?: { student?: number; type?: string; date_from?: string; date_to?: string }) => {
+        const r = await api.get(`/classes/${classId}/results/`, { params });
+        return r.data;
+    },
     join: async (join_code: string) => {
         const r = await api.post('/classes/join/', { join_code });
         return r.data;

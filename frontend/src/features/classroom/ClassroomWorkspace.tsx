@@ -17,10 +17,11 @@ import { Analytics } from "./pages/Analytics";
 import { Gradebook } from "./pages/Gradebook";
 import { Materials } from "./pages/Materials";
 import { Midterms } from "./pages/Midterms";
+import { Results } from "./pages/Results";
 import { ComingSoon } from "./pages/ComingSoon";
 
 function isTabId(v: string | null): v is ClassroomTabId {
-  return v != null && ["overview", "assignments", "materials", "midterms", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
+  return v != null && ["overview", "assignments", "materials", "midterms", "results", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
 }
 
 export function ClassroomWorkspace({ classId }: { classId: number }) {
@@ -56,6 +57,7 @@ export function ClassroomWorkspace({ classId }: { classId: number }) {
       {current === "assignments" && <Assignments classroom={classroom} />}
       {current === "midterms" && caps.canManageAssignments && <Midterms classroom={classroom} />}
       {current === "materials" && caps.isMember && <Materials classroom={classroom} />}
+      {current === "results" && caps.isStaff && <Results classroom={classroom} />}
       {current === "people" && <People classroom={classroom} />}
       {current === "rankings" && <Rankings classroom={classroom} />}
       {current === "grading" && caps.canGrade && <Gradebook classroom={classroom} />}

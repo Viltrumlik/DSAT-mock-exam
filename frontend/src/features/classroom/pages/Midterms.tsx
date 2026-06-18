@@ -4,8 +4,43 @@ import { useState } from "react";
 import { Check, Timer } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
 import { Card, CardHeader, Button, LoadingState } from "../ui";
-import { useAssignmentOptions, useAssignMidterm } from "../hooks";
+import { useAssignmentOptions, useAssignMidterm, useMidtermResults } from "../hooks";
 import type { ClassroomWithRole } from "../types";
+
+function MidtermResultsSection({ classId }: { classId: number }) {
+  const { data, isLoading } = useMidtermResults(classId);
+  const midterms = data?.midterms ?? [];
+  if (isLoading) return <LoadingState label="Loading midterm results…" />;
+  if (midterms.length === 0) return null;
+  return (
+    <div className="space-y-4">
+      {midterms.map((m) => (
+        <Card key={m.midterm_id}>
+          <CardHeader title={m.title} description={`${m.subject} · ${m.assigned} assigned · ${m.started} started · ${m.completed} completed`} />
+          <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-lg bg-surface-2 p-2"><p className="text-xs text-muted-foreground">Average</p><p className="text-base font-bold text-foreground">{m.average ?? "—"}</p></div>
+            <div className="rounded-lg bg-surface-2 p-2"><p className="text-xs text-muted-foreground">Highest</p><p className="text-base font-bold text-foreground">{m.highest ?? "—"}</p></div>
+            <div className="rounded-lg bg-surface-2 p-2"><p className="text-xs text-muted-foreground">Lowest</p><p className="text-base font-bold text-foreground">{m.lowest ?? "—"}</p></div>
+          </div>
+          <table className="mt-4 w-full text-sm">
+            <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th><th>State</th><th>Score</th><th>Attempts</th><th>Date</th></tr></thead>
+            <tbody>
+              {m.students.map((s) => (
+                <tr key={s.student_id} className="border-t border-border">
+                  <td className="py-1.5 font-medium text-foreground">{s.student}</td>
+                  <td className="text-muted-foreground">{s.state.replace("_", " ")}</td>
+                  <td className="text-foreground">{s.score ?? "—"}</td>
+                  <td className="text-muted-foreground">{s.attempt_count}</td>
+                  <td className="text-muted-foreground">{s.attempt_date ? s.attempt_date.slice(0, 10) : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ))}
+    </div>
+  );
+}
 
 interface MidtermOption {
   id: number;
@@ -46,10 +81,11 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   }
 
   return (
+    <div className="space-y-5">
     <Card>
       <CardHeader
         title="Assign a midterm"
-        description="Assign an existing interactive midterm to every student in this class. Results appear in the Grading tab."
+        description="Assign an existing interactive midterm to every student in this class. Results appear below."
       />
       {err && <p className="mt-4 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-600">{err}</p>}
       {isLoading ? (
@@ -79,5 +115,7 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
         </ul>
       )}
     </Card>
+    <MidtermResultsSection classId={id} />
+    </div>
   );
 }

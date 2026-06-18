@@ -182,6 +182,39 @@ export function useAssignMidterm(id: number) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: classroomKeys.assignments(id) });
       qc.invalidateQueries({ queryKey: classroomKeys.detail(id) });
+      qc.invalidateQueries({ queryKey: classroomKeys.midtermResults(id) });
     },
+  });
+}
+
+// ── Results (read-only aggregation) ─────────────────────────────────────────
+export interface MidtermResult {
+  midterm_id: number; title: string; subject: string;
+  assigned: number; started: number; completed: number;
+  average: number | null; highest: number | null; lowest: number | null;
+  students: { student_id: number; student: string; state: string; score: number | null; attempt_date: string | null; attempt_count: number }[];
+}
+export interface UnifiedRow {
+  student_id: number; student: string; content_name: string; type: string;
+  score: number | null; status: string; submission_date: string | null;
+}
+export interface UnifiedResults {
+  summary: { average_score: number | null; completion_rate: number | null; total_attempts: number; pending_work: number };
+  rows: UnifiedRow[];
+}
+
+export function useMidtermResults(id: number) {
+  return useQuery<{ midterms: MidtermResult[] }>({
+    queryKey: classroomKeys.midtermResults(id),
+    queryFn: () => classesApi.midtermResults(id),
+    enabled: enabledId(id),
+  });
+}
+
+export function useUnifiedResults(id: number, filters: { student?: number; type?: string; date_from?: string; date_to?: string }) {
+  return useQuery<UnifiedResults>({
+    queryKey: classroomKeys.results(id, filters),
+    queryFn: () => classesApi.unifiedResults(id, filters),
+    enabled: enabledId(id),
   });
 }
