@@ -145,3 +145,19 @@ class TransferOwnershipView(_AdminClassroomGovernanceView):
         classroom.teacher = user
         classroom.save(update_fields=["teacher", "updated_at"])
         return Response({"detail": "Ownership transferred.", "classroom_id": classroom.pk, "owner_id": user.pk})
+
+
+class ClassroomGovernanceDeleteView(_AdminClassroomGovernanceView):
+    """Admin governance: delete ANY classroom (admin / super_admin only).
+
+    The operational ``ClassroomViewSet.destroy`` is owner-only and membership-scoped, so
+    admins (non-members) get 403 there. This is the explicit governance delete path.
+    """
+
+    @transaction.atomic
+    def delete(self, request, classroom_pk):
+        if not self._guard(request):
+            return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
+        classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        classroom.delete()
+        return Response(status=http.HTTP_204_NO_CONTENT)

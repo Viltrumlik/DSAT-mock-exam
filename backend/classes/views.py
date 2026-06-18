@@ -398,9 +398,9 @@ class ClassroomViewSet(ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="directory")
     def directory(self, request):
-        """Directory-wide classroom list (super_admin/superuser only)."""
+        """Directory-wide classroom list (governance: admin / super_admin / superuser)."""
         user = request.user
-        if not (getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN):
+        if not (getattr(user, "is_superuser", False) or normalized_role(user) in (acc_const.ROLE_SUPER_ADMIN, acc_const.ROLE_ADMIN)):
             raise PermissionDenied(detail="You do not have permission to view the classroom directory.")
         qs = Classroom.objects.annotate(members_count=Count("memberships")).distinct().order_by("-created_at")
         page = self.paginate_queryset(qs)
