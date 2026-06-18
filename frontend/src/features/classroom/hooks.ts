@@ -109,6 +109,17 @@ export function useUpdateClass(id: number) {
   });
 }
 
+export function useRegenerateCode(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => classesApi.regenerateCode(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: classroomKeys.detail(id) });
+      qc.invalidateQueries({ queryKey: classroomKeys.list() });
+    },
+  });
+}
+
 export function useArchiveClass() {
   const qc = useQueryClient();
   return useMutation({
