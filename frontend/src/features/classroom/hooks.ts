@@ -108,3 +108,69 @@ export function useUpdateClass(id: number) {
     },
   });
 }
+
+export function useArchiveClass() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, archived }: { id: number; archived: boolean }) =>
+      classesApi.setArchived(id, archived),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: classroomKeys.detail(id) });
+      qc.invalidateQueries({ queryKey: classroomKeys.list() });
+    },
+  });
+}
+
+// ── Materials (downloadable PDF/DOCX) ──────────────────────────────────────
+export interface ClassroomMaterial {
+  id: number;
+  title: string;
+  description: string;
+  file_url: string | null;
+  teacher_name: string | null;
+  created_at: string;
+}
+
+export function useMaterials(id: number) {
+  return useQuery<{ results: ClassroomMaterial[] }>({
+    queryKey: classroomKeys.materials(id),
+    queryFn: () => classesApi.listMaterials(id),
+    enabled: enabledId(id),
+  });
+}
+
+export function useUploadMaterial(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (formData: FormData) => classesApi.uploadMaterial(id, formData),
+    onSuccess: () => qc.invalidateQueries({ queryKey: classroomKeys.materials(id) }),
+  });
+}
+
+export function useDeleteMaterial(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (materialId: number) => classesApi.deleteMaterial(id, materialId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: classroomKeys.materials(id) }),
+  });
+}
+
+// ── Assignment options (assessments / past papers / midterms a teacher can assign) ──
+export function useAssignmentOptions(id: number) {
+  return useQuery({
+    queryKey: classroomKeys.assignmentOptions(id),
+    queryFn: () => classesApi.getAssignmentOptions(id),
+    enabled: enabledId(id),
+  });
+}
+
+export function useAssignMidterm(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mockExamId: number) => classesApi.assignMidterm(id, mockExamId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: classroomKeys.assignments(id) });
+      qc.invalidateQueries({ queryKey: classroomKeys.detail(id) });
+    },
+  });
+}

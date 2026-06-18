@@ -599,10 +599,25 @@ class ClassroomViewSet(ModelViewSet):
                 "section_count": ptp.sections.count(),
             })
 
+        # Interactive midterms (MockExam kind=MIDTERM) the teacher may assign to this class.
+        from exams.models import MockExam
+        midterms = []
+        for mid in MockExam.objects.filter(
+            kind=MockExam.KIND_MIDTERM, is_published=True
+        ).order_by("-id"):
+            midterms.append({
+                "id": mid.id,
+                "title": mid.title or "",
+                "subject": mid.midterm_subject,
+                "scoring_scale": mid.midterm_scoring_scale,
+                "module_count": mid.midterm_module_count,
+            })
+
         return Response({
             "practice_tests": practice_tests,
             "assessment_sets": assessment_sets,
             "practice_test_packs": practice_test_packs,
+            "midterms": midterms,
         })
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="leaderboard")

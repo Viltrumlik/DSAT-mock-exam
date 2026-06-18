@@ -8,12 +8,16 @@ import {
   CalendarCheck,
   BarChart3,
   Settings,
+  FolderOpen,
+  Timer,
 } from "lucide-react";
 import type { Capabilities } from "../capabilities";
 
 export type ClassroomTabId =
   | "overview"
   | "assignments"
+  | "materials"
+  | "midterms"
   | "stream"
   | "people"
   | "rankings"
@@ -33,6 +37,8 @@ export interface ClassroomTabDef {
 export const CLASSROOM_TABS: ClassroomTabDef[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, show: () => true },
   { id: "assignments", label: "Assignments", icon: ClipboardList, show: () => true },
+  { id: "midterms", label: "Midterms", icon: Timer, show: (c) => c.canManageAssignments },
+  { id: "materials", label: "Materials", icon: FolderOpen, show: (c) => c.isMember },
   { id: "stream", label: "Stream", icon: MessageSquare, show: () => true },
   { id: "people", label: "People", icon: Users, show: () => true },
   { id: "rankings", label: "Rankings", icon: Trophy, show: () => true },

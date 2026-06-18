@@ -11,6 +11,9 @@ import {
   UserCircle,
   ClipboardPen,
   Table2,
+  School,
+  Timer,
+  FolderOpen,
 } from "lucide-react";
 
 export type NavItem = {
@@ -79,8 +82,9 @@ export const teacherNav: NavSection[] = [
   {
     section: "Classroom",
     items: [
-      // Dedicated teacher Classes page is future work; class health lives on the
-      // Dashboard today. Students is the live roster surface.
+      { href: "/teacher/classrooms", label: "Classrooms", icon: School },
+      { href: "/teacher/midterms", label: "Midterms", icon: Timer },
+      { href: "/teacher/materials", label: "Materials", icon: FolderOpen },
       { href: "/teacher/students", label: "Students", icon: Users },
     ],
   },

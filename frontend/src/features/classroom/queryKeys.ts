@@ -7,4 +7,6 @@ export const classroomKeys = {
   interventions: (id: number) => [...classroomKeys.all, "interventions", id] as const,
   assignments: (id: number) => [...classroomKeys.all, "assignments", id] as const,
   stream: (id: number) => [...classroomKeys.all, "stream", id] as const,
+  materials: (id: number) => [...classroomKeys.all, "materials", id] as const,
+  assignmentOptions: (id: number) => [...classroomKeys.all, "assignment-options", id] as const,
 };
