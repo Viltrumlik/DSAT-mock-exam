@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Users, Plus, LogIn, BookOpen, Calculator, GraduationCap } from "lucide-react";
+import { Users, LogIn, BookOpen, Calculator, GraduationCap } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
-import { can } from "@/lib/permissions";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
-import { PageHeader, Card, Button, Dialog, Field, Input, Select, TextField, EmptyState, LoadingState, ErrorState, Pill } from "../ui";
-import { useClassrooms, useJoinClass, useCreateClass, type CreateClassInput } from "../hooks";
+import { PageHeader, Card, Button, Dialog, Field, Input, EmptyState, LoadingState, ErrorState, Pill } from "../ui";
+import { useClassrooms, useJoinClass } from "../hooks";
 import { normalizeRole, ROLE_LABEL } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
+
+// Student portal is consumer-only: students JOIN and VIEW classes. Classroom creation/
+// editing/administration lives exclusively in the Teacher Portal (teacher.mastersat.uz).
 
 function ClassCard({ c }: { c: ClassroomWithRole }) {
   const subject = String((c as { subject?: string }).subject ?? "").toUpperCase();
@@ -54,16 +56,10 @@ function ClassCard({ c }: { c: ClassroomWithRole }) {
 export function ClassesHome() {
   const { data, isLoading, isError, refetch } = useClassrooms();
   const join = useJoinClass();
-  const create = useCreateClass();
-  const canCreate = typeof window !== "undefined" && can("create_classroom");
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [code, setCode] = useState("");
   const [joinErr, setJoinErr] = useState<string | null>(null);
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<CreateClassInput>({ name: "", subject: "ENGLISH", lesson_days: "ODD" });
-  const [createErr, setCreateErr] = useState<string | null>(null);
 
   const classes = (data?.items ?? []) as ClassroomWithRole[];
 
@@ -78,34 +74,15 @@ export function ClassesHome() {
     }
   }
 
-  async function submitCreate() {
-    setCreateErr(null);
-    if (!form.name.trim()) return setCreateErr("Give the class a name.");
-    try {
-      await create.mutateAsync(form);
-      setCreateOpen(false);
-      setForm({ name: "", subject: "ENGLISH", lesson_days: "ODD" });
-    } catch (e) {
-      setCreateErr(normalizeApiError(e).message);
-    }
-  }
-
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6 sm:px-6">
       <PageHeader
         title="Classes"
         description="Your classrooms, assignments, and progress in one place."
         actions={
-          <div className="flex gap-2">
-            <Button variant="secondary" icon={LogIn} onClick={() => setJoinOpen(true)}>
-              Join
-            </Button>
-            {canCreate && (
-              <Button icon={Plus} onClick={() => setCreateOpen(true)}>
-                Create class
-              </Button>
-            )}
-          </div>
+          <Button variant="secondary" icon={LogIn} onClick={() => setJoinOpen(true)}>
+            Join
+          </Button>
         }
       />
 
@@ -119,18 +96,11 @@ export function ClassesHome() {
             <EmptyState
               icon={GraduationCap}
               title="No classes yet"
-              description={canCreate ? "Create your first class or join one with a code." : "Join a class with the code your teacher shared."}
+              description="Join a class with the code your teacher shared."
               action={
-                <div className="flex gap-2">
-                  <Button variant="secondary" icon={LogIn} onClick={() => setJoinOpen(true)}>
-                    Join with code
-                  </Button>
-                  {canCreate && (
-                    <Button icon={Plus} onClick={() => setCreateOpen(true)}>
-                      Create class
-                    </Button>
-                  )}
-                </div>
+                <Button variant="secondary" icon={LogIn} onClick={() => setJoinOpen(true)}>
+                  Join with code
+                </Button>
               }
             />
           </Card>
@@ -170,61 +140,6 @@ export function ClassesHome() {
           />
         </Field>
       </Dialog>
-
-      {canCreate && (
-        <Dialog
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-          title="Create a class"
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button loading={create.isPending} onClick={submitCreate}>
-                Create class
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            {createErr && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-600">{createErr}</p>}
-            <TextField
-              label="Class name"
-              required
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="SAT Math — Evening Group"
-            />
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Subject" htmlFor="cls-subject">
-                <Select
-                  id="cls-subject"
-                  value={form.subject}
-                  onChange={(e) => setForm({ ...form, subject: e.target.value as CreateClassInput["subject"] })}
-                >
-                  <option value="ENGLISH">English</option>
-                  <option value="MATH">Math</option>
-                </Select>
-              </Field>
-              <Field label="Lesson days" htmlFor="cls-days">
-                <Select
-                  id="cls-days"
-                  value={form.lesson_days}
-                  onChange={(e) => setForm({ ...form, lesson_days: e.target.value as CreateClassInput["lesson_days"] })}
-                >
-                  <option value="ODD">Odd days</option>
-                  <option value="EVEN">Even days</option>
-                </Select>
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <TextField label="Lesson time" value={form.lesson_time ?? ""} onChange={(e) => setForm({ ...form, lesson_time: e.target.value })} placeholder="18:00" />
-              <TextField label="Room" value={form.room_number ?? ""} onChange={(e) => setForm({ ...form, room_number: e.target.value })} placeholder="Optional" />
-            </div>
-          </div>
-        </Dialog>
-      )}
     </div>
   );
 }
