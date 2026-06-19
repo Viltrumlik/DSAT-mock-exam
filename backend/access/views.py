@@ -240,6 +240,51 @@ def _int_list(raw) -> list[int]:
     return out
 
 
+def _merge_targets_from_payload(data):
+    """Build a deduped list of (resource_type, resource_id) targets from the request body.
+
+    Accepts EITHER a many-to-many ``resources`` array (each item
+    ``{resource_type, resource_id, subject_scope?}``) OR the legacy single
+    ``resource_type``/``resource_id`` (+ ``subject_scope``). Each resource is expanded via
+    ``resources.expand_subject_targets`` (packs → their subject sections), then merged/deduped.
+
+    Returns ``(targets, error_message)``; ``targets`` is None when there is an error.
+    """
+    raw_list = data.get("resources")
+    entries: list[tuple[str, object, object]] = []
+    if isinstance(raw_list, list) and raw_list:
+        for r in raw_list:
+            if not isinstance(r, dict):
+                continue
+            rt = str(r.get("resource_type") or "").strip()
+            try:
+                rid = int(r.get("resource_id"))
+            except (TypeError, ValueError):
+                return None, "Each resource needs a numeric resource_id."
+            entries.append((rt, rid, r.get("subject_scope")))
+    else:
+        rt = str(data.get("resource_type") or "").strip()
+        try:
+            rid = int(data.get("resource_id"))
+        except (TypeError, ValueError):
+            return None, "resource_id is required."
+        entries.append((rt, rid, data.get("subject_scope")))
+
+    targets: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    for rt, rid, scope in entries:
+        if not resources.is_registered(rt):
+            return None, f"Unknown resource_type {rt!r}."
+        for t in resources.expand_subject_targets(rt, rid, scope):
+            key = (t[0], t[1])
+            if key not in seen:
+                seen.add(key)
+                targets.append(t)
+    if not targets:
+        return None, "No matching sections for the chosen subject."
+    return targets, None
+
+
 class EngineGrantSubjectView(APIView):
     """POST /api/access/grants/subject/ — grant a SUBJECT to one or many users."""
 
@@ -273,20 +318,13 @@ class EngineGrantResourceView(APIView):
     def post(self, request):
         data = request.data or {}
         user_ids = _int_list(data.get("user_ids")) or _int_list([data.get("user_id")])
-        resource_type = str(data.get("resource_type") or "").strip()
-        try:
-            resource_id = int(data.get("resource_id"))
-        except (TypeError, ValueError):
-            return Response({"detail": "resource_id is required."}, status=400)
         if not user_ids:
             return Response({"detail": "user_ids is required."}, status=400)
-        if not resources.is_registered(resource_type):
-            return Response({"detail": f"Unknown resource_type {resource_type!r}."}, status=400)
+        # Accepts one resource (legacy) OR a `resources` array → many tests × many students.
+        targets, err = _merge_targets_from_payload(data)
+        if err:
+            return Response({"detail": err}, status=400)
         users = list(User.objects.filter(pk__in=user_ids))
-        subject_scope = data.get("subject_scope")
-        targets = resources.expand_subject_targets(resource_type, resource_id, subject_scope)
-        if not targets:
-            return Response({"detail": "No matching sections for the chosen subject."}, status=400)
         try:
             result = AssignmentService.bulk_assign_targets(
                 users, targets, actor=request.user,
@@ -309,19 +347,15 @@ class EngineGrantClassroomView(APIView):
         data = request.data or {}
         try:
             classroom_id = int(data.get("classroom_id"))
-            resource_id = int(data.get("resource_id"))
         except (TypeError, ValueError):
-            return Response({"detail": "classroom_id and resource_id are required."}, status=400)
-        resource_type = str(data.get("resource_type") or "").strip()
-        if not resources.is_registered(resource_type):
-            return Response({"detail": f"Unknown resource_type {resource_type!r}."}, status=400)
+            return Response({"detail": "classroom_id is required."}, status=400)
+        # Accepts one resource (legacy) OR a `resources` array → many tests to a whole class.
+        targets, err = _merge_targets_from_payload(data)
+        if err:
+            return Response({"detail": err}, status=400)
         classroom = Classroom.objects.filter(pk=classroom_id).first()
         if not classroom:
             return Response({"detail": "Classroom not found."}, status=404)
-        subject_scope = data.get("subject_scope")
-        targets = resources.expand_subject_targets(resource_type, resource_id, subject_scope)
-        if not targets:
-            return Response({"detail": "No matching sections for the chosen subject."}, status=400)
         try:
             result = ClassroomAccessService.assign_targets_to_classroom(
                 classroom, targets, actor=request.user,

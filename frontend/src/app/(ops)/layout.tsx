@@ -12,7 +12,6 @@ import {
   AlertOctagon,
   ScrollText,
   BookOpen,
-  GraduationCap,
   KeyRound,
 } from "lucide-react";
 
@@ -39,8 +38,9 @@ const OPS_NAV = [
     icon: School,
     exact: false,
   },
-  // Operational assignment management moved to the Teacher Portal. Admin keeps
-  // governance (Classrooms) + content authoring (Midterms) + Access/Users/Audit.
+  // Operational assignment management + midterm authoring moved out of the admin panel
+  // (authoring lives in the Builder console). Admin keeps governance (Classrooms) +
+  // Access/Users/Audit.
   {
     href: "/ops/access",
     label: "Access",
@@ -51,12 +51,6 @@ const OPS_NAV = [
     href: "/ops/users",
     label: "Users",
     icon: Users,
-    exact: false,
-  },
-  {
-    href: "/ops/midterms",
-    label: "Midterms",
-    icon: GraduationCap,
     exact: false,
   },
   {

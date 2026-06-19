@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Search, X } from "lucide-react";
-import api from "@/lib/api";
+import api, { classesApi } from "@/lib/api";
 import { cn } from "@/lib/cn";
+
+type ClassroomRow = { id: number; name: string };
 
 export type StudentRow = {
   id: number;
@@ -29,6 +31,10 @@ export function StudentMultiSelect({
   const [users, setUsers] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [classrooms, setClassrooms] = useState<ClassroomRow[]>([]);
+  const [classroomId, setClassroomId] = useState<number | "">("");
+  // Set of student ids in the chosen classroom; null = no classroom filter.
+  const [classroomMemberIds, setClassroomMemberIds] = useState<Set<number> | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -41,23 +47,59 @@ export function StudentMultiSelect({
         if (alive) setLoading(false);
       }
     })();
+    (async () => {
+      try {
+        const data = await classesApi.list();
+        if (alive) setClassrooms((data.items as ClassroomRow[]) ?? []);
+      } catch {
+        /* non-fatal */
+      }
+    })();
     return () => {
       alive = false;
     };
   }, []);
 
+  // When a classroom is picked, fetch its members and restrict the list to those students.
+  useEffect(() => {
+    let alive = true;
+    if (classroomId === "") {
+      setClassroomMemberIds(null);
+      return;
+    }
+    (async () => {
+      try {
+        const r = await api.get(`/classes/${classroomId}/members/`);
+        const raw = Array.isArray(r.data) ? r.data : (r.data?.members ?? []);
+        const ids = new Set<number>(
+          raw
+            .filter((m: { role?: string }) => String(m.role ?? "").toUpperCase() === "STUDENT")
+            .map((m: { user?: { id?: number } }) => m.user?.id)
+            .filter((id: number | undefined): id is number => typeof id === "number"),
+        );
+        if (alive) setClassroomMemberIds(ids);
+      } catch {
+        if (alive) setClassroomMemberIds(new Set());
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [classroomId]);
+
   const byId = useMemo(() => new Map(users.map((u) => [u.id, u])), [users]);
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const scoped = classroomMemberIds ? users.filter((u) => classroomMemberIds.has(u.id)) : users;
     const base = q
-      ? users.filter((u) =>
+      ? scoped.filter((u) =>
           label(u).toLowerCase().includes(q) ||
           (u.email ?? "").toLowerCase().includes(q) ||
           (u.username ?? "").toLowerCase().includes(q),
         )
-      : users;
+      : scoped;
     return base.slice(0, 50);
-  }, [users, search]);
+  }, [users, search, classroomMemberIds]);
 
   const toggle = (id: number) =>
     onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
@@ -88,14 +130,28 @@ export function StudentMultiSelect({
         </div>
       )}
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search students by name, username, or email…"
-          className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40"
-        />
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={classroomId}
+          onChange={(e) => setClassroomId(e.target.value ? Number(e.target.value) : "")}
+          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <option value="">All classrooms</option>
+          {classrooms.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search students by name, username, or email…"
+            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+          />
+        </div>
       </div>
 
       <div className="max-h-56 overflow-y-auto rounded-xl border border-border bg-card">

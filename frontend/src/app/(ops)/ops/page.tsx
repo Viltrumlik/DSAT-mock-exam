@@ -7,7 +7,6 @@ import {
   AlertOctagon,
   ArrowRight,
   CheckCircle2,
-  GraduationCap,
   KeyRound,
   School,
   Users,
@@ -122,12 +121,6 @@ const QUICK_LINKS = [
     href: "/ops/access",
     icon: KeyRound,
     title: "Access",
-    cta: "Manage",
-  },
-  {
-    href: "/ops/midterms",
-    icon: GraduationCap,
-    title: "Midterms",
     cta: "Manage",
   },
   {

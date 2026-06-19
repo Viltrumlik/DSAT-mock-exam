@@ -98,6 +98,12 @@ function listOf<T>(data: unknown): T[] {
   return [];
 }
 
+export type GrantResourceItem = {
+  resource_type: string;
+  resource_id: number;
+  subject_scope?: SubjectScope;
+};
+
 export const accessApi = {
   listGrants: async (filters: GrantFilters = {}): Promise<GrantListResponse> => {
     const params: Record<string, string | number> = {};
@@ -135,6 +141,26 @@ export const accessApi = {
     resource_type: string;
     resource_id: number;
     subject_scope?: SubjectScope;
+    expires_at?: string | null;
+  }): Promise<BulkResult> => {
+    const r = await api.post("/access/grants/classroom/", payload);
+    return r.data as BulkResult;
+  },
+
+  // Many-to-many: grant several resources to many students in one call.
+  grantResources: async (payload: {
+    user_ids: number[];
+    resources: GrantResourceItem[];
+    expires_at?: string | null;
+  }): Promise<BulkResult> => {
+    const r = await api.post("/access/grants/resource/", payload);
+    return r.data as BulkResult;
+  },
+
+  // Many resources → every student in a classroom (transactional).
+  grantClassroomResources: async (payload: {
+    classroom_id: number;
+    resources: GrantResourceItem[];
     expires_at?: string | null;
   }): Promise<BulkResult> => {
     const r = await api.post("/access/grants/classroom/", payload);

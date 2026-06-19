@@ -18,8 +18,8 @@ import { ResourcePicker, type SelectedResource } from "./ResourcePicker";
 type Mode = "resource_students" | "resource_classroom";
 
 const MODES: { key: Mode; label: string; icon: React.ElementType; hint: string }[] = [
-  { key: "resource_students", label: "Resource → students", icon: BookMarked, hint: "Grant one resource to one or many students." },
-  { key: "resource_classroom", label: "Resource → classroom", icon: School, hint: "Grant a resource to every enrolled student (transactional)." },
+  { key: "resource_students", label: "Tests → students", icon: BookMarked, hint: "Grant one or many tests to one or many students." },
+  { key: "resource_classroom", label: "Tests → classroom", icon: School, hint: "Grant one or many tests to every enrolled student (transactional)." },
 ];
 
 const SCOPES: { key: SubjectScope; label: string }[] = [
@@ -33,7 +33,7 @@ type ClassroomRow = { id: number; name: string; subject?: string };
 export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
   const [mode, setMode] = useState<Mode>("resource_students");
   const [userIds, setUserIds] = useState<number[]>([]);
-  const [resource, setResource] = useState<SelectedResource | null>(null);
+  const [resources, setResources] = useState<SelectedResource[]>([]);
   const [subjectScope, setSubjectScope] = useState<SubjectScope>("both");
   const [classroomId, setClassroomId] = useState<number | "">("");
   const [classrooms, setClassrooms] = useState<ClassroomRow[]>([]);
@@ -43,7 +43,7 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   // Math/Reading/Both only applies to pack resources that expand to subject sections.
-  const showScope = !!resource && SUBJECT_SCOPED_TYPES.has(resource.resource_type);
+  const showScope = resources.some((r) => SUBJECT_SCOPED_TYPES.has(r.resource_type));
 
   useEffect(() => {
     (async () => {
@@ -58,41 +58,38 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
 
   const reset = () => {
     setUserIds([]);
-    setResource(null);
+    setResources([]);
     setSubjectScope("both");
     setClassroomId("");
     setExpiresAt("");
   };
 
   const canSubmit = (() => {
-    if (submitting || !resource) return false;
+    if (submitting || resources.length === 0) return false;
     if (mode === "resource_students") return userIds.length > 0;
     return classroomId !== "";
   })();
 
   const submit = async () => {
-    if (!resource) return;
+    if (resources.length === 0) return;
     setSubmitting(true);
     setError(null);
     setResult(null);
     const expires_at = expiresAt ? new Date(expiresAt).toISOString() : null;
-    const scope = showScope ? subjectScope : undefined;
+    // One subject scope applies to any selected pack resources; other types ignore it.
+    const items = resources.map((r) => ({
+      resource_type: r.resource_type,
+      resource_id: r.resource_id,
+      subject_scope: SUBJECT_SCOPED_TYPES.has(r.resource_type) ? subjectScope : undefined,
+    }));
     try {
       let res: BulkResult;
       if (mode === "resource_students") {
-        res = await accessApi.grantResource({
-          user_ids: userIds,
-          resource_type: resource.resource_type,
-          resource_id: resource.resource_id,
-          subject_scope: scope,
-          expires_at,
-        });
+        res = await accessApi.grantResources({ user_ids: userIds, resources: items, expires_at });
       } else {
-        res = await accessApi.grantClassroom({
+        res = await accessApi.grantClassroomResources({
           classroom_id: Number(classroomId),
-          resource_type: resource.resource_type,
-          resource_id: resource.resource_id,
-          subject_scope: scope,
+          resources: items,
           expires_at,
         });
       }
@@ -161,8 +158,8 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
           </Field>
         )}
 
-        <Field label="Resource" icon={BookMarked}>
-          <ResourcePicker value={resource} onChange={setResource} />
+        <Field label="Tests / resources" icon={BookMarked}>
+          <ResourcePicker value={resources} onChange={setResources} />
         </Field>
 
         {showScope && (
