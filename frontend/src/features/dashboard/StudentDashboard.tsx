@@ -1,39 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+/**
+ * Student dashboard — a 1:1 implementation of the provided design mockup
+ * (~/Downloads/MasterSAT Dashboard.html). The mockup's exact palette, spacing,
+ * typography and animations are reproduced via inline styles bound to scoped
+ * `--dz-*` tokens + the `.dzboard` keyframe/hover classes in globals.css, wired
+ * to real data (useDashboardData + useStudentSchedule). Dark mode is handled by
+ * the `.dark .dzboard` token overrides (next-themes).
+ */
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Target,
   CalendarDays,
-  ArrowRight,
-  GraduationCap,
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
+  ArrowRight,
+  GraduationCap,
   Users,
   ClipboardList,
   FileText,
-  Sparkles,
 } from "lucide-react";
-import { cn } from "@/lib/cn";
-import {
-  Button,
-  Card,
-  CardContent,
-  EmptyState,
-  Modal,
-  Field,
-  Input,
-  Skeleton,
-} from "@/components/ui";
+import { Button, Card, CardContent, Skeleton } from "@/components/ui";
 import type { ScheduleEvent } from "@/lib/api";
 import { useDashboardData, type DashboardModel } from "./useDashboardData";
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 
+const GOAL_OPTIONS = [1400, 1500, 1550, 1600];
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
 export function StudentDashboard({ previewModel }: { previewModel?: DashboardModel }) {
   const live = useDashboardData();
   const router = useRouter();
-  const [goalOpen, setGoalOpen] = useState(false);
 
   const status = previewModel ? "ready" : live.status;
   const model = previewModel ?? live.model;
@@ -61,129 +61,318 @@ export function StudentDashboard({ previewModel }: { previewModel?: DashboardMod
     );
   }
 
+  return <DashboardBody model={model} live={live} isPreview={!!previewModel} />;
+}
+
+function DashboardBody({
+  model,
+  live,
+  isPreview,
+}: {
+  model: DashboardModel;
+  live: ReturnType<typeof useDashboardData>;
+  isPreview: boolean;
+}) {
+  const target = model.target ?? 1500;
+  const english = Math.round(target / 20) * 10;
+  const math = target - english;
+
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="ds-overline text-primary">Dashboard</p>
-          <h1 className="ds-h1 mt-1">Welcome back, {model.firstName}</h1>
-          <p className="ds-small mt-1">Your goal, schedule, and next lessons at a glance.</p>
+    <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
+      <div className="dz-content">
+        {/* Header row */}
+        <HeaderRow
+          name={model.firstName}
+          target={target}
+          saving={live.savingGoal}
+          onSave={async (v) => { if (!isPreview) await live.saveGoal(v); }}
+        />
+
+        {/* Score + countdown */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 20,
+            alignItems: "stretch",
+            marginBottom: 22,
+          }}
+          className="dz-scoregrid"
+        >
+          <TargetScoresCard overall={model.target} english={model.target != null ? english : null} math={model.target != null ? math : null} />
+          <CountdownCard daysToGo={model.examDaysLeft} examDate={model.examDate} />
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" leftIcon={<Target />} onClick={() => setGoalOpen(true)}>
-            {model.target != null ? "Update goal" : "Set goal"}
-          </Button>
-        </div>
+
+        {/* Calendar + right column */}
+        <ScheduleSection />
       </div>
-
-      {/* Top — target scores + SAT countdown */}
-      <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-        <TargetScoresCard model={model} onEditGoal={() => setGoalOpen(true)} />
-        <CountdownCard model={model} />
-      </div>
-
-      {/* Schedule — monthly calendar + next lesson + selected-day lessons */}
-      <ScheduleSection />
-
-      <GoalModal
-        open={goalOpen}
-        onClose={() => setGoalOpen(false)}
-        initial={model.target ?? 1400}
-        saving={live.savingGoal}
-        onSave={async (total) => {
-          if (!previewModel) await live.saveGoal(total);
-          setGoalOpen(false);
-        }}
-      />
     </div>
   );
 }
 
-/* ── Target scores ──────────────────────────────────────────────────────── */
-function TargetScoresCard({ model, onEditGoal }: { model: DashboardModel; onEditGoal: () => void }) {
-  const target = model.target;
-  const english = target != null ? Math.round(target / 20) * 10 : null;
-  const math = target != null && english != null ? target - english : null;
-  return (
-    <Card>
-      <CardContent className="flex h-full flex-col gap-5">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-soft text-primary">
-            <Target className="h-5 w-5" />
-          </span>
-          <div>
-            <p className="text-sm font-bold text-foreground">Target scores</p>
-            <p className="text-[12px] text-muted-foreground">Where you&apos;re aiming on test day</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          <ScoreBox label="Overall" value={target} highlight onClick={onEditGoal} />
-          <ScoreBox label="English" value={english} onClick={onEditGoal} />
-          <ScoreBox label="Math" value={math} onClick={onEditGoal} />
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+/* ── Header ──────────────────────────────────────────────────────────────── */
+function HeaderRow({
+  name,
+  target,
+  saving,
+  onSave,
+}: {
+  name: string;
+  target: number;
+  saving: boolean;
+  onSave: (v: number) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
-function ScoreBox({ label, value, highlight, onClick }: { label: string; value: number | null; highlight?: boolean; onClick: () => void }) {
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "ds-ring rounded-2xl border p-4 text-left transition-colors",
-        highlight ? "border-primary/40 bg-primary-soft" : "border-border bg-surface-2 hover:bg-surface-3",
-      )}
+    <div
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 24,
+        flexWrap: "wrap",
+        marginBottom: 26,
+      }}
     >
-      <p className="ds-overline">{label}</p>
-      <p className={cn("ds-num mt-1 text-3xl font-extrabold leading-none", highlight ? "text-primary" : "text-foreground")}>
-        {value ?? "—"}
-      </p>
-    </button>
-  );
-}
+      <div style={{ flex: 1, minWidth: 280 }}>
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 42,
+            lineHeight: 1.05,
+            fontWeight: 800,
+            letterSpacing: "-.03em",
+            color: "var(--dz-ink)",
+          }}
+        >
+          Welcome back, {name}
+        </h1>
+      </div>
+      <div ref={wrapRef} style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="dz-updatebtn"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "13px 18px",
+            borderRadius: 13,
+            border: "1px solid var(--dz-border)",
+            background: "var(--dz-panel)",
+            fontFamily: "inherit",
+            fontSize: 15,
+            fontWeight: 700,
+            color: "var(--dz-ink)",
+            cursor: "pointer",
+          }}
+        >
+          <span style={{ color: "var(--dz-indigo)", display: "flex" }}>
+            <Target size={18} />
+          </span>{" "}
+          Update goal
+        </button>
 
-/* ── SAT countdown ──────────────────────────────────────────────────────── */
-function CountdownCard({ model }: { model: DashboardModel }) {
-  return (
-    <Card className="relative overflow-hidden bg-primary text-primary-foreground">
-      <span aria-hidden className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10" />
-      <span aria-hidden className="pointer-events-none absolute -bottom-12 right-10 h-28 w-28 rounded-full bg-white/5" />
-      <CardContent className="relative flex h-full flex-col justify-center">
-        <div className="flex items-center gap-2 opacity-90">
-          <CalendarDays className="h-4 w-4" />
-          <span className="text-[11px] font-bold uppercase tracking-wider">SAT countdown</span>
-        </div>
-        <p className="ds-num mt-2 text-6xl font-extrabold leading-none">
-          {model.examDaysLeft == null ? "—" : Math.max(0, model.examDaysLeft)}
-        </p>
-        <p className="mt-1 text-sm font-semibold opacity-90">
-          {model.examDaysLeft == null ? "Set your exam date" : "days to go"}
-        </p>
-        {model.examDate ? (
-          <p className="mt-2 text-[12px] opacity-75">
-            {new Date(model.examDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-          </p>
+        {open ? (
+          <div
+            className="dz-floatup"
+            style={{
+              position: "absolute",
+              top: 60,
+              right: 0,
+              zIndex: 20,
+              width: 300,
+              background: "var(--dz-panel)",
+              border: "1px solid var(--dz-border)",
+              borderRadius: 18,
+              boxShadow: "0 24px 60px rgba(15,23,41,.18)",
+              padding: 18,
+            }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".04em", color: "var(--dz-ink)", marginBottom: 4 }}>
+              Set your target score
+            </div>
+            <div style={{ fontSize: 13, color: "var(--dz-mute)", marginBottom: 14 }}>SAT total, out of 1600.</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {GOAL_OPTIONS.map((g) => {
+                const active = g === target;
+                return (
+                  <button
+                    key={g}
+                    type="button"
+                    disabled={saving}
+                    onClick={async () => { await onSave(g); setOpen(false); }}
+                    className="dz-goalopt"
+                    style={{
+                      padding: "13px 0",
+                      borderRadius: 12,
+                      border: active ? "1px solid var(--dz-indigo)" : "1px solid var(--dz-border)",
+                      background: active ? "var(--dz-indigo-soft)" : "var(--dz-panel)",
+                      color: active ? "var(--dz-indigo)" : "var(--dz-ink)",
+                      fontFamily: "inherit",
+                      fontSize: 16,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {g}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-/* ── Schedule (calendar + lessons) ──────────────────────────────────────── */
-const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+/* ── Target scores ───────────────────────────────────────────────────────── */
+function TargetScoresCard({ overall, english, math }: { overall: number | null; english: number | null; math: number | null }) {
+  return (
+    <div
+      className="dz-lift"
+      style={{
+        background: "var(--dz-card)",
+        border: "1px solid var(--dz-border)",
+        borderRadius: 24,
+        padding: "30px 34px",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 13, marginBottom: 22 }}>
+        <span
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 12,
+            background: "var(--dz-indigo-soft)",
+            color: "var(--dz-indigo)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Target size={20} />
+        </span>
+        <div>
+          <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>Target scores</div>
+          <div style={{ fontSize: 13, color: "var(--dz-mute)", fontWeight: 500 }}>Where you&apos;re aiming on test day</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <ScoreBox label="OVERALL" value={overall} primary />
+        <ScoreBox label="ENGLISH" value={english} />
+        <ScoreBox label="MATH" value={math} />
+      </div>
+    </div>
+  );
+}
 
+function ScoreBox({ label, value, primary }: { label: string; value: number | null; primary?: boolean }) {
+  return (
+    <div
+      className={primary ? "dz-scorebox dz-scorebox-p" : "dz-scorebox"}
+      style={{
+        flex: 1,
+        minWidth: 80,
+        background: primary ? "var(--dz-indigo-soft)" : "var(--dz-panel)",
+        border: primary ? "1px solid var(--dz-indigo)" : "1px solid var(--dz-border)",
+        borderRadius: 17,
+        padding: "18px 20px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 800,
+          letterSpacing: ".12em",
+          color: primary ? "var(--dz-indigo)" : "var(--dz-faint)",
+          opacity: primary ? 0.85 : 1,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 33,
+          fontWeight: 800,
+          letterSpacing: "-.03em",
+          color: primary ? "var(--dz-indigo)" : "var(--dz-ink)",
+          lineHeight: 1,
+          marginTop: 9,
+        }}
+      >
+        {value ?? "—"}
+      </div>
+    </div>
+  );
+}
+
+/* ── Countdown ───────────────────────────────────────────────────────────── */
+function CountdownCard({ daysToGo, examDate }: { daysToGo: number | null; examDate: string | null }) {
+  const label = examDate
+    ? new Date(examDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : "Set your exam date";
+  return (
+    <div
+      className="dz-countdown"
+      style={{
+        background: "var(--dz-indigo-deep)",
+        borderRadius: 24,
+        padding: 28,
+        color: "#fff",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        className="dz-orb"
+        style={{ position: "absolute", right: -40, top: -40, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,.08)" }}
+      />
+      <div
+        className="dz-orb-rev"
+        style={{ position: "absolute", left: -30, bottom: -50, width: 130, height: 130, borderRadius: "50%", background: "rgba(255,255,255,.05)" }}
+      />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, fontWeight: 800, letterSpacing: ".14em", opacity: 0.85, position: "relative" }}>
+        <CalendarDays size={16} /> SAT COUNTDOWN
+      </div>
+      <div style={{ marginTop: "auto", position: "relative" }}>
+        <div style={{ fontSize: 74, fontWeight: 800, lineHeight: 0.95, letterSpacing: "-.04em" }}>
+          {daysToGo == null ? "—" : Math.max(0, daysToGo)}
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 600, opacity: 0.9, marginTop: 2 }}>days to go</div>
+        <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.65, marginTop: 14 }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Schedule (calendar + right column) ──────────────────────────────────── */
 function ScheduleSection() {
   const today = useMemo(() => new Date(), []);
   const [viewY, setViewY] = useState(today.getFullYear());
   const [viewM, setViewM] = useState(today.getMonth());
   const [selected, setSelected] = useState<string | null>(null);
 
-  const { loading, byDate, nextLessonDate } = useStudentSchedule(viewY, viewM);
+  const { byDate, nextLessonDate } = useStudentSchedule(viewY, viewM);
 
-  // Default the selected day to the next upcoming lesson once the schedule loads.
   useEffect(() => {
     if (selected == null && nextLessonDate) setSelected(nextLessonDate);
   }, [selected, nextLessonDate]);
@@ -218,101 +407,151 @@ function ScheduleSection() {
   const selEvents = selected ? (byDate.get(selected) ?? []) : [];
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 20, alignItems: "start" }} className="dz-calgrid">
       {/* Calendar */}
-      <Card>
-        <CardContent>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-soft text-primary">
-                <CalendarDays className="h-5 w-5" />
-              </span>
-              <div>
-                <p className="text-sm font-bold text-foreground">Lesson calendar</p>
-                <p className="text-[12px] text-muted-foreground">Tap a day to see what&apos;s on</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <button type="button" onClick={prevMonth} aria-label="Previous month"
-                className="ds-ring rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="min-w-[7.5rem] text-center text-sm font-bold text-foreground">{monthLabel}</span>
-              <button type="button" onClick={nextMonth} aria-label="Next month"
-                className="ds-ring rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground">
-                <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
+      <div
+        className="dz-rise"
+        style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 24, padding: "24px 26px" }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+          <span style={{ color: "var(--dz-indigo)", display: "flex" }}>
+            <CalendarRange size={22} />
+          </span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>Lesson calendar</div>
+            <div style={{ fontSize: 13, color: "var(--dz-mute)", fontWeight: 500 }}>Tap a day to see what&apos;s on</div>
           </div>
+          <CalNavButton dir="l" onClick={prevMonth} />
+          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)", minWidth: 128, textAlign: "center" }}>{monthLabel}</div>
+          <CalNavButton dir="r" onClick={nextMonth} />
+        </div>
 
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {WEEKDAYS.map((w) => (
-              <div key={w} className="pb-1 text-[10px] font-bold tracking-wider text-label-foreground">{w}</div>
-            ))}
-            {cells.map((c) => (
-              <button
-                key={c.iso}
-                type="button"
-                disabled={!c.inMonth}
-                onClick={() => c.inMonth && setSelected(c.iso)}
-                className={cn(
-                  "ds-ring flex h-12 items-center justify-center rounded-xl transition-colors",
-                  !c.inMonth && "opacity-30",
-                  c.inMonth && "hover:bg-surface-2",
-                )}
-              >
-                <span
-                  className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold",
-                    c.isSelected || c.isNext
-                      ? "bg-primary text-primary-foreground"
-                      : c.hasMock
-                        ? "border-2 border-warning text-warning"
-                        : c.hasClass
-                          ? "border-2 border-primary text-primary"
-                          : c.isToday
-                            ? "border-2 border-dashed border-primary text-primary"
-                            : c.hasAssignment
-                              ? "text-primary underline decoration-dotted underline-offset-4"
-                              : "text-foreground",
-                  )}
-                >
-                  {c.day}
-                </span>
-              </button>
-            ))}
-          </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 }}>
+          {WEEKDAYS.map((wd) => (
+            <div key={wd} style={{ textAlign: "center", fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--dz-faint)", padding: "4px 0" }}>
+              {wd}
+            </div>
+          ))}
+        </div>
 
-          {loading ? <p className="mt-3 text-[12px] text-muted-foreground">Loading your schedule…</p> : null}
-          <Legend />
-        </CardContent>
-      </Card>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6 }}>
+          {cells.map((c) => (
+            <DayCell key={c.iso} c={c} onClick={() => c.inMonth && setSelected(c.iso)} />
+          ))}
+        </div>
 
-      {/* Next lesson + selected day */}
-      <div className="flex flex-col gap-4">
+        <Legend />
+      </div>
+
+      {/* Right column */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         <NextLessonCard date={nextLessonDate} event={nextEvents[0] ?? null} />
-
-        <Card>
-          <CardContent>
-            <p className="ds-h4 mb-3">
-              {selected
-                ? new Date(selected + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
-                : "Select a day"}
-            </p>
-            {selEvents.length === 0 ? (
-              <EmptyState compact icon={CalendarDays} title="Nothing scheduled" description="No lessons or work on this day." />
-            ) : (
-              <div className="flex flex-col gap-2">
-                {selEvents.map((e, i) => <LessonRow key={i} event={e} />)}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <SelectedDayCard selected={selected} events={selEvents} />
       </div>
     </div>
   );
 }
 
+function CalNavButton({ dir, onClick }: { dir: "l" | "r"; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={dir === "l" ? "Previous month" : "Next month"}
+      className={`dz-navbtn ${dir === "l" ? "dz-navbtn-l" : "dz-navbtn-r"}`}
+      style={{
+        width: 38,
+        height: 38,
+        borderRadius: 10,
+        border: "1px solid var(--dz-border)",
+        background: "var(--dz-panel)",
+        color: "var(--dz-mute)",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {dir === "l" ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+    </button>
+  );
+}
+
+type CellModel = {
+  iso: string; day: number; inMonth: boolean; isToday: boolean; isSelected: boolean;
+  isNext: boolean; hasMock: boolean; hasClass: boolean; hasAssignment: boolean;
+};
+
+function DayCell({ c, onClick }: { c: CellModel; onClick: () => void }) {
+  const highlight = c.isSelected || c.isNext;
+  const num: React.CSSProperties = {
+    width: 40,
+    height: 40,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 14,
+    fontWeight: 700,
+  };
+  if (highlight) {
+    Object.assign(num, { background: "var(--dz-indigo)", color: "#fff", boxShadow: "0 0 0 3px rgba(42,104,192,.18)" });
+  } else if (c.hasMock) {
+    Object.assign(num, { border: "2px solid var(--dz-amber)", background: "var(--dz-amber-soft)", color: "var(--dz-amber)" });
+  } else if (c.hasClass) {
+    Object.assign(num, { border: "2px solid var(--dz-indigo)", background: "var(--dz-indigo-soft)", color: "var(--dz-indigo)" });
+  } else if (c.isToday) {
+    Object.assign(num, { border: "2px dashed var(--dz-indigo)", color: "var(--dz-indigo)" });
+  } else if (c.hasAssignment) {
+    Object.assign(num, { color: "var(--dz-indigo)" });
+  } else {
+    Object.assign(num, { color: c.inMonth ? "var(--dz-ink)" : "var(--dz-faint)" });
+  }
+  return (
+    <button
+      type="button"
+      disabled={!c.inMonth}
+      onClick={onClick}
+      className="dz-daycell"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: 46,
+        border: "none",
+        background: "transparent",
+        borderRadius: 12,
+        cursor: c.inMonth ? "pointer" : "default",
+        fontFamily: "inherit",
+        opacity: c.inMonth ? 1 : 0.35,
+        padding: 0,
+      }}
+    >
+      <span className={highlight ? "dz-daypop" : undefined} style={num}>{c.day}</span>
+    </button>
+  );
+}
+
+function Legend() {
+  const items: { sw: React.CSSProperties; label: string }[] = [
+    { sw: { border: "2px solid var(--dz-indigo)", background: "var(--dz-indigo-soft)" }, label: "Class" },
+    { sw: { border: "2px solid var(--dz-amber)", background: "var(--dz-amber-soft)" }, label: "Mock test" },
+    { sw: { background: "var(--dz-indigo)", boxShadow: "0 0 0 3px rgba(42,104,192,.18)" }, label: "Next lesson" },
+    { sw: { border: "2px dashed var(--dz-indigo)" }, label: "Today" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--dz-border)" }}>
+      {items.map((it) => (
+        <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)" }}>
+          <span style={{ width: 16, height: 16, borderRadius: "50%", ...it.sw }} />
+          {it.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Next lesson ─────────────────────────────────────────────────────────── */
 function relativeDays(iso: string | null): string {
   if (!iso) return "";
   const today = new Date();
@@ -325,180 +564,126 @@ function relativeDays(iso: string | null): string {
 }
 
 function NextLessonCard({ date, event }: { date: string | null; event: ScheduleEvent | null }) {
+  const cardStyle: React.CSSProperties = {
+    background: "var(--dz-card)",
+    border: "1px solid var(--dz-border)",
+    borderRadius: 24,
+    padding: 24,
+    position: "relative",
+    overflow: "hidden",
+  };
+  const labelRow = (
+    <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, fontWeight: 800, letterSpacing: ".12em", color: "var(--dz-indigo)", marginBottom: 16 }}>
+      <span className="dz-dot" style={{ width: 9, height: 9, borderRadius: "50%", background: "var(--dz-indigo)" }} /> NEXT LESSON
+    </div>
+  );
+
   if (!event || !date) {
     return (
-      <Card>
-        <CardContent>
-          <p className="ds-overline mb-2 flex items-center gap-1.5 text-primary">
-            <span className="h-2 w-2 rounded-full bg-primary" /> Next lesson
-          </p>
-          <EmptyState compact icon={Sparkles} title="You're all caught up" description="Upcoming lessons will appear here." />
-        </CardContent>
-      </Card>
+      <div className="dz-lift4" style={cardStyle}>
+        {labelRow}
+        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)", lineHeight: 1.2 }}>You&apos;re all caught up</div>
+        <div style={{ fontSize: 14, color: "var(--dz-mute)", fontWeight: 500, marginTop: 5 }}>Upcoming lessons will appear here.</div>
+      </div>
     );
   }
+
   const when = new Date(date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-  const href =
-    event.type === "assignment" && event.classroom_id
-      ? `/classes/${event.classroom_id}/assignments/${event.assignment_id}`
-      : event.classroom_id
-        ? `/classes/${event.classroom_id}`
-        : null;
-  const isClass = event.type === "class";
-  const cta = isClass ? "Join lesson" : event.type === "assignment" ? "Open assignment" : "View details";
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-4">
-        <p className="ds-overline flex items-center gap-1.5 text-primary">
-          <span className="h-2 w-2 rounded-full bg-primary" /> Next lesson
-        </p>
-        <div>
-          <p className="ds-h3 leading-tight">{event.title}</p>
-          {event.sub ? <p className="mt-0.5 text-sm text-muted-foreground">{event.sub}</p> : null}
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <InfoBox label="When" value={when} />
-          <InfoBox label="Time" value={event.time || "—"} />
-        </div>
-        {href ? (
-          <Link href={href}>
-            <Button fullWidth rightIcon={<ArrowRight />}>
-              {cta} · {relativeDays(date)}
-            </Button>
-          </Link>
-        ) : (
-          <Button fullWidth disabled rightIcon={<ArrowRight />}>
-            {cta} · {relativeDays(date)}
-          </Button>
-        )}
-      </CardContent>
-    </Card>
+    <div className="dz-lift4" style={cardStyle}>
+      {labelRow}
+      <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)", lineHeight: 1.2 }}>{event.title}</div>
+      {event.sub ? <div style={{ fontSize: 14, color: "var(--dz-mute)", fontWeight: 500, marginTop: 5 }}>{event.sub}</div> : null}
+      <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+        <InfoBox label="WHEN" value={when} />
+        <InfoBox label="TIME" value={event.time || "—"} />
+      </div>
+      <button
+        type="button"
+        className="dz-joinbtn"
+        style={{
+          marginTop: 16,
+          width: "100%",
+          padding: 14,
+          borderRadius: 13,
+          border: "none",
+          background: "var(--dz-indigo)",
+          color: "#fff",
+          fontFamily: "inherit",
+          fontSize: 15,
+          fontWeight: 700,
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+        }}
+      >
+        Join lesson · {relativeDays(date)} <ArrowRight size={18} />
+      </button>
+    </div>
   );
 }
 
 function InfoBox({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-2 p-3">
-      <p className="ds-overline">{label}</p>
-      <p className="mt-1 truncate text-sm font-bold text-foreground">{value}</p>
+    <div style={{ flex: 1, background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 13, padding: "12px 14px" }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".1em", color: "var(--dz-faint)" }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--dz-ink)", marginTop: 4 }}>{value}</div>
     </div>
   );
 }
 
-function eventVisual(type: ScheduleEvent["type"]) {
+/* ── Selected day ────────────────────────────────────────────────────────── */
+function SelectedDayCard({ selected, events }: { selected: string | null; events: ScheduleEvent[] }) {
+  const heading = selected
+    ? new Date(selected + "T00:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    : "Select a day";
+  return (
+    <div className="dz-lift4" style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 24, padding: "22px 24px" }}>
+      <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".04em", color: "var(--dz-ink)" }}>{heading}</div>
+      {events.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+          {events.map((e, i) => <LessonRow key={i} event={e} />)}
+        </div>
+      ) : (
+        <div style={{ marginTop: 14, padding: 20, borderRadius: 14, border: "1px dashed var(--dz-border)", textAlign: "center" }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--dz-mute)" }}>No lessons scheduled</div>
+          <div style={{ fontSize: 13, color: "var(--dz-faint)", marginTop: 3 }}>Use this day for past papers or vocab.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function lessonVisual(type: ScheduleEvent["type"]) {
   switch (type) {
     case "mock":
     case "midterm":
-      return { Icon: ClipboardList, wrap: "bg-warning-soft text-warning-foreground" };
+      return { Icon: ClipboardList, bg: "var(--dz-amber-soft)", color: "var(--dz-amber)" };
     case "assignment":
-      return { Icon: FileText, wrap: "bg-info-soft text-info-foreground" };
+      return { Icon: FileText, bg: "var(--dz-indigo-soft)", color: "var(--dz-indigo)" };
     default:
-      return { Icon: Users, wrap: "bg-primary-soft text-primary" };
+      return { Icon: Users, bg: "var(--dz-indigo-soft)", color: "var(--dz-indigo)" };
   }
 }
 
 function LessonRow({ event }: { event: ScheduleEvent }) {
-  const { Icon, wrap } = eventVisual(event.type);
-  const href =
-    event.type === "assignment" && event.classroom_id
-      ? `/classes/${event.classroom_id}/assignments/${event.assignment_id}`
-      : event.classroom_id
-        ? `/classes/${event.classroom_id}`
-        : null;
-  const body = (
-    <div className="flex items-center gap-3 rounded-xl border border-border p-3">
-      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", wrap)}>
-        <Icon className="h-5 w-5" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-foreground">{event.title}</p>
-        {event.sub ? <p className="truncate text-[12px] text-muted-foreground">{event.sub}</p> : null}
-      </div>
-      {event.time ? <span className="shrink-0 text-[12px] font-semibold text-muted-foreground">{event.time}</span> : null}
-    </div>
-  );
-  return href ? <Link href={href} className="ds-ring block rounded-xl transition-colors hover:bg-surface-2">{body}</Link> : body;
-}
-
-function Legend() {
-  const items = [
-    { cls: "border-2 border-primary", label: "Class" },
-    { cls: "border-2 border-warning", label: "Mock test" },
-    { cls: "bg-primary border-2 border-primary", label: "Next lesson" },
-    { cls: "border-2 border-dashed border-primary", label: "Today" },
-  ];
+  const { Icon, bg, color } = lessonVisual(event.type);
   return (
-    <div className="mt-4 flex flex-wrap items-center gap-4">
-      {items.map((it) => (
-        <span key={it.label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className={cn("h-3.5 w-3.5 rounded-full", it.cls)} />
-          {it.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-/* ── Goal modal ─────────────────────────────────────────────────────────── */
-function GoalModal({
-  open,
-  onClose,
-  initial,
-  saving,
-  onSave,
-}: {
-  open: boolean;
-  onClose: () => void;
-  initial: number;
-  saving: boolean;
-  onSave: (total: number) => void | Promise<void>;
-}) {
-  const [value, setValue] = useState(String(initial));
-  const quick = [1400, 1500, 1550, 1600];
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title="Your goal score"
-      description="We tailor recommendations and your readiness to it."
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button loading={saving} onClick={() => onSave(Math.max(400, Math.min(1600, Number(value) || 0)))}>
-            Save goal
-          </Button>
-        </>
-      }
+    <div
+      className="dz-lessonrow"
+      style={{ display: "flex", gap: 13, alignItems: "flex-start", padding: 13, borderRadius: 14, background: "var(--dz-card)" }}
     >
-      <div className="mb-4 flex flex-wrap gap-2">
-        {quick.map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setValue(String(v))}
-            className={cn(
-              "ds-ring rounded-xl border px-4 py-2 text-sm font-bold transition-colors",
-              Number(value) === v
-                ? "border-primary bg-primary-soft text-primary"
-                : "border-border text-foreground hover:bg-surface-2",
-            )}
-          >
-            {v}
-          </button>
-        ))}
+      <div style={{ width: 40, height: 40, flex: "none", borderRadius: 12, background: bg, color, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <Icon size={20} />
       </div>
-      <Field label="Target total (400–1600)" htmlFor="goal-input" hint="The digital SAT is scored 400–1600.">
-        <Input
-          id="goal-input"
-          type="number"
-          min={400}
-          max={1600}
-          step={10}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-      </Field>
-    </Modal>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--dz-ink)" }}>{event.title}</div>
+        {event.sub ? <div style={{ fontSize: 13, color: "var(--dz-mute)", fontWeight: 500, marginTop: 2 }}>{event.sub}</div> : null}
+      </div>
+      {event.time ? <div style={{ fontSize: 13, fontWeight: 700, color: "var(--dz-mute)", whiteSpace: "nowrap" }}>{event.time}</div> : null}
+    </div>
   );
 }
 
@@ -506,11 +691,14 @@ function GoalModal({
 function DashboardSkeleton() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
-      <Skeleton className="h-10 w-64" />
-      <Skeleton className="h-40 w-full rounded-2xl" />
-      <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-        <Skeleton className="h-96 rounded-2xl" />
-        <Skeleton className="h-96 rounded-2xl" />
+      <Skeleton className="h-12 w-72" />
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Skeleton className="h-44 rounded-3xl" />
+        <Skeleton className="h-44 rounded-3xl" />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+        <Skeleton className="h-96 rounded-3xl" />
+        <Skeleton className="h-96 rounded-3xl" />
       </div>
     </div>
   );

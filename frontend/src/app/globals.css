@@ -924,3 +924,94 @@ mark.ts-annot {
   background-color: #fde047;
   color: inherit;
 }
+
+/* ============================================================
+   Student Dashboard — 1:1 with provided mockup (~/Downloads/MasterSAT Dashboard.html)
+   Scoped under .dzboard so the exact mockup palette + animations
+   never leak into the rest of the app. Dark values tuned to the
+   app's dark surfaces (next-themes `.dark` on <html>).
+   ============================================================ */
+.dzboard {
+  --dz-indigo: #2a68c0;
+  --dz-indigo-deep: #21539e;
+  --dz-indigo-soft: #e7effb;
+  --dz-ink: #0f1729;
+  --dz-mute: #64748b;
+  --dz-faint: #94a3b8;
+  --dz-panel: #ffffff;
+  --dz-card: #f4f7fc;
+  --dz-border: #e7ebf3;
+  --dz-amber: #f59e0b;
+  --dz-amber-soft: rgba(245, 158, 11, 0.13);
+  font-family: var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.dark .dzboard {
+  --dz-indigo: #5b8def;
+  --dz-indigo-deep: #1f4f96;
+  --dz-indigo-soft: rgba(91, 141, 239, 0.16);
+  --dz-ink: #e8eef9;
+  --dz-mute: #94a3b8;
+  --dz-faint: #6b7a90;
+  --dz-panel: #1e293b;
+  --dz-card: #172033;
+  --dz-border: rgba(255, 255, 255, 0.09);
+  --dz-amber: #fbbf24;
+  --dz-amber-soft: rgba(251, 191, 36, 0.15);
+}
+
+@keyframes dz-pulseRing { 0% { box-shadow: 0 0 0 0 rgba(42,104,192,.35) } 70% { box-shadow: 0 0 0 10px rgba(42,104,192,0) } 100% { box-shadow: 0 0 0 0 rgba(42,104,192,0) } }
+@keyframes dz-floatUp { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes dz-riseIn { from { opacity: 0; transform: translateY(18px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes dz-popIn { 0% { opacity: 0; transform: scale(.92) translateY(8px) } 60% { transform: scale(1.02) } 100% { opacity: 1; transform: scale(1) translateY(0) } }
+@keyframes dz-spinSlow { to { transform: rotate(360deg) } }
+@keyframes dz-dayPop { 0% { transform: scale(.6) } 55% { transform: scale(1.18) } 100% { transform: scale(1) } }
+@keyframes dz-sectionIn { 0% { opacity: .25; transform: translateY(14px) scale(.992) } 100% { opacity: 1; transform: translateY(0) scale(1) } }
+
+.dzboard .dz-content { animation: dz-sectionIn .5s cubic-bezier(.22,1,.36,1) both; }
+.dzboard .dz-rise { animation: dz-riseIn .5s cubic-bezier(.22,1,.36,1) both; }
+.dzboard .dz-pop { animation: dz-popIn .45s cubic-bezier(.22,1,.36,1) both; }
+.dzboard .dz-orb { animation: dz-spinSlow 26s linear infinite; }
+.dzboard .dz-orb-rev { animation: dz-spinSlow 34s linear infinite reverse; }
+.dzboard .dz-dot { animation: dz-pulseRing 2s infinite; }
+.dzboard .dz-floatup { animation: dz-floatUp .18s ease; }
+.dzboard .dz-daypop { animation: dz-dayPop .3s cubic-bezier(.22,1,.36,1); }
+
+/* Hover lifts */
+.dzboard .dz-lift  { transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s; }
+.dzboard .dz-lift:hover  { transform: translateY(-5px); box-shadow: 0 16px 32px rgba(15,23,41,.12); }
+.dzboard .dz-lift4 { transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s; }
+.dzboard .dz-lift4:hover { transform: translateY(-4px); box-shadow: 0 18px 38px rgba(15,23,41,.12); }
+.dzboard .dz-scorebox { transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s; }
+.dzboard .dz-scorebox:hover { transform: translateY(-5px); box-shadow: 0 14px 28px rgba(15,23,41,.1); }
+.dzboard .dz-scorebox-p:hover { transform: translateY(-5px); box-shadow: 0 16px 32px rgba(42,104,192,.26); }
+.dzboard .dz-countdown { transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s; }
+.dzboard .dz-countdown:hover { transform: translateY(-5px); box-shadow: 0 22px 44px rgba(33,83,158,.4); }
+
+/* Buttons */
+.dzboard .dz-updatebtn { transition: transform .18s, box-shadow .18s, border-color .18s; }
+.dzboard .dz-updatebtn:hover { transform: translateY(-2px); box-shadow: 0 10px 22px rgba(15,23,41,.1); border-color: var(--dz-indigo); }
+.dzboard .dz-updatebtn:active { transform: translateY(0) scale(.97); }
+.dzboard .dz-navbtn { transition: transform .18s, background .18s, color .18s; }
+.dzboard .dz-navbtn-l:hover { transform: translateX(-2px); background: var(--dz-indigo-soft); color: var(--dz-indigo); }
+.dzboard .dz-navbtn-r:hover { transform: translateX(2px); background: var(--dz-indigo-soft); color: var(--dz-indigo); }
+.dzboard .dz-navbtn-l:active { transform: translateX(-2px) scale(.88); }
+.dzboard .dz-navbtn-r:active { transform: translateX(2px) scale(.88); }
+.dzboard .dz-joinbtn { transition: transform .18s, box-shadow .18s, gap .18s; }
+.dzboard .dz-joinbtn:hover { transform: translateY(-2px); box-shadow: 0 14px 28px rgba(42,104,192,.4); gap: 12px; }
+.dzboard .dz-joinbtn:active { transform: translateY(0) scale(.98); box-shadow: 0 6px 14px rgba(42,104,192,.5); }
+.dzboard .dz-goalopt { transition: transform .15s, background .15s, border-color .15s; }
+.dzboard .dz-goalopt:active { transform: scale(.94); }
+.dzboard .dz-lessonrow { transition: transform .2s, background .2s; }
+.dzboard .dz-lessonrow:hover { transform: translateX(4px); background: var(--dz-indigo-soft); }
+.dzboard .dz-daycell { transition: transform .15s, background .15s; }
+.dzboard .dz-daycell:hover { background: var(--dz-indigo-soft); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dzboard *, .dzboard *::before, .dzboard *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+}
+
+/* Dashboard responsive collapse (mockup is desktop-fixed) */
+@media (max-width: 900px) {
+  .dzboard .dz-scoregrid { grid-template-columns: 1fr !important; }
+  .dzboard .dz-calgrid { grid-template-columns: 1fr !important; }
+}
