@@ -33,7 +33,10 @@ function dueLabel(due?: string | null): string {
 }
 
 function hrefFor(classId: number, a: AsgRow): string {
-  if (a.assessment_homework != null) return `/assessments/${a.id}`;
+  // Always open the in-class assignment detail page so the student sees instructions and every
+  // attached activity (a homework may bundle a past paper, an assessment and a file). The detail
+  // page deep-links into each one (incl. "Start assessment"). Do NOT jump straight into the
+  // assessment runner, which would hide the other contents.
   return `/classes/${classId}/assignments/${a.id}`;
 }
 

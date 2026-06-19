@@ -95,7 +95,7 @@ export interface ContentAction {
  */
 export function contentActions(a: AssignmentDetail): ContentAction[] {
   const out: ContentAction[] = [];
-  if (a.assessment_homework != null) out.push({ kind: "QUIZ", label: "Open Assessment", href: `/assessments/${a.id}` });
+  if (a.assessment_homework != null) out.push({ kind: "QUIZ", label: "Start assessment", href: `/assessments/${a.id}` });
   if (a.mock_exam != null) out.push({ kind: "MOCK", label: "Open Mock Exam", href: `/mock/${a.mock_exam}` });
   if (a.pastpaper_pack != null) out.push({ kind: "PASTPAPER", label: "Open Past Paper", href: `/pastpapers/${a.pastpaper_pack}` });
   if (a.practice_test_pack != null) {

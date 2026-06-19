@@ -12,8 +12,10 @@ interface ExamHeaderProps {
   timerWarning: boolean;
   showDirections: boolean;
   onToggleDirections: () => void;
-  /** Calculator + Reference are SAT Math-only. */
+  /** Reference sheet is SAT Math-only. */
   mathTools: boolean;
+  /** Calculator: Math-only AND not a midterm (midterms have no calculator). */
+  showCalculator: boolean;
   tools: ExamTools;
   pauseAllowed: boolean;
   paused: boolean;
@@ -45,6 +47,7 @@ export function ExamHeader({
   showDirections,
   onToggleDirections,
   mathTools,
+  showCalculator,
   tools,
   pauseAllowed,
   paused,
@@ -79,15 +82,15 @@ export function ExamHeader({
       </div>
 
       <div className="flex items-center justify-end gap-5">
+        {showCalculator && (
+          <ToolButton label="Calculator" active={tools.calculatorOpen} onClick={tools.toggleCalculator}>
+            <Calculator className="h-5 w-5" />
+          </ToolButton>
+        )}
         {mathTools && (
-          <>
-            <ToolButton label="Calculator" active={tools.calculatorOpen} onClick={tools.toggleCalculator}>
-              <Calculator className="h-5 w-5" />
-            </ToolButton>
-            <ToolButton label="Reference" active={tools.referenceOpen} onClick={tools.toggleReference}>
-              <span className="text-base font-bold italic leading-none">x²</span>
-            </ToolButton>
-          </>
+          <ToolButton label="Reference" active={tools.referenceOpen} onClick={tools.toggleReference}>
+            <span className="text-base font-bold italic leading-none">x²</span>
+          </ToolButton>
         )}
         <ToolButton label="Highlights" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
           <Highlighter className="h-5 w-5" />

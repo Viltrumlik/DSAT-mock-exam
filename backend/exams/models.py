@@ -935,13 +935,13 @@ class TestAttempt(TimestampedModel):
         # Immediately advance to module 2 (no persisted MODULE_1_SUBMITTED).
         ensure_full_mock_practice_test_modules(self.practice_test)
         m2 = self._module_by_order(2)
-        if not m2:
-            raise ValidationError("Module 2 is missing; cannot advance.")
 
-        # If Module 2 has zero questions (single-module pastpaper), skip directly to SCORING
-        # instead of leaving the student stuck on an empty module.
-        m2_question_count = m2.questions.count()
-        if m2_question_count == 0:
+        # Single-module exams skip straight to SCORING instead of advancing to a Module 2:
+        #   - a single-module MIDTERM (midterm_module_count == 1) has NO Module 2 row, and
+        #   - a single-module pastpaper has a Module 2 row with zero questions.
+        # Either way there is no second module to take, so finalize for scoring.
+        single_module = (m2 is None) or (m2.questions.count() == 0)
+        if single_module:
             assert_primary_transition_allowed(self.STATE_MODULE_1_ACTIVE, self.STATE_SCORING)
             ts = timezone.now()
             v0 = int(self.version_number or 0)
@@ -950,7 +950,7 @@ class TestAttempt(TimestampedModel):
             # Mark M2 timestamps so scoring pipeline sees a complete attempt
             m2_sub = ts
             scoring_at = ts
-            if not self.completed_modules.filter(pk=m2.pk).exists():
+            if m2 is not None and not self.completed_modules.filter(pk=m2.pk).exists():
                 self.completed_modules.add(m2)
             n = conditional_attempt_update(
                 pk=int(self.pk),
@@ -980,7 +980,7 @@ class TestAttempt(TimestampedModel):
             self._attempt_engine_log(
                 "submit_module_1",
                 from_state=from_state,
-                detail="module_2_empty_skip_to_scoring",
+                detail="single_module_skip_to_scoring" if m2 is None else "module_2_empty_skip_to_scoring",
             )
             return True
 
