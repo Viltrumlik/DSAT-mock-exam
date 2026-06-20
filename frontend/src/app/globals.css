@@ -1015,3 +1015,67 @@ mark.ts-annot {
   .dzboard .dz-scoregrid { grid-template-columns: 1fr !important; }
   .dzboard .dz-calgrid { grid-template-columns: 1fr !important; }
 }
+
+/* ============================================================
+   Classes page — 1:1 with provided mockup (~/Downloads/MasterSAT Classes.html)
+   Reuses the .dzboard token scope; adds the class-card animations +
+   a 5-colour accent cycle (light hex from the mockup; dark tuned).
+   ============================================================ */
+@keyframes dz-cardIn { 0% { opacity: 0; transform: translateY(26px) scale(.94) } 100% { opacity: 1; transform: none } }
+@keyframes dz-bandShift { 0% { background-position: 0% 50% } 50% { background-position: 100% 50% } 100% { background-position: 0% 50% } }
+@keyframes dz-floatY { 0%, 100% { transform: translateY(0) } 50% { transform: translateY(-5px) } }
+
+.dzboard .dz-card {
+  background: var(--dz-panel);
+  border: 1px solid var(--acc-border);
+  border-radius: 20px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform .22s cubic-bezier(.22,1,.36,1), box-shadow .22s, border-color .22s;
+  animation: dz-cardIn .55s cubic-bezier(.22,1,.36,1) both;
+}
+.dzboard .dz-card:hover { transform: translateY(-6px); box-shadow: 0 20px 40px rgba(15,23,41,.14); border-color: var(--acc); }
+.dzboard .dz-band {
+  position: relative; height: 92px; padding: 0 20px; display: flex; align-items: center; overflow: hidden;
+  background: linear-gradient(120deg, var(--acc-soft) 0%, var(--acc-mid) 52%, var(--acc-soft) 100%);
+  background-size: 220% 220%;
+  animation: dz-bandShift 9s ease-in-out infinite;
+}
+.dzboard .dz-tile {
+  width: 50px; height: 50px; border-radius: 15px; background: var(--dz-panel);
+  display: flex; align-items: center; justify-content: center; color: var(--acc);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--acc) 22%, transparent);
+  animation: dz-floatY 4s ease-in-out infinite;
+}
+.dzboard .dz-openbtn {
+  display: flex; align-items: center; gap: 6px; padding: 8px 15px; border-radius: 11px;
+  border: 1.5px solid var(--acc); background: transparent; color: var(--acc);
+  font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer;
+  transition: transform .16s, background .16s, color .16s, gap .16s, box-shadow .16s;
+}
+.dzboard .dz-openbtn:hover { background: var(--acc); color: #fff; gap: 10px; box-shadow: 0 8px 18px color-mix(in srgb, var(--acc) 40%, transparent); }
+.dzboard .dz-openbtn:active { transform: scale(.93); }
+.dzboard .dz-pill {
+  display: flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 11px;
+  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: transform .14s, background .14s, border-color .14s, color .14s;
+}
+.dzboard .dz-pill:hover { transform: translateY(-2px); }
+.dzboard .dz-pill:active { transform: scale(.95); }
+.dzboard .dz-joinbtn2 { transition: transform .18s, box-shadow .18s; }
+.dzboard .dz-joinbtn2:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(42,104,192,.4); }
+.dzboard .dz-joinbtn2:active { transform: translateY(0) scale(.97); }
+.dzboard .clip1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Accent cycle (light = exact mockup pastels) */
+.dzboard .dz-acc-0 { --acc:#2a68c0; --acc-soft:#e7effb; --acc-mid:#d4e4fb; --acc-border:#d4e4fb; }
+.dzboard .dz-acc-1 { --acc:#6d4ec7; --acc-soft:#ece6fa; --acc-mid:#ddd0f6; --acc-border:#ddd0f6; }
+.dzboard .dz-acc-2 { --acc:#0d9488; --acc-soft:#d8f1ee; --acc-mid:#c2e9e3; --acc-border:#c2e9e3; }
+.dzboard .dz-acc-3 { --acc:#e0851a; --acc-soft:#fbeed5; --acc-mid:#f7e0b6; --acc-border:#f7e0b6; }
+.dzboard .dz-acc-4 { --acc:#d6477f; --acc-soft:#fbe4ee; --acc-mid:#f6d2e1; --acc-border:#f6d2e1; }
+/* Dark: brighter accent, translucent band/border */
+.dark .dzboard .dz-acc-0 { --acc:#5b8def; --acc-soft:rgba(91,141,239,.13); --acc-mid:rgba(91,141,239,.24); --acc-border:rgba(91,141,239,.34); }
+.dark .dzboard .dz-acc-1 { --acc:#9b82e8; --acc-soft:rgba(155,130,232,.13); --acc-mid:rgba(155,130,232,.24); --acc-border:rgba(155,130,232,.34); }
+.dark .dzboard .dz-acc-2 { --acc:#2dd4bf; --acc-soft:rgba(45,212,191,.12); --acc-mid:rgba(45,212,191,.22); --acc-border:rgba(45,212,191,.32); }
+.dark .dzboard .dz-acc-3 { --acc:#fbbf24; --acc-soft:rgba(251,191,36,.12); --acc-mid:rgba(251,191,36,.22); --acc-border:rgba(251,191,36,.32); }
+.dark .dzboard .dz-acc-4 { --acc:#f472b6; --acc-soft:rgba(244,114,182,.13); --acc-mid:rgba(244,114,182,.24); --acc-border:rgba(244,114,182,.34); }

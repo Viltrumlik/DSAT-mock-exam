@@ -1,67 +1,66 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
-import { Users, LogIn, BookOpen, Calculator, GraduationCap } from "lucide-react";
-import { cn } from "@/lib/cn";
+/**
+ * Classes (student) — 1:1 with the provided mockup (~/Downloads/MasterSAT Classes.html).
+ * Reuses the `.dzboard` token scope + keyframe/accent classes in globals.css; wired to the
+ * real classroom data (useClassrooms / useJoinClass). Students are consumer-only: JOIN + VIEW.
+ */
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Users, ArrowRight, UserPlus, BookOpen, Calculator, GraduationCap } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
-import { PageHeader, Card, Button, Dialog, Field, Input, EmptyState, LoadingState, ErrorState, Pill } from "../ui";
+import { Button, Dialog, Field, Input, EmptyState, LoadingState, ErrorState } from "../ui";
 import { useClassrooms, useJoinClass } from "../hooks";
-import { normalizeRole, ROLE_LABEL } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
 
-// Student portal is consumer-only: students JOIN and VIEW classes. Classroom creation/
-// editing/administration lives exclusively in the Teacher Portal (teacher.mastersat.uz).
-
-function ClassCard({ c }: { c: ClassroomWithRole }) {
-  const subject = String((c as { subject?: string }).subject ?? "").toUpperCase();
-  const isMath = subject === "MATH";
-  const Icon = isMath ? Calculator : BookOpen;
-  const schedule = formatLessonDaysMeta((c as { lesson_days?: string }).lesson_days);
-  const count = (c as { members_count?: number; student_count?: number }).members_count ?? (c as { student_count?: number }).student_count;
-  const role = normalizeRole(c.my_role);
-
-  return (
-    <Link href={`/classes/${c.id}`} className="block">
-      <Card pad="none" interactive>
-        <div className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div
-            className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-xl",
-              isMath ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-            )}
-          >
-            <Icon className="h-5 w-5" />
-          </div>
-          {role && <Pill tone={role === "STUDENT" ? "neutral" : "primary"}>{ROLE_LABEL[role]}</Pill>}
-        </div>
-        <h3 className="mt-3 truncate text-base font-semibold text-foreground">{c.name}</h3>
-        <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
-          <span>{isMath ? "Math" : "English"}</span>
-          {schedule && <span>· {schedule}</span>}
-          {typeof count === "number" && (
-            <span className="inline-flex items-center gap-1">
-              <Users className="h-3.5 w-3.5" /> {count}
-            </span>
-          )}
-        </div>
-        </div>
-      </Card>
-    </Link>
-  );
+/* ── schedule formatting (matches the mockup's "Tue, Thu, Sat · 5:00 PM · Room 204") ── */
+function shortDays(d: string | undefined | null): string {
+  if (d === "ODD") return "Mon, Wed, Fri";
+  if (d === "EVEN") return "Tue, Thu, Sat";
+  return d || "";
 }
+function fmtTime(t: string | undefined | null): string {
+  if (!t) return "";
+  const m = /^(\d{1,2}):(\d{2})/.exec(t.trim());
+  if (!m) return t.trim();
+  let h = Number(m[1]);
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${m[2]} ${ap}`;
+}
+function roomLabel(r: string | undefined | null): string {
+  const v = (r || "").trim();
+  if (!v) return "";
+  return /^room\b/i.test(v) ? v : `Room ${v}`;
+}
+
+type Filter = "ALL" | "ENGLISH" | "MATH";
 
 export function ClassesHome() {
   const { data, isLoading, isError, refetch } = useClassrooms();
   const join = useJoinClass();
+  const router = useRouter();
 
+  const [filter, setFilter] = useState<Filter>("ALL");
   const [joinOpen, setJoinOpen] = useState(false);
   const [code, setCode] = useState("");
   const [joinErr, setJoinErr] = useState<string | null>(null);
 
-  const classes = (data?.items ?? []) as ClassroomWithRole[];
+  const classes = useMemo(() => (data?.items ?? []) as ClassroomWithRole[], [data]);
+  const counts = useMemo(() => {
+    let math = 0, eng = 0;
+    for (const c of classes) {
+      const s = String((c as { subject?: string }).subject ?? "").toUpperCase();
+      if (s === "MATH") math++; else eng++;
+    }
+    return { all: classes.length, math, eng };
+  }, [classes]);
+
+  const shown = useMemo(() => {
+    if (filter === "ALL") return classes;
+    return classes.filter((c) => String((c as { subject?: string }).subject ?? "").toUpperCase() === filter);
+  }, [classes, filter]);
 
   async function submitJoin() {
     setJoinErr(null);
@@ -74,40 +73,79 @@ export function ClassesHome() {
     }
   }
 
-  return (
-    <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6 sm:px-6">
-      <PageHeader
-        title="Classes"
-        description="Your classrooms, assignments, and progress in one place."
-        actions={
-          <Button variant="secondary" icon={LogIn} onClick={() => setJoinOpen(true)}>
-            Join
-          </Button>
-        }
-      />
+  const FILTERS: { key: Filter; label: string; count: number }[] = [
+    { key: "ALL", label: "All", count: counts.all },
+    { key: "ENGLISH", label: "English", count: counts.eng },
+    { key: "MATH", label: "Math", count: counts.math },
+  ];
 
-      <div className="mt-6">
+  return (
+    <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
+      <div className="dz-content">
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 24, flexWrap: "wrap", marginBottom: 22 }}>
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <h1 style={{ margin: 0, fontSize: 38, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)" }}>
+              Classes
+            </h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => setJoinOpen(true)}
+            className="dz-joinbtn2"
+            style={{
+              display: "flex", alignItems: "center", gap: 9, padding: "13px 20px", borderRadius: 13,
+              border: "none", background: "var(--dz-indigo)", fontFamily: "inherit", fontSize: 15,
+              fontWeight: 700, color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            <UserPlus size={18} /> Join class
+          </button>
+        </div>
+
+        {/* Filter pills */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
+            return (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => setFilter(f.key)}
+                className="dz-pill"
+                style={{
+                  border: active ? "1px solid var(--dz-indigo)" : "1px solid var(--dz-border)",
+                  background: active ? "var(--dz-indigo-soft)" : "var(--dz-panel)",
+                  color: active ? "var(--dz-indigo)" : "var(--dz-mute)",
+                }}
+              >
+                {f.label}{" "}
+                <span style={{ opacity: 0.7, fontWeight: 800 }}>{f.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Body */}
         {isLoading ? (
           <LoadingState label="Loading your classes…" />
         ) : isError ? (
           <ErrorState message="We couldn't load your classes." onRetry={() => refetch()} />
         ) : classes.length === 0 ? (
-          <Card>
-            <EmptyState
-              icon={GraduationCap}
-              title="No classes yet"
-              description="Join a class with the code your teacher shared."
-              action={
-                <Button variant="secondary" icon={LogIn} onClick={() => setJoinOpen(true)}>
-                  Join with code
-                </Button>
-              }
-            />
-          </Card>
+          <EmptyState
+            icon={GraduationCap}
+            title="No classes yet"
+            description="Join a class with the code your teacher shared."
+            action={
+              <Button variant="secondary" icon={UserPlus} onClick={() => setJoinOpen(true)}>
+                Join with code
+              </Button>
+            }
+          />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {classes.map((c) => (
-              <ClassCard key={c.id} c={c} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(312px, 1fr))", gap: 20 }}>
+            {shown.map((c, i) => (
+              <ClassCard key={c.id} c={c} index={i} onOpen={() => router.push(`/classes/${c.id}`)} />
             ))}
           </div>
         )}
@@ -120,12 +158,8 @@ export function ClassesHome() {
         description="Enter the code your teacher gave you."
         footer={
           <>
-            <Button variant="ghost" onClick={() => setJoinOpen(false)}>
-              Cancel
-            </Button>
-            <Button loading={join.isPending} onClick={submitJoin} disabled={!code.trim()}>
-              Join class
-            </Button>
+            <Button variant="ghost" onClick={() => setJoinOpen(false)}>Cancel</Button>
+            <Button loading={join.isPending} onClick={submitJoin} disabled={!code.trim()}>Join class</Button>
           </>
         }
       >
@@ -140,6 +174,52 @@ export function ClassesHome() {
           />
         </Field>
       </Dialog>
+    </div>
+  );
+}
+
+function ClassCard({ c, index, onOpen }: { c: ClassroomWithRole; index: number; onOpen: () => void }) {
+  const subject = String((c as { subject?: string }).subject ?? "").toUpperCase();
+  const isMath = subject === "MATH";
+  const Icon = isMath ? Calculator : BookOpen;
+  const lessonDays = (c as { lesson_days?: string }).lesson_days;
+  const lessonTime = (c as { lesson_time?: string }).lesson_time;
+  const room = (c as { room_number?: string }).room_number;
+  const schedule = [shortDays(lessonDays), fmtTime(lessonTime), roomLabel(room)].filter(Boolean).join(" · ");
+  const count =
+    (c as { members_count?: number }).members_count ??
+    (c as { student_count?: number }).student_count ??
+    0;
+
+  return (
+    <div
+      className={`dz-card dz-acc-${index % 5}`}
+      style={{ animationDelay: `${Math.min(index, 9) * 0.08}s` }}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+    >
+      <div className="dz-band">
+        <div className="dz-tile"><Icon size={26} /></div>
+      </div>
+      <div style={{ padding: "16px 18px 18px" }}>
+        <div className="clip1" style={{ fontSize: 16, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>{c.name}</div>
+        <div style={{ fontSize: 13, color: "var(--dz-mute)", fontWeight: 600, marginTop: 6 }}>{schedule || (isMath ? "Math" : "English")}</div>
+        <div style={{ height: 1, background: "var(--dz-border)", margin: "14px 0" }} />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 700, color: "var(--dz-mute)" }}>
+            <Users size={16} /> {count} {count === 1 ? "student" : "students"}
+          </span>
+          <button
+            type="button"
+            className="dz-openbtn"
+            onClick={(e) => { e.stopPropagation(); onOpen(); }}
+          >
+            Open <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
