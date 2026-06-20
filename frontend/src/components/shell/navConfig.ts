@@ -14,6 +14,7 @@ import {
   School,
   Timer,
   FolderOpen,
+  Database,
 } from "lucide-react";
 
 export type NavItem = {
@@ -49,6 +50,7 @@ export const studentNav: NavSection[] = [
   {
     section: "Practice",
     items: [
+      { href: "/question-bank", label: "Question Bank", icon: Database, isNew: true },
       { href: "/pastpapers", label: "Past papers", icon: BookOpen },
       { href: "/practice-tests", label: "Practice tests", icon: BookOpenCheck },
       { href: "/vocabulary", label: "Vocabulary", icon: Languages },

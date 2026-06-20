@@ -188,6 +188,61 @@ class BankQuestionDetailSerializer(serializers.ModelSerializer):
 
 
 # ── Versions ──────────────────────────────────────────────────────────────────
+# ── Student practice (APPROVED-only; NEVER leaks correct_answer/explanation) ───
+def _has_any_image(q: BankQuestion) -> bool:
+    return bool(
+        q.question_image or q.option_a_image or q.option_b_image
+        or q.option_c_image or q.option_d_image
+    )
+
+
+class PracticeQuestionListSerializer(serializers.ModelSerializer):
+    domain_name = serializers.CharField(source="domain.name", read_only=True, default=None)
+    skill_name = serializers.CharField(source="skill.name", read_only=True, default=None)
+    has_image = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BankQuestion
+        fields = [
+            "id", "qb_id", "subject", "question_type", "difficulty",
+            "domain_name", "skill_name", "question_text", "has_image",
+        ]
+
+    def get_has_image(self, obj) -> bool:
+        return _has_any_image(obj)
+
+
+class PracticeQuestionDetailSerializer(serializers.ModelSerializer):
+    """Renderable question for self-study — deliberately WITHOUT correct_answer,
+    explanation, or student_answer (those arrive only after the student answers)."""
+
+    domain_name = serializers.CharField(source="domain.name", read_only=True, default=None)
+    skill_name = serializers.CharField(source="skill.name", read_only=True, default=None)
+    passage_text = serializers.CharField(source="passage.passage_text", read_only=True, default=None)
+    question_image = serializers.SerializerMethodField()
+    choices = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BankQuestion
+        fields = [
+            "id", "qb_id", "subject", "question_type", "difficulty",
+            "domain_name", "skill_name", "passage_text",
+            "question_text", "question_prompt", "question_image", "choices", "points",
+        ]
+
+    def get_question_image(self, obj):
+        return _image_url(obj.question_image)
+
+    def get_choices(self, obj) -> list[dict]:
+        out = []
+        for letter in ("a", "b", "c", "d"):
+            text = getattr(obj, f"option_{letter}")
+            image = _image_url(getattr(obj, f"option_{letter}_image"))
+            if (text or "").strip() or image:
+                out.append({"id": letter.upper(), "text": text, "image": image})
+        return out
+
+
 class FlexibleJSONField(serializers.JSONField):
     """Accepts a JSON value OR a bare string (multipart sends "C", not '"C"')."""
 

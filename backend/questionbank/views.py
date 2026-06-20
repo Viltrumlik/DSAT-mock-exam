@@ -30,6 +30,7 @@ from .models import (
     BankDomain,
     BankPassage,
     BankQuestion,
+    BankQuestionAttempt,
     BankQuestionVersion,
     BankSkill,
     ImportBatch,
@@ -541,3 +542,104 @@ class ImportBatchPromoteView(APIView):
             promoted = promote_batch(batch, include_warnings=include_warnings, user=request.user)
             audit.record_batch_event(batch=batch, actor=request.user, promoted_count=promoted)
         return Response(qb.ImportBatchSerializer(batch).data, status=http_status.HTTP_200_OK)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Student practice (M9) — APPROVED-only, self-study. Any authenticated user.
+# The correct answer + explanation are NEVER in the browse/detail payloads; they
+# are only returned by the answer endpoint, after the student commits an answer.
+# ══════════════════════════════════════════════════════════════════════════════
+PRACTICE_PERMISSIONS = [IsAuthenticatedAndNotFrozen]
+
+
+def _grade_answer(correct, answer: str) -> bool:
+    answer = (answer or "").strip()
+    if not answer or correct is None:
+        return False
+    if isinstance(correct, (list, tuple)):
+        return any(str(c).strip().lower() == answer.lower() for c in correct)
+    return str(correct).strip().lower() == answer.lower()
+
+
+@extend_schema(tags=["questionbank"])
+class PracticeQuestionListView(generics.ListAPIView):
+    """GET /api/questionbank/practice/ — browse APPROVED questions with filters."""
+
+    permission_classes = PRACTICE_PERMISSIONS
+    serializer_class = qb.PracticeQuestionListSerializer
+    pagination_class = QbPagination
+
+    def get_queryset(self):
+        qs = BankQuestion.objects.approved().select_related("domain", "skill")
+        p = self.request.query_params
+        if p.get("subject"):
+            qs = qs.filter(subject=p["subject"])
+        if p.get("difficulty"):
+            qs = qs.filter(difficulty=p["difficulty"])
+        if (domain_id := _int_or_none(p.get("domain"))) is not None:
+            qs = qs.filter(domain_id=domain_id)
+        if (skill_id := _int_or_none(p.get("skill"))) is not None:
+            qs = qs.filter(skill_id=skill_id)
+        term = (p.get("search") or "").strip()
+        if term:
+            qs = qs.filter(Q(qb_id__icontains=term) | Q(question_text__icontains=term))
+        return qs.order_by("-created_at", "-id")
+
+
+@extend_schema(tags=["questionbank"])
+class PracticeQuestionDetailView(generics.RetrieveAPIView):
+    """GET /api/questionbank/practice/<id>/ — one APPROVED question (no answer)."""
+
+    permission_classes = PRACTICE_PERMISSIONS
+    serializer_class = qb.PracticeQuestionDetailSerializer
+
+    def get_queryset(self):
+        return BankQuestion.objects.approved().select_related("domain", "skill", "passage")
+
+
+@extend_schema(tags=["questionbank"])
+class PracticeAnswerView(APIView):
+    """POST /api/questionbank/practice/<id>/answer/ — grade, record, reveal."""
+
+    permission_classes = PRACTICE_PERMISSIONS
+
+    def post(self, request, pk):
+        question = get_object_or_404(BankQuestion.objects.approved(), pk=pk)
+        answer = str(request.data.get("answer", "")).strip()
+        is_correct = _grade_answer(question.correct_answer, answer)
+        BankQuestionAttempt.objects.create(
+            user=request.user, bank_question=question,
+            selected_answer=answer[:255], is_correct=is_correct,
+        )
+        return Response({
+            "is_correct": is_correct,
+            "correct_answer": question.correct_answer,
+            "explanation": question.explanation,
+        })
+
+
+@extend_schema(tags=["questionbank"], parameters=[OpenApiParameter("subject", str)])
+class PracticeTaxonomyView(APIView):
+    """GET /api/questionbank/practice/taxonomy/ — domains/skills with APPROVED content."""
+
+    permission_classes = PRACTICE_PERMISSIONS
+
+    def get(self, request):
+        approved = BankQuestion.objects.approved()
+        if request.query_params.get("subject"):
+            approved = approved.filter(subject=request.query_params["subject"])
+        domain_ids = list(approved.values_list("domain_id", flat=True).distinct())
+        skill_ids = list(approved.values_list("skill_id", flat=True).distinct())
+        domains = BankDomain.objects.filter(id__in=domain_ids).order_by(
+            "subject", "display_order", "name"
+        )
+        skills = BankSkill.objects.filter(id__in=skill_ids).select_related("domain").order_by(
+            "display_order", "name"
+        )
+        return Response({
+            "domains": [{"id": d.id, "subject": d.subject, "name": d.name} for d in domains],
+            "skills": [
+                {"id": s.id, "domain": s.domain_id, "subject": s.domain.subject, "name": s.name}
+                for s in skills
+            ],
+        })

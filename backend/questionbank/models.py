@@ -363,6 +363,28 @@ class BankQuestionVersion(models.Model):
 # ──────────────────────────────────────────────────────────────────────────────
 # PDF import staging — parsed-but-not-yet-promoted candidates
 # ──────────────────────────────────────────────────────────────────────────────
+class BankQuestionAttempt(models.Model):
+    """One student practice attempt at an APPROVED bank question (self-study)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="bank_question_attempts"
+    )
+    bank_question = models.ForeignKey(
+        BankQuestion, on_delete=models.CASCADE, related_name="attempts"
+    )
+    selected_answer = models.CharField(max_length=255, blank=True, default="")
+    is_correct = models.BooleanField()
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "qb_question_attempts"
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["user", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} · {self.bank_question_id} · {'✓' if self.is_correct else '✗'}"
+
+
 class ImportCandidate(TimestampedModel):
     """
     One parsed question awaiting human review before it becomes a BankQuestion.

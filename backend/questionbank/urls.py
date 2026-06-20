@@ -22,6 +22,11 @@ urlpatterns = [
     path("versions/", views.BankQuestionVersionListView.as_view(), name="version-list"),
     path("domains/", views.BankDomainListView.as_view(), name="domain-list"),
     path("skills/", views.BankSkillListView.as_view(), name="skill-list"),
+    # Student practice (M9) — APPROVED-only, no answer leak
+    path("practice/", views.PracticeQuestionListView.as_view(), name="practice-list"),
+    path("practice/taxonomy/", views.PracticeTaxonomyView.as_view(), name="practice-taxonomy"),
+    path("practice/<int:pk>/", views.PracticeQuestionDetailView.as_view(), name="practice-detail"),
+    path("practice/<int:pk>/answer/", views.PracticeAnswerView.as_view(), name="practice-answer"),
     # Import batch management (Phase B + M5 upload)
     path("import-batches/", views.ImportBatchListView.as_view(), name="batch-list"),
     path("import-batches/upload/", views.ImportBatchUploadView.as_view(), name="batch-upload"),
