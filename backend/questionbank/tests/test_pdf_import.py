@@ -81,10 +81,52 @@ class MultiPageRationaleTests(TestCase):
         self.assertEqual(q2.correct_answer, "C")
 
 
+# Import policy is English text-only, so pipeline/validation fixtures use R&W.
+ENG_PAGE_1 = """Assessment SAT
+Test: Reading and Writing
+Domain: Information and Ideas
+Skill: Inferences
+Difficulty: Medium
+
+Question
+The passage emphasizes that the results were unexpected.
+Which choice best states the main idea of the passage?
+
+A. The results were expected.
+B. The results were unexpected and notable.
+C. The results were unrelated.
+D. The results were minor.
+
+Correct Answer: B
+
+Rationale
+Choice B is correct because the passage stresses how unexpected the results were.
+"""
+
+ENG_PAGE_2 = """Assessment SAT
+Test: Reading and Writing
+Domain: Craft and Structure
+Skill: Words in Context
+
+Question
+As used in the passage, the word notable most nearly means
+
+A. ordinary
+B. remarkable
+C. hidden
+D. brief
+
+Correct Answer: B
+
+Rationale
+Choice B is correct because notable means worthy of attention.
+"""
+
+
 class ValidationTests(TestCase):
     def test_missing_answer_is_error(self):
         (q,) = parse_pages([
-            "Question\nWhat is 2+2?\nA. 3\nB. 4\nRationale\nIt is four.\n"
+            "Test: Reading and Writing\nQuestion\nWhich choice is best?\nA. one\nB. two\nRationale\nIt is two.\n"
         ])
         status, messages = validate_parsed(q)
         self.assertEqual(status, ImportCandidate.Validation.ERROR)
@@ -92,17 +134,23 @@ class ValidationTests(TestCase):
 
     def test_truncated_rationale_warns(self):
         (q,) = parse_pages([
-            "Question\nPick one.\nA. x\nB. y\nCorrect Answer: A\n"
+            "Test: Reading and Writing\nQuestion\nPick one.\nA. x\nB. y\nCorrect Answer: A\n"
             "Rationale\nChoice A is correct because it is the only option that\n"
         ])
         status, messages = validate_parsed(q)
         self.assertEqual(status, ImportCandidate.Validation.WARNING)
         self.assertTrue(any("truncat" in m.lower() for m in messages))
 
+    def test_math_is_excluded_by_policy(self):
+        (q,) = parse_pages([PAGE_1])  # Test: Math
+        status, messages = validate_parsed(q)
+        self.assertEqual(status, ImportCandidate.Validation.ERROR)
+        self.assertTrue(any("math" in m.lower() for m in messages))
+
 
 class PipelineTests(TestCase):
     def test_batch_stage_and_promote_to_triage(self):
-        batch = create_batch_from_pages([PAGE_1, PAGE_2], filename="sat_math.pdf")
+        batch = create_batch_from_pages([ENG_PAGE_1, ENG_PAGE_2], filename="sat_rw.pdf")
         self.assertEqual(batch.candidates.count(), 2)
         self.assertEqual(
             batch.candidates.filter(validation_status=ImportCandidate.Validation.VALID).count(), 2
@@ -116,14 +164,23 @@ class PipelineTests(TestCase):
         self.assertEqual(BankQuestion.objects.filter(domain__isnull=True).count(), 2)
         q = BankQuestion.objects.first()
         self.assertEqual(q.source_type, "PDF_IMPORT")
-        self.assertEqual(q.source_reference, "sat_math.pdf")
+        self.assertEqual(q.source_reference, "sat_rw.pdf")
         self.assertIsNotNone(q.current_version)
 
+    def test_math_batch_is_not_promoted(self):
+        batch = create_batch_from_pages([PAGE_1, PAGE_2], filename="sat_math.pdf")
+        # Both Math candidates are excluded by policy → none promotable.
+        self.assertEqual(
+            batch.candidates.filter(validation_status=ImportCandidate.Validation.ERROR).count(), 2
+        )
+        self.assertEqual(promote_batch(batch), 0)
+        self.assertEqual(BankQuestion.objects.count(), 0)
+
     def test_duplicate_detection_against_existing_bank(self):
-        batch1 = create_batch_from_pages([PAGE_1, PAGE_2])
+        batch1 = create_batch_from_pages([ENG_PAGE_1, ENG_PAGE_2])
         promote_batch(batch1)
         # Re-import the same PDF → all candidates flagged DUPLICATE.
-        batch2 = create_batch_from_pages([PAGE_1, PAGE_2])
+        batch2 = create_batch_from_pages([ENG_PAGE_1, ENG_PAGE_2])
         dups = batch2.candidates.filter(validation_status=ImportCandidate.Validation.DUPLICATE).count()
         self.assertEqual(dups, 2)
         # Promoting the duplicate batch creates no new bank rows.
@@ -132,7 +189,7 @@ class PipelineTests(TestCase):
         self.assertEqual(BankQuestion.objects.count(), before)
 
     def test_idempotent_promotion(self):
-        batch = create_batch_from_pages([PAGE_1, PAGE_2])
+        batch = create_batch_from_pages([ENG_PAGE_1, ENG_PAGE_2])
         promote_batch(batch)
         n = BankQuestion.objects.count()
         promote_batch(batch)  # again

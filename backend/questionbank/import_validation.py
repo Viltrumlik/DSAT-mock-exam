@@ -27,6 +27,17 @@ def validate_parsed(q: ParsedQuestion) -> tuple[str, list[str]]:
     messages: list[str] = []
     status = _STATUS.VALID
 
+    # IMPORT POLICY: PDF import is English + text-only. Math and unknown-subject
+    # questions are EXCLUDED (not promotable) — author those manually in the bank.
+    # (Figure-bearing questions are excluded separately in create_batch_from_pdf,
+    # which is the only place that can see the PDF's embedded/vector graphics.)
+    if q.subject == "MATH":
+        return _STATUS.ERROR, ["Excluded: Math import is disabled — add Math questions manually."]
+    if q.subject != "ENGLISH":
+        return _STATUS.ERROR, [
+            "Excluded: subject is not English — only English text-only questions are imported."
+        ]
+
     is_spr = q.correct_answer is None and not any(q.options.values())
 
     if not q.question_text.strip():
@@ -52,11 +63,6 @@ def validate_parsed(q: ParsedQuestion) -> tuple[str, list[str]]:
     elif _looks_truncated(q.explanation):
         messages.append("Rationale may be truncated at a page boundary (ends mid-sentence).")
         if status != _STATUS.ERROR:
-            status = _STATUS.WARNING
-
-    if not q.subject:
-        messages.append("Subject could not be inferred from the PDF header (will need triage).")
-        if status == _STATUS.VALID:
             status = _STATUS.WARNING
 
     return status, messages

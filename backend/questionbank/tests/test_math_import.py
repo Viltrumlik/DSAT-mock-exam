@@ -56,6 +56,21 @@ Rationale
 Dividing both sides by 2 gives x = 3.
 """
 
+# English text-only — the only kind PDF import accepts.
+_ENG_PAGE = """Test: Reading and Writing
+Question ID cb-eng-001
+Question
+Which choice best completes the text?
+A. one
+B. two
+C. three
+D. four
+Correct Answer: C
+Student Answer: B
+Rationale
+The student chose two, but three is correct.
+"""
+
 
 class ParserExternalAndStudentTests(TestCase):
     def test_parses_external_id_and_separate_student_answer(self):
@@ -170,12 +185,19 @@ class ImportExternalIdDedupTests(TestCase):
         self.assertIsNotNone(find_by_external_id("cb-math-001"))
 
     def test_promote_carries_external_id_and_student_answer(self):
-        batch = create_batch_from_pages([_MATH_PAGE], filename="m.pdf")
+        # English text-only is importable; verify external_id + student_answer carry.
+        batch = create_batch_from_pages([_ENG_PAGE], filename="rw.pdf")
         promote_batch(batch)
-        q = BankQuestion.objects.get(external_id="cb-math-001")
+        q = BankQuestion.objects.get(external_id="cb-eng-001")
         self.assertEqual(q.status, QuestionStatus.TRIAGE)
         self.assertEqual(q.student_answer, "B")
         self.assertEqual(q.correct_answer, "C")  # never overwritten by student answer
+
+    def test_math_candidate_is_excluded(self):
+        batch = create_batch_from_pages([_MATH_PAGE], filename="m.pdf")
+        cand = batch.candidates.get()
+        self.assertEqual(cand.validation_status, ImportCandidate.Validation.ERROR)
+        self.assertEqual(promote_batch(batch), 0)
 
 
 def _make_pdf_with_image(path: str, text: str) -> None:
@@ -243,22 +265,22 @@ class PdfImageExtractionTests(TestCase):
         finally:
             os.unlink(path)
 
-    def test_create_batch_from_pdf_attaches_and_promotes_image(self):
+    def test_figure_question_is_excluded_from_import(self):
+        """Policy: a question on a page with a figure is excluded (author manually)."""
         from questionbank.import_pipeline import create_batch_from_pdf
 
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             path = tmp.name
         try:
-            _make_pdf_with_image(path, _MATH_PAGE)
-            batch = create_batch_from_pdf(path, filename="math.pdf")
+            _make_pdf_with_image(path, _ENG_PAGE)  # English text + an embedded figure
+            batch = create_batch_from_pdf(path, filename="rw.pdf")
         finally:
             os.unlink(path)
 
         cand = batch.candidates.get()
-        self.assertTrue(cand.question_image)  # page-level image staged
-        promote_batch(batch)
-        q = BankQuestion.objects.get(external_id="cb-math-001")
-        self.assertTrue(q.question_image)  # diagram carried onto the bank question
+        self.assertEqual(cand.validation_status, ImportCandidate.Validation.ERROR)
+        self.assertTrue(any("figure" in m.lower() for m in cand.validation_messages))
+        self.assertEqual(promote_batch(batch), 0)
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())

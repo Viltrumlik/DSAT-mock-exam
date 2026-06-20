@@ -90,9 +90,10 @@ class PassagePopulationTests(TestCase):
 
 class DedupUnificationTests(TestCase):
     def test_intra_batch_duplicate_flagged_and_not_promoted(self):
+        # Import policy is English text-only, so use an R&W question.
         single = (
-            "Test: Math\nDomain: Algebra\n\nQuestion\nWhat is 1+1?\n"
-            "A. 1\nB. 2\nCorrect Answer: B\nRationale\nIt is two.\n"
+            "Test: Reading and Writing\nDomain: Information and Ideas\n\nQuestion\nWhich choice is best?\n"
+            "A. one\nB. two\nCorrect Answer: B\nRationale\nIt is two.\n"
         )
         batch = create_batch_from_pages([single, single])  # same question twice
         statuses = list(batch.candidates.order_by("order").values_list("validation_status", flat=True))

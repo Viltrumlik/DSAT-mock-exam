@@ -24,8 +24,18 @@ from .models import (
     SourceType,
     Subject,
 )
-from .pdf_parser import parse_pages
+from .pdf_parser import ParsedQuestion, parse_pages
 from .services import create_bank_question
+from .text_cleanup import dejoin_kerning
+
+
+def _clean_parsed(q: ParsedQuestion) -> None:
+    """Repair kerning-split words in the parsed text fields (in place)."""
+    q.question_text = dejoin_kerning(q.question_text)
+    q.passage_text = dejoin_kerning(q.passage_text)
+    q.explanation = dejoin_kerning(q.explanation)
+    for letter in ("A", "B", "C", "D"):
+        q.options[letter] = dejoin_kerning(q.options[letter])
 
 
 @transaction.atomic
@@ -40,6 +50,8 @@ def create_batch_from_pages(
         status=ImportBatch.Status.READY,
     )
     parsed = parse_pages(pages)
+    for q in parsed:
+        _clean_parsed(q)
     seen_in_batch: dict[tuple[str, str], int] = {}  # (subject, hash) -> earlier candidate order
     seen_ext: dict[str, int] = {}  # external_id -> earlier candidate order
     for order, q in enumerate(parsed):
@@ -86,42 +98,41 @@ def create_batch_from_pages(
     return batch
 
 
-def _attach_page_images(batch: ImportBatch, images_by_page: dict[int, list[tuple[str, bytes]]]) -> int:
-    """Best-effort: stage the FIRST image found on a candidate's starting page onto
-    that candidate (saved to storage). Page-level association is approximate; a human
-    confirms/corrects during triage. Returns the number of candidates that got one."""
+def _exclude_figure_candidates(batch: ImportBatch, images_by_page: dict) -> int:
+    """IMPORT POLICY: a question on a page that contains a figure (embedded raster
+    OR vector-drawn chart) is EXCLUDED — figures are author-only, not auto-imported.
+    Marks such candidates ERROR with a clear reason. Returns the count excluded."""
     if not images_by_page:
         return 0
-    from django.core.files.base import ContentFile
-    from django.core.files.storage import default_storage
-
-    attached = 0
+    fig_pages = set(images_by_page)
+    excluded = 0
     for cand in batch.candidates.all():
-        imgs = images_by_page.get(cand.page_start) if cand.page_start else None
-        if not imgs:
-            continue
-        ext, data = imgs[0]
-        name = default_storage.save(
-            f"question_bank/imports/batch{batch.id}/cand{cand.id}.{ext}", ContentFile(data)
-        )
-        cand.question_image = name
-        cand.save(update_fields=["question_image"])
-        attached += 1
-    return attached
+        start = cand.page_start or 0
+        end = cand.page_end or start
+        if any(p in fig_pages for p in range(start, end + 1)):
+            if cand.validation_status != ImportCandidate.Validation.ERROR:
+                cand.validation_status = ImportCandidate.Validation.ERROR
+                cand.validation_messages = [
+                    "Excluded: question contains a figure/chart — add it manually in the bank."
+                ] + list(cand.validation_messages or [])
+                cand.save(update_fields=["validation_status", "validation_messages"])
+                excluded += 1
+    return excluded
 
 
 def create_batch_from_pdf(
     pdf_path: str, *, filename: str = "", source_reference: str = "", uploaded_by=None,
 ) -> ImportBatch:
-    """End-to-end PDF ingestion: text → candidates, plus best-effort page-level image
-    extraction (PyMuPDF). Falls back to text-only when PyMuPDF is unavailable."""
+    """End-to-end PDF ingestion: text → candidates (English text-only policy enforced
+    in validate_parsed), then exclude any candidate on a page that has a figure
+    (PyMuPDF detection). Degrades to text-only when PyMuPDF is unavailable."""
     from .pdf_text import extract_page_images, extract_pages
 
     pages = extract_pages(pdf_path)
     batch = create_batch_from_pages(
         pages, filename=filename, source_reference=source_reference, uploaded_by=uploaded_by,
     )
-    _attach_page_images(batch, extract_page_images(pdf_path))
+    _exclude_figure_candidates(batch, extract_page_images(pdf_path))
     return batch
 
 
