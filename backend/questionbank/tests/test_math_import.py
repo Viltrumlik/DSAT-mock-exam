@@ -67,6 +67,75 @@ class ParserExternalAndStudentTests(TestCase):
         self.assertEqual(q.options["C"], "3")
 
 
+# Real College Board export layout: "Question ID:" starts each record, and the
+# header is COLUMNAR — bare labels (Assessment/Test/Domain/Skill/Difficulty) then
+# their values as a separate block in the same order.
+_COLUMNAR_EXPORT = """Question ID: id-001
+Assessment
+Test
+Domain
+Skill
+Difficulty
+SAT
+Reading and Writing
+Information and Ideas
+Inferences
+Hard
+Question
+First stem text?
+Answer
+A. one
+B. two
+C. three
+D. four
+Correct Answer: B
+Rationale
+Because two is right.
+Question ID: id-002
+Assessment
+Test
+Domain
+Skill
+Difficulty
+SAT
+Math
+Algebra
+Linear functions
+Medium
+Question
+Second stem text?
+Answer
+A. 1
+B. 2
+C. 3
+D. 4
+Correct Answer: C
+Rationale
+Because three.
+"""
+
+
+class ColumnarExportTests(TestCase):
+    def test_columnar_header_and_record_boundaries(self):
+        qs = parse_pages([_COLUMNAR_EXPORT])
+        self.assertEqual(len(qs), 2)
+        q1, q2 = qs
+        # external_id aligns to the right record (the boundary fix).
+        self.assertEqual(q1.external_id, "id-001")
+        self.assertEqual(q2.external_id, "id-002")
+        # Columnar labels mapped positionally to values.
+        self.assertEqual(q1.subject, "ENGLISH")
+        self.assertEqual(q1.raw_domain, "Information and Ideas")
+        self.assertEqual(q1.raw_skill, "Inferences")
+        self.assertEqual(q1.raw_difficulty, "Hard")
+        self.assertEqual(q1.correct_answer, "B")
+        self.assertEqual(q2.subject, "MATH")
+        self.assertEqual(q2.raw_domain, "Algebra")
+        self.assertEqual(q2.correct_answer, "C")
+        # The "Answer" choice-list header must not pollute the stem.
+        self.assertNotIn("Answer", q1.question_text)
+
+
 class ExternalIdUniquenessTests(TestCase):
     def test_cross_question_duplicate_external_id_rejected(self):
         create_bank_question(

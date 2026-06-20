@@ -101,6 +101,12 @@ class _Parser:
         # until the next "Passage" block — this is how Passage A → Q1..Q4 works.
         self.current_passage = ""
         self._passage_buf = ""
+        # Columnar header support: some exports list bare labels (Assessment / Test /
+        # Domain / Skill / Difficulty) on their own lines, then the VALUES as a
+        # separate block in the same order. We collect the labels then map values
+        # positionally. (Inline "Test: Math" still works via _absorb_label.)
+        self._col_labels: list[str] = []
+        self._col_values: list[str] = []
 
     # ── header accumulation ───────────────────────────────────────────────────
     def _absorb_label(self, label: str, value: str) -> None:
@@ -123,6 +129,13 @@ class _Parser:
 
     def _reset_pending(self) -> None:
         self.pending = {"subject": "", "domain": "", "skill": "", "difficulty": "", "external_id": ""}
+
+    def _apply_columnar(self) -> None:
+        """Map collected columnar labels → values positionally, then clear."""
+        for name, val in zip(self._col_labels, self._col_values):
+            self._absorb_label(name, val)
+        self._col_labels = []
+        self._col_values = []
 
     def _commit(self) -> None:
         if self.cur is not None:
@@ -150,6 +163,8 @@ class _Parser:
         if _QUESTION_RE.match(line):
             if self.mode == "passage":
                 self._finalize_passage_buffer()
+            if self._col_labels:  # flush any in-progress columnar header
+                self._apply_columnar()
             self._commit()
             self.cur = ParsedQuestion(page_start=page_no, page_end=page_no)
             if any(self.pending.values()):
@@ -164,9 +179,15 @@ class _Parser:
             self.mode = "stem"
             return
 
-        # External/source id may appear in the header block or inside the record.
+        # "Question ID" begins a record. If a question is already open past its stem
+        # (options/answer/rationale), this id starts the NEXT record → commit the
+        # current one first so the id isn't mis-attached to the previous question.
         em = _EXTERNAL_ID_RE.match(line)
         if em:
+            if self.cur is not None and self.mode in ("options", "post_answer", "rationale"):
+                self._commit()
+                self._reset_pending()
+                self.mode = "header"  # leave rationale so the next header isn't eaten
             if self.cur is not None:
                 self.cur.external_id = em.group(1)
             else:
@@ -203,8 +224,22 @@ class _Parser:
                 # A new record's header arrived right after an answer (no rationale).
                 self._commit()
                 self._reset_pending()
-            self._absorb_label(*label)
+            lname, lval = label
+            if lval:
+                self._absorb_label(lname, lval)   # inline "Label: value"
+            else:
+                self._col_labels.append(lname)    # columnar: bare label, value follows later
             self.mode = "header"
+            return
+
+        # Columnar header values: bare labels were collected above; the following
+        # plain lines are their values, in document order.
+        if self._col_labels and self.cur is None and self.mode in ("header", "col_values"):
+            self.mode = "col_values"
+            self._col_values.append(stripped)
+            if len(self._col_values) >= len(self._col_labels):
+                self._apply_columnar()
+                self.mode = "header"
             return
 
         if self.cur is None:
@@ -234,6 +269,8 @@ class _Parser:
             return
 
         if self.mode == "stem":
+            if stripped.lower() == "answer":
+                return  # "Answer" is the choice-list header, not stem content
             self.cur.question_text += (" " if self.cur.question_text else "") + stripped
         elif self.mode == "options":
             last = self._last_filled_option()
