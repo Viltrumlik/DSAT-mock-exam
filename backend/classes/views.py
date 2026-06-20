@@ -9,7 +9,7 @@ from statistics import mean
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Exists, OuterRef, Q
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -207,7 +207,9 @@ class _ClassroomMemberGateMixin:
         c = Classroom.objects.filter(pk=classroom_pk).first()
         if c is None:
             return
-        if not c.memberships.filter(user=request.user).exists():
+        if not c.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             raise PermissionDenied(detail="You do not have access to this classroom.")
 
 
@@ -237,9 +239,19 @@ class ClassroomViewSet(ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        # Membership is a soft delete (status=REMOVED). Gate visibility on a
+        # non-removed membership, and count only non-removed members.
+        active_membership = ClassroomMembership.objects.filter(
+            classroom=OuterRef("pk"), user=user
+        ).exclude(status=ClassroomMembership.STATUS_REMOVED)
         member_qs = (
-            Classroom.objects.filter(memberships__user=user)
-            .annotate(members_count=Count("memberships"))
+            Classroom.objects.filter(Exists(active_membership))
+            .annotate(
+                members_count=Count(
+                    "memberships",
+                    filter=~Q(memberships__status=ClassroomMembership.STATUS_REMOVED),
+                )
+            )
             .distinct()
         )
         # Default visibility for classroom resources is membership-scoped. This keeps the
@@ -270,7 +282,10 @@ class ClassroomViewSet(ModelViewSet):
         """
         user = request.user
         enrolled = list(
-            Classroom.objects.filter(memberships__user=user)
+            Classroom.objects.filter(
+                memberships__user=user,
+                memberships__status__in=ClassroomMembership.NON_REMOVED_STATUSES,
+            )
             .only("id", "name", "subject")
             .distinct()
         )
@@ -436,7 +451,11 @@ class ClassroomViewSet(ModelViewSet):
         events: list[dict] = []
 
         classes = list(
-            Classroom.objects.filter(memberships__user=user, is_active=True)
+            Classroom.objects.filter(
+                memberships__user=user,
+                memberships__status__in=ClassroomMembership.NON_REMOVED_STATUSES,
+                is_active=True,
+            )
             .only("id", "name", "subject", "lesson_days", "lesson_time", "start_date")
             .distinct()
         )
@@ -731,7 +750,9 @@ class ClassroomViewSet(ModelViewSet):
         and score on the most recently assigned practice test in this class.
         """
         classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user).exists():
+        if not classroom.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
 
         student_memberships = list(
@@ -982,7 +1003,9 @@ class ClassroomViewSet(ModelViewSet):
         """
         classroom = self.get_object()
         user = request.user
-        membership = classroom.memberships.filter(user=user).first()
+        membership = classroom.memberships.filter(user=user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).first()
         if not membership:
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         if membership.role not in (ClassroomMembership.ROLE_ADMIN, "TEACHER"):
@@ -1208,7 +1231,9 @@ class ClassroomViewSet(ModelViewSet):
         Unified class feed: posts, new assignments, and submission events (mixed, newest first).
         """
         classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user).exists():
+        if not classroom.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         qs = ClassroomStreamItem.objects.filter(classroom=classroom).select_related("actor").order_by("-created_at")
         paginator = StreamPagination()
@@ -1226,7 +1251,9 @@ class ClassroomViewSet(ModelViewSet):
         Teachers receive the same assignment list with ``workflow_status`` null.
         """
         classroom = self.get_object()
-        if not classroom.memberships.filter(user=request.user).exists():
+        if not classroom.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         user = request.user
         is_student = classroom.memberships.filter(user=user, role=ClassroomMembership.ROLE_STUDENT).exists()
@@ -1450,7 +1477,9 @@ class ClassPostViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     def get_queryset(self):
         classroom = self.get_classroom()
         # membership enforced
-        if not classroom.memberships.filter(user=self.request.user).exists():
+        if not classroom.memberships.filter(user=self.request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return ClassPost.objects.none()
         return ClassPost.objects.filter(classroom=classroom).select_related("author")
 
@@ -1486,14 +1515,16 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     def get_queryset(self):
         classroom = self.get_classroom()
         user = self.request.user
-        if not classroom.memberships.filter(user=user).exists():
+        if not classroom.memberships.filter(user=user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Assignment.objects.none()
         qs = Assignment.objects.filter(classroom=classroom).select_related(
             "created_by", "mock_exam", "practice_test", "pastpaper_pack", "practice_test_pack", "module"
         ).prefetch_related("extra_attachments").annotate(submissions_count=Count("submissions"))
         is_staff = classroom.memberships.filter(
             user=user, role__in=ClassroomMembership.STAFF_ROLES
-        ).exists()
+        ).exclude(status=ClassroomMembership.STATUS_REMOVED).exists()
         if not is_staff:
             # Students never see DRAFT or ARCHIVED assignments. Order newest-GIVEN first
             # (when it was published, falling back to creation) so freshly assigned work
@@ -1512,7 +1543,7 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         classroom = self.get_classroom()
         if not classroom.memberships.filter(
             user=request.user, role__in=ClassroomMembership.STAFF_ROLES
-        ).exists():
+        ).exclude(status=ClassroomMembership.STATUS_REMOVED).exists():
             return None, Response({"detail": "You do not have permission to manage assignments."}, status=status.HTTP_403_FORBIDDEN)
         a = Assignment.objects.filter(pk=pk, classroom=classroom).first()
         if a is None:
@@ -1746,7 +1777,9 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     )
     def submit(self, request, classroom_pk=None, pk=None):
         classroom = self.get_classroom()
-        if not classroom.memberships.filter(user=request.user).exists():
+        if not classroom.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
 
@@ -2042,7 +2075,9 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
     @action(detail=True, methods=["get"], url_path="my-submission")
     def my_submission(self, request, classroom_pk=None, pk=None):
         classroom = self.get_classroom()
-        if not classroom.memberships.filter(user=request.user).exists():
+        if not classroom.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
         if classroom.memberships.filter(
@@ -2350,7 +2385,9 @@ class ClassCommentListCreateView(APIView):
 
     def get(self, request, classroom_pk):
         classroom = get_object_or_404(Classroom, pk=classroom_pk)
-        if not classroom.memberships.filter(user=request.user).exists():
+        if not classroom.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         tt = (request.query_params.get("target_type") or "").strip().lower()
         if tt == "post":
@@ -2379,7 +2416,9 @@ class ClassCommentListCreateView(APIView):
 
     def post(self, request, classroom_pk):
         classroom = get_object_or_404(Classroom, pk=classroom_pk)
-        if not classroom.memberships.filter(user=request.user).exists():
+        if not classroom.memberships.filter(user=request.user).exclude(
+            status=ClassroomMembership.STATUS_REMOVED
+        ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         ser = ClassCommentSerializer(data=request.data, context={"classroom": classroom, "request": request})
         ser.is_valid(raise_exception=True)
@@ -2430,7 +2469,8 @@ class OpsStatsView(APIView):
                 user=request.user, role="ADMIN"
             ).values_list("classroom_id", flat=True)
             total_classrooms = Classroom.objects.filter(
-                memberships__user=request.user
+                memberships__user=request.user,
+                memberships__status__in=ClassroomMembership.NON_REMOVED_STATUSES,
             ).distinct().count()
         else:
             managed_ids = ClassroomMembership.objects.filter(

@@ -1,5 +1,7 @@
 from rest_framework.permissions import BasePermission
 
+from .models import ClassroomMembership
+
 
 class IsAdminUser(BasePermission):
     """
@@ -22,7 +24,11 @@ class IsClassMember(BasePermission):
         classroom = getattr(view, "get_classroom", lambda: None)()
         if classroom is None:
             return False
-        return classroom.memberships.filter(user=request.user).exists()
+        return (
+            classroom.memberships.filter(user=request.user)
+            .exclude(status=ClassroomMembership.STATUS_REMOVED)
+            .exists()
+        )
 
 
 class IsClassAdmin(BasePermission):
@@ -37,7 +43,11 @@ class IsClassAdmin(BasePermission):
         classroom = getattr(view, "get_classroom", lambda: None)()
         if classroom is None:
             return False
-        return classroom.memberships.filter(user=request.user, role="ADMIN").exists()
+        return (
+            classroom.memberships.filter(user=request.user, role="ADMIN")
+            .exclude(status=ClassroomMembership.STATUS_REMOVED)
+            .exists()
+        )
 
 
 # ── Capability-backed permissions (BUSINESS-ARCHITECTURE §2) ──────────────────

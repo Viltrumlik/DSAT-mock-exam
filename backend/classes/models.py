@@ -123,6 +123,10 @@ class ClassroomMembership(models.Model):
         (STATUS_INVITED, "Invited"),
         (STATUS_REMOVED, "Removed"),
     ]
+    # Statuses that still count as "a member" for ACCESS gates. Removal is a soft
+    # delete (status=REMOVED), so any query that decides whether the requesting user
+    # may see/enter a classroom must exclude REMOVED. Keep this rule in one place.
+    NON_REMOVED_STATUSES = (STATUS_ACTIVE, STATUS_INVITED)
 
     classroom = models.ForeignKey(
         Classroom, on_delete=models.CASCADE, related_name="memberships"
