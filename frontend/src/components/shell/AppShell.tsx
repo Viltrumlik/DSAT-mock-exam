@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
 import {
@@ -108,6 +108,19 @@ export function AppShell({
     return flat.filter((i) => i.label.toLowerCase().includes(q)).slice(0, 8);
   }, [nav, cmd]);
 
+  // Material-style click ripple for nav items (matches the design reference).
+  const addRipple = (e: ReactPointerEvent<HTMLElement>) => {
+    const el = e.currentTarget;
+    const rect = el.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const span = document.createElement("span");
+    span.className = "dz-ripple";
+    span.style.cssText =
+      `left:${e.clientX - rect.left}px;top:${e.clientY - rect.top}px;width:${size}px;height:${size}px`;
+    el.appendChild(span);
+    window.setTimeout(() => span.remove(), 600);
+  };
+
   const title = pageTitleFor(nav, pathname, brand.name);
   const signedIn = !!user;
 
@@ -194,9 +207,17 @@ export function AppShell({
               No sections match.
             </p>
           ) : (
-            filteredNav.map(({ section, items }) => (
-              <div key={section} className="flex flex-col gap-1">
-                {!collapsed && section ? <p className="ds-overline px-3 pb-1">{section}</p> : null}
+            filteredNav.map(({ section, items }, sIdx) => (
+              <div
+                key={section}
+                className="flex flex-col gap-[7px]"
+                style={{ animation: "dz-sectionIn .42s cubic-bezier(.22,1,.36,1) both", animationDelay: `${sIdx * 60}ms` }}
+              >
+                {!collapsed && section ? (
+                  <p className="px-3.5 pb-2 pt-[18px] text-[11px] font-extrabold uppercase tracking-[0.14em] text-label-foreground">
+                    {section}
+                  </p>
+                ) : null}
                 {items.map(({ href, label, icon: Icon, isNew }) => {
                   const active = isNavItemActive(href, pathname);
                   const link = (
@@ -204,24 +225,25 @@ export function AppShell({
                       key={href}
                       href={href}
                       onClick={() => setMobileOpen(false)}
+                      onPointerDown={addRipple}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "ds-ring group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors",
+                        "ds-ring group relative flex items-center gap-[13px] overflow-hidden rounded-[13px] border-[1.5px] px-3.5 py-[11px] text-[15px] font-semibold transition-[background-color,color,transform,border-color,box-shadow] duration-200 active:scale-[0.96]",
                         collapsed && "md:justify-center md:px-2",
                         active
-                          ? "bg-primary-soft text-primary"
-                          : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+                          ? "border-primary bg-primary-soft font-bold text-primary hover:translate-x-0.5 hover:shadow-[0_6px_16px_rgba(24,40,177,0.18)]"
+                          : "border-border bg-transparent text-muted-foreground hover:translate-x-[3px] hover:border-primary hover:text-primary",
                       )}
                     >
-                      <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={2} />
+                      <Icon
+                        className={cn("h-5 w-5 shrink-0", active && "[animation:dz-navPop_0.4s_ease]")}
+                        strokeWidth={2}
+                      />
                       {!collapsed ? <span className="flex-1 truncate">{label}</span> : null}
                       {!collapsed && isNew ? (
-                        <span className="rounded-full bg-success-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-success-foreground">
+                        <span className="rounded-md bg-success-soft px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-success-foreground">
                           New
                         </span>
-                      ) : null}
-                      {active ? (
-                        <span className="absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-primary" />
                       ) : null}
                     </Link>
                   );
