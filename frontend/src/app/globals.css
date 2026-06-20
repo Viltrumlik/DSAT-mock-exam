@@ -966,6 +966,10 @@ mark.ts-annot {
 @keyframes dz-spinSlow { to { transform: rotate(360deg) } }
 @keyframes dz-dayPop { 0% { transform: scale(.6) } 55% { transform: scale(1.18) } 100% { transform: scale(1) } }
 @keyframes dz-sectionIn { 0% { opacity: .25; transform: translateY(14px) scale(.992) } 100% { opacity: 1; transform: translateY(0) scale(1) } }
+@keyframes dz-rippleExpand { from { transform: translate(-50%, -50%) scale(0); opacity: .4 } to { transform: translate(-50%, -50%) scale(1); opacity: 0 } }
+@keyframes dz-navPop { 0% { transform: scale(.9) } 60% { transform: scale(1.12) } 100% { transform: scale(1) } }
+/* Click ripple for sidebar nav items — AppShell sets only left/top/width/height inline. */
+.dz-ripple { position: absolute; border-radius: 9999px; background: currentColor; opacity: .3; pointer-events: none; transform: translate(-50%, -50%) scale(0); animation: dz-rippleExpand .6s ease-out forwards; }
 
 .dzboard .dz-content { animation: dz-sectionIn .5s cubic-bezier(.22,1,.36,1) both; }
 .dzboard .dz-rise { animation: dz-riseIn .5s cubic-bezier(.22,1,.36,1) both; }
