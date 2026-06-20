@@ -138,17 +138,17 @@ export function AppShell({
             collapsed && "md:justify-center md:px-0",
           )}
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
-            {brand.logoSrc ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={brand.logoSrc} alt="" className="h-full w-full object-contain p-1" />
-            ) : (
-              brand.name.slice(0, 1)
-            )}
-          </span>
+          {brand.logoSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={brand.logoSrc} alt={brand.name} className="h-10 w-10 shrink-0 object-contain" />
+          ) : (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary text-sm font-extrabold text-primary-foreground">
+              {brand.name.slice(0, 1)}
+            </span>
+          )}
           {!collapsed ? (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[15px] font-extrabold tracking-tight">{brand.name}</p>
+              <p className="truncate text-[19px] font-extrabold tracking-tight text-foreground">{brand.name}</p>
               {brand.tagline ? (
                 <p className="ds-overline text-primary">{brand.tagline}</p>
               ) : null}
@@ -266,7 +266,17 @@ export function AppShell({
       </aside>
 
       {/* Main column */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Large faint brand watermark — sits behind all page content */}
+        {brand.logoSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={brand.logoSrc}
+            alt=""
+            aria-hidden
+            className="pointer-events-none absolute -bottom-20 -right-16 z-0 w-[min(55vw,560px)] select-none opacity-[0.045] dark:opacity-[0.07]"
+          />
+        ) : null}
         <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-2 border-b border-border bg-card/80 px-3 backdrop-blur md:gap-4 md:px-6">
           <IconButton
             variant="ghost"
@@ -356,7 +366,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-3 py-5 md:px-6 lg:px-8">{children}</main>
+        <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-5 md:px-6 lg:px-8">{children}</main>
       </div>
 
       {/* Notifications — bell opens a drawer (not a primary nav item) */}

@@ -21,7 +21,7 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   return (
     <AuthGuard>
       <AppShell
-        brand={{ name: "MasterSAT", tagline: "Learning OS", logoSrc: "/images/logo.png" }}
+        brand={{ name: "MasterSAT", logoSrc: "/images/logo.png" }}
         nav={studentNav}
         pathname={pathname}
         user={isAuthenticated ? { name, avatarUrl: m?.profile_image_url ?? null } : null}
