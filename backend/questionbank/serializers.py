@@ -11,12 +11,17 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from django.db.models import Count
+
 from .models import (
     BankDomain,
     BankPassage,
     BankQuestion,
     BankQuestionVersion,
     BankSkill,
+    Difficulty,
+    ImportBatch,
+    ImportCandidate,
 )
 
 
@@ -189,3 +194,103 @@ class BankQuestionVersionDetailSerializer(BankQuestionVersionSerializer):
 
     class Meta(BankQuestionVersionSerializer.Meta):
         fields = BankQuestionVersionSerializer.Meta.fields + ["snapshot_json"]
+
+
+# ── Triage write inputs (Phase B) ─────────────────────────────────────────────
+class TriageClassifyInputSerializer(serializers.Serializer):
+    domain = serializers.PrimaryKeyRelatedField(queryset=BankDomain.objects.all())
+    skill = serializers.PrimaryKeyRelatedField(queryset=BankSkill.objects.all())
+    difficulty = serializers.ChoiceField(choices=Difficulty.choices)
+
+
+class TriageRejectInputSerializer(serializers.Serializer):
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class BulkTriageInputSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=["approve", "reject", "classify"])
+    ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=False)
+    # classify-only
+    domain = serializers.PrimaryKeyRelatedField(queryset=BankDomain.objects.all(), required=False)
+    skill = serializers.PrimaryKeyRelatedField(queryset=BankSkill.objects.all(), required=False)
+    difficulty = serializers.ChoiceField(choices=Difficulty.choices, required=False)
+    # reject-only
+    reason = serializers.CharField(required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["action"] == "classify":
+            missing = [f for f in ("domain", "skill", "difficulty") if attrs.get(f) in (None, "")]
+            if missing:
+                raise serializers.ValidationError(
+                    {f: "Required for action=classify." for f in missing}
+                )
+        return attrs
+
+
+# ── Import batches (Phase B) ──────────────────────────────────────────────────
+_BATCH_STATUS_LABELS = {
+    ImportBatch.Status.PENDING: "Uploaded",
+    ImportBatch.Status.PARSING: "Processing",
+    ImportBatch.Status.READY: "Ready For Review",
+    ImportBatch.Status.PROMOTED: "Imported",
+    ImportBatch.Status.FAILED: "Validation Failed",
+}
+
+
+class ImportBatchSerializer(serializers.ModelSerializer):
+    status_display = serializers.SerializerMethodField()
+    candidate_counts = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ImportBatch
+        fields = [
+            "id", "source_type", "filename", "source_reference",
+            "status", "status_display", "total_candidates", "promoted_count",
+            "candidate_counts", "notes", "created_at", "updated_at",
+        ]
+
+    def _counts(self, obj) -> dict:
+        if not hasattr(obj, "_qb_counts"):
+            obj._qb_counts = {
+                row["validation_status"]: row["n"]
+                for row in obj.candidates.values("validation_status").annotate(n=Count("id"))
+            }
+        return obj._qb_counts
+
+    def get_candidate_counts(self, obj) -> dict:
+        c = self._counts(obj)
+        V = ImportCandidate.Validation
+        return {
+            "valid": c.get(V.VALID, 0),
+            "warning": c.get(V.WARNING, 0),
+            "error": c.get(V.ERROR, 0),
+            "duplicate": c.get(V.DUPLICATE, 0),
+        }
+
+    def get_status_display(self, obj) -> str:
+        # READY but carrying parse errors surfaces as "Validation Failed".
+        if obj.status == ImportBatch.Status.READY and self._counts(obj).get(
+            ImportCandidate.Validation.ERROR, 0
+        ):
+            return "Validation Failed"
+        return _BATCH_STATUS_LABELS.get(obj.status, obj.status)
+
+
+class ImportCandidateSerializer(serializers.ModelSerializer):
+    duplicate_of_qb_id = serializers.CharField(source="duplicate_of.qb_id", read_only=True, default=None)
+    promoted_question_qb_id = serializers.CharField(source="promoted_question.qb_id", read_only=True, default=None)
+
+    class Meta:
+        model = ImportCandidate
+        fields = [
+            "id", "batch", "order", "subject",
+            "raw_domain", "raw_skill", "raw_difficulty",
+            "passage_text", "question_text",
+            "option_a", "option_b", "option_c", "option_d",
+            "correct_answer", "explanation", "content_hash",
+            "page_start", "page_end",
+            "validation_status", "validation_messages",
+            "duplicate_of", "duplicate_of_qb_id",
+            "promoted_question", "promoted_question_qb_id",
+            "created_at",
+        ]
