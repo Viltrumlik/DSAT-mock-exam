@@ -56,6 +56,47 @@ function TrendBadge({ trend }: { trend: Trend | null }) {
   return <Pill tone={m.tone}><m.Icon className="h-3 w-3" /> {m.label}</Pill>;
 }
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+/** Top-3 podium (1st centered + taller, with crown), matching the Classroom mockup. */
+function Podium({ rows, scoreOf }: { rows: RankingRow[]; scoreOf: (r: RankingRow) => number | null }) {
+  const top = rows.slice(0, 3);
+  if (top.length < 3) return null;
+  const order = [top[1], top[0], top[2]]; // 2nd, 1st, 3rd
+  const meta: Record<number, { ring: string; medal: string; pad: string }> = {
+    1: { ring: "bg-gradient-to-br from-amber-400 to-amber-600", medal: "bg-amber-500", pad: "pt-7" },
+    2: { ring: "bg-gradient-to-br from-slate-300 to-slate-500", medal: "bg-slate-400", pad: "pt-4" },
+    3: { ring: "bg-gradient-to-br from-orange-300 to-orange-500", medal: "bg-orange-400", pad: "pt-4" },
+  };
+  return (
+    <div className="mb-4 grid grid-cols-3 items-end gap-3">
+      {order.map((r) => {
+        const m = meta[r.rank] ?? meta[3];
+        const score = scoreOf(r);
+        return (
+          <div key={`${r.rank}-${r.name}`}
+            className={cn("relative flex flex-col items-center rounded-2xl border p-4", m.pad,
+              r.is_me ? "border-primary bg-primary/5" : "border-border bg-card")}>
+            {r.rank === 1 && <span className="absolute -top-3 text-amber-500">👑</span>}
+            <div className={cn("flex h-14 w-14 items-center justify-center rounded-full text-base font-extrabold text-white shadow-md", m.ring)}>
+              {initials(r.name)}
+            </div>
+            <span className={cn("-mt-2.5 flex h-6 w-6 items-center justify-center rounded-full text-xs font-extrabold text-white ring-2 ring-card", m.medal)}>{r.rank}</span>
+            <div className="mt-2 max-w-full truncate text-center text-sm font-extrabold text-foreground">
+              {r.name}{r.is_me && <span className="ml-1 text-xs text-primary">You</span>}
+            </div>
+            <div className="mt-0.5 text-[13px] font-bold text-muted-foreground">{score != null ? `${Math.round(score)} pts` : "—"}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function topPercent(p: number | null): string | null {
   if (p == null) return null;
   return `Top ${Math.max(1, Math.round(100 - p))}%`;
@@ -167,12 +208,15 @@ function RankingBoard({ classroom, kind }: { classroom: ClassroomWithRole; kind:
             </Button>
           )}
         />
+        {data.rows.length >= 3 && data.config.leaderboard_mode !== "ANONYMOUS" ? (
+          <Podium rows={data.rows} scoreOf={showScore} />
+        ) : null}
         <div className="mt-4 space-y-1.5">
           {data.rows.length === 0 ? (
             <EmptyState icon={M.icon} title="No rankings yet"
               description={data.can_configure ? "Once students complete work, recompute to build the leaderboard." : "Your ranking will appear once there's enough data."} />
           ) : (
-            data.rows.map((row) => {
+            (data.rows.length >= 3 && data.config.leaderboard_mode !== "ANONYMOUS" ? data.rows.slice(3) : data.rows).map((row) => {
               const score = showScore(row);
               return (
                 <div key={`${row.rank}-${row.name}`}

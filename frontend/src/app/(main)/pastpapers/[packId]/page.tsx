@@ -1,141 +1,66 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+/**
+ * Past paper detail — 1:1 with the MasterSAT Paper Detail mockup (.dzboard scope):
+ * a sticky left rail (region + title + composite score ring / progress) and section
+ * cards with per-section score rings + Start/Continue/Review-Retry actions.
+ * Data + start/resume logic preserved from the original page.
+ */
+
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+// Public pastpaper packs + attempts live only on examsPublicApi; no feature wrapper exists.
+// eslint-disable-next-line no-restricted-imports
 import { examsPublicApi, type PastpaperPackPublic, type PastpaperPackSection } from "@/lib/api";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { useMe } from "@/hooks/useMe";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
-import { ArrowLeft, BookOpen, Calculator, Calendar, Eye, Play, Trophy } from "lucide-react";
-import { cn } from "@/lib/cn";
-import { Card, CardContent, Badge, Button, EmptyState, Spinner } from "@/components/ui";
-
-// ─── helpers (preserved) ─────────────────────────────────────────────────────
+import { ArrowLeft, BookOpen, Calculator, Calendar, Eye, Play, Trophy, Globe } from "lucide-react";
+import { Spinner } from "@/components/ui";
 
 function formatDate(s: string | null): string {
   if (!s) return "Undated";
-  try {
-    return new Date(s).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  } catch {
-    return s;
-  }
+  try { return new Date(s).toLocaleDateString("en-US", { month: "long", year: "numeric" }); } catch { return s; }
 }
-
-function isRWSubject(subject: string): boolean {
+function isRW(subject: string): boolean {
   return subject === "READING_WRITING" || subject?.toLowerCase().includes("reading");
 }
-
 function subjectLabel(subject: string): string {
-  if (isRWSubject(subject)) return "Reading & Writing";
+  if (isRW(subject)) return "Reading & Writing";
   if (subject === "MATH" || subject?.toLowerCase().includes("math")) return "Mathematics";
   return subject;
 }
-
-function totalMinutes(section: PastpaperPackSection): number {
-  if (isRWSubject(section.subject)) return section.module_count * 32;
-  return section.module_count * 35;
+function totalMinutes(s: PastpaperPackSection): number {
+  return isRW(s.subject) ? s.module_count * 32 : s.module_count * 35;
 }
 
 type AttemptRow = { id: number; practice_test: number; is_completed: boolean; is_expired: boolean; score?: number | null };
 
-// ─── section card ─────────────────────────────────────────────────────────────
-
-function SectionCard({
-  section, attempts, onStart, starting, startError, locked, lockReason,
-}: {
-  section: PastpaperPackSection;
-  attempts: AttemptRow[];
-  onStart: (sectionId: number) => void;
-  starting: number | null;
-  startError?: string | null;
-  locked?: boolean;
-  lockReason?: string;
-}) {
-  const rw = isRWSubject(section.subject);
-  const Icon = rw ? BookOpen : Calculator;
-  const sectionAttempts = attempts.filter((a) => a.practice_test === section.id).sort((a, b) => b.id - a.id);
-  const activeAttempt = sectionAttempts.find((a) => !a.is_completed && !a.is_expired);
-  const completedAttempt = sectionAttempts.find((a) => a.is_completed);
-  const isCompleted = !!completedAttempt;
-  const isLoading = starting === section.id;
-
+function Ring({ size, stroke, value, max, color, gradient }: { size: number; stroke: number; value: number; max: number; color?: string; gradient?: boolean }) {
+  const r = (size - stroke) / 2 - 1;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(1, value / max));
+  const off = c * (1 - pct);
+  const gid = `g${size}`;
   return (
-    <Card className={locked ? "opacity-60" : undefined}>
-      <CardContent className="flex flex-col gap-4">
-        <div className="flex items-start gap-4">
-          <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl", rw ? "bg-info-soft text-info-foreground" : "bg-success-soft text-success-foreground")}>
-            <Icon className="h-6 w-6" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="ds-h4">{subjectLabel(section.subject)}</h3>
-              {isCompleted ? <Badge variant="success">Done</Badge> : null}
-              {activeAttempt && !isCompleted ? <Badge variant="warning">In progress</Badge> : null}
-              {locked ? <Badge variant="neutral">Locked</Badge> : null}
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {section.module_count} module{section.module_count !== 1 ? "s" : ""} · {totalMinutes(section)} min{section.form_type === "US" ? " · US form" : " · International"}
-            </p>
-            {isCompleted && completedAttempt?.score != null ? (
-              <p className="mt-1 text-xs font-bold text-foreground">Score: <span className="text-primary">{completedAttempt.score}</span><span className="font-normal text-muted-foreground"> / 800</span></p>
-            ) : null}
-            {locked && lockReason ? <p className="mt-1 text-xs text-muted-foreground">{lockReason}</p> : null}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {startError ? <p className="rounded-lg bg-danger-soft px-3 py-2 text-xs font-semibold text-danger-foreground">{startError}</p> : null}
-          {isCompleted ? (
-            <div className="flex gap-2">
-              <Link href={`/review/${completedAttempt!.id}`} className="flex-1"><Button variant="secondary" fullWidth leftIcon={<Eye />}>Review answers</Button></Link>
-              <Button variant={rw ? "primary" : "primary"} loading={isLoading} disabled={locked} leftIcon={<Play className="fill-current" />} onClick={() => !locked && onStart(section.id)}>Retry</Button>
-            </div>
-          ) : (
-            <Button fullWidth size="lg" loading={isLoading} disabled={locked} leftIcon={<Play className="fill-current" />} onClick={() => !locked && onStart(section.id)}>
-              {activeAttempt ? "Continue" : "Start"}
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
+      {gradient ? (
+        <defs>
+          <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1="0" y1="0" x2={size} y2={size}>
+            <animateTransform attributeName="gradientTransform" type="rotate" from={`0 ${size / 2} ${size / 2}`} to={`360 ${size / 2} ${size / 2}`} dur="6s" repeatCount="indefinite" />
+            <stop offset="0" stopColor="#2a68c0" />
+            <stop offset="1" stopColor="#16a34a" />
+          </linearGradient>
+        </defs>
+      ) : null}
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--dz-border)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={gradient ? `url(#${gid})` : color} strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c} strokeDashoffset={off} style={{ transition: "stroke-dashoffset .8s cubic-bezier(.22,1,.36,1)" }} />
+    </svg>
   );
 }
 
-// ─── combined score banner ────────────────────────────────────────────────────
-
-function CombinedScoreBanner({ pack, attempts }: { pack: PastpaperPackPublic; attempts: AttemptRow[] }) {
-  const completedAttempts = pack.sections.map((s) => attempts.find((a) => a.practice_test === s.id && a.is_completed));
-  if (completedAttempts.some((a) => !a)) return null;
-
-  const scores = completedAttempts.map((a) => a?.score ?? null);
-  const allHaveScores = scores.every((s) => s != null);
-  const composite = allHaveScores ? Math.min(1600, scores.reduce((sum, s) => (sum ?? 0) + (s ?? 0), 0) ?? 0) : null;
-
-  return (
-    <Card className="border-success/25 bg-success-soft">
-      <CardContent>
-        <div className="mb-2 flex items-center gap-3">
-          <Trophy className="h-5 w-5 shrink-0 text-success" />
-          <p className="ds-overline text-success-foreground">All sections complete</p>
-        </div>
-        {composite != null ? (
-          <div className="flex items-baseline gap-2">
-            <span className="ds-num text-4xl font-extrabold text-success-foreground">{composite}</span>
-            <span className="text-sm font-bold text-success-foreground">/ 1600</span>
-            <span className="ml-1 text-xs text-success-foreground/80">composite SAT score</span>
-          </div>
-        ) : (
-          <p className="text-sm text-success-foreground">Review each section to see your answers and explanations.</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── inner page ───────────────────────────────────────────────────────────────
-
-function PastpaperPackDetailInner() {
+function PaperDetailInner() {
   const { packId } = useParams<{ packId: string }>();
   const id = Number(packId);
   const router = useRouter();
@@ -157,7 +82,7 @@ function PastpaperPackDetailInner() {
         setFetchError(null);
         const [packData, attData] = await Promise.all([
           examsPublicApi.getPastpaperPack(id),
-          isAuthenticated ? examsStudentApi.getAttempts() : Promise.resolve({ items: [] }),
+          isAuthenticated ? examsStudentApi.getAttempts() : Promise.resolve({ items: [] as AttemptRow[] }),
         ]);
         if (!cancelled) {
           setPack(packData);
@@ -175,7 +100,21 @@ function PastpaperPackDetailInner() {
     return () => { cancelled = true; };
   }, [id, isAuthenticated]);
 
-  const sorted = [...(pack?.sections ?? [])].sort((a, b) => (isRWSubject(a.subject) ? 0 : 1) - (isRWSubject(b.subject) ? 0 : 1));
+  const sections = useMemo(
+    () => [...(pack?.sections ?? [])].sort((a, b) => (isRW(a.subject) ? 0 : 1) - (isRW(b.subject) ? 0 : 1)),
+    [pack],
+  );
+  const secState = (s: PastpaperPackSection) => {
+    const list = attempts.filter((a) => a.practice_test === s.id).sort((a, b) => b.id - a.id);
+    const completed = list.find((a) => a.is_completed);
+    const active = list.find((a) => !a.is_completed && !a.is_expired);
+    return { completed, active, done: !!completed, score: completed?.score ?? null };
+  };
+  const doneCount = sections.filter((s) => secState(s).done).length;
+  const allDone = sections.length > 0 && doneCount === sections.length;
+  const composite = allDone
+    ? Math.min(1600, sections.reduce((sum, s) => sum + (secState(s).score ?? 0), 0))
+    : null;
 
   const handleStart = async (sectionId: number) => {
     if (!assertCriticalAuth()) return;
@@ -183,18 +122,14 @@ function PastpaperPackDetailInner() {
     setStartError(null);
     try {
       let attempt = attempts.find((a) => a.practice_test === sectionId && !a.is_completed && !a.is_expired);
-      // Fresh start (no in-progress attempt) → show the welcome screen; resumes skip it.
       const isFreshStart = !attempt;
       if (!attempt) {
         attempt = (await examsStudentApi.startTest(sectionId)) as AttemptRow;
         setAttempts((prev) => [...prev, attempt!]);
       }
-      try {
-        sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt));
-      } catch {}
+      try { sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt)); } catch {}
       router.push(`/exam/${attempt.id}${isFreshStart ? "?welcome=1" : ""}`);
     } catch (e: unknown) {
-      console.error("[pastpaper] start section failed", e);
       const data = (e as { response?: { data?: unknown } })?.response?.data;
       let msg = "Could not start the test. Please try again.";
       if (data && typeof data === "object") {
@@ -209,42 +144,137 @@ function PastpaperPackDetailInner() {
     }
   };
 
-  if (loading) {
-    return <div className="flex min-h-[40vh] items-center justify-center"><Spinner className="h-10 w-10 text-primary" /></div>;
-  }
-
+  if (loading) return <div className="flex min-h-[40vh] items-center justify-center"><Spinner className="h-10 w-10 text-primary" /></div>;
   if (!pack) {
     return (
-      <div className="mx-auto max-w-xl py-16">
-        <EmptyState title={fetchError ?? "Past paper not found"} description="It may have been unpublished." action={<Link href="/pastpapers"><Button variant="secondary">Back to past papers</Button></Link>} />
+      <div className="dzboard" style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 22, padding: "64px 40px", textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--dz-ink)" }}>{fetchError ?? "Past paper not found"}</div>
+          <Link href="/pastpapers" style={{ display: "inline-block", marginTop: 18, color: "var(--dz-indigo)", fontWeight: 700 }}>← Back to past papers</Link>
+        </div>
       </div>
     );
   }
 
+  const isUS = pack.form_type === "US";
+  const regionMain = isUS ? "var(--dz-indigo)" : "#0d9488";
+  const regionSoft = isUS ? "var(--dz-indigo-soft)" : "rgba(13,148,136,.12)";
+
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-6 pb-12">
-      <Link href="/pastpapers" className="ds-ring inline-flex w-fit items-center gap-1.5 rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Past papers
-      </Link>
+    <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
+      <div className="dz-content">
+        <button type="button" onClick={() => router.push("/pastpapers")} className="dz-secbtn"
+          style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--dz-mute)", fontWeight: 700, fontSize: 14, cursor: "pointer", marginBottom: 20, padding: "9px 15px", borderRadius: 11, border: "1.5px solid var(--dz-border)", background: "var(--dz-panel)" }}>
+          <ArrowLeft size={16} /> Past papers
+        </button>
 
-      <div>
-        <p className="ds-overline text-primary">{pack.form_type === "US" ? "US form" : "International form"}{pack.label ? ` · Form ${pack.label}` : ""}</p>
-        <h1 className="ds-h1 mt-1">{pack.title || `SAT past paper — ${formatDate(pack.practice_date)}`}</h1>
-        <p className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground"><Calendar className="h-4 w-4 shrink-0" /> {formatDate(pack.practice_date)}</p>
-        <p className="ds-small mt-2">Practice SAT sections — start with either Reading &amp; Writing or Mathematics, in any order.</p>
-      </div>
+        <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 28, alignItems: "start" }} className="dz-paper">
+          {/* Left rail */}
+          <div style={{ position: "sticky", top: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800, color: regionMain, background: regionSoft, padding: "4px 10px", borderRadius: 8 }}>
+                {isUS ? <span style={{ fontSize: 12 }}>🇺🇸</span> : <Globe size={12} />} {isUS ? "US" : "International"}
+              </span>
+              {pack.label ? <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", color: "var(--dz-faint)" }}>FORM {pack.label}</span> : null}
+            </div>
+            <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.1, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)" }}>
+              {pack.title || `SAT past paper — ${formatDate(pack.practice_date)}`}
+            </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--dz-mute)", marginTop: 10 }}>
+              <Calendar size={14} /> {formatDate(pack.practice_date)}
+            </div>
 
-      {isAuthenticated ? <CombinedScoreBanner pack={pack} attempts={attempts} /> : null}
+            {allDone ? (
+              <div style={{ background: "linear-gradient(135deg,var(--dz-panel),rgba(22,163,74,.08))", border: "1px solid rgba(22,163,74,.25)", borderRadius: 18, padding: "24px 22px", marginTop: 22, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12, fontWeight: 800, letterSpacing: ".08em", color: "#16a34a", alignSelf: "flex-start" }}>
+                  <Trophy size={14} /> ALL SECTIONS COMPLETE
+                </div>
+                <div style={{ position: "relative", width: 176, height: 176, margin: "18px 0 6px" }} className="dz-pop">
+                  <Ring size={176} stroke={13} value={composite ?? 0} max={1600} gradient />
+                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontSize: 44, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-indigo-deep)", lineHeight: 1 }}>{composite}</span>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#3f9e76", marginTop: 2 }}>/ 1600</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ background: "var(--dz-card)", border: "1px solid var(--dz-border)", borderRadius: 18, padding: 20, marginTop: 22 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", color: "var(--dz-faint)" }}>PROGRESS</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "var(--dz-ink)", marginTop: 8 }}>{doneCount} of {sections.length || 2} sections complete</div>
+                <div style={{ height: 8, borderRadius: 6, background: "var(--dz-border)", overflow: "hidden", marginTop: 12 }}>
+                  <div style={{ height: "100%", width: `${sections.length ? (doneCount / sections.length) * 100 : 0}%`, borderRadius: 6, background: "var(--dz-indigo)" }} />
+                </div>
+              </div>
+            )}
+          </div>
 
-      {sorted.length === 0 ? (
-        <EmptyState compact title="No sections yet" description="Sections appear here once added." />
-      ) : (
-        <div className="grid gap-4">
-          {sorted.map((section) => (
-            <SectionCard key={section.id} section={section} attempts={attempts} onStart={handleStart} starting={starting} startError={startError?.sectionId === section.id ? startError.msg : null} />
-          ))}
+          {/* Right: sections */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {sections.length === 0 ? (
+              <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 16, padding: 26, textAlign: "center", color: "var(--dz-mute)", fontWeight: 600 }}>No sections yet</div>
+            ) : (
+              sections.map((s) => {
+                const st = secState(s);
+                const rw = isRW(s.subject);
+                const accent = rw ? "var(--dz-indigo)" : "#0d9488";
+                const accentSoft = rw ? "var(--dz-indigo-soft)" : "rgba(13,148,136,.12)";
+                const Icon = rw ? BookOpen : Calculator;
+                const status = st.done ? { label: "Done", color: "#16a34a", bg: "rgba(22,163,74,.12)" }
+                  : st.active ? { label: "In progress", color: "var(--dz-amber)", bg: "color-mix(in srgb,var(--dz-amber) 14%,transparent)" }
+                  : { label: "Not started", color: "var(--dz-mute)", bg: "var(--dz-card)" };
+                return (
+                  <div key={s.id} className="dz-statecard" style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 18, padding: 20 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                      <div style={{ width: 48, height: 48, flex: "none", borderRadius: 14, background: accentSoft, color: accent, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={24} /></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>{subjectLabel(s.subject)}</span>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: status.color, background: status.bg, padding: "3px 9px", borderRadius: 8 }}>{status.label}</span>
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--dz-mute)", marginTop: 5 }}>
+                          {s.module_count} module{s.module_count !== 1 ? "s" : ""} · {totalMinutes(s)} min
+                        </div>
+                      </div>
+                      {st.done ? (
+                        <div style={{ position: "relative", width: 74, height: 74, flex: "none" }} className="dz-pop">
+                          <Ring size={74} stroke={7} value={st.score ?? 0} max={800} color={accent} />
+                          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                            <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.02em", color: "var(--dz-ink)", lineHeight: 1 }}>{st.score ?? "—"}</div>
+                            <div style={{ fontSize: 9, fontWeight: 700, color: "var(--dz-faint)" }}>/ 800</div>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {startError?.sectionId === s.id ? (
+                      <div style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: "var(--dz-error)", background: "var(--dz-error-soft)", padding: "8px 12px", borderRadius: 10 }}>{startError.msg}</div>
+                    ) : null}
+
+                    {st.done ? (
+                      <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                        <Link href={`/review/${st.completed!.id}`} style={{ flex: 1 }}>
+                          <button type="button" className="dz-actionbtn" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 12, borderRadius: 12, border: "1px solid var(--dz-border)", background: "var(--dz-card)", color: "var(--dz-mute)", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                            <Eye size={15} /> Review answers
+                          </button>
+                        </Link>
+                        <button type="button" disabled={starting === s.id} onClick={() => handleStart(s.id)} className="dz-actionbtn"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "12px 24px", borderRadius: 12, border: "none", background: "var(--dz-indigo-deep)", color: "#fff", fontFamily: "inherit", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>
+                          <Play size={15} /> {starting === s.id ? "…" : "Retry"}
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" disabled={starting === s.id} onClick={() => handleStart(s.id)} className="dz-actionbtn"
+                        style={{ width: "100%", marginTop: 16, padding: 14, borderRadius: 12, border: "none", background: "var(--dz-indigo-deep)", color: "#fff", fontFamily: "inherit", fontSize: 15, fontWeight: 800, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                        <Play size={15} /> {starting === s.id ? "Starting…" : st.active ? "Continue" : "Start"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -252,7 +282,7 @@ function PastpaperPackDetailInner() {
 export default function PastpaperPackDetailPage() {
   return (
     <Suspense fallback={<div className="flex min-h-[40vh] items-center justify-center"><Spinner className="h-10 w-10 text-primary" /></div>}>
-      <PastpaperPackDetailInner />
+      <PaperDetailInner />
     </Suspense>
   );
 }

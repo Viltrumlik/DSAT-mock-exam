@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { authApi, usersApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { UserPlus, GraduationCap, Sparkles, ShieldCheck, LineChart } from "lucide-react";
+import { UserPlus, Sparkles, ShieldCheck, LineChart } from "lucide-react";
 import Link from "next/link";
 import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import { Button, Input, Field, Alert, Spinner } from "@/components/ui";
@@ -143,18 +143,24 @@ export default function RegisterPage() {
     return (
         <div className="ds-app flex min-h-screen bg-background text-foreground">
             {/* Brand panel — desktop only */}
-            <aside className="relative hidden w-[44%] max-w-xl flex-col justify-between overflow-hidden bg-primary p-12 text-primary-foreground lg:flex">
-                <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15">
-                        <GraduationCap className="h-6 w-6" />
-                    </span>
-                    <div>
-                        <p className="text-lg font-extrabold tracking-tight">MasterSAT</p>
-                        <p className="text-[11px] font-bold uppercase tracking-[0.16em] opacity-80">Learning OS</p>
-                    </div>
+            <aside
+                className="authbrand relative hidden w-[44%] max-w-xl flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+                style={{ background: "linear-gradient(160deg,#2a68c0,#1f4d9a)" }}
+            >
+                <span aria-hidden className="pointer-events-none absolute -right-[70px] -top-[50px] h-[280px] w-[280px] rounded-full bg-white/10" style={{ animation: "dz-floatA 14s ease-in-out infinite" }} />
+                <span aria-hidden className="pointer-events-none absolute -bottom-[90px] right-[60px] h-[200px] w-[200px] bg-white/[0.08]" style={{ borderRadius: 44, animation: "dz-floatB 16s ease-in-out infinite" }} />
+                <span aria-hidden className="pointer-events-none absolute bottom-[120px] -left-[60px] h-[150px] w-[150px] rounded-full border-[18px] border-white/[0.11]" style={{ animation: "dz-floatC 13s ease-in-out infinite" }} />
+                <span aria-hidden className="pointer-events-none absolute left-[40px] top-[180px] h-4 w-4 rounded-[5px] bg-white/30" style={{ animation: "dz-floatD 11s ease-in-out infinite" }} />
+                <span aria-hidden className="pointer-events-none absolute right-[120px] top-[90px] h-[60px] w-[60px] rounded-[18px] bg-white/[0.07]" style={{ animation: "dz-floatD 15s ease-in-out infinite" }} />
+                <span aria-hidden className="pointer-events-none absolute -bottom-[40px] left-[140px] h-[120px] w-[120px] rounded-full border-[10px] border-white/[0.08]" style={{ animation: "dz-drift 40s linear infinite" }} />
+
+                <div className="relative flex items-center gap-3">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/images/logo.png" alt="" className="h-12 w-auto object-contain" style={{ filter: "brightness(0) invert(1)" }} />
+                    <p className="text-xl font-extrabold tracking-tight">MasterSAT</p>
                 </div>
 
-                <div className="max-w-sm">
+                <div className="relative max-w-sm">
                     <h2 className="text-4xl font-extrabold leading-[1.1] tracking-tight">Start your climb to a higher score.</h2>
                     <p className="mt-4 text-[15px] leading-relaxed opacity-90">
                         Set a goal, build a streak, and watch your readiness rise with every practice set.
@@ -175,7 +181,7 @@ export default function RegisterPage() {
                     </ul>
                 </div>
 
-                <p className="text-xs opacity-70">© {new Date().getFullYear()} MasterSAT Center</p>
+                <p className="relative text-xs opacity-70">© {new Date().getFullYear()} MasterSAT Center</p>
             </aside>
 
             {/* Form panel */}

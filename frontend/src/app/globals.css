@@ -1122,3 +1122,17 @@ mark.ts-annot {
 .dzboard .dz-secbtn:hover { border-color: var(--dz-indigo); color: var(--dz-indigo); }
 .dzboard .dz-actionbtn { transition: transform .15s, box-shadow .15s; }
 .dzboard .dz-actionbtn:active { transform: scale(.96); }
+
+/* Auth brand-panel floating shapes (MasterSAT Login/Register mockup) */
+@keyframes dz-floatA { 0%,100% { transform: translate(0,0) rotate(0deg) scale(1) } 50% { transform: translate(-14px,18px) rotate(8deg) scale(1.05) } }
+@keyframes dz-floatB { 0%,100% { transform: translate(0,0) rotate(24deg) scale(1) } 50% { transform: translate(12px,-16px) rotate(16deg) scale(1.06) } }
+@keyframes dz-floatC { 0%,100% { transform: translate(0,0) scale(1) } 50% { transform: translate(14px,-12px) scale(1.08) } }
+@keyframes dz-floatD { 0%,100% { transform: translate(0,0) rotate(0deg) } 50% { transform: translate(-10px,12px) rotate(20deg) } }
+@keyframes dz-drift { 0%,100% { transform: rotate(0deg) } 50% { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) {
+  .authbrand * { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+}
+
+@media (max-width: 860px) {
+  .dzboard .dz-paper { grid-template-columns: 1fr !important; }
+}
