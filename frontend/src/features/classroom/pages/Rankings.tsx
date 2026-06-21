@@ -1,286 +1,176 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Trophy,
-  GraduationCap,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  ArrowUp,
-  ArrowDown,
-  RefreshCcw,
-  EyeOff,
-  History,
-  type LucideIcon,
-} from "lucide-react";
+import { Trophy, GraduationCap, RefreshCcw, Crown, EyeOff, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { Card, CardHeader, Button, Pill, Select, Field, StatCard, EmptyState, LoadingState, ErrorState } from "../ui";
-import type { PillTone } from "../ui";
+import { Button, Select, Field, EmptyState, LoadingState, ErrorState } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
-import { useRankings, useRankingHistory, useRecomputeRankings, useUpdateRankingConfig } from "../rankingsHooks";
-import type { LeaderboardMode, RankingKind, RankingRow, Trend } from "../rankingsApi";
+import { useRankings, useRecomputeRankings, useUpdateRankingConfig } from "../rankingsHooks";
+import type { LeaderboardMode, RankingKind, RankingRow } from "../rankingsApi";
 
-const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: string; unit: string }> = {
-  SAT: {
-    title: "SAT Ranking",
-    icon: Trophy,
-    desc: "Ranked by SAT performance — practice tests, past papers, mock exams, and SAT simulations.",
-    unit: "SAT score",
-  },
-  ACADEMIC: {
-    title: "Academic Ranking",
-    icon: GraduationCap,
-    desc: "Ranked by graded work — homework, quizzes, classwork, participation (and attendance when enabled).",
-    unit: "academic score",
-  },
+const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: string }> = {
+  SAT: { title: "SAT", icon: Trophy, desc: "Ranked by SAT performance — practice tests, past papers, and mock exams." },
+  ACADEMIC: { title: "Academic", icon: GraduationCap, desc: "Points earned across assignments, quizzes, and practice." },
 };
 
-function Movement({ change }: { change: number | null }) {
-  if (change == null || change === 0)
-    return <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground"><Minus className="h-3 w-3" /></span>;
-  if (change > 0)
-    return <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-600"><ArrowUp className="h-3 w-3" />{change}</span>;
-  return <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-rose-600"><ArrowDown className="h-3 w-3" />{Math.abs(change)}</span>;
-}
-
-function TrendBadge({ trend }: { trend: Trend | null }) {
-  if (!trend) return null;
-  const map: Record<Trend, { tone: PillTone; Icon: React.ElementType; label: string }> = {
-    IMPROVING: { tone: "success", Icon: TrendingUp, label: "Improving" },
-    DECLINING: { tone: "warning", Icon: TrendingDown, label: "Declining" },
-    STABLE: { tone: "neutral", Icon: Minus, label: "Steady" },
-  };
-  const m = map[trend];
-  return <Pill tone={m.tone}><m.Icon className="h-3 w-3" /> {m.label}</Pill>;
-}
-
 function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "?";
-  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+  const p = name.trim().split(/\s+/).filter(Boolean);
+  if (!p.length) return "?";
+  return (p[0][0] + (p[1]?.[0] ?? "")).toUpperCase();
+}
+function fmt(n: number | null): string {
+  return n == null ? "—" : Math.round(n).toLocaleString("en-US");
 }
 
-/** Top-3 podium (1st centered + taller, with crown), matching the Classroom mockup. */
-function Podium({ rows, scoreOf }: { rows: RankingRow[]; scoreOf: (r: RankingRow) => number | null }) {
-  const top = rows.slice(0, 3);
-  if (top.length < 3) return null;
-  const order = [top[1], top[0], top[2]]; // 2nd, 1st, 3rd
-  const meta: Record<number, { ring: string; medal: string; pad: string }> = {
-    1: { ring: "bg-gradient-to-br from-amber-400 to-amber-600", medal: "bg-amber-500", pad: "pt-7" },
-    2: { ring: "bg-gradient-to-br from-slate-300 to-slate-500", medal: "bg-slate-400", pad: "pt-4" },
-    3: { ring: "bg-gradient-to-br from-orange-300 to-orange-500", medal: "bg-orange-400", pad: "pt-4" },
-  };
-  return (
-    <div className="mb-4 grid grid-cols-3 items-end gap-3">
-      {order.map((r) => {
-        const m = meta[r.rank] ?? meta[3];
-        const score = scoreOf(r);
-        return (
-          <div key={`${r.rank}-${r.name}`}
-            className={cn("relative flex flex-col items-center rounded-2xl border p-4", m.pad,
-              r.is_me ? "border-primary bg-primary/5" : "border-border bg-card")}>
-            {r.rank === 1 && <span className="absolute -top-3 text-amber-500">👑</span>}
-            <div className={cn("flex h-14 w-14 items-center justify-center rounded-full text-base font-extrabold text-white shadow-md", m.ring)}>
-              {initials(r.name)}
-            </div>
-            <span className={cn("-mt-2.5 flex h-6 w-6 items-center justify-center rounded-full text-xs font-extrabold text-white ring-2 ring-card", m.medal)}>{r.rank}</span>
-            <div className="mt-2 max-w-full truncate text-center text-sm font-extrabold text-foreground">
-              {r.name}{r.is_me && <span className="ml-1 text-xs text-primary">You</span>}
-            </div>
-            <div className="mt-0.5 text-[13px] font-bold text-muted-foreground">{score != null ? `${Math.round(score)} pts` : "—"}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function topPercent(p: number | null): string | null {
-  if (p == null) return null;
-  return `Top ${Math.max(1, Math.round(100 - p))}%`;
-}
-
-function num(c: Record<string, unknown> | null, key: string): number | null {
-  const v = c?.[key];
-  return typeof v === "number" ? v : null;
-}
+// Avatar colour cycle for the ranked list (soft bg, strong text).
+const AV: [string, string][] = [
+  ["var(--primary-soft)", "var(--primary)"],
+  ["rgba(109,78,199,.14)", "#6d4ec7"],
+  ["rgba(13,148,136,.14)", "#0d9488"],
+  ["rgba(224,133,26,.16)", "#e0851a"],
+  ["rgba(214,71,127,.14)", "#d6477f"],
+];
 
 export function Rankings({ classroom }: { classroom: ClassroomWithRole }) {
   const [kind, setKind] = useState<RankingKind>("SAT");
-  return (
-    <div className="space-y-5">
-      {/* SAT and Academic are completely separate experiences — switch, never combine. */}
-      <div className="inline-flex rounded-xl border border-border p-0.5">
-        {(["SAT", "ACADEMIC"] as RankingKind[]).map((k) => {
-          const M = KIND_META[k];
-          return (
-            <button key={k} onClick={() => setKind(k)}
-              className={cn("inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold",
-                kind === k ? "bg-surface-2 text-foreground" : "text-muted-foreground hover:text-foreground")}>
-              <M.icon className="h-4 w-4" /> {M.title}
-            </button>
-          );
-        })}
-      </div>
-      <RankingBoard key={kind} classroom={classroom} kind={kind} />
-    </div>
-  );
+  return <RankingBoard key={kind} classroom={classroom} kind={kind} setKind={setKind} />;
 }
 
-function RankingBoard({ classroom, kind }: { classroom: ClassroomWithRole; kind: RankingKind }) {
+function RankingBoard({ classroom, kind, setKind }: { classroom: ClassroomWithRole; kind: RankingKind; setKind: (k: RankingKind) => void }) {
   const classId = Number(classroom.id);
   const caps = capabilitiesFor(classroom.my_role);
   const { data, isLoading, isError, refetch } = useRankings(classId, kind);
   const recompute = useRecomputeRankings(classId);
   const updateConfig = useUpdateRankingConfig(classId, kind);
-  const [showHistory, setShowHistory] = useState(false);
-  const M = KIND_META[kind];
 
-  if (isLoading) return <LoadingState label={`Loading ${M.title}…`} />;
-  if (isError || !data) return <ErrorState onRetry={() => refetch()} />;
-
-  const hideScores = data.config.hide_score_values;
-  const showScore = (row: RankingRow) => (row.is_me ? row.score : hideScores && !caps.isStaff ? null : row.score);
+  const hideScores = data?.config.hide_score_values;
+  const scoreOf = (row: RankingRow) => (row.is_me ? row.score : hideScores && !caps.isStaff ? null : row.score);
 
   return (
     <div className="space-y-5">
-      <Card>
-        <CardHeader
-          title={M.title}
-          description={M.desc}
-          actions={
-            data.can_recompute && (
-              <Button size="sm" variant="secondary" icon={RefreshCcw} loading={recompute.isPending}
-                onClick={() => recompute.mutate([kind])}>
-                Recompute
-              </Button>
-            )
-          }
-        />
+      {/* Header: title + SAT/Academic segmented */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Trophy className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-extrabold tracking-tight text-foreground">Class rankings</h2>
+        </div>
+        <div className="flex gap-1 rounded-xl bg-surface-2 p-1">
+          {(["SAT", "ACADEMIC"] as RankingKind[]).map((k) => (
+            <button key={k} type="button" onClick={() => setKind(k)}
+              className={cn("rounded-lg px-3.5 py-1.5 text-sm font-bold transition-colors",
+                kind === k ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground")}>
+              {KIND_META[k].title}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="-mt-3 text-[13px] font-medium text-muted-foreground">{KIND_META[kind].desc}</p>
 
-        {data.can_configure && (
-          <div className="mt-4 flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-border p-3">
-            <Field label="Leaderboard visibility" className="w-44">
-              <Select
-                value={data.config.leaderboard_mode}
-                onChange={(e) => updateConfig.mutate({ leaderboard_mode: e.target.value as LeaderboardMode })}
-              >
-                <option value="FULL">Full — names + scores</option>
-                <option value="ANONYMOUS">Anonymous — hide names</option>
-                <option value="HIDDEN">Hidden — own rank only</option>
-              </Select>
-            </Field>
-            <label className="flex items-center gap-2 pb-2.5 text-sm text-foreground">
-              <input type="checkbox" checked={data.config.hide_score_values}
-                onChange={(e) => updateConfig.mutate({ hide_score_values: e.target.checked })}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-[var(--ring)]" />
-              Hide score values
-            </label>
-          </div>
-        )}
-
-        {/* My position — always highlighted, own score always visible */}
-        {data.my && (
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Your rank" value={`#${data.my.rank}`} icon={M.icon} accent="text-amber-600 bg-amber-500/10" />
-            <StatCard label={M.unit} value={data.my.score != null ? Math.round(data.my.score) : "—"} icon={TrendingUp} />
-            {data.my.percentile != null && <StatCard label="Standing" value={topPercent(data.my.percentile) ?? "—"} icon={Trophy} accent="text-emerald-600 bg-emerald-500/10" />}
-            {kind === "SAT" && num(data.my.components, "best") != null && (
-              <StatCard label="Best" value={Math.round(num(data.my.components, "best") as number)} icon={Trophy} />
-            )}
-            {kind === "ACADEMIC" && num(data.my.components, "completion_rate") != null && (
-              <StatCard label="Completion" value={`${num(data.my.components, "completion_rate")}%`} icon={GraduationCap} />
-            )}
-          </div>
-        )}
-      </Card>
-
-      {/* Leaderboard */}
-      <Card>
-        <CardHeader
-          title="Leaderboard"
-          description={data.period_key ? `Updated ${data.period_key}` : undefined}
-          actions={data.my && (
-            <Button size="sm" variant="ghost" icon={History} onClick={() => setShowHistory((v) => !v)}>
-              My history
+      {/* Staff controls (students never see these) */}
+      {data && (data.can_recompute || data.can_configure) ? (
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-border p-3">
+          {data.can_configure ? (
+            <>
+              <Field label="Leaderboard visibility" className="w-44">
+                <Select value={data.config.leaderboard_mode} onChange={(e) => updateConfig.mutate({ leaderboard_mode: e.target.value as LeaderboardMode })}>
+                  <option value="FULL">Full — names + scores</option>
+                  <option value="ANONYMOUS">Anonymous — hide names</option>
+                  <option value="HIDDEN">Hidden — own rank only</option>
+                </Select>
+              </Field>
+              <label className="flex items-center gap-2 pb-2.5 text-sm text-foreground">
+                <input type="checkbox" checked={data.config.hide_score_values} onChange={(e) => updateConfig.mutate({ hide_score_values: e.target.checked })}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-[var(--ring)]" />
+                Hide score values
+              </label>
+            </>
+          ) : null}
+          {data.can_recompute ? (
+            <Button size="sm" variant="secondary" icon={RefreshCcw} loading={recompute.isPending} onClick={() => recompute.mutate([kind])} className="ml-auto">
+              Recompute
             </Button>
-          )}
-        />
-        {data.rows.length >= 3 && data.config.leaderboard_mode !== "ANONYMOUS" ? (
-          <Podium rows={data.rows} scoreOf={showScore} />
-        ) : null}
-        <div className="mt-4 space-y-1.5">
-          {data.rows.length === 0 ? (
-            <EmptyState icon={M.icon} title="No rankings yet"
-              description={data.can_configure ? "Once students complete work, recompute to build the leaderboard." : "Your ranking will appear once there's enough data."} />
-          ) : (
-            (data.rows.length >= 3 && data.config.leaderboard_mode !== "ANONYMOUS" ? data.rows.slice(3) : data.rows).map((row) => {
-              const score = showScore(row);
+          ) : null}
+        </div>
+      ) : null}
+
+      {isLoading ? (
+        <LoadingState label="Loading rankings…" />
+      ) : isError || !data ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : data.rows.length === 0 ? (
+        <EmptyState icon={Trophy} title="No rankings yet"
+          description={data.can_configure ? "Once students complete work, recompute to build the leaderboard." : "Your ranking will appear once there's enough data."} />
+      ) : (
+        <>
+          {data.rows.length >= 3 && data.config.leaderboard_mode !== "ANONYMOUS" ? (
+            <Podium rows={data.rows} scoreOf={scoreOf} />
+          ) : null}
+          <div className="flex flex-col gap-2">
+            {(data.rows.length >= 3 && data.config.leaderboard_mode !== "ANONYMOUS" ? data.rows.slice(3) : data.rows).map((row, i) => {
+              const [abg, ac] = AV[(row.rank - 1) % AV.length];
+              const score = scoreOf(row);
               return (
-                <div key={`${row.rank}-${row.name}`}
-                  className={cn(
-                    "flex items-center gap-3 rounded-xl border px-4 py-2.5",
-                    row.is_me ? "border-primary bg-primary/5" : "border-border",
-                  )}>
-                  <span className="w-8 shrink-0 text-sm font-bold tabular-nums text-muted-foreground">#{row.rank}</span>
-                  <Movement change={row.rank_change} />
-                  <span className={cn("min-w-0 flex-1 truncate text-sm", row.is_me ? "font-semibold text-foreground" : "text-foreground")}>
-                    {row.name}{row.is_me && <span className="ml-1.5 text-xs text-primary">You</span>}
+                <div key={`${row.rank}-${row.name}-${i}`}
+                  className={cn("group flex items-center gap-3.5 rounded-2xl border px-4 py-3 transition-all hover:translate-x-[3px] hover:border-primary hover:shadow-[0_6px_16px_rgba(42,104,192,.12)]",
+                    row.is_me ? "border-primary bg-primary/5" : "border-border bg-card")}>
+                  <span className="w-[26px] shrink-0 text-center text-[15px] font-extrabold tabular-nums text-muted-foreground">{row.rank}</span>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-extrabold" style={{ background: abg, color: ac }}>{initials(row.name)}</span>
+                  <span className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
+                    {row.name}{row.is_me ? <span className="ml-1.5 text-xs font-bold text-primary">You</span> : null}
                   </span>
-                  {kind === "SAT" && row.confidence && row.confidence !== "HIGH" && (
-                    <Pill tone="neutral">{row.confidence === "LOW" ? "Provisional" : "Building"}</Pill>
-                  )}
-                  <TrendBadge trend={row.trend} />
-                  {row.percentile != null && <span className="hidden w-16 text-right text-xs text-muted-foreground sm:inline">{Math.round(row.percentile)}%ile</span>}
-                  <span className="w-16 shrink-0 text-right text-sm font-semibold tabular-nums text-foreground">
-                    {score != null ? Math.round(score) : <EyeOff className="ml-auto h-3.5 w-3.5 text-muted-foreground" />}
+                  <span className="w-[84px] shrink-0 text-right text-[15px] font-extrabold tabular-nums text-foreground">
+                    {score != null ? fmt(score) : <EyeOff className="ml-auto h-3.5 w-3.5 text-muted-foreground" />}
                   </span>
                 </div>
               );
-            })
-          )}
-        </div>
-        {!caps.isStaff && data.config.leaderboard_mode === "HIDDEN" && (
-          <p className="mt-3 text-center text-xs text-muted-foreground">Your teacher shows only your own position for this class.</p>
-        )}
-      </Card>
-
-      {showHistory && <HistoryPanel classId={classId} kind={kind} onClose={() => setShowHistory(false)} />}
+            })}
+          </div>
+          {!caps.isStaff && data.config.leaderboard_mode === "HIDDEN" ? (
+            <p className="text-center text-xs text-muted-foreground">Your teacher shows only your own position for this class.</p>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
 
-function HistoryPanel({ classId, kind, onClose }: { classId: number; kind: RankingKind; onClose: () => void }) {
-  const { data, isLoading, isError, refetch } = useRankingHistory(classId, kind);
-  const points = data?.history ?? [];
-  const maxScore = Math.max(1, ...points.map((p) => p.score));
-
+/** Top-3 podium — 1st centred + taller with crown (1:1 with the Classroom mockup). */
+function Podium({ rows, scoreOf }: { rows: RankingRow[]; scoreOf: (r: RankingRow) => number | null }) {
+  const top = rows.slice(0, 3);
+  if (top.length < 3) return null;
+  const order = [top[1], top[0], top[2]]; // 2nd, 1st, 3rd
+  const RANK: Record<number, { soft: string; border: string; medal: string; av: string }> = {
+    1: { soft: "linear-gradient(160deg,#fdf3d6,#fff)", border: "1.5px solid #f0d488", medal: "#e3a008", av: "linear-gradient(135deg,#f5b740,#d98f0a)" },
+    2: { soft: "linear-gradient(160deg,#eef1f6,#fff)", border: "1.5px solid #e7ebf3", medal: "#94a3b8", av: "linear-gradient(135deg,#cbd5e1,#94a3b8)" },
+    3: { soft: "linear-gradient(160deg,#fbeed5,#fff)", border: "1.5px solid #f0d9b3", medal: "#e0851a", av: "linear-gradient(135deg,#f4b15f,#e0851a)" },
+  };
   return (
-    <Card>
-      <CardHeader title="Ranking history" description="Your position over time" actions={<Button size="sm" variant="ghost" onClick={onClose}>Close</Button>} />
-      {isLoading ? <LoadingState label="Loading history…" /> : isError ? <ErrorState onRetry={() => refetch()} /> : points.length === 0 ? (
-        <EmptyState icon={History} title="No history yet" description="History builds up as rankings are recomputed over time." />
-      ) : (
-        <div className="mt-4 space-y-4">
-          <div className="flex items-end gap-1.5" style={{ height: 100 }}>
-            {points.map((p) => (
-              <div key={p.period_key} className="flex flex-1 flex-col items-center justify-end gap-1" title={`${p.period_key} · #${p.rank} · ${Math.round(p.score)}`}>
-                <div className="w-full rounded-t bg-primary/60" style={{ height: `${(p.score / maxScore) * 100}%`, minHeight: 2 }} />
-              </div>
-            ))}
+    <div className="grid grid-cols-3 items-end gap-3 sm:gap-4">
+      {order.map((r) => {
+        const m = RANK[r.rank] ?? RANK[3];
+        const first = r.rank === 1;
+        const score = scoreOf(r);
+        return (
+          <div key={`${r.rank}-${r.name}`}
+            className="relative flex flex-col items-center rounded-[18px] px-3 pb-[18px] text-center"
+            style={{
+              paddingTop: first ? 34 : 22,
+              background: r.is_me ? "var(--primary-soft)" : m.soft,
+              border: r.is_me ? "2px solid var(--primary)" : m.border,
+            }}>
+            {first ? <Crown className="absolute -top-3 h-6 w-6" style={{ color: "#e3a008", fill: "#f5c542" }} /> : null}
+            <span className={cn("flex items-center justify-center rounded-full font-extrabold text-white shadow-md", first ? "h-16 w-16 text-lg" : "h-14 w-14 text-base")} style={{ background: m.av }}>
+              {initials(r.name)}
+            </span>
+            <span className="z-10 -mt-3 flex h-6 w-6 items-center justify-center rounded-full text-xs font-extrabold text-white ring-2 ring-card" style={{ background: m.medal }}>{r.rank}</span>
+            <div className="mt-2.5 max-w-full truncate text-[15px] font-extrabold text-foreground">
+              {r.name}{r.is_me ? <span className="ml-1 text-xs text-primary">You</span> : null}
+            </div>
+            <div className="mt-0.5 text-[13px] font-bold text-muted-foreground">{score != null ? `${fmt(score)} pts` : "—"}</div>
           </div>
-          <div className="space-y-1.5">
-            {[...points].reverse().map((p) => (
-              <div key={p.period_key} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
-                <span className="text-muted-foreground">{p.period_key}</span>
-                <span className="font-medium text-foreground">#{p.rank} · {Math.round(p.score)}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </Card>
+        );
+      })}
+    </div>
   );
 }
