@@ -335,7 +335,7 @@ export default function LoginPage() {
                             <p className="-mt-2 text-[12px] text-muted-foreground">Ask your teacher or the MasterSAT center to reset your password.</p>
                         ) : null}
 
-                        <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<LogIn />}>
+                        <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<LogIn />} className="!bg-[#2a68c0] hover:!bg-[#21539e]">
                             Sign in
                         </Button>
 

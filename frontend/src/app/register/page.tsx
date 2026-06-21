@@ -240,7 +240,7 @@ export default function RegisterPage() {
                             />
                         </Field>
 
-                        <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<UserPlus />}>
+                        <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<UserPlus />} className="!bg-[#2a68c0] hover:!bg-[#21539e]">
                             Create account
                         </Button>
 
