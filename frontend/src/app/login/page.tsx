@@ -4,12 +4,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { authApi, usersApi } from "@/lib/api";
 import { invalidateMe } from "@/hooks/useMe";
 import { useRouter } from "next/navigation";
-import { LogIn, RefreshCw, Sparkles, ShieldCheck, LineChart } from "lucide-react";
+import { LogIn, RefreshCw, Sparkles, ShieldCheck, LineChart, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import type { AuthNoticeRecord } from "@/lib/auth/authTabSync";
 import { consumeAuthNotice } from "@/lib/auth/authTabSync";
-import { Button, Input, Field, Checkbox, Alert, Spinner, type AlertTone } from "@/components/ui";
+import { Button, Input, Field, Alert, Spinner, type AlertTone } from "@/components/ui";
 
 declare global {
     interface Window {
@@ -64,7 +64,8 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [isRetryable, setIsRetryable] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [rememberMe, setRememberMe] = useState(true);
+    const [rememberMe] = useState(true);
+    const [showPw, setShowPw] = useState(false);
     const [googleCredential, setGoogleCredential] = useState("");
     const [googleMissing, setGoogleMissing] = useState<string[]>([]);
     const [googleProfile, setGoogleProfile] = useState({ first_name: "", last_name: "", username: "" });
@@ -301,27 +302,29 @@ export default function LoginPage() {
                                 onChange={(e) => setEmail(e.target.value)}
                                 disabled={loading}
                                 autoComplete="username"
+                                leftIcon={<Mail className="h-4 w-4" />}
                             />
                         </Field>
                         <Field label="Password" htmlFor="password">
                             <Input
                                 id="password"
-                                type="password"
+                                type={showPw ? "text" : "password"}
                                 required
                                 placeholder="••••••••"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 disabled={loading}
                                 autoComplete="current-password"
+                                leftIcon={<Lock className="h-4 w-4" />}
+                                rightSlot={
+                                    <button type="button" tabIndex={-1} aria-label={showPw ? "Hide password" : "Show password"}
+                                        onClick={() => setShowPw((v) => !v)}
+                                        className="ds-ring flex items-center justify-center rounded-md text-label-foreground hover:text-foreground">
+                                        {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                }
                             />
                         </Field>
-
-                        <Checkbox
-                            id="remember"
-                            label="Remember me for 1 week"
-                            checked={rememberMe}
-                            onChange={(e) => setRememberMe(e.target.checked)}
-                        />
 
                         <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<LogIn />}>
                             Sign in

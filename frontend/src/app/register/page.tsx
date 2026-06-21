@@ -2,7 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { authApi, usersApi } from "@/lib/api";
 import { useRouter } from "next/navigation";
-import { UserPlus, Sparkles, ShieldCheck, LineChart } from "lucide-react";
+import { UserPlus, Sparkles, ShieldCheck, LineChart, User, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
 import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import { Button, Input, Field, Alert, Spinner } from "@/components/ui";
@@ -21,6 +21,7 @@ export default function RegisterPage() {
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
     const [loading, setLoading] = useState(false);
+    const [showPw, setShowPw] = useState(false);
     const googleButtonRef = useRef<HTMLDivElement>(null);
     const router = useRouter();
     const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null; client_id: string | null; start_url: string | null } | null>(null);
@@ -210,13 +211,30 @@ export default function RegisterPage() {
                             </Field>
                         </div>
                         <Field label="Username" htmlFor="username">
-                            <Input id="username" required placeholder="johndoe123" value={username} onChange={(e) => setUsername(e.target.value)} disabled={loading} autoComplete="username" />
+                            <Input id="username" required placeholder="johndoe123" value={username} onChange={(e) => setUsername(e.target.value)} disabled={loading} autoComplete="username" leftIcon={<User className="h-4 w-4" />} />
                         </Field>
                         <Field label="Email address" htmlFor="email-address">
-                            <Input id="email-address" type="email" required placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} autoComplete="email" />
+                            <Input id="email-address" type="email" required placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)} disabled={loading} autoComplete="email" leftIcon={<Mail className="h-4 w-4" />} />
                         </Field>
                         <Field label="Password" htmlFor="password">
-                            <Input id="password" type="password" required placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} disabled={loading} autoComplete="new-password" />
+                            <Input
+                                id="password"
+                                type={showPw ? "text" : "password"}
+                                required
+                                placeholder="••••••••"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                disabled={loading}
+                                autoComplete="new-password"
+                                leftIcon={<Lock className="h-4 w-4" />}
+                                rightSlot={
+                                    <button type="button" tabIndex={-1} aria-label={showPw ? "Hide password" : "Show password"}
+                                        onClick={() => setShowPw((v) => !v)}
+                                        className="ds-ring flex items-center justify-center rounded-md text-label-foreground hover:text-foreground">
+                                        {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                    </button>
+                                }
+                            />
                         </Field>
 
                         <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<UserPlus />}>
