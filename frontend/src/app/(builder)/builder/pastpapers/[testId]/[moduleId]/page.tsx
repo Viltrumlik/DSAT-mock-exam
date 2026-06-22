@@ -5,35 +5,33 @@ import { useParams } from "next/navigation";
 import { Suspense } from "react";
 import ModuleQuestionsPanel from "@/features/questionsAdmin/ModuleQuestionsPanel";
 import { examsAdminApi } from "@/features/examsAdmin/api";
-import type { AdminPastpaperPack } from "@/lib/api";
+import type { AdminPastpaperSection } from "@/lib/api";
 import { writeStudioSession } from "@/lib/studioSession";
 
 // ─── Context loader ───────────────────────────────────────────────────────────
 
 function PastpaperModuleEditor({
-  packId,
   testId,
   moduleId,
 }: {
-  packId: number;
   testId: number;
   moduleId: number;
 }) {
-  const [pack, setPack] = useState<AdminPastpaperPack | null>(null);
+  const [section, setSection] = useState<AdminPastpaperSection | null>(null);
 
-  // Load pack context for breadcrumb enrichment (non-blocking — panel renders immediately)
+  // Load section context for breadcrumb enrichment (non-blocking — panel renders immediately)
   useEffect(() => {
     let cancelled = false;
-    examsAdminApi.getPastpaperPacks().then((result) => {
+    examsAdminApi.getStandaloneSections().then((sections) => {
       if (cancelled) return;
-      const found = result.items.find((p) => p.id === packId) ?? null;
-      setPack(found);
+      const found = sections.find((s) => s.id === testId) ?? null;
+      setSection(found);
     });
     return () => { cancelled = true; };
-  }, [packId]);
+  }, [testId]);
 
-  const section = pack?.sections.find((s) => s.id === testId) ?? null;
-  const module = section?.modules?.find((m) => m.id === moduleId) ?? null;
+  const moduleEntry = section?.modules?.find((m) => m.id === moduleId) ?? null;
+  const collectionTitle = (section?.collection_name && section.collection_name.trim()) || section?.title || undefined;
 
   // ── Session continuity: persist last-viewed pastpaper module ─────────────
   useEffect(() => {
@@ -45,32 +43,30 @@ function PastpaperModuleEditor({
         : null;
 
     const label = [
-      pack?.title,
+      collectionTitle,
       subjectLabel,
-      module?.module_order != null ? `Module ${module.module_order}` : null,
+      moduleEntry?.module_order != null ? `Module ${moduleEntry.module_order}` : null,
     ]
       .filter(Boolean)
       .join(" · ");
 
     writeStudioSession({
       lastPastpaperModule: {
-        packId,
         testId,
         moduleId,
         label: label || undefined,
       },
     });
-  }, [packId, testId, moduleId, pack?.title, section?.subject, module?.module_order]);
+  }, [testId, moduleId, collectionTitle, section?.subject, moduleEntry?.module_order]);
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
       <ModuleQuestionsPanel
         testId={testId}
         moduleId={moduleId}
-        packId={pack?.id}
-        packTitle={pack?.title ?? undefined}
+        packTitle={collectionTitle}
         sectionSubject={section?.subject ?? undefined}
-        moduleOrder={module?.module_order != null ? `Module ${module.module_order}` : undefined}
+        moduleOrder={moduleEntry?.module_order != null ? `Module ${moduleEntry.module_order}` : undefined}
       />
     </div>
   );
@@ -81,14 +77,12 @@ function PastpaperModuleEditor({
 export default function BuilderPastpaperModulePage() {
   const params = useParams();
 
-  const packId = Number(Array.isArray(params.packId) ? params.packId[0] : params.packId);
   const testId = Number(Array.isArray(params.testId) ? params.testId[0] : params.testId);
   const moduleId = Number(
     Array.isArray(params.moduleId) ? params.moduleId[0] : params.moduleId,
   );
 
   if (
-    !Number.isFinite(packId) || packId <= 0 ||
     !Number.isFinite(testId) || testId <= 0 ||
     !Number.isFinite(moduleId) || moduleId <= 0
   ) {
@@ -97,7 +91,7 @@ export default function BuilderPastpaperModulePage() {
         <div className="text-center">
           <p className="font-semibold text-foreground">Invalid route parameters.</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Expected <code className="rounded bg-muted px-1">/builder/pastpapers/[packId]/[testId]/[moduleId]</code>
+            Expected <code className="rounded bg-muted px-1">/builder/pastpapers/[testId]/[moduleId]</code>
           </p>
         </div>
       </div>
@@ -112,7 +106,7 @@ export default function BuilderPastpaperModulePage() {
         </div>
       }
     >
-      <PastpaperModuleEditor packId={packId} testId={testId} moduleId={moduleId} />
+      <PastpaperModuleEditor testId={testId} moduleId={moduleId} />
     </Suspense>
   );
 }

@@ -212,15 +212,6 @@ class Command(BaseCommand):
             ),
         }
 
-        report["pastpaper_sections_recently_detached"] = {
-            "count": PracticeTest.objects.exclude(pastpaper_detached_at__isnull=True).count(),
-            "practice_test_ids": list(
-                PracticeTest.objects.exclude(pastpaper_detached_at__isnull=True)
-                .order_by("-pastpaper_detached_at")
-                .values_list("id", flat=True)[:limit]
-            ),
-        }
-
         if as_json:
             self.stdout.write(json.dumps(report, indent=2, sort_keys=True))
             return

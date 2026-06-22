@@ -13,7 +13,6 @@ from .models import (
     BulkAssignmentDispatch,
     MockExam,
     Module,
-    PastpaperPack,
     PortalMockExam,
     PracticeTest,
     PracticeTestPack,
@@ -138,47 +137,6 @@ class PortalMockExamStudentSerializer(serializers.ModelSerializer):
         fields = ["id", "mock_exam_id", "title", "practice_date", "kind", "is_published", "section_test_ids"]
 
 
-class PastpaperPackBriefSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PastpaperPack
-        fields = ["id", "title", "practice_date", "label", "form_type"]
-
-
-class PastpaperPackStudentSerializer(serializers.ModelSerializer):
-    """
-    Student-facing pastpaper pack: pack metadata + shallow section list.
-    ``sections`` uses ModuleListSerializer-style brevity (no questions payload) so the
-    hub page can render section cards without blowing up response size.
-    """
-
-    sections = serializers.SerializerMethodField()
-
-    def get_sections(self, obj):
-        # obj.sections is the reverse FK manager from PracticeTest.pastpaper_pack.
-        # Only surface sections that have at least one question so students can actually start them.
-        qs = (
-            obj.sections.filter(mock_exam__isnull=True, modules__questions__isnull=False)
-            .prefetch_related("modules")
-            .distinct()
-        )
-        return [
-            {
-                "id": pt.id,
-                "title": pt.title,
-                "subject": pt.subject,
-                "label": pt.label,
-                "form_type": pt.form_type,
-                "practice_date": pt.practice_date,
-                "module_count": pt.modules.count(),
-            }
-            for pt in qs
-        ]
-
-    class Meta:
-        model = PastpaperPack
-        fields = ["id", "title", "practice_date", "label", "form_type", "sections"]
-
-
 class PracticeTestPackStudentSerializer(serializers.ModelSerializer):
     """Student-facing practice test pack: pack metadata + shallow section list."""
 
@@ -217,7 +175,7 @@ class AttemptPracticeTestDetailsSerializer(serializers.Serializer):
     label = serializers.CharField(allow_blank=True, allow_null=True, required=False)
     form_type = serializers.CharField(allow_blank=True, allow_null=True, required=False)
     practice_date = serializers.CharField(allow_blank=True, allow_null=True, required=False)
-    pastpaper_pack = PastpaperPackBriefSerializer(required=False, allow_null=True)
+    collection_name = serializers.CharField(allow_blank=True, allow_null=True, required=False)
     is_active = serializers.BooleanField(required=False)
     mock_exam_id = serializers.IntegerField(allow_null=True, required=False)
     mock_kind = serializers.CharField(allow_blank=True, allow_null=True, required=False)
@@ -229,8 +187,6 @@ class PracticeTestSerializer(serializers.ModelSerializer):
 
     modules = ModuleListSerializer(many=True, read_only=True)
     subject = serializers.CharField()
-    # Standalone / legacy sections have no FK pack; omit null from schema hints without this.
-    pastpaper_pack = PastpaperPackBriefSerializer(read_only=True, allow_null=True)
     mock_exam_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
@@ -242,9 +198,10 @@ class PracticeTestSerializer(serializers.ModelSerializer):
             "subject",
             "label",
             "form_type",
+            "collection_name",
+            "is_published",
             "modules",
             "created_at",
-            "pastpaper_pack",
             "mock_exam_id",
         ]
         read_only_fields = ["created_at", "mock_exam_id"]
@@ -512,11 +469,10 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         pt = obj.practice_test
         mock = getattr(pt, "mock_exam", None)
         subj = _normalize_platform_subject_value(pt.subject) or pt.subject
-        pack = getattr(pt, "pastpaper_pack", None)
+        collection_name = (getattr(pt, "collection_name", None) or "").strip()
         pt_title = (getattr(pt, "title", None) or "").strip()
-        pack_title = (getattr(pack, "title", None) or "").strip() if pack is not None else ""
         mock_title = (getattr(mock, "title", None) or "").strip() if mock is not None else ""
-        resolved_title = pt_title or mock_title or pack_title
+        resolved_title = pt_title or mock_title or collection_name
 
         if mock is not None and getattr(mock, "practice_date", None):
             practice_date_iso = mock.practice_date.isoformat()
@@ -525,8 +481,6 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         else:
             practice_date_iso = None
 
-        pastpaper_pack_payload = PastpaperPackBriefSerializer(pack).data if pack is not None else None
-
         return {
             "id": pt.id,
             "subject": subj,
@@ -534,7 +488,7 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             "label": getattr(pt, "label", "") or "",
             "form_type": getattr(pt, "form_type", "") or "INTERNATIONAL",
             "practice_date": practice_date_iso,
-            "pastpaper_pack": pastpaper_pack_payload,
+            "collection_name": collection_name,
             "is_active": getattr(mock, "is_active", True) if mock is not None else True,
             "mock_exam_id": getattr(pt, "mock_exam_id", None),
             "mock_kind": getattr(mock, "kind", None) if mock is not None else None,
@@ -813,12 +767,6 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
     assigned_users = serializers.PrimaryKeyRelatedField(
         many=True, queryset=User.objects.all(), required=False
     )
-    pastpaper_pack = serializers.PrimaryKeyRelatedField(
-        queryset=PastpaperPack.objects.all(),
-        allow_null=True,
-        required=False,
-        default=None,
-    )
 
     class Meta:
         model = PracticeTest
@@ -829,12 +777,14 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
             "subject",
             "label",
             "form_type",
+            "collection_name",
+            "is_published",
+            "published_at",
             "mock_exam",
-            "pastpaper_pack",
             "modules",
             "assigned_users",
         ]
-        read_only_fields = ["mock_exam"]
+        read_only_fields = ["mock_exam", "published_at"]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -847,21 +797,6 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
             else:
                 data["subject"] = str(v)
         return data
-
-    def validate(self, attrs):
-        instance = self.instance
-        pack = attrs.get("pastpaper_pack", serializers.empty)
-        if pack is serializers.empty or instance is None:
-            return attrs
-        subj = attrs.get("subject", instance.subject)
-        if pack is not None:
-            qs = PracticeTest.objects.filter(pastpaper_pack=pack, subject=subj)
-            qs = qs.exclude(pk=instance.pk)
-            if qs.exists():
-                raise serializers.ValidationError(
-                    {"pastpaper_pack": "Target pack already has a section for this subject."}
-                )
-        return attrs
 
     def create(self, validated_data):
         assigned_users = validated_data.pop("assigned_users", [])
@@ -876,58 +811,6 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
         if assigned_users is not serializers.empty:
             inst.assigned_users.set(assigned_users)
         return inst
-
-
-class AdminPastpaperPackSerializer(serializers.ModelSerializer):
-    sections = AdminPracticeTestSerializer(many=True, read_only=True)
-    sat_violations = serializers.SerializerMethodField()
-    publish_ready = serializers.SerializerMethodField()
-    # Distinct students who actually have access to this pack (via any section's
-    # assigned_users). Lets the admin UI warn "published but 0 students have
-    # access" so publishing is never a silent zero-recipient success.
-    assigned_student_count = serializers.SerializerMethodField()
-
-    def get_assigned_student_count(self, obj) -> int:
-        return (
-            User.objects.filter(assigned_tests__pastpaper_pack=obj)
-            .distinct()
-            .count()
-        )
-
-    class Meta:
-        model = PastpaperPack
-        fields = [
-            "id",
-            "title",
-            "practice_date",
-            "label",
-            "form_type",
-            "is_published",
-            "published_at",
-            "sections",
-            "assigned_student_count",
-            "sat_violations",
-            "publish_ready",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = [
-            "created_at", "updated_at", "sat_violations", "publish_ready",
-            "published_at",
-        ]
-
-    def _get_violations(self, obj):
-        cache_attr = "_sat_violations_cache"
-        if not hasattr(obj, cache_attr):
-            from .sat_rules import pastpaper_pack_publish_violations
-            setattr(obj, cache_attr, pastpaper_pack_publish_violations(obj))
-        return getattr(obj, cache_attr)
-
-    def get_sat_violations(self, obj) -> list[str]:
-        return [v.message for v in self._get_violations(obj)]
-
-    def get_publish_ready(self, obj) -> bool:
-        return len(self._get_violations(obj)) == 0
 
 
 class AdminPracticeTestPackSerializer(serializers.ModelSerializer):

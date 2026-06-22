@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .models import MockExam, Module, PastpaperPack, PracticeTest
+    from .models import MockExam, Module, PracticeTest
 
 # ── Official SAT subjects ────────────────────────────────────────────────────
 
@@ -219,40 +219,6 @@ def validate_practice_test(pt: "PracticeTest") -> list[SatViolation]:
     return violations
 
 
-# ── Pack-level validators ────────────────────────────────────────────────────
-
-
-def validate_pastpaper_pack(pack: "PastpaperPack") -> list[SatViolation]:
-    """
-    Return all SAT violations for a PastpaperPack (full standalone pastpaper form).
-
-    A complete pastpaper must contain both a Reading & Writing section and a Math section,
-    each structurally valid.
-    """
-    violations: list[SatViolation] = []
-    sections = list(pack.sections.all())
-    subjects_present = {s.subject for s in sections}
-
-    for required_subj in SAT_FULL_MOCK_REQUIRED_SUBJECTS:
-        if required_subj not in subjects_present:
-            label = "Reading & Writing" if required_subj == "READING_WRITING" else "Math"
-            violations.append(
-                SatViolation(
-                    code="PACK_MISSING_SECTION",
-                    message=(
-                        f"Pastpaper is missing the {label} section. "
-                        f"A complete SAT form requires both sections."
-                    ),
-                    blocking=True,
-                )
-            )
-
-    for section in sections:
-        violations.extend(validate_practice_test(section))
-
-    return violations
-
-
 # ── Mock-exam-level validators ───────────────────────────────────────────────
 
 
@@ -342,9 +308,9 @@ def mock_exam_publish_violations(exam: "MockExam") -> list[SatViolation]:
     return [v for v in validate_mock_exam(exam) if v.blocking]
 
 
-def pastpaper_pack_publish_violations(pack: "PastpaperPack") -> list[SatViolation]:
-    """All blocking violations that prevent publishing this pastpaper pack."""
-    return [v for v in validate_pastpaper_pack(pack) if v.blocking]
+def practice_test_publish_violations(section: "PracticeTest") -> list[SatViolation]:
+    """All blocking violations that prevent publishing this standalone section."""
+    return [v for v in validate_practice_test(section) if v.blocking]
 
 
 def compute_sat_module_score(

@@ -4,9 +4,8 @@ import json
 import re
 
 from django.core.management.base import BaseCommand
-from django.db.models import Count, Q
 
-from exams.models import PastpaperPack, PracticeTest
+from exams.models import PracticeTest
 
 
 _SUBJECT_TAIL_RE = re.compile(
@@ -36,7 +35,7 @@ def _suspicious_title_reasons(title: str) -> list[str]:
 
 
 class Command(BaseCommand):
-    help = "Read-only integrity audit for pastpaper packs + practice library structure (prints counts + sample IDs)."
+    help = "Read-only integrity audit for standalone practice/pastpaper sections (prints counts + sample IDs)."
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=50, help="Max IDs to print per category.")
@@ -48,64 +47,12 @@ class Command(BaseCommand):
 
         report: dict[str, dict] = {}
 
-        # ── Pastpaper packs ────────────────────────────────────────────────
-        empty_packs = list(
-            PastpaperPack.objects.annotate(section_count=Count("sections"))
-            .filter(section_count=0)
-            .values_list("id", flat=True)[:limit]
-        )
-
-        single_section_packs = list(
-            PastpaperPack.objects.annotate(section_count=Count("sections"))
-            .filter(section_count=1)
-            .values_list("id", flat=True)[:limit]
-        )
-
-        # Packs whose sections disagree with the pack signature (should generally be normalized).
-        mismatch_rows = []
-        for pack in PastpaperPack.objects.all().order_by("id").iterator(chunk_size=200):
-            bad = (
-                PracticeTest.objects.filter(pastpaper_pack=pack)
-                .filter(
-                    Q(practice_date__isnull=False) & ~Q(practice_date=pack.practice_date)
-                    | Q(form_type__isnull=False) & ~Q(form_type=pack.form_type)
-                    | Q(label__isnull=False) & ~Q(label=pack.label)
-                )
-                .values_list("id", flat=True)[: min(limit, 25)]
-            )
-            bad_ids = list(bad)
-            if bad_ids:
-                mismatch_rows.append(
-                    {
-                        "pack_id": pack.pk,
-                        "pack_signature": {
-                            "practice_date": str(pack.practice_date) if pack.practice_date else None,
-                            "form_type": pack.form_type,
-                            "label": pack.label,
-                        },
-                        "sample_section_ids": bad_ids,
-                    }
-                )
-                if len(mismatch_rows) >= limit:
-                    break
-
-        report["packs"] = {
-            "packs_with_zero_sections": {"count": PastpaperPack.objects.annotate(section_count=Count("sections")).filter(section_count=0).count(), "ids": empty_packs},
-            "packs_with_one_section": {"count": PastpaperPack.objects.annotate(section_count=Count("sections")).filter(section_count=1).count(), "ids": single_section_packs},
-            "packs_with_section_signature_mismatch": {"count": len(mismatch_rows), "rows": mismatch_rows},
-        }
-
         # ── Sections (PracticeTest) ─────────────────────────────────────────
-        # A section should not be both mock_exam and pastpaper_pack.
-        mixed_link_ids = list(
-            PracticeTest.objects.filter(mock_exam__isnull=False, pastpaper_pack__isnull=False)
-            .values_list("id", flat=True)[:limit]
-        )
-
-        # Standalone practice sections not in packs (potentially orphaned from pack grouping).
-        orphan_standalone_ids = list(
-            PracticeTest.objects.filter(mock_exam__isnull=True, pastpaper_pack__isnull=True)
-            .values_list("id", flat=True)[:limit]
+        # Standalone pastpaper/practice sections (no mock, no practice-test pack).
+        standalone_ids = list(
+            PracticeTest.objects.filter(
+                mock_exam__isnull=True, practice_test_pack__isnull=True
+            ).values_list("id", flat=True)[:limit]
         )
 
         # Suspicious titles (likely concatenation/corruption artifacts).
@@ -119,13 +66,11 @@ class Command(BaseCommand):
                 break
 
         report["sections"] = {
-            "sections_with_both_mock_exam_and_pack_set": {
-                "count": PracticeTest.objects.filter(mock_exam__isnull=False, pastpaper_pack__isnull=False).count(),
-                "ids": mixed_link_ids,
-            },
-            "standalone_sections_without_pack": {
-                "count": PracticeTest.objects.filter(mock_exam__isnull=True, pastpaper_pack__isnull=True).count(),
-                "ids": orphan_standalone_ids,
+            "standalone_sections": {
+                "count": PracticeTest.objects.filter(
+                    mock_exam__isnull=True, practice_test_pack__isnull=True
+                ).count(),
+                "ids": standalone_ids,
             },
             "sections_with_suspicious_titles": {
                 "count": len(suspicious_title_rows),
@@ -139,4 +84,3 @@ class Command(BaseCommand):
 
         self.stdout.write("TEST LIBRARY INTEGRITY AUDIT")
         self.stdout.write(json.dumps(report, indent=2, sort_keys=True))
-

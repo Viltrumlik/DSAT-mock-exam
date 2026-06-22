@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam, PastpaperPack, PracticeTestPack
+from .models import Question, PracticeTest, Module, TestAttempt, AuditLog, MockExam, PortalMockExam, PracticeTestPack
 
 class QuestionInline(admin.StackedInline):
     model = Question
@@ -82,21 +82,6 @@ class MockExamAdmin(admin.ModelAdmin):
     )
 
 
-class PastpaperSectionInline(admin.TabularInline):
-    model = PracticeTest
-    fk_name = "pastpaper_pack"
-    extra = 0
-    show_change_link = True
-
-
-@admin.register(PastpaperPack)
-class PastpaperPackAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "practice_date", "form_type", "label")
-    list_filter = ("form_type",)
-    search_fields = ("title",)
-    inlines = [PastpaperSectionInline]
-
-
 class PracticeTestPackSectionInline(admin.TabularInline):
     model = PracticeTest
     fk_name = "practice_test_pack"
@@ -123,9 +108,9 @@ class PortalMockExamAdmin(admin.ModelAdmin):
 
 @admin.register(PracticeTest)
 class PracticeTestAdmin(admin.ModelAdmin):
-    list_display = ('id', 'mock_exam', 'subject')
-    list_filter = ('subject', 'mock_exam')
-    search_fields = ('mock_exam__title',)
+    list_display = ('id', 'title', 'collection_name', 'subject', 'is_published', 'mock_exam')
+    list_filter = ('subject', 'is_published', 'mock_exam')
+    search_fields = ('title', 'collection_name', 'mock_exam__title')
     inlines = [ModuleInline]
     list_per_page = 50
 

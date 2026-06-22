@@ -6,7 +6,7 @@ from rest_framework import serializers
 from urllib.parse import urlparse
 from django.core.validators import URLValidator
 
-from exams.models import MockExam, PastpaperPack, PracticeTest, PracticeTestPack
+from exams.models import MockExam, PracticeTest, PracticeTestPack
 
 from .submission_validation import validate_submission_grade
 
@@ -240,9 +240,6 @@ class AssignmentSerializer(serializers.ModelSerializer):
     practice_test = serializers.PrimaryKeyRelatedField(
         queryset=PracticeTest.objects.all(), required=False, allow_null=True
     )
-    pastpaper_pack = serializers.PrimaryKeyRelatedField(
-        queryset=PastpaperPack.objects.all(), required=False, allow_null=True
-    )
     practice_test_pack = serializers.PrimaryKeyRelatedField(
         queryset=PracticeTestPack.objects.all(), required=False, allow_null=True
     )
@@ -265,7 +262,6 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "due_at",
             "mock_exam",
             "practice_test",
-            "pastpaper_pack",
             "practice_test_pack",
             "practice_test_ids",
             "practice_scope",
@@ -407,7 +403,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
         inst = self.instance
 
         if inst is not None:
-            for fk in ("mock_exam", "practice_test", "pastpaper_pack"):
+            for fk in ("mock_exam", "practice_test"):
                 if fk in attrs and attrs[fk] == "":
                     attrs[fk] = None
             if "practice_test_ids" in attrs:
@@ -416,12 +412,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
                     attrs["practice_test_ids"] = None
         else:
             # CREATE: multi-content is allowed — a single assignment may bundle a file,
-            # a past paper, an assessment and a practice test at once. Normalize each
-            # field independently ("" -> None) and only collapse WITHIN the pastpaper/
-            # practice slot (pack vs legacy ids vs single describe the same rows). Do NOT
-            # null one content type because another is present.
-            if attrs.get("pastpaper_pack") == "":
-                attrs["pastpaper_pack"] = None
+            # a past paper section, an assessment and a practice test at once. Normalize
+            # each field independently ("" -> None) and only collapse WITHIN the practice
+            # slot (legacy ids vs single describe the same rows). Do NOT null one content
+            # type because another is present.
             if attrs.get("practice_test") == "":
                 attrs["practice_test"] = None
             pids = attrs.get("practice_test_ids")
@@ -442,13 +436,6 @@ class AssignmentSerializer(serializers.ModelSerializer):
         elif inst is not None:
             mock_id = inst.mock_exam_id
 
-        pp_id = None
-        if "pastpaper_pack" in attrs:
-            p = attrs["pastpaper_pack"]
-            pp_id = p.pk if p else None
-        elif inst is not None:
-            pp_id = inst.pastpaper_pack_id
-
         pt_id = None
         if "practice_test" in attrs:
             t = attrs["practice_test"]
@@ -467,12 +454,12 @@ class AssignmentSerializer(serializers.ModelSerializer):
             scope = Assignment.PRACTICE_SCOPE_BOTH
         attrs["practice_scope"] = scope
 
-        raw = raw_target_practice_test_ids_from_fks(mock_id, pp_id, pids, pt_id)
+        raw = raw_target_practice_test_ids_from_fks(mock_id, pids, pt_id)
         filtered = filter_practice_targets_by_scope(raw, scope)
         if scope != Assignment.PRACTICE_SCOPE_BOTH and raw and not filtered:
             raise serializers.ValidationError(
                 {
-                    "practice_scope": "No section matches this choice for the selected mock or pastpaper (e.g. Math-only choice on an English-only test)."
+                    "practice_scope": "No section matches this choice for the selected mock or section (e.g. Math-only choice on an English-only test)."
                 }
             )
 

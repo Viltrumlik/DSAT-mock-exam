@@ -3,7 +3,6 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdminMockExamViewSet,
     AdminModuleViewSet,
-    AdminPastpaperPackViewSet,
     AdminPracticeTestPackViewSet,
     AdminPracticeTestViewSet,
     AdminQuestionViewSet,
@@ -11,8 +10,6 @@ from .views import (
     BulkAssignmentHistoryDetailView,
     BulkAssignmentHistoryRerunView,
     MockExamViewSet,
-    PastpaperPackStudentListView,
-    PastpaperPackStudentDetailView,
     PracticeTestPackStudentListView,
     PracticeTestPackStudentDetailView,
     PracticeTestViewSet,
@@ -34,9 +31,6 @@ router.register(r'mock-exams', MockExamViewSet, basename='mock-exam')
 # ── Admin routes (manual nested) ────────────────────────────────────────────
 admin_mock_exam_router = DefaultRouter()
 admin_mock_exam_router.register(r'', AdminMockExamViewSet, basename='admin-mock-exams')
-
-admin_pastpaper_pack_router = DefaultRouter()
-admin_pastpaper_pack_router.register(r'', AdminPastpaperPackViewSet, basename='admin-pastpaper-packs')
 
 admin_practice_test_pack_router = DefaultRouter()
 admin_practice_test_pack_router.register(r'', AdminPracticeTestPackViewSet, basename='admin-practice-test-packs')
@@ -76,15 +70,8 @@ urlpatterns = [
     # Admin Mock Exams CRUD: /exams/admin/mock-exams/
     path('admin/mock-exams/', include(admin_mock_exam_router.urls)),
 
-    # Admin Pastpaper packs: /exams/admin/pastpaper-packs/
-    path('admin/pastpaper-packs/', include(admin_pastpaper_pack_router.urls)),
-
     # Admin Practice test packs: /exams/admin/practice-test-packs/
     path('admin/practice-test-packs/', include(admin_practice_test_pack_router.urls)),
-
-    # Student pastpaper pack hub: /exams/pastpaper-packs/ and /exams/pastpaper-packs/<pk>/
-    path("pastpaper-packs/", PastpaperPackStudentListView.as_view(), name="pastpaper-pack-list"),
-    path("pastpaper-packs/<int:pk>/", PastpaperPackStudentDetailView.as_view(), name="pastpaper-pack-detail"),
 
     # Student practice test pack hub: /exams/practice-test-packs/ and /exams/practice-test-packs/<pk>/
     path("practice-test-packs/", PracticeTestPackStudentListView.as_view(), name="practice-test-pack-list"),

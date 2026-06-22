@@ -26,9 +26,8 @@ export type StudioSession = {
   lastSetId?: number;
   /** The last question selected within that set. */
   lastQuestionId?: number;
-  /** The last pastpaper module the author had open. */
+  /** The last pastpaper module (standalone section) the author had open. */
   lastPastpaperModule?: {
-    packId: number;
     testId: number;
     moduleId: number;
     /** Human-readable label e.g. "SAT Oct 2024 · Reading & Writing · Module 1" */
@@ -124,8 +123,8 @@ export function sessionContinueHref(session: StudioSession): string | null {
     return session.lastQuestionId ? `${base}?questionId=${session.lastQuestionId}` : base;
   }
   if (session.lastPastpaperModule) {
-    const { packId, testId, moduleId } = session.lastPastpaperModule;
-    return `/builder/pastpapers/${packId}/${testId}/${moduleId}`;
+    const { testId, moduleId } = session.lastPastpaperModule;
+    return `/builder/pastpapers/${testId}/${moduleId}`;
   }
   return null;
 }

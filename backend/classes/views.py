@@ -668,11 +668,10 @@ class ClassroomViewSet(ModelViewSet):
         pvs = PracticeTestViewSet()
         pvs.request = request
         pvs.format_kwarg = None
-        pt_qs = pvs.get_queryset().select_related("pastpaper_pack")
+        pt_qs = pvs.get_queryset()
 
         practice_tests = []
         for pt in pt_qs:
-            pack = pt.pastpaper_pack
             practice_tests.append(
                 {
                     "id": pt.id,
@@ -683,18 +682,8 @@ class ClassroomViewSet(ModelViewSet):
                     "practice_date": pt.practice_date.isoformat() if pt.practice_date else None,
                     "created_at": pt.created_at.isoformat() if pt.created_at else None,
                     "mock_exam": None,
-                    "pastpaper_pack_id": pt.pastpaper_pack_id,
-                    "pastpaper_pack": (
-                        {
-                            "id": pack.id,
-                            "title": pack.title or "",
-                            "practice_date": pack.practice_date.isoformat() if pack.practice_date else None,
-                            "label": pack.label or "",
-                            "form_type": pack.form_type,
-                        }
-                        if pack
-                        else None
-                    ),
+                    "collection_name": pt.collection_name or "",
+                    "is_published": pt.is_published,
                 }
             )
 
@@ -767,11 +756,10 @@ class ClassroomViewSet(ModelViewSet):
             Assignment.objects.filter(classroom=classroom)
             .filter(
                 Q(practice_test__isnull=False)
-                | Q(pastpaper_pack__isnull=False)
                 | Q(practice_test_ids__isnull=False)
                 | Q(mock_exam__isnull=False)
             )
-            .select_related("practice_test", "pastpaper_pack", "mock_exam")
+            .select_related("practice_test", "mock_exam")
             .order_by("-created_at")
         )
         assign_ids = [a.id for a in practice_assignments]
@@ -783,7 +771,7 @@ class ClassroomViewSet(ModelViewSet):
             subs_qs = Submission.objects.filter(
                 assignment_id__in=assign_ids,
                 student_id__in=student_ids,
-            ).select_related("attempt", "assignment", "assignment__practice_test", "assignment__pastpaper_pack")
+            ).select_related("attempt", "assignment", "assignment__practice_test")
             for s in subs_qs:
                 sub_map[(s.student_id, s.assignment_id)] = s
                 att = s.attempt
@@ -797,7 +785,7 @@ class ClassroomViewSet(ModelViewSet):
             scores = scores_by_assignment.get(a.id, [])
             target_ids = assignment_target_practice_test_ids(a)
             pt_first = PracticeTest.objects.filter(pk=target_ids[0]).first() if target_ids else None
-            title_fallback = a.pastpaper_pack.title if a.pastpaper_pack_id and a.pastpaper_pack else None
+            title_fallback = (pt_first.collection_name or None) if pt_first else None
             assignments_summary.append(
                 {
                     "assignment_id": a.id,
@@ -908,7 +896,7 @@ class ClassroomViewSet(ModelViewSet):
                 att = s.attempt if s else None
                 lt_ids = assignment_target_practice_test_ids(latest_pa)
                 pt = PracticeTest.objects.filter(pk=lt_ids[0]).first() if lt_ids else None
-                title_fb = latest_pa.pastpaper_pack.title if latest_pa.pastpaper_pack_id and latest_pa.pastpaper_pack else None
+                title_fb = (pt.collection_name or None) if pt else None
                 latest_practice = {
                     "assignment_id": latest_pa.id,
                     "assignment_title": latest_pa.title,
@@ -1520,7 +1508,7 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         ).exists():
             return Assignment.objects.none()
         qs = Assignment.objects.filter(classroom=classroom).select_related(
-            "created_by", "mock_exam", "practice_test", "pastpaper_pack", "practice_test_pack", "module"
+            "created_by", "mock_exam", "practice_test", "practice_test_pack", "module"
         ).prefetch_related("extra_attachments").annotate(submissions_count=Count("submissions"))
         is_staff = classroom.memberships.filter(
             user=user, role__in=ClassroomMembership.STAFF_ROLES

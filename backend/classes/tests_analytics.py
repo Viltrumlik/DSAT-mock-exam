@@ -9,7 +9,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from exams.models import Module, PastpaperPack, PracticeTest, Question, TestAttempt
+from exams.models import Module, PracticeTest, Question, TestAttempt
 
 from classes import analytics
 from classes.models import Assignment, Classroom, ClassroomMembership, Submission, SubmissionReview
@@ -34,8 +34,7 @@ class AnalyticsFixture(TestCase):
         self.s2 = _u("an_s2@t.com")
         for u in (self.s1, self.s2):
             ClassroomMembership.objects.create(classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT)
-        self.pack = PastpaperPack.objects.create(title="PP", label="A")
-        self.section = PracticeTest.objects.create(subject="MATH", label="M", title="sec", pastpaper_pack=self.pack)
+        self.section = PracticeTest.objects.create(subject="MATH", label="M", title="sec", collection_name="PP")
         now = timezone.now()
         for u, sc in ((self.s1, 700), (self.s2, 500)):
             TestAttempt.objects.create(student=u, practice_test=self.section, score=sc,

@@ -19,7 +19,7 @@ from django.http import HttpResponse
 from datetime import timedelta
 import hashlib
 import json
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
 from access.permissions import CanManageQuestions, RequiresSubmitTest
@@ -48,7 +48,6 @@ from .models import (
     BulkAssignmentDispatch,
     MockExam,
     Module,
-    PastpaperPack,
     PortalMockExam,
     PracticeTest,
     PracticeTestPack,
@@ -58,14 +57,12 @@ from .models import (
 )
 from .serializers import (
     MockExamSerializer,
-    PastpaperPackStudentSerializer,
     PortalMockExamStudentSerializer,
     PracticeTestPackStudentSerializer,
     PracticeTestSerializer,
     TestAttemptSerializer,
     ModuleSerializer,
     AdminMockExamSerializer,
-    AdminPastpaperPackSerializer,
     AdminPracticeTestPackSerializer,
     AdminPracticeTestSerializer,
     AdminModuleSerializer,
@@ -276,66 +273,6 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
 
-class PastpaperPackStudentListView(generics.ListAPIView):
-    """
-    Student-facing pastpaper pack hub: returns packs that have at least one
-    section with questions.  Students see only published packs that have at
-    least one section explicitly assigned to them.
-    Teachers/admins/super_admins see all packs (published or not).
-    """
-
-    permission_classes = [AllowAny]
-    serializer_class = PastpaperPackStudentSerializer
-
-    def get_queryset(self):
-        base = (
-            PastpaperPack.objects.filter(
-                sections__mock_exam__isnull=True,
-                sections__modules__questions__isnull=False,
-            )
-            .prefetch_related("sections__modules")
-            .distinct()
-            .order_by("-practice_date", "-created_at")
-        )
-        user = self.request.user
-        if not user.is_authenticated:
-            return base.none()
-        if normalized_role(user) == acc_const.ROLE_STUDENT:
-            # An explicit per-student section assignment IS the access grant, so it
-            # alone makes the pack visible — even if the pack was never flipped to
-            # is_published. Previously we required is_published AND assignment, which
-            # silently hid packs the admin had successfully granted (console reported
-            # success, student saw nothing). Assignment now governs visibility.
-            return base.filter(sections__assigned_users=user).distinct()
-        # Teachers, admins, super_admins: full catalog (published + unpublished).
-        return base
-
-
-class PastpaperPackStudentDetailView(generics.RetrieveAPIView):
-    """Single pack detail — same serializer as the list view."""
-
-    permission_classes = [AllowAny]
-    serializer_class = PastpaperPackStudentSerializer
-
-    def get_queryset(self):
-        base = (
-            PastpaperPack.objects.filter(
-                sections__mock_exam__isnull=True,
-                sections__modules__questions__isnull=False,
-            )
-            .prefetch_related("sections__modules")
-            .distinct()
-        )
-        user = self.request.user
-        if not user.is_authenticated:
-            return base.none()
-        if normalized_role(user) == acc_const.ROLE_STUDENT:
-            # Visibility follows assignment (see list view): an assigned student may
-            # open the pack regardless of the is_published flag.
-            return base.filter(sections__assigned_users=user).distinct()
-        return base
-
-
 class PracticeTestPackStudentListView(generics.ListAPIView):
     """Student-facing practice test pack list: published packs with questions."""
 
@@ -404,18 +341,20 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         # requires a non-empty `current_module_details.questions` payload.
         base = (
             PracticeTest.objects.filter(mock_exam__isnull=True, modules__questions__isnull=False)
-            .select_related("mock_exam", "pastpaper_pack")
+            .select_related("mock_exam")
             .prefetch_related("modules")
             .distinct()
         )
         if can_browse_standalone_practice_library(user):
             return filter_practice_tests_for_user(user, base).distinct()
         if not user.is_authenticated:
-            # Unauthenticated: show nothing (assignment required)
+            # Unauthenticated: show nothing (assignment/publish required)
             return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
-            # Students see only tests explicitly assigned to them by a teacher/admin.
-            return base.filter(assigned_users=user).distinct()
+            # Section-level visibility: a published section OR one explicitly assigned to the
+            # student. An explicit assignment alone grants access even when unpublished (mirrors
+            # the old pack rule where assignment governed visibility).
+            return base.filter(Q(is_published=True) | Q(assigned_users=user)).distinct()
         return base.filter(assigned_users=user).distinct()
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
@@ -482,7 +421,6 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         raw_cc = request.data.get("client_context")
         allowed_cc = {
             "wizard_kind",
-            "pastpaper_pack_id",
             "pastpaper_scope",
             "mock_exam_id",
             "content_label",
@@ -572,7 +510,6 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 "current_module",
                 "practice_test",
                 "practice_test__mock_exam",
-                "practice_test__pastpaper_pack",
             )
             .prefetch_related(
                 "practice_test__modules",
@@ -585,7 +522,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         test_id = request.data.get("practice_test")
         user = request.user
         # Permission scope for which PracticeTest rows this user may target (questions checked next).
-        unrestricted = PracticeTest.objects.all().select_related("mock_exam", "pastpaper_pack")
+        unrestricted = PracticeTest.objects.all().select_related("mock_exam")
         if can_browse_standalone_practice_library(user):
             allowed = filter_practice_tests_for_user(user, unrestricted).distinct()
         elif normalized_role(user) == acc_const.ROLE_STUDENT:
@@ -1502,84 +1439,6 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         return Response({'status': 'removed'})
 
 
-class AdminPastpaperPackViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, CanManageQuestions]
-    serializer_class = AdminPastpaperPackSerializer
-
-    def get_queryset(self):
-        base = PastpaperPack.objects.all().prefetch_related(
-            "sections__modules",
-            "sections__assigned_users",
-        )
-        if not can_manage_questions(self.request.user):
-            return base.none()
-        return base.order_by("-practice_date", "-id")
-
-    def perform_update(self, serializer):
-        pack = serializer.save()
-        PracticeTest.objects.filter(pastpaper_pack=pack).update(
-            practice_date=pack.practice_date,
-            label=pack.label,
-            form_type=pack.form_type,
-        )
-
-    @action(detail=True, methods=["post"])
-    def add_section(self, request, pk=None):
-        pack = self.get_object()
-        subject = request.data.get("subject")
-        if subject not in ("READING_WRITING", "MATH"):
-            return Response({"detail": "Invalid subject."}, status=status.HTTP_400_BAD_REQUEST)
-        if pack.sections.filter(subject=subject).exists():
-            return Response(
-                {"detail": "This pack already has that section."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        title = (request.data.get("title") or "").strip()
-        pt = PracticeTest.objects.create(
-            mock_exam=None,
-            pastpaper_pack=pack,
-            subject=subject,
-            title=title,
-            label=pack.label or "",
-            form_type=pack.form_type or "INTERNATIONAL",
-            practice_date=pack.practice_date,
-        )
-        pt = (
-            PracticeTest.objects.filter(pk=pt.pk)
-            .prefetch_related("modules", "assigned_users")
-            .first()
-        )
-        return Response(AdminPracticeTestSerializer(pt).data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=["post"])
-    def publish(self, request, pk=None):
-        """Mark a pastpaper pack as published (visible to assigned students)."""
-        from .sat_rules import pastpaper_pack_publish_violations
-        pack = self.get_object()
-        violations = pastpaper_pack_publish_violations(pack)
-        blocking = [v for v in violations if v.blocking]
-        if blocking:
-            return Response(
-                {
-                    "detail": "Cannot publish: pack has blocking SAT violations.",
-                    "violations": [{"code": v.code, "message": v.message} for v in blocking],
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        pack.is_published = True
-        pack.published_at = timezone.now()
-        pack.save(update_fields=["is_published", "published_at", "updated_at"])
-        return Response(self.get_serializer(pack).data)
-
-    @action(detail=True, methods=["post"])
-    def unpublish(self, request, pk=None):
-        """Retract a pastpaper pack from student view."""
-        pack = self.get_object()
-        pack.is_published = False
-        pack.save(update_fields=["is_published", "updated_at"])
-        return Response(self.get_serializer(pack).data)
-
-
 class AdminPracticeTestPackViewSet(viewsets.ModelViewSet):
     """CRUD for custom practice test packs (distinct from official pastpapers)."""
 
@@ -1601,7 +1460,6 @@ class AdminPracticeTestPackViewSet(viewsets.ModelViewSet):
         for subject in ("READING_WRITING", "MATH"):
             PracticeTest.objects.create(
                 mock_exam=None,
-                pastpaper_pack=None,
                 practice_test_pack=pack,
                 subject=subject,
                 title=f"{pack.title} - {'Reading & Writing' if subject == 'READING_WRITING' else 'Math'}",
@@ -1620,7 +1478,6 @@ class AdminPracticeTestPackViewSet(viewsets.ModelViewSet):
             )
         pt = PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=None,
             practice_test_pack=pack,
             subject=subject,
             title=f"{pack.title} - {dict(PracticeTest.SUBJECT_CHOICES).get(subject, subject)}",
@@ -1684,6 +1541,34 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
         if standalone in ("1", "true", "yes"):
             return base.filter(mock_exam__isnull=True)
         return base
+
+    @action(detail=True, methods=["post"])
+    def publish(self, request, pk=None):
+        """Publish a single standalone section (visible to students without an assignment)."""
+        from .sat_rules import practice_test_publish_violations
+
+        section = self.get_object()
+        blocking = practice_test_publish_violations(section)
+        if blocking:
+            return Response(
+                {
+                    "detail": "Cannot publish: section has blocking SAT violations.",
+                    "violations": [{"code": v.code, "message": v.message} for v in blocking],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        section.is_published = True
+        section.published_at = timezone.now()
+        section.save(update_fields=["is_published", "published_at", "updated_at"])
+        return Response(self.get_serializer(section).data)
+
+    @action(detail=True, methods=["post"])
+    def unpublish(self, request, pk=None):
+        """Retract a single standalone section from student view."""
+        section = self.get_object()
+        section.is_published = False
+        section.save(update_fields=["is_published", "updated_at"])
+        return Response(self.get_serializer(section).data)
 
 
 class AdminModuleViewSet(viewsets.ModelViewSet):

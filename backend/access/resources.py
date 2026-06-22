@@ -26,7 +26,6 @@ from .subject_mapping import platform_subject_to_domain
 RT_PRACTICE_TEST = "practice_test"
 RT_MOCK_EXAM = "mock_exam"
 RT_MIDTERM = "midterm"
-RT_PASTPAPER_PACK = "pastpaper_pack"
 RT_PRACTICE_TEST_PACK = "practice_test_pack"
 RT_ASSESSMENT_SET = "assessment_set"
 RT_MODULE = "module"
@@ -178,7 +177,6 @@ def models_F(name):
 
 #: pack resource_type -> the PracticeTest FK field pointing back at that pack
 _PACK_SECTION_FIELD = {
-    RT_PASTPAPER_PACK: "pastpaper_pack_id",
     RT_PRACTICE_TEST_PACK: "practice_test_pack_id",
 }
 
@@ -258,15 +256,6 @@ register(
         is_published_resolver=lambda e: bool(getattr(e, "is_published", True)),
         subject_queryset_resolver=_mock_exam_subject_qs,
         queryset_filter={"kind": _MOCK_KIND_MIDTERM},
-    )
-)
-register(
-    ResourceType(
-        RT_PASTPAPER_PACK,
-        "exams.PastpaperPack",
-        _pack_section_domains,
-        is_published_resolver=lambda p: bool(getattr(p, "is_published", True)),
-        subject_queryset_resolver=_pack_subject_qs,
     )
 )
 register(

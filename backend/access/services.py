@@ -21,8 +21,8 @@ LMS authorization — **use these entry points and no ad‑hoc shortcuts**.
 * **Domain permissions**: :func:`authorize` with ``subject=`` (platform vocabulary). Cookies /
   client headers are **never** authorization inputs.
 
-* **Querysets**: :func:`filter_practice_tests_for_user` / :func:`filter_mock_exams_for_user` /
-  :func:`filter_pastpaper_packs_for_user` must stay equivalent to ABAC helpers; enable
+* **Querysets**: :func:`filter_practice_tests_for_user` / :func:`filter_mock_exams_for_user`
+  must stay equivalent to ABAC helpers; enable
   ``LMS_AUTHZ_CONSISTENCY_CHECKS`` in dev to detect drift.
 
 1. **Permission + resource subject (platform string)**  
@@ -528,22 +528,16 @@ def collect_platform_subjects_from_mock_exam(exam) -> list[str]:
     )
 
 
-def collect_platform_subjects_from_pastpaper_pack(pack) -> list[str]:
-    return list({s for s in pack.sections.values_list("subject", flat=True) if s})
-
-
 def can_edit_multi_subject_object(user, obj) -> bool:
     """
     True iff the user may **edit** every platform subject present on a composite object
-    (``MockExam`` or ``PastpaperPack``). Single entry point for packs / mocks — do not
-    duplicate ``can_edit_tests`` loops in view code.
+    (``MockExam``). Single entry point for mocks — do not duplicate ``can_edit_tests``
+    loops in view code.
     """
-    from exams.models import MockExam, PastpaperPack
+    from exams.models import MockExam
 
     if isinstance(obj, MockExam):
         subs = collect_platform_subjects_from_mock_exam(obj)
-    elif isinstance(obj, PastpaperPack):
-        subs = collect_platform_subjects_from_pastpaper_pack(obj)
     else:
         raise TypeError(f"can_edit_multi_subject_object: unsupported type {type(obj)!r}")
 
@@ -830,35 +824,6 @@ def filter_practice_tests_for_user(user, queryset):
         return out
     out = queryset.filter(subject__in=subjs)
     _debug_log_test_library_filter("filter_practice_tests_for_user", user, queryset, out)
-    return out
-
-
-def filter_pastpaper_packs_for_user(user, queryset):
-    from django.db.models import Count
-
-    from exams.models import PracticeTest
-
-    subjs = visible_practice_test_platform_subjects_for_query(user)
-    if subjs is not None and not subjs:
-        out = queryset.none()
-        _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, out)
-        return out
-
-    # Wildcard / global staff: unfiltered library — return all packs. Do not use
-    # ``sections__in`` + queryset union (``|``): that has produced empty results for some
-    # PostgreSQL / ORM combinations even when rows exist.
-    if subjs is None:
-        _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, queryset)
-        return queryset
-
-    # Avoid queryset UNION (|) to prevent ORM / Postgres edge cases returning empty results.
-    visible = filter_practice_tests_for_user(user, PracticeTest.objects.filter(mock_exam__isnull=True))
-    out = (
-        queryset.annotate(_section_count=Count("sections"))
-        .filter(Q(sections__in=visible) | Q(_section_count=0))
-        .distinct()
-    )
-    _debug_log_test_library_filter("filter_pastpaper_packs_for_user", user, queryset, out)
     return out
 
 

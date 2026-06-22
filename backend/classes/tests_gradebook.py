@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from exams.models import PastpaperPack, PracticeTest, TestAttempt
+from exams.models import PracticeTest, TestAttempt
 
 from classes.models import Assignment, Classroom, ClassroomMembership, Submission, SubmissionReview
 
@@ -33,8 +33,7 @@ class GradebookFixture(TestCase):
             category=Assignment.CATEGORY_HOMEWORK, instructions="Write", max_score=100,
         )
         # Auto assignment (practice test).
-        self.pack = PastpaperPack.objects.create(title="PP", label="A")
-        self.section = PracticeTest.objects.create(subject="MATH", label="M", title="sec", pastpaper_pack=self.pack)
+        self.section = PracticeTest.objects.create(subject="MATH", label="M", title="sec", collection_name="PP")
         self.auto = Assignment.objects.create(
             classroom=self.classroom, created_by=self.owner, title="Practice",
             category=Assignment.CATEGORY_PRACTICE_TEST, practice_test=self.section,

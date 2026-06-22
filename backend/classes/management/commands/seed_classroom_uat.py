@@ -24,7 +24,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from exams.models import PastpaperPack, PracticeTest, TestAttempt
+from exams.models import PracticeTest, TestAttempt
 
 from classes.models import (
     Assignment, Classroom, ClassroomMembership, Submission, SubmissionReview,
@@ -100,9 +100,10 @@ class Command(BaseCommand):
             submission=sub2, defaults={"teacher": teacher, "grade": 88, "max_score": 100, "feedback": "Strong thesis.", "is_auto": False})
 
         # --- Auto-graded practice test ---
-        pack, _ = PastpaperPack.objects.get_or_create(title="UAT Pack", defaults={"label": "UAT"})
         section, _ = PracticeTest.objects.get_or_create(
-            title="UAT Math Section", defaults={"subject": "MATH", "label": "UAT", "pastpaper_pack": pack})
+            title="UAT Math Section",
+            defaults={"subject": "MATH", "label": "UAT", "collection_name": "UAT Pack"},
+        )
         auto, _ = Assignment.objects.get_or_create(
             classroom=classroom, title="Practice Test — Math (auto-graded)",
             defaults={"created_by": owner, "category": Assignment.CATEGORY_PRACTICE_TEST,

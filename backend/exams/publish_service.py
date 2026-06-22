@@ -1,5 +1,5 @@
 """
-Publish-readiness checks for timed mocks and pastpaper packs.
+Publish-readiness checks for timed mocks.
 
 All structural rules are delegated to sat_rules.py — do not add
 SAT constraints here directly.
@@ -10,11 +10,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:
-    from .models import MockExam, PastpaperPack
+    from .models import MockExam
 
 from .sat_rules import (
     mock_exam_publish_violations,
-    pastpaper_pack_publish_violations,
 )
 
 
@@ -32,24 +31,6 @@ def mock_exam_publish_ready(exam: "MockExam") -> Tuple[bool, str]:
     return True, ""
 
 
-def pastpaper_pack_publish_ready(pack: "PastpaperPack") -> Tuple[bool, str]:
-    """
-    Returns (is_ready, blocking_message) for a pastpaper pack.
-
-    A complete SAT pastpaper pack must have both R&W and Math sections,
-    each with exactly 2 modules at the official question counts (27/22).
-    """
-    violations = pastpaper_pack_publish_violations(pack)
-    if violations:
-        return False, violations[0].message
-    return True, ""
-
-
 def mock_exam_all_violations(exam: "MockExam") -> list[str]:
     """Return all blocking violation messages for display in admin UIs."""
     return [v.message for v in mock_exam_publish_violations(exam)]
-
-
-def pastpaper_pack_all_violations(pack: "PastpaperPack") -> list[str]:
-    """Return all blocking violation messages for display in admin UIs."""
-    return [v.message for v in pastpaper_pack_publish_violations(pack)]

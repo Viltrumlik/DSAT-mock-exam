@@ -12,7 +12,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 
-from exams.models import MockExam, PastpaperPack, PracticeTest, PracticeTestPack, Module, TestAttempt
+from exams.models import MockExam, PracticeTest, PracticeTestPack, Module, TestAttempt
 
 
 def _generate_join_code(length: int = 7) -> str:
@@ -244,13 +244,6 @@ class Assignment(models.Model):
     practice_test = models.ForeignKey(
         PracticeTest, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_assignments"
     )
-    pastpaper_pack = models.ForeignKey(
-        PastpaperPack,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="class_assignments",
-    )
     practice_test_pack = models.ForeignKey(
         PracticeTestPack,
         on_delete=models.SET_NULL,
@@ -350,8 +343,6 @@ class Assignment(models.Model):
         n = 0
         if self.mock_exam_id:
             n += 1
-        if self.pastpaper_pack_id:
-            n += 1
         if self.practice_test_pack_id:
             n += 1
         if self.module_id:
@@ -393,7 +384,6 @@ class Assignment(models.Model):
         if (
             self.mock_exam_id
             or self.practice_test_id
-            or self.pastpaper_pack_id
             or self.practice_test_pack_id
             or self.module_id
             or self.practice_test_ids
@@ -411,8 +401,6 @@ class Assignment(models.Model):
             return "Bundle"
         if self.mock_exam_id:
             return "Mock Exam"
-        if self.pastpaper_pack_id:
-            return "Past Paper"
         if self.module_id:
             return "Module Test"
         if self.practice_test_id or self.practice_test_pack_id or self.practice_test_ids:
@@ -441,27 +429,17 @@ class AssignmentExtraAttachment(models.Model):
 
 def raw_target_practice_test_ids_from_fks(
     mock_exam_id: int | None,
-    pastpaper_pack_id: int | None,
     practice_test_ids: list | None,
     practice_test_id: int | None,
     practice_test_pack_id: int | None = None,
 ) -> list[int]:
     """
-    Practice test row ids before practice_scope filtering (mock, pack, legacy bundle, or single).
+    Practice test row ids before practice_scope filtering (mock, pack, bundle, or single).
     """
     if mock_exam_id:
         order = {"READING_WRITING": 0, "MATH": 1}
         rows = list(
             PracticeTest.objects.filter(mock_exam_id=mock_exam_id).values_list("id", "subject")
-        )
-        rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
-        return [r[0] for r in rows]
-    if pastpaper_pack_id:
-        order = {"READING_WRITING": 0, "MATH": 1}
-        rows = list(
-            PracticeTest.objects.filter(pastpaper_pack_id=pastpaper_pack_id).values_list(
-                "id", "subject"
-            )
         )
         rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
         return [r[0] for r in rows]
@@ -508,7 +486,6 @@ def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
     """Practice test ids linked to this homework, after applying practice_scope."""
     raw = raw_target_practice_test_ids_from_fks(
         assignment.mock_exam_id,
-        assignment.pastpaper_pack_id,
         assignment.practice_test_ids,
         assignment.practice_test_id,
         practice_test_pack_id=getattr(assignment, "practice_test_pack_id", None),

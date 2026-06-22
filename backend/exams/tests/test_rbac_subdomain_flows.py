@@ -5,7 +5,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
-from exams.models import MockExam, PastpaperPack, PracticeTest
+from exams.models import MockExam, PracticeTest
 
 User = get_user_model()
 
@@ -80,14 +80,13 @@ class RBACSubdomainFlowsTests(TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIsInstance(r.json(), list)
 
-    def test_admin_host_lists_pastpaper_cards_and_sections_for_assignment_console(self):
+    def test_admin_host_lists_standalone_sections_for_assignment_console(self):
         self.client.force_authenticate(user=self.admin)
 
-        pack = PastpaperPack.objects.create(title="October form", form_type="INTERNATIONAL")
-        # Pack sections (RW + Math) + one orphan standalone section.
+        # Standalone pastpaper sections, grouped only by their collection_name label.
         PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=pack,
+            collection_name="October form",
             subject="MATH",
             form_type="INTERNATIONAL",
             title="Pack Math",
@@ -95,7 +94,7 @@ class RBACSubdomainFlowsTests(TestCase):
         )
         PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=pack,
+            collection_name="October form",
             subject="READING_WRITING",
             form_type="INTERNATIONAL",
             title="Pack RW",
@@ -103,17 +102,11 @@ class RBACSubdomainFlowsTests(TestCase):
         )
         PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=None,
             subject="READING_WRITING",
             form_type="INTERNATIONAL",
             title="Orphan RW",
             skip_default_modules=True,
         )
-
-        packs = self.client.get("/api/exams/admin/pastpaper-packs/", **_ADMIN_HOST)
-        self.assertEqual(packs.status_code, 200)
-        self.assertIsInstance(packs.json(), list)
-        self.assertGreaterEqual(len(packs.json()), 1)
 
         standalone = self.client.get("/api/exams/admin/tests/?standalone=1", **_ADMIN_HOST)
         self.assertEqual(standalone.status_code, 200)

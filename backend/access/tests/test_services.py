@@ -13,7 +13,6 @@ from access.services import (
     can_edit_tests,
     can_manage_questions,
     can_view_tests,
-    filter_pastpaper_packs_for_user,
     filter_practice_tests_for_user,
     has_access_for_classroom,
     has_global_subject_access,
@@ -287,22 +286,6 @@ class AccessPrimitivesTests(TestCase):
         v = visible_practice_test_platform_subjects_for_query(self.math_teacher)
         self.assertEqual(v, frozenset([C.SUBJECT_MATH_PLATFORM]))
 
-    def test_can_edit_multi_subject_pastpaper_requires_all_sections(self):
-        from exams.models import PastpaperPack, PracticeTest
-
-        pack = PastpaperPack.objects.create(title="dual")
-        PracticeTest.objects.create(
-            pastpaper_pack=pack,
-            subject=C.SUBJECT_MATH_PLATFORM,
-            skip_default_modules=True,
-        )
-        PracticeTest.objects.create(
-            pastpaper_pack=pack,
-            subject=C.SUBJECT_ENGLISH_PLATFORM,
-            skip_default_modules=True,
-        )
-        self.assertFalse(can_edit_multi_subject_object(self.math_teacher, pack))
-
     def test_can_edit_multi_subject_mock_requires_all_sections(self):
         from exams.models import MockExam, PracticeTest
 
@@ -340,23 +323,23 @@ class AccessPrimitivesTests(TestCase):
         )
         self.assertTrue(can_edit_multi_subject_object(ta, exam))
 
-    def test_super_admin_sees_all_pastpaper_pack_rows(self):
-        """Regression: global roles must not rely on sections__in + queryset | union (can be empty)."""
-        from exams.models import PastpaperPack, PracticeTest
+    def test_super_admin_sees_all_standalone_sections(self):
+        """Regression: global roles see the full standalone practice/pastpaper library."""
+        from exams.models import PracticeTest
 
         su = User.objects.create_user(
             email="su_pp@example.com",
             password="x",
             role=C.ROLE_SUPER_ADMIN,
         )
-        pack = PastpaperPack.objects.create(title="October form")
-        PracticeTest.objects.create(
-            pastpaper_pack=pack,
+        sec = PracticeTest.objects.create(
+            collection_name="October form",
             subject=C.SUBJECT_MATH_PLATFORM,
             mock_exam=None,
             skip_default_modules=True,
         )
-        qs = filter_pastpaper_packs_for_user(su, PastpaperPack.objects.all())
-        self.assertEqual(qs.count(), 1)
-        self.assertTrue(qs.filter(pk=pack.pk).exists())
+        qs = filter_practice_tests_for_user(
+            su, PracticeTest.objects.filter(mock_exam__isnull=True)
+        )
+        self.assertTrue(qs.filter(pk=sec.pk).exists())
 

@@ -124,8 +124,6 @@ class Command(BaseCommand):
                 targets.append((resources.RT_PRACTICE_TEST, pt_id))
             if a.mock_exam_id:
                 targets.append((resources.RT_MOCK_EXAM, a.mock_exam_id))
-            if a.pastpaper_pack_id:
-                targets.append((resources.RT_PASTPAPER_PACK, a.pastpaper_pack_id))
             if getattr(a, "practice_test_pack_id", None):
                 targets.append((resources.RT_PRACTICE_TEST_PACK, a.practice_test_pack_id))
 

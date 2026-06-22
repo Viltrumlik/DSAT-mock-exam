@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 
-from exams.models import PastpaperPack, PracticeTest, TestAttempt
+from exams.models import PracticeTest, TestAttempt
 
 from classes.models import Assignment, Classroom, ClassroomMembership, Submission, SubmissionReview
 from classes.homework_auto_submit import (
@@ -31,8 +31,7 @@ class AutoGradeFixture(TestCase):
         ClassroomMembership.objects.create(classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN)
         self.student = User.objects.create_user("ag_student@t.com", "secret123")
         ClassroomMembership.objects.create(classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT)
-        self.pack = PastpaperPack.objects.create(title="PP", label="A")
-        self.section = PracticeTest.objects.create(subject="MATH", label="M", title="sec", pastpaper_pack=self.pack)
+        self.section = PracticeTest.objects.create(subject="MATH", label="M", title="sec", collection_name="PP")
         self.assignment = Assignment.objects.create(
             classroom=self.classroom, created_by=self.owner, title="Practice HW",
             category=Assignment.CATEGORY_PRACTICE_TEST, practice_test=self.section,

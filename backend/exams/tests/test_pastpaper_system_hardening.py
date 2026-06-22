@@ -5,7 +5,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
-from exams.models import PastpaperPack, PracticeTest
+from exams.models import PracticeTest
 from exams.tests.support import seed_mc_questions_for_practice_test
 
 User = get_user_model()
@@ -41,34 +41,25 @@ class PastpaperSystemHardeningTests(TestCase):
             role=acc_const.ROLE_STUDENT,
         )
 
-    def test_test_admin_can_create_pack_add_sections_and_edit_section(self):
+    def test_test_admin_can_create_and_edit_standalone_section(self):
         self.client.force_authenticate(user=self.test_admin)
 
-        pack = self.client.post(
-            "/api/exams/admin/pastpaper-packs/",
-            data={"title": "Pack 1", "practice_date": "2024-10-01", "label": "A", "form_type": "INTERNATIONAL"},
+        created = self.client.post(
+            "/api/exams/admin/tests/",
+            data={
+                "subject": "MATH",
+                "title": "Math Section",
+                "collection_name": "October form",
+                "practice_date": "2024-10-01",
+                "label": "A",
+                "form_type": "INTERNATIONAL",
+            },
             format="json",
             **_QUESTIONS_HOST,
         )
-        self.assertEqual(pack.status_code, 201, pack.content)
-        pack_id = int(pack.json()["id"])
-
-        s1 = self.client.post(
-            f"/api/exams/admin/pastpaper-packs/{pack_id}/add_section/",
-            data={"subject": "MATH", "title": "Math Section"},
-            format="json",
-            **_QUESTIONS_HOST,
-        )
-        self.assertEqual(s1.status_code, 201, s1.content)
-        section_id = int(s1.json()["id"])
-
-        dup = self.client.post(
-            f"/api/exams/admin/pastpaper-packs/{pack_id}/add_section/",
-            data={"subject": "MATH", "title": "Math Section 2"},
-            format="json",
-            **_QUESTIONS_HOST,
-        )
-        self.assertEqual(dup.status_code, 400, dup.content)
+        self.assertEqual(created.status_code, 201, created.content)
+        section_id = int(created.json()["id"])
+        self.assertEqual(created.json()["collection_name"], "October form")
 
         patched = self.client.patch(
             f"/api/exams/admin/tests/{section_id}/",
@@ -79,27 +70,73 @@ class PastpaperSystemHardeningTests(TestCase):
         self.assertEqual(patched.status_code, 200, patched.content)
         self.assertEqual(PracticeTest.objects.get(pk=section_id).title, "Math Section (edited)")
 
-    def test_admin_can_browse_packs_on_admin_host(self):
-        pack = PastpaperPack.objects.create(title="Visible pack", form_type="INTERNATIONAL")
+    def test_admin_can_browse_standalone_sections_on_admin_host(self):
         PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=pack,
+            collection_name="Visible form",
             subject="MATH",
             form_type="INTERNATIONAL",
             title="Pack Math",
             skip_default_modules=True,
         )
         self.client.force_authenticate(user=self.admin)
-        r = self.client.get("/api/exams/admin/pastpaper-packs/", **_ADMIN_HOST)
+        r = self.client.get("/api/exams/admin/tests/?standalone=1", **_ADMIN_HOST)
         self.assertEqual(r.status_code, 200)
         self.assertIsInstance(r.json(), list)
 
-    def test_admin_can_assign_pastpaper_section_and_student_can_start(self):
-        # Create a pack section
-        pack = PastpaperPack.objects.create(title="Assign pack", form_type="INTERNATIONAL")
+    def test_admin_publish_blocked_when_incomplete(self):
+        # Section-level publish enforces full SAT structure (same rule the old pack
+        # publish applied per section): an under-seeded Math module is blocked.
         section = PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=pack,
+            collection_name="Pub form",
+            subject="MATH",
+            form_type="INTERNATIONAL",
+            title="Pub Section",
+            skip_default_modules=False,
+        )
+        seed_mc_questions_for_practice_test(section, questions_per_module=1)
+        self.client.force_authenticate(user=self.admin)
+
+        blocked = self.client.post(
+            f"/api/exams/admin/tests/{section.pk}/publish/", format="json", **_ADMIN_HOST
+        )
+        self.assertEqual(blocked.status_code, 400, blocked.content)
+        self.assertTrue(blocked.json().get("violations"))
+        section.refresh_from_db()
+        self.assertFalse(section.is_published)
+
+    def test_admin_can_publish_complete_section_then_unpublish(self):
+        # Math requires exactly 22 questions per module to be structurally complete.
+        section = PracticeTest.objects.create(
+            mock_exam=None,
+            collection_name="Pub form 2",
+            subject="MATH",
+            form_type="INTERNATIONAL",
+            title="Pub Section 2",
+            skip_default_modules=False,
+        )
+        seed_mc_questions_for_practice_test(section, questions_per_module=22)
+        self.client.force_authenticate(user=self.admin)
+
+        pub = self.client.post(
+            f"/api/exams/admin/tests/{section.pk}/publish/", format="json", **_ADMIN_HOST
+        )
+        self.assertEqual(pub.status_code, 200, pub.content)
+        section.refresh_from_db()
+        self.assertTrue(section.is_published)
+
+        unpub = self.client.post(
+            f"/api/exams/admin/tests/{section.pk}/unpublish/", format="json", **_ADMIN_HOST
+        )
+        self.assertEqual(unpub.status_code, 200, unpub.content)
+        section.refresh_from_db()
+        self.assertFalse(section.is_published)
+
+    def test_admin_can_assign_pastpaper_section_and_student_can_start(self):
+        section = PracticeTest.objects.create(
+            mock_exam=None,
+            collection_name="Assign form",
             subject="MATH",
             form_type="INTERNATIONAL",
             title="Assign Section",
@@ -122,4 +159,3 @@ class PastpaperSystemHardeningTests(TestCase):
         start = self.client.post("/api/exams/attempts/", data={"practice_test": section.pk}, format="json", HTTP_HOST="testserver")
         self.assertIn(start.status_code, (200, 201), start.content)
         self.assertTrue(start.json().get("id"))
-

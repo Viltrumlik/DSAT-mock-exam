@@ -59,7 +59,6 @@ class AssignmentPracticeAccessSyncTests(TestCase):
         )
         self.pt = PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=None,
             subject="READING_WRITING",
             title="Standalone section",
         )
@@ -94,7 +93,6 @@ class PracticeHomeworkAutoSubmitTests(TestCase):
         )
         self.pt = PracticeTest.objects.create(
             mock_exam=None,
-            pastpaper_pack=None,
             subject="READING_WRITING",
             title="Section",
         )

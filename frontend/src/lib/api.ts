@@ -29,7 +29,6 @@ import {
     type PracticeTestPublic,
 } from "@/lib/examsPublicContract";
 import {
-    parseAdminPastpaperPackList,
     parseAssignmentList,
     parseAuthSessionPayload,
     parseBulkAssignResponse,
@@ -39,7 +38,6 @@ import {
     parseUserMePayload,
     type Assignment,
     type BulkAssignmentDispatch,
-    type AdminPastpaperPack,
     type Classroom,
     type NormalizedList,
     type UserMe,
@@ -47,27 +45,46 @@ import {
 
 export type { MockExamPublic, NormalizedExamList, PracticeTestPublic } from "@/lib/examsPublicContract";
 export { InvalidApiPayloadError, emptyNormalizedExamList } from "@/lib/examsPublicContract";
-export type { Assignment, AdminPastpaperPack, BulkAssignmentDispatch, Classroom, NormalizedList, UserMe } from "@/lib/criticalApiContract";
+export type { Assignment, BulkAssignmentDispatch, Classroom, NormalizedList, UserMe } from "@/lib/criticalApiContract";
 
-// ── Pastpaper Pack student types ─────────────────────────────────────────────
-export type PastpaperPackSection = {
+// ── Pastpaper section types ──────────────────────────────────────────────────
+/**
+ * A single standalone pastpaper SECTION (one `PracticeTest`, subject MATH or
+ * READING_WRITING). The former `PastpaperPack` grouping was removed on the
+ * backend; sections now carry `collection_name` (the former pack title) for
+ * grouping/labeling. Returned by GET /exams/ (student) and
+ * GET /exams/admin/tests/ (admin).
+ */
+export type PastpaperModuleBrief = {
     id: number;
-    title: string;
-    subject: string;
-    label: string;
-    form_type: string;
-    practice_date: string | null;
-    module_count: number;
+    module_order?: number | null;
+    time_limit_minutes?: number | null;
 };
 
-export type PastpaperPackPublic = {
+export type PastpaperSection = {
     id: number;
     title: string;
     practice_date: string | null;
+    subject: string; // "MATH" | "READING_WRITING"
     label: string;
-    form_type: string;
-    sections: PastpaperPackSection[];
+    form_type: string; // "INTERNATIONAL" | "US"
+    collection_name: string;
+    is_published: boolean;
+    modules: PastpaperModuleBrief[];
+    created_at?: string;
+    mock_exam_id?: number | null;
 };
+
+/** Admin section row (GET /exams/admin/tests/). Extends the student shape with admin fields. */
+export type AdminPastpaperSection = PastpaperSection & {
+    published_at?: string | null;
+    mock_exam?: number | null;
+    assigned_users?: number[];
+};
+
+/** Violation entry returned when publishing a section is blocked by SAT rules. */
+export type SectionPublishViolation = { code: string; message: string };
+
 export { emptyNormalizedList } from "@/lib/criticalApiContract";
 
 /** Tighter budget for bootstrap identity probes (UX: fail faster to login/error path). */
@@ -711,17 +728,23 @@ export const examsPublicApi = {
         // — a different shape from TestAttempt. Return raw data.
         return res.data;
     },
-    /** Pastpaper pack student hub: all packs with at least one section that has questions. */
-    getPastpaperPacks: async (): Promise<PastpaperPackPublic[]> => {
-        const res = await api.get("/exams/pastpaper-packs/");
+    /**
+     * Pastpaper section library: flattened list of standalone sections (one per
+     * `PracticeTest`, subject MATH or READING_WRITING). Backed by the same
+     * `/exams/` practice library as `getPracticeTests`; each row additionally
+     * carries `collection_name` + `is_published`. Student visibility = published
+     * OR assigned; only sections with questions and no mock_exam are returned.
+     */
+    getPastpaperSections: async (): Promise<PastpaperSection[]> => {
+        const res = await api.get("/exams/");
         const raw = res.data;
         const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
-        return arr as PastpaperPackPublic[];
+        return arr as PastpaperSection[];
     },
-    /** Single pastpaper pack (includes sections). */
-    getPastpaperPack: async (id: number): Promise<PastpaperPackPublic> => {
-        const res = await api.get(`/exams/pastpaper-packs/${id}/`);
-        return res.data as PastpaperPackPublic;
+    /** Single pastpaper section. */
+    getPastpaperSection: async (id: number): Promise<PastpaperSection> => {
+        const res = await api.get(`/exams/${id}/`);
+        return res.data as PastpaperSection;
     },
     /** Practice test pack student hub: published packs with questions. */
     getPracticeTestPacksStudent: async () => {
@@ -1054,24 +1077,36 @@ export const examsAdminApi = {
         return r.data;
     },
 
-    getPastpaperPacks: async (): Promise<NormalizedList<AdminPastpaperPack>> => {
-        const r = await api.get('/exams/admin/pastpaper-packs/');
-        return parseAdminPastpaperPackList(r.data, "GET /exams/admin/pastpaper-packs/");
+    // Standalone pastpaper sections (each a PracticeTest; the PastpaperPack grouping was removed).
+    getStandaloneSections: async (): Promise<AdminPastpaperSection[]> => {
+        const r = await api.get('/exams/admin/tests/', { params: { standalone: '1' } });
+        return unwrapAdminList<AdminPastpaperSection>(r.data);
     },
-    createPastpaperPack: async (data: object) => {
-        const r = await api.post('/exams/admin/pastpaper-packs/', data);
-        return r.data;
+    createSection: async (data: {
+        subject: 'READING_WRITING' | 'MATH';
+        title?: string;
+        collection_name?: string;
+        label?: string;
+        form_type?: 'INTERNATIONAL' | 'US';
+        practice_date?: string | null;
+    }): Promise<AdminPastpaperSection> => {
+        const r = await api.post('/exams/admin/tests/', { mock_exam: null, ...data });
+        return r.data as AdminPastpaperSection;
     },
-    updatePastpaperPack: async (id: number, data: object) => {
-        const r = await api.patch(`/exams/admin/pastpaper-packs/${id}/`, data);
-        return r.data;
+    updateSection: async (id: number, data: Record<string, unknown>): Promise<AdminPastpaperSection> => {
+        const r = await api.patch(`/exams/admin/tests/${id}/`, data);
+        return r.data as AdminPastpaperSection;
     },
-    deletePastpaperPack: async (id: number) => {
-        await api.delete(`/exams/admin/pastpaper-packs/${id}/`);
+    deleteSection: async (id: number) => {
+        await api.delete(`/exams/admin/tests/${id}/`);
     },
-    addPastpaperPackSection: async (packId: number, subject: 'READING_WRITING' | 'MATH') => {
-        const r = await api.post(`/exams/admin/pastpaper-packs/${packId}/add_section/`, { subject });
-        return r.data;
+    publishSection: async (id: number): Promise<AdminPastpaperSection> => {
+        const r = await api.post(`/exams/admin/tests/${id}/publish/`);
+        return r.data as AdminPastpaperSection;
+    },
+    unpublishSection: async (id: number): Promise<AdminPastpaperSection> => {
+        const r = await api.post(`/exams/admin/tests/${id}/unpublish/`);
+        return r.data as AdminPastpaperSection;
     },
 
     // Practice Test Packs (custom user-created, distinct from pastpapers)

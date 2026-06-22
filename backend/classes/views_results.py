@@ -172,7 +172,7 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
                     .select_related("assignment", "review"))
             for s in subs:
                 a = s.assignment
-                if not (a.practice_test_id or a.pastpaper_pack_id or a.practice_test_pack_id):
+                if not (a.practice_test_id or a.practice_test_ids or a.practice_test_pack_id):
                     continue
                 review = getattr(s, "review", None)
                 rows.append({

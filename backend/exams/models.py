@@ -301,50 +301,11 @@ class PortalMockExam(TimestampedModel):
         return f"Portal: {self.mock_exam}"
 
 
-class PastpaperPack(TimestampedModel):
-    """
-    Groups standalone pastpaper sections (R&W + Math) for one exam form.
-    PracticeTest rows link here when mock_exam is NULL.
-    """
-
-    title = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        help_text="Pack title shown on student practice cards.",
-    )
-    practice_date = models.DateField(null=True, blank=True, db_index=True)
-    label = models.CharField(max_length=10, blank=True, help_text="e.g. A, B — shared by sections in this pack.")
-    form_type = models.CharField(
-        max_length=20,
-        choices=[("INTERNATIONAL", "International Form"), ("US", "US Form")],
-        default="INTERNATIONAL",
-        db_index=True,
-    )
-    # Publish gate: only published packs are visible to students.
-    # Admins/teachers always see all packs regardless of this flag.
-    is_published = models.BooleanField(
-        default=False,
-        db_index=True,
-        help_text=(
-            "Only published packs are shown to students. "
-            "A pack must be structurally valid (sat_violations empty) before publishing."
-        ),
-    )
-    published_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        db_table = "pastpaper_packs"
-        ordering = ["-practice_date", "-created_at"]
-
-    def __str__(self):
-        return self.title or f"Pack {self.pk}"
-
-
 class PracticeTestPack(TimestampedModel):
     """
     Groups custom/user-created practice test sections (R&W + Math).
-    Distinct from PastpaperPack which holds official old SAT tests.
+    Official old-SAT pastpapers are standalone PracticeTest sections (no pack),
+    distinguished by their ``collection_name`` label.
     """
 
     title = models.CharField(
@@ -397,14 +358,6 @@ class PracticeTest(TimestampedModel):
         blank=True,
         help_text="NULL = pastpaper / practice library. If set, this row is a mock-only section (staff-built under that mock, never linked from pastpapers).",
     )
-    pastpaper_pack = models.ForeignKey(
-        PastpaperPack,
-        on_delete=models.CASCADE,
-        related_name="sections",
-        null=True,
-        blank=True,
-        help_text="When set (and mock_exam is NULL), this section belongs to a grouped pastpaper card.",
-    )
     practice_test_pack = models.ForeignKey(
         PracticeTestPack,
         on_delete=models.CASCADE,
@@ -429,33 +382,33 @@ class PracticeTest(TimestampedModel):
     )
     label = models.CharField(max_length=10, blank=True, help_text="e.g., A, B, C, D")
     form_type = models.CharField(max_length=20, choices=FORM_TYPES, default='INTERNATIONAL', db_index=True)
+    collection_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text=(
+            "Optional grouping label (formerly the pastpaper pack title). Lets standalone "
+            "sections be distinguished/grouped in admin, builder and student lists."
+        ),
+    )
+    is_published = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "Only published sections are shown to students who don't have an explicit "
+            "assignment. Section-level replacement for the old pack publish gate."
+        ),
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
     assigned_users = models.ManyToManyField(User, related_name='assigned_tests', blank=True)
     skip_default_modules = models.BooleanField(
         default=False,
         help_text="If True, post_save does not auto-create SAT modules (midterm/custom builds).",
     )
-    pastpaper_detached_at = models.DateTimeField(
-        null=True,
-        blank=True,
-        editable=False,
-        help_text="Set when this section is removed from a pastpaper pack (audit / drift detection).",
-    )
-    pastpaper_detached_pack_id = models.PositiveIntegerField(
-        null=True,
-        blank=True,
-        editable=False,
-        help_text="Snapshot of pastpaper_pack_id at detach time.",
-    )
 
     class Meta:
         db_table = 'practice_tests'
-        constraints = [
-            models.UniqueConstraint(
-                fields=["pastpaper_pack", "subject"],
-                condition=models.Q(pastpaper_pack__isnull=False),
-                name="uniq_pastpaper_pack_subject",
-            ),
-        ]
 
     def clean(self):
         super().clean()
@@ -495,8 +448,10 @@ class PracticeTest(TimestampedModel):
     def __str__(self):
         if self.mock_exam:
             exam_title = self.mock_exam.title
-        elif self.pastpaper_pack_id:
-            exam_title = self.pastpaper_pack.title or f"Pack {self.pastpaper_pack_id}"
+        elif self.collection_name:
+            exam_title = self.collection_name
+        elif self.title:
+            exam_title = self.title
         else:
             exam_title = "Unassigned"
         label_str = f" ({self.label})" if self.label else ""
@@ -1249,10 +1204,9 @@ class TestAttempt(TimestampedModel):
         # (sum of per-question scores for correctly answered questions). The
         # SAT 200-base + 800-cap curve is reserved for mock exams that the
         # teacher explicitly assembles as a full SAT simulation.
-        is_pastpaper_or_practice = (
-            getattr(pt, "pastpaper_pack_id", None) is not None
-            or getattr(pt, "practice_test_pack_id", None) is not None
-        )
+        # Any non-mock section (standalone pastpaper or practice-test pack) uses
+        # raw-points scoring; mock exams use the proportional SAT curve below.
+        is_pastpaper_or_practice = pt.mock_exam_id is None
 
         if mock and mock.kind == MockExam.KIND_MIDTERM:
             scale = getattr(mock, "midterm_scoring_scale", MockExam.SCALE_100)
@@ -1420,10 +1374,9 @@ class TestAttempt(TimestampedModel):
         is_midterm = bool(mock and mock.kind == MockExam.KIND_MIDTERM)
         # Pastpapers and standalone practice-test packs use raw-points scoring
         # (no SAT 200-base / 800-cap curve). The review page should mirror that.
-        is_pastpaper_or_practice = (
-            getattr(pt, "pastpaper_pack_id", None) is not None
-            or getattr(pt, "practice_test_pack_id", None) is not None
-        )
+        # Any non-mock section (standalone pastpaper or practice-test pack) uses
+        # raw-points scoring; mock exams use the proportional SAT curve below.
+        is_pastpaper_or_practice = pt.mock_exam_id is None
 
         modules = self.practice_test.modules.prefetch_related('questions').order_by('module_order')
 

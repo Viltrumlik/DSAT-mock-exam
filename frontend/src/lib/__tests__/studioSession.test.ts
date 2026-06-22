@@ -62,7 +62,7 @@ describe("writeStudioSession / readStudioSession roundtrip", () => {
   });
 
   it("persists lastPastpaperModule with full shape", () => {
-    const mod = { packId: 1, testId: 2, moduleId: 3, label: "SAT Oct 2024 · Module 1" };
+    const mod = { testId: 2, moduleId: 3, label: "SAT Oct 2024 · Module 1" };
     writeStudioSession({ lastPastpaperModule: mod });
     const session = readStudioSession();
     expect(session!.lastPastpaperModule).toEqual(mod);
@@ -84,12 +84,12 @@ describe("writeStudioSession / readStudioSession roundtrip", () => {
 describe("merge semantics", () => {
   it("patch merges with existing data rather than replacing", () => {
     writeStudioSession({ lastSetId: 10, lastQuestionId: 20 });
-    writeStudioSession({ lastPastpaperModule: { packId: 5, testId: 6, moduleId: 7 } });
+    writeStudioSession({ lastPastpaperModule: { testId: 6, moduleId: 7 } });
     const session = readStudioSession();
     // Both the original set info and the new pastpaper info should survive.
     expect(session!.lastSetId).toBe(10);
     expect(session!.lastQuestionId).toBe(20);
-    expect(session!.lastPastpaperModule?.packId).toBe(5);
+    expect(session!.lastPastpaperModule?.testId).toBe(6);
   });
 
   it("a later write overwrites an individual field", () => {
@@ -240,7 +240,7 @@ describe("sessionContinueLabel", () => {
     const label = sessionContinueLabel(
       session({
         lastSetId: 1,
-        lastPastpaperModule: { packId: 2, testId: 3, moduleId: 4, label: "Module X" },
+        lastPastpaperModule: { testId: 3, moduleId: 4, label: "Module X" },
       }),
     );
     expect(label).toBe("Set #1");
@@ -250,7 +250,7 @@ describe("sessionContinueLabel", () => {
     expect(
       sessionContinueLabel(
         session({
-          lastPastpaperModule: { packId: 1, testId: 2, moduleId: 3, label: "SAT Oct 2024 · M1" },
+          lastPastpaperModule: { testId: 2, moduleId: 3, label: "SAT Oct 2024 · M1" },
         }),
       ),
     ).toBe("SAT Oct 2024 · M1");
@@ -259,7 +259,7 @@ describe("sessionContinueLabel", () => {
   it("falls back to module ID when pastpaper label is absent", () => {
     expect(
       sessionContinueLabel(
-        session({ lastPastpaperModule: { packId: 1, testId: 2, moduleId: 3 } }),
+        session({ lastPastpaperModule: { testId: 2, moduleId: 3 } }),
       ),
     ).toBe("Module #3");
   });
@@ -289,16 +289,16 @@ describe("sessionContinueHref", () => {
   it("returns pastpaper URL when only pastpaper module is set", () => {
     expect(
       sessionContinueHref(
-        session({ lastPastpaperModule: { packId: 10, testId: 20, moduleId: 30 } }),
+        session({ lastPastpaperModule: { testId: 20, moduleId: 30 } }),
       ),
-    ).toBe("/builder/pastpapers/10/20/30");
+    ).toBe("/builder/pastpapers/20/30");
   });
 
   it("prefers set route when both set and pastpaper are present", () => {
     const href = sessionContinueHref(
       session({
         lastSetId: 1,
-        lastPastpaperModule: { packId: 2, testId: 3, moduleId: 4 },
+        lastPastpaperModule: { testId: 3, moduleId: 4 },
       }),
     );
     expect(href).toBe("/builder/sets/1");

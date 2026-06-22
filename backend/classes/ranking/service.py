@@ -44,17 +44,19 @@ def _attempt_is_sat_scaled(attempt: TestAttempt) -> bool:
         if mock.kind == MockExam.KIND_MIDTERM:
             return getattr(mock, "midterm_scoring_scale", None) == MockExam.SCALE_800
         return mock.kind == MockExam.KIND_MOCK_SAT
-    # pastpaper / practice-test packs are SAT-scaled section scores
-    return bool(pt.pastpaper_pack_id or pt.practice_test_pack_id)
+    # Any non-mock section (standalone pastpaper or practice-test pack) is a
+    # SAT-scaled section score.
+    return pt.mock_exam_id is None
 
 
 def _parent_key(attempt: TestAttempt):
     pt = attempt.practice_test
     if attempt.mock_exam_id or pt.mock_exam_id:
         return ("mock", attempt.mock_exam_id or pt.mock_exam_id)
-    if pt.pastpaper_pack_id:
-        return ("pp", pt.pastpaper_pack_id)
-    return ("ptp", pt.practice_test_pack_id)
+    if pt.practice_test_pack_id:
+        return ("ptp", pt.practice_test_pack_id)
+    # Standalone pastpaper section: it is its own parent.
+    return ("pt", pt.id)
 
 
 def _classroom_sat_mode(classroom):

@@ -2,15 +2,15 @@
 
 import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { examsAdminApi } from "@/features/examsAdmin/api";
 
 /**
  * Legacy route: /questions/tests/[testId]/modules/[moduleId]
  *
  * Redirects to the canonical builder-namespaced URL:
- *   /builder/pastpapers/[packId]/[testId]/[moduleId]
+ *   /builder/pastpapers/[testId]/[moduleId]
  *
- * If the pack lookup fails, falls back to /builder/pastpapers.
+ * Sections are now standalone (the PastpaperPack grouping was removed), so the
+ * module editor route no longer needs a pack segment.
  */
 export default function ModuleQuestionsPageInner() {
   const params = useParams();
@@ -26,23 +26,7 @@ export default function ModuleQuestionsPageInner() {
       router.replace("/builder/pastpapers");
       return;
     }
-
-    // Find the pack that contains this testId (section id)
-    examsAdminApi
-      .getPastpaperPacks()
-      .then((result) => {
-        const pack = result.items.find((p) =>
-          p.sections.some((s) => s.id === testId),
-        );
-        if (pack) {
-          router.replace(`/builder/pastpapers/${pack.id}/${testId}/${moduleId}`);
-        } else {
-          router.replace("/builder/pastpapers");
-        }
-      })
-      .catch(() => {
-        router.replace("/builder/pastpapers");
-      });
+    router.replace(`/builder/pastpapers/${testId}/${moduleId}`);
   }, [testId, moduleId, router]);
 
   return (

@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
-from exams.models import PastpaperPack
+from exams.models import PracticeTest
 
 User = get_user_model()
 
@@ -45,19 +45,15 @@ class PastPapersAdminMainDomainTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIsInstance(resp.json(), list)
 
-    def test_pastpaper_packs_list_on_admin_host_not_blocked(self):
-        self.client.force_authenticate(user=self.test_admin)
-        resp = self.client.get("/api/exams/admin/pastpaper-packs/", **_ADMIN_HOST_KWARGS)
-        self.assertEqual(resp.status_code, 200)
-        self.assertIsInstance(resp.json(), list)
-
-    def test_pastpaper_pack_create_patch_on_admin_host_not_blocked_by_http_guard(self):
+    def test_section_create_patch_on_admin_host_not_blocked_by_http_guard(self):
         """Middleware must not deny CRUD so staff can manage content from hosted admin SPA."""
         self.client.force_authenticate(user=self.test_admin)
         resp = self.client.post(
-            "/api/exams/admin/pastpaper-packs/",
+            "/api/exams/admin/tests/",
             data={
+                "subject": "MATH",
                 "title": "October form",
+                "collection_name": "October",
                 "practice_date": "2024-10-05",
                 "label": "A",
                 "form_type": "INTERNATIONAL",
@@ -65,24 +61,26 @@ class PastPapersAdminMainDomainTests(TestCase):
             format="json",
             **_ADMIN_HOST_KWARGS,
         )
-        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.status_code, 201, resp.content)
         self.assertEqual(resp.json().get("title"), "October form")
-        pack_id = resp.json()["id"]
+        section_id = resp.json()["id"]
         patched = self.client.patch(
-            f"/api/exams/admin/pastpaper-packs/{pack_id}/",
+            f"/api/exams/admin/tests/{section_id}/",
             data={"title": "October form — updated"},
             format="json",
             **_ADMIN_HOST_KWARGS,
         )
         self.assertEqual(patched.status_code, 200)
-        self.assertEqual(PastpaperPack.objects.get(pk=pack_id).title, "October form — updated")
+        self.assertEqual(PracticeTest.objects.get(pk=section_id).title, "October form — updated")
 
-    def test_pastpaper_pack_delete_on_admin_host_not_blocked(self):
-        pack = PastpaperPack.objects.create(title="Trash me", form_type="INTERNATIONAL")
+    def test_section_delete_on_admin_host_not_blocked(self):
+        section = PracticeTest.objects.create(
+            title="Trash me", subject="MATH", form_type="INTERNATIONAL", skip_default_modules=True
+        )
         self.client.force_authenticate(user=self.test_admin)
-        resp = self.client.delete(f"/api/exams/admin/pastpaper-packs/{pack.pk}/", **_ADMIN_HOST_KWARGS)
+        resp = self.client.delete(f"/api/exams/admin/tests/{section.pk}/", **_ADMIN_HOST_KWARGS)
         self.assertEqual(resp.status_code, 204)
-        self.assertFalse(PastpaperPack.objects.filter(pk=pack.pk).exists())
+        self.assertFalse(PracticeTest.objects.filter(pk=section.pk).exists())
 
     def test_questions_host_public_practice_catalog_200_for_test_admin(self):
         """Pastpaper SPA on ``questions.*`` loads GET /api/exams/ — must not hard-fail authoring roles."""

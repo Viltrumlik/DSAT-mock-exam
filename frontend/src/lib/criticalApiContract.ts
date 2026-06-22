@@ -10,7 +10,6 @@ import {
 export type UserMe = components["schemas"]["UserMe"];
 export type Classroom = components["schemas"]["Classroom"];
 export type Assignment = components["schemas"]["Assignment"];
-export type AdminPastpaperPack = components["schemas"]["AdminPastpaperPack"];
 export type BulkAssignmentDispatch = components["schemas"]["BulkAssignmentDispatch"];
 
 /** Re-use the same list envelope as exams public API (items + optional DRF pagination). */
@@ -119,29 +118,6 @@ export function parseAssignmentList(data: unknown, endpoint: string): Normalized
   const items = env.itemsUnknown.map((row, i) =>
     parseWithSchema(assignmentRowSchema, row, `${endpoint}[${i}]`),
   ) as Assignment[];
-  return {
-    items,
-    count: env.count,
-    next: env.next,
-    previous: env.previous,
-  };
-}
-
-const adminPastpaperPackSchema = z
-  .object({
-    id: z.number(),
-    created_at: z.string(),
-  })
-  .passthrough();
-
-export function parseAdminPastpaperPackList(
-  data: unknown,
-  endpoint: string,
-): NormalizedList<AdminPastpaperPack> {
-  const env = extractNormalizedListEnvelope(data, endpoint);
-  const items = env.itemsUnknown.map((row, i) =>
-    parseWithSchema(adminPastpaperPackSchema, row, `${endpoint}[${i}]`),
-  ) as AdminPastpaperPack[];
   return {
     items,
     count: env.count,

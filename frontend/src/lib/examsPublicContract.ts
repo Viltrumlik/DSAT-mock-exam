@@ -111,8 +111,14 @@ export const practiceTestPublicSchema = z
     form_type: z.enum(["INTERNATIONAL", "US"]).optional(),
     modules: z.array(moduleListPublicSchema),
     created_at: z.string(),
-    /** Standalone sections / legacy rows omit the nested pack; serializer returns `null`. */
-    pastpaper_pack: pastpaperPackBriefStudentSchema.nullable(),
+    /**
+     * Former `PastpaperPack` grouping (removed on the backend). Sections are now
+     * standalone; `collection_name` carries the former pack title for labeling.
+     * `pastpaper_pack` is accepted (optional/nullable) only for backward compat.
+     */
+    collection_name: z.string().optional(),
+    is_published: z.boolean().optional(),
+    pastpaper_pack: pastpaperPackBriefStudentSchema.nullable().optional(),
     mock_exam_id: z.number().nullable(),
   })
   .passthrough();

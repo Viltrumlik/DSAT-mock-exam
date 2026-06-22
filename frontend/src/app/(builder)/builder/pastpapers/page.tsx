@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { examsAdminApi } from "@/features/examsAdmin/api";
-import type { AdminPastpaperPack } from "@/lib/api";
+import type { AdminPastpaperSection, SectionPublishViolation } from "@/lib/api";
 import {
   AlertTriangle,
   BookOpen,
@@ -16,21 +16,24 @@ import {
   Plus,
   RefreshCcw,
   Trash2,
-  Users,
   X,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type FormState = {
+  subject: "READING_WRITING" | "MATH";
   title: string;
+  collection_name: string;
   practice_date: string;
   label: string;
   form_type: "INTERNATIONAL" | "US";
 };
 
 const EMPTY_FORM: FormState = {
+  subject: "READING_WRITING",
   title: "",
+  collection_name: "",
   practice_date: "",
   label: "",
   form_type: "INTERNATIONAL",
@@ -58,6 +61,10 @@ function SubjectIcon({ subject }: { subject: string }) {
   return <BookOpen className="h-3.5 w-3.5" />;
 }
 
+function collectionOf(s: AdminPastpaperSection): string {
+  return (s.collection_name && s.collection_name.trim()) || "Ungrouped";
+}
+
 function parseError(e: unknown): string {
   const data = (e as { response?: { data?: unknown } })?.response?.data;
   if (!data) return "An error occurred.";
@@ -73,14 +80,30 @@ function parseError(e: unknown): string {
   return "An error occurred.";
 }
 
-// ─── Pack form modal ──────────────────────────────────────────────────────────
+function parseViolations(e: unknown): SectionPublishViolation[] {
+  const data = (e as { response?: { data?: { violations?: unknown } } })?.response?.data;
+  const v = data?.violations;
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((row) => {
+      if (row && typeof row === "object") {
+        const r = row as Record<string, unknown>;
+        return { code: String(r.code ?? ""), message: String(r.message ?? r.code ?? "") };
+      }
+      return { code: "", message: String(row) };
+    })
+    .filter((x) => x.message);
+}
 
-function PackModal({
+// ─── Section form modal ─────────────────────────────────────────────────────────
+
+function SectionModal({
   open,
   title,
   initial,
   saving,
   error,
+  isEdit,
   onSubmit,
   onClose,
 }: {
@@ -89,6 +112,7 @@ function PackModal({
   initial: FormState;
   saving: boolean;
   error: string | null;
+  isEdit: boolean;
   onSubmit: (f: FormState) => void;
   onClose: () => void;
 }) {
@@ -129,12 +153,45 @@ function PackModal({
         >
           <div>
             <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+              Subject
+            </label>
+            <select
+              value={form.subject}
+              onChange={set("subject")}
+              disabled={isEdit}
+              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+            >
+              <option value="READING_WRITING">Reading &amp; Writing</option>
+              <option value="MATH">Mathematics</option>
+            </select>
+            {isEdit ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">Subject can&apos;t be changed after creation.</p>
+            ) : null}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+              Collection
+            </label>
+            <input
+              value={form.collection_name}
+              onChange={set("collection_name")}
+              placeholder="e.g. SAT October 2024"
+              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Sections sharing a collection name are grouped together for students.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
               Title
             </label>
             <input
               value={form.title}
               onChange={set("title")}
-              placeholder="e.g. SAT October 2024"
+              placeholder="Optional — defaults to subject + date"
               className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
@@ -201,82 +258,71 @@ function PackModal({
   );
 }
 
-// ─── Pack row ──────────────────────────────────────────────────────────────────
+// ─── Section row ─────────────────────────────────────────────────────────────────
 
-function PackRow({
-  pack,
+function SectionRow({
+  section,
   onEdit,
   onDelete,
-  onAddSection,
-  addingSection,
+  onTogglePublish,
+  busy,
+  violations,
 }: {
-  pack: AdminPastpaperPack;
+  section: AdminPastpaperSection;
   onEdit: () => void;
   onDelete: () => void;
-  onAddSection: (subject: "READING_WRITING" | "MATH") => void;
-  addingSection: boolean;
+  onTogglePublish: () => void;
+  busy: boolean;
+  violations: SectionPublishViolation[] | null;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const rwSection = pack.sections.find((s) => s.subject === "READING_WRITING");
-  const mathSection = pack.sections.find((s) => s.subject === "MATH");
-  const hasRW = !!rwSection;
-  const hasMath = !!mathSection;
-
-  // is_published / assigned_student_count are served by the backend but not yet
-  // in the generated OpenAPI type — read them defensively at runtime.
-  const packMeta = pack as unknown as {
-    is_published?: boolean;
-    assigned_student_count?: number;
-  };
-  const isPublished = packMeta.is_published === true;
-  const assignedCount =
-    typeof packMeta.assigned_student_count === "number" ? packMeta.assigned_student_count : undefined;
-  // Operational visibility (NOT a publish block): a live pack with zero assigned
-  // students is invisible to students despite being published.
-  const publishedButNoAccess = isPublished && assignedCount === 0;
+  const isRW = section.subject === "READING_WRITING";
+  const isPublished = section.is_published === true;
+  const modules = section.modules ?? [];
 
   return (
     <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      {/* Pack header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            <div className={`rounded-md p-1 ${isRW ? "bg-primary/10 text-primary" : "bg-emerald-100 text-emerald-700"}`}>
+              <SubjectIcon subject={section.subject} />
+            </div>
             <h3 className="font-extrabold text-foreground">
-              {pack.title || `Pack #${pack.id}`}
+              {section.title?.trim() || `${subjectLabel(section.subject)} · ${formatDate(section.practice_date)}`}
             </h3>
             <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-              {pack.form_type === "US" ? "US Form" : "International"}
-              {pack.label ? ` · Form ${pack.label}` : ""}
+              {section.form_type === "US" ? "US Form" : "International"}
+              {section.label ? ` · Form ${section.label}` : ""}
             </span>
-            {/* Publish status chip */}
             <span
               className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                isPublished
-                  ? publishedButNoAccess
-                    ? "bg-amber-100 text-amber-800"
-                    : "bg-emerald-100 text-emerald-700"
-                  : "bg-surface-2 text-muted-foreground"
+                isPublished ? "bg-emerald-100 text-emerald-700" : "bg-surface-2 text-muted-foreground"
               }`}
             >
               {isPublished ? "Live" : "Draft"}
             </span>
-            {/* Recipient count when published */}
-            {isPublished && assignedCount != null ? (
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground">
-                <Users className="h-3 w-3" />
-                {assignedCount} student{assignedCount !== 1 ? "s" : ""}
-              </span>
-            ) : null}
           </div>
           <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
             <Calendar className="h-3 w-3 shrink-0" />
-            {formatDate(pack.practice_date)}
+            {formatDate(section.practice_date)}
             <span className="ml-2 text-muted-foreground/50">·</span>
-            <span>{pack.sections.length} section{pack.sections.length !== 1 ? "s" : ""}</span>
+            <span>{modules.length} module{modules.length !== 1 ? "s" : ""}</span>
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onTogglePublish}
+            disabled={busy}
+            className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
+              isPublished
+                ? "border border-border bg-card text-foreground hover:bg-surface-2"
+                : "bg-emerald-600 text-white hover:bg-emerald-700"
+            }`}
+          >
+            {busy ? "…" : isPublished ? "Unpublish" : "Publish"}
+          </button>
           <button
             type="button"
             onClick={onEdit}
@@ -315,94 +361,46 @@ function PackRow({
         </div>
       </div>
 
-      {/* Invisible-publish warning: live but no students have access. Operational
-          visibility only — publishing is never blocked (admins may pre-publish). */}
-      {publishedButNoAccess ? (
+      {/* Publish violations (blocking SAT rules) */}
+      {violations && violations.length > 0 ? (
         <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-4 py-2.5 text-xs text-amber-900">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-          <span>
-            <strong>Published, but no students currently have access.</strong> This pack is live
-            but invisible to students until you assign it. Use bulk assign to grant access.
-          </span>
+          <div>
+            <strong>Can&apos;t publish yet — resolve these first:</strong>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {violations.map((v, i) => (
+                <li key={`${v.code}-${i}`}>{v.message}</li>
+              ))}
+            </ul>
+          </div>
         </div>
       ) : null}
 
-      {/* Sections + per-module links */}
-      {pack.sections.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {pack.sections.map((section) => {
-            const isRW = section.subject === "READING_WRITING";
-            const modules = section.modules ?? [];
-            return (
-              <div key={section.id}>
-                {/* Section header row */}
-                <div className="mb-1.5 flex items-center gap-2 px-1">
-                  <div className={`rounded-md p-1 ${isRW ? "bg-primary/10 text-primary" : "bg-emerald-100 text-emerald-700"}`}>
-                    <SubjectIcon subject={section.subject} />
-                  </div>
-                  <span className="text-xs font-bold text-foreground">{subjectLabel(section.subject)}</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {modules.length} module{modules.length !== 1 ? "s" : ""}
-                  </span>
-                </div>
-
-                {/* Per-module links */}
-                {modules.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-border px-4 py-2.5 text-xs text-muted-foreground italic">
-                    No modules yet — add questions from the test admin.
+      {/* Per-module links */}
+      <div className="mt-4">
+        {modules.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border px-4 py-2.5 text-xs text-muted-foreground italic">
+            No modules yet — they appear here once this section has modules.
+          </p>
+        ) : (
+          <div className="grid gap-1.5 sm:grid-cols-2">
+            {modules.map((mod) => (
+              <Link
+                key={mod.id}
+                href={`/builder/pastpapers/${section.id}/${mod.id}`}
+                className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-primary/30 hover:bg-primary/5 ${
+                  isRW ? "border-primary/20 bg-primary/5" : "border-emerald-200 bg-emerald-50/50"
+                }`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-extrabold text-foreground">
+                    {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
                   </p>
-                ) : (
-                  <div className="grid gap-1.5 sm:grid-cols-2">
-                    {modules.map((mod) => (
-                      <Link
-                        key={mod.id}
-                        href={`/builder/pastpapers/${pack.id}/${section.id}/${mod.id}`}
-                        className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-primary/30 hover:bg-primary/5 ${
-                          isRW ? "border-primary/20 bg-primary/5" : "border-emerald-200 bg-emerald-50/50"
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-extrabold text-foreground">
-                            {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
-                          </p>
-                        </div>
-                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Add section buttons */}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {!hasRW && (
-          <button
-            type="button"
-            onClick={() => onAddSection("READING_WRITING")}
-            disabled={addingSection}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:border-primary/70 hover:bg-primary/5 disabled:opacity-50 transition-colors"
-          >
-            <Plus className="h-3 w-3" />
-            Add Reading &amp; Writing
-          </button>
-        )}
-        {!hasMath && (
-          <button
-            type="button"
-            onClick={() => onAddSection("MATH")}
-            disabled={addingSection}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-emerald-400/50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:border-emerald-500 hover:bg-emerald-50 disabled:opacity-50 transition-colors"
-          >
-            <Plus className="h-3 w-3" />
-            Add Mathematics
-          </button>
-        )}
-        {hasRW && hasMath && (
-          <p className="text-xs text-muted-foreground italic">All sections added.</p>
+                </div>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+              </Link>
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -412,25 +410,26 @@ function PackRow({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BuilderPastpapersPage() {
-  const [packs, setPacks] = useState<AdminPastpaperPack[]>([]);
+  const [sections, setSections] = useState<AdminPastpaperSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingPack, setEditingPack] = useState<AdminPastpaperPack | null>(null);
+  const [editing, setEditing] = useState<AdminPastpaperSection | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Per-pack section-adding state
-  const [addingSectionFor, setAddingSectionFor] = useState<number | null>(null);
+  // Per-section publish state
+  const [publishBusy, setPublishBusy] = useState<number | null>(null);
+  const [violationsFor, setViolationsFor] = useState<Record<number, SectionPublishViolation[]>>({});
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await examsAdminApi.getPastpaperPacks();
-      setPacks(data.items);
+      const data = await examsAdminApi.getStandaloneSections();
+      setSections(data);
     } catch (e) {
       setError(parseError(e));
     } finally {
@@ -442,14 +441,34 @@ export default function BuilderPastpapersPage() {
     void load();
   }, []);
 
+  // Group sections by collection_name; newest practice_date first within a group.
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, AdminPastpaperSection[]>();
+    for (const s of sections) {
+      const key = collectionOf(s);
+      if (!map.has(key)) { map.set(key, []); order.push(key); }
+      map.get(key)!.push(s);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => {
+        // Reading & Writing before Math, then by id.
+        const rank = (x: AdminPastpaperSection) => (x.subject === "READING_WRITING" ? 0 : 1);
+        const d = rank(a) - rank(b);
+        return d !== 0 ? d : a.id - b.id;
+      });
+    }
+    return order.map((name) => ({ name, items: map.get(name)! }));
+  }, [sections]);
+
   const openCreate = () => {
-    setEditingPack(null);
+    setEditing(null);
     setSaveError(null);
     setModalOpen(true);
   };
 
-  const openEdit = (pack: AdminPastpaperPack) => {
-    setEditingPack(pack);
+  const openEdit = (section: AdminPastpaperSection) => {
+    setEditing(section);
     setSaveError(null);
     setModalOpen(true);
   };
@@ -460,14 +479,15 @@ export default function BuilderPastpapersPage() {
     try {
       const payload = {
         title: form.title.trim() || undefined,
+        collection_name: form.collection_name.trim() || undefined,
         practice_date: form.practice_date || null,
         label: form.label.trim() || undefined,
         form_type: form.form_type,
       };
-      if (editingPack) {
-        await examsAdminApi.updatePastpaperPack(editingPack.id, payload);
+      if (editing) {
+        await examsAdminApi.updateSection(editing.id, payload);
       } else {
-        await examsAdminApi.createPastpaperPack(payload);
+        await examsAdminApi.createSection({ subject: form.subject, ...payload });
       }
       setModalOpen(false);
       await load();
@@ -480,31 +500,47 @@ export default function BuilderPastpapersPage() {
 
   const handleDelete = async (id: number) => {
     try {
-      await examsAdminApi.deletePastpaperPack(id);
+      await examsAdminApi.deleteSection(id);
       await load();
     } catch (e) {
       setError(parseError(e));
     }
   };
 
-  const handleAddSection = async (packId: number, subject: "READING_WRITING" | "MATH") => {
-    setAddingSectionFor(packId);
+  const handleTogglePublish = async (section: AdminPastpaperSection) => {
+    setPublishBusy(section.id);
+    setViolationsFor((prev) => {
+      const next = { ...prev };
+      delete next[section.id];
+      return next;
+    });
     try {
-      await examsAdminApi.addPastpaperPackSection(packId, subject);
+      if (section.is_published) {
+        await examsAdminApi.unpublishSection(section.id);
+      } else {
+        await examsAdminApi.publishSection(section.id);
+      }
       await load();
     } catch (e) {
-      setError(parseError(e));
+      const violations = parseViolations(e);
+      if (violations.length > 0) {
+        setViolationsFor((prev) => ({ ...prev, [section.id]: violations }));
+      } else {
+        setError(parseError(e));
+      }
     } finally {
-      setAddingSectionFor(null);
+      setPublishBusy(null);
     }
   };
 
-  const modalInitial: FormState = editingPack
+  const modalInitial: FormState = editing
     ? {
-        title: editingPack.title ?? "",
-        practice_date: editingPack.practice_date ?? "",
-        label: editingPack.label ?? "",
-        form_type: (editingPack.form_type as "INTERNATIONAL" | "US") ?? "INTERNATIONAL",
+        subject: (editing.subject === "MATH" ? "MATH" : "READING_WRITING"),
+        title: editing.title ?? "",
+        collection_name: editing.collection_name ?? "",
+        practice_date: editing.practice_date ?? "",
+        label: editing.label ?? "",
+        form_type: (editing.form_type as "INTERNATIONAL" | "US") ?? "INTERNATIONAL",
       }
     : EMPTY_FORM;
 
@@ -515,8 +551,9 @@ export default function BuilderPastpapersPage() {
         <div>
           <h1 className="text-xl font-bold text-foreground tracking-tight">Pastpapers</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage pastpaper packs. Each pack groups a Reading &amp; Writing section and a
-            Mathematics section from one SAT form. Students see packs on the Pastpapers page.
+            Manage standalone pastpaper sections. Each section is a single Reading &amp; Writing or
+            Mathematics test, published independently. Use a shared collection name to group sections
+            from the same SAT form for students.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -535,7 +572,7 @@ export default function BuilderPastpapersPage() {
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <Plus className="h-4 w-4" />
-            New pack
+            New section
           </button>
         </div>
       </div>
@@ -552,14 +589,14 @@ export default function BuilderPastpapersPage() {
         <div className="flex justify-center py-16">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
-      ) : packs.length === 0 ? (
+      ) : sections.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-12 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
             <FileText className="h-7 w-7 text-muted-foreground/40" />
           </div>
-          <p className="font-extrabold text-foreground">No pastpaper packs yet</p>
+          <p className="font-extrabold text-foreground">No pastpaper sections yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create a pack, then add Reading &amp; Writing and Mathematics sections.
+            Create a section, then add its modules and questions.
           </p>
           <button
             type="button"
@@ -567,31 +604,46 @@ export default function BuilderPastpapersPage() {
             className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <Plus className="h-4 w-4" />
-            New pack
+            New section
           </button>
         </div>
       ) : (
-        <div className="space-y-4">
-          {packs.map((pack) => (
-            <PackRow
-              key={pack.id}
-              pack={pack}
-              onEdit={() => openEdit(pack)}
-              onDelete={() => void handleDelete(pack.id)}
-              onAddSection={(subject) => void handleAddSection(pack.id, subject)}
-              addingSection={addingSectionFor === pack.id}
-            />
+        <div className="space-y-6">
+          {groups.map((g) => (
+            <div key={g.name} className="space-y-3">
+              <div className="flex items-center gap-2 px-1">
+                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{g.name}</span>
+                <span className="text-[11px] text-muted-foreground/60">
+                  {g.items.length} section{g.items.length !== 1 ? "s" : ""}
+                </span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+              <div className="space-y-3">
+                {g.items.map((section) => (
+                  <SectionRow
+                    key={section.id}
+                    section={section}
+                    onEdit={() => openEdit(section)}
+                    onDelete={() => void handleDelete(section.id)}
+                    onTogglePublish={() => void handleTogglePublish(section)}
+                    busy={publishBusy === section.id}
+                    violations={violationsFor[section.id] ?? null}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}
 
       {/* Create / edit modal */}
-      <PackModal
+      <SectionModal
         open={modalOpen}
-        title={editingPack ? "Edit pack" : "New pastpaper pack"}
+        title={editing ? "Edit section" : "New pastpaper section"}
         initial={modalInitial}
         saving={saving}
         error={saveError}
+        isEdit={!!editing}
         onSubmit={(f) => void handleSave(f)}
         onClose={() => setModalOpen(false)}
       />

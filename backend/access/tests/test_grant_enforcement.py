@@ -27,7 +27,7 @@ from access.engine import AssignmentService, ClassroomAccessService
 from access.engine import enforcement
 from access.models import ResourceAccessGrant, UserAccess
 from classes.models import Classroom, ClassroomMembership
-from exams.models import MockExam, PastpaperPack, PortalMockExam, PracticeTest
+from exams.models import MockExam, PortalMockExam, PracticeTest, PracticeTestPack
 
 User = get_user_model()
 
@@ -91,22 +91,22 @@ class WriteThroughRegressionTests(TestCase):
 
 
 class PackSubjectScopeTests(TestCase):
-    """Past Paper Pack: Math / Reading / Both grants only the chosen sections."""
+    """Practice Test Pack: Math / Reading / Both grants only the chosen sections."""
 
     def setUp(self):
         self.actor = User.objects.create_user(email="adm2@e.com", password="x", role=C.ROLE_ADMIN)
         self.student = make_student("ps@e.com")
-        self.pack = PastpaperPack.objects.create(title="Pack A", is_published=True)
+        self.pack = PracticeTestPack.objects.create(title="Pack A", is_published=True)
         self.math = PracticeTest.objects.create(
-            subject="MATH", pastpaper_pack=self.pack, skip_default_modules=True
+            subject="MATH", practice_test_pack=self.pack, skip_default_modules=True
         )
         self.rw = PracticeTest.objects.create(
-            subject="READING_WRITING", pastpaper_pack=self.pack, skip_default_modules=True
+            subject="READING_WRITING", practice_test_pack=self.pack, skip_default_modules=True
         )
 
     def _grant(self, scope):
         targets = resources.expand_subject_targets(
-            resources.RT_PASTPAPER_PACK, self.pack.pk, scope
+            resources.RT_PRACTICE_TEST_PACK, self.pack.pk, scope
         )
         AssignmentService.bulk_assign_targets([self.student], targets, actor=self.actor)
 

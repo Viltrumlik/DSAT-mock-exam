@@ -13,7 +13,7 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from exams.models import PastpaperPack, PracticeTest, TestAttempt
+from exams.models import PracticeTest, TestAttempt
 
 from classes.models import Assignment, Classroom, ClassroomMembership, Submission, SubmissionReview
 from classes.models_ranking import RankingSnapshot
@@ -36,9 +36,8 @@ class SATServiceTests(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
         )
-        self.pack = PastpaperPack.objects.create(title="PP A", label="A")
         self.section = PracticeTest.objects.create(
-            subject="MATH", label="M", title="Math sec", pastpaper_pack=self.pack
+            subject="MATH", label="M", title="Math sec", collection_name="PP A"
         )
         # three students with distinct Math section scores
         self.s700 = _student("w700@t.com")
@@ -168,9 +167,8 @@ class RankingsApiTests(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
         )
-        self.pack = PastpaperPack.objects.create(title="PP", label="A")
         self.section = PracticeTest.objects.create(
-            subject="MATH", label="M", title="sec", pastpaper_pack=self.pack
+            subject="MATH", label="M", title="sec", collection_name="PP"
         )
         self.top = _student("api_top@t.com")
         self.low = _student("api_low@t.com")

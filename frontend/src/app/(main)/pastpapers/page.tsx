@@ -5,24 +5,28 @@
  * (shared `.dzboard` scope): SIMULATION header, Region + Year + Status segmented
  * filters, search, and booklet cards with per-user state.
  *
- * Status + scores are derived per pack from the student's section attempts
- * (GET /exams/attempts/): a pack is Completed when every section has a completed
- * attempt, In progress when some section is started, otherwise New. Scores are
- * the scaled section scores (R&W + Math, each /800; composite /1600).
+ * Each card is ONE standalone section (a `PracticeTest`, subject MATH or
+ * READING_WRITING). The former `PastpaperPack` grouping was removed on the
+ * backend; sections carry `collection_name` (the former pack title) which we use
+ * to visually group cards. Status + per-section score are derived from the
+ * student's attempts (GET /exams/attempts/). Each section is scored standalone
+ * (200–800 style); there is no composite /1600. Clicking a card starts/resumes
+ * that single section's attempt directly (POST /exams/attempts/ → /exam/{id}).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-// Public pastpaper packs + attempts live only on examsPublicApi; no feature wrapper exists.
+// Public pastpaper sections + attempts live only on examsPublicApi; no feature wrapper exists.
 // eslint-disable-next-line no-restricted-imports
-import { examsPublicApi, type PastpaperPackPublic, type PastpaperPackSection } from "@/lib/api";
+import { examsPublicApi, type PastpaperSection } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
+import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import {
   BookOpen, Calculator, Calendar, Globe, Search, Play, PlayCircle, Eye, Clock,
-  AlertTriangle, FileText, RefreshCw, Lock,
+  AlertTriangle, FileText, RefreshCw,
 } from "lucide-react";
 
-function fmtMonth(s: string | null): string {
+function fmtMonth(s: string | null | undefined): string {
   if (!s) return "Undated";
   try { return new Date(s).toLocaleDateString("en-US", { month: "long", year: "numeric" }); } catch { return s; }
 }
@@ -30,45 +34,46 @@ function fmtDay(s: string | null | undefined): string {
   if (!s) return "";
   try { return new Date(s).toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" }); } catch { return ""; }
 }
-function yearOf(s: string | null): string | null {
+function yearOf(s: string | null | undefined): string | null {
   if (!s) return null;
   const d = new Date(s); return Number.isNaN(d.getTime()) ? null : String(d.getFullYear());
 }
 function isRW(subject: string): boolean {
   return subject === "READING_WRITING" || subject?.toLowerCase().includes("reading");
 }
+function subjectLabel(subject: string): string {
+  if (isRW(subject)) return "Reading & Writing";
+  if (subject === "MATH" || subject?.toLowerCase().includes("math")) return "Mathematics";
+  return subject;
+}
+function sectionTitle(s: PastpaperSection): string {
+  if (s.title && s.title.trim()) return s.title.trim();
+  return `${subjectLabel(s.subject)} — ${fmtMonth(s.practice_date)}`;
+}
+function collectionLabel(s: PastpaperSection): string {
+  return (s.collection_name && s.collection_name.trim()) || "Past papers";
+}
 
 type Att = { id: number; practice_test: number; is_completed: boolean; is_expired: boolean; score: number | null; completed_at?: string | null; submitted_at?: string | null };
 type Status = "new" | "progress" | "completed";
 type Derived = {
   status: Status;
-  total: number | null; rw: number | null; math: number | null;
-  completedDate: string | null; pct: number;
-  hasRW: boolean; hasMath: boolean;
+  score: number | null;
+  completedDate: string | null;
+  completedAttemptId: number | null;
 };
 
-function derive(pack: PastpaperPackPublic, byTest: Map<number, Att[]>): Derived {
-  const sections = pack.sections;
-  const rwSec = sections.find((s) => isRW(s.subject));
-  const mathSec = sections.find((s) => !isRW(s.subject));
-  const compOf = (s?: PastpaperPackSection) => s ? (byTest.get(s.id) ?? []).find((a) => a.is_completed) : undefined;
-  const startedOf = (s: PastpaperPackSection) => (byTest.get(s.id) ?? []).some((a) => a.is_completed || (!a.is_completed && !a.is_expired));
-
-  const comps = sections.map((s) => compOf(s));
-  const completedCount = comps.filter(Boolean).length;
-  const allDone = sections.length > 0 && completedCount === sections.length;
-  const anyStarted = sections.some(startedOf);
-  const status: Status = allDone ? "completed" : anyStarted ? "progress" : "new";
-
-  const rwComp = compOf(rwSec); const mathComp = compOf(mathSec);
-  const rw = rwComp?.score ?? null; const math = mathComp?.score ?? null;
-  const scored = comps.map((c) => c?.score).filter((s): s is number => typeof s === "number");
-  const total = allDone && scored.length ? Math.min(1600, scored.reduce((a, b) => a + b, 0)) : null;
-  const dates = comps.map((c) => c?.completed_at || c?.submitted_at).filter(Boolean) as string[];
-  const completedDate = dates.sort().slice(-1)[0] ?? null;
-  const pct = sections.length ? Math.round((completedCount / sections.length) * 100) : 0;
-
-  return { status, total, rw, math, completedDate, pct, hasRW: !!rwSec, hasMath: !!mathSec };
+function derive(section: PastpaperSection, list: Att[]): Derived {
+  const sorted = [...list].sort((a, b) => b.id - a.id);
+  const completed = sorted.find((a) => a.is_completed);
+  const active = sorted.find((a) => !a.is_completed && !a.is_expired);
+  const status: Status = completed ? "completed" : active ? "progress" : "new";
+  return {
+    status,
+    score: completed?.score ?? null,
+    completedDate: completed?.completed_at || completed?.submitted_at || null,
+    completedAttemptId: completed?.id ?? null,
+  };
 }
 
 type Region = "ALL" | "US" | "INTL";
@@ -77,7 +82,8 @@ type StatusFilter = "new" | "progress" | "completed";
 export default function PastpapersPage() {
   const router = useRouter();
   const { isAuthenticated } = useMe();
-  const [packs, setPacks] = useState<PastpaperPackPublic[]>([]);
+  const { assertCriticalAuth } = useAuthCriticalGate();
+  const [sections, setSections] = useState<PastpaperSection[]>([]);
   const [atts, setAtts] = useState<Att[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -85,14 +91,16 @@ export default function PastpapersPage() {
   const [year, setYear] = useState<string>("ALL");
   const [status, setStatus] = useState<StatusFilter>("new");
   const [search, setSearch] = useState("");
+  const [starting, setStarting] = useState<number | null>(null);
+  const [startError, setStartError] = useState<{ sectionId: number; msg: string } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true); setError(false);
     Promise.all([
-      examsPublicApi.getPastpaperPacks(),
+      examsPublicApi.getPastpaperSections(),
       isAuthenticated ? examsPublicApi.getAttempts().then((r) => r.items as Att[]).catch(() => []) : Promise.resolve([] as Att[]),
     ])
-      .then(([p, a]) => { setPacks(p); setAtts(a); })
+      .then(([s, a]) => { setSections(s); setAtts(a); })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [isAuthenticated]);
@@ -107,28 +115,73 @@ export default function PastpapersPage() {
 
   const years = useMemo(() => {
     const set = new Set<string>();
-    for (const p of packs) { const y = yearOf(p.practice_date); if (y) set.add(y); }
+    for (const s of sections) { const y = yearOf(s.practice_date); if (y) set.add(y); }
     return Array.from(set).sort((a, b) => Number(b) - Number(a));
-  }, [packs]);
+  }, [sections]);
 
   const rows = useMemo(() => {
     const q = search.toLowerCase().trim();
-    return packs
-      .map((p) => ({ pack: p, d: derive(p, byTest) }))
-      .filter(({ pack, d }) => {
-        if (region === "US" && pack.form_type !== "US") return false;
-        if (region === "INTL" && pack.form_type === "US") return false;
-        if (year !== "ALL" && yearOf(pack.practice_date) !== year) return false;
+    return sections
+      .map((s) => ({ section: s, d: derive(s, byTest.get(s.id) ?? []) }))
+      .filter(({ section, d }) => {
+        if (region === "US" && section.form_type !== "US") return false;
+        if (region === "INTL" && section.form_type === "US") return false;
+        if (year !== "ALL" && yearOf(section.practice_date) !== year) return false;
         if (d.status !== status) return false;
         if (q) {
-          const blob = `${pack.title || ""} ${pack.label || ""} ${pack.form_type || ""} ${fmtMonth(pack.practice_date)}`.toLowerCase();
+          const blob = `${sectionTitle(section)} ${collectionLabel(section)} ${section.label || ""} ${section.form_type || ""} ${subjectLabel(section.subject)} ${fmtMonth(section.practice_date)}`.toLowerCase();
           if (!blob.includes(q)) return false;
         }
         return true;
       });
-  }, [packs, byTest, region, year, status, search]);
+  }, [sections, byTest, region, year, status, search]);
+
+  // Group filtered cards by collection_name, preserving newest-date-first order.
+  const groups = useMemo(() => {
+    const order: string[] = [];
+    const map = new Map<string, { section: PastpaperSection; d: Derived }[]>();
+    for (const row of rows) {
+      const key = collectionLabel(row.section);
+      if (!map.has(key)) { map.set(key, []); order.push(key); }
+      map.get(key)!.push(row);
+    }
+    return order.map((name) => ({ name, items: map.get(name)! }));
+  }, [rows]);
 
   const hasFilter = region !== "ALL" || year !== "ALL" || !!search.trim();
+
+  const handleOpen = async (section: PastpaperSection, d: Derived) => {
+    // Completed: review the finished attempt. Otherwise start/resume an attempt.
+    if (d.status === "completed" && d.completedAttemptId) {
+      router.push(`/review/${d.completedAttemptId}`);
+      return;
+    }
+    if (!assertCriticalAuth()) return;
+    setStarting(section.id);
+    setStartError(null);
+    try {
+      let attempt = atts.find((a) => a.practice_test === section.id && !a.is_completed && !a.is_expired);
+      const isFreshStart = !attempt;
+      if (!attempt) {
+        attempt = (await examsPublicApi.startTest(section.id)) as unknown as Att;
+        setAtts((prev) => [...prev, attempt!]);
+      }
+      try { sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt)); } catch {}
+      router.push(`/exam/${attempt.id}${isFreshStart ? "?welcome=1" : ""}`);
+    } catch (e: unknown) {
+      const data = (e as { response?: { data?: unknown } })?.response?.data;
+      let msg = "Could not start this section. Please try again.";
+      if (data && typeof data === "object") {
+        const dd = data as Record<string, unknown>;
+        if (typeof dd.message === "string") msg = dd.message;
+        else if (typeof dd.detail === "string") msg = dd.detail;
+        else if (typeof dd.error === "string") msg = dd.error;
+        else if (dd.code === "practice_test_empty") msg = "This section has no questions yet.";
+      }
+      setStartError({ sectionId: section.id, msg });
+      setStarting(null);
+    }
+  };
 
   return (
     <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
@@ -159,13 +212,32 @@ export default function PastpapersPage() {
           <PapersError onRetry={load} />
         ) : loading ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 18 }}>
-            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="dz-skel" style={{ height: 210, borderRadius: 18 }} />)}
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="dz-skel" style={{ height: 200, borderRadius: 18 }} />)}
           </div>
-        ) : rows.length === 0 ? (
+        ) : groups.length === 0 ? (
           <PapersEmpty hasFilter={hasFilter} />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 18 }}>
-            {rows.map(({ pack, d }) => <Booklet key={pack.id} pack={pack} d={d} onOpen={() => router.push(`/pastpapers/${pack.id}`)} />)}
+          <div style={{ display: "flex", flexDirection: "column", gap: 30 }}>
+            {groups.map((g) => (
+              <div key={g.name}>
+                <div className="dz-headin" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--dz-mute)" }}>{g.name}</span>
+                  <span style={{ flex: 1, height: 1, background: "var(--dz-border)" }} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 18 }}>
+                  {g.items.map(({ section, d }) => (
+                    <Booklet
+                      key={section.id}
+                      section={section}
+                      d={d}
+                      busy={starting === section.id}
+                      error={startError?.sectionId === section.id ? startError.msg : null}
+                      onOpen={() => void handleOpen(section, d)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -194,15 +266,19 @@ function Segmented({ label, value, onChange, options }: { label: string; value: 
   );
 }
 
-function Booklet({ pack, d, onOpen }: { pack: PastpaperPackPublic; d: Derived; onOpen: () => void }) {
-  const isUS = pack.form_type === "US";
+function Booklet({ section, d, busy, error, onOpen }: { section: PastpaperSection; d: Derived; busy: boolean; error: string | null; onOpen: () => void }) {
+  const isUS = section.form_type === "US";
+  const rw = isRW(section.subject);
   const regionMain = isUS ? "var(--dz-indigo)" : "#0d9488";
   const regionSoft = isUS ? "var(--dz-indigo-soft)" : "rgba(13,148,136,.12)";
+  const subjAccent = rw ? "var(--dz-indigo)" : "#0d9488";
+  const subjSoft = rw ? "var(--dz-indigo-soft)" : "rgba(13,148,136,.12)";
   const statusMeta = {
     new: { dot: regionMain, label: "Not started", color: "var(--dz-mute)", bg: "var(--dz-card)" },
     progress: { dot: "var(--dz-amber)", label: "In progress", color: "var(--dz-amber)", bg: "color-mix(in srgb, var(--dz-amber) 12%, transparent)" },
     completed: { dot: "#16a34a", label: "Completed", color: "#16a34a", bg: "rgba(22,163,74,.12)" },
   }[d.status];
+  const SubjIcon = rw ? BookOpen : Calculator;
 
   return (
     <div className="dz-booklet" onClick={onOpen} role="button" tabIndex={0}
@@ -219,30 +295,35 @@ function Booklet({ pack, d, onOpen }: { pack: PastpaperPackPublic; d: Derived; o
             {isUS ? <span style={{ fontSize: 13, lineHeight: 1 }}>🇺🇸</span> : <Globe size={13} />} {isUS ? "US" : "International"}
           </span>
         </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: subjAccent, background: subjSoft, padding: "5px 11px", borderRadius: 9 }}>
+            <SubjIcon size={13} /> {subjectLabel(section.subject)}
+          </span>
+        </div>
+
         <div className="clip1" style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>
-          {pack.title || `SAT past paper — ${fmtMonth(pack.practice_date)}`}
+          {sectionTitle(section)}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--dz-mute)", marginTop: 6 }}>
-          <Calendar size={14} /> {fmtMonth(pack.practice_date)}
-          {pack.label ? <><span style={{ color: "var(--dz-faint)" }}>·</span> Form {pack.label}</> : null}
+          <Calendar size={14} /> {fmtMonth(section.practice_date)}
+          {section.label ? <><span style={{ color: "var(--dz-faint)" }}>·</span> Form {section.label}</> : null}
         </div>
         <div style={{ height: 1, background: "var(--dz-border)", margin: "15px 0" }} />
+
+        {error ? (
+          <div style={{ marginBottom: 12, fontSize: 12, fontWeight: 600, color: "var(--dz-error)", background: "var(--dz-error-soft)", padding: "8px 12px", borderRadius: 10 }}>{error}</div>
+        ) : null}
 
         {d.status === "completed" ? (
           <>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 14, marginBottom: 14 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--dz-faint)", marginBottom: 3 }}>FINAL SCORE</div>
+                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--dz-faint)", marginBottom: 3 }}>YOUR SCORE</div>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-                  <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)", lineHeight: 1 }}>{d.total ?? "—"}</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--dz-faint)" }}>/ 1600</span>
+                  <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)", lineHeight: 1 }}>{d.score ?? "—"}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--dz-faint)" }}>/ 800</span>
                 </div>
-              </div>
-              <div style={{ flex: 1 }} />
-              <div style={{ display: "flex", gap: 8 }}>
-                {d.hasRW ? <ScoreSplit label="R&W" value={d.rw} color="var(--dz-indigo)" /> : null}
-                {d.hasRW && d.hasMath ? <div style={{ width: 1, background: "var(--dz-border)" }} /> : null}
-                {d.hasMath ? <ScoreSplit label="MATH" value={d.math} color="#0d9488" /> : null}
               </div>
             </div>
             {d.completedDate ? (
@@ -254,54 +335,20 @@ function Booklet({ pack, d, onOpen }: { pack: PastpaperPackPublic; d: Derived; o
               style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-indigo)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
               <Eye size={15} /> Review answers
             </button>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "var(--dz-faint)", marginTop: 10 }}>
-              <Lock size={12} /> Completed papers are one-time — your score is final
-            </div>
           </>
         ) : d.status === "progress" ? (
-          <>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 7 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--dz-mute)" }}>Keep going — you&apos;ve started this one</span>
-              <span style={{ fontSize: 13, fontWeight: 800, color: "var(--dz-amber)" }}>{d.pct}%</span>
-            </div>
-            <div style={{ height: 8, borderRadius: 6, background: "var(--dz-card)", overflow: "hidden", marginBottom: 14 }}>
-              <div style={{ height: "100%", width: `${d.pct}%`, background: "var(--dz-amber)", borderRadius: 6 }} />
-            </div>
-            <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
-              style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-amber)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-              <PlayCircle size={15} /> Resume
-            </button>
-          </>
+          <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
+            style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-amber)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+            <PlayCircle size={15} /> {busy ? "…" : "Resume"}
+          </button>
         ) : (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {d.hasRW ? <Chip icon={<BookOpen size={13} />} label="R&W" color="var(--dz-indigo)" soft="var(--dz-indigo-soft)" /> : null}
-            {d.hasMath ? <Chip icon={<Calculator size={13} />} label="Math" color="#0d9488" soft="rgba(13,148,136,.12)" /> : null}
-            <div style={{ flex: 1 }} />
-            <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 18px", borderRadius: 11, border: "none", background: "var(--dz-indigo)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-              <Play size={15} /> Start
-            </button>
-          </div>
+          <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
+            style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-indigo)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+            <Play size={15} /> {busy ? "Starting…" : "Start"}
+          </button>
         )}
       </div>
     </div>
-  );
-}
-
-function ScoreSplit({ label, value, color }: { label: string; value: number | null; color: string }) {
-  return (
-    <div style={{ textAlign: "right" }}>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".06em", color }}>{label}</div>
-      <div style={{ fontSize: 17, fontWeight: 800, color: "var(--dz-ink)", lineHeight: 1.1 }}>{value ?? "—"}</div>
-    </div>
-  );
-}
-
-function Chip({ icon, label, color, soft }: { icon: React.ReactNode; label: string; color: string; soft: string }) {
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color, background: soft, padding: "6px 11px", borderRadius: 9 }}>
-      {icon} {label}
-    </span>
   );
 }
 
