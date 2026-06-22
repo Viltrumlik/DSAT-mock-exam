@@ -22,8 +22,7 @@ import { BookOpen, ClipboardList, FileText, FlaskConical, Loader2, Paperclip, Tr
 
 type PastpaperRow = Record<string, unknown> & {
   id: number;
-  pastpaper_pack?: { id: number; title?: string; practice_date?: string | null; label?: string; form_type?: string } | null;
-  pastpaper_pack_id?: number | null;
+  collection_name?: string;
 };
 
 type AssessmentSetOption = {
@@ -38,7 +37,7 @@ type AssessmentSetOption = {
 type PastSelection =
   | { mode: "none" }
   | { mode: "single"; testId: number }
-  | { mode: "pack_db"; packId: number }
+  // A collection of standalone sections, assigned together via practice_test_ids.
   | { mode: "pack_legacy"; testIds: number[] };
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
@@ -104,7 +103,6 @@ function cardReactKey(c: CardPastpaperPack | CardSingle): string {
 
 function selectionMatchesCard(sel: PastSelection, c: CardPastpaperPack | CardSingle): boolean {
   if (c.kind === "single") return sel.mode === "single" && sel.testId === c.test.id;
-  if (c.pack?.id != null) return sel.mode === "pack_db" && sel.packId === c.pack.id;
   const ids = c.tests.map((t) => t.id).sort((a, b) => a - b);
   if (sel.mode !== "pack_legacy" || ids.length === 0) return false;
   const a = [...sel.testIds].sort((x, y) => x - y);
@@ -113,7 +111,6 @@ function selectionMatchesCard(sel: PastSelection, c: CardPastpaperPack | CardSin
 
 function selectFromCard(c: CardPastpaperPack | CardSingle): PastSelection {
   if (c.kind === "single") return { mode: "single", testId: c.test.id };
-  if (c.pack?.id != null) return { mode: "pack_db", packId: c.pack.id };
   return { mode: "pack_legacy", testIds: c.tests.map((t) => t.id) };
 }
 
@@ -230,12 +227,6 @@ export default function CreateAssignmentModal({
         setAssignmentType("practice_test");
         const ptpId = typeof ptp === "object" && ptp != null && "id" in ptp ? Number((ptp as { id: number }).id) : Number(ptp);
         if (Number.isFinite(ptpId)) setSelectedPracticeTestPackId(ptpId);
-      } else if (editingAssignment.pastpaper_pack != null) {
-        const pp = editingAssignment.pastpaper_pack;
-        setAssignmentType("pastpaper");
-        const packId = typeof pp === "object" && pp != null && "id" in pp ? Number((pp as { id: number }).id) : Number(pp);
-        if (Number.isFinite(packId)) setPastSel({ mode: "pack_db", packId });
-        else setPastSel({ mode: "none" });
       } else if (Array.isArray(editingAssignment.practice_test_ids) && editingAssignment.practice_test_ids.length > 0) {
         setAssignmentType("pastpaper");
         setPastSel({ mode: "pack_legacy", testIds: (editingAssignment.practice_test_ids as unknown[]).map((x) => Number(x)) });
@@ -279,7 +270,6 @@ export default function CreateAssignmentModal({
           instructions: newAsg.instructions,
           external_url: newAsg.external_url.trim() || "",
           due_at: null as string | null,
-          pastpaper_pack: null,
           practice_test_pack: null,
           practice_test: null,
           practice_test_ids: null,
@@ -289,8 +279,7 @@ export default function CreateAssignmentModal({
           if (!Number.isNaN(t.getTime())) body.due_at = t.toISOString();
         }
         if (assignmentType === "pastpaper") {
-          if (pastSel.mode === "pack_db") body.pastpaper_pack = pastSel.packId;
-          else if (pastSel.mode === "pack_legacy") body.practice_test_ids = pastSel.testIds;
+          if (pastSel.mode === "pack_legacy") body.practice_test_ids = pastSel.testIds;
           else if (pastSel.mode === "single") body.practice_test = pastSel.testId;
         } else if (assignmentType === "practice_test" && selectedPracticeTestPackId) {
           body.practice_test_pack = selectedPracticeTestPackId;
@@ -318,10 +307,9 @@ export default function CreateAssignmentModal({
       }
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
 
-      // Pastpaper content
+      // Pastpaper content — standalone sections assigned via practice_test_ids / practice_test.
       if (includePastpaper && pastSel.mode !== "none") {
-        if (pastSel.mode === "pack_db") fd.append("pastpaper_pack", String(pastSel.packId));
-        else if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
+        if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
         else if (pastSel.mode === "single") fd.append("practice_test", String(pastSel.testId));
         fd.append("practice_scope", practiceScope);
       }

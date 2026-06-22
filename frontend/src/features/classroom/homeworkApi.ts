@@ -12,7 +12,6 @@ export interface AssignmentDetail {
   max_score: string | null;
   mock_exam?: number | null;
   practice_test?: number | null;
-  pastpaper_pack?: number | null;
   practice_test_pack?: number | null;
   module?: number | null;
   practice_test_ids?: number[] | null;
@@ -62,10 +61,19 @@ export type AssignmentKind = "QUIZ" | "MOCK" | "PASTPAPER" | "PRACTICE" | "MODUL
 export function assignmentKind(a: AssignmentDetail): AssignmentKind {
   if (a.assessment_homework != null) return "QUIZ";
   if (a.mock_exam != null) return "MOCK";
-  if (a.pastpaper_pack != null) return "PASTPAPER";
-  if (a.practice_test_pack != null || a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) return "PRACTICE";
+  // Custom practice-test pack → Practice; standalone pastpaper sections (the homework
+  // "Pastpaper" type stores them as practice_test / practice_test_ids) → Past Paper.
+  if (a.practice_test_pack != null) return "PRACTICE";
+  if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) return "PASTPAPER";
   if (a.module != null) return "MODULE";
   return "FILE";
+}
+
+/** Resolve the standalone section id to open directly, or null when several need a chooser. */
+function singleSectionId(a: AssignmentDetail): number | null {
+  if (a.practice_test != null) return a.practice_test;
+  const ids = a.practice_test_ids ?? [];
+  return ids.length === 1 ? ids[0] : null;
 }
 
 export const KIND_LABEL: Record<AssignmentKind, string> = {
@@ -97,12 +105,12 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
   const out: ContentAction[] = [];
   if (a.assessment_homework != null) out.push({ kind: "QUIZ", label: "Start assessment", href: `/assessments/${a.id}` });
   if (a.mock_exam != null) out.push({ kind: "MOCK", label: "Open Mock Exam", href: `/mock/${a.mock_exam}` });
-  if (a.pastpaper_pack != null) out.push({ kind: "PASTPAPER", label: "Open Past Paper", href: `/pastpapers/${a.pastpaper_pack}` });
   if (a.practice_test_pack != null) {
     out.push({ kind: "PRACTICE", label: "Open Practice Test", href: `/practice-tests/${a.practice_test_pack}` });
   } else if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) {
-    const tid = a.practice_test ?? a.practice_test_ids?.[0];
-    if (tid != null) out.push({ kind: "PRACTICE", label: "Open Practice Test", href: `/practice-test/${tid}` });
+    // Standalone pastpaper section(s): open one directly, or the listing to choose from several.
+    const single = singleSectionId(a);
+    out.push({ kind: "PASTPAPER", label: "Open Past Paper", href: single != null ? `/practice-test/${single}` : `/pastpapers` });
   }
   if (a.module != null) {
     const tid = a.practice_test ?? a.practice_test_ids?.[0];
@@ -116,11 +124,13 @@ export function startHref(classId: number, a: AssignmentDetail): string | null {
   const kind = assignmentKind(a);
   if (kind === "QUIZ") return `/assessments/${a.id}`;
   if (kind === "MOCK") return `/mock/${a.mock_exam}`;
-  if (kind === "PASTPAPER") return `/pastpapers/${a.pastpaper_pack}`;
+  if (kind === "PASTPAPER") {
+    const single = singleSectionId(a);
+    return single != null ? `/practice-test/${single}` : `/pastpapers`;
+  }
   if (kind === "PRACTICE") {
     if (a.practice_test_pack != null) return `/practice-tests/${a.practice_test_pack}`;
-    const tid = a.practice_test ?? a.practice_test_ids?.[0];
-    return tid != null ? `/practice-test/${tid}` : null;
+    return null;
   }
   if (kind === "MODULE") {
     const tid = a.practice_test ?? a.practice_test_ids?.[0];

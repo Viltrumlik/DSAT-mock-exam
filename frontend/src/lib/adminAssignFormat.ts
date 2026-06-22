@@ -50,14 +50,8 @@ export function pastpaperSectionSummary(sections: { subject?: string }[]): {
 
 /** Pastpaper section row in admin assign UI. */
 export function formatPastpaperSectionForAssign(t: Record<string, unknown>): string {
-  const pp = t.pastpaper_pack as Record<string, unknown> | undefined;
-  const packId =
-    typeof pp === "object" && pp != null && pp.id != null
-      ? Number(pp.id)
-      : t.pastpaper_pack_id != null
-        ? Number(t.pastpaper_pack_id)
-        : null;
-  const packHint = packId != null && !Number.isNaN(packId) ? ` · Card #${packId}` : " · No card";
+  const collection = String(t.collection_name ?? "").trim();
+  const packHint = collection ? ` · ${collection}` : " · No collection";
   const subj = normalizePlatformSubject(String(t.subject ?? "")) === "MATH" ? "Math" : "R&W";
   const title = String(t.title || "").trim();
   const head = title || subj;

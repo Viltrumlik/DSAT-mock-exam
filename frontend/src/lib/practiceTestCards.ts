@@ -14,7 +14,12 @@ function normalizePastpaperLabel(label: string | null | undefined) {
   return (label || "").trim();
 }
 
-/** Legacy rows without pastpaper_pack: group by date + form + label. */
+/** Denormalized grouping label (former pastpaper pack title) on a standalone section. */
+function collectionName(t: any): string {
+  return String(t?.collection_name ?? "").trim();
+}
+
+/** Sections without a collection_name: group by date + form + label (legacy fallback). */
 function standaloneGroupKey(t: any): string {
   return [t.practice_date || "", t.form_type || "", normalizePastpaperLabel(t.label)].join("|");
 }
@@ -46,7 +51,6 @@ export function isTimedMockSectionRow(t: any): boolean {
 
 export function buildCards(tests: any[]): PracticeCard[] {
   const byMock = new Map<number, any[]>();
-  const byPastpaperPack = new Map<number, { pack: any; tests: any[] }>();
   const looseStandalone: any[] = [];
 
   for (const t of tests) {
@@ -55,30 +59,6 @@ export function buildCards(tests: any[]): PracticeCard[] {
     if (m?.id) {
       if (!byMock.has(m.id)) byMock.set(m.id, []);
       byMock.get(m.id)!.push(t);
-      continue;
-    }
-    const rawPack = t.pastpaper_pack;
-    const pid =
-      rawPack && typeof rawPack === "object" && rawPack.id != null
-        ? Number(rawPack.id)
-        : t.pastpaper_pack_id != null
-          ? Number(t.pastpaper_pack_id)
-          : null;
-    if (pid != null && !Number.isNaN(pid)) {
-      if (!byPastpaperPack.has(pid)) {
-        const packObj =
-          rawPack && typeof rawPack === "object"
-            ? rawPack
-            : {
-                id: pid,
-                title: "",
-                practice_date: t.practice_date,
-                label: t.label,
-                form_type: t.form_type,
-              };
-        byPastpaperPack.set(pid, { pack: packObj, tests: [] });
-      }
-      byPastpaperPack.get(pid)!.tests.push(t);
       continue;
     }
     looseStandalone.push(t);
@@ -91,32 +71,28 @@ export function buildCards(tests: any[]): PracticeCard[] {
     tests: list,
   }));
 
-  const dbPastpaperPacks: CardPastpaperPack[] = Array.from(byPastpaperPack.entries()).map(([id, { pack, tests }]) => ({
-    kind: "pastpaper_pack",
-    packKey: `db-${id}`,
-    pack,
-    tests: sortPastpaperSections(tests),
-  }));
-
-  const byLoose = new Map<string, any[]>();
+  // Group standalone pastpaper sections by collection_name (former pack); fall back to
+  // the legacy date+form+label key when a section has no collection label.
+  const byGroup = new Map<string, { collection: string; tests: any[] }>();
   for (const t of looseStandalone) {
-    const k = standaloneGroupKey(t);
-    if (!byLoose.has(k)) byLoose.set(k, []);
-    byLoose.get(k)!.push(t);
+    const collection = collectionName(t);
+    const key = collection ? `col:${collection.toLowerCase()}` : `loose:${standaloneGroupKey(t)}`;
+    if (!byGroup.has(key)) byGroup.set(key, { collection, tests: [] });
+    byGroup.get(key)!.tests.push(t);
   }
 
-  const legacyPacks: CardPastpaperPack[] = [];
+  const collectionPacks: CardPastpaperPack[] = [];
   const singles: CardSingle[] = [];
-  for (const [groupKey, list] of byLoose) {
+  for (const [groupKey, { collection, tests: list }] of byGroup) {
     const unique = [...new Map(list.map((x) => [x.id, x])).values()];
     if (unique.length >= 2) {
       const p0 = unique[0];
-      legacyPacks.push({
+      collectionPacks.push({
         kind: "pastpaper_pack",
-        packKey: `legacy-${groupKey}`,
+        packKey: collection ? `col-${groupKey}` : `legacy-${groupKey}`,
         pack: {
           id: null,
-          title: "",
+          title: collection,
           practice_date: p0.practice_date,
           label: p0.label,
           form_type: p0.form_type,
@@ -128,7 +104,7 @@ export function buildCards(tests: any[]): PracticeCard[] {
     }
   }
 
-  const all: PracticeCard[] = [...packs, ...dbPastpaperPacks, ...legacyPacks, ...singles];
+  const all: PracticeCard[] = [...packs, ...collectionPacks, ...singles];
   const sortKey = (c: PracticeCard) => {
     if (c.kind === "pack") return c.mock.practice_date || "";
     if (c.kind === "pastpaper_pack") return c.pack?.practice_date || c.tests[0]?.practice_date || "";
@@ -162,14 +138,9 @@ export function singleDisplayTitle(test: any) {
   return `${form}${letter} · ${subjectLabel(test.subject)}`.trim();
 }
 
-/** Title from nested `pastpaper_pack` — matches `/exams/` PracticeTestSerializer only (no nested mock_exam). */
+/** Collection label (former pastpaper pack title) — now denormalized on each section. */
 export function pastpaperPackDisplayTitle(test: any): string {
-  const p = test?.pastpaper_pack;
-  if (p && typeof p === "object" && "title" in p) {
-    const s = String((p as { title?: string }).title ?? "").trim();
-    if (s) return s;
-  }
-  return "";
+  return String(test?.collection_name ?? "").trim();
 }
 
 /** Search / filter text using public practice-test API fields only (no `mock_exam`). */
