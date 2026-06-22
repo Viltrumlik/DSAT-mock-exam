@@ -21,9 +21,12 @@ const SUBJECT_FILTERS: { key: "all" | "math" | "english"; label: string }[] = [
 export function ResourcePicker({
   value,
   onChange,
+  single = false,
 }: {
   value: SelectedResource[];
   onChange: (r: SelectedResource[]) => void;
+  /** When true, only one resource may be selected (clicking replaces the selection). */
+  single?: boolean;
 }) {
   const [types, setTypes] = useState<string[]>([]);
   const [type, setType] = useState<string>("");
@@ -73,12 +76,26 @@ export function ResourcePicker({
 
   const toggle = (it: ResourcePickerItem) => {
     const key = `${it.resource_type}:${it.resource_id}`;
+    const picked = { resource_type: it.resource_type, resource_id: it.resource_id, label: it.label };
     if (selectedKeys.has(key)) {
       onChange(value.filter((v) => `${v.resource_type}:${v.resource_id}` !== key));
     } else {
-      onChange([...value, { resource_type: it.resource_type, resource_id: it.resource_id, label: it.label }]);
+      onChange(single ? [picked] : [...value, picked]);
     }
   };
+
+  // Group standalone sections by their collection (former pastpaper pack); other types stay flat.
+  const grouped = useMemo(() => {
+    if (type !== "practice_test") return null;
+    const groups = new Map<string, ResourcePickerItem[]>();
+    for (const it of visible) {
+      const g = (it.group || "").trim() || "Ungrouped";
+      const arr = groups.get(g) ?? [];
+      arr.push(it);
+      groups.set(g, arr);
+    }
+    return Array.from(groups.entries());
+  }, [type, visible]);
 
   const subjectBadge = (subs: string[]) =>
     subs.map((s) => (
@@ -86,6 +103,30 @@ export function ResourcePicker({
         {s}
       </span>
     ));
+
+  const renderRow = (it: ResourcePickerItem) => {
+    const checked = selectedKeys.has(`${it.resource_type}:${it.resource_id}`);
+    return (
+      <button
+        type="button"
+        key={`${it.resource_type}:${it.resource_id}`}
+        onClick={() => toggle(it)}
+        className={cn(
+          "flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-2",
+          checked && "bg-primary/5",
+        )}
+      >
+        <span className="min-w-0 truncate">
+          <span className="font-bold text-foreground">{it.label}</span>
+          {subjectBadge(it.subjects)}
+        </span>
+        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+          {it.published ? "" : "draft · "}#{it.resource_id}
+          {checked && <Check className="h-4 w-4 text-primary" />}
+        </span>
+      </button>
+    );
+  };
 
   return (
     <div className="space-y-2">
@@ -158,30 +199,17 @@ export function ResourcePicker({
           </div>
         ) : visible.length === 0 ? (
           <p className="p-4 text-sm text-muted-foreground">No resources found.</p>
+        ) : grouped ? (
+          grouped.map(([group, rows]) => (
+            <div key={group}>
+              <div className="sticky top-0 border-b border-border bg-surface-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                {group}
+              </div>
+              {rows.map(renderRow)}
+            </div>
+          ))
         ) : (
-          visible.map((it) => {
-            const checked = selectedKeys.has(`${it.resource_type}:${it.resource_id}`);
-            return (
-              <button
-                type="button"
-                key={`${it.resource_type}:${it.resource_id}`}
-                onClick={() => toggle(it)}
-                className={cn(
-                  "flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-2",
-                  checked && "bg-primary/5",
-                )}
-              >
-                <span className="min-w-0 truncate">
-                  <span className="font-bold text-foreground">{it.label}</span>
-                  {subjectBadge(it.subjects)}
-                </span>
-                <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                  {it.published ? "" : "draft · "}#{it.resource_id}
-                  {checked && <Check className="h-4 w-4 text-primary" />}
-                </span>
-              </button>
-            );
-          })
+          visible.map(renderRow)
         )}
       </div>
     </div>

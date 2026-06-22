@@ -172,17 +172,8 @@ class GrantsPagination(PageNumberPagination):
     max_page_size = 200
 
 
-def _resource_label(rt, instance) -> str:
-    if instance is None:
-        return f"{rt.key}#?"
-    title = (getattr(instance, "title", None) or getattr(instance, "name", None) or "").strip()
-    if rt.key == resources.RT_PRACTICE_TEST:
-        subj = getattr(instance, "subject", "")
-        form = getattr(instance, "form_type", "")
-        date = getattr(instance, "practice_date", "") or ""
-        bits = [b for b in [title, subj, form, str(date) if date else ""] if b]
-        return " · ".join(bits) or f"Practice test #{instance.pk}"
-    return title or f"{rt.key} #{instance.pk}"
+# Resource labelling lives in access.resources (shared with the grant serializer).
+_resource_label = resources.resource_label
 
 
 class EngineGrantListView(generics.ListAPIView):
@@ -205,6 +196,8 @@ class EngineGrantListView(generics.ListAPIView):
             qs = qs.filter(source=p["source"])
         if p.get("resource_type"):
             qs = qs.filter(resource_type=p["resource_type"])
+        if p.get("resource_id"):
+            qs = qs.filter(resource_id=p["resource_id"])
         if p.get("classroom"):
             qs = qs.filter(classroom_id=p["classroom"])
         q = (p.get("q") or "").strip()
@@ -416,10 +409,19 @@ class EngineResourceSearchView(APIView):
         qs = rt.model().objects.all()
         if rt.queryset_filter:
             qs = qs.filter(**rt.queryset_filter)
+        # Standalone pastpaper/practice sections only — never mock-exam sections — so the
+        # access console grants individual sections (former pastpaper packs are gone).
+        is_practice_test = rt.key == resources.RT_PRACTICE_TEST
+        if is_practice_test:
+            qs = qs.filter(mock_exam__isnull=True)
         if q:
             cond = Q()
-            for field in ("title", "name"):
-                if any(f.name == field for f in rt.model()._meta.get_fields() if hasattr(f, "name")):
+            search_fields = ("title", "name")
+            if is_practice_test:
+                search_fields = ("title", "name", "collection_name")
+            model_field_names = {f.name for f in rt.model()._meta.get_fields() if hasattr(f, "name")}
+            for field in search_fields:
+                if field in model_field_names:
                     cond |= Q(**{f"{field}__icontains": q})
             if str(q).isdigit():
                 cond |= Q(pk=int(q))
@@ -433,6 +435,8 @@ class EngineResourceSearchView(APIView):
                 "label": _resource_label(rt, obj),
                 "subjects": sorted(rt.domain_subjects(obj)),
                 "published": rt.is_published(obj),
+                # Grouping label for the picker (former pack title); blank for non-sections.
+                "group": (getattr(obj, "collection_name", "") or "").strip() if is_practice_test else "",
             })
         return Response({"results": items, "resource_type": rt.key})
 

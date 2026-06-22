@@ -30,10 +30,22 @@ const SCOPES: { key: SubjectScope; label: string }[] = [
 
 type ClassroomRow = { id: number; name: string; subject?: string };
 
-export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
+export function GrantPanel({
+  onSuccess,
+  lockResource,
+  lockUserIds,
+}: {
+  onSuccess?: () => void;
+  /** Pre-scope to one resource (By-resource → Add users): hides the resource picker + mode. */
+  lockResource?: SelectedResource;
+  /** Pre-scope to fixed students (By-user → Grant access): hides the student select + mode. */
+  lockUserIds?: number[];
+}) {
+  // When locked, the panel is embedded in By-user / By-resource and always grants to students.
+  const locked = Boolean(lockResource) || Boolean(lockUserIds);
   const [mode, setMode] = useState<Mode>("resource_students");
-  const [userIds, setUserIds] = useState<number[]>([]);
-  const [resources, setResources] = useState<SelectedResource[]>([]);
+  const [userIds, setUserIds] = useState<number[]>(lockUserIds ?? []);
+  const [resources, setResources] = useState<SelectedResource[]>(lockResource ? [lockResource] : []);
   const [subjectScope, setSubjectScope] = useState<SubjectScope>("both");
   const [classroomId, setClassroomId] = useState<number | "">("");
   const [classrooms, setClassrooms] = useState<ClassroomRow[]>([]);
@@ -57,8 +69,8 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
   }, []);
 
   const reset = () => {
-    setUserIds([]);
-    setResources([]);
+    if (!lockUserIds) setUserIds([]);
+    if (!lockResource) setResources([]);
     setSubjectScope("both");
     setClassroomId("");
     setExpiresAt("");
@@ -105,7 +117,8 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
 
   return (
     <div className="space-y-5 rounded-2xl border border-border bg-card p-5 shadow-sm">
-      {/* Mode selector */}
+      {/* Mode selector (hidden when pre-scoped to a user or resource) */}
+      {!locked && (
       <div className="grid gap-2 sm:grid-cols-2">
         {MODES.map((m) => {
           const active = mode === m.key;
@@ -133,34 +146,45 @@ export function GrantPanel({ onSuccess }: { onSuccess?: () => void }) {
           );
         })}
       </div>
+      )}
 
       {/* Target selectors */}
       <div className="space-y-4">
-        {mode === "resource_classroom" ? (
-          <Field label="Classroom" icon={School}>
-            <select
-              value={classroomId}
-              onChange={(e) => setClassroomId(e.target.value ? Number(e.target.value) : "")}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
-            >
-              <option value="">Select a classroom…</option>
-              {classrooms.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.subject ? ` · ${c.subject}` : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
-        ) : (
-          <Field label="Students" icon={Users}>
-            <StudentMultiSelect value={userIds} onChange={setUserIds} />
-          </Field>
+        {!lockUserIds && (
+          mode === "resource_classroom" && !locked ? (
+            <Field label="Classroom" icon={School}>
+              <select
+                value={classroomId}
+                onChange={(e) => setClassroomId(e.target.value ? Number(e.target.value) : "")}
+                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <option value="">Select a classroom…</option>
+                {classrooms.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                    {c.subject ? ` · ${c.subject}` : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Students" icon={Users}>
+              <StudentMultiSelect value={userIds} onChange={setUserIds} />
+            </Field>
+          )
         )}
 
-        <Field label="Tests / resources" icon={BookMarked}>
-          <ResourcePicker value={resources} onChange={setResources} />
-        </Field>
+        {lockResource ? (
+          <Field label="Resource" icon={BookMarked}>
+            <div className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm font-bold text-foreground">
+              {lockResource.label}
+            </div>
+          </Field>
+        ) : (
+          <Field label="Tests / resources" icon={BookMarked}>
+            <ResourcePicker value={resources} onChange={setResources} />
+          </Field>
+        )}
 
         {showScope && (
           <Field label="Sections">

@@ -19,7 +19,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 function targetLabel(g: ResourceAccessGrant): string {
   if (g.scope === "SUBJECT") return `Subject · ${g.subject}`;
-  return `${resourceTypeLabel(g.resource_type ?? "")} #${g.resource_id}`;
+  return g.resource_label || `${resourceTypeLabel(g.resource_type ?? "")} #${g.resource_id}`;
 }
 
 export function GrantsManager({ refreshKey = 0 }: { refreshKey?: number }) {

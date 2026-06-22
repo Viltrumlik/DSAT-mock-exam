@@ -12,12 +12,12 @@ export type GrantScope = "SUBJECT" | "RESOURCE";
 export type SubjectScope = "math" | "reading" | "both";
 
 /** Resource types that expand to subject sections, so a Math/Reading/Both choice applies. */
-export const SUBJECT_SCOPED_TYPES = new Set(["pastpaper_pack", "practice_test_pack"]);
+export const SUBJECT_SCOPED_TYPES = new Set(["practice_test_pack"]);
 /** Resource types intentionally hidden from the access-console picker.
- *  practice_test is hidden: individual past-paper tests are granted via their
- *  Pastpaper pack (with the Math/Reading/Both scope), so the standalone type is
- *  redundant. It stays registered for pack expansion + enforcement. */
-export const HIDDEN_PICKER_TYPES = new Set(["module", "assessment_set", "practice_test"]);
+ *  practice_test IS shown now: pastpaper packs were removed, so standalone sections
+ *  (grouped by collection_name) are granted individually. module/assessment_set stay
+ *  hidden (granted indirectly / not assignable from this console). */
+export const HIDDEN_PICKER_TYPES = new Set(["module", "assessment_set"]);
 export type GrantStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
 export type GrantSource = "MANUAL" | "BULK" | "CLASSROOM" | "PURCHASE" | "SYSTEM";
 
@@ -30,6 +30,8 @@ export type ResourceAccessGrant = {
   subject: string | null;
   resource_type: string | null;
   resource_id: number | null;
+  /** Human-readable resource name (e.g. "March 2024 · MATH"); "" for subject grants. */
+  resource_label: string;
   classroom: number | null;
   classroom_name: string;
   source: GrantSource;
@@ -59,6 +61,8 @@ export type ResourcePickerItem = {
   label: string;
   subjects: string[];
   published: boolean;
+  /** Grouping label for the picker (former pastpaper pack title); "" if ungrouped. */
+  group?: string;
 };
 
 export type BulkResult = {
@@ -85,6 +89,7 @@ export type GrantFilters = {
   status?: GrantStatus | "";
   source?: GrantSource | "";
   resource_type?: string;
+  resource_id?: number;
   classroom?: number;
   page?: number;
   page_size?: number;
@@ -194,10 +199,9 @@ export const accessApi = {
 };
 
 export const RESOURCE_TYPE_LABELS: Record<string, string> = {
-  practice_test: "Practice / Past paper test",
+  practice_test: "Practice / Past paper section",
   mock_exam: "Mock exam",
   midterm: "Midterm",
-  pastpaper_pack: "Pastpaper pack",
   practice_test_pack: "Practice test pack",
   assessment_set: "Assessment set",
   module: "Module",

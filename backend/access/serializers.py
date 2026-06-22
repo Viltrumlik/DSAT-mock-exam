@@ -23,12 +23,13 @@ class ResourceAccessGrantSerializer(serializers.ModelSerializer):
     granted_by_email = serializers.SerializerMethodField()
     classroom_name = serializers.SerializerMethodField()
     is_effective = serializers.SerializerMethodField()
+    resource_label = serializers.SerializerMethodField()
 
     class Meta:
         model = ResourceAccessGrant
         fields = (
             "id", "user", "user_email", "user_name", "scope", "subject",
-            "resource_type", "resource_id", "classroom", "classroom_name",
+            "resource_type", "resource_id", "resource_label", "classroom", "classroom_name",
             "source", "status", "is_effective", "granted_by", "granted_by_email",
             "expires_at", "created_at", "updated_at",
         )
@@ -48,6 +49,12 @@ class ResourceAccessGrantSerializer(serializers.ModelSerializer):
 
     def get_is_effective(self, obj):
         return obj.is_effective()
+
+    def get_resource_label(self, obj):
+        # Subject grants have no concrete resource; show the subject instead.
+        if obj.scope != ResourceAccessGrant.SCOPE_RESOURCE or not obj.resource_type:
+            return ""
+        return resources.label_for(obj.resource_type, obj.resource_id)
 
 
 class AccessGrantEventSerializer(serializers.ModelSerializer):

@@ -230,6 +230,34 @@ def is_registered(resource_type: str) -> bool:
     return resource_type in _REGISTRY
 
 
+def resource_label(rt: "ResourceType", instance) -> str:
+    """Human-readable label for a concrete resource instance (admin console).
+
+    Shared by the resource-picker search and the grant serializer so both render
+    targets identically (e.g. ``March 2024 · MATH · INTERNATIONAL``).
+    """
+    if instance is None:
+        return f"{getattr(rt, 'key', '?')}#?"
+    title = (getattr(instance, "title", None) or getattr(instance, "name", None) or "").strip()
+    if rt.key == RT_PRACTICE_TEST:
+        collection = (getattr(instance, "collection_name", "") or "").strip()
+        subj = getattr(instance, "subject", "")
+        form = getattr(instance, "form_type", "")
+        date = getattr(instance, "practice_date", "") or ""
+        bits = [b for b in [collection, title, subj, form, str(date) if date else ""] if b]
+        return " · ".join(bits) or f"Practice test #{instance.pk}"
+    return title or f"{rt.key} #{instance.pk}"
+
+
+def label_for(resource_type: str, resource_id: int) -> str:
+    """Resolve ``(resource_type, resource_id)`` to a human label, or a stable fallback."""
+    rt = get(resource_type)
+    if rt is None or resource_id is None:
+        return f"{resource_type}#{resource_id}"
+    inst = rt.model().objects.filter(pk=resource_id).first()
+    return resource_label(rt, inst)
+
+
 register(
     ResourceType(
         RT_PRACTICE_TEST,
