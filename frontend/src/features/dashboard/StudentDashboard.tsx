@@ -99,7 +99,7 @@ function DashboardBody({
           className="dz-scoregrid"
         >
           <TargetScoresCard overall={model.target} english={model.englishTarget} math={model.mathTarget} />
-          <CountdownCard daysToGo={model.examDaysLeft} examDate={model.examDate} />
+          <CountdownCard examDate={model.examDate} />
         </div>
 
         {/* Calendar + right column */}
@@ -355,10 +355,77 @@ function ScoreBox({ label, value, primary }: { label: string; value: number | nu
 }
 
 /* ── Countdown ───────────────────────────────────────────────────────────── */
-function CountdownCard({ daysToGo, examDate }: { daysToGo: number | null; examDate: string | null }) {
-  const label = examDate
-    ? new Date(examDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-    : "Set your exam date";
+type Remaining = { days: number; hours: number; minutes: number; seconds: number; done: boolean };
+
+/** Resolve a (date-only) exam date to a local-midnight timestamp on the exam day. */
+function examTargetTime(examDate: string | null): number | null {
+  if (!examDate) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(examDate);
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(examDate);
+  const t = d.getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+function computeRemaining(target: number | null): Remaining | null {
+  if (target == null) return null;
+  let diff = target - Date.now();
+  const done = diff <= 0;
+  if (diff < 0) diff = 0;
+  return {
+    days: Math.floor(diff / 86400000),
+    hours: Math.floor((diff % 86400000) / 3600000),
+    minutes: Math.floor((diff % 3600000) / 60000),
+    seconds: Math.floor((diff % 60000) / 1000),
+    done,
+  };
+}
+
+/** Live remaining time toward the exam date, ticking once per second. */
+function useCountdown(examDate: string | null): Remaining | null {
+  const target = useMemo(() => examTargetTime(examDate), [examDate]);
+  const [remaining, setRemaining] = useState<Remaining | null>(() => computeRemaining(target));
+  useEffect(() => {
+    setRemaining(computeRemaining(target));
+    if (target == null) return;
+    const id = setInterval(() => setRemaining(computeRemaining(target)), 1000);
+    return () => clearInterval(id);
+  }, [target]);
+  return remaining;
+}
+
+function CountdownSegment({ value, label, pad }: { value: number; label: string; pad?: boolean }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        textAlign: "center",
+        background: "rgba(255,255,255,.08)",
+        borderRadius: 14,
+        padding: "12px 4px",
+      }}
+    >
+      <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-.03em", fontVariantNumeric: "tabular-nums" }}>
+        {pad ? String(value).padStart(2, "0") : value}
+      </div>
+      <div style={{ fontSize: 10, fontWeight: 800, opacity: 0.7, textTransform: "uppercase", letterSpacing: ".12em", marginTop: 6 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function CountdownCard({ examDate }: { examDate: string | null }) {
+  const remaining = useCountdown(examDate);
+  const dateLabel = examDate
+    ? new Date(examTargetTime(examDate) ?? Date.now()).toLocaleDateString("en-US", {
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      })
+    : "Set your exam date in your profile";
+
   return (
     <div
       className="dz-countdown"
@@ -385,12 +452,25 @@ function CountdownCard({ daysToGo, examDate }: { daysToGo: number | null; examDa
       <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, fontWeight: 800, letterSpacing: ".14em", opacity: 0.85, position: "relative" }}>
         <CalendarDays size={16} /> SAT COUNTDOWN
       </div>
+
       <div style={{ marginTop: "auto", position: "relative" }}>
-        <div style={{ fontSize: 74, fontWeight: 800, lineHeight: 0.95, letterSpacing: "-.04em" }}>
-          {daysToGo == null ? "—" : Math.max(0, daysToGo)}
-        </div>
-        <div style={{ fontSize: 18, fontWeight: 600, opacity: 0.9, marginTop: 2 }}>days to go</div>
-        <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.65, marginTop: 14 }}>{label}</div>
+        {remaining == null ? (
+          <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2, opacity: 0.92 }}>
+            Pick your exam date to start the countdown.
+          </div>
+        ) : remaining.done ? (
+          <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1, letterSpacing: "-.02em" }}>
+            It's exam day — you've got this! 🎉
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8 }}>
+            <CountdownSegment value={remaining.days} label="days" />
+            <CountdownSegment value={remaining.hours} label="hrs" pad />
+            <CountdownSegment value={remaining.minutes} label="min" pad />
+            <CountdownSegment value={remaining.seconds} label="sec" pad />
+          </div>
+        )}
+        <div style={{ fontSize: 14, fontWeight: 600, opacity: 0.65, marginTop: 16 }}>{dateLabel}</div>
       </div>
     </div>
   );

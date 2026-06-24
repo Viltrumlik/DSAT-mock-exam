@@ -13,6 +13,7 @@ import {
   ScrollText,
   BookOpen,
   KeyRound,
+  CalendarClock,
 } from "lucide-react";
 
 /**
@@ -51,6 +52,12 @@ const OPS_NAV = [
     href: "/ops/users",
     label: "Users",
     icon: Users,
+    exact: false,
+  },
+  {
+    href: "/ops/exam-dates",
+    label: "Exam dates",
+    icon: CalendarClock,
     exact: false,
   },
   {
