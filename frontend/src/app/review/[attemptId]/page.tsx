@@ -233,6 +233,10 @@ export default function ReviewPage() {
     );
 
     const searchParams = useSearchParams();
+    // Where the back button returns to. Callers (e.g. /pastpapers) pass ?back=…;
+    // restricted to internal paths to avoid open redirects. Defaults to the dashboard.
+    const backParam = searchParams.get('back');
+    const backTarget = backParam && backParam.startsWith('/') && !backParam.startsWith('//') ? backParam : '/';
     const moduleId = searchParams.get('module_id');
     // ?q=N deep-link: open the Nth question (1-indexed) on load
     const qParam = searchParams.get('q');
@@ -296,7 +300,7 @@ export default function ReviewPage() {
             <div className="min-h-screen bg-background relative pb-20">
                 <header className="bg-card border-b border-border px-8 py-4 flex justify-between items-center sticky top-0 z-40 shadow-sm">
                     <div className="flex items-center">
-                        <button onClick={() => router.push('/')} className="mr-6 p-2 rounded-xl hover:bg-surface-2 transition-all border border-border shadow-sm">
+                        <button onClick={() => router.push(backTarget)} className="mr-6 p-2 rounded-xl hover:bg-surface-2 transition-all border border-border shadow-sm">
                             <ArrowLeft className="w-4 h-4 text-muted-foreground" />
                         </button>
                         <div className="flex items-center gap-3 border-l border-border pl-6 ml-1">

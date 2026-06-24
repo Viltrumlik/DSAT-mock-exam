@@ -153,7 +153,7 @@ export default function PastpapersPage() {
   const handleOpen = async (section: PastpaperSection, d: Derived) => {
     // Completed: review the finished attempt. Otherwise start/resume an attempt.
     if (d.status === "completed" && d.completedAttemptId) {
-      router.push(`/review/${d.completedAttemptId}`);
+      router.push(`/review/${d.completedAttemptId}?back=/pastpapers`);
       return;
     }
     if (!assertCriticalAuth()) return;
