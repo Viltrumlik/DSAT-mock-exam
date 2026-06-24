@@ -41,7 +41,11 @@ def latexify(text: str | None) -> str:
     last = 0
     for m in _PROTECT.finditer(text):
         out.append(_wrap_segment(text[last:m.start()]))
-        out.append(m.group(0))
+        span = m.group(0)
+        # A lone escaped dollar (`\$`, literal currency) renders broken because the
+        # frontend math splitter pairs the raw `$`. Wrap it as `\(\$\)` so KaTeX
+        # emits a literal `$` and no stray `$` can form a false delimiter pair.
+        out.append('\\(\\$\\)' if span == '\\$' else span)
         last = m.end()
     out.append(_wrap_segment(text[last:]))
     return ''.join(out)
