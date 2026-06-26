@@ -1149,6 +1149,7 @@ mark.ts-annot {
 /* Entry */
 .cr-rise { animation: dz-riseIn .5s cubic-bezier(.22,1,.36,1) both; }
 .cr-pop  { animation: dz-popIn .45s cubic-bezier(.22,1,.36,1) both; }
+.cr-rowin { animation: dz-cardIn .45s cubic-bezier(.22,1,.36,1) both; }
 
 /* Cards: stagger-in (delay set inline per index) + hover lift */
 .cr-card { animation: dz-cardIn .5s cubic-bezier(.22,1,.36,1) both;
@@ -1187,6 +1188,6 @@ mark.ts-annot {
   animation: dz-rippleExpand .6s ease-out forwards; }
 
 @media (prefers-reduced-motion: reduce) {
-  .cr-section, .cr-rise, .cr-pop, .cr-card, .cr-pulse, .cr-float, .cr-tabpop, .cr-ripple-dot { animation: none !important; }
+  .cr-section, .cr-rise, .cr-pop, .cr-rowin, .cr-card, .cr-pulse, .cr-float, .cr-tabpop, .cr-ripple-dot { animation: none !important; }
   .cr-card, .cr-lift, .cr-press, .cr-pill, .cr-iconpop { transition: none !important; }
 }
