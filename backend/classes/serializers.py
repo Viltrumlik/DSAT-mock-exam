@@ -1,4 +1,5 @@
 import json
+import os
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
@@ -761,11 +762,16 @@ class ClassroomMaterialSerializer(serializers.ModelSerializer):
     """Read serializer for downloadable classroom materials."""
 
     file_url = serializers.SerializerMethodField()
+    file_name = serializers.SerializerMethodField()
+    file_size = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ClassroomMaterial
-        fields = ["id", "title", "description", "file_url", "teacher_name", "created_at"]
+        fields = [
+            "id", "title", "description", "file_url", "file_name", "file_size",
+            "teacher_name", "created_at",
+        ]
         read_only_fields = fields
 
     def get_file_url(self, obj) -> str | None:
@@ -773,6 +779,20 @@ class ClassroomMaterialSerializer(serializers.ModelSerializer):
             return None
         request = self.context.get("request")
         return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+
+    def get_file_name(self, obj) -> str | None:
+        if not obj.file:
+            return None
+        return os.path.basename(obj.file.name)
+
+    def get_file_size(self, obj) -> int | None:
+        """Size in bytes (drives the '2.4 MB' meta line). None if unreadable."""
+        if not obj.file:
+            return None
+        try:
+            return obj.file.size
+        except (OSError, ValueError):
+            return None
 
     def get_teacher_name(self, obj) -> str | None:
         u = obj.teacher

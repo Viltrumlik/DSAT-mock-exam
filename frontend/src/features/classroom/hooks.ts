@@ -138,6 +138,8 @@ export interface ClassroomMaterial {
   title: string;
   description: string;
   file_url: string | null;
+  file_name: string | null;
+  file_size: number | null;
   teacher_name: string | null;
   created_at: string;
 }

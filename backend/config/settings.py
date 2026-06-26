@@ -495,7 +495,7 @@ if not DEBUG:
 # ─── Classroom homework (submissions) ─────────────────────────────────────────
 # Max size per file; comma-separated lower-case extensions including the dot (e.g. ".pdf,.png").
 CLASSROOM_SUBMISSION_MAX_FILE_BYTES = int(
-    os.getenv("CLASSROOM_SUBMISSION_MAX_FILE_BYTES", str(15 * 1024 * 1024))
+    os.getenv("CLASSROOM_SUBMISSION_MAX_FILE_BYTES", str(50 * 1024 * 1024))
 )
 CLASSROOM_SUBMISSION_ALLOWED_FILE_EXTENSIONS = frozenset(
     x.strip().lower()

@@ -66,11 +66,12 @@ class ClassroomMaterialsView(_ClassroomScopedView):
             file=upload,
         )
         try:
-            # Triggers the FileExtensionValidator (pdf/doc/docx) on the model field.
+            # Triggers the FileExtensionValidator on the model field.
             material.full_clean(exclude=["teacher"])
         except DjangoValidationError as exc:
+            allowed = ", ".join(ClassroomMaterial.MATERIAL_EXTENSIONS).upper()
             return Response(
-                {"detail": "Only PDF or Word documents are allowed.", "errors": exc.message_dict},
+                {"detail": f"Unsupported file type. Allowed: {allowed}.", "errors": exc.message_dict},
                 status=http.HTTP_400_BAD_REQUEST,
             )
         material.save()

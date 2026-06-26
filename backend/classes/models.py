@@ -166,7 +166,15 @@ class ClassroomMaterial(models.Model):
     Soft-archived via ``is_active`` (mirrors ``Classroom.is_active``).
     """
 
-    MATERIAL_EXTENSIONS = ["pdf", "doc", "docx"]
+    # Documents, slides, sheets, and audio — drives the Materials tab's
+    # Document / Slides / Audio category filters on the frontend.
+    MATERIAL_EXTENSIONS = [
+        "pdf", "doc", "docx", "rtf", "txt",
+        "ppt", "pptx", "key", "odp",
+        "xls", "xlsx", "csv",
+        "mp3", "m4a", "wav", "aac", "ogg",
+        "png", "jpg", "jpeg",
+    ]
 
     classroom = models.ForeignKey(
         Classroom, on_delete=models.CASCADE, related_name="materials"
