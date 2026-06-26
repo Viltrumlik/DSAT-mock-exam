@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Trophy, GraduationCap, RefreshCcw, Crown, EyeOff, type LucideIcon } from "lucide-react";
+import { Trophy, GraduationCap, Crown, EyeOff, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { Button, Select, Field, EmptyState, LoadingState, ErrorState } from "../ui";
+import { EmptyState, LoadingState, ErrorState } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
-import { useRankings, useRecomputeRankings, useUpdateRankingConfig } from "../rankingsHooks";
-import type { LeaderboardMode, RankingKind, RankingRow } from "../rankingsApi";
+import { useRankings } from "../rankingsHooks";
+import type { RankingKind, RankingRow } from "../rankingsApi";
 
 const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: string }> = {
   SAT: { title: "SAT", icon: Trophy, desc: "Ranked by SAT performance — practice tests, past papers, and mock exams." },
@@ -41,8 +41,6 @@ function RankingBoard({ classroom, kind, setKind }: { classroom: ClassroomWithRo
   const classId = Number(classroom.id);
   const caps = capabilitiesFor(classroom.my_role);
   const { data, isLoading, isError, refetch } = useRankings(classId, kind);
-  const recompute = useRecomputeRankings(classId);
-  const updateConfig = useUpdateRankingConfig(classId, kind);
 
   const hideScores = data?.config.hide_score_values;
   const scoreOf = (row: RankingRow) => (row.is_me ? row.score : hideScores && !caps.isStaff ? null : row.score);
@@ -66,33 +64,6 @@ function RankingBoard({ classroom, kind, setKind }: { classroom: ClassroomWithRo
         </div>
       </div>
       <p className="-mt-3 text-[13px] font-medium text-muted-foreground">{KIND_META[kind].desc}</p>
-
-      {/* Staff controls (students never see these) */}
-      {data && (data.can_recompute || data.can_configure) ? (
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-border p-3">
-          {data.can_configure ? (
-            <>
-              <Field label="Leaderboard visibility" className="w-44">
-                <Select value={data.config.leaderboard_mode} onChange={(e) => updateConfig.mutate({ leaderboard_mode: e.target.value as LeaderboardMode })}>
-                  <option value="FULL">Full — names + scores</option>
-                  <option value="ANONYMOUS">Anonymous — hide names</option>
-                  <option value="HIDDEN">Hidden — own rank only</option>
-                </Select>
-              </Field>
-              <label className="flex items-center gap-2 pb-2.5 text-sm text-foreground">
-                <input type="checkbox" checked={data.config.hide_score_values} onChange={(e) => updateConfig.mutate({ hide_score_values: e.target.checked })}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-2 focus:ring-[var(--ring)]" />
-                Hide score values
-              </label>
-            </>
-          ) : null}
-          {data.can_recompute ? (
-            <Button size="sm" variant="secondary" icon={RefreshCcw} loading={recompute.isPending} onClick={() => recompute.mutate([kind])} className="ml-auto">
-              Recompute
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
 
       {isLoading ? (
         <LoadingState label="Loading rankings…" />
