@@ -333,7 +333,7 @@ export function ExamRunnerPage() {
   });
 
   const mathQuestions = isMath(attempt);
-  // Midterms never offer a calculator (same signal used by pauseAllowed). Reference sheet stays.
+  // Midterms never offer a calculator or reference sheet (see exams/midterm_rules.py).
   const isMidtermExam = attempt?.practice_test_details?.mock_kind === "MIDTERM";
   useMathRendering(!loading && Boolean(attempt?.current_module_details), `${moduleId}:${currentIndex}`);
 
@@ -592,7 +592,7 @@ export function ExamRunnerPage() {
         timerWarning={warning}
         showDirections={showDirections}
         onToggleDirections={() => setShowDirections((v) => !v)}
-        mathTools={mathQuestions}
+        mathTools={mathQuestions && !isMidtermExam}
         showCalculator={mathQuestions && !isMidtermExam}
         tools={tools}
         pauseAllowed={pauseAllowed(attempt, mockFlow)}

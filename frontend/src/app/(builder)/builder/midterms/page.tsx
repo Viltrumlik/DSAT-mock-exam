@@ -65,6 +65,7 @@ type AdminMidterm = {
   midterm_module1_minutes: number;
   midterm_module2_minutes: number;
   midterm_target_question_count: number;
+  midterm_module_question_limit: number;
   tests: AdminTestSection[];
   publish_ready: boolean;
   publish_block_reason: string;
@@ -79,6 +80,7 @@ type MidtermForm = {
   midterm_module1_minutes: string;
   midterm_module2_minutes: string;
   midterm_target_question_count: string;
+  midterm_module_question_limit: string;
 };
 
 const DEFAULT_FORM: MidtermForm = {
@@ -90,6 +92,7 @@ const DEFAULT_FORM: MidtermForm = {
   midterm_module1_minutes: "60",
   midterm_module2_minutes: "60",
   midterm_target_question_count: "44",
+  midterm_module_question_limit: "30",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -248,7 +251,7 @@ function MidtermModal({
               <input
                 type="number"
                 min={5}
-                max={240}
+                max={600}
                 value={form.midterm_module1_minutes}
                 onChange={set("midterm_module1_minutes")}
                 className={SI}
@@ -260,7 +263,7 @@ function MidtermModal({
                 <input
                   type="number"
                   min={5}
-                  max={240}
+                  max={600}
                   value={form.midterm_module2_minutes}
                   onChange={set("midterm_module2_minutes")}
                   className={SI}
@@ -282,6 +285,22 @@ function MidtermModal({
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
               Total questions across all modules. Used for grading and score calculation.
+            </p>
+          </div>
+
+          {/* Per-module question limit (hard cap enforced in the question console) */}
+          <div>
+            <label className={FL}>Questions per module (limit)</label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={form.midterm_module_question_limit}
+              onChange={set("midterm_module_question_limit")}
+              className={SI}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Maximum questions you can add to each module. Default 30.
             </p>
           </div>
 
@@ -562,6 +581,7 @@ export default function BuilderMidtermsPage() {
         midterm_module1_minutes: Number(form.midterm_module1_minutes),
         midterm_module2_minutes: Number(form.midterm_module2_minutes),
         midterm_target_question_count: Number(form.midterm_target_question_count),
+        midterm_module_question_limit: Number(form.midterm_module_question_limit),
       };
       if (editingMidterm) {
         await examsAdminApi.updateMockExam(editingMidterm.id, payload);
@@ -620,6 +640,7 @@ export default function BuilderMidtermsPage() {
         midterm_module1_minutes: String(editingMidterm.midterm_module1_minutes ?? 60),
         midterm_module2_minutes: String(editingMidterm.midterm_module2_minutes ?? 60),
         midterm_target_question_count: String(editingMidterm.midterm_target_question_count ?? 44),
+        midterm_module_question_limit: String(editingMidterm.midterm_module_question_limit ?? 30),
       }
     : DEFAULT_FORM;
 

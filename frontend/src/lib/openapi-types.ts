@@ -2157,6 +2157,8 @@ export interface components {
              * @description 0 = no fixed target. Otherwise planner cap for total questions across modules.
              */
             midterm_target_question_count?: number;
+            /** @description Only used when kind=MIDTERM. Max questions allowed per module. */
+            midterm_module_question_limit?: number;
             readonly tests: components["schemas"]["AdminPracticeTest"][];
             readonly publish_ready: string;
             readonly publish_block_reason: string;
@@ -2716,6 +2718,8 @@ export interface components {
              * @description 0 = no fixed target. Otherwise planner cap for total questions across modules.
              */
             midterm_target_question_count?: number;
+            /** @description Only used when kind=MIDTERM. Max questions allowed per module. */
+            midterm_module_question_limit?: number;
             readonly tests?: components["schemas"]["AdminPracticeTest"][];
             readonly publish_ready?: string;
             readonly publish_block_reason?: string;

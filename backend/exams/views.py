@@ -19,7 +19,7 @@ from django.http import HttpResponse
 from datetime import timedelta
 import hashlib
 import json
-from django.db.models import Prefetch, Q
+from django.db.models import Prefetch
 
 from access import constants as acc_const
 from access.permissions import CanManageQuestions, RequiresSubmitTest
@@ -350,11 +350,11 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         if not user.is_authenticated:
             # Unauthenticated: show nothing (assignment/publish required)
             return base.none()
-        if normalized_role(user) == acc_const.ROLE_STUDENT:
-            # Section-level visibility: a published section OR one explicitly assigned to the
-            # student. An explicit assignment alone grants access even when unpublished (mirrors
-            # the old pack rule where assignment governed visibility).
-            return base.filter(Q(is_published=True) | Q(assigned_users=user)).distinct()
+        # Students (and other non-browsing authenticated roles) see a pastpaper ONLY
+        # when it has been explicitly assigned to them. Publishing alone must not
+        # expose a section to every student — every assignment path (library
+        # bulk-assign, classroom assign, homework) writes to ``assigned_users``, so
+        # this is the single gate.
         return base.filter(assigned_users=user).distinct()
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
@@ -1672,7 +1672,24 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         is_midterm = bool(exam and exam.kind == _MockExam.KIND_MIDTERM)
         subject = getattr(pt, "subject", None)
 
-        if not is_midterm and subject in SAT_MODULE_QUESTION_COUNT:
+        if is_midterm:
+            # Midterms use their own builder-configurable per-module cap (default
+            # 30), NOT the official SAT counts. See exams/midterm_rules.py.
+            from .midterm_rules import midterm_module_question_limit
+
+            limit = midterm_module_question_limit(exam)
+            current = Question.objects.filter(module_id=module.pk).count()
+            if current >= limit:
+                raise DRFValidationError(
+                    {
+                        "non_field_errors": [
+                            f"Module {module.module_order} already has "
+                            f"{current} question{'s' if current != 1 else ''} — the maximum for this module is {limit}. "
+                            f"Remove a question before adding another."
+                        ]
+                    }
+                )
+        elif subject in SAT_MODULE_QUESTION_COUNT:
             limit = SAT_MODULE_QUESTION_COUNT[subject]
             current = Question.objects.filter(module_id=module.pk).count()
             if current >= limit:

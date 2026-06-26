@@ -861,6 +861,7 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
             "midterm_module1_minutes",
             "midterm_module2_minutes",
             "midterm_target_question_count",
+            "midterm_module_question_limit",
             "tests",
             "publish_ready",
             "publish_block_reason",

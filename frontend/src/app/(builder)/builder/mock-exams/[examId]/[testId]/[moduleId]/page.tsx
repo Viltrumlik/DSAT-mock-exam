@@ -21,6 +21,7 @@ type AdminMockExam = {
   title: string;
   kind: string;
   midterm_scoring_scale?: "SCALE_100" | "SCALE_800";
+  midterm_module_question_limit?: number | null;
   tests: AdminTestSection[];
 };
 
@@ -73,6 +74,7 @@ function MockExamModuleEditor({
         backLabel="Mock exams"
         examKind={exam?.kind ?? undefined}
         scoringScale={exam?.midterm_scoring_scale ?? undefined}
+        midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
       />
     </div>
   );

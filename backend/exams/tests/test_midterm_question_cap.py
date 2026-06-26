@@ -73,3 +73,52 @@ class MidtermQuestionCapTests(TestCase):
             format="json", **_QHOST,
         )
         self.assertEqual(r.status_code, 400, r.content)
+
+
+@override_settings(ALLOWED_HOSTS=list(_ALLOWED_HOSTS))
+class MidtermModuleQuestionLimitTests(TestCase):
+    """Midterms enforce a builder-configurable per-module question limit (default
+    30) instead of the official SAT 22/27 counts. See exams/midterm_rules.py."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            email="mt-limit-admin@example.com", password="pw",
+            role="super_admin", is_staff=True, is_superuser=True,
+        )
+        self.client.force_authenticate(self.admin)
+        # Small limit (2) keeps the test fast while exercising the same gate as 30.
+        self.exam = MockExam.objects.create(
+            title="Midterm limit test", kind=MockExam.KIND_MIDTERM,
+            midterm_subject="MATH", midterm_scoring_scale=MockExam.SCALE_100,
+            midterm_module_count=1, midterm_module_question_limit=2,
+        )
+        self.pt = PracticeTest.objects.create(
+            subject="MATH", form_type="INTERNATIONAL", mock_exam=self.exam,
+            title="Midterm section", skip_default_modules=True,
+        )
+        self.mod = Module.objects.create(
+            practice_test=self.pt, module_order=1, time_limit_minutes=35,
+        )
+
+    def _url(self):
+        return f"/api/exams/admin/tests/{self.pt.id}/modules/{self.mod.id}/questions/"
+
+    def test_add_blocked_at_configured_limit(self):
+        # First two stub creates succeed; the third exceeds the limit of 2.
+        for _ in range(2):
+            r = self.client.post(self._url(), {}, format="json", **_QHOST)
+            self.assertEqual(r.status_code, 201, r.content)
+        r = self.client.post(self._url(), {}, format="json", **_QHOST)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn(b"maximum for this module is 2", r.content)
+        self.assertEqual(Question.objects.filter(module=self.mod).count(), 2)
+
+    def test_default_limit_is_30(self):
+        # An exam with no explicit limit falls back to 30 (well above SAT Math 22).
+        exam = MockExam.objects.create(
+            title="Default limit", kind=MockExam.KIND_MIDTERM,
+            midterm_subject="MATH", midterm_scoring_scale=MockExam.SCALE_100,
+            midterm_module_count=1,
+        )
+        self.assertEqual(exam.midterm_module_question_limit, 30)

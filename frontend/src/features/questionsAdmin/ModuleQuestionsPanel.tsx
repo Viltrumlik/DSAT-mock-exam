@@ -57,6 +57,7 @@ import {
   type SatQuestionType,
   type SatSubject,
 } from "@/lib/satRules";
+import { getMidtermModuleProgress } from "@/lib/midtermRules";
 
 // ─── Draft type ──────────────────────────────────────────────────────────────
 
@@ -950,8 +951,10 @@ export default function ModuleQuestionsPanel(props: {
   examKind?: string;
   /** MockExam.midterm_scoring_scale — SCALE_800 exposes per-question weights. */
   scoringScale?: "SCALE_100" | "SCALE_800";
+  /** MockExam.midterm_module_question_limit — per-module cap for midterms (default 30). */
+  midtermModuleQuestionLimit?: number | null;
 }) {
-  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale } = props;
+  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit } = props;
 
   const {
     data: questions = [],
@@ -1044,9 +1047,14 @@ export default function ModuleQuestionsPanel(props: {
     [questions],
   );
 
-  // ── SAT progress ───────────────────────────────────────────────────────────
+  // ── Module question progress ────────────────────────────────────────────────
   // Computed before handleAdd so `atCapacity` is in scope for the guard.
-  const progress = getModuleProgress(questions.length, sectionSubject);
+  // Midterms use their own builder-configurable per-module cap (default 30);
+  // full SAT sections use the official 22/27 per-subject counts.
+  const isMidtermPanel = examKind === "MIDTERM";
+  const progress = isMidtermPanel
+    ? getMidtermModuleProgress(questions.length, midtermModuleQuestionLimit)
+    : getModuleProgress(questions.length, sectionSubject);
   const moduleOrderNum = (() => {
     const match = moduleOrder?.match(/\d+/);
     return match ? Number(match[0]) : 1;
@@ -1058,10 +1066,12 @@ export default function ModuleQuestionsPanel(props: {
       .filter((q) => !allowedTypesForSubject.includes(q.question_type as SatQuestionType))
       .map((q) => q.id),
   );
-  const isSat = isSatSubject(sectionSubject ?? "");
-  // True when the module is at or over the SAT question limit — adding is blocked.
+  const isSat = isSatSubject(sectionSubject ?? "") && !isMidtermPanel;
+  // Show the "X / N" question counter for any capped module (SAT or midterm).
+  const hasQuestionLimit = isSat || isMidtermPanel;
+  // True when the module is at or over its question limit — adding is blocked.
   const atCapacity =
-    isSat && progress.required !== null && questions.length >= progress.required;
+    hasQuestionLimit && progress.required !== null && questions.length >= progress.required;
 
   const handleAdd = async () => {
     // Guard: never fire when the module is already at SAT capacity.
@@ -1099,7 +1109,7 @@ export default function ModuleQuestionsPanel(props: {
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {isLoading ? "Loading…" : (
-                    isSat
+                    hasQuestionLimit
                       ? <span className={progress.complete ? "text-emerald-600 font-bold" : progress.over ? "text-red-600 font-bold" : ""}>
                           {progress.label} questions
                         </span>

@@ -76,6 +76,7 @@ class MockExamAdmin(admin.ModelAdmin):
                     "midterm_module1_minutes",
                     "midterm_module2_minutes",
                     "midterm_target_question_count",
+                    "midterm_module_question_limit",
                 )
             },
         ),

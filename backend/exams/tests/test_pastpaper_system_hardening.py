@@ -159,3 +159,34 @@ class PastpaperSystemHardeningTests(TestCase):
         start = self.client.post("/api/exams/attempts/", data={"practice_test": section.pk}, format="json", HTTP_HOST="testserver")
         self.assertIn(start.status_code, (200, 201), start.content)
         self.assertTrue(start.json().get("id"))
+
+    def test_published_pastpaper_hidden_until_assigned(self):
+        """Publishing alone must not expose a pastpaper to every student — only an
+        explicit assignment makes it visible in the student list."""
+        from django.urls import reverse
+
+        section = PracticeTest.objects.create(
+            mock_exam=None,
+            collection_name="Visibility",
+            subject="MATH",
+            form_type="INTERNATIONAL",
+            title="Published Unassigned",
+            skip_default_modules=False,
+            is_published=True,
+        )
+        seed_mc_questions_for_practice_test(section)
+
+        list_url = reverse("practice-test-list")
+        self.client.force_authenticate(user=self.student)
+
+        # Published but NOT assigned → must not appear.
+        r = self.client.get(list_url, HTTP_HOST="testserver")
+        self.assertEqual(r.status_code, 200, r.content)
+        ids = {row["id"] for row in r.json()}
+        self.assertNotIn(section.pk, ids)
+
+        # Assign to the student → now appears.
+        section.assigned_users.add(self.student)
+        r = self.client.get(list_url, HTTP_HOST="testserver")
+        ids = {row["id"] for row in r.json()}
+        self.assertIn(section.pk, ids)

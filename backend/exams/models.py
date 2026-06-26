@@ -258,6 +258,13 @@ class MockExam(TimestampedModel):
         default=0,
         help_text="0 = no fixed target. Otherwise planner cap for total questions across modules.",
     )
+    # Hard per-module question cap for midterms (builder-configurable, like module
+    # time). Midterms use this instead of the official SAT per-module counts
+    # (22 Math / 27 R&W). See exams/midterm_rules.py.
+    midterm_module_question_limit = models.PositiveSmallIntegerField(
+        default=30,
+        help_text="Only used when kind=MIDTERM. Max questions allowed per module.",
+    )
     # Who may open this mock in the app (full SAT / midterm flow). Separate from PracticeTest rows below.
     assigned_users = models.ManyToManyField(
         User,

@@ -3575,6 +3575,11 @@ components:
           format: int64
           description: 0 = no fixed target. Otherwise planner cap for total questions
             across modules.
+        midterm_module_question_limit:
+          type: integer
+          maximum: 32767
+          minimum: 0
+          description: Only used when kind=MIDTERM. Max questions allowed per module.
         tests:
           type: array
           items:
@@ -4956,6 +4961,11 @@ components:
           format: int64
           description: 0 = no fixed target. Otherwise planner cap for total questions
             across modules.
+        midterm_module_question_limit:
+          type: integer
+          maximum: 32767
+          minimum: 0
+          description: Only used when kind=MIDTERM. Max questions allowed per module.
         tests:
           type: array
           items:
