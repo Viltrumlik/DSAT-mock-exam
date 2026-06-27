@@ -479,6 +479,36 @@ export function ExamRunnerPage() {
     fsKickRef.current = handleSaveAndExit;
   }, [handleSaveAndExit]);
 
+  // ── Auto-pause on leave (pastpapers only) ────────────────────────────────────
+  // Pastpapers are pausable and their module timer is wall-clock. If the student
+  // leaves WITHOUT clicking "Save & Exit" — switches tab, closes the window, or
+  // navigates away — the clock keeps burning, so on return the module has
+  // "expired" and the runner auto-submits it (Module 1 silently skips to Module 2;
+  // Module 2 submits the whole test). Mirror handleSaveAndExit's pause on the
+  // implicit leave events so the student always resumes exactly where they stopped.
+  // Mocks/midterms never auto-pause (pauseAllowed === false).
+  const autoPauseRef = useRef<() => void>(() => {});
+  autoPauseRef.current = () => {
+    if (!attempt || !attemptId || !pauseAllowed(attempt, mockFlow)) return;
+    const order = attempt.current_module_details?.module_order ?? 0;
+    if (order <= 0 || isCompleted(attempt) || paused || submitting || exiting) return;
+    setPaused(true); // freeze the local countdown immediately
+    examApi.pauseKeepalive(attemptId); // persist; keepalive survives a tab close
+  };
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") autoPauseRef.current();
+    };
+    const onPageHide = () => autoPauseRef.current();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      autoPauseRef.current(); // SPA navigation away: page stays alive — pause now
+    };
+  }, []);
+
   // ── Render gates ────────────────────────────────────────────────────────────
   const questions = liveQuestions;
   const twoPane = !mathQuestions; // RW shows passage + answers; Math is single column

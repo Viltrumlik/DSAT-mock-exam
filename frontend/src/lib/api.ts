@@ -294,6 +294,15 @@ function invalidateMaskedCsrfToken(): void {
     _maskedCsrfToken = null;
 }
 
+/**
+ * Synchronously read the cached masked CSRF token (no network). Fire-and-forget
+ * keepalive requests sent on tab close (e.g. the exam runner's auto-pause) cannot
+ * await the async fetch, so they reuse the token already cached during the session.
+ */
+export function getCachedCsrfToken(): string | null {
+    return _maskedCsrfToken;
+}
+
 api.interceptors.request.use(async (config) => {
     // Auth is cookie-based (HttpOnly access token). Do not attach Authorization header.
     // CSRF hardening: send X-CSRFToken for unsafe methods using the cached MASKED token

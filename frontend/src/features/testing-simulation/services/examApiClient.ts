@@ -6,7 +6,7 @@
  * the JWT access token and refresh interceptors. Only the exam-specific request
  * shapes are owned here.
  */
-import api from "@/lib/api";
+import api, { getCachedCsrfToken } from "@/lib/api";
 import { type Attempt, parseAttempt } from "../types";
 
 interface MutationOptions {
@@ -50,6 +50,27 @@ export const examApi = {
   async resumePause(attemptId: number): Promise<Attempt> {
     const r = await api.post(`/exams/attempts/${attemptId}/resume_pause/`, {});
     return parseAttempt(r.data, "POST resume_pause");
+  },
+
+  /**
+   * Fire-and-forget pause that survives a tab close / navigation away (`keepalive`),
+   * unlike the awaitable `pause` above. Used by the runner's auto-pause-on-leave so a
+   * pastpaper's wall clock doesn't keep burning while the student is gone. Cookie auth
+   * + cached masked CSRF token (no network) so it works without an interceptor.
+   */
+  pauseKeepalive(attemptId: number): void {
+    try {
+      const token = getCachedCsrfToken();
+      void fetch(`/api/exams/attempts/${attemptId}/pause/`, {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
+        body: "{}",
+      });
+    } catch {
+      /* best-effort: progress is also continuously autosaved and paused on return */
+    }
   },
 
   /** Submit the active module → advances state (M1→M2, or M2→SCORING). */
