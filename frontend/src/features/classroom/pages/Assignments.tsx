@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { ClipboardList, Plus, MoreVertical, Eye, Archive, RotateCcw, ExternalLink, Play, ArrowRight } from "lucide-react";
+import { ClipboardList, Plus, MoreVertical, Eye, Archive, RotateCcw, ExternalLink } from "lucide-react";
 import CreateAssignmentModal from "@/components/CreateAssignmentModal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -16,7 +15,6 @@ import { useAssignmentLifecycle } from "../homeworkHooks";
 import { classroomKeys } from "../queryKeys";
 import { capabilitiesFor } from "../capabilities";
 import { spawnRipple } from "../ui/ripple";
-import { KIND_LABEL, type AssignmentKind } from "../homeworkApi";
 import { SubmissionStatusPill } from "./statusPill";
 import type { ClassroomWithRole } from "../types";
 
@@ -30,14 +28,6 @@ interface AsgRow {
   workflow_status?: string | null;
   assessment_homework?: unknown | null;
   submissions_count?: number;
-  // New content metadata (same fields the detail payload carries).
-  content_type?: string;
-  contents?: { kind: AssignmentKind; title: string; item_count: number | null }[];
-  mock_exam?: number | null;
-  practice_test?: number | null;
-  practice_test_pack?: number | null;
-  practice_test_ids?: number[] | null;
-  practice_bundle_tests?: { id: number; title?: string; collection_name?: string; name?: string; subject?: string }[];
 }
 
 function shortDate(iso?: string | null): string {
@@ -63,55 +53,6 @@ function statusInfo(a: AsgRow, staff: boolean): { text: string; overdue: boolean
 function hrefFor(classId: number, a: AsgRow): string {
   // Open the in-class detail page (it deep-links into every bundled activity).
   return `/classes/${classId}/assignments/${a.id}`;
-}
-
-/** Derive the single content kind from a list row (mirror of homeworkApi.assignmentKind). */
-function rowKind(a: AsgRow): AssignmentKind {
-  if (a.assessment_homework != null) return "QUIZ";
-  if (a.mock_exam != null) return "MOCK";
-  if (a.practice_test_pack != null) return "PRACTICE";
-  if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) return "PASTPAPER";
-  return "FILE";
-}
-
-/** Type badge label for a row: explicit content_type → bundle → derived kind. */
-function rowBadge(a: AsgRow): string {
-  const contents = a.contents ?? [];
-  if (contents.length > 1) return "Bundle";
-  if (a.content_type) {
-    const ct = a.content_type.toLowerCase();
-    if (ct === "assessment") return KIND_LABEL.QUIZ;
-    if (ct === "mock") return KIND_LABEL.MOCK;
-    if (ct === "pastpaper") return KIND_LABEL.PASTPAPER;
-    if (ct === "practice") return KIND_LABEL.PRACTICE;
-    if (ct === "module") return KIND_LABEL.MODULE;
-    if (ct === "file") return KIND_LABEL.FILE;
-  }
-  return KIND_LABEL[rowKind(a)];
-}
-
-/**
- * Direct "Start" href for a single-content row, using the SAME per-kind routes as
- * homeworkApi.startHref / contentActions. Returns null when no reliable direct link
- * can be computed from the row alone (caller falls back to the detail page).
- */
-function directHref(a: AsgRow): string | null {
-  const kind = rowKind(a);
-  if (kind === "QUIZ") return `/assessments/${a.id}`;
-  if (kind === "MOCK") return a.mock_exam != null ? `/mock/${a.mock_exam}` : null;
-  if (kind === "PRACTICE") return a.practice_test_pack != null ? `/practice-tests/${a.practice_test_pack}` : null;
-  if (kind === "PASTPAPER") {
-    // Scope-resolved sections win: one → its welcome page; several → null so the
-    // card opens the detail (which lists each section's Start). Never /pastpapers.
-    const bundle = a.practice_bundle_tests ?? [];
-    if (bundle.length === 1) return `/practice-test/${bundle[0].id}`;
-    if (bundle.length > 1) return null;
-    if (a.practice_test != null) return `/practice-test/${a.practice_test}`;
-    const ids = a.practice_test_ids ?? [];
-    if (ids.length === 1) return `/practice-test/${ids[0]}`;
-    return null;
-  }
-  return null; // FILE / unknown → no direct start
 }
 
 export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
@@ -160,17 +101,15 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
           description={staff ? "Create the first assignment for this class." : "New assignments will appear here."}
           action={staff && <Button icon={Plus} onClick={() => setCreateOpen(true)}>New assignment</Button>}
         />
-      ) : staff ? (
-        <div className="divide-y divide-border border-y border-border">
-          {rows.map((a, i) => (
-            <StaffRow key={a.id} classId={classId} a={a} index={i} />
-          ))}
-        </div>
       ) : (
-        <div className="space-y-3">
-          {rows.map((a, i) => (
-            <StudentCard key={a.id} classId={classId} a={a} index={i} />
-          ))}
+        <div className="divide-y divide-border border-y border-border">
+          {rows.map((a, i) =>
+            staff ? (
+              <StaffRow key={a.id} classId={classId} a={a} index={i} />
+            ) : (
+              <StudentRow key={a.id} classId={classId} a={a} index={i} />
+            ),
+          )}
         </div>
       )}
 
@@ -234,55 +173,24 @@ function RowShell({ classId, a, index, staff, badge, actions }: { classId: numbe
   );
 }
 
-/** Student homework card — type badge, title, content name(s), due/countdown, status + Start. */
-function StudentCard({ classId, a, index }: { classId: number; a: AsgRow; index: number }) {
-  const router = useRouter();
-  const s = statusInfo(a, false);
-  const contents = a.contents ?? [];
-  const bundle = contents.length > 1;
-  const contentNames = contents.map((c) => c.title).filter(Boolean).join(" · ");
-
-  // Single content → Start straight into the welcome page (direct href, else detail fallback);
-  // bundle → "Open" the detail page, which shows the split launcher.
-  const direct = bundle ? null : directHref(a);
-  const startHrefValue = bundle ? hrefFor(classId, a) : (direct ?? hrefFor(classId, a));
-  const startLabel = bundle ? "Open" : "Start";
-  const StartIcon = bundle ? ArrowRight : Play;
-
+function StudentRow({ classId, a, index }: { classId: number; a: AsgRow; index: number }) {
   return (
-    <div
-      className="cr-rowin cr-card cr-lift group rounded-2xl border border-border bg-card p-4 transition-colors hover:border-primary/40 sm:p-5"
-      style={{ animationDelay: `${Math.min(index, 14) * 40}ms` }}
-    >
-      <div className="flex items-start gap-4">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <ClipboardList className="h-5 w-5" aria-hidden />
-        </span>
-        <Link href={hrefFor(classId, a)} className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill tone="primary">{rowBadge(a)}</Pill>
-            {a.workflow_status && <SubmissionStatusPill status={a.workflow_status} />}
-          </div>
-          <p className="mt-1.5 truncate text-[15px] font-bold text-foreground transition-colors group-hover:text-primary">
-            {a.title}
-          </p>
-          {contentNames && (
-            <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{contentNames}</p>
-          )}
-          <p className={cn("mt-1 text-[13px] font-semibold", s.overdue ? "text-[#c0392b] dark:text-rose-400" : "text-muted-foreground")}>
-            {s.text}
-          </p>
-        </Link>
-        <Button
-          className="cr-press cr-ripple shrink-0"
-          icon={StartIcon}
-          onPointerDown={spawnRipple}
-          onClick={() => router.push(startHrefValue)}
+    <RowShell
+      classId={classId}
+      a={a}
+      index={index}
+      staff={false}
+      badge={a.workflow_status ? <SubmissionStatusPill status={a.workflow_status} /> : null}
+      actions={
+        <Link
+          href={hrefFor(classId, a)}
+          aria-label={`Open ${a.title}`}
+          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
         >
-          {startLabel}
-        </Button>
-      </div>
-    </div>
+          <MoreVertical className="h-[18px] w-[18px]" />
+        </Link>
+      }
+    />
   );
 }
 
