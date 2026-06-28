@@ -201,7 +201,7 @@ export function SubmitConfirmScreen({
   const pct = totalCount ? Math.round((answeredCount / totalCount) * 100) : 0;
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl items-center justify-center py-5">
+    <div className="w-full">
       <div className="cr-celebpop grid w-full overflow-hidden rounded-3xl border border-border bg-card shadow-xl sm:grid-cols-[260px_1fr]">
         {/* Left progress rail */}
         <div className="relative overflow-hidden bg-primary p-8 text-primary-foreground">

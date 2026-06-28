@@ -1078,19 +1078,21 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // ── Stage: complete ─────────────────────────────────────────────────────────
   if (stage === "complete") {
     return (
-      <CompleteScreen
-        title={setTitle}
-        assignmentId={assignmentId ?? null}
-        attemptId={attemptId}
-      />
+      <div className="flex min-h-screen items-center justify-center px-4 py-6">
+        <CompleteScreen
+          title={setTitle}
+          assignmentId={assignmentId ?? null}
+          attemptId={attemptId}
+        />
+      </div>
     );
   }
 
   // ── Stage: submitting ───────────────────────────────────────────────────────
   if (stage === "submitting") {
     return (
-      <div className="mx-auto w-full max-w-lg">
-        <div className="rounded-2xl border border-border bg-card p-12 text-center space-y-4">
+      <div className="flex min-h-screen items-center justify-center px-4 py-6">
+        <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-12 text-center space-y-4">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
           <p className="font-extrabold text-foreground">Submitting your answers…</p>
           <p className="text-sm text-muted-foreground">This only takes a moment.</p>
@@ -1102,19 +1104,21 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // ── Stage: confirm-submit ───────────────────────────────────────────────────
   if (stage === "confirm-submit") {
     return (
-      <div className="space-y-4">
-        <SubmitConfirmScreen
-          title={setTitle}
-          answeredCount={answeredCount}
-          totalCount={totalCount}
-          onConfirm={() => void handleSubmitConfirm()}
-          onBack={() => setStage("exam")}
-        />
-        {submitError && (
-          <div className="mx-auto w-full max-w-lg rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
-            {submitError}
-          </div>
-        )}
+      <div className="flex min-h-screen items-center justify-center px-4 py-6">
+        <div className="w-full max-w-2xl space-y-4">
+          <SubmitConfirmScreen
+            title={setTitle}
+            answeredCount={answeredCount}
+            totalCount={totalCount}
+            onConfirm={() => void handleSubmitConfirm()}
+            onBack={() => setStage("exam")}
+          />
+          {submitError && (
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+              {submitError}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
