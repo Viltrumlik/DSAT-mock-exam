@@ -1152,9 +1152,38 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 })
         
         total_skipped = total_questions - total_answered
-        
+
         pt = attempt.practice_test
         mock = getattr(pt, "mock_exam", None)
+
+        # Score delta vs the student's previous completed attempt of THIS same
+        # section — drives the "+N pts" chip on the redesigned result hero.
+        # Earlier completion wins; falls back to a lower pk when timestamps are
+        # missing. Null when there's no prior attempt or scores aren't numeric.
+        previous_score = None
+        prev_qs = (
+            TestAttempt.objects
+            .filter(
+                student_id=attempt.student_id,
+                practice_test_id=attempt.practice_test_id,
+                current_state=TestAttempt.STATE_COMPLETED,
+                is_completed=True,
+                score__isnull=False,
+            )
+            .exclude(pk=attempt.pk)
+        )
+        if attempt.completed_at:
+            prev = prev_qs.filter(completed_at__lt=attempt.completed_at).order_by("-completed_at", "-pk").first()
+        else:
+            prev = prev_qs.filter(pk__lt=attempt.pk).order_by("-pk").first()
+        if prev is not None:
+            previous_score = prev.score
+        score_delta = (
+            attempt.score - previous_score
+            if previous_score is not None and attempt.score is not None
+            else None
+        )
+
         return Response({
             'questions': questions_data,
             'module_results': attempt.get_module_results(),
@@ -1164,6 +1193,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             'total_incorrect': total_questions - total_correct - total_skipped,
             'total_skipped': total_skipped,
             'total_score': attempt.score,
+            'previous_score': previous_score,
+            'score_delta': score_delta,
             'score_percentage': (total_correct / total_questions * 100) if total_questions > 0 else 0,
             # Section context — used by the review page to render the correct score label.
             'subject': getattr(pt, 'subject', None),

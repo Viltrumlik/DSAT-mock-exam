@@ -302,10 +302,32 @@ class ClassroomViewSet(ModelViewSet):
                 "classroom",
                 "created_by",
                 "assessment_homework__assessment_set",
+                "mock_exam",
+                "practice_test_pack",
             )
             .annotate(_given_at=Coalesce("published_at", "created_at"))
             .order_by("classroom_id", "-_given_at", "-id")
         )
+
+        # Batch all practice-test metadata (title / subject / question count) for the
+        # redesigned homework cards + meta tiles in ONE query — avoids an N+1 per row.
+        ids_by_assignment: dict[int, list[int]] = {}
+        all_pt_ids: set[int] = set()
+        for a in assignments:
+            ids = assignment_target_practice_test_ids(a) or []
+            ids_by_assignment[a.id] = ids
+            all_pt_ids.update(ids)
+        pt_meta: dict[int, dict] = {}
+        if all_pt_ids:
+            for pt in PracticeTest.objects.filter(id__in=all_pt_ids).prefetch_related("modules__questions"):
+                pt_meta[pt.id] = {
+                    "title": (pt.title or "").strip(),
+                    "subject": getattr(pt, "subject", None),
+                    "qcount": sum(m.questions.count() for m in pt.modules.all()),
+                }
+
+        def _practice_qcount(assign_id: int) -> int:
+            return sum(pt_meta.get(i, {}).get("qcount", 0) for i in ids_by_assignment.get(assign_id, []))
 
         # Build submission map for this student (one query).
         subs_map = {
@@ -391,14 +413,72 @@ class ClassroomViewSet(ModelViewSet):
                 }
 
             classroom = classroom_map.get(a.classroom_id)
+            pt_ids = ids_by_assignment.get(a.id, [])
+
+            # Explicit content type (mirrors AssignmentSerializer.get_content_type precedence).
+            if hw is not None:
+                content_type = "assessment"
+            elif a.mock_exam_id:
+                content_type = "mock"
+            elif a.practice_test_pack_id:
+                content_type = "practice"
+            elif a.practice_test_id or a.practice_test_ids:
+                content_type = "pastpaper"
+            elif a.module_id:
+                content_type = "module"
+            else:
+                content_type = "file"
+
+            # Openable contents (name + item count) for the launcher cards — same order
+            # the detail launcher renders them: assessment, mock, practice pack, past paper.
+            contents = []
+            if hw is not None:
+                contents.append({"kind": "QUIZ", "title": (hw_set.title if hw_set else "Assessment"), "item_count": None})
+            if a.mock_exam_id:
+                mock = a.mock_exam
+                contents.append({"kind": "MOCK", "title": (getattr(mock, "title", None) or getattr(mock, "name", None) or "Mock Exam"), "item_count": _practice_qcount(a.id)})
+            if a.practice_test_pack_id:
+                pack = a.practice_test_pack
+                contents.append({"kind": "PRACTICE", "title": (getattr(pack, "title", None) or getattr(pack, "name", None) or "Practice Test"), "item_count": _practice_qcount(a.id)})
+            elif a.practice_test_id or a.practice_test_ids:
+                secs = [pt_meta[i]["title"] for i in pt_ids if i in pt_meta and pt_meta[i]["title"]]
+                if len(secs) == 1:
+                    pp_title = secs[0]
+                elif len(pt_ids) > 1:
+                    pp_title = f"Past Paper · {len(pt_ids)} sections"
+                else:
+                    pp_title = (secs[0] if secs else "Past Paper")
+                contents.append({"kind": "PASTPAPER", "title": pp_title, "item_count": _practice_qcount(a.id)})
+
+            # Dominant section subject for the SECTION tile.
+            if hw_set is not None:
+                content_subject = hw_set.subject
+            elif pt_ids and pt_ids[0] in pt_meta:
+                content_subject = pt_meta[pt_ids[0]]["subject"]
+            else:
+                content_subject = classroom.subject if classroom else None
+
+            # TASKS count.
+            if content_type == "assessment":
+                item_count = None  # assessment question count not loaded in the list query
+            elif content_type in ("pastpaper", "practice", "mock"):
+                item_count = _practice_qcount(a.id)
+            else:
+                item_count = None
+
             items.append({
                 "id": a.id,
                 "title": a.title,
                 "due_at": a.due_at.isoformat() if a.due_at else None,
                 "created_at": a.created_at.isoformat(),
+                "assigned_at": (a.published_at or a.created_at).isoformat() if (a.published_at or a.created_at) else None,
                 "classroom_id": a.classroom_id,
                 "classroom_name": classroom.name if classroom else f"Class #{a.classroom_id}",
                 "classroom_subject": classroom.subject if classroom else None,
+                "content_type": content_type,
+                "contents": contents,
+                "item_count": item_count,
+                "subject": content_subject,
                 "workflow_status": wf,
                 "assessment_homework": assessment_homework_payload,
                 # attempt_id is present only when workflow_status == "in_progress".

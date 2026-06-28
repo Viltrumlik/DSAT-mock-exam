@@ -253,6 +253,15 @@ class AssignmentSerializer(serializers.ModelSerializer):
     practice_bundle_tests = serializers.SerializerMethodField(read_only=True)
     locks_file_upload = serializers.SerializerMethodField(read_only=True)
     assessment_homework = serializers.SerializerMethodField(read_only=True)
+    # Redesigned-homework metadata: an explicit content-type label, the openable
+    # contents (each with its display name + item count for the launcher cards),
+    # the dominant section subject, a task/item count for the "TASKS" tile, and the
+    # "given" timestamp the student-facing ordering + "ASSIGNED" tile use.
+    content_type = serializers.SerializerMethodField(read_only=True)
+    contents = serializers.SerializerMethodField(read_only=True)
+    item_count = serializers.SerializerMethodField(read_only=True)
+    subject = serializers.SerializerMethodField(read_only=True)
+    assigned_at = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Assignment
@@ -269,6 +278,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "practice_bundle_tests",
             "locks_file_upload",
             "assessment_homework",
+            "content_type",
+            "contents",
+            "item_count",
+            "subject",
+            "assigned_at",
             "module",
             "external_url",
             "attachment_file",
@@ -293,6 +307,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "attachment_urls",
             "published_at",
             "archived_at",
+            "content_type",
+            "contents",
+            "item_count",
+            "subject",
+            "assigned_at",
         ]
 
     @extend_schema_field(serializers.BooleanField(read_only=True))
@@ -376,6 +395,135 @@ class AssignmentSerializer(serializers.ModelSerializer):
             {"id": p.id, "title": (p.title or "").strip(), "subject": p.subject}
             for p in pts
         ]
+
+    # ---- Redesigned-homework helpers -------------------------------------
+
+    @staticmethod
+    def _practice_item_count(ids) -> int:
+        """Total questions across the modules of the given practice-test ids."""
+        if not ids:
+            return 0
+        pts = PracticeTest.objects.filter(id__in=ids).prefetch_related("modules__questions")
+        return sum(m.questions.count() for pt in pts for m in pt.modules.all())
+
+    @staticmethod
+    def _assessment_question_count(aset) -> int:
+        if aset is None:
+            return 0
+        qs = getattr(aset, "questions", None)
+        if qs is None:
+            return 0
+        try:
+            return qs.filter(is_active=True).count()
+        except Exception:
+            return qs.count()
+
+    @extend_schema_field(serializers.CharField(read_only=True))
+    def get_content_type(self, obj):
+        """Explicit type label mirroring the frontend AssignmentKind precedence."""
+        try:
+            if getattr(obj, "assessment_homework", None) is not None:
+                return "assessment"
+        except Exception:
+            pass
+        if obj.mock_exam_id:
+            return "mock"
+        if obj.practice_test_pack_id:
+            return "practice"
+        if obj.practice_test_id or obj.practice_test_ids:
+            return "pastpaper"
+        if obj.module_id:
+            return "module"
+        return "file"
+
+    @extend_schema_field(serializers.ListField(child=serializers.DictField(), read_only=True))
+    def get_contents(self, obj):
+        """Openable contents in the same order the launcher renders them (assessment,
+        mock, practice pack, past paper). Each carries a display name + item count so the
+        redesigned homework cards can show the content's real name with its Start button.
+        Files/links stay in the Details card and are intentionally excluded."""
+        out = []
+        try:
+            hw = getattr(obj, "assessment_homework", None)
+        except Exception:
+            hw = None
+        if hw is not None:
+            aset = getattr(hw, "assessment_set", None)
+            out.append({
+                "kind": "QUIZ",
+                "title": (getattr(aset, "title", None) or "Assessment"),
+                "item_count": self._assessment_question_count(aset),
+            })
+        if obj.mock_exam_id:
+            mock = obj.mock_exam
+            out.append({
+                "kind": "MOCK",
+                "title": (getattr(mock, "title", None) or getattr(mock, "name", None) or "Mock Exam"),
+                "item_count": self._practice_item_count(assignment_target_practice_test_ids(obj)),
+            })
+        if obj.practice_test_pack_id:
+            pack = obj.practice_test_pack
+            out.append({
+                "kind": "PRACTICE",
+                "title": (getattr(pack, "title", None) or getattr(pack, "name", None) or "Practice Test"),
+                "item_count": self._practice_item_count(assignment_target_practice_test_ids(obj)),
+            })
+        elif obj.practice_test_id or obj.practice_test_ids:
+            ids = assignment_target_practice_test_ids(obj)
+            sections = list(PracticeTest.objects.filter(id__in=ids)) if ids else []
+            if len(sections) == 1:
+                title = (sections[0].title or "").strip() or "Past Paper"
+            elif len(sections) > 1:
+                title = f"Past Paper · {len(sections)} sections"
+            else:
+                title = "Past Paper"
+            out.append({
+                "kind": "PASTPAPER",
+                "title": title,
+                "item_count": self._practice_item_count(ids),
+            })
+        return out
+
+    @extend_schema_field(serializers.IntegerField(read_only=True))
+    def get_item_count(self, obj):
+        """Task/item count for the homework 'TASKS' tile — questions for the dominant
+        content, or attachment count for a file deliverable."""
+        ct = self.get_content_type(obj)
+        if ct == "assessment":
+            hw = getattr(obj, "assessment_homework", None)
+            return self._assessment_question_count(getattr(hw, "assessment_set", None))
+        if ct in ("pastpaper", "practice", "mock"):
+            return self._practice_item_count(assignment_target_practice_test_ids(obj))
+        if ct == "file":
+            n = 1 if obj.attachment_file else 0
+            try:
+                n += obj.extra_attachments.count()
+            except Exception:
+                pass
+            return n or 1
+        return 0
+
+    @extend_schema_field(serializers.CharField(allow_null=True, read_only=True))
+    def get_subject(self, obj):
+        """Dominant section subject for the 'SECTION' tile (assessment set / past paper
+        section subject), falling back to the classroom subject."""
+        try:
+            hw = getattr(obj, "assessment_homework", None)
+            if hw is not None and getattr(hw, "assessment_set", None) is not None:
+                return hw.assessment_set.subject
+        except Exception:
+            pass
+        ids = assignment_target_practice_test_ids(obj)
+        if ids:
+            pt = PracticeTest.objects.filter(id__in=ids).first()
+            if pt is not None:
+                return getattr(pt, "subject", None)
+        classroom = getattr(obj, "classroom", None)
+        return getattr(classroom, "subject", None)
+
+    @extend_schema_field(serializers.DateTimeField(allow_null=True, read_only=True))
+    def get_assigned_at(self, obj):
+        return obj.published_at or obj.created_at
 
     def validate_title(self, value):
         text = (value or "").strip()
