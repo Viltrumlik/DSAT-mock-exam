@@ -1,9 +1,8 @@
 "use client";
 
 import type { AssessmentChoice, AssessmentQuestionType } from "@/features/assessments/types";
-import { MathText } from "@/components/MathText";
-import { processInstructionalText, sanitizeHighlightHtml } from "@/lib/assessmentText";
-import { renderMath } from "@/lib/mathRender";
+import StableHtml from "@/features/assessments/components/StableHtml";
+import { processInstructionalText } from "@/lib/assessmentText";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { MinusCircle, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -18,38 +17,6 @@ function optionImageSrc(images: OptionImageMap | undefined, choiceId: string): s
   return resolveImageUrl(raw);
 }
 
-// Mark-preserving HTML renderer for answer-choice text, mirroring the runner's
-// MathHtml. Used only when the highlighter is wired in (onOptionMouseUp present):
-// it keeps the <mark> spans that MathText strips, carries the per-option id the
-// highlight engine targets, and tags the element via data-assessment-option so
-// the cross-platform selectionchange detector can resolve which choice was hit.
-function OptionHtml({
-  html,
-  className,
-  choiceId,
-  onMouseUp,
-}: {
-  html: string;
-  className?: string;
-  choiceId: string;
-  onMouseUp?: (e: React.MouseEvent<HTMLDivElement>) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (ref.current) renderMath({ root: ref.current });
-  }, [html]);
-  return (
-    <div
-      ref={ref}
-      id={`assessment-option-content-${choiceId}`}
-      data-assessment-option={choiceId}
-      className={className}
-      onMouseUp={onMouseUp}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
-
 export function MultipleChoiceInput({
   choices,
   value,
@@ -57,25 +24,22 @@ export function MultipleChoiceInput({
   eliminated,
   onToggleElim,
   highlighterActive = false,
-  optionHighlights,
   optionImages,
-  onOptionMouseUp,
 }: {
   choices: AssessmentChoice[];
   value: string | null;
   onChange: (next: string | null) => void;
   eliminated?: Set<string>;
   onToggleElim?: (id: string) => void;
-  /** Highlighter wiring (optional): when onOptionMouseUp is provided, choice text
-   *  becomes selectable + highlightable (mirrors the pastpaper simulation). */
+  /** True while the highlighter tool is on — choice text becomes selectable and
+   *  a click that finished a selection must not toggle the answer. The actual
+   *  highlight painting is handled by useAnnotator over the #assessment-choices
+   *  container (offset-based; survives re-renders). */
   highlighterActive?: boolean;
-  optionHighlights?: Record<string, string>;
   /** Optional answer-choice images (diagram options), keyed by choice id. */
   optionImages?: OptionImageMap;
-  onOptionMouseUp?: (choiceId: string, e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   const elim = eliminated ?? new Set<string>();
-  const highlightable = Boolean(onOptionMouseUp);
   return (
     <div className="grid gap-3">
       {choices.map((c) => {
@@ -100,7 +64,7 @@ export function MultipleChoiceInput({
               }}
               disabled={isEliminated}
               className={`flex-1 min-h-[64px] rounded-2xl border-2 px-4 py-3 text-left transition-all ${
-                highlightable && highlighterActive ? "" : "select-none"
+                highlighterActive ? "cursor-text" : "select-none"
               } ${
                 checked
                   ? "border-primary bg-primary/8 shadow-sm"
@@ -121,27 +85,12 @@ export function MultipleChoiceInput({
                   {c.id}
                 </span>
                 <div className="min-w-0 flex-1">
-                  {highlightable ? (
-                    <OptionHtml
-                      choiceId={c.id}
-                      onMouseUp={(e) => highlighterActive && onOptionMouseUp?.(c.id, e)}
-                      className={`text-base text-slate-900 leading-snug ${
-                        highlighterActive ? "cursor-text" : ""
-                      } ${isEliminated ? "line-through decoration-2 decoration-slate-500" : ""}`}
-                      html={
-                        optionHighlights?.[c.id]
-                          ? sanitizeHighlightHtml(optionHighlights[c.id])
-                          : processInstructionalText(c.text)
-                      }
-                    />
-                  ) : (
-                    <MathText
-                      text={c.text}
-                      className={`text-base text-slate-900 leading-snug ${
-                        isEliminated ? "line-through decoration-2 decoration-slate-500" : ""
-                      }`}
-                    />
-                  )}
+                  <StableHtml
+                    html={processInstructionalText(c.text)}
+                    className={`text-base text-slate-900 leading-snug ${
+                      highlighterActive ? "cursor-text" : ""
+                    } ${isEliminated ? "line-through decoration-2 decoration-slate-500" : ""}`}
+                  />
                   {imgSrc && (
                     <img
                       src={imgSrc}
@@ -261,9 +210,7 @@ export function AnswerInput({
   eliminated,
   onToggleElim,
   highlighterActive,
-  optionHighlights,
   optionImages,
-  onOptionMouseUp,
 }: {
   type: AssessmentQuestionType;
   choices?: AssessmentChoice[];
@@ -272,9 +219,7 @@ export function AnswerInput({
   eliminated?: Set<string>;
   onToggleElim?: (id: string) => void;
   highlighterActive?: boolean;
-  optionHighlights?: Record<string, string>;
   optionImages?: OptionImageMap;
-  onOptionMouseUp?: (choiceId: string, e: React.MouseEvent<HTMLDivElement>) => void;
 }) {
   if (type === "multiple_choice") {
     return (
@@ -285,9 +230,7 @@ export function AnswerInput({
         eliminated={eliminated}
         onToggleElim={onToggleElim}
         highlighterActive={highlighterActive}
-        optionHighlights={optionHighlights}
         optionImages={optionImages}
-        onOptionMouseUp={onOptionMouseUp}
       />
     );
   }

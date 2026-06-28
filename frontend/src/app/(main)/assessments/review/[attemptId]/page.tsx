@@ -20,8 +20,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
-import { AssessmentText, HighlightedText } from "@/lib/assessmentText";
-import { readHighlightStore, type HighlightStore } from "@/features/assessments/attemptHighlightStorage";
+import { AssessmentText } from "@/lib/assessmentText";
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, Badge, Button, IconButton, ProgressRing, EmptyState, Spinner } from "@/components/ui";
 
@@ -143,10 +142,9 @@ function ChoiceRow({
 // ─── Question card ────────────────────────────────────────────────────────────
 
 function QuestionCard({
-  q, index, total, questionHighlight, passageHighlight,
+  q, index, total,
 }: {
   q: PedagogicalReviewQuestion; index: number; total: number;
-  questionHighlight?: string | null; passageHighlight?: string | null;
 }) {
   const outcome = getQuestionOutcome(q);
   const choices: Choice[] = Array.isArray(q.choices) ? q.choices : [];
@@ -169,22 +167,14 @@ function QuestionCard({
 
       <CardContent className="space-y-4">
         {q.question_prompt && q.question_prompt.trim().length > 0 ? (
-          passageHighlight ? (
-            <HighlightedText html={passageHighlight} className="max-h-40 overflow-y-auto rounded-xl border-l-4 border-primary/40 bg-surface-2 py-3 pl-4 pr-4 text-sm leading-relaxed text-foreground sm:max-h-none sm:overflow-visible" />
-          ) : (
-            <AssessmentText text={q.question_prompt} block className="max-h-40 overflow-y-auto rounded-xl border-l-4 border-primary/40 bg-surface-2 py-3 pl-4 pr-4 text-sm leading-relaxed text-foreground sm:max-h-none sm:overflow-visible" />
-          )
+          <AssessmentText text={q.question_prompt} block className="max-h-40 overflow-y-auto rounded-xl border-l-4 border-primary/40 bg-surface-2 py-3 pl-4 pr-4 text-sm leading-relaxed text-foreground sm:max-h-none sm:overflow-visible" />
         ) : null}
-
-        {questionHighlight ? (
-          <HighlightedText html={questionHighlight} className="text-sm font-medium leading-relaxed text-foreground" />
-        ) : (
-          <AssessmentText text={q.prompt} block className="text-sm font-medium leading-relaxed text-foreground" />
-        )}
 
         {resolveImageUrl(q.question_image) ? (
           <img src={resolveImageUrl(q.question_image)} alt="Question figure" className="max-h-[360px] max-w-full rounded-xl border border-border object-contain" />
         ) : null}
+
+        <AssessmentText text={q.prompt} block className="text-sm font-medium leading-relaxed text-foreground" />
 
         {isMCQ && choices.length > 0 ? (
           <div className="space-y-2">
@@ -243,11 +233,6 @@ function PedagogicalReviewContent() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const [retryError, setRetryError] = useState<string | null>(null);
-
-  const [highlights, setHighlights] = useState<HighlightStore | null>(null);
-  useEffect(() => {
-    if (!isNaN(attemptId) && attemptId > 0) setHighlights(readHighlightStore(attemptId));
-  }, [attemptId]);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["pedagogical-review", attemptId],
@@ -429,7 +414,7 @@ function PedagogicalReviewContent() {
           {filteredQuestions.length === 0 ? (
             <EmptyState compact title="No questions in this view" action={<Button variant="ghost" size="sm" onClick={() => handleFilterChange("all")}>Show all questions</Button>} />
           ) : current ? (
-            <QuestionCard q={current} index={safeIndex} total={filteredQuestions.length} questionHighlight={highlights?.question[current.id] ?? null} passageHighlight={highlights?.passage[current.id] ?? null} />
+            <QuestionCard q={current} index={safeIndex} total={filteredQuestions.length} />
           ) : null}
         </div>
 

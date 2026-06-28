@@ -46,13 +46,10 @@ import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { useFullscreen } from "@/features/testing-simulation/tools/useFullscreen";
 import { FullscreenWarning } from "@/features/testing-simulation/components/FullscreenWarning";
 import { MathText } from "@/components/MathText";
-import { renderMath } from "@/lib/mathRender";
-import { processInstructionalText, sanitizeHighlightHtml } from "@/lib/assessmentText";
-import {
-  readHighlightStore,
-  saveHighlight,
-  saveOptionHighlight,
-} from "@/features/assessments/attemptHighlightStorage";
+import { processInstructionalText } from "@/lib/assessmentText";
+import StableHtml from "@/features/assessments/components/StableHtml";
+import { useAnnotator } from "@/features/testing-simulation/tools/highlight/useAnnotator";
+import { AnnotationToolbar } from "@/features/testing-simulation/tools/highlight/AnnotationToolbar";
 import {
   answersMapFromAttempt,
   detectAnswerConflicts,
@@ -81,7 +78,6 @@ import {
   Monitor,
   Send,
   Timer,
-  Trash2,
   Wifi,
   WifiOff,
   X,
@@ -224,28 +220,10 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // ── Per-question SAT tooling state ──────────────────────────────────────────
   // Eliminated answer choices (per question id → set of choice ids).
   const [eliminatedByQid, setEliminatedByQid] = useState<Record<number, Set<string>>>({});
-  // Persistent highlighter mode (toggle in header).
+  // Persistent highlighter mode (toggle in header). Highlights themselves are
+  // managed by useAnnotator inside ExamSimulationView (offset-based; persisted in
+  // localStorage by region, survive re-renders / refresh / navigation).
   const [highlighterActive, setHighlighterActive] = useState(false);
-  // Per-question saved highlight HTML for question text (prompt).
-  const [highlightsByQid, setHighlightsByQid] = useState<Record<number, string>>({});
-  // Per-question saved highlight HTML for passage/context (question_prompt).
-  const [passageHighlightsByQid, setPassageHighlightsByQid] = useState<Record<number, string>>({});
-  // Per-question saved highlight HTML for answer choices: qid → { choiceId → html }.
-  const [optionHighlightsByQid, setOptionHighlightsByQid] = useState<Record<number, Record<string, string>>>({});
-
-  // ── Highlight persistence (frontend-only, Phase 1) ──────────────────────────
-  // Restore saved highlights on mount so they survive refresh / navigation /
-  // disconnect / browser reopen. Scoped by attemptId (key) + questionId (inner
-  // map). Writes happen on change (in the onChange handlers below) via
-  // saveHighlight, not via an effect — this avoids an effect-ordering race where
-  // the write could clobber storage with empty state before hydration applied.
-  // Not cleared on submit — the pedagogical review page reads them back read-only.
-  useEffect(() => {
-    const stored = readHighlightStore(attemptId);
-    setHighlightsByQid(stored.question);
-    setPassageHighlightsByQid(stored.passage);
-    setOptionHighlightsByQid(stored.options);
-  }, [attemptId]);
 
   // Count-up timer: tick every second while the exam stage is active
   useEffect(() => {
@@ -970,18 +948,18 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               />
             </div>
           )}
+          {questionFigureUrl(current) && (
+            <img
+              src={questionFigureUrl(current)}
+              alt="Question figure"
+              className="mb-4 max-h-[360px] max-w-full rounded-xl border border-border object-contain"
+            />
+          )}
           <MathText
             text={String(current?.prompt || "").trim() || "—"}
             block
             className="text-base font-semibold text-foreground leading-relaxed"
           />
-          {questionFigureUrl(current) && (
-            <img
-              src={questionFigureUrl(current)}
-              alt="Question figure"
-              className="mt-4 max-h-[360px] max-w-full rounded-xl border border-border object-contain"
-            />
-          )}
           <div className="mt-5 pointer-events-none select-none opacity-75">
             <AnswerInput
               type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
@@ -1193,24 +1171,8 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       }}
       highlighterActive={highlighterActive}
       onToggleHighlighter={() => setHighlighterActive((v) => !v)}
-      questionHighlightHtml={highlightsByQid[currentQuestionId] ?? null}
-      onQuestionHighlightChange={(html) => {
-        setHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }));
-        saveHighlight(attemptId, "question", currentQuestionId, html);
-      }}
-      passageHighlightHtml={passageHighlightsByQid[currentQuestionId] ?? null}
-      onPassageHighlightChange={(html) => {
-        setPassageHighlightsByQid((prev) => ({ ...prev, [currentQuestionId]: html }));
-        saveHighlight(attemptId, "passage", currentQuestionId, html);
-      }}
-      optionHighlights={optionHighlightsByQid[currentQuestionId] ?? EMPTY_OPTION_HIGHLIGHTS}
-      onOptionHighlightChange={(choiceId, html) => {
-        setOptionHighlightsByQid((prev) => ({
-          ...prev,
-          [currentQuestionId]: { ...(prev[currentQuestionId] ?? {}), [choiceId]: html },
-        }));
-        saveOptionHighlight(attemptId, currentQuestionId, choiceId, html);
-      }}
+      attemptId={attemptId}
+      questionId={currentQuestionId}
       // Navigation
       onPrevious={() => setCurrentIdx((i) => Math.max(0, i - 1))}
       onNext={() => setCurrentIdx((i) => Math.min(totalCount - 1, i + 1))}
@@ -1235,38 +1197,6 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 // clean question card, bottom nav bar) but specialised for assessment runs:
 // count-up timer (no deadline), single-column question layout, no calculator/
 // highlighter (assessment questions are simpler than SAT modules).
-
-// Stable empty reference so questions with no option highlights don't hand the
-// memoized answer renderer a fresh object every render (which would defeat memo).
-const EMPTY_OPTION_HIGHLIGHTS: Record<string, string> = {};
-
-// Renders pre-processed HTML and triggers KaTeX after each change.
-// Mirrors MathText's useEffect([text]) pattern but accepts HTML + onMouseUp.
-function MathHtml({
-  html,
-  className,
-  id,
-  onMouseUp,
-}: {
-  html: string;
-  className?: string;
-  id?: string;
-  onMouseUp?: (e: React.MouseEvent<HTMLDivElement>) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (ref.current) renderMath({ root: ref.current });
-  }, [html]);
-  return (
-    <div
-      ref={ref}
-      id={id}
-      className={className}
-      onMouseUp={onMouseUp}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
 
 type ExamSimulationProps = {
   setTitle: string;
@@ -1304,13 +1234,9 @@ type ExamSimulationProps = {
   onToggleElim: (choiceId: string) => void;
   highlighterActive: boolean;
   onToggleHighlighter: () => void;
-  questionHighlightHtml: string | null;
-  onQuestionHighlightChange: (html: string) => void;
-  passageHighlightHtml: string | null;
-  onPassageHighlightChange: (html: string) => void;
-  /** choiceId → saved highlight HTML for that answer choice. */
-  optionHighlights: Record<string, string>;
-  onOptionHighlightChange: (choiceId: string, html: string) => void;
+  /** Identifies the annotation offset-store namespace (region highlights). */
+  attemptId: number;
+  questionId: number;
 
   onPrevious: () => void;
   onNext: () => void;
@@ -1347,12 +1273,8 @@ function ExamSimulationView({
   onToggleElim,
   highlighterActive,
   onToggleHighlighter,
-  questionHighlightHtml,
-  onQuestionHighlightChange,
-  passageHighlightHtml,
-  onPassageHighlightChange,
-  optionHighlights,
-  onOptionHighlightChange,
+  attemptId,
+  questionId,
   onPrevious,
   onNext,
   onSubmitClick,
@@ -1365,231 +1287,22 @@ function ExamSimulationView({
 
   const isLast = currentIdx >= totalCount - 1;
 
-  // ── Annotation popover (full highlight system, mirrors exam page) ─────────
-  const [annotationPopover, setAnnotationPopover] = useState<{
-    visible: boolean; x: number; y: number;
-    range?: Range | null;
-    targetId?: string;
-    markElement?: HTMLElement | null;
-  }>({ visible: false, x: 0, y: 0 });
-  const popoverRef = useRef<HTMLDivElement>(null);
-
-  // Dismiss a stale popover on scroll / outside-pointer / Escape. The popover is
-  // position:fixed at the selection's viewport rect; inside the scrollable exam
-  // body it would otherwise stay pinned to an old spot after the content scrolls,
-  // which reads as "the highlighter is stuck". Additive only — never touches the
-  // apply/persist path. We listen on pointerdown (capture) but ignore pointers
-  // inside the popover so swatch clicks still register.
-  useEffect(() => {
-    if (!annotationPopover.visible) return;
-    const hide = () => setAnnotationPopover((p) => ({ ...p, visible: false }));
-    const onPointerDown = (e: Event) => {
-      if (popoverRef.current && popoverRef.current.contains(e.target as Node)) return;
-      hide();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") hide();
-    };
-    // On scroll, REPOSITION the popover from its stored range rather than hiding
-    // it. Hiding-on-scroll broke mobile: finishing a touch selection fires scroll
-    // events (native callout / viewport nudge) that would dismiss the popover the
-    // instant selectionchange showed it. Repositioning keeps it attached to the
-    // selection and still avoids the "stuck in a stale spot" desktop problem.
-    const onScroll = () => {
-      setAnnotationPopover((p) => {
-        if (!p.visible) return p;
-        if (!p.range) return { ...p, visible: false }; // mark-based popover: hide
-        const rect = p.range.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return { ...p, visible: false };
-        const x = Math.min(Math.max(rect.left + rect.width / 2, 16), window.innerWidth - 16);
-        const y = Math.max(rect.top - 10, 56);
-        return { ...p, x, y };
-      });
-    };
-    // capture so we catch scrolls on the inner overflow container too
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [annotationPopover.visible]);
-
-  // ── Touch/mobile selection trigger (the real fix) ─────────────────────────
-  // onMouseUp does NOT reliably fire for native text selection on iOS Safari /
-  // Android Chrome (long-press + drag-handle selection emits no mouseup; touchend
-  // fires before the OS finalizes the range, so it reads collapsed). The
-  // cross-platform signal is document `selectionchange`, debounced until the
-  // selection settles. When it lands inside a highlight container we open the
-  // popover with the CLONED range (tapping a swatch collapses the native
-  // selection, but applyAnnotation works off the clone). Desktop keeps onMouseUp
-  // for instant precision; this listener is additive and gated on highlighter on.
-  useEffect(() => {
-    if (!highlighterActive) return;
-    let settleTimer: ReturnType<typeof setTimeout> | null = null;
-    const onSelectionChange = () => {
-      if (settleTimer) clearTimeout(settleTimer);
-      // Wait for the selection to stop changing (handles still being dragged on
-      // mobile) before reading it — avoids the collapsed/partial-range race.
-      settleTimer = setTimeout(() => {
-        const sel = window.getSelection();
-        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
-        const range = sel.getRangeAt(0);
-        const node = range.commonAncestorContainer;
-        const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
-        const optionEl = el?.closest<HTMLElement>("[data-assessment-option]");
-        const targetId = optionEl
-          ? `option-${optionEl.dataset.assessmentOption}`
-          : el?.closest("#assessment-question-content")
-            ? "question"
-            : el?.closest("#assessment-passage-content")
-              ? "passage"
-              : null;
-        if (!targetId) return; // selection outside the highlightable content
-        const rect = range.getBoundingClientRect();
-        if (rect.width === 0 && rect.height === 0) return;
-        // Clamp into the viewport so the popover is never off-screen on small
-        // mobile widths. Positioning is viewport-relative (matches position:fixed).
-        const x = Math.min(Math.max(rect.left + rect.width / 2, 16), window.innerWidth - 16);
-        const y = Math.max(rect.top - 10, 56);
-        setAnnotationPopover({
-          visible: true,
-          x,
-          y,
-          range: range.cloneRange(),
-          targetId,
-          markElement: null,
-        });
-      }, 350);
-    };
-    document.addEventListener("selectionchange", onSelectionChange);
-    return () => {
-      if (settleTimer) clearTimeout(settleTimer);
-      document.removeEventListener("selectionchange", onSelectionChange);
-    };
-  }, [highlighterActive]);
-
-  // Shared instructional pipeline: sanitize + markdown (prepareRichText),
-  // underline fill-in blanks (.ms-blank), then KaTeX. Reused by the review page
-  // so the runner and review render math + blanks identically.
-  const processQuestionText = processInstructionalText;
-
-  // Sanitize saved highlight HTML (preserves <mark> with inline styles).
-  // Shared with the read-only review renderer so the pipeline isn't duplicated.
-  const sanitizeHighlight = sanitizeHighlightHtml;
-
-  const handleShowPopover = (targetId: string, e?: React.MouseEvent) => {
-    const selection = window.getSelection();
-    const target = e?.target as HTMLElement;
-    if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      setAnnotationPopover({
-        visible: true,
-        x: rect.left + rect.width / 2,
-        y: rect.top - 10,
-        range: range.cloneRange(),
-        targetId,
-        markElement: null,
-      });
-    } else if (target && target.tagName === "MARK") {
-      const rect = target.getBoundingClientRect();
-      setAnnotationPopover({
-        visible: true,
-        x: rect.left + rect.width / 2,
-        y: rect.top - 10,
-        range: null,
-        targetId,
-        markElement: target,
-      });
-    } else {
-      setAnnotationPopover((prev) => ({ ...prev, visible: false }));
-    }
-  };
-
-  const applyAnnotation = (style: "yellow" | "blue" | "pink" | "underline" | "clear") => {
-    if (!annotationPopover.targetId) return;
-    const tid = annotationPopover.targetId;
-    const optionChoiceId = tid.startsWith("option-") ? tid.slice("option-".length) : null;
-    const containerId =
-      optionChoiceId !== null
-        ? `assessment-option-content-${optionChoiceId}`
-        : tid === "passage"
-          ? "assessment-passage-content"
-          : "assessment-question-content";
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    const styleCss: Record<string, string> = {
-      yellow: "background-color: #faed7d; color: #000; text-decoration: none;",
-      blue: "background-color: #d0e6f5; color: #000; text-decoration: none;",
-      pink: "background-color: #fae0e0; color: #000; text-decoration: none;",
-      underline:
-        "background-color: transparent; text-decoration: underline; text-decoration-color: #3b82f6; text-decoration-thickness: 2px;",
-    };
-
-    if (annotationPopover.markElement) {
-      const markNode = annotationPopover.markElement;
-      if (style === "clear") {
-        const parent = markNode.parentNode;
-        if (parent) {
-          while (markNode.firstChild) parent.insertBefore(markNode.firstChild, markNode);
-          parent.removeChild(markNode);
-        }
-      } else {
-        markNode.className = `annot-${style}`;
-        markNode.style.cssText = styleCss[style] ?? "";
-      }
-    } else if (annotationPopover.range) {
-      if (style === "clear") return;
-      let range = annotationPopover.range;
-      // Resilience: the cloned range can go stale if the DOM inside the container
-      // was replaced between selection and apply (a re-render or KaTeX text-node
-      // replacement detaches the cloned boundary nodes). When that happens, fall
-      // back to the LIVE selection if it still sits inside this container —
-      // otherwise the highlight would silently never apply.
-      const staleClone =
-        !range.startContainer.isConnected ||
-        !container.contains(range.commonAncestorContainer);
-      if (staleClone) {
-        const live = window.getSelection();
-        if (
-          live &&
-          live.rangeCount > 0 &&
-          !live.isCollapsed &&
-          container.contains(live.getRangeAt(0).commonAncestorContainer)
-        ) {
-          range = live.getRangeAt(0);
-        } else {
-          setAnnotationPopover((prev) => ({ ...prev, visible: false }));
-          return;
-        }
-      }
-      const mark = document.createElement("mark");
-      mark.className = `annot-${style}`;
-      mark.style.cssText = styleCss[style] ?? "";
-      try {
-        const fragment = range.extractContents();
-        mark.appendChild(fragment);
-        range.insertNode(mark);
-      } catch {
-        /* ignore cross-element selection errors */
-      }
-    }
-
-    window.getSelection()?.removeAllRanges();
-    if (optionChoiceId !== null) {
-      onOptionHighlightChange(optionChoiceId, container.innerHTML);
-    } else if (tid === "passage") {
-      onPassageHighlightChange(container.innerHTML);
-    } else {
-      onQuestionHighlightChange(container.innerHTML);
-    }
-    setAnnotationPopover((prev) => ({ ...prev, visible: false }));
-  };
-
+  // ── Offset-based highlighter (reuses the pastpaper/exam annotator) ────────
+  // Stores highlights as character offsets per region and repaints the <mark>
+  // spans via useLayoutEffect after every commit, so they survive re-renders
+  // (the 1-second timer), math, navigation and refresh. The attemptId is
+  // namespaced with "asmt-" so assessment highlights never collide with exam
+  // attempts in the shared `ts.annot.*` localStorage.
+  const annotator = useAnnotator({
+    attemptId: `asmt-${attemptId}`,
+    questionId: questionId || undefined,
+    active: highlighterActive,
+    getContainers: () => [
+      { key: "passage", el: document.getElementById("assessment-passage-content") },
+      { key: "question", el: document.getElementById("assessment-question-content") },
+      { key: "choices", el: document.getElementById("assessment-choices") },
+    ],
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-white flex flex-col font-sans text-slate-900 overflow-hidden">
@@ -1742,39 +1455,34 @@ function ExamSimulationView({
             </div>
           </div>
 
-          {/* Question prompt context (passage/stimulus) if any */}
+          {/* Question prompt context (passage/stimulus) if any. The id lives on
+              the stable content div so the annotator can repaint its marks. */}
           {Boolean(current?.question_prompt) && (
-            <MathHtml
+            <StableHtml
               id="assessment-passage-content"
               className={`mb-6 border-l-4 border-slate-300 pl-5 py-1 text-base text-slate-700 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
-              onMouseUp={(e) => highlighterActive && handleShowPopover("passage", e)}
-              html={passageHighlightHtml
-                ? sanitizeHighlight(passageHighlightHtml)
-                : processQuestionText(String(current!.question_prompt))}
+              html={processInstructionalText(String(current!.question_prompt))}
             />
           )}
 
-          {/* The question itself */}
-          <MathHtml
-            id="assessment-question-content"
-            className={`text-lg font-normal text-slate-900 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
-            onMouseUp={(e) => highlighterActive && handleShowPopover("question", e)}
-            html={questionHighlightHtml
-              ? sanitizeHighlight(questionHighlightHtml)
-              : processQuestionText(String(current?.prompt || "").trim() || "—")}
-          />
-
-          {/* Question figure (diagram/chart), if any */}
+          {/* Question figure (diagram/chart) — ABOVE the question stem */}
           {questionFigureUrl(current) && (
             <img
               src={questionFigureUrl(current)}
               alt="Question figure"
-              className="mt-5 max-h-[420px] max-w-full rounded-xl border border-slate-200 object-contain"
+              className="mb-5 max-h-[420px] max-w-full rounded-xl border border-slate-200 object-contain"
             />
           )}
 
-          {/* Answer input */}
-          <div className="mt-8">
+          {/* The question itself */}
+          <StableHtml
+            id="assessment-question-content"
+            className={`text-lg font-normal text-slate-900 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
+            html={processInstructionalText(String(current?.prompt || "").trim() || "—")}
+          />
+
+          {/* Answer input — single annotatable region for all choices */}
+          <div id="assessment-choices" className="mt-8">
             <AnswerInput
               type={String(current?.question_type || "") as import("@/features/assessments/types").AssessmentQuestionType}
               choices={parseChoices(current?.choices)}
@@ -1783,43 +1491,21 @@ function ExamSimulationView({
               eliminated={eliminatedChoices}
               onToggleElim={onToggleElim}
               highlighterActive={highlighterActive}
-              optionHighlights={optionHighlights}
               optionImages={optionImagesFromQuestion(current)}
-              onOptionMouseUp={(choiceId, e) => handleShowPopover(`option-${choiceId}`, e)}
             />
           </div>
         </div>
       </main>
 
-      {/* ── Annotation popover (highlight colour / underline / clear) ──────── */}
-      {annotationPopover.visible && highlighterActive && (
-        <div
-          ref={popoverRef}
-          onMouseDown={(e) => e.preventDefault()}
-          className="fixed z-[100] bg-[#ebf0f7] p-2 rounded-xl shadow-[0_5px_20px_rgba(0,0,0,0.15)] flex items-center gap-2 border border-slate-300"
-          style={{
-            left: `${annotationPopover.x}px`,
-            top: `${annotationPopover.y}px`,
-            transform: "translate(-50%, -100%)",
-          }}
-        >
-          <button onClick={() => applyAnnotation("yellow")} className="w-8 h-8 rounded-full bg-[#faed7d] border border-slate-400/30 shadow-inner hover:scale-110 transition-transform" />
-          <button onClick={() => applyAnnotation("blue")}   className="w-8 h-8 rounded-full bg-[#d0e6f5] border border-slate-400/30 shadow-inner hover:scale-110 transition-transform" />
-          <button onClick={() => applyAnnotation("pink")}   className="w-8 h-8 rounded-full bg-[#fae0e0] border border-slate-400/30 shadow-inner hover:scale-110 transition-transform" />
-          <div className="w-px h-6 bg-slate-300 mx-1" />
-          <button
-            onClick={() => applyAnnotation("underline")}
-            className="p-1 px-2.5 bg-white border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-1 font-bold text-xs"
-          >
-            <span className="underline text-base leading-none">U</span>
-          </button>
-          <button
-            onClick={() => applyAnnotation("clear")}
-            className="p-2 bg-white border border-slate-300 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
+      {/* ── Annotation toolbar (recolour / underline / delete) ─────────────── */}
+      {annotator.toolbar && (
+        <AnnotationToolbar
+          toolbar={annotator.toolbar}
+          onColor={annotator.applyColor}
+          onUnderline={annotator.applyUnderline}
+          onDelete={annotator.deleteAnnotation}
+          onClose={annotator.dismiss}
+        />
       )}
 
       {/* ── Question map drawer (toggled from bottom bar) ───────────────────── */}
