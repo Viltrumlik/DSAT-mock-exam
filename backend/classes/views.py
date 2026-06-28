@@ -51,6 +51,7 @@ from .models import (
     ClassroomStreamItem,
     ClassComment,
     assignment_target_practice_test_ids,
+    grant_practice_test_library_access_for_assignment,
     submission_workflow_status,
 )
 from .submission_audit import audit_submission_event
@@ -1623,11 +1624,16 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             assignment.attachment_file = files[0]
             assignment.save(update_fields=["attachment_file", "updated_at"])
 
-        # Auto-assign pastpaper/practice test access to students
+        # Auto-assign pastpaper/practice test access to students. Best-effort:
+        # a failure here must not block assignment creation, but log it rather
+        # than swallow silently (this call previously NameError'd unnoticed).
         try:
             grant_practice_test_library_access_for_assignment(assignment)
         except Exception:
-            pass
+            logger.exception(
+                "grant_practice_test_library_access_for_assignment failed for assignment %s",
+                getattr(assignment, "pk", None),
+            )
 
         # Handle assessment_set_id — create linked HomeworkAssignment
         assessment_set_id = request.data.get("assessment_set_id")

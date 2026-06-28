@@ -69,6 +69,29 @@ class AssignmentPracticeAccessSyncTests(TestCase):
         ser.save(classroom=self.classroom, created_by=self.admin)
         self.assertTrue(self.pt.assigned_users.filter(pk=self.student.pk).exists())
 
+    def test_view_module_resolves_grant_helper(self):
+        """Regression: AssignmentViewSet.create() calls
+        grant_practice_test_library_access_for_assignment, so that name must be
+        bound in the view module. It previously was not imported, so the call
+        raised NameError that a bare ``except Exception: pass`` swallowed."""
+        from classes import views
+
+        self.assertTrue(callable(views.grant_practice_test_library_access_for_assignment))
+
+    def test_create_assignment_via_api_grants_practice_library_access(self):
+        """End-to-end contract: POSTing an assignment that targets a standalone
+        practice test must unlock that test for the class students on the global
+        practice library (assigned_users)."""
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        resp = client.post(
+            f"/api/classes/{self.classroom.id}/assignments/",
+            {"title": "Pastpaper HW", "practice_test": self.pt.pk},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertTrue(self.pt.assigned_users.filter(pk=self.student.pk).exists())
+
 
 class PracticeHomeworkAutoSubmitTests(TestCase):
     """Practice-linked homework: no file uploads; completed attempts auto-submit."""
