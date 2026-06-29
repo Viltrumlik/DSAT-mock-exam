@@ -940,15 +940,6 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
             Question {currentIdx + 1} of {_passiveTotal}
           </p>
-          {Boolean(current?.question_prompt) && (
-            <div className="mb-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
-              <MathText
-                text={String(current!.question_prompt)}
-                block
-                className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
-              />
-            </div>
-          )}
           {questionFigureUrl(current) && (
             <img
               src={questionFigureUrl(current)}
@@ -970,6 +961,16 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               optionImages={optionImagesFromQuestion(current)}
             />
           </div>
+          {/* Passage/stimulus — rendered BELOW the question + answer */}
+          {Boolean(current?.question_prompt) && (
+            <div className="mt-5 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
+              <MathText
+                text={String(current!.question_prompt)}
+                block
+                className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
+              />
+            </div>
+          )}
         </div>
 
         {/* Navigation — browse only, no submit */}
@@ -1443,16 +1444,6 @@ function ExamSimulationView({
             </div>
           </div>
 
-          {/* Question prompt context (passage/stimulus) if any. The id lives on
-              the stable content div so the annotator can repaint its marks. */}
-          {Boolean(current?.question_prompt) && (
-            <StableHtml
-              id="assessment-passage-content"
-              className={`mb-6 border-l-4 border-slate-300 pl-5 py-1 text-base text-slate-700 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
-              html={processInstructionalText(String(current!.question_prompt))}
-            />
-          )}
-
           {/* Question figure (diagram/chart) — ABOVE the question stem */}
           {questionFigureUrl(current) && (
             <img
@@ -1482,6 +1473,17 @@ function ExamSimulationView({
               optionImages={optionImagesFromQuestion(current)}
             />
           </div>
+
+          {/* Question prompt context (passage/stimulus) if any — rendered BELOW the
+              question + answer. The id lives on the stable content div so the
+              annotator can repaint its marks regardless of position. */}
+          {Boolean(current?.question_prompt) && (
+            <StableHtml
+              id="assessment-passage-content"
+              className={`mt-8 border-l-4 border-slate-300 pl-5 py-1 text-base text-slate-700 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
+              html={processInstructionalText(String(current!.question_prompt))}
+            />
+          )}
         </div>
       </main>
 
