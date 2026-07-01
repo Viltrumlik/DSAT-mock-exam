@@ -564,3 +564,16 @@ class SecurityAuditEventSerializer(serializers.ModelSerializer):
         model = SecurityAuditEvent
         fields = ("id", "event_type", "severity", "ip", "user_agent", "detail", "created_at")
 
+
+class UserBulkActionSerializer(serializers.Serializer):
+    """Validate a bulk management action over a list of user ids (admin console)."""
+
+    ACTIONS = ("freeze", "unfreeze", "activate", "deactivate", "delete")
+
+    action = serializers.ChoiceField(choices=ACTIONS)
+    ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        max_length=500,
+    )
+

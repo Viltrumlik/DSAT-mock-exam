@@ -12,9 +12,11 @@ import {
   Snowflake,
   ShieldAlert,
   Loader2,
+  Trash2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useToast } from "@/components/ToastProvider";
 
 type UserRecord = {
   id: number;
@@ -22,6 +24,7 @@ type UserRecord = {
   email: string;
   first_name: string;
   last_name: string;
+  phone_number?: string | null;
   role: string;
   is_active: boolean;
   is_frozen: boolean;
@@ -30,6 +33,35 @@ type UserRecord = {
 };
 
 type RoleFilter = "all" | "student" | "teacher" | "test_admin" | "admin" | "super_admin";
+
+// ─── Bulk actions ────────────────────────────────────────────────────────────
+
+type BulkAction = "freeze" | "unfreeze" | "activate" | "deactivate" | "delete";
+
+type BulkResult = {
+  id: number;
+  ok: boolean;
+  is_frozen?: boolean;
+  is_active?: boolean;
+  deleted?: boolean;
+  error?: string;
+};
+
+const ACTION_LABEL: Record<BulkAction, string> = {
+  freeze: "Freeze",
+  unfreeze: "Unfreeze",
+  activate: "Activate",
+  deactivate: "Deactivate",
+  delete: "Delete",
+};
+
+const ACTION_PAST: Record<BulkAction, string> = {
+  freeze: "frozen",
+  unfreeze: "unfrozen",
+  activate: "activated",
+  deactivate: "deactivated",
+  delete: "deleted",
+};
 
 const ALL_ROLES = ["student", "teacher", "test_admin", "admin", "super_admin"] as const;
 
@@ -71,10 +103,17 @@ type EditModalProps = {
 };
 
 function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
+  const [firstName, setFirstName] = useState(user.first_name ?? "");
+  const [lastName, setLastName] = useState(user.last_name ?? "");
+  const [username, setUsername] = useState(user.username ?? "");
+  const [email, setEmail] = useState(user.email ?? "");
+  const [phone, setPhone] = useState(user.phone_number ?? "");
   const [role, setRole] = useState(user.role);
   const [subject, setSubject] = useState(user.subject ?? "");
   const [isActive, setIsActive] = useState(user.is_active);
   const [isFrozen, setIsFrozen] = useState(user.is_frozen);
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,25 +124,37 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
     setError(null);
     try {
       const payload: Record<string, unknown> = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        username: username.trim() || null,
+        email: email.trim(),
+        phone_number: phone.trim() || null,
         role,
         is_active: isActive,
         is_frozen: isFrozen,
       };
       if (needsSubject) payload.subject = subject || null;
       else payload.subject = null;
+      if (newPassword.trim()) payload.password = newPassword;
 
       const r = await api.patch(`/users/${user.id}/update/`, payload);
-      onSaved({ ...user, ...r.data, role, is_active: isActive, is_frozen: isFrozen, subject: needsSubject ? subject || null : null });
+      // The serializer returns the full, normalized record — trust it, then keep
+      // the fields it doesn't echo back (password is write-only) from local state.
+      onSaved({ ...user, ...r.data });
       onClose();
     } catch (e: unknown) {
-      const detail = (e as { response?: { data?: { detail?: string; role?: string[] } } })?.response?.data;
-      const msg =
-        typeof detail?.detail === "string"
-          ? detail.detail
-          : Array.isArray(detail?.role)
-            ? detail.role[0]
-            : "Could not save changes.";
-      setError(msg);
+      const data = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      const firstFieldError = (): string | null => {
+        if (!data || typeof data !== "object") return null;
+        if (typeof data.detail === "string") return data.detail;
+        for (const key of ["email", "phone_number", "username", "first_name", "last_name", "role", "subject", "password"]) {
+          const v = data[key];
+          if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+          if (typeof v === "string") return v;
+        }
+        return null;
+      };
+      setError(firstFieldError() ?? "Could not save changes.");
     } finally {
       setSaving(false);
     }
@@ -112,7 +163,7 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-3xl bg-card border border-border shadow-2xl p-6 space-y-5"
+        className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-3xl bg-card border border-border shadow-2xl p-6 space-y-5"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -130,6 +181,46 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
           >
             <X className="h-4 w-4" />
           </button>
+        </div>
+
+        {/* Personal information */}
+        <div className="space-y-3">
+          <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Student information
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="First name"
+              className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <input
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Last name"
+              className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+          </div>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Username"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <input
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="Phone number"
+            className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
         </div>
 
         {/* Role */}
@@ -209,6 +300,30 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
           </div>
         </div>
 
+        {/* Password reset */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Reset password
+          </label>
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Leave blank to keep current password"
+              autoComplete="new-password"
+              className="w-full rounded-xl border border-border bg-card px-3 py-2 pr-16 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-[11px] font-bold text-muted-foreground hover:bg-surface-2"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
+        </div>
+
         {error && (
           <p className="rounded-xl bg-red-50 border border-red-200 px-3 py-2 text-sm font-semibold text-red-700">
             {error}
@@ -238,6 +353,93 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
   );
 }
 
+// ─── Bulk confirmation modal ─────────────────────────────────────────────────
+
+function ConfirmBulkModal({
+  action,
+  count,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  action: BulkAction;
+  count: number;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const isDelete = action === "delete";
+  const canConfirm = !busy && (!isDelete || typed.trim().toUpperCase() === "DELETE");
+  const noun = `${count} account${count === 1 ? "" : "s"}`;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+      <div
+        className="w-full max-w-sm rounded-3xl bg-card border border-border shadow-2xl p-6 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2">
+          {isDelete ? (
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-600">
+              <Trash2 className="h-4.5 w-4.5" />
+            </span>
+          ) : (
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <ShieldAlert className="h-4.5 w-4.5" />
+            </span>
+          )}
+          <p className="font-black text-foreground text-base">
+            {ACTION_LABEL[action]} {noun}?
+          </p>
+        </div>
+
+        <p className="text-sm text-muted-foreground">
+          {isDelete
+            ? `This permanently deletes ${noun}. This cannot be undone.`
+            : `This will ${ACTION_LABEL[action].toLowerCase()} ${noun}. You can reverse it later.`}
+        </p>
+
+        {isDelete && (
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+              Type DELETE to confirm
+            </label>
+            <input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder="DELETE"
+              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-red-300"
+            />
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-xl border border-border px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={!canConfirm}
+            className={cn(
+              "flex-1 rounded-xl px-4 py-2.5 text-sm font-bold text-background transition-opacity disabled:opacity-50 flex items-center justify-center gap-2",
+              isDelete ? "bg-red-600 hover:bg-red-700 text-white" : "bg-foreground hover:opacity-90",
+            )}
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {ACTION_LABEL[action]}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function OpsUsersPage() {
@@ -249,6 +451,10 @@ export default function OpsUsersPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "frozen">("all");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<UserRecord | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [pendingAction, setPendingAction] = useState<BulkAction | null>(null);
+  const { push } = useToast();
   const PAGE_SIZE = 50;
 
   const loadUsers = async () => {
@@ -313,6 +519,88 @@ export default function OpsUsersPage() {
   );
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+
+  // ── Selection ──────────────────────────────────────────────────────────────
+  const pageIds = useMemo(() => paginated.map((u) => u.id), [paginated]);
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+
+  const toggleOne = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllOnPage = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelected(new Set());
+
+  // ── Single freeze/unfreeze (row buttons) ─────────────────────────────────────
+  const setFrozenSingle = async (u: UserRecord, next: boolean) => {
+    try {
+      await api.patch(`/users/${u.id}/update/`, { is_frozen: next });
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, is_frozen: next } : x)));
+      push({ tone: "success", message: next ? "Account frozen." : "Account unfrozen." });
+    } catch {
+      push({ tone: "error", message: "Could not update account." });
+    }
+  };
+
+  // ── Bulk actions ─────────────────────────────────────────────────────────────
+  const runBulk = async (action: BulkAction) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const r = await api.post("/users/admin/bulk/", { action, ids });
+      const results: BulkResult[] = Array.isArray(r.data?.results) ? r.data.results : [];
+      const okResults = results.filter((x) => x.ok);
+      const okCount = okResults.length;
+      const failCount = results.length - okCount;
+
+      if (action === "delete") {
+        const deleted = new Set(okResults.map((x) => x.id));
+        setUsers((prev) => prev.filter((u) => !deleted.has(u.id)));
+      } else {
+        const okMap = new Map(okResults.map((x) => [x.id, x]));
+        setUsers((prev) =>
+          prev.map((u) => {
+            const res = okMap.get(u.id);
+            if (!res) return u;
+            return {
+              ...u,
+              ...(typeof res.is_frozen === "boolean" ? { is_frozen: res.is_frozen } : {}),
+              ...(typeof res.is_active === "boolean" ? { is_active: res.is_active } : {}),
+            };
+          }),
+        );
+      }
+
+      clearSelection();
+      const verb = ACTION_PAST[action];
+      if (okCount === 0) {
+        push({ tone: "error", message: `Nothing ${verb} — ${failCount} skipped.` });
+      } else if (failCount === 0) {
+        push({ tone: "success", message: `${okCount} account${okCount === 1 ? "" : "s"} ${verb}.` });
+      } else {
+        push({ tone: "error", message: `${okCount} ${verb}, ${failCount} skipped.` });
+      }
+    } catch {
+      push({ tone: "error", message: "Bulk action failed. Please try again." });
+    } finally {
+      setBulkBusy(false);
+      setPendingAction(null);
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -387,6 +675,61 @@ export default function OpsUsersPage() {
         </select>
       </div>
 
+      {/* Bulk action toolbar */}
+      {selected.size > 0 && (
+        <div className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-2xl border border-primary/30 bg-primary/5 px-4 py-3 shadow-sm backdrop-blur">
+          <span className="text-sm font-black text-foreground">{selected.size} selected</span>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="text-xs font-bold text-muted-foreground underline hover:no-underline"
+          >
+            Clear
+          </button>
+          <div className="flex-1" />
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => setPendingAction("freeze")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50"
+          >
+            <Snowflake className="h-3.5 w-3.5" /> Freeze
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => setPendingAction("unfreeze")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
+          >
+            <Snowflake className="h-3.5 w-3.5" /> Unfreeze
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => setPendingAction("activate")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+          >
+            <UserCheck className="h-3.5 w-3.5" /> Activate
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => setPendingAction("deactivate")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
+          >
+            <UserX className="h-3.5 w-3.5" /> Deactivate
+          </button>
+          <button
+            type="button"
+            disabled={bulkBusy}
+            onClick={() => setPendingAction("delete")}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-5 py-4 flex items-center justify-between gap-2">
@@ -416,6 +759,15 @@ export default function OpsUsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
+                  <th className="w-10 px-3 py-3">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all on this page"
+                      checked={allOnPageSelected}
+                      onChange={toggleAllOnPage}
+                      className="h-4 w-4 rounded accent-primary cursor-pointer"
+                    />
+                  </th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
                     User
                   </th>
@@ -441,12 +793,25 @@ export default function OpsUsersPage() {
                   const fullName = [u.first_name, u.last_name].filter(Boolean).join(" ");
                   const roleColor = ROLE_COLORS[u.role] ?? "bg-slate-100 text-slate-700";
                   const roleLabel = ROLE_LABELS[u.role] ?? u.role;
+                  const isSelected = selected.has(u.id);
                   return (
                     <tr
                       key={u.id}
-                      className="hover:bg-surface-2/50 transition-colors cursor-pointer"
+                      className={cn(
+                        "transition-colors cursor-pointer",
+                        isSelected ? "bg-primary/5" : "hover:bg-surface-2/50",
+                      )}
                       onClick={() => setEditing(u)}
                     >
+                      <td className="w-10 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${u.email}`}
+                          checked={isSelected}
+                          onChange={() => toggleOne(u.id)}
+                          className="h-4 w-4 rounded accent-primary cursor-pointer"
+                        />
+                      </td>
                       <td className="px-5 py-3">
                         <p className="font-bold text-foreground">
                           {fullName || u.username || u.email}
@@ -503,12 +868,7 @@ export default function OpsUsersPage() {
                             <button
                               type="button"
                               title="Unfreeze account"
-                              onClick={async () => {
-                                try {
-                                  await api.patch(`/users/${u.id}/update/`, { is_frozen: false });
-                                  setUsers((prev) => prev.map((x) => x.id === u.id ? { ...x, is_frozen: false } : x));
-                                } catch { /* ignore */ }
-                              }}
+                              onClick={() => void setFrozenSingle(u, false)}
                               className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 transition-colors"
                             >
                               <Snowflake className="h-3.5 w-3.5" />
@@ -517,12 +877,7 @@ export default function OpsUsersPage() {
                             <button
                               type="button"
                               title="Freeze account"
-                              onClick={async () => {
-                                try {
-                                  await api.patch(`/users/${u.id}/update/`, { is_frozen: true });
-                                  setUsers((prev) => prev.map((x) => x.id === u.id ? { ...x, is_frozen: true } : x));
-                                } catch { /* ignore */ }
-                              }}
+                              onClick={() => void setFrozenSingle(u, true)}
                               className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-muted-foreground hover:bg-surface-2 transition-colors"
                             >
                               <ShieldAlert className="h-3.5 w-3.5" />
@@ -570,6 +925,17 @@ export default function OpsUsersPage() {
           user={editing}
           onClose={() => setEditing(null)}
           onSaved={handleSaved}
+        />
+      )}
+
+      {/* Bulk confirmation */}
+      {pendingAction && (
+        <ConfirmBulkModal
+          action={pendingAction}
+          count={selected.size}
+          busy={bulkBusy}
+          onCancel={() => (bulkBusy ? undefined : setPendingAction(null))}
+          onConfirm={() => void runBulk(pendingAction)}
         />
       )}
     </div>

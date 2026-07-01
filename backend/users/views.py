@@ -12,6 +12,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.db import transaction
 from django.db.models import Prefetch, Q
 from .models import ExamDateOption, User
 from classes.models import Classroom, ClassroomMembership
@@ -31,6 +32,7 @@ from .serializers import (
     ExamDateOptionSerializer,
     MyTokenObtainPairSerializer,
     SecurityAuditEventSerializer,
+    UserBulkActionSerializer,
     UserMeSerializer,
     UserSerializer,
 )
@@ -85,6 +87,64 @@ def _prefetch_user_directory(qs):
             ),
         ),
     )
+
+
+def manageable_users_queryset(actor):
+    """Users that ``actor`` is authorized to see/manage in the admin console.
+
+    Shared by the directory list view and the bulk-action endpoint so that
+    row-level scope (super_admin/global admin see everyone; a subject-scoped
+    admin/teacher only their math|english students+teachers) is enforced
+    identically for reads and writes. Raises ``PermissionDenied`` when a
+    scoped actor lacks a valid domain subject.
+    """
+    qs = User.objects.all().order_by("-date_joined")
+    probe = actor_subject_probe_for_domain_perm(actor)
+    if not probe:
+        return qs.none()
+    # Full directory: super_admin / global admin. Subject-scoped: teachers.
+    if authorize(actor, acc_const.PERM_MANAGE_USERS, subject=probe):
+        if getattr(actor, "is_superuser", False) or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN:
+            return _prefetch_user_directory(qs)
+        if is_global_scope_staff(actor) and normalized_role(actor) != acc_const.ROLE_TEACHER:
+            return _prefetch_user_directory(qs)
+        dom = user_domain_subject(actor)
+        if not dom:
+            raise PermissionDenied(
+                detail="A valid subject (math or english) is required to list users for this account."
+            )
+        clsub = (
+            Classroom.SUBJECT_MATH
+            if dom == acc_const.DOMAIN_MATH
+            else Classroom.SUBJECT_ENGLISH
+        )
+        return _prefetch_user_directory(
+            qs.filter(
+                Q(role=acc_const.ROLE_STUDENT)
+                & (
+                    Q(access_grants__subject=dom)
+                    | Q(class_memberships__classroom__subject=clsub)
+                )
+                | Q(subject=dom, role=acc_const.ROLE_TEACHER)
+            ).distinct()
+        )
+    if authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=probe):
+        if is_global_scope_staff(actor) and normalized_role(actor) != acc_const.ROLE_TEACHER:
+            return _prefetch_user_directory(qs.filter(role=acc_const.ROLE_STUDENT))
+        dom = user_domain_subject(actor)
+        q = Q(role=acc_const.ROLE_STUDENT)
+        if not dom:
+            raise PermissionDenied(
+                detail="A valid subject (math or english) is required to list users for this account."
+            )
+        clsub = (
+            Classroom.SUBJECT_MATH
+            if dom == acc_const.DOMAIN_MATH
+            else Classroom.SUBJECT_ENGLISH
+        )
+        q &= Q(access_grants__subject=dom) | Q(class_memberships__classroom__subject=clsub)
+        return _prefetch_user_directory(qs.filter(q).distinct())
+    return qs.none()
 
 
 def _apply_telegram_phone(user, data) -> Response | None:
@@ -650,54 +710,7 @@ class UserListView(generics.ListAPIView):
             return Response(body, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def get_queryset(self):
-        qs = User.objects.all().order_by("-date_joined")
-        user = self.request.user
-        probe = actor_subject_probe_for_domain_perm(user)
-        if not probe:
-            return qs.none()
-        # Full directory: super_admin / global admin. Subject-scoped: teachers.
-        if authorize(user, acc_const.PERM_MANAGE_USERS, subject=probe):
-            if getattr(user, "is_superuser", False) or normalized_role(user) == acc_const.ROLE_SUPER_ADMIN:
-                return _prefetch_user_directory(qs)
-            if is_global_scope_staff(user) and normalized_role(user) != acc_const.ROLE_TEACHER:
-                return _prefetch_user_directory(qs)
-            dom = user_domain_subject(user)
-            if not dom:
-                raise PermissionDenied(
-                    detail="A valid subject (math or english) is required to list users for this account."
-                )
-            clsub = (
-                Classroom.SUBJECT_MATH
-                if dom == acc_const.DOMAIN_MATH
-                else Classroom.SUBJECT_ENGLISH
-            )
-            return _prefetch_user_directory(
-                qs.filter(
-                    Q(role=acc_const.ROLE_STUDENT)
-                    & (
-                        Q(access_grants__subject=dom)
-                        | Q(class_memberships__classroom__subject=clsub)
-                    )
-                    | Q(subject=dom, role=acc_const.ROLE_TEACHER)
-                ).distinct()
-            )
-        if authorize(user, acc_const.PERM_ASSIGN_ACCESS, subject=probe):
-            if is_global_scope_staff(user) and normalized_role(user) != acc_const.ROLE_TEACHER:
-                return _prefetch_user_directory(qs.filter(role=acc_const.ROLE_STUDENT))
-            dom = user_domain_subject(user)
-            q = Q(role=acc_const.ROLE_STUDENT)
-            if not dom:
-                raise PermissionDenied(
-                    detail="A valid subject (math or english) is required to list users for this account."
-                )
-            clsub = (
-                Classroom.SUBJECT_MATH
-                if dom == acc_const.DOMAIN_MATH
-                else Classroom.SUBJECT_ENGLISH
-            )
-            q &= Q(access_grants__subject=dom) | Q(class_memberships__classroom__subject=clsub)
-            return _prefetch_user_directory(qs.filter(q).distinct())
-        return qs.none()
+        return manageable_users_queryset(self.request.user)
 
 class UserCreateView(generics.CreateAPIView):
     serializer_class = UserSerializer
@@ -752,6 +765,93 @@ class UserDeleteView(generics.DestroyAPIView):
             or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN,
         )
         super().perform_destroy(instance)
+
+
+class UserBulkActionView(APIView):
+    """Apply a management action to many users at once (admin console).
+
+    Body: ``{"action": "freeze|unfreeze|activate|deactivate|delete", "ids": [..]}``.
+    Scope-safe: an actor may only affect users that ``manageable_users_queryset``
+    would return for them, so a subject-scoped teacher cannot touch out-of-scope
+    accounts. Returns a per-id ``results`` list so the UI can report partial
+    outcomes; out-of-scope and missing ids are reported identically (no leak).
+    """
+
+    permission_classes = [HasManageUsers]
+
+    def post(self, request, *args, **kwargs):
+        ser = UserBulkActionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        action = ser.validated_data["action"]
+        ids = ser.validated_data["ids"]
+
+        actor = request.user
+        actor_id = getattr(actor, "pk", None)
+        is_super = getattr(actor, "is_superuser", False) or normalized_role(actor) == acc_const.ROLE_SUPER_ADMIN
+        allowed = manageable_users_queryset(actor)
+
+        # De-duplicate while preserving request order.
+        ordered_ids = list(dict.fromkeys(ids))
+
+        results = []
+        affected = 0
+        skipped = 0
+        for uid in ordered_ids:
+            if uid == actor_id:
+                results.append({"id": uid, "ok": False, "error": "cannot act on your own account"})
+                skipped += 1
+                continue
+            target = allowed.filter(pk=uid).first()
+            if target is None:
+                results.append({"id": uid, "ok": False, "error": "not found or out of scope"})
+                skipped += 1
+                continue
+            try:
+                with transaction.atomic():
+                    if action == "freeze":
+                        target.is_frozen = True
+                        target.save(update_fields=["is_frozen"])
+                        results.append({"id": uid, "ok": True, "is_frozen": True})
+                    elif action == "unfreeze":
+                        target.is_frozen = False
+                        target.save(update_fields=["is_frozen"])
+                        results.append({"id": uid, "ok": True, "is_frozen": False})
+                    elif action == "activate":
+                        target.is_active = True
+                        target.save(update_fields=["is_active"])
+                        results.append({"id": uid, "ok": True, "is_active": True})
+                    elif action == "deactivate":
+                        target.is_active = False
+                        target.save(update_fields=["is_active"])
+                        results.append({"id": uid, "ok": True, "is_active": False})
+                    else:  # delete
+                        email = target.email
+                        target.delete()
+                        logger.info(
+                            "user_deleted target_id=%s email=%s actor_id=%s is_superuser=%s bulk=1",
+                            uid,
+                            email,
+                            actor_id,
+                            is_super,
+                        )
+                        results.append({"id": uid, "ok": True, "deleted": True})
+                affected += 1
+            except Exception:  # defensive: one bad row must not fail the batch
+                logger.exception("user_bulk_action item failed uid=%s action=%s", uid, action)
+                results.append({"id": uid, "ok": False, "error": "operation failed"})
+                skipped += 1
+
+        logger.info(
+            "user_bulk_action actor_id=%s is_superuser=%s action=%s requested=%s affected=%s skipped=%s",
+            actor_id,
+            is_super,
+            action,
+            len(ordered_ids),
+            affected,
+            skipped,
+        )
+        return Response({"action": action, "results": results}, status=status.HTTP_200_OK)
+
 
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserSerializer
