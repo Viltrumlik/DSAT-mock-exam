@@ -49,9 +49,13 @@ function countdown(due?: string | null): string {
   return `${days} days left`;
 }
 
-export function AssignmentDetailPage({ classId, assignmentId }: { classId: number; assignmentId: number }) {
+export function AssignmentDetailPage({ classId, assignmentId, basePath }: { classId: number; assignmentId: number; basePath?: string }) {
   const classroom = useClassroom(classId);
   const a = useAssignment(classId, assignmentId);
+  // On the teacher portal (teacher.mastersat.uz) every link must stay under
+  // `/teacher/*` (middleware bounces `/classes/...` to the dashboard), so callers
+  // there pass basePath=`/teacher/classrooms/<id>`. Defaults to the student site.
+  const base = basePath ?? `/classes/${classId}`;
 
   if (a.isLoading || classroom.isLoading) return <LoadingState label="Opening assignment…" />;
   if (a.isError || !a.data) return <ErrorState title="Assignment not available" onRetry={() => a.refetch()} />;
@@ -59,17 +63,17 @@ export function AssignmentDetailPage({ classId, assignmentId }: { classId: numbe
   const caps = capabilitiesFor(classroom.data?.my_role);
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-16 pt-4 sm:px-6">
-      <Link href={`/classes/${classId}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+      <Link href={base} className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> Back to class
       </Link>
       {caps.isStaff
-        ? <TeacherView classId={classId} assignment={a.data} />
-        : <StudentView classId={classId} assignment={a.data} />}
+        ? <TeacherView base={base} assignment={a.data} />
+        : <StudentView classId={classId} base={base} assignment={a.data} />}
     </div>
   );
 }
 
-function TeacherView({ classId, assignment }: { classId: number; assignment: AssignmentDetail }) {
+function TeacherView({ base, assignment }: { base: string; assignment: AssignmentDetail }) {
   const router = useRouter();
   const kind = assignmentKind(assignment);
   return (
@@ -87,7 +91,7 @@ function TeacherView({ classId, assignment }: { classId: number; assignment: Ass
       )}
       <Card className="cr-card">
         <CardHeader title="Grading" description={assignment.category === "HOMEWORK" || kind === "FILE" ? "Manual grading" : "Auto-graded"} />
-        <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`/classes/${classId}?tab=grading`)}>
+        <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`${base}?tab=grading`)}>
           Open in gradebook
         </Button>
       </Card>
@@ -95,7 +99,7 @@ function TeacherView({ classId, assignment }: { classId: number; assignment: Ass
   );
 }
 
-function StudentView({ classId, assignment }: { classId: number; assignment: AssignmentDetail }) {
+function StudentView({ classId, base, assignment }: { classId: number; base: string; assignment: AssignmentDetail }) {
   const router = useRouter();
   const sub = useMySubmission(classId, assignment.id);
   const kind = assignmentKind(assignment);
@@ -220,7 +224,7 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
                   if (c.mode === "start" && c.startTestId != null) return void startPastpaper(c.startTestId);
                   const href =
                     c.mode === "review" && c.kind === "PASTPAPER" && c.attemptId != null
-                      ? `${c.href}?back=${encodeURIComponent(`/classes/${classId}/assignments/${assignment.id}`)}`
+                      ? `${c.href}?back=${encodeURIComponent(`${base}/assignments/${assignment.id}`)}`
                       : c.href;
                   router.push(href);
                 }}

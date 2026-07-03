@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ClipboardList, Plus, MoreVertical, Eye, Archive, RotateCcw, ExternalLink, Pencil, Trash2 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api, { classesApi } from "@/lib/api";
@@ -49,18 +50,32 @@ function statusInfo(a: AsgRow, staff: boolean): { text: string; overdue: boolean
   return posted ? { text: `Posted ${shortDate(posted)}`, overdue: false } : { text: "No deadline", overdue: false };
 }
 
-function hrefFor(classId: number, a: AsgRow): string {
+function hrefFor(classBase: string, a: AsgRow): string {
   // Open the in-class detail page (it deep-links into every bundled activity).
-  return `/classes/${classId}/assignments/${a.id}`;
+  return `${classBase}/assignments/${a.id}`;
+}
+
+/**
+ * Base path for this classroom's routes. The teacher portal (teacher.mastersat.uz)
+ * is scoped by middleware to `/teacher/*` only — linking to `/classes/...` there
+ * bounces the teacher to the dashboard — so keep every link under `/teacher/classrooms`
+ * when we're rendered inside the teacher console.
+ */
+function useClassBase(classId: number): string {
+  const pathname = usePathname() || "";
+  return pathname.startsWith("/teacher/")
+    ? `/teacher/classrooms/${classId}`
+    : `/classes/${classId}`;
 }
 
 export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
   const classId = Number(classroom.id);
+  const classBase = useClassBase(classId);
   const caps = capabilitiesFor(classroom.my_role);
   const staff = caps.canManageAssignments;
   const { data, isLoading, isError, refetch } = useAssignments(classId);
   const [showArchived, setShowArchived] = useState(false);
-  const newHref = `/classes/${classId}/assignments/new`;
+  const newHref = `${classBase}/assignments/new`;
 
   const archived = useQuery({
     queryKey: [...classroomKeys.assignments(classId), "archived"],
@@ -105,9 +120,9 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
         <div className="divide-y divide-border border-y border-border">
           {rows.map((a, i) =>
             staff ? (
-              <StaffRow key={a.id} classId={classId} a={a} index={i} />
+              <StaffRow key={a.id} classId={classId} classBase={classBase} a={a} index={i} />
             ) : (
-              <StudentRow key={a.id} classId={classId} a={a} index={i} />
+              <StudentRow key={a.id} classBase={classBase} a={a} index={i} />
             ),
           )}
         </div>
@@ -128,7 +143,7 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
             <EmptyState icon={Archive} title="Nothing archived" />
           ) : (
             <div className="divide-y divide-border border-y border-border">
-              {archivedRows.map((a, i) => <StaffRow key={a.id} classId={classId} a={a} index={i} archived />)}
+              {archivedRows.map((a, i) => <StaffRow key={a.id} classId={classId} classBase={classBase} a={a} index={i} archived />)}
             </div>
           )}
         </div>
@@ -140,14 +155,14 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
 
 /** Shared row chrome: indigo-circle icon tile + title + status date (mockup order:
  *  icon · title · badge · date · actions). */
-function RowShell({ classId, a, index, staff, badge, actions }: { classId: number; a: AsgRow; index: number; staff: boolean; badge?: React.ReactNode; actions?: React.ReactNode }) {
+function RowShell({ classBase, a, index, staff, badge, actions }: { classBase: string; a: AsgRow; index: number; staff: boolean; badge?: React.ReactNode; actions?: React.ReactNode }) {
   const s = statusInfo(a, staff);
   return (
     <div className="cr-rowin group flex items-center gap-3 px-3 py-3 transition-colors hover:bg-surface-2" style={{ animationDelay: `${Math.min(index, 14) * 40}ms` }}>
       <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
         <ClipboardList className="h-5 w-5" aria-hidden />
       </span>
-      <Link href={hrefFor(classId, a)} className="min-w-0 flex-1">
+      <Link href={hrefFor(classBase, a)} className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-bold text-foreground transition-colors group-hover:text-primary">{a.title}</p>
         {staff && typeof a.submissions_count === "number" && a.submissions_count > 0 && (
           <p className="mt-0.5 text-xs text-muted-foreground">{a.submissions_count} submitted</p>
@@ -162,17 +177,17 @@ function RowShell({ classId, a, index, staff, badge, actions }: { classId: numbe
   );
 }
 
-function StudentRow({ classId, a, index }: { classId: number; a: AsgRow; index: number }) {
+function StudentRow({ classBase, a, index }: { classBase: string; a: AsgRow; index: number }) {
   return (
     <RowShell
-      classId={classId}
+      classBase={classBase}
       a={a}
       index={index}
       staff={false}
       badge={a.workflow_status ? <SubmissionStatusPill status={a.workflow_status} /> : null}
       actions={
         <Link
-          href={hrefFor(classId, a)}
+          href={hrefFor(classBase, a)}
           aria-label={`Open ${a.title}`}
           className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
         >
@@ -183,7 +198,7 @@ function StudentRow({ classId, a, index }: { classId: number; a: AsgRow; index: 
   );
 }
 
-function StaffRow({ classId, a, index, archived }: { classId: number; a: AsgRow; index: number; archived?: boolean }) {
+function StaffRow({ classId, classBase, a, index, archived }: { classId: number; classBase: string; a: AsgRow; index: number; archived?: boolean }) {
   const qc = useQueryClient();
   const lc = useAssignmentLifecycle(classId, a.id);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -211,7 +226,7 @@ function StaffRow({ classId, a, index, archived }: { classId: number; a: AsgRow;
 
   return (
     <RowShell
-      classId={classId}
+      classBase={classBase}
       a={a}
       index={index}
       staff
@@ -223,8 +238,8 @@ function StaffRow({ classId, a, index, archived }: { classId: number; a: AsgRow;
       actions={
         <>
           <KebabMenu>
-            <MenuItem icon={ExternalLink} href={hrefFor(classId, a)}>Open</MenuItem>
-            <MenuItem icon={Pencil} href={`/classes/${classId}/assignments/${a.id}/edit`}>Edit</MenuItem>
+            <MenuItem icon={ExternalLink} href={hrefFor(classBase, a)}>Open</MenuItem>
+            <MenuItem icon={Pencil} href={`${classBase}/assignments/${a.id}/edit`}>Edit</MenuItem>
             {a.status === "DRAFT" && (
               <MenuItem icon={Eye} onClick={() => run(lc.publish, `“${a.title}” published.`)}>Publish</MenuItem>
             )}
