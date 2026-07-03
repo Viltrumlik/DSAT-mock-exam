@@ -10,7 +10,7 @@ from access import constants as acc_const
 from access.models import UserAccess
 from assessments import async_tasks as assessments_async_tasks
 from assessments import grading_service
-from assessments import views as assessments_views
+from assessments import views_attempt as assessments_views_attempt
 from assessments.models import AssessmentAttempt, AssessmentQuestion, AssessmentSet, AssessmentResult, HomeworkAssignment
 from assessments.async_tasks import grade_attempt_task
 from classes.models import Assignment, Classroom, ClassroomMembership
@@ -133,7 +133,7 @@ class SubmitGradingOnceTests(TestCase):
     )
     def test_submit_inline_fallback_calls_grade_attempt_once(self):
         real_grade = grading_service.grade_attempt
-        with patch.object(assessments_views, "grade_attempt", wraps=real_grade) as gm:
+        with patch.object(assessments_views_attempt, "grade_attempt", wraps=real_grade) as gm:
             r = self.client.post(
                 "/api/assessments/attempts/submit/",
                 {"attempt_id": self.attempt_id},
