@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ClipboardList, Plus, MoreVertical, Eye, Archive, RotateCcw, ExternalLink } from "lucide-react";
-import CreateAssignmentModal from "@/components/CreateAssignmentModal";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import api from "@/lib/api";
+import { ClipboardList, Plus, MoreVertical, Eye, Archive, RotateCcw, ExternalLink, Pencil, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import api, { classesApi } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
@@ -59,10 +58,9 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
   const classId = Number(classroom.id);
   const caps = capabilitiesFor(classroom.my_role);
   const staff = caps.canManageAssignments;
-  const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useAssignments(classId);
-  const [createOpen, setCreateOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const newHref = `/classes/${classId}/assignments/new`;
 
   const archived = useQuery({
     queryKey: [...classroomKeys.assignments(classId), "archived"],
@@ -85,7 +83,9 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
           </p>
         </div>
         {staff && (
-          <Button className="cr-ripple" onPointerDown={spawnRipple} icon={Plus} onClick={() => setCreateOpen(true)}>New</Button>
+          <Link href={newHref}>
+            <Button className="cr-ripple" onPointerDown={spawnRipple} icon={Plus}>New</Button>
+          </Link>
         )}
       </div>
 
@@ -99,7 +99,7 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
           icon={ClipboardList}
           title="No assignments yet"
           description={staff ? "Create the first assignment for this class." : "New assignments will appear here."}
-          action={staff && <Button icon={Plus} onClick={() => setCreateOpen(true)}>New assignment</Button>}
+          action={staff && <Link href={newHref}><Button icon={Plus}>New assignment</Button></Link>}
         />
       ) : (
         <div className="divide-y divide-border border-y border-border">
@@ -134,17 +134,6 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
         </div>
       )}
 
-      {staff && (
-        <CreateAssignmentModal
-          open={createOpen}
-          classId={classId}
-          onClose={() => setCreateOpen(false)}
-          onSuccess={() => {
-            setCreateOpen(false);
-            qc.invalidateQueries({ queryKey: classroomKeys.assignments(classId) });
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -195,8 +184,20 @@ function StudentRow({ classId, a, index }: { classId: number; a: AsgRow; index: 
 }
 
 function StaffRow({ classId, a, index, archived }: { classId: number; a: AsgRow; index: number; archived?: boolean }) {
+  const qc = useQueryClient();
   const lc = useAssignmentLifecycle(classId, a.id);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const del = useMutation({
+    mutationFn: () => classesApi.deleteAssignment(classId, a.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: classroomKeys.assignments(classId) });
+      pushGlobalToast({ tone: "success", message: `“${a.title}” deleted.` });
+      setConfirmDelete(false);
+    },
+    onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
+  });
 
   async function run(m: { mutateAsync: () => Promise<unknown> }, ok: string) {
     try {
@@ -223,6 +224,7 @@ function StaffRow({ classId, a, index, archived }: { classId: number; a: AsgRow;
         <>
           <KebabMenu>
             <MenuItem icon={ExternalLink} href={hrefFor(classId, a)}>Open</MenuItem>
+            <MenuItem icon={Pencil} href={`/classes/${classId}/assignments/${a.id}/edit`}>Edit</MenuItem>
             {a.status === "DRAFT" && (
               <MenuItem icon={Eye} onClick={() => run(lc.publish, `“${a.title}” published.`)}>Publish</MenuItem>
             )}
@@ -232,6 +234,7 @@ function StaffRow({ classId, a, index, archived }: { classId: number; a: AsgRow;
             {(a.status === "ARCHIVED" || archived) && (
               <MenuItem icon={RotateCcw} onClick={() => run(lc.unarchive, `“${a.title}” unarchived.`)}>Unarchive</MenuItem>
             )}
+            <MenuItem icon={Trash2} destructive onClick={() => setConfirmDelete(true)}>Delete</MenuItem>
           </KebabMenu>
 
           <ConfirmDialog
@@ -243,6 +246,17 @@ function StaffRow({ classId, a, index, archived }: { classId: number; a: AsgRow;
             loading={lc.archive.isPending}
             onConfirm={() => run(lc.archive, `“${a.title}” archived.`)}
             onCancel={() => setConfirmArchive(false)}
+          />
+
+          <ConfirmDialog
+            open={confirmDelete}
+            title="Delete assignment?"
+            description={`“${a.title}” will be permanently deleted, along with any student submissions and grades. This cannot be undone.`}
+            confirmLabel="Delete"
+            tone="danger"
+            loading={del.isPending}
+            onConfirm={() => del.mutate()}
+            onCancel={() => setConfirmDelete(false)}
           />
         </>
       }
@@ -279,8 +293,11 @@ function KebabMenu({ children }: { children: React.ReactNode }) {
   );
 }
 
-function MenuItem({ icon: Icon, onClick, href, children }: { icon: React.ElementType; onClick?: () => void; href?: string; children: React.ReactNode }) {
-  const cls = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-foreground transition-colors hover:bg-surface-2";
-  const body = (<><Icon className="h-4 w-4 text-muted-foreground" aria-hidden />{children}</>);
+function MenuItem({ icon: Icon, onClick, href, destructive, children }: { icon: React.ElementType; onClick?: () => void; href?: string; destructive?: boolean; children: React.ReactNode }) {
+  const cls = destructive
+    ? "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
+    : "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-foreground transition-colors hover:bg-surface-2";
+  const iconCls = destructive ? "h-4 w-4 text-red-500" : "h-4 w-4 text-muted-foreground";
+  const body = (<><Icon className={iconCls} aria-hidden />{children}</>);
   return href ? <Link href={href} className={cls}>{body}</Link> : <button type="button" onClick={onClick} className={cls}>{body}</button>;
 }

@@ -265,6 +265,7 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "subject",
+            "source",
             "category",
             "title",
             "description",
@@ -290,6 +291,7 @@ class AssessmentSetAdminSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "subject",
+            "source",
             "category",
             "title",
             "description",
@@ -306,11 +308,30 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "subject",
+            "source",
             "category",
             "title",
             "description",
             "is_active",
         ]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Resolve the effective subject/source (fall back to the instance on PATCH).
+        subject = attrs.get("subject") or getattr(self.instance, "subject", None)
+        source = attrs.get("source", getattr(self.instance, "source", ""))
+        creating = self.instance is None
+        if creating and not source:
+            raise serializers.ValidationError(
+                {"source": "Source is required when creating an assessment set."}
+            )
+        if source:
+            allowed = AssessmentSet.allowed_sources_for_subject(subject)
+            if source not in allowed:
+                raise serializers.ValidationError(
+                    {"source": f"'{source}' is not a valid source for {subject} sets."}
+                )
+        return attrs
 
 
 class HomeworkAssignmentSerializer(serializers.ModelSerializer):

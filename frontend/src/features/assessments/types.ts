@@ -5,6 +5,8 @@ export type Subject = "math" | "english";
 export type AssessmentSet = {
   id: number;
   subject: Subject;
+  /** Provenance of the questions; see lib/assessmentSources. Blank on legacy sets. */
+  source?: string;
   category: string;
   title: string;
   description: string;

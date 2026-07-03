@@ -39,7 +39,7 @@ class AssessmentsAdminSubdomainGuardTests(TestCase):
         self.client.force_authenticate(user=self.test_admin)
         r = self.client.post(
             "/api/assessments/admin/sets/",
-            data={"subject": "math", "title": "Blocked on admin host", "category": "algebra"},
+            data={"subject": "math", "source": "SQB", "title": "Blocked on admin host", "category": "algebra"},
             format="json",
             **_ADMIN_HOST,
         )
@@ -51,7 +51,7 @@ class AssessmentsAdminSubdomainGuardTests(TestCase):
         self.client.force_authenticate(user=self.test_admin)
         r = self.client.post(
             "/api/assessments/admin/sets/",
-            data={"subject": "math", "title": "Allowed on questions host", "category": "algebra"},
+            data={"subject": "math", "source": "SQB", "title": "Allowed on questions host", "category": "algebra"},
             format="json",
             **_QUESTIONS_HOST,
         )

@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import os
 
 from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
@@ -372,18 +373,41 @@ class AssignmentSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url)
         return url
 
-    @extend_schema_field(serializers.ListField(child=serializers.URLField(), read_only=True))
+    @extend_schema_field(
+        serializers.ListField(
+            child=serializers.DictField(),
+            read_only=True,
+            help_text="Attachment objects: { url, file_name, content_type, size }.",
+        )
+    )
     def get_attachment_urls(self, obj):
-        """Primary file first, then extra attachments (same order as upload)."""
+        """Primary file first, then extra attachments (same order as upload).
+
+        Each entry is an object carrying the display filename + type so the student
+        UI can show the right icon and a working download (not a bare URL string)."""
         request = self.context.get("request")
-        urls = []
+
+        def entry(filefield):
+            name = filefield.name or ""
+            file_name = os.path.basename(name)
+            url = filefield.url
+            try:
+                size = filefield.size
+            except Exception:
+                size = None
+            return {
+                "url": request.build_absolute_uri(url) if request else url,
+                "file_name": file_name,
+                "content_type": mimetypes.guess_type(file_name)[0] or "",
+                "size": size,
+            }
+
+        items = []
         if obj.attachment_file:
-            u = obj.attachment_file.url
-            urls.append(request.build_absolute_uri(u) if request else u)
+            items.append(entry(obj.attachment_file))
         for ex in obj.extra_attachments.all():
-            u = ex.file.url
-            urls.append(request.build_absolute_uri(u) if request else u)
-        return urls
+            items.append(entry(ex.file))
+        return items
 
     @extend_schema_field(
         serializers.ListField(child=AssignmentPracticeBundleTestSerializer(), read_only=True),
@@ -654,6 +678,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 if v in (None, "", []):
                     attrs["practice_test_ids"] = None
         else:
+            # CREATE: instructions are mandatory on new homework (teacher form enforces
+            # this client-side too). Only checked on create so publish/archive actions and
+            # existing PATCH flows are never forced to resend instructions.
+            if not (attrs.get("instructions") or "").strip():
+                raise serializers.ValidationError(
+                    {"instructions": "Instructions are required."}
+                )
             # CREATE: multi-content is allowed — a single assignment may bundle a file,
             # a past paper section, an assessment and a practice test at once. Normalize
             # each field independently ("" -> None) and only collapse WITHIN the practice

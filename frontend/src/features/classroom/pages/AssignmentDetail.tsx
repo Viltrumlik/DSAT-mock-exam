@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Clock, Upload, Play, RotateCcw, MessageSquare, CheckCircle2,
-  FileText, ExternalLink, Paperclip, GraduationCap, X, Eye,
+  FileText, ExternalLink, GraduationCap, X, Eye,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
@@ -17,6 +17,8 @@ import { assignmentKind, contentActions, KIND_LABEL, type AssignmentDetail, type
 import { spawnRipple } from "../ui/ripple";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { SubmissionStatusPill } from "./statusPill";
+import { materialMeta, formatBytes } from "./materialMeta";
+import { Download } from "lucide-react";
 
 /** Short, friendly date — "Jun 30" — matching the design's meta tiles. */
 function shortDate(iso?: string | null): string {
@@ -277,12 +279,36 @@ function StudentView({ classId, assignment }: { classId: number; assignment: Ass
                 <ExternalLink className="h-4 w-4" /> Open linked resource
               </a>
             )}
-            {(assignment.attachment_urls ?? []).map((f, i) => (
-              <a key={i} href={f.url} target="_blank" rel="noreferrer"
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-foreground hover:bg-surface-2">
-                <Paperclip className="h-4 w-4 text-muted-foreground" /> {f.file_name || "Attachment"}
-              </a>
-            ))}
+            {(assignment.attachment_urls ?? []).map((f, i) => {
+              const name = f.file_name || decodeURIComponent(f.url.split("/").pop() || "") || "Attachment";
+              const meta = materialMeta(name);
+              const Icon = meta.Icon;
+              const size = formatBytes(f.size);
+              return (
+                <div key={i} className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5 hover:bg-surface-2">
+                  <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", meta.iconWrap)}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  {/* Click the name to open the file in a new tab. */}
+                  <a href={f.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-foreground">{name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      <span className={cn("rounded px-1 py-0.5 text-[9px] font-bold", meta.badge)}>{meta.label}</span>
+                      {size ? <span className="ml-1.5">{size}</span> : null}
+                    </p>
+                  </a>
+                  {/* Explicit download (same-origin /media ⇒ the download attribute saves the file). */}
+                  <a
+                    href={f.url}
+                    download={name}
+                    className="cr-press inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10"
+                    aria-label={`Download ${name}`}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Download
+                  </a>
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}

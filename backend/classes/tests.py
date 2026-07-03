@@ -64,7 +64,7 @@ class AssignmentPracticeAccessSyncTests(TestCase):
         )
 
     def test_create_assignment_adds_students_to_practice_test_assigned_users(self):
-        ser = AssignmentSerializer(data={"title": "Pastpaper HW", "practice_test": self.pt.pk})
+        ser = AssignmentSerializer(data={"title": "Pastpaper HW", "instructions": "Complete the section.", "practice_test": self.pt.pk})
         ser.is_valid(raise_exception=True)
         ser.save(classroom=self.classroom, created_by=self.admin)
         self.assertTrue(self.pt.assigned_users.filter(pk=self.student.pk).exists())
@@ -86,7 +86,7 @@ class AssignmentPracticeAccessSyncTests(TestCase):
         client.force_authenticate(self.admin)
         resp = client.post(
             f"/api/classes/{self.classroom.id}/assignments/",
-            {"title": "Pastpaper HW", "practice_test": self.pt.pk},
+            {"title": "Pastpaper HW", "instructions": "Complete the section.", "practice_test": self.pt.pk},
             format="json",
         )
         self.assertEqual(resp.status_code, 201, resp.content)

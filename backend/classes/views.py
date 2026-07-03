@@ -757,6 +757,13 @@ class ClassroomViewSet(ModelViewSet):
         pvs.format_kwarg = None
         pt_qs = pvs.get_queryset()
 
+        # Match the picker to the classroom's subject: a Math class only sees Math
+        # sections/sets; an English class only sees Reading & Writing ones.
+        platform_subject = classroom.platform_subject
+        domain_subject = classroom.domain_subject
+        if platform_subject:
+            pt_qs = pt_qs.filter(subject=platform_subject)
+
         practice_tests = []
         for pt in pt_qs:
             practice_tests.append(
@@ -776,12 +783,16 @@ class ClassroomViewSet(ModelViewSet):
 
         # Assessment sets
         from assessments.models import AssessmentSet
+        aset_qs = AssessmentSet.objects.filter(is_active=True)
+        if domain_subject:
+            aset_qs = aset_qs.filter(subject=domain_subject)
         assessment_sets = []
-        for aset in AssessmentSet.objects.filter(is_active=True).order_by("-created_at"):
+        for aset in aset_qs.order_by("-created_at"):
             assessment_sets.append({
                 "id": aset.id,
                 "title": aset.title,
                 "subject": aset.subject,
+                "source": aset.source or "",
                 "category": aset.category or "",
                 "description": aset.description or "",
                 "question_count": aset.questions.filter(is_active=True).count(),
@@ -813,6 +824,7 @@ class ClassroomViewSet(ModelViewSet):
             })
 
         return Response({
+            "classroom_subject": classroom.subject,
             "practice_tests": practice_tests,
             "assessment_sets": assessment_sets,
             "practice_test_packs": practice_test_packs,

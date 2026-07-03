@@ -179,3 +179,48 @@ export function sharedPastpaperPackTitle(tests: any[]): string {
 export function buildHomeworkPastpaperCards(tests: any[]): (CardPastpaperPack | CardSingle)[] {
   return buildCards(tests).filter((c): c is CardPastpaperPack | CardSingle => c.kind !== "pack");
 }
+
+/** The sections a pastpaper card represents (a pack has many, a single has one). */
+function cardSections(c: CardPastpaperPack | CardSingle): any[] {
+  return c.kind === "single" ? [c.test] : c.tests;
+}
+
+/** Year (YYYY) of a section's practice_date, or null. */
+function sectionYear(t: any): string | null {
+  const iso = t?.practice_date || t?.created_at;
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : String(d.getFullYear());
+}
+
+/** Distinct years present across pastpaper cards, newest first (for the Year filter). */
+export function pastpaperCardYears(cards: (CardPastpaperPack | CardSingle)[]): string[] {
+  const set = new Set<string>();
+  for (const c of cards) for (const t of cardSections(c)) { const y = sectionYear(t); if (y) set.add(y); }
+  return Array.from(set).sort((a, b) => Number(b) - Number(a));
+}
+
+export type PastpaperFilter = {
+  /** "ALL" | "US" | "INTL" — matches the student page semantics (form_type). */
+  region?: "ALL" | "US" | "INTL";
+  /** "ALL" or a YYYY string. */
+  year?: string;
+  /** Free-text search over the card's sections. */
+  search?: string;
+};
+
+/** Filter homework pastpaper cards by region (form_type), year (practice_date), and search. */
+export function filterPastpaperCards(
+  cards: (CardPastpaperPack | CardSingle)[],
+  { region = "ALL", year = "ALL", search = "" }: PastpaperFilter,
+): (CardPastpaperPack | CardSingle)[] {
+  const q = search.trim().toLowerCase();
+  return cards.filter((c) => {
+    const sections = cardSections(c);
+    if (region === "US" && !sections.some((t) => t.form_type === "US")) return false;
+    if (region === "INTL" && !sections.some((t) => t.form_type !== "US")) return false;
+    if (year !== "ALL" && !sections.some((t) => sectionYear(t) === year)) return false;
+    if (q && !sections.some((t) => practiceTestSearchBlob(t).includes(q))) return false;
+    return true;
+  });
+}

@@ -46,7 +46,7 @@ class TAMatrixFixture(TestCase):
 
 class AssignmentMatrix(TAMatrixFixture):
     def _create_as(self, who):
-        return self.as_(who).post(f"/api/classes/{self.classroom.id}/assignments/", {"title": "New"}, format="json")
+        return self.as_(who).post(f"/api/classes/{self.classroom.id}/assignments/", {"title": "New", "instructions": "Do it."}, format="json")
 
     def test_ta_can_create_teacher_can_student_cannot(self):
         self.assertEqual(self._create_as(self.ta).status_code, 201)

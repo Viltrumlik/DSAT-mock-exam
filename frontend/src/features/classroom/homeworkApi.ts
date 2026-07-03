@@ -18,7 +18,7 @@ export interface AssignmentDetail {
   assessment_homework?: unknown | null;
   external_url?: string | null;
   attachment_file_url?: string | null;
-  attachment_urls?: { url: string; file_name?: string }[];
+  attachment_urls?: { url: string; file_name?: string; content_type?: string; size?: number | null }[];
   practice_bundle_tests?: {
     id: number;
     title?: string;

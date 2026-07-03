@@ -152,7 +152,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
         self.client.force_authenticate(user=self.test_admin)
         resp = self.client.post(
             "/api/assessments/admin/sets/",
-            data={"subject": "math", "category": "x", "title": "New set", "description": "", "is_active": True},
+            data={"subject": "math", "source": "SQB", "category": "x", "title": "New set", "description": "", "is_active": True},
             format="json",
             HTTP_HOST="admin.mastersat.uz",
         )
@@ -162,7 +162,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
         self.client.force_authenticate(user=self.test_admin)
         resp = self.client.post(
             "/api/assessments/admin/sets/",
-            data={"subject": "math", "category": "x", "title": "New set", "description": "", "is_active": True},
+            data={"subject": "math", "source": "SQB", "category": "x", "title": "New set", "description": "", "is_active": True},
             format="json",
             HTTP_HOST="questions.mastersat.uz",
         )
@@ -267,7 +267,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
         self.client.force_authenticate(user=self.teacher_math)
         resp = self.client.post(
             "/api/assessments/admin/sets/",
-            data={"subject": "math", "category": "x", "title": "T", "description": "", "is_active": True},
+            data={"subject": "math", "source": "SQB", "category": "x", "title": "T", "description": "", "is_active": True},
             format="json",
             HTTP_HOST="questions.mastersat.uz",
         )

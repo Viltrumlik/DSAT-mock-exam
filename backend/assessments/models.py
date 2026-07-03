@@ -13,7 +13,39 @@ class AssessmentSet(models.Model):
         (SUBJECT_ENGLISH, "English"),
     ]
 
+    # Provenance of the questions in this set. English and Math share SQB + External
+    # but otherwise draw from different question banks; see ALLOWED_SOURCES_BY_SUBJECT.
+    SOURCE_SQB = "SQB"
+    SOURCE_SATOPLAM = "SATOPLAM"
+    SOURCE_MATHBOOK = "MATHBOOK"
+    SOURCE_PREP_PROS = "PREP_PROS"
+    SOURCE_HARD_QUESTIONS = "HARD_QUESTIONS"
+    SOURCE_EXTERNAL = "EXTERNAL"
+    SOURCE_CHOICES = [
+        (SOURCE_SQB, "SQB"),
+        (SOURCE_SATOPLAM, "SAToplam"),
+        (SOURCE_MATHBOOK, "Mathbook"),
+        (SOURCE_PREP_PROS, "Prep Pros"),
+        (SOURCE_HARD_QUESTIONS, "Hard questions"),
+        (SOURCE_EXTERNAL, "External source"),
+    ]
+    ALLOWED_SOURCES_BY_SUBJECT = {
+        SUBJECT_ENGLISH: (SOURCE_SQB, SOURCE_SATOPLAM, SOURCE_EXTERNAL),
+        SUBJECT_MATH: (
+            SOURCE_SQB,
+            SOURCE_MATHBOOK,
+            SOURCE_PREP_PROS,
+            SOURCE_HARD_QUESTIONS,
+            SOURCE_EXTERNAL,
+        ),
+    }
+
     subject = models.CharField(max_length=16, choices=SUBJECT_CHOICES, db_index=True)
+    # Blank = legacy/None; new sets require a source valid for their subject (enforced
+    # in the admin write serializer). Editable later from set metadata.
+    source = models.CharField(
+        max_length=32, choices=SOURCE_CHOICES, blank=True, default="", db_index=True
+    )
     category = models.CharField(max_length=255, db_index=True, blank=True, default="")
     title = models.CharField(max_length=200, db_index=True)
     description = models.TextField(blank=True, default="")
@@ -36,6 +68,11 @@ class AssessmentSet(models.Model):
 
     def __str__(self) -> str:
         return f"{self.subject}:{self.title}"
+
+    @classmethod
+    def allowed_sources_for_subject(cls, subject: str) -> tuple[str, ...]:
+        """Source keys valid for the given subject (empty for unknown subjects)."""
+        return cls.ALLOWED_SOURCES_BY_SUBJECT.get(subject, ())
 
 
 class AssessmentSetVersion(models.Model):

@@ -28,6 +28,12 @@ class Classroom(models.Model):
         (SUBJECT_MATH, "Math"),
     ]
 
+    # Classroom subject → the two resource vocabularies used elsewhere:
+    #   platform subject (READING_WRITING/MATH): PracticeTest.subject, MockExam.midterm_subject
+    #   domain subject   (english/math):         AssessmentSet.subject, UserAccess.subject
+    _PLATFORM_SUBJECT = {SUBJECT_MATH: "MATH", SUBJECT_ENGLISH: "READING_WRITING"}
+    _DOMAIN_SUBJECT = {SUBJECT_MATH: "math", SUBJECT_ENGLISH: "english"}
+
     DAYS_ODD = "ODD"
     DAYS_EVEN = "EVEN"
     DAYS_CHOICES = [
@@ -76,6 +82,16 @@ class Classroom(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @property
+    def platform_subject(self) -> str | None:
+        """READING_WRITING / MATH — for PracticeTest and MockExam filtering."""
+        return self._PLATFORM_SUBJECT.get(self.subject)
+
+    @property
+    def domain_subject(self) -> str | None:
+        """english / math — for AssessmentSet and access filtering."""
+        return self._DOMAIN_SUBJECT.get(self.subject)
 
     def ensure_join_code(self) -> None:
         if self.join_code:
