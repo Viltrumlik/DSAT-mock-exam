@@ -19,7 +19,7 @@ import type {
   AssessmentQuestionType,
   AssessmentSet,
 } from "@/features/assessments/types";
-import { normalizeApiError } from "@/lib/apiError";
+import { normalizeApiError, formatApiErrorForToast } from "@/lib/apiError";
 import ErrorPanel from "@/components/ErrorPanel";
 import { useToast } from "@/components/ToastProvider";
 import { normalizeQuestionList } from "@/features/assessments/builder/normalize";
@@ -28,9 +28,9 @@ import {
   useBuilderViewSet,
 } from "@/features/assessments/builder/store";
 import { PublishSlideOver } from "@/features/assessments/builder/PublishSlideOver";
+import { SATQuestionPreview } from "@/features/assessments/builder/SATQuestionPreview";
+import { QuestionRow } from "@/features/assessments/builder/QuestionRow";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
-import { renderMath } from "@/lib/mathRender";
-import { MathText } from "@/components/MathText";
 import { writeStudioSession } from "@/lib/studioSession";
 import {
   DndContext,
@@ -42,20 +42,16 @@ import {
 import {
   SortableContext,
   arrayMove,
-  useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import {
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Circle,
   Copy,
   Eye,
-  GripVertical,
   Database,
   Lock,
   Monitor,
@@ -64,7 +60,6 @@ import {
   RotateCcw,
   Save,
   Smartphone,
-  Trash2,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -82,345 +77,6 @@ const LABEL = "text-[11px] font-bold text-muted-foreground uppercase tracking-wi
 // question figure.
 const MAX_QUESTION_IMAGE_MB = 10;
 const MAX_QUESTION_IMAGE_BYTES = MAX_QUESTION_IMAGE_MB * 1024 * 1024;
-
-const TYPE_SHORT: Record<string, string> = {
-  multiple_choice: "MC",
-  numeric: "Num",
-  short_text: "Text",
-  boolean: "T/F",
-};
-
-// ─── Live SAT preview ─────────────────────────────────────────────────────────
-
-function SATQuestionPreview({
-  prompt,
-  question_type,
-  choicesText,
-  correctAnswerText,
-  explanation,
-  stimulusContext,
-}: {
-  prompt: string;
-  question_type: string;
-  choicesText: string;
-  correctAnswerText: string;
-  explanation: string;
-  /** Optional passage/stimulus excerpt shown above the question stem (SAT Reading pattern). */
-  stimulusContext?: string;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const choices = useMemo(() => {
-    try {
-      const parsed = JSON.parse(choicesText) as Array<{ id: string; text: string }>;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, [choicesText]);
-
-  const correctId = useMemo(() => {
-    try { return JSON.parse(correctAnswerText) as string | null; } catch { return null; }
-  }, [correctAnswerText]);
-
-  // ── RENDERING FALLBACK OWNERSHIP DECLARATION ──────────────────────────────
-  //
-  // Fallback type:  Container-level KaTeX safety net
-  // Owner:          BuilderSetEditorContainer / SATQuestionPreview scope only
-  // Authority:      SUPPLEMENTARY — not primary rendering ownership
-  //
-  // 1. WHY THIS FALLBACK EXISTS
-  //    KaTeX is loaded as a CDN script (layout.tsx `<Script>`), not a bundled
-  //    module. On slow networks the CDN load completes after React's initial
-  //    render and useEffect batch. Individual <MathText> useEffects fire while
-  //    renderMathInElement is still undefined, becoming silent no-ops. This
-  //    container sweep runs on every content keystroke, so the first character
-  //    typed after CDN load triggers a full re-pass across the entire preview.
-  //
-  // 2. FAILURE MODE PROTECTED AGAINST
-  //    Without this sweep: on slow networks, a freshly loaded authoring session
-  //    shows raw LaTeX delimiters (e.g. \( x^2 \)) in the preview pane until
-  //    the author happens to type a character. The preview appears broken on
-  //    load even though the content and the component are correct.
-  //
-  // 3. SURFACES THAT RELY ON THIS FALLBACK
-  //    SATQuestionPreview inside this container — author-facing preview only.
-  //    The student runner, review page, and choice live previews do NOT rely
-  //    on this sweep; they have per-element MathText useEffects and the CDN
-  //    is typically warm by the time students reach those pages.
-  //
-  // 4. WHEN THIS FALLBACK IS REMOVABLE
-  //    If KaTeX is migrated from CDN script to a bundled npm import
-  //    (`katex` + `katex/contrib/auto-render`), the race condition disappears.
-  //    Individual <MathText> useEffects become sufficient. To remove safely:
-  //      a) Bundle KaTeX via npm (remove <Script> from layout.tsx)
-  //      b) Verify preview renders math immediately on fresh load (no flash)
-  //      c) Confirm full test suite passes
-  //    Do NOT remove until (a) is confirmed in production.
-  //
-  // 5. WHY THIS IS NOT PRIMARY RENDERING OWNERSHIP
-  //    Each <MathText> owns rendering of its content through its own useEffect.
-  //    This sweep is a CDN-timing guard, not an authority over what renders.
-  //    If math on a new sub-component only renders because of this sweep, that
-  //    sub-component is missing its own <MathText> — fix the sub-component,
-  //    do not expand the scope of this sweep to cover the gap.
-  //
-  // ──────────────────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (containerRef.current) {
-      renderMath({ root: containerRef.current });
-    }
-  }, [prompt, choicesText, explanation, stimulusContext]);
-
-  if (!prompt.trim() && !stimulusContext?.trim()) {
-    return (
-      <div className="flex items-center justify-center rounded-2xl border border-dashed border-border bg-surface-2/30 py-16 text-sm text-muted-foreground">
-        Enter a question to see the preview
-      </div>
-    );
-  }
-
-  return (
-    <div ref={containerRef} className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-      <div className="flex items-center gap-2 border-b border-border bg-primary/5 px-4 py-2.5">
-        <Eye className="h-3.5 w-3.5 shrink-0 text-primary/70" />
-        <span className="text-[10px] font-bold uppercase tracking-widest text-primary/80">
-          Student preview
-        </span>
-      </div>
-      <div className="space-y-4 p-5">
-        {/* Stimulus / passage context block */}
-        {stimulusContext?.trim() && (
-          <div className="rounded-xl border border-border/60 bg-surface-2/30 px-4 py-3">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Passage context
-            </p>
-            <MathText
-              text={stimulusContext}
-              block
-              className="text-sm leading-relaxed text-foreground/80 italic"
-            />
-          </div>
-        )}
-        {/* Question stem */}
-        <MathText
-          text={prompt}
-          block
-          className="text-sm font-medium leading-relaxed text-foreground"
-        />
-
-        {question_type === "multiple_choice" && choices.length > 0 && (
-          <div className="space-y-2">
-            {choices.map((c, i) => {
-              const letter = String.fromCharCode(65 + i);
-              const isCorrect = c.id === correctId;
-              return (
-                <div
-                  key={c.id ?? i}
-                  className={cn(
-                    "flex items-start gap-3 rounded-xl border px-3 py-2.5",
-                    isCorrect
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                      : "border-border bg-surface-2/40 text-foreground",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                      isCorrect
-                        ? "bg-emerald-500 text-white"
-                        : "border border-border bg-background text-muted-foreground",
-                    )}
-                  >
-                    {letter}
-                  </span>
-                  {c.text
-                    ? <MathText text={c.text} className="pt-0.5 text-sm leading-relaxed" />
-                    : <em className="pt-0.5 text-sm opacity-40">empty</em>
-                  }
-                  {isCorrect && (
-                    <CheckCircle2 className="ml-auto h-4 w-4 shrink-0 text-emerald-500 mt-0.5" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {question_type === "numeric" && (
-          <div className="rounded-xl border border-border bg-surface-2/40 px-3 py-3 text-sm text-muted-foreground">
-            Student enters a number
-            {correctId && (
-              <span className="ml-2 font-bold text-emerald-700">
-                (Correct: {String(correctId)})
-              </span>
-            )}
-          </div>
-        )}
-
-        {question_type === "short_text" && (
-          <div className="rounded-xl border border-border bg-surface-2/40 px-3 py-3 text-sm text-muted-foreground">
-            Student types a short answer
-          </div>
-        )}
-
-        {question_type === "boolean" && (
-          <div className="flex gap-2">
-            {[{ label: "True", val: "true" }, { label: "False", val: "false" }].map(({ label, val }) => {
-              let parsed: unknown = null;
-              try { parsed = JSON.parse(correctAnswerText); } catch { /* ignore */ }
-              const isCorrect = parsed === val || (parsed === true && val === "true") || (parsed === false && val === "false");
-              return (
-                <div
-                  key={val}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-2 rounded-xl border px-3 py-3 text-sm font-semibold",
-                    isCorrect
-                      ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-                      : "border-border bg-surface-2/40 text-foreground",
-                  )}
-                >
-                  {isCorrect ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Circle className="h-4 w-4 text-muted-foreground/40" />}
-                  {label}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {explanation && (
-          <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1">
-              Explanation
-            </p>
-            <MathText
-              text={explanation}
-              block
-              className="text-sm text-foreground leading-relaxed"
-            />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Sortable question row ────────────────────────────────────────────────────
-
-function QuestionRow({
-  q,
-  index,
-  active,
-  onSelect,
-  onDelete,
-}: {
-  q: AssessmentQuestion;
-  index: number;
-  active: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: q.id });
-  const style = { transform: CSS.Transform.toString(transform), transition };
-  const [confirming, setConfirming] = useState(false);
-  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const startConfirm = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirming(true);
-    confirmTimer.current = setTimeout(() => setConfirming(false), 4000);
-  };
-  const cancelConfirm = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    setConfirming(false);
-  };
-  const commitDelete = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirmTimer.current) clearTimeout(confirmTimer.current);
-    setConfirming(false);
-    onDelete();
-  };
-  useEffect(() => () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); }, []);
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      onClick={onSelect}
-      className={cn(
-        "group flex items-start gap-2 rounded-xl border px-3 py-2.5 cursor-pointer transition-all",
-        active
-          ? "border-primary/40 bg-primary/8 shadow-sm"
-          : "border-border bg-card hover:border-border/80 hover:bg-surface-2/60",
-      )}
-    >
-      {/* Drag handle */}
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        onClick={(e) => e.stopPropagation()}
-        className="mt-0.5 cursor-grab text-muted-foreground/30 hover:text-muted-foreground active:cursor-grabbing shrink-0"
-        aria-label="Drag to reorder"
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
-
-      {/* Number + content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <span className={cn(
-            "text-[9px] font-black uppercase tabular-nums rounded px-1 py-0.5",
-            active ? "bg-primary/15 text-primary" : "bg-surface-2 text-muted-foreground",
-          )}>
-            Q{index + 1}
-          </span>
-          <span className="text-[9px] font-bold text-muted-foreground/60 uppercase">
-            {TYPE_SHORT[q.question_type] ?? q.question_type}
-          </span>
-          {!q.is_active && (
-            <span className="text-[9px] font-bold text-amber-600 uppercase">Inactive</span>
-          )}
-        </div>
-        <p className="text-xs font-semibold leading-snug text-foreground line-clamp-2">
-          {q.prompt.trim() || <em className="text-muted-foreground/40 font-normal">No prompt</em>}
-        </p>
-      </div>
-
-      {/* Delete */}
-      <div className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-        {confirming ? (
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              onClick={commitDelete}
-              className="rounded-lg bg-red-500 px-2 py-1 text-[10px] font-black text-white hover:bg-red-600"
-            >
-              Yes
-            </button>
-            <button
-              type="button"
-              onClick={cancelConfirm}
-              className="rounded-lg border border-border bg-card px-2 py-1 text-[10px] font-bold hover:bg-surface-2"
-            >
-              No
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={startConfirm}
-            className="rounded-lg p-1 text-muted-foreground/40 hover:bg-red-50 hover:text-red-500 transition-colors"
-            title="Delete question"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ─── Main editor ──────────────────────────────────────────────────────────────
 
@@ -715,7 +371,10 @@ export default function BuilderSetEditorContainer() {
     const capturedImageClears = imageClears;
     try {
       const payload: any = {
-        order: Number(editing.order || 0),
+        // `order` is intentionally NOT sent: it is server-owned (append-on-create
+        // under a set lock + the atomic reorder endpoint). Sending a stale
+        // editing.order could collide under UNIQUE(assessment_set, order); the
+        // backend now treats it as read-only, so it would be ignored anyway.
         prompt: String(editing.prompt || "").trim(),
         question_prompt: String(editing.question_prompt || ""),
         question_type: editing.question_type,
@@ -859,7 +518,9 @@ export default function BuilderSetEditorContainer() {
         selectQuestion(savedId);
       }
     } catch (e) {
-      toast.push({ tone: "error", message: normalizeApiError(e).message });
+      // Surface DRF field errors (e.g. "question_image: The submitted data was not
+      // a file") so the teacher can see exactly why a save was rejected.
+      toast.push({ tone: "error", message: formatApiErrorForToast(e) });
     }
   };
 
@@ -899,7 +560,7 @@ export default function BuilderSetEditorContainer() {
   const duplicateQuestion = useCallback(async () => {
     if (!editing.questionId && !editing.prompt) return;
     const payload: any = {
-      order: questions.length ? (questions[questions.length - 1].order ?? 0) + 1 : 0,
+      // `order` omitted — the backend appends the duplicate under a set lock.
       prompt: editing.prompt ? `${editing.prompt} (copy)` : "(copy)",
       question_type: editing.question_type,
       points: editing.points,
@@ -914,7 +575,7 @@ export default function BuilderSetEditorContainer() {
       toast.push({ tone: "success", message: "Question duplicated." });
       selectQuestion((res as any).id);
     } catch (e) {
-      toast.push({ tone: "error", message: normalizeApiError(e).message });
+      toast.push({ tone: "error", message: formatApiErrorForToast(e) });
     }
   }, [editing, questions, upsertQuestion, selectQuestion, toast]);
 
@@ -927,15 +588,14 @@ export default function BuilderSetEditorContainer() {
     const next = normalizeQuestionList(arrayMove(questions, oldIndex, newIndex));
     pushUndoPoint();
     try {
-      for (let i = 0; i < next.length; i++) {
-        const q = next[i];
-        if (q.order !== i) {
-          await upsertQuestion.mutateAsync({ id: q.id, payload: { order: i } });
-        }
-      }
+      // Single atomic reorder: the backend reindexes ALL questions to a dense,
+      // unique 0..n-1 under a set row-lock. Replaces the old N-PATCH loop, which
+      // left duplicate/gapped orders if a request failed midway.
+      await assessmentAuthoringApi.reorderQuestions(setId, next.map((q) => q.id));
+      await detail.refetch();
       toast.push({ tone: "success", message: "Order saved." });
     } catch (e) {
-      toast.push({ tone: "error", message: normalizeApiError(e).message });
+      toast.push({ tone: "error", message: formatApiErrorForToast(e) });
     }
   };
 

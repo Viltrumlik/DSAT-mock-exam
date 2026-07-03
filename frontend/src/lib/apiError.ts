@@ -53,3 +53,26 @@ export function normalizeApiError(err: unknown): ApiError {
   return fallback;
 }
 
+/**
+ * Build a human toast message from an API error, surfacing DRF field errors when
+ * present. The builder previously showed only `.message` (usually a generic
+ * "Request failed."), so a teacher had no idea *which* field was rejected — e.g.
+ * `question_image: The submitted data was not a file`. This exposes up to two
+ * field errors ("field: message") so the cause is actionable.
+ */
+export function formatApiErrorForToast(err: unknown, max = 2): string {
+  const e = normalizeApiError(err);
+  const fieldErrors = e.fieldErrors;
+  if (fieldErrors) {
+    const parts = Object.entries(fieldErrors)
+      .slice(0, max)
+      .map(([field, msgs]) => `${field}: ${(msgs && msgs[0]) || "invalid"}`);
+    if (parts.length) {
+      return e.message && !/request failed/i.test(e.message)
+        ? `${e.message} (${parts.join("; ")})`
+        : parts.join("; ");
+    }
+  }
+  return e.message;
+}
+

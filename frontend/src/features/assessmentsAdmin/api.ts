@@ -93,6 +93,18 @@ export const assessmentsAdminApi = {
     await assessmentsAdminClient.adminDeleteQuestion(id);
   },
   /**
+   * Atomically persist a full question ordering for a set. The backend reindexes
+   * every question to a dense, unique 0..n-1 under a set row-lock — replacing the
+   * old per-question PATCH loop that could leave duplicate/gapped orders if a
+   * request failed midway. Returns the server's canonical ordered id list.
+   */
+  reorderQuestions: async (setId: number, orderedIds: number[]): Promise<number[]> => {
+    const r = await api.post(`/assessments/admin/sets/${setId}/questions/reorder/`, {
+      ordered_ids: orderedIds,
+    });
+    return (r.data as { ordered_ids?: number[] })?.ordered_ids ?? orderedIds;
+  },
+  /**
    * Dry-run publish validation.
    * Calls GET /assessments/admin/sets/{id}/validate-publish/ and returns the
    * full PublishValidationReport (blocking + warning findings).
