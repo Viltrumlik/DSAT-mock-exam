@@ -288,7 +288,7 @@ function Booklet({ section, d, busy, error, onOpen }: { section: PastpaperSectio
       style={{ display: "flex", border: "1px solid var(--dz-border)", borderRadius: 18, overflow: "hidden", background: "var(--dz-panel)", cursor: "pointer" }}>
       <div className="dz-edge" style={{ width: 11, background: d.status === "completed" ? "#16a34a" : d.status === "progress" ? "var(--dz-amber)" : regionMain, flex: "none" }} />
       <div style={{ width: 10, background: "repeating-linear-gradient(var(--dz-panel), var(--dz-panel) 3px, var(--dz-border) 3px, var(--dz-border) 6px)", borderRight: "1px solid var(--dz-border)", flex: "none" }} />
-      <div style={{ padding: "18px 20px", flex: 1, minWidth: 0 }}>
+      <div style={{ padding: "18px 20px", flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800, color: statusMeta.color, background: statusMeta.bg, padding: "4px 10px", borderRadius: 8 }}>
             <span style={{ width: 7, height: 7, borderRadius: "50%", background: statusMeta.dot }} /> {statusMeta.label}
@@ -304,7 +304,11 @@ function Booklet({ section, d, busy, error, onOpen }: { section: PastpaperSectio
           </span>
         </div>
 
-        <div className="clip1" style={{ fontSize: 18, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>
+        {/* marginTop:auto absorbs any extra card height (when a shorter card is
+            stretched next to a taller sibling) BETWEEN the badge and the title,
+            so the title/date/action move down together instead of leaving an
+            awkward gap around the button. Collapses to 0 on a full card. */}
+        <div className="clip1" style={{ marginTop: "auto", fontSize: 18, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>
           {sectionTitle(section)}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--dz-mute)", marginTop: 6 }}>
