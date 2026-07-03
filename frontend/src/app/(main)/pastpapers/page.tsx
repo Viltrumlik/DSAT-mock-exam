@@ -46,14 +46,33 @@ function subjectLabel(subject: string): string {
   if (subject === "MATH" || subject?.toLowerCase().includes("math")) return "Mathematics";
   return subject;
 }
+function variantLabel(s: PastpaperSection): string {
+  // The paper variant shown as the card TITLE (e.g. "Int. A", "US A"), derived by
+  // stripping the "<Month Year>" prefix from collection_name. The month is the
+  // GROUP HEADER; the subject (R&W / Math) is the badge — so the title only needs
+  // the variant, which is what tells the two sittings of a month apart.
+  const coll = (s.collection_name || "").trim();
+  const month = fmtMonth(s.practice_date);
+  if (coll) {
+    if (month && coll.toLowerCase().startsWith(month.toLowerCase())) {
+      const rest = coll.slice(month.length).trim();
+      if (rest) return rest;
+    }
+    const parts = coll.split(/\s+/);
+    if (parts.length > 2) return parts.slice(2).join(" ");
+    return coll;
+  }
+  const region = s.form_type === "US" ? "US" : "Int.";
+  return s.label && s.label.trim() ? `${region} ${s.label.trim()}` : region;
+}
 function sectionTitle(s: PastpaperSection): string {
   if (s.title && s.title.trim()) return s.title.trim();
-  // Card title is the date only — the subject (Reading & Writing / Mathematics)
-  // is already shown as a badge above, so it must not be repeated in the title.
-  return fmtMonth(s.practice_date);
+  return variantLabel(s);
 }
 function collectionLabel(s: PastpaperSection): string {
-  return (s.collection_name && s.collection_name.trim()) || "Past papers";
+  // Group header = the sitting month (e.g. "October 2025"); ALL variants
+  // (Int. A/B, US A/B) live under one month, distinguished by the card title.
+  return fmtMonth(s.practice_date);
 }
 
 type Att = { id: number; practice_test: number; is_completed: boolean; is_expired: boolean; score: number | null; completed_at?: string | null; submitted_at?: string | null };
@@ -138,16 +157,27 @@ export default function PastpapersPage() {
       });
   }, [sections, byTest, region, year, status, search]);
 
-  // Group filtered cards by collection_name, preserving newest-date-first order.
+  // Group filtered cards by sitting MONTH (one header per month); within a month
+  // order by variant then subject so each paper's R&W + Math sit together, and
+  // list months newest-first.
   const groups = useMemo(() => {
-    const order: string[] = [];
     const map = new Map<string, { section: PastpaperSection; d: Derived }[]>();
     for (const row of rows) {
       const key = collectionLabel(row.section);
-      if (!map.has(key)) { map.set(key, []); order.push(key); }
+      if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(row);
     }
-    return order.map((name) => ({ name, items: map.get(name)! }));
+    const subjRank = (s: PastpaperSection) => (isRW(s.subject) ? 0 : 1);
+    for (const items of map.values()) {
+      items.sort((a, b) => {
+        const c = (a.section.collection_name || "").localeCompare(b.section.collection_name || "");
+        return c !== 0 ? c : subjRank(a.section) - subjRank(b.section);
+      });
+    }
+    return Array.from(map.entries())
+      .map(([name, items]) => ({ name, items, sortKey: items[0]?.section.practice_date || "" }))
+      .sort((a, b) => (b.sortKey || "").localeCompare(a.sortKey || ""))
+      .map(({ name, items }) => ({ name, items }));
   }, [rows]);
 
   const hasFilter = region !== "ALL" || year !== "ALL" || status !== "ALL" || !!search.trim();
