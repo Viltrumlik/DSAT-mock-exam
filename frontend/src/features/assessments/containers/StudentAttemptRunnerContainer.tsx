@@ -69,6 +69,7 @@ import {
 import {
   CheckCircle2,
   ChevronLeft,
+  AlertTriangle,
   ChevronRight,
   ChevronUp,
   Clock,
@@ -84,7 +85,7 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Stage = "exam" | "confirm-submit" | "submitting" | "complete";
+type Stage = "exam" | "confirm-submit" | "submitting" | "complete" | "version-conflict";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -256,7 +257,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // Leave full screen on the way out (submit complete / unmount) so students
   // aren't stuck full screen on the results screen.
   useEffect(() => {
-    if (stage === "complete") void fsExit();
+    if (stage === "complete" || stage === "version-conflict") void fsExit();
   }, [stage, fsExit]);
 
   // Track per-question time when switching questions
@@ -425,7 +426,9 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       // After a successful submit the student should navigate freely to results.
       // Also suppressed once submitInflightRef is true (submit in progress) since
       // the submit API call itself will persist the work server-side.
-      if (stage === "complete" || stage === "submitting") return;
+      // version-conflict is terminal — the attempt can't be submitted, so don't
+      // trap the student with an "unsaved work" prompt on their way to restart.
+      if (stage === "complete" || stage === "submitting" || stage === "version-conflict") return;
       const hasPending = Object.keys(offlineQueue.current).length > 0;
       if (saveState === "saving" || hasPending) {
         e.preventDefault();
@@ -798,9 +801,18 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       // submitInflightRef intentionally stays true — successful submit should
       // never be re-fired even if the user navigates back to this surface.
     } catch (e) {
+      const ax = normalizeApiError(e);
+      // 409 = the assessment's questions were changed by the teacher while this
+      // attempt was open, so its snapshot no longer matches. This is TERMINAL:
+      // the attempt can't be submitted and must be restarted. Do NOT drop back to
+      // the confirm-submit retry loop (that caused students to hammer submit) —
+      // keep the inflight guard set and show a dedicated conflict screen.
+      if (ax.status === 409) {
+        setStage("version-conflict");
+        return;
+      }
       submitInflightRef.current = false; // allow student to retry
       setStage("confirm-submit");
-      const ax = normalizeApiError(e);
       setSubmitError(
         ax.status === 401
           ? "Your session has expired. Your answers are saved locally — please sign in again."
@@ -1043,6 +1055,38 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const answerValue = currentQuestionId ? draftById[currentQuestionId] : null;
 
   // ── Stage: complete ─────────────────────────────────────────────────────────
+  // ── Stage: version-conflict (terminal) ──────────────────────────────────────
+  // The teacher edited this assessment's questions while the attempt was open, so
+  // its snapshot no longer matches and it cannot be submitted. Guide the student
+  // to restart instead of letting them hammer a submit button that always 409s.
+  if (stage === "version-conflict") {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 py-6">
+        <div className="w-full max-w-lg rounded-2xl border border-border bg-card p-10 text-center space-y-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+            <AlertTriangle className="h-7 w-7 text-amber-600" />
+          </div>
+          <p className="text-lg font-extrabold text-foreground">This assessment was updated</p>
+          <p className="text-sm text-muted-foreground">
+            Your teacher changed the questions while you were working, so this attempt
+            can’t be submitted. Please start it again from your assignments — your new
+            attempt will use the latest version.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              void fsExit();
+              window.location.assign(assignmentId ? `/assessments/${assignmentId}` : "/classes");
+            }}
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            Back to assignments
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (stage === "complete") {
     return (
       <div className="flex min-h-screen items-center justify-center px-4 py-6">
