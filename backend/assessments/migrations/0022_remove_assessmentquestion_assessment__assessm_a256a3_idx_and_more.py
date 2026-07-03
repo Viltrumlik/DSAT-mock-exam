@@ -49,14 +49,16 @@ class Migration(migrations.Migration):
         ('questionbank', '0004_bankquestionattempt'),
     ]
 
+    # Data-normalization only. The UNIQUE(assessment_set, order) constraint is
+    # added in the FOLLOWING migration (0023), NOT here: on PostgreSQL you cannot
+    # `ALTER TABLE ... ADD CONSTRAINT` in the same transaction that just ran the
+    # RunPython bulk updates ("cannot ALTER TABLE ... because it has pending
+    # trigger events"). Django wraps each migration in its own transaction, so
+    # splitting the schema change into 0023 lets the normalization commit first.
     operations = [
         migrations.RemoveIndex(
             model_name='assessmentquestion',
             name='assessment__assessm_a256a3_idx',
         ),
         migrations.RunPython(_normalize_all_orders, _noop_reverse),
-        migrations.AddConstraint(
-            model_name='assessmentquestion',
-            constraint=models.UniqueConstraint(fields=('assessment_set', 'order'), name='uniq_assessment_question_order_per_set'),
-        ),
     ]
