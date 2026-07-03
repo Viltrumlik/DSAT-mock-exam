@@ -48,7 +48,9 @@ function subjectLabel(subject: string): string {
 }
 function sectionTitle(s: PastpaperSection): string {
   if (s.title && s.title.trim()) return s.title.trim();
-  return `${subjectLabel(s.subject)} — ${fmtMonth(s.practice_date)}`;
+  // Card title is the date only — the subject (Reading & Writing / Mathematics)
+  // is already shown as a badge above, so it must not be repeated in the title.
+  return fmtMonth(s.practice_date);
 }
 function collectionLabel(s: PastpaperSection): string {
   return (s.collection_name && s.collection_name.trim()) || "Past papers";
