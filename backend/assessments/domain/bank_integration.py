@@ -16,7 +16,8 @@ ARCHIVED are never selectable.
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError
-from django.db.models import Max, Q
+from django.db import transaction
+from django.db.models import Q
 
 from questionbank.models import BankQuestion, QuestionStatus, QuestionType
 
@@ -75,14 +76,6 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion, *, or
             f"Question {bank_question.qb_id} has no current version to pin."
         )
 
-    if order is None:
-        mx = (
-            AssessmentQuestion.objects.filter(assessment_set=assessment_set)
-            .aggregate(Max("order")).get("order__max")
-            or 0
-        )
-        order = int(mx) + 1
-
     # FREEZE-SAFE IMAGE COPY: reference the bank's image files by storage name on
     # the new (editable) AssessmentQuestion row. The frozen attempt/review delivery
     # paths supplement images from the live row (_image_map_for in views.py), so the
@@ -92,21 +85,31 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion, *, or
     # deleted. Math diagrams therefore survive publish without being dropped.
     image_fields = {f: _img_name(getattr(bank_question, f)) for f in _IMAGE_FIELDS}
 
-    return AssessmentQuestion.objects.create(
-        assessment_set=assessment_set,
-        order=order,
-        prompt=bank_question.question_text,
-        question_prompt=bank_question.question_prompt or "",
-        question_type=_TYPE_MAP.get(bank_question.question_type, "multiple_choice"),
-        choices=_choices_from_bank(bank_question),
-        correct_answer=bank_question.correct_answer,
-        points=bank_question.points or 1,
-        explanation=bank_question.explanation or "",
-        is_active=True,
-        bank_question=bank_question,
-        bank_version=bank_question.current_version,
-        **image_fields,
-    )
+    # Assign the append order under a set row-lock (held through the insert) so
+    # concurrent bank-adds can never race to the same order value — the defect
+    # that scrambled the Boundaries sets. See domain/question_ordering.py.
+    from .question_ordering import append_order_locked
+
+    with transaction.atomic():
+        if order is None:
+            order = append_order_locked(assessment_set.pk)
+        else:
+            type(assessment_set).objects.select_for_update().get(pk=assessment_set.pk)
+        return AssessmentQuestion.objects.create(
+            assessment_set=assessment_set,
+            order=order,
+            prompt=bank_question.question_text,
+            question_prompt=bank_question.question_prompt or "",
+            question_type=_TYPE_MAP.get(bank_question.question_type, "multiple_choice"),
+            choices=_choices_from_bank(bank_question),
+            correct_answer=bank_question.correct_answer,
+            points=bank_question.points or 1,
+            explanation=bank_question.explanation or "",
+            is_active=True,
+            bank_question=bank_question,
+            bank_version=bank_question.current_version,
+            **image_fields,
+        )
 
 
 def selectable_bank_questions(*, subject: str | None = None, domain_id=None, skill_id=None,

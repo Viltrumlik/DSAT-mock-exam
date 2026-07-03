@@ -315,7 +315,11 @@ class GradingReplayInvarianceTests(TestCase):
         # ── Deactivate original, add new question, republish ──────────────────
         q_original.is_active = False
         q_original.save()
-        q_new = make_mc_question(aset, order=1, correct="C")
+        # order is unique across ALL rows in a set (active + inactive) under
+        # UNIQUE(assessment_set, order); the deactivated original still holds
+        # order=1, so the replacement appends at order=2 — mirroring the real
+        # create flow (which always appends under a set lock).
+        q_new = make_mc_question(aset, order=2, correct="C")
         v2 = publish_assessment_set(set_id=aset.pk, actor=self.teacher)
         self.assertNotEqual(v1.snapshot_checksum, v2.snapshot_checksum)
         self.assertEqual(v2.question_count, 1)

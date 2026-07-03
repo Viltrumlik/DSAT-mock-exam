@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
@@ -66,7 +68,36 @@ class AssessmentQuestionAdminReadSerializer(serializers.ModelSerializer):
         ]
 
 
+_CLEAR_IMAGE_FIELDS = [
+    "clear_question_image",
+    "clear_option_a_image",
+    "clear_option_b_image",
+    "clear_option_c_image",
+    "clear_option_d_image",
+]
+
+# A numeric answer is either a plain number or a simple fraction like "1/2" or
+# "-3/4" (graded as a decimal on the backend). Mirrors the builder's client check.
+_FRACTION_RE = re.compile(r"^-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?$")
+
+
 class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
+    """
+    Create/update serializer for the builder.
+
+    ``assessment_set`` and ``order`` are **server-owned** (read-only): the parent
+    set is injected by the view via ``save(assessment_set=…)`` and ``order`` is
+    assigned under a set row-lock (append on create; the atomic reorder endpoint
+    otherwise). This closes two defects: (1) a stale builder tab sending ``order``
+    can no longer collide under ``UNIQUE(assessment_set, order)``, and (2) the
+    client can't spoof ``assessment_set`` across sets.
+
+    Validation is strict and returns precise per-field messages so the builder can
+    surface *why* a save failed instead of a generic error. JSON columns tolerate a
+    raw JSON string (belt-and-suspenders for any transport that skips DRF's
+    html-input decoding) and reject malformed values by name.
+    """
+
     clear_question_image = serializers.BooleanField(write_only=True, required=False)
     clear_option_a_image = serializers.BooleanField(write_only=True, required=False)
     clear_option_b_image = serializers.BooleanField(write_only=True, required=False)
@@ -75,6 +106,7 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = AssessmentQuestion
+        read_only_fields = ["assessment_set", "order"]
         fields = [
             "id",
             "assessment_set",
@@ -100,6 +132,94 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
             "clear_option_d_image",
         ]
 
+    # ── field-level structural checks ────────────────────────────────────────
+    # NOTE: choices/correct_answer/grading_config are DRF JSONFields — by the time
+    # these run, DRF has already decoded any JSON string (a malformed string 400s
+    # as "<field>: Value must be valid JSON" before we get here). So we only assert
+    # the top-level shape; type-specific rules live in validate() below.
+    def validate_choices(self, value):
+        if value in (None, ""):
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Choices must be a list.")
+        return value
+
+    def validate_grading_config(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Grading config must be an object.")
+        return value
+
+    # ── cross-field validation (type-aware, PATCH-tolerant) ──────────────────
+    def validate(self, attrs):
+        def current(field, default=None):
+            if field in attrs:
+                return attrs[field]
+            if self.instance is not None:
+                return getattr(self.instance, field, default)
+            return default
+
+        qtype = current("question_type")
+        choices = current("choices") or []
+        correct = current("correct_answer")
+
+        if qtype == AssessmentQuestion.TYPE_MULTIPLE_CHOICE:
+            ids = []
+            for i, ch in enumerate(choices):
+                if not isinstance(ch, dict):
+                    raise serializers.ValidationError({"choices": f"Choice #{i + 1} must be an object."})
+                cid = str(ch.get("id") or "").strip()
+                if not cid:
+                    raise serializers.ValidationError({"choices": f"Choice #{i + 1} is missing an id."})
+                ids.append(cid)
+            if not ids:
+                raise serializers.ValidationError({"choices": "Add at least one answer choice."})
+            if len(set(ids)) != len(ids):
+                raise serializers.ValidationError({"choices": "Answer choice ids must be unique."})
+            # correct_answer is required on create; on partial PATCH it may be absent.
+            has_correct = "correct_answer" in attrs or self.instance is not None
+            if has_correct:
+                cstr = correct if isinstance(correct, str) else ("" if correct is None else str(correct))
+                if not cstr:
+                    raise serializers.ValidationError({"correct_answer": "Pick which choice is correct."})
+                if cstr not in ids:
+                    raise serializers.ValidationError(
+                        {"correct_answer": f'Selected answer "{cstr}" does not match any choice id.'}
+                    )
+                attrs["correct_answer"] = cstr
+
+        elif qtype == AssessmentQuestion.TYPE_NUMERIC and ("correct_answer" in attrs):
+            raw = "" if correct is None else str(correct).strip()
+            if raw == "":
+                raise serializers.ValidationError({"correct_answer": "Enter a correct numeric value."})
+            if _FRACTION_RE.match(raw):
+                attrs["correct_answer"] = raw
+            else:
+                try:
+                    attrs["correct_answer"] = float(raw) if ("." in raw or "e" in raw.lower()) else int(raw)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError(
+                        {"correct_answer": "Value must be a number or a fraction like 1/2."}
+                    )
+
+        elif qtype == AssessmentQuestion.TYPE_BOOLEAN and ("correct_answer" in attrs):
+            if isinstance(correct, bool):
+                pass
+            elif isinstance(correct, str) and correct.strip().lower() in ("true", "false"):
+                attrs["correct_answer"] = correct.strip().lower() == "true"
+            else:
+                raise serializers.ValidationError({"correct_answer": "Value must be true or false."})
+
+        elif qtype == AssessmentQuestion.TYPE_SHORT_TEXT and ("correct_answer" in attrs):
+            if correct is not None and not isinstance(correct, (str, list)):
+                raise serializers.ValidationError(
+                    {"correct_answer": "Value must be a string or a list of acceptable strings."}
+                )
+
+        return attrs
+
+    # ── image clear handling ─────────────────────────────────────────────────
     def _clear_image_field(self, instance, field_name):
         field = getattr(instance, field_name)
         if field:
@@ -107,8 +227,7 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
         setattr(instance, field_name, None)
 
     def create(self, validated_data):
-        for key in ["clear_question_image", "clear_option_a_image", "clear_option_b_image",
-                    "clear_option_c_image", "clear_option_d_image"]:
+        for key in _CLEAR_IMAGE_FIELDS:
             validated_data.pop(key, None)
         return super().create(validated_data)
 

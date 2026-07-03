@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from django.db import transaction
-from django.db.models import Max
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.pagination import LimitOffsetPagination
@@ -33,6 +32,7 @@ from .serializers import (
     AssessmentQuestionAdminWriteSerializer,
     ApiAssessmentDetailSerializer,
 )
+from .services.authoring_service import create_question, reorder_questions
 
 
 class AdminAssessmentSetListCreateView(APIView):
@@ -148,16 +148,14 @@ class AdminAssessmentQuestionCreateView(APIView):
 
     def post(self, request, set_pk: int):
         aset = get_object_or_404(AssessmentSet, pk=set_pk)
-        s = AssessmentQuestionAdminWriteSerializer(data={**request.data, "assessment_set": aset.pk})
+        # Pass request.data through UNTOUCHED. Spreading a multipart QueryDict into a
+        # plain dict wraps every value in a single-element list and breaks JSON/file
+        # field parsing — the cause of the create-with-image 400s. assessment_set and
+        # order are server-owned (read-only on the serializer) and injected by the
+        # authoring service under a set row-lock.
+        s = AssessmentQuestionAdminWriteSerializer(data=request.data)
         s.is_valid(raise_exception=True)
-        # Default append order if not specified.
-        if "order" not in s.validated_data:
-            mx = (
-                AssessmentQuestion.objects.filter(assessment_set=aset).aggregate(Max("order")).get("order__max")
-                or 0
-            )
-            s.validated_data["order"] = int(mx) + 1
-        q = s.save(assessment_set=aset)
+        q = create_question(aset, s)
         _sync_question_to_bank(q)
         return Response(AssessmentQuestionAdminWriteSerializer(q).data, status=status.HTTP_201_CREATED)
 
@@ -177,6 +175,33 @@ class AdminAssessmentQuestionDetailView(APIView):
         q = get_object_or_404(AssessmentQuestion, pk=pk)
         q.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminAssessmentSetReorderView(APIView):
+    """
+    POST /assessments/admin/sets/{set_pk}/questions/reorder/  {"ordered_ids": [...]}
+
+    Atomically persist a full question ordering for a set. The whole set is
+    reindexed to a dense, unique ``0..n-1`` under a set row-lock via a two-phase
+    temp band — safe under the ``UNIQUE(assessment_set, order)`` constraint.
+    Replaces the builder's old N-PATCH drag loop (which left duplicate/gapped
+    orders if a request failed midway). Ids not listed are appended in canonical
+    order; unknown ids are ignored.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+
+    def post(self, request, set_pk: int):
+        aset = get_object_or_404(AssessmentSet, pk=set_pk)
+        raw = request.data.get("ordered_ids")
+        if not isinstance(raw, list):
+            return Response(
+                {"detail": "ordered_ids must be a list of question ids."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        ordered_ids = [int(x) for x in raw if isinstance(x, (int, str)) and str(x).isdigit()]
+        final_ids = reorder_questions(aset.pk, ordered_ids)
+        return Response({"ordered_ids": final_ids})
 
 
 class AdminQuestionBankSelectView(APIView):

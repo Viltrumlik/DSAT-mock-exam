@@ -8,6 +8,7 @@ from .views import (
     AdminAssessmentSetVersionListView,
     AdminAssessmentQuestionCreateView,
     AdminAssessmentQuestionDetailView,
+    AdminAssessmentSetReorderView,
     AdminQuestionBankSelectView,
     AdminQuestionBankTaxonomyView,
     AdminAssessmentQuestionFromBankView,
@@ -41,6 +42,7 @@ urlpatterns = [
     path("admin/sets/<int:pk>/validate-publish/", AdminValidatePublishView.as_view(), name="assessment-admin-set-validate-publish"),
     path("admin/sets/<int:pk>/versions/", AdminAssessmentSetVersionListView.as_view(), name="assessment-admin-set-versions"),
     path("admin/sets/<int:set_pk>/questions/", AdminAssessmentQuestionCreateView.as_view(), name="assessment-admin-question-create"),
+    path("admin/sets/<int:set_pk>/questions/reorder/", AdminAssessmentSetReorderView.as_view(), name="assessment-admin-questions-reorder"),
     path("admin/sets/<int:set_pk>/questions/from-bank/", AdminAssessmentQuestionFromBankView.as_view(), name="assessment-admin-question-from-bank"),
     path("admin/questions/<int:pk>/", AdminAssessmentQuestionDetailView.as_view(), name="assessment-admin-question-detail"),
     # M4 — Question Bank picker (APPROVED-only) for the assessment builder

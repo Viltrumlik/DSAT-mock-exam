@@ -205,8 +205,15 @@ class AssessmentQuestion(models.Model):
     class Meta:
         db_table = "assessment_questions"
         ordering = ["assessment_set_id", "order", "id"]
-        indexes = [
-            models.Index(fields=["assessment_set", "order"]),
+        constraints = [
+            # Dense, unique 0..n-1 ordering per set (mirrors exams' UNIQUE(module,
+            # order)). Enforced by domain/question_ordering.py, which assigns order
+            # under a set row-lock via a two-phase temp band. Prevents the duplicate
+            # `order` values that scrambled question delivery in the Boundaries sets.
+            models.UniqueConstraint(
+                fields=["assessment_set", "order"],
+                name="uniq_assessment_question_order_per_set",
+            ),
         ]
 
 
