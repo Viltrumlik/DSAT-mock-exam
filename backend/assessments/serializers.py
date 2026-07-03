@@ -153,6 +153,17 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
 
     # ── cross-field validation (type-aware, PATCH-tolerant) ──────────────────
     def validate(self, attrs):
+        # On a partial PATCH, only re-validate the answer shape when the request is
+        # actually changing it. Editing just prompt/points/is_active/images must NOT
+        # re-check the stored choices/correct_answer — otherwise a legacy question
+        # whose data predates these rules would become uneditable.
+        is_create = self.instance is None
+        touches_answer = is_create or any(
+            f in attrs for f in ("question_type", "choices", "correct_answer", "grading_config")
+        )
+        if not touches_answer:
+            return attrs
+
         def current(field, default=None):
             if field in attrs:
                 return attrs[field]

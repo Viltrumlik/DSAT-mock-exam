@@ -164,6 +164,43 @@ class AdminQuestionMultipartCreateTests(TestCase):
         )
         self.assertEqual(by_order, list(reversed(ids)))
 
+    # ── legacy-data safety: unrelated PATCH must not re-validate answer shape ──
+    def test_patch_unrelated_field_on_legacy_question_does_not_400(self):
+        # Simulate a legacy question whose stored correct_answer no longer matches
+        # any choice id (possible from the old buggy flow). Toggling is_active must
+        # still succeed — strict answer validation only fires when the request
+        # actually changes the answer shape.
+        legacy = AssessmentQuestion.objects.create(
+            assessment_set=self.aset, order=0, prompt="legacy",
+            question_type="multiple_choice",
+            choices=[{"id": "A", "text": "a"}, {"id": "B", "text": "b"}],
+            correct_answer="Z",  # orphaned — not in choices
+        )
+        r = self.client.patch(
+            f"/api/assessments/admin/questions/{legacy.id}/",
+            {"is_active": False}, format="json", HTTP_HOST=AUTHORING_HOST,
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        legacy.refresh_from_db()
+        self.assertFalse(legacy.is_active)
+        self.assertEqual(legacy.correct_answer, "Z")  # untouched
+
+    def test_patch_editing_choices_still_validates_correct(self):
+        # But if you DO edit choices, an orphaned correct_answer is rejected.
+        q = AssessmentQuestion.objects.create(
+            assessment_set=self.aset, order=0, prompt="q",
+            question_type="multiple_choice",
+            choices=[{"id": "A", "text": "a"}, {"id": "B", "text": "b"}],
+            correct_answer="A",
+        )
+        r = self.client.patch(
+            f"/api/assessments/admin/questions/{q.id}/",
+            {"choices": [{"id": "C", "text": "c"}, {"id": "D", "text": "d"}]},
+            format="json", HTTP_HOST=AUTHORING_HOST,
+        )
+        self.assertEqual(r.status_code, 400)  # correct "A" no longer in choices
+        self.assertIn("correct_answer", r.json())
+
     def test_reorder_rejects_non_list(self):
         r = self.client.post(
             f"/api/assessments/admin/sets/{self.aset.id}/questions/reorder/",
