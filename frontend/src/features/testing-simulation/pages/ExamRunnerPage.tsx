@@ -138,7 +138,14 @@ export function ExamRunnerPage() {
       /* sessionStorage unavailable — keep in-memory */
     }
   }, [attemptId]);
-  const showWelcome = !mockFlow && welcomeParam && !welcomeAck;
+  // Show the welcome/Start screen for a fresh pastpaper (?welcome=1) AND, as a
+  // safety net, for ANY non-mock attempt the backend is still holding in
+  // NOT_STARTED — so an entry path that dropped the welcome param can't strand
+  // the student on a NOT_STARTED attempt (no module loaded, timer not begun).
+  const showWelcome =
+    !mockFlow &&
+    !welcomeAck &&
+    (welcomeParam || attempt?.current_state === ATTEMPT_STATE.NOT_STARTED);
   // SPR directions panel collapse state — persisted for the tab session so it is
   // remembered while navigating between Student-Produced Response questions.
   const [sprGuideExpanded, setSprGuideExpanded] = useState(() => {

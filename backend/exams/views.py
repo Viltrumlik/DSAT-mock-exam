@@ -635,7 +635,15 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     attempt.refresh_from_db()
                     if pre_state != TestAttempt.STATE_SCORING and attempt.current_state == TestAttempt.STATE_SCORING:
                         _enqueue_scoring_when_in_scoring_state(attempt_id=attempt.pk, request=request)
-                    attempt.start_attempt()
+                    # Timer hold: a FRESH pastpaper attempt stays NOT_STARTED so its
+                    # Module 1 clock does not burn while the student is still on the
+                    # welcome/instructions screen — it starts only when they click Start
+                    # (POST .../start/, which calls start_attempt()). Mock exams have no
+                    # welcome gate, so they start immediately; an ABANDONED attempt is
+                    # still resumed here (start_attempt restores its checkpoint), and for
+                    # an already-active attempt start_attempt() is a no-op (resume).
+                    if is_mock or attempt.current_state != TestAttempt.STATE_NOT_STARTED:
+                        attempt.start_attempt()
                 last_exc = None
                 break
             except TransitionConflict:

@@ -46,6 +46,8 @@ class ScoringTransitionTests(APITestCase):
     def test_submit_module2_enters_scoring_and_sets_timestamp(self):
         a = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json").data
         attempt_id = a["id"]
+        # Timer held on create → begin Module 1 via the Start action.
+        self.client.post(f"/api/exams/attempts/{attempt_id}/start/", {}, format="json")
         # Submit module 1 -> module 2 active
         r1 = self.client.post(f"/api/exams/attempts/{attempt_id}/submit_module/", {"answers": {}, "flagged": []}, format="json")
         self.assertEqual(r1.status_code, 200)

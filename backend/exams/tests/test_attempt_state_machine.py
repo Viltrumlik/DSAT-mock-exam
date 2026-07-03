@@ -33,9 +33,14 @@ class TestAttemptStateMachineTests(APITestCase):
         seed_mc_questions_for_practice_test(self.test)
 
     def _start_attempt(self) -> dict:
+        # Pastpapers create in NOT_STARTED (Module 1 timer HELD on the welcome
+        # screen); the welcome Start button (POST .../start/) begins Module 1.
+        # Mirror that two-step flow so these tests exercise an active attempt.
         r = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json")
         self.assertIn(r.status_code, (200, 201))
-        return r.data
+        r2 = self.client.post(f"/api/exams/attempts/{r.data['id']}/start/", {}, format="json")
+        self.assertEqual(r2.status_code, 200, r2.content)
+        return r2.data
 
     def test_module1_submit_advances_to_module2_not_review(self):
         attempt = self._start_attempt()
@@ -164,6 +169,8 @@ class TestAttemptStateMachineTests(APITestCase):
 
         attempt = self.client.post("/api/exams/attempts/", {"practice_test": test.id}, format="json").data
         attempt_id = attempt["id"]
+        # Timer held on create → begin Module 1 via the Start action.
+        attempt = self.client.post(f"/api/exams/attempts/{attempt_id}/start/", {}, format="json").data
         self.assertEqual(attempt.get("current_state"), TestAttempt.STATE_MODULE_1_ACTIVE)
 
         r = self.client.post(
