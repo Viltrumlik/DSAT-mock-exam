@@ -46,24 +46,22 @@ function subjectLabel(subject: string): string {
   if (subject === "MATH" || subject?.toLowerCase().includes("math")) return "Mathematics";
   return subject;
 }
+function formLetter(s: PastpaperSection): string {
+  const lbl = (s.label || "").trim();
+  if (/^[A-Za-z]$/.test(lbl)) return lbl.toUpperCase();
+  // Fall back to the last token of collection_name (e.g. "November 2025 Int. B" → "B")
+  // for older rows where `label` was left blank.
+  const last = (s.collection_name || "").trim().split(/\s+/).pop() || "";
+  return /^[A-Za-z]$/.test(last) ? last.toUpperCase() : "";
+}
 function variantLabel(s: PastpaperSection): string {
-  // The paper variant shown as the card TITLE (e.g. "Int. A", "US A"), derived by
-  // stripping the "<Month Year>" prefix from collection_name. The month is the
-  // GROUP HEADER; the subject (R&W / Math) is the badge — so the title only needs
-  // the variant, which is what tells the two sittings of a month apart.
-  const coll = (s.collection_name || "").trim();
-  const month = fmtMonth(s.practice_date);
-  if (coll) {
-    if (month && coll.toLowerCase().startsWith(month.toLowerCase())) {
-      const rest = coll.slice(month.length).trim();
-      if (rest) return rest;
-    }
-    const parts = coll.split(/\s+/);
-    if (parts.length > 2) return parts.slice(2).join(" ");
-    return coll;
-  }
-  const region = s.form_type === "US" ? "US" : "Int.";
-  return s.label && s.label.trim() ? `${region} ${s.label.trim()}` : region;
+  // Full, readable variant used as the card TITLE, e.g. "International Form A" /
+  // "US Form B". Region comes from form_type; the form letter from `label` (or a
+  // fallback parse of collection_name). The month is the GROUP HEADER and the
+  // subject (R&W / Math) is the badge, so the title carries the variant only.
+  const region = s.form_type === "US" ? "US" : "International";
+  const letter = formLetter(s);
+  return letter ? `${region} Form ${letter}` : region;
 }
 function sectionTitle(s: PastpaperSection): string {
   if (s.title && s.title.trim()) return s.title.trim();
@@ -343,7 +341,6 @@ function Booklet({ section, d, busy, error, onOpen }: { section: PastpaperSectio
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "var(--dz-mute)", marginTop: 6 }}>
           <Calendar size={14} /> {fmtMonth(section.practice_date)}
-          {section.label ? <><span style={{ color: "var(--dz-faint)" }}>·</span> Form {section.label}</> : null}
         </div>
         <div style={{ height: 1, background: "var(--dz-border)", margin: "15px 0" }} />
 
