@@ -54,7 +54,7 @@ def _choices_from_bank(bank: BankQuestion) -> list[dict]:
     return choices
 
 
-def create_question_from_bank(assessment_set, bank_question: BankQuestion, *, order: int | None = None):
+def create_question_from_bank(assessment_set, bank_question: BankQuestion):
     """
     Create a new AssessmentQuestion in ``assessment_set`` sourced from an APPROVED
     bank question. Returns the new AssessmentQuestion (live, not yet snapshotted).
@@ -85,16 +85,15 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion, *, or
     # deleted. Math diagrams therefore survive publish without being dropped.
     image_fields = {f: _img_name(getattr(bank_question, f)) for f in _IMAGE_FIELDS}
 
-    # Assign the append order under a set row-lock (held through the insert) so
-    # concurrent bank-adds can never race to the same order value — the defect
-    # that scrambled the Boundaries sets. See domain/question_ordering.py.
+    # Order is server-owned: ALWAYS append under a set row-lock held through the
+    # insert, so concurrent bank-adds can never race to the same order value (the
+    # defect that scrambled the Boundaries sets) and a caller can never supply a
+    # colliding order that would trip UNIQUE(assessment_set, order). See
+    # domain/question_ordering.py.
     from .question_ordering import append_order_locked
 
     with transaction.atomic():
-        if order is None:
-            order = append_order_locked(assessment_set.pk)
-        else:
-            type(assessment_set).objects.select_for_update().get(pk=assessment_set.pk)
+        order = append_order_locked(assessment_set.pk)
         return AssessmentQuestion.objects.create(
             assessment_set=assessment_set,
             order=order,

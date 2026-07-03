@@ -54,6 +54,18 @@ class M4AssessmentBankIntegrationTests(TestCase):
         self.assertEqual([c["id"] for c in aq.choices], ["A", "B"])
         self.assertEqual(aq.correct_answer, "A")
 
+    def test_from_bank_always_appends_dense_order(self):
+        # order is server-owned: repeated bank-adds to a set get dense 0..n-1 and
+        # can never collide under UNIQUE(assessment_set, order). The function no
+        # longer accepts a caller-supplied order (which could trip the constraint).
+        aset = self._set()
+        a = create_question_from_bank(aset, self._approved_bank_q("Q1?"))
+        b = create_question_from_bank(aset, self._approved_bank_q("Q2?"))
+        c = create_question_from_bank(aset, self._approved_bank_q("Q3?"))
+        self.assertEqual([a.order, b.order, c.order], [0, 1, 2])
+        with self.assertRaises(TypeError):
+            create_question_from_bank(aset, self._approved_bank_q("Q4?"), order=0)
+
     # 2 ─────────────────────────────────────────────────────────────────────
     def test_cannot_select_triage_question(self):
         triage = create_bank_question(

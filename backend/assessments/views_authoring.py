@@ -257,7 +257,7 @@ class AdminAssessmentQuestionFromBankView(APIView):
         aset = get_object_or_404(AssessmentSet, pk=set_pk)
         bank = get_object_or_404(BankQuestion, pk=request.data.get("bank_question_id"))
         try:
-            aq = create_question_from_bank(aset, bank, order=request.data.get("order"))
+            aq = create_question_from_bank(aset, bank)
         except DjangoValidationError as exc:
             msg = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
             return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
