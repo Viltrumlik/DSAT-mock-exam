@@ -135,7 +135,6 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
   const tiles: { label: string; value: string; countdown?: boolean }[] = [
     { label: "Assigned", value: shortDate(assignment.assigned_at ?? assignment.created_at ?? assignment.published_at) },
     { label: "Due", value: assignment.due_at ? shortDate(assignment.due_at) : "No deadline" },
-    { label: "Tasks", value: assignment.item_count != null ? `${assignment.item_count} items` : "—" },
     { label: "Section", value: sectionLabel(assignment.subject) },
     { label: "Countdown", value: countdown(assignment.due_at), countdown: true },
   ];

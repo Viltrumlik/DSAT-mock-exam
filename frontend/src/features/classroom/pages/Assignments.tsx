@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ClipboardList, Plus, MoreVertical, Eye, Archive, RotateCcw, ExternalLink, Pencil, Trash2 } from "lucide-react";
@@ -282,9 +283,36 @@ function StaffRow({ classId, classBase, a, index, archived }: { classId: number;
 /** Minimal kebab dropdown (click-away via a transparent overlay). */
 function KebabMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+
+  // Each assignment row is its own stacking context (the `.cr-rowin` enter animation
+  // ends on a `translateY(0)` transform), so an absolutely-positioned menu is trapped
+  // behind the rows below it. Render it in a portal with fixed coordinates so it
+  // floats above everything and stays clickable.
+  const place = useCallback(() => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({ top: Math.round(r.bottom + 4), right: Math.max(8, Math.round(window.innerWidth - r.right)) });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open, place]);
+
   return (
-    <div className="relative shrink-0">
+    <div className="shrink-0">
       <button
+        ref={btnRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="Actions"
@@ -293,17 +321,20 @@ function KebabMenu({ children }: { children: React.ReactNode }) {
       >
         <MoreVertical className="h-[18px] w-[18px]" />
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
-          <div
-            className="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-xl border border-border bg-card p-1 shadow-[var(--ds-shadow-lg)]"
-            onClick={() => setOpen(false)}
-          >
-            {children}
-          </div>
-        </>
-      )}
+      {open && pos && typeof document !== "undefined" &&
+        createPortal(
+          <>
+            <div className="fixed inset-0 z-[998]" onClick={() => setOpen(false)} aria-hidden />
+            <div
+              className="fixed z-[999] w-44 overflow-hidden rounded-xl border border-border bg-card p-1 shadow-[var(--ds-shadow-lg)]"
+              style={{ top: pos.top, right: pos.right }}
+              onClick={() => setOpen(false)}
+            >
+              {children}
+            </div>
+          </>,
+          document.body,
+        )}
     </div>
   );
 }
