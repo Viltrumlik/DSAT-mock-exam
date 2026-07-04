@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import AuthGuard from "@/components/AuthGuard";
 import { useMyAssessmentResult } from "@/features/assessments/hooks";
@@ -9,6 +9,7 @@ import { assessmentsStudentApi, type PedagogicalReviewQuestion } from "@/feature
 import { RefreshCw } from "lucide-react";
 import { Card, CardContent, Button, EmptyState, Spinner } from "@/components/ui";
 import { SummaryResultView, type SummaryRow, type SummaryRowStatus } from "@/features/assessments/components/SummaryResultView";
+import { QuestionReviewModal } from "@/features/assessments/components/QuestionReviewModal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -93,20 +94,26 @@ export default function AssessmentResultPage() {
   const questionTimes = attempt?.question_times ?? null;
   const timeForQuestion = (qid: number): number => (questionTimes ? Number(questionTimes[String(qid)] || 0) : 0);
 
+  // Questions sorted by order — the modal pages through these; rows mirror the order.
+  const sortedQuestions = useMemo(
+    () => [...(review?.questions ?? [])].sort((a, b) => a.order - b.order),
+    [review],
+  );
+
+  // Which question is open in the pop-up review modal (null = closed).
+  const [reviewIndex, setReviewIndex] = useState<number | null>(null);
+
   // Build presentational rows (sorted by question order).
   const rows: SummaryRow[] = useMemo(() => {
-    const qs = review?.questions ?? [];
-    return [...qs]
-      .sort((a, b) => a.order - b.order)
-      .map((q) => ({
-        id: q.id,
-        order: q.order,
-        status: statusOf(q),
-        correctDisplay: answerToDisplay(q.correct_answer),
-        seconds: timeForQuestion(q.id),
-      }));
+    return sortedQuestions.map((q) => ({
+      id: q.id,
+      order: q.order,
+      status: statusOf(q),
+      correctDisplay: answerToDisplay(q.correct_answer),
+      seconds: timeForQuestion(q.id),
+    }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [review, questionTimes]);
+  }, [sortedQuestions, questionTimes]);
 
   return (
     <AuthGuard>
@@ -152,7 +159,20 @@ export default function AssessmentResultPage() {
             avgPerQuestionLabel={`${avgPerQuestion} sec`}
             rows={rows}
             onBack={() => router.push(`/assessments/${aid}`)}
-            onReview={() => router.push(`/assessments/review/${attemptId}`)}
+            onReview={(row) => {
+              const idx = sortedQuestions.findIndex((q) => q.id === row.id);
+              if (idx >= 0) setReviewIndex(idx);
+            }}
+          />
+        ) : null}
+
+        {/* Per-question review pops up in a modal (mirrors the pastpaper review). */}
+        {reviewIndex != null && sortedQuestions.length > 0 ? (
+          <QuestionReviewModal
+            questions={sortedQuestions}
+            index={reviewIndex}
+            onIndexChange={setReviewIndex}
+            onClose={() => setReviewIndex(null)}
           />
         ) : null}
       </div>

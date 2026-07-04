@@ -9,6 +9,14 @@ export function formatLessonDaysMeta(lessonDays: string | undefined | null): str
   return lessonDays;
 }
 
+/** Abbreviated weekdays for compact chrome (e.g. classroom header): "Tue, Thu, Sat". */
+export function formatLessonDaysShort(lessonDays: string | undefined | null): string {
+  if (!lessonDays) return "";
+  if (lessonDays === "EVEN") return "Tue, Thu, Sat";
+  if (lessonDays === "ODD") return "Mon, Wed, Fri";
+  return lessonDays;
+}
+
 /** Leading " · " + meta text, or empty when nothing to show. */
 export function lessonDaysMetaSuffix(lessonDays: string | undefined | null): string {
   const d = formatLessonDaysMeta(lessonDays);

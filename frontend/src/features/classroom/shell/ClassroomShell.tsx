@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Check, Copy, BookOpen, Calculator } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
+import { formatLessonDaysShort } from "@/lib/classroomSchedule";
 import { Tabs } from "../ui/Tabs";
 import { Pill } from "../ui/Pill";
 import { capabilitiesFor, ROLE_LABEL, normalizeRole } from "../capabilities";
@@ -80,7 +80,7 @@ export function ClassroomShell({
   const subject = String((classroom as { subject?: string }).subject ?? "").toUpperCase();
   const isMath = subject === "MATH";
   const SubjectIcon = isMath ? Calculator : BookOpen;
-  const schedule = formatLessonDaysMeta((classroom as { lesson_days?: string }).lesson_days);
+  const schedule = formatLessonDaysShort((classroom as { lesson_days?: string }).lesson_days);
   const lessonTime = (classroom as { lesson_time?: string }).lesson_time;
   const joinCode = classroom.join_code;
 
@@ -93,14 +93,9 @@ export function ClassroomShell({
         <ArrowLeft className="h-4 w-4" /> {backLabel}
       </Link>
 
-      <header className="cr-rise mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card p-4 sm:p-5">
+      <header className="cr-rise mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border-2 border-primary bg-card p-4 shadow-sm sm:p-5">
         <div className="flex min-w-0 items-center gap-3.5">
-          <div
-            className={cn(
-              "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl",
-              isMath ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" : "bg-violet-500/10 text-violet-600 dark:text-violet-400",
-            )}
-          >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <SubjectIcon className="h-6 w-6" />
           </div>
           <div className="min-w-0">
