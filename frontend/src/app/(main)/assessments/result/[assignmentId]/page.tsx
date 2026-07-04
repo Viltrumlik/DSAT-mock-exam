@@ -4,8 +4,10 @@ import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import AuthGuard from "@/components/AuthGuard";
-import { useMyAssessmentResult } from "@/features/assessments/hooks";
+import { useMyAssessmentResult, useStartAttempt } from "@/features/assessments/hooks";
 import { assessmentsStudentApi, type PedagogicalReviewQuestion } from "@/features/assessmentsStudent/api";
+import { normalizeApiError } from "@/lib/apiError";
+import { pushGlobalToast } from "@/lib/toastBus";
 import { RefreshCw } from "lucide-react";
 import { Card, CardContent, Button, EmptyState, Spinner } from "@/components/ui";
 import { SummaryResultView, type SummaryRow, type SummaryRowStatus } from "@/features/assessments/components/SummaryResultView";
@@ -103,6 +105,21 @@ export default function AssessmentResultPage() {
   // Which question is open in the pop-up review modal (null = closed).
   const [reviewIndex, setReviewIndex] = useState<number | null>(null);
 
+  // Retry the assessment from within the review page (starts a fresh attempt).
+  const start = useStartAttempt();
+  const [retrying, setRetrying] = useState(false);
+  const retryAssessment = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const att = await start.mutateAsync({ assignment_id: aid });
+      router.push(`/assessments/attempt/${att.id}`);
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+      setRetrying(false);
+    }
+  };
+
   // Build presentational rows (sorted by question order).
   const rows: SummaryRow[] = useMemo(() => {
     return sortedQuestions.map((q) => ({
@@ -158,7 +175,9 @@ export default function AssessmentResultPage() {
             maxPoints={result.max_points}
             avgPerQuestionLabel={`${avgPerQuestion} sec`}
             rows={rows}
-            onBack={() => router.push(`/assessments/${aid}`)}
+            onBack={() => router.push(`/assessments`)}
+            onRetry={retryAssessment}
+            retrying={retrying}
             onReview={(row) => {
               const idx = sortedQuestions.findIndex((q) => q.id === row.id);
               if (idx >= 0) setReviewIndex(idx);

@@ -11,7 +11,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 
@@ -72,6 +72,9 @@ export interface SummaryResultViewProps {
   rows: SummaryRow[];
   onBack: () => void;
   onReview: (row: SummaryRow) => void;
+  /** Retry the whole assessment (start a fresh attempt). Optional. */
+  onRetry?: () => void;
+  retrying?: boolean;
 }
 
 export function SummaryResultView({
@@ -86,6 +89,8 @@ export function SummaryResultView({
   rows,
   onBack,
   onReview,
+  onRetry,
+  retrying,
 }: SummaryResultViewProps) {
   const [showAnswers, setShowAnswers] = useState(false);
   const [filter, setFilter] = useState<SummaryFilterKey>("all");
@@ -126,13 +131,25 @@ export function SummaryResultView({
 
   return (
     <div className="cr-section flex w-full flex-col gap-[18px]" style={{ fontFamily: JAKARTA }}>
-      <button
-        type="button"
-        onClick={onBack}
-        className="ds-ring group inline-flex w-fit items-center gap-2 rounded-lg text-sm font-bold text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ArrowLeft className="h-[17px] w-[17px]" /> Back to assignment
-      </button>
+      <div className="flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          className="ds-ring group inline-flex w-fit items-center gap-2 rounded-lg text-sm font-bold text-muted-foreground transition-colors hover:text-primary"
+        >
+          <ArrowLeft className="h-[17px] w-[17px]" /> Back to assignment
+        </button>
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="ds-ring inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-extrabold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RotateCcw className={cn("h-4 w-4", retrying && "animate-spin")} /> {retrying ? "Starting…" : "Retry assessment"}
+          </button>
+        ) : null}
+      </div>
 
       {/* HERO — gradient banner + stat strip (no ring). */}
       <div className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">

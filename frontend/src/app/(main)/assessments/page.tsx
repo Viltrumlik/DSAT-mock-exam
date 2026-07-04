@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen, Calculator, Clock, Calendar, CheckCircle2,
-  PlayCircle, RefreshCw, AlertTriangle, Hourglass,
+  PlayCircle, RefreshCw, AlertTriangle, Hourglass, Loader2,
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { classesApi } from "@/lib/api";
@@ -19,6 +19,9 @@ import type { Assignment } from "@/lib/criticalApiContract";
 import {
   deriveAssignmentLifecycleState, formatAssignmentDue,
 } from "@/lib/assignmentLifecycle";
+import { useStartAttempt } from "@/features/assessments/hooks";
+import { normalizeApiError } from "@/lib/apiError";
+import { pushGlobalToast } from "@/lib/toastBus";
 
 type AssessmentSet = { id: number; subject: string; category: string; title: string; description: string };
 type AssessmentHomework = { homework_id: number; set?: AssessmentSet | null };
@@ -72,6 +75,22 @@ function Board() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  // Start (or resume) the assessment directly from the card — no intermediate
+  // launcher page. The backend reuses an in-progress attempt or creates a fresh one.
+  const start = useStartAttempt();
+  const [startingId, setStartingId] = useState<number | null>(null);
+  const beginAssessment = async (assignmentId: number) => {
+    if (startingId != null) return;
+    setStartingId(assignmentId);
+    try {
+      const att = await start.mutateAsync({ assignment_id: assignmentId });
+      router.push(`/assessments/attempt/${att.id}`);
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+      setStartingId(null);
+    }
+  };
 
   const load = async () => {
     setLoading(true); setError(false); setEntries([]);
@@ -140,7 +159,13 @@ function Board() {
                     </div>
                   ) : (
                     byCol[col.key].map((e) => (
-                      <AssessCard key={`${e.classroomId}-${e.assignment.id}`} entry={e} onGo={(href) => router.push(href)} />
+                      <AssessCard
+                        key={`${e.classroomId}-${e.assignment.id}`}
+                        entry={e}
+                        onGo={(href) => router.push(href)}
+                        onStart={beginAssessment}
+                        starting={startingId === e.assignment.id}
+                      />
                     ))
                   )}
                 </div>
@@ -153,7 +178,7 @@ function Board() {
   );
 }
 
-function AssessCard({ entry, onGo }: { entry: Entry; onGo: (href: string) => void }) {
+function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (href: string) => void; onStart: (assignmentId: number) => void; starting: boolean }) {
   const state = deriveState(entry);
   const set = entry.assignment.assessment_homework?.set;
   const title = entry.assignment.title ?? set?.title ?? "Assignment";
@@ -220,31 +245,33 @@ function AssessCard({ entry, onGo }: { entry: Entry; onGo: (href: string) => voi
 
       <div style={{ display: "flex", gap: 8 }}>
         {col === "todo" ? (
-          <ActionBtn primary icon={<PlayCircle size={15} />} label="Start" onClick={() => onGo(`/assessments/${aid}`)} />
+          <ActionBtn
+            primary
+            disabled={starting}
+            icon={starting ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}
+            label={starting ? "Starting…" : "Start"}
+            onClick={() => onStart(aid)}
+          />
         ) : col === "progress" ? (
-          <ActionBtn amber icon={<PlayCircle size={15} />} label="Resume" onClick={() => onGo(entry.resumeHref ?? `/assessments/${aid}`)} />
+          <ActionBtn amber icon={<PlayCircle size={15} />} label="Resume" onClick={() => (entry.resumeHref ? onGo(entry.resumeHref) : onStart(aid))} />
         ) : (
-          <>
-            <ActionBtn icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
-            {state === "COMPLETED" ? (
-              <ActionBtn ghost icon={<RefreshCw size={15} />} label="Retry" onClick={() => onGo(`/assessments/${aid}`)} />
-            ) : null}
-          </>
+          // Completed: just Review — retry now lives inside the review (result) page.
+          <ActionBtn icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
         )}
       </div>
     </div>
   );
 }
 
-function ActionBtn({ label, icon, onClick, primary, amber, ghost }: {
-  label: string; icon: React.ReactNode; onClick: () => void; primary?: boolean; amber?: boolean; ghost?: boolean;
+function ActionBtn({ label, icon, onClick, primary, amber, ghost, disabled }: {
+  label: string; icon: React.ReactNode; onClick: () => void; primary?: boolean; amber?: boolean; ghost?: boolean; disabled?: boolean;
 }) {
   const bg = primary ? "var(--dz-indigo)" : amber ? "var(--dz-amber)" : ghost ? "transparent" : "var(--dz-card)";
   const color = primary || amber ? "#fff" : "var(--dz-ink)";
   const border = ghost ? "1px solid var(--dz-border)" : "none";
   return (
-    <button type="button" onClick={onClick} className="dz-actionbtn"
-      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 12px", borderRadius: 11, border, background: bg, color, fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+    <button type="button" onClick={onClick} disabled={disabled} className="dz-actionbtn"
+      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 12px", borderRadius: 11, border, background: bg, color, fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.7 : 1 }}>
       {icon} {label}
     </button>
   );
