@@ -294,21 +294,8 @@ function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (h
       ) : col === "progress" ? (
         <ActionBtn amber icon={<PlayCircle size={15} />} label="Continue" onClick={() => (entry.resumeHref ? onGo(entry.resumeHref) : onStart(aid))} />
       ) : (
-        <div style={{ display: "flex", gap: 8 }}>
-          <ActionBtn outline icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
-          {state === "COMPLETED" ? (
-            <button
-              type="button"
-              title="Retry assessment"
-              disabled={starting}
-              onClick={() => onStart(aid)}
-              className="dz-actionbtn"
-              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 47, padding: "9px 0", borderRadius: 11, border: "1.5px solid var(--dz-border)", background: "var(--dz-panel)", color: "var(--dz-mute)", cursor: starting ? "not-allowed" : "pointer", opacity: starting ? 0.6 : 1 }}
-            >
-              {starting ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            </button>
-          ) : null}
-        </div>
+        // Completed: just Review — retry lives inside the result/review page.
+        <ActionBtn outline icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
       )}
     </div>
   );
