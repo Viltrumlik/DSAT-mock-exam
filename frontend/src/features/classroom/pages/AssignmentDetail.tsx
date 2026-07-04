@@ -128,7 +128,9 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
 
   const action = resolveAction(kind, status);
   const actions = contentActions(assignment);
-  const isFile = kind === "FILE" || actions.length === 0;
+  // Students may upload a file whenever the teacher allowed it (independent of any
+  // pastpaper/assessment) — or when there's no auto-graded content at all.
+  const canUpload = Boolean((assignment as { allow_file_upload?: boolean }).allow_file_upload) || actions.length === 0;
   const badgeLabel = actions.length > 1 ? "Bundle" : KIND_LABEL[kind];
 
   // Meta tiles (design's hero row): label + value, animated with stagger.
@@ -197,7 +199,7 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
       </Card>
 
       {/* CONTENT LAUNCHER — one card per openable content (replaces the old "Next step"). */}
-      {!isFile && (
+      {actions.length > 0 && (
         <div
           className={cn(
             "grid gap-3",
@@ -235,38 +237,39 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
         </div>
       )}
 
-      {/* FILE kind — completed banner / upload next-step, plus the upload panel. */}
-      {isFile && (done ? (
+      {/* STUDENT FILE SUBMISSION — shown whenever the teacher allows uploads; can
+          coexist with a pastpaper/assessment launcher above (manual + auto grading). */}
+      {canUpload && (done ? (
         <Card className="cr-card border-emerald-500/30 bg-emerald-500/5">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
             <div className="flex-1">
-              <p className="text-sm font-semibold text-foreground">Completed</p>
-              <p className="text-xs text-muted-foreground">Your work is graded — see your feedback below.</p>
+              <p className="text-sm font-semibold text-foreground">File submitted</p>
+              <p className="text-xs text-muted-foreground">Your teacher will review and grade it — see feedback below.</p>
             </div>
             <Button variant="secondary" icon={MessageSquare} onClick={runAction}>Feedback</Button>
           </div>
         </Card>
       ) : (
         <Card className="cr-card">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Next step</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Turn in your work</p>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-foreground">Upload your work as a file. Your teacher will review and grade it.</p>
+            <p className="text-sm text-foreground">Upload a file for your teacher to review and grade.</p>
             <Button
               size="lg"
               className="cr-press cr-ripple"
-              icon={action.icon}
+              icon={Upload}
               onPointerDown={spawnRipple}
-              onClick={action.mode === "feedback" ? runAction : startUpload}
+              onClick={startUpload}
             >
-              {action.label}
+              Upload work
             </Button>
           </div>
         </Card>
       ))}
 
-      {/* File upload panel (FILE kind) */}
-      {uploadOpen && isFile && (
+      {/* File upload panel */}
+      {uploadOpen && canUpload && (
         <UploadPanel classId={classId} assignmentId={assignment.id} my={my} onClose={() => setUploadOpen(false)} />
       )}
 

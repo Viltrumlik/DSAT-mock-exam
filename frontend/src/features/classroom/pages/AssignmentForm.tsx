@@ -24,7 +24,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { formatApiErrorForToast } from "@/lib/apiError";
-import { ArrowLeft, BookOpen, ClipboardList, FileText, FlaskConical, Loader2, Paperclip, Search, X } from "lucide-react";
+import { ArrowLeft, ClipboardList, FlaskConical, Loader2, Paperclip, Search, X } from "lucide-react";
 
 type PastpaperRow = Record<string, unknown> & {
   id: number;
@@ -52,8 +52,6 @@ type PracticeTestPackOption = {
   section_count: number;
   already_assigned?: boolean;
 };
-
-type AssignmentType = "pastpaper" | "practice_test" | "assessment" | "file_only";
 
 type Props = {
   classId: number;
@@ -125,11 +123,10 @@ function readAttachments(a: Record<string, unknown> | null | undefined): Attachm
 export default function AssignmentForm({ classId, editingAssignment = null, onCancel, onSaved }: Props) {
   const isEditing = editingAssignment != null;
 
-  const [assignmentType, setAssignmentType] = useState<AssignmentType>("pastpaper");
-  const [includePastpaper, setIncludePastpaper] = useState(false);
-  const [includePracticeTest, setIncludePracticeTest] = useState(false);
-  const [includeAssessment, setIncludeAssessment] = useState(false);
   const [newAsg, setNewAsg] = useState({ title: "", instructions: "", external_url: "" });
+  // Whether students may upload a file as their submission (independent of any
+  // attached pastpaper/assessment — both can coexist, so manual + auto grading).
+  const [allowFileUpload, setAllowFileUpload] = useState(false);
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
   const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
@@ -238,11 +235,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   }, [dueTime]);
 
   const resetForm = () => {
-    setAssignmentType("pastpaper");
-    setIncludePastpaper(false);
-    setIncludePracticeTest(false);
-    setIncludeAssessment(false);
     setNewAsg({ title: "", instructions: "", external_url: "" });
+    setAllowFileUpload(false);
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
     setSelectedPackIds(new Set());
@@ -357,15 +351,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       if (Number.isFinite(tid)) nextTestIds.add(tid);
     }
     setSelectedTestIds(nextTestIds);
-
-    // Toggles/section-type follow which selections are non-empty (Req 6).
-    setIncludePastpaper(nextTestIds.size > 0);
-    setIncludePracticeTest(nextPackIds.size > 0);
-    setIncludeAssessment(nextAssessmentIds.size > 0);
-    if (nextAssessmentIds.size > 0) setAssignmentType("assessment");
-    else if (nextPackIds.size > 0) setAssignmentType("practice_test");
-    else if (nextTestIds.size > 0) setAssignmentType("pastpaper");
-    else setAssignmentType("file_only");
+    setAllowFileUpload(Boolean(editingAssignment.allow_file_upload));
 
     const ps = editingAssignment.practice_scope;
     if (ps === "ENGLISH" || ps === "MATH" || ps === "BOTH") setPracticeScope(ps);
@@ -399,6 +385,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           practice_test_ids: testIds.length > 0 ? testIds : null,
           practice_test_pack_ids: packIds.length > 0 ? packIds : null,
           practice_scope: practiceScope,
+          allow_file_upload: allowFileUpload,
         };
 
         await classesApi.updateAssignment(classId, editId, body);
@@ -417,17 +404,20 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       if (dueIso) fd.append("due_at", dueIso);
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
 
-      if (includePastpaper && selectedTestIds.size > 0) {
+      // A resource counts only if the teacher actually selected it — otherwise
+      // it's simply ignored (no content type to pick first).
+      if (selectedTestIds.size > 0) {
         fd.append("practice_test_ids", JSON.stringify([...selectedTestIds]));
         fd.append("practice_scope", practiceScope);
       }
-      if (includePracticeTest && selectedPackIds.size > 0) {
+      if (selectedPackIds.size > 0) {
         fd.append("practice_test_pack_ids", JSON.stringify([...selectedPackIds]));
         fd.append("practice_scope", practiceScope);
       }
-      if (includeAssessment && selectedAssessmentIds.size > 0) {
+      if (selectedAssessmentIds.size > 0) {
         fd.append("assessment_set_ids", JSON.stringify([...selectedAssessmentIds]));
       }
+      fd.append("allow_file_upload", String(allowFileUpload));
       for (const f of asgFiles) fd.append("attachment_file", f);
 
       fd.append("status", publishStatus);
@@ -622,7 +612,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const searchInputCls = `${crInputClass} pl-9`;
 
   return (
-    <div className="mx-auto w-full max-w-3xl">
+    <div className="mx-auto w-full max-w-5xl">
       {/* Header */}
       <div className="mb-6">
         <button type="button" onClick={onCancel} className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
@@ -642,47 +632,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         ) : null}
         {asgOptionsError ? <ClassroomAlert tone="warning">{asgOptionsError}</ClassroomAlert> : null}
 
-        {/* Content types (multi-select) */}
-        {!isEditing && (
-          <section className="cr-pop rounded-2xl border border-border bg-surface-2/40 p-4">
-            <p className="ds-section-title mb-1 text-muted-foreground">Content</p>
-            <p className="ds-caption mb-3 text-muted-foreground">Bundle one or more — students get a launcher for each.</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {([
-                { key: "pastpaper" as const, icon: BookOpen, label: "Pastpaper", desc: "Official SAT test" },
-                { key: "practice_test" as const, icon: FlaskConical, label: "Practice Test", desc: "Custom practice" },
-                { key: "assessment" as const, icon: ClipboardList, label: "Assessment", desc: "Classroom quiz/test" },
-                { key: "file_only" as const, icon: FileText, label: "File / Link", desc: "Custom homework" },
-              ]).map(({ key, icon: Icon, label, desc }) => {
-                const active = key === "pastpaper" ? includePastpaper
-                  : key === "practice_test" ? includePracticeTest
-                  : key === "assessment" ? includeAssessment
-                  : (!includePastpaper && !includePracticeTest && !includeAssessment);
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => {
-                      if (key === "pastpaper") setIncludePastpaper((v) => !v);
-                      else if (key === "practice_test") setIncludePracticeTest((v) => !v);
-                      else if (key === "assessment") setIncludeAssessment((v) => !v);
-                      else {
-                        setIncludePastpaper(false); setIncludePracticeTest(false); setIncludeAssessment(false);
-                        setSelectedTestIds(new Set()); setSelectedAssessmentIds(new Set()); setSelectedPackIds(new Set());
-                      }
-                    }}
-                    className={`${cardBase} ${active ? cardSel : cardUnsel}`}
-                  >
-                    <Icon className={`mb-1 h-4 w-4 ${active ? "text-primary" : "text-muted-foreground"}`} />
-                    <p className="text-sm font-bold text-foreground">{label}</p>
-                    <p className="text-[10px] text-muted-foreground">{desc}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
-
+        {/* Two-column: homework options (left) · content pickers + upload (right). */}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr] lg:items-start">
+        {/* ── LEFT: homework options ── */}
+        <div className="space-y-6 lg:sticky lg:top-4">
         {/* Details: title / instructions / due date */}
         <section className="cr-pop space-y-5 rounded-2xl border border-border bg-card p-4">
           <p className="ds-section-title text-muted-foreground">Details</p>
@@ -737,11 +690,14 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
             </div>
           </ClassroomField>
         </section>
+        </div>{/* end LEFT options */}
 
-        {/* Pastpaper picker — search + region/year filters */}
-        {includePastpaper && (
-          <section className="cr-pop space-y-4 rounded-2xl border border-border bg-card p-4">
-            <p className="ds-section-title text-muted-foreground">Pastpaper</p>
+        {/* ── RIGHT: content pickers + student submission ── */}
+        <div className="space-y-6">
+
+        {/* Pastpaper picker — always visible; counts only if a card is selected. */}
+        <section className="cr-pop space-y-4 rounded-2xl border border-border bg-card p-4">
+            <p className="ds-section-title text-muted-foreground">Pastpaper <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
             <div className="space-y-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -806,11 +762,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
               </ClassroomField>
             )}
           </section>
-        )}
 
-        {/* Practice test pack picker — search */}
-        {includePracticeTest && (
-          <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
+        {/* Practice test pack picker — always visible; counts only if selected. */}
+        <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
+            <p className="ds-section-title text-muted-foreground">Practice test <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input value={packSearch} onChange={(e) => setPackSearch(e.target.value)} placeholder="Search practice test packs…" className={searchInputCls} />
@@ -830,11 +785,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
               )}
             </ClassroomField>
           </section>
-        )}
 
-        {/* Assessment picker — search + source filter */}
-        {includeAssessment && (
-          <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
+        {/* Assessment picker — always visible; counts only if selected. */}
+        <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
+            <p className="ds-section-title text-muted-foreground">Assessment <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -864,13 +818,29 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
               )}
             </ClassroomField>
           </section>
-        )}
 
-        {/* Resources: external link + attachments */}
+        {/* Student file submission — teacher decides whether students upload work.
+            Independent of any pastpaper/assessment above (both can coexist). */}
+        <section className="cr-pop rounded-2xl border border-border bg-card p-4">
+          <p className="ds-section-title text-muted-foreground">File submission <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
+          <label className="mt-3 flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              checked={allowFileUpload}
+              onChange={(e) => setAllowFileUpload(e.target.checked)}
+            />
+            <span>
+              <span className="text-sm font-bold text-foreground">Allow students to upload files</span>
+              <span className="block text-xs text-muted-foreground">Students can turn in a file for manual grading — even alongside a pastpaper or assessment they solve.</span>
+            </span>
+          </label>
+        </section>
+
+        {/* Resources: external link + teacher attachments */}
         <section className="cr-pop space-y-5 rounded-2xl border border-border bg-card p-4">
-          <p className="ds-section-title text-muted-foreground">Resources</p>
+          <p className="ds-section-title text-muted-foreground">Resources <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
 
-          {(isEditing ? (assignmentType === "file_only" || assignmentType === "pastpaper") : true) && (
             <ClassroomField label="External link (optional)" htmlFor="asg-url">
               <input
                 id="asg-url"
@@ -880,7 +850,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 className={crInputClass}
               />
             </ClassroomField>
-          )}
 
           <ClassroomField label={isEditing ? "Teacher attachments" : "Files (optional)"} hint="PDF, Word, Excel, PowerPoint, text, or images. Students can download them.">
             {isEditing ? (
@@ -959,6 +928,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
             )}
           </ClassroomField>
         </section>
+        </div>{/* end RIGHT content */}
+        </div>{/* end two-column grid */}
 
         {/* Actions */}
         <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row">

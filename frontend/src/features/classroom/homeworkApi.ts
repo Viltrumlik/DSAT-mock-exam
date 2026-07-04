@@ -16,6 +16,7 @@ export interface AssignmentDetail {
   module?: number | null;
   practice_test_ids?: number[] | null;
   practice_test_pack_ids?: number[] | null;
+  allow_file_upload?: boolean;
   assessment_homework?: unknown | null;
   /** Every assessment attached to this homework (a bundle can hold several). */
   assessment_homeworks?: {

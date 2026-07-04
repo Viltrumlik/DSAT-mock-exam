@@ -294,6 +294,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "assessment_progress",
             "module",
             "external_url",
+            "allow_file_upload",
             "attachment_file",
             "attachment_file_url",
             "attachment_urls",
@@ -325,13 +326,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.BooleanField(read_only=True))
     def get_locks_file_upload(self, obj):
-        """True when this homework includes assigned practice/mock sections (auto turn-in when tests finish)."""
-        # Multi-content bundles are instructional — keep file upload available so a bundle
-        # that includes a file deliverable can still be turned in.
-        if getattr(obj, "is_multi_content", False):
-            return False
-        # Also lock for assessment homework (no file submissions / manual grading).
-        return bool(assignment_target_practice_test_ids(obj) or obj.assessment_homeworks.exists())
+        """True when students may NOT upload a file. Upload is now an explicit
+        teacher choice (``allow_file_upload``) so it can coexist with auto-graded
+        content — a homework can have both a solvable pastpaper/assessment AND a
+        file the student turns in (manual + auto grading together)."""
+        return not bool(getattr(obj, "allow_file_upload", False))
 
     @staticmethod
     def _hw_list(obj):

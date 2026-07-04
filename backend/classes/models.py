@@ -284,6 +284,10 @@ class Assignment(models.Model):
     )
     external_url = models.URLField(blank=True)
     attachment_file = models.FileField(upload_to="homework_files/", null=True, blank=True)
+    # Whether students may upload a file as their submission. Independent of any
+    # attached auto-graded content — a homework can have BOTH (a pastpaper/assessment
+    # the student solves AND a file they turn in), so manual + auto grading coexist.
+    allow_file_upload = models.BooleanField(default=False)
     practice_scope = models.CharField(
         max_length=20,
         choices=PRACTICE_SCOPE_CHOICES,
