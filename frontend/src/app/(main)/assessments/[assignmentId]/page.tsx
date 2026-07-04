@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AuthGuard from "@/components/AuthGuard";
 import { normalizeApiError } from "@/lib/apiError";
@@ -40,10 +40,14 @@ function formatDueDate(iso: string | null | undefined): string {
 export default function AssessmentStartPage() {
   const router = useRouter();
   const { assignmentId } = useParams();
+  const searchParams = useSearchParams();
   const aid = Number(assignmentId);
+  // ?homework=<id> targets one assessment of a bundle (a homework can hold several).
+  const homeworkId = Number(searchParams.get("homework")) || undefined;
+  const resultHref = `/assessments/result/${aid}${homeworkId ? `?homework=${homeworkId}` : ""}`;
 
   const start = useStartAttempt();
-  const { data, isLoading, error, refetch } = useMyAssessmentResult(aid);
+  const { data, isLoading, error, refetch } = useMyAssessmentResult(aid, homeworkId);
 
   const richData = data as MyResultData | undefined;
   const attempt = richData?.attempt ?? null;
@@ -70,7 +74,7 @@ export default function AssessmentStartPage() {
   const begin = async () => {
     setStartErr(null);
     try {
-      const att = await start.mutateAsync({ assignment_id: aid });
+      const att = await start.mutateAsync(homeworkId ? { homework_id: homeworkId } : { assignment_id: aid });
       router.push(`/assessments/attempt/${att.id}`);
     } catch (e) {
       setStartErr(normalizeApiError(e).message);
@@ -132,7 +136,7 @@ export default function AssessmentStartPage() {
                     <p className="text-sm font-bold text-success-foreground">Completed</p>
                     <p className="text-sm text-success-foreground">{result.correct_count} / {result.total_questions} correct · {Number(result.percent).toFixed(0)}%</p>
                   </div>
-                  <button type="button" onClick={() => router.push(`/assessments/result/${aid}`)} className="ds-ring ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-lg text-sm font-bold text-success-foreground hover:underline">
+                  <button type="button" onClick={() => router.push(resultHref)} className="ds-ring ml-auto inline-flex items-center gap-1 whitespace-nowrap rounded-lg text-sm font-bold text-success-foreground hover:underline">
                     See results <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -163,7 +167,7 @@ export default function AssessmentStartPage() {
                   </Button>
                 ) : null}
                 {canViewResult ? (
-                  <Button variant="secondary" rightIcon={<ChevronRight />} onClick={() => router.push(`/assessments/result/${aid}`)}>View results</Button>
+                  <Button variant="secondary" rightIcon={<ChevronRight />} onClick={() => router.push(resultHref)}>View results</Button>
                 ) : null}
               </div>
             </div>

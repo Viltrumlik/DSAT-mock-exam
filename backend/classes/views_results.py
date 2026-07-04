@@ -168,7 +168,7 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
         if f_type in ("all", "past paper", "pastpaper", "past_paper"):
             subs = (Submission.objects
                     .filter(assignment__classroom=classroom, student_id__in=student_ids)
-                    .exclude(assignment__assessment_homework__isnull=False)
+                    .exclude(assignment__assessment_homeworks__isnull=False)
                     .select_related("assignment", "review"))
             for s in subs:
                 a = s.assignment

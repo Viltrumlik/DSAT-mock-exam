@@ -64,7 +64,7 @@ from .views_grading_ops import (
     AdminGovernanceEventListView,
     AdminFailedAttemptsListView,
 )
-from .views_results import MyAssessmentResultForAssignmentView
+from .views_results import MyAssessmentResultForAssignmentView, MyAssessmentResultForHomeworkView
 
 __all__ = [
     # Authoring
@@ -103,6 +103,7 @@ __all__ = [
     "AdminFailedAttemptsListView",
     # Results
     "MyAssessmentResultForAssignmentView",
+    "MyAssessmentResultForHomeworkView",
     # Helpers (kept on the aggregator for backwards-compatible imports/patches)
     "_audit_attempt",
     "_img_url",

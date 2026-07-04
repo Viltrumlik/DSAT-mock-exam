@@ -246,6 +246,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
         queryset=PracticeTestPack.objects.all(), required=False, allow_null=True
     )
     practice_test_ids = serializers.JSONField(required=False, allow_null=True)
+    practice_test_pack_ids = serializers.JSONField(required=False, allow_null=True)
     practice_scope = serializers.ChoiceField(
         choices=Assignment.PRACTICE_SCOPE_CHOICES,
         required=False,
@@ -254,6 +255,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
     practice_bundle_tests = serializers.SerializerMethodField(read_only=True)
     locks_file_upload = serializers.SerializerMethodField(read_only=True)
     assessment_homework = serializers.SerializerMethodField(read_only=True)
+    assessment_homeworks = serializers.SerializerMethodField(read_only=True)
     # Redesigned-homework metadata: an explicit content-type label, the openable
     # contents (each with its display name + item count for the launcher cards),
     # the dominant section subject, a task/item count for the "TASKS" tile, and the
@@ -278,10 +280,12 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "practice_test",
             "practice_test_pack",
             "practice_test_ids",
+            "practice_test_pack_ids",
             "practice_scope",
             "practice_bundle_tests",
             "locks_file_upload",
             "assessment_homework",
+            "assessment_homeworks",
             "content_type",
             "contents",
             "item_count",
@@ -327,30 +331,71 @@ class AssignmentSerializer(serializers.ModelSerializer):
         if getattr(obj, "is_multi_content", False):
             return False
         # Also lock for assessment homework (no file submissions / manual grading).
-        return bool(assignment_target_practice_test_ids(obj) or getattr(obj, "assessment_homework", None))
+        return bool(assignment_target_practice_test_ids(obj) or obj.assessment_homeworks.exists())
+
+    @staticmethod
+    def _hw_list(obj):
+        """Ordered assessment homeworks attached to this assignment (may be many)."""
+        try:
+            return list(obj.assessment_homeworks.all())
+        except Exception:
+            return []
+
+    @staticmethod
+    def _pack_ids(obj) -> list:
+        """Deduped practice-pack ids on this assignment (legacy FK + multi list)."""
+        out: list[int] = []
+        seen: set[int] = set()
+        if obj.practice_test_pack_id and obj.practice_test_pack_id not in seen:
+            seen.add(obj.practice_test_pack_id)
+            out.append(obj.practice_test_pack_id)
+        for x in (obj.practice_test_pack_ids or []):
+            try:
+                v = int(x)
+            except (TypeError, ValueError):
+                continue
+            if v not in seen:
+                seen.add(v)
+                out.append(v)
+        return out
+
+    @staticmethod
+    def _pastpaper_only_ids(obj) -> list:
+        """Explicit pastpaper section ids (practice_test_ids / practice_test),
+        EXCLUDING pack-derived sections (packs are shown separately)."""
+        raw = raw_target_practice_test_ids_from_fks(None, obj.practice_test_ids, obj.practice_test_id)
+        scope = obj.practice_scope or Assignment.PRACTICE_SCOPE_BOTH
+        return filter_practice_targets_by_scope(raw, scope)
+
+    def _serialize_hw(self, hw):
+        aset = getattr(hw, "assessment_set", None)
+        set_payload = None if not aset else {
+            "id": aset.id,
+            "subject": aset.subject,
+            "category": aset.category,
+            "title": aset.title,
+            "description": aset.description,
+        }
+        return {
+            "homework_id": hw.id,
+            "set": set_payload,
+            # Per-assessment student state, so a bundle's launcher/board can show
+            # each assessment's own Start/Continue/Review + score.
+            "progress": self._hw_progress(hw, self._req_user()),
+            "question_count": self._assessment_question_count(aset),
+        }
 
     @extend_schema_field(AssignmentAssessmentHomeworkSerializer(allow_null=True, required=False, read_only=True))
     def get_assessment_homework(self, obj):
-        """
-        When this `classes.Assignment` is backed by an assessment homework, expose enough metadata
-        for the homework page to render a start/resume/result CTA.
-        """
-        hw = getattr(obj, "assessment_homework", None)
-        if not hw:
-            return None
-        aset = getattr(hw, "assessment_set", None)
-        if not aset:
-            return {"homework_id": hw.id, "set": None}
-        return {
-            "homework_id": hw.id,
-            "set": {
-                "id": aset.id,
-                "subject": aset.subject,
-                "category": aset.category,
-                "title": aset.title,
-                "description": aset.description,
-            },
-        }
+        """First attached assessment homework (back-compat singular; use
+        ``assessment_homeworks`` for the full bundle)."""
+        hws = self._hw_list(obj)
+        return self._serialize_hw(hws[0]) if hws else None
+
+    @extend_schema_field(AssignmentAssessmentHomeworkSerializer(many=True, read_only=True))
+    def get_assessment_homeworks(self, obj):
+        """Every assessment attached to this homework (a bundle can hold many)."""
+        return [self._serialize_hw(hw) for hw in self._hw_list(obj)]
 
     @extend_schema_field(AssignmentCreatedBySerializer(read_only=True))
     def get_created_by(self, obj):
@@ -473,15 +518,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 out[tid] = {"state": "in_progress", "attempt_id": active[tid]}
         return out
 
-    @extend_schema_field(serializers.DictField(allow_null=True, read_only=True))
-    def get_assessment_progress(self, obj):
-        """The requesting student's assessment attempt state for this homework:
-        {"state": not_started|in_progress|completed, "attempt_id": id|null}."""
-        user = self._req_user()
-        try:
-            hw = getattr(obj, "assessment_homework", None)
-        except Exception:
-            hw = None
+    def _hw_progress(self, hw, user):
+        """The requesting student's attempt state for ONE assessment homework:
+        {state, attempt_id, + score/answered fields}."""
         if user is None or hw is None:
             return {"state": "not_started", "attempt_id": None}
         from assessments.models import AssessmentAttempt
@@ -528,6 +567,15 @@ class AssignmentSerializer(serializers.ModelSerializer):
             }
         return {"state": "not_started", "attempt_id": att.id}
 
+    @extend_schema_field(serializers.DictField(allow_null=True, read_only=True))
+    def get_assessment_progress(self, obj):
+        """Back-compat: progress for the FIRST attached assessment (per-assessment
+        progress for a bundle lives in each ``assessment_homeworks`` item)."""
+        hws = self._hw_list(obj)
+        if not hws:
+            return {"state": "not_started", "attempt_id": None}
+        return self._hw_progress(hws[0], self._req_user())
+
     @staticmethod
     def _section_name(pt) -> str:
         """Display name for a standalone pastpaper section: collection_name first
@@ -564,13 +612,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
     def get_content_type(self, obj):
         """Explicit type label mirroring the frontend AssignmentKind precedence."""
         try:
-            if getattr(obj, "assessment_homework", None) is not None:
+            if obj.assessment_homeworks.exists():
                 return "assessment"
         except Exception:
             pass
         if obj.mock_exam_id:
             return "mock"
-        if obj.practice_test_pack_id:
+        if obj.practice_test_pack_id or obj.practice_test_pack_ids:
             return "practice"
         if obj.practice_test_id or obj.practice_test_ids:
             return "pastpaper"
@@ -585,16 +633,15 @@ class AssignmentSerializer(serializers.ModelSerializer):
         redesigned homework cards can show the content's real name with its Start button.
         Files/links stay in the Details card and are intentionally excluded."""
         out = []
-        try:
-            hw = getattr(obj, "assessment_homework", None)
-        except Exception:
-            hw = None
-        if hw is not None:
+        # One QUIZ launcher per attached assessment (a bundle can hold many), each
+        # carrying its homework_id so the launcher/board can deep-link to that quiz.
+        for hw in self._hw_list(obj):
             aset = getattr(hw, "assessment_set", None)
             out.append({
                 "kind": "QUIZ",
                 "title": (getattr(aset, "title", None) or "Assessment"),
                 "item_count": self._assessment_question_count(aset),
+                "homework_id": hw.id,
             })
         if obj.mock_exam_id:
             mock = obj.mock_exam
@@ -603,15 +650,26 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 "title": (getattr(mock, "title", None) or getattr(mock, "name", None) or "Mock Exam"),
                 "item_count": self._practice_item_count(assignment_target_practice_test_ids(obj)),
             })
-        if obj.practice_test_pack_id:
-            pack = obj.practice_test_pack
-            out.append({
-                "kind": "PRACTICE",
-                "title": (getattr(pack, "title", None) or getattr(pack, "name", None) or "Practice Test"),
-                "item_count": self._practice_item_count(assignment_target_practice_test_ids(obj)),
-            })
-        elif obj.practice_test_id or obj.practice_test_ids:
-            ids = assignment_target_practice_test_ids(obj)
+        # One PRACTICE launcher per attached pack (legacy single FK + the multi list).
+        pack_ids = self._pack_ids(obj)
+        if pack_ids:
+            packs = {p.id: p for p in PracticeTestPack.objects.filter(id__in=pack_ids)}
+            scope = obj.practice_scope or Assignment.PRACTICE_SCOPE_BOTH
+            for pid in pack_ids:
+                pack = packs.get(pid)
+                sec_ids = filter_practice_targets_by_scope(
+                    raw_target_practice_test_ids_from_fks(None, None, None, practice_test_pack_id=pid), scope
+                )
+                out.append({
+                    "kind": "PRACTICE",
+                    "title": (getattr(pack, "title", None) or getattr(pack, "name", None) or "Practice Test"),
+                    "item_count": self._practice_item_count(sec_ids),
+                })
+        # Explicit pastpaper sections (practice_test_ids / practice_test) — pack
+        # sections are shown as PRACTICE above, so exclude them here.
+        pastpaper_ids = self._pastpaper_only_ids(obj)
+        if pastpaper_ids:
+            ids = pastpaper_ids
             sections = list(PracticeTest.objects.filter(id__in=ids)) if ids else []
             names = {self._section_name(s) for s in sections}
             names.discard("Past Paper")
@@ -637,8 +695,11 @@ class AssignmentSerializer(serializers.ModelSerializer):
         content, or attachment count for a file deliverable."""
         ct = self.get_content_type(obj)
         if ct == "assessment":
-            hw = getattr(obj, "assessment_homework", None)
-            return self._assessment_question_count(getattr(hw, "assessment_set", None))
+            # Sum questions across every attached assessment.
+            return sum(
+                self._assessment_question_count(getattr(hw, "assessment_set", None))
+                for hw in self._hw_list(obj)
+            )
         if ct in ("pastpaper", "practice", "mock"):
             return self._practice_item_count(assignment_target_practice_test_ids(obj))
         if ct == "file":
@@ -655,9 +716,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
         """Dominant section subject for the 'SECTION' tile (assessment set / past paper
         section subject), falling back to the classroom subject."""
         try:
-            hw = getattr(obj, "assessment_homework", None)
-            if hw is not None and getattr(hw, "assessment_set", None) is not None:
-                return hw.assessment_set.subject
+            hws = self._hw_list(obj)
+            if hws and getattr(hws[0], "assessment_set", None) is not None:
+                return hws[0].assessment_set.subject
         except Exception:
             pass
         ids = assignment_target_practice_test_ids(obj)
@@ -693,6 +754,23 @@ class AssignmentSerializer(serializers.ModelSerializer):
         out = [int(x) for x in value]
         if len(out) != len(set(out)):
             raise serializers.ValidationError("Duplicate practice test ids.")
+        return out
+
+    def validate_practice_test_pack_ids(self, value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            s = value.strip()
+            if not s or s == "null":
+                return None
+            value = json.loads(s)
+        if not isinstance(value, list):
+            raise serializers.ValidationError("practice_test_pack_ids must be a list of integers.")
+        if len(value) == 0:
+            return None
+        out = [int(x) for x in value]
+        if len(out) != len(set(out)):
+            raise serializers.ValidationError("Duplicate practice test pack ids.")
         return out
 
     def validate(self, attrs):

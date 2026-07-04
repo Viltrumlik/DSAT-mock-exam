@@ -15,7 +15,14 @@ export interface AssignmentDetail {
   practice_test_pack?: number | null;
   module?: number | null;
   practice_test_ids?: number[] | null;
+  practice_test_pack_ids?: number[] | null;
   assessment_homework?: unknown | null;
+  /** Every assessment attached to this homework (a bundle can hold several). */
+  assessment_homeworks?: {
+    homework_id: number;
+    set?: { id: number; subject?: string; title?: string; category?: string } | null;
+    progress?: { state?: ContentState; attempt_id?: number | null } | null;
+  }[] | null;
   external_url?: string | null;
   attachment_file_url?: string | null;
   attachment_urls?: { url: string; file_name?: string; content_type?: string; size?: number | null }[];
@@ -182,11 +189,18 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
     });
 
   const out: ContentAction[] = [];
-  if (a.assessment_homework != null) {
-    // The assessment welcome page handles start/resume; finished → its result page.
-    const ap = a.assessment_progress;
+  // One QUIZ launcher per attached assessment (a homework can bundle several),
+  // each keyed by its homework_id so start/resume/review target the right quiz.
+  const hws = a.assessment_homeworks
+    ?? (a.assessment_homework != null ? [{ homework_id: 0, progress: a.assessment_progress ?? null }] : []);
+  for (const hw of hws) {
+    const ap = hw.progress;
     const mode = stateToMode(ap?.state);
-    const href = mode === "review" ? `/assessments/result/${a.id}` : `/assessments/${a.id}`;
+    const hwParam = hw.homework_id ? `?homework=${hw.homework_id}` : "";
+    const href =
+      mode === "review" ? `/assessments/result/${a.id}${hwParam}`
+        : mode === "resume" && ap?.attempt_id ? `/assessments/attempt/${ap.attempt_id}`
+        : `/assessments/${a.id}${hwParam}`;
     add(out, "QUIZ", "Start assessment", href, { mode, attemptId: ap?.attempt_id ?? null });
   }
   if (a.mock_exam != null) add(out, "MOCK", "Open Mock Exam", `/mock/${a.mock_exam}`);

@@ -29,6 +29,7 @@ import { ArrowLeft, BookOpen, ClipboardList, FileText, FlaskConical, Loader2, Pa
 type PastpaperRow = Record<string, unknown> & {
   id: number;
   collection_name?: string;
+  already_assigned?: boolean;
 };
 
 type AssessmentSetOption = {
@@ -39,12 +40,8 @@ type AssessmentSetOption = {
   category: string;
   description: string;
   question_count: number;
+  already_assigned?: boolean;
 };
-
-type PastSelection =
-  | { mode: "none" }
-  | { mode: "single"; testId: number }
-  | { mode: "pack_legacy"; testIds: number[] };
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
 
@@ -53,6 +50,7 @@ type PracticeTestPackOption = {
   title: string;
   description: string;
   section_count: number;
+  already_assigned?: boolean;
 };
 
 type AssignmentType = "pastpaper" | "practice_test" | "assessment" | "file_only";
@@ -105,17 +103,9 @@ function cardReactKey(c: CardPastpaperPack | CardSingle): string {
   return `pack-${c.packKey}`;
 }
 
-function selectionMatchesCard(sel: PastSelection, c: CardPastpaperPack | CardSingle): boolean {
-  if (c.kind === "single") return sel.mode === "single" && sel.testId === c.test.id;
-  const ids = c.tests.map((t) => t.id).sort((a, b) => a - b);
-  if (sel.mode !== "pack_legacy" || ids.length === 0) return false;
-  const a = [...sel.testIds].sort((x, y) => x - y);
-  return a.length === ids.length && a.every((v, i) => v === ids[i]);
-}
-
-function selectFromCard(c: CardPastpaperPack | CardSingle): PastSelection {
-  if (c.kind === "single") return { mode: "single", testId: c.test.id };
-  return { mode: "pack_legacy", testIds: c.tests.map((t) => t.id) };
+/** All pastpaper SECTION ids a card assigns. */
+function cardSectionIds(c: CardPastpaperPack | CardSingle): number[] {
+  return c.kind === "single" ? [c.test.id] : c.tests.map((t) => t.id);
 }
 
 /** Attachment objects on an assignment (backend returns {url,file_name,...}). */
@@ -140,9 +130,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [includePracticeTest, setIncludePracticeTest] = useState(false);
   const [includeAssessment, setIncludeAssessment] = useState(false);
   const [newAsg, setNewAsg] = useState({ title: "", instructions: "", external_url: "" });
-  const [pastSel, setPastSel] = useState<PastSelection>({ mode: "none" });
-  const [selectedAssessmentId, setSelectedAssessmentId] = useState<number | null>(null);
-  const [selectedPracticeTestPackId, setSelectedPracticeTestPackId] = useState<number | null>(null);
+  const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
+  const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
+  const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
   // Deadline is composed from two dropdowns (no calendar): a date (next 7 days) + a time.
   const [dueDate, setDueDate] = useState(""); // "" = no deadline
   const [dueTime, setDueTime] = useState(DEFAULT_DUE_TIME);
@@ -185,6 +175,27 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     () => filterPastpaperCards(pastpaperCards, { region: pastpaperRegion, year: pastpaperYear, search: pastpaperSearch }),
     [pastpaperCards, pastpaperRegion, pastpaperYear, pastpaperSearch]
   );
+  // Section id → already_assigned (from the option rows) for grouping/badging cards.
+  const sectionAssigned = useMemo(() => {
+    const m = new Map<number, boolean>();
+    for (const row of assignmentOptions.practice_tests) m.set(row.id, !!row.already_assigned);
+    return m;
+  }, [assignmentOptions.practice_tests]);
+  // A card counts as "already given" only when every section it assigns is already assigned.
+  const cardAlreadyGiven = (c: CardPastpaperPack | CardSingle): boolean => {
+    const ids = cardSectionIds(c);
+    return ids.length > 0 && ids.every((id) => sectionAssigned.get(id));
+  };
+  const availablePastpaperCards = useMemo(
+    () => filteredPastpaperCards.filter((c) => !cardAlreadyGiven(c)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredPastpaperCards, sectionAssigned]
+  );
+  const givenPastpaperCards = useMemo(
+    () => filteredPastpaperCards.filter((c) => cardAlreadyGiven(c)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filteredPastpaperCards, sectionAssigned]
+  );
 
   const filteredPacks = useMemo(() => {
     const q = packSearch.trim().toLowerCase();
@@ -193,6 +204,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       (p) => `${p.title} ${p.description}`.toLowerCase().includes(q)
     );
   }, [assignmentOptions.practice_test_packs, packSearch]);
+  const availablePacks = useMemo(() => filteredPacks.filter((p) => !p.already_assigned), [filteredPacks]);
+  const givenPacks = useMemo(() => filteredPacks.filter((p) => p.already_assigned), [filteredPacks]);
 
   const filteredAssessmentSets = useMemo(() => {
     const q = assessmentSearch.trim().toLowerCase();
@@ -202,6 +215,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       return true;
     });
   }, [assignmentOptions.assessment_sets, assessmentSearch, assessmentSource]);
+  const availableAssessmentSets = useMemo(() => filteredAssessmentSets.filter((a) => !a.already_assigned), [filteredAssessmentSets]);
+  const givenAssessmentSets = useMemo(() => filteredAssessmentSets.filter((a) => a.already_assigned), [filteredAssessmentSets]);
 
   const dateOptions = useMemo(() => {
     const opts = next7Days();
@@ -228,9 +243,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     setIncludePracticeTest(false);
     setIncludeAssessment(false);
     setNewAsg({ title: "", instructions: "", external_url: "" });
-    setPastSel({ mode: "none" });
-    setSelectedAssessmentId(null);
-    setSelectedPracticeTestPackId(null);
+    setSelectedTestIds(new Set());
+    setSelectedAssessmentIds(new Set());
+    setSelectedPackIds(new Set());
     setDueDate("");
     setDueTime(DEFAULT_DUE_TIME);
     setAsgFiles([]);
@@ -294,31 +309,64 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       } else { setDueDate(""); setDueTime(DEFAULT_DUE_TIME); }
     } else { setDueDate(""); setDueTime(DEFAULT_DUE_TIME); }
 
-    const ah = editingAssignment.assessment_homework;
-    if (ah && typeof ah === "object" && "set" in (ah as Record<string, unknown>)) {
-      setAssignmentType("assessment");
-      const set = (ah as { set?: { id?: number } }).set;
-      setSelectedAssessmentId(set?.id ?? null);
-    } else {
-      const ptp = editingAssignment.practice_test_pack;
-      if (ptp != null) {
-        setAssignmentType("practice_test");
-        const ptpId = typeof ptp === "object" && ptp != null && "id" in ptp ? Number((ptp as { id: number }).id) : Number(ptp);
-        if (Number.isFinite(ptpId)) setSelectedPracticeTestPackId(ptpId);
-      } else if (Array.isArray(editingAssignment.practice_test_ids) && editingAssignment.practice_test_ids.length > 0) {
-        setAssignmentType("pastpaper");
-        setPastSel({ mode: "pack_legacy", testIds: (editingAssignment.practice_test_ids as unknown[]).map((x) => Number(x)) });
-      } else if (editingAssignment.practice_test != null) {
-        setAssignmentType("pastpaper");
-        const pt = editingAssignment.practice_test;
-        const tid = typeof pt === "object" && pt != null && "id" in pt ? Number((pt as { id: number }).id) : Number(pt);
-        if (Number.isFinite(tid)) setPastSel({ mode: "single", testId: tid });
-        else setPastSel({ mode: "none" });
-      } else {
-        setAssignmentType("file_only");
-        setPastSel({ mode: "none" });
+    // ── Assessments ── prefer the multi `assessment_homeworks` array; fall back to
+    // the legacy single `assessment_homework`.
+    const nextAssessmentIds = new Set<number>();
+    const ahs = editingAssignment.assessment_homeworks;
+    if (Array.isArray(ahs)) {
+      for (const item of ahs) {
+        const sid = item && typeof item === "object" && "set" in item
+          ? Number((item as { set?: { id?: number } }).set?.id)
+          : NaN;
+        if (Number.isFinite(sid)) nextAssessmentIds.add(sid);
       }
     }
+    const ah = editingAssignment.assessment_homework;
+    if (nextAssessmentIds.size === 0 && ah && typeof ah === "object" && "set" in (ah as Record<string, unknown>)) {
+      const sid = Number((ah as { set?: { id?: number } }).set?.id);
+      if (Number.isFinite(sid)) nextAssessmentIds.add(sid);
+    }
+    setSelectedAssessmentIds(nextAssessmentIds);
+
+    // ── Practice packs ── multi `practice_test_pack_ids` and/or legacy single `practice_test_pack`.
+    const nextPackIds = new Set<number>();
+    if (Array.isArray(editingAssignment.practice_test_pack_ids)) {
+      for (const x of editingAssignment.practice_test_pack_ids as unknown[]) {
+        const n = Number(x);
+        if (Number.isFinite(n)) nextPackIds.add(n);
+      }
+    }
+    const ptp = editingAssignment.practice_test_pack;
+    if (ptp != null) {
+      const ptpId = typeof ptp === "object" && ptp != null && "id" in ptp ? Number((ptp as { id: number }).id) : Number(ptp);
+      if (Number.isFinite(ptpId)) nextPackIds.add(ptpId);
+    }
+    setSelectedPackIds(nextPackIds);
+
+    // ── Pastpaper sections ── multi `practice_test_ids` and/or legacy single `practice_test`.
+    const nextTestIds = new Set<number>();
+    if (Array.isArray(editingAssignment.practice_test_ids)) {
+      for (const x of editingAssignment.practice_test_ids as unknown[]) {
+        const n = Number(x);
+        if (Number.isFinite(n)) nextTestIds.add(n);
+      }
+    }
+    if (editingAssignment.practice_test != null) {
+      const pt = editingAssignment.practice_test;
+      const tid = typeof pt === "object" && pt != null && "id" in pt ? Number((pt as { id: number }).id) : Number(pt);
+      if (Number.isFinite(tid)) nextTestIds.add(tid);
+    }
+    setSelectedTestIds(nextTestIds);
+
+    // Toggles/section-type follow which selections are non-empty (Req 6).
+    setIncludePastpaper(nextTestIds.size > 0);
+    setIncludePracticeTest(nextPackIds.size > 0);
+    setIncludeAssessment(nextAssessmentIds.size > 0);
+    if (nextAssessmentIds.size > 0) setAssignmentType("assessment");
+    else if (nextPackIds.size > 0) setAssignmentType("practice_test");
+    else if (nextTestIds.size > 0) setAssignmentType("pastpaper");
+    else setAssignmentType("file_only");
+
     const ps = editingAssignment.practice_scope;
     if (ps === "ENGLISH" || ps === "MATH" || ps === "BOTH") setPracticeScope(ps);
     setAsgFiles([]);
@@ -340,22 +388,18 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       const dueIso = buildDueIso();
       const editId = editingAssignment != null ? Number(editingAssignment.id) : NaN;
       if (Number.isFinite(editId)) {
+        const testIds = [...selectedTestIds];
+        const packIds = [...selectedPackIds];
         const body: Record<string, unknown> = {
           title: newAsg.title.trim(),
           instructions: newAsg.instructions,
           external_url: newAsg.external_url.trim() || "",
           due_at: dueIso,
-          practice_test_pack: null,
           practice_test: null,
-          practice_test_ids: null,
+          practice_test_ids: testIds.length > 0 ? testIds : null,
+          practice_test_pack_ids: packIds.length > 0 ? packIds : null,
+          practice_scope: practiceScope,
         };
-        if (assignmentType === "pastpaper") {
-          if (pastSel.mode === "pack_legacy") body.practice_test_ids = pastSel.testIds;
-          else if (pastSel.mode === "single") body.practice_test = pastSel.testId;
-        } else if (assignmentType === "practice_test" && selectedPracticeTestPackId) {
-          body.practice_test_pack = selectedPracticeTestPackId;
-        }
-        body.practice_scope = practiceScope;
 
         await classesApi.updateAssignment(classId, editId, body);
         if (replaceAttachments || editAsgFiles.length > 0) {
@@ -373,17 +417,16 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       if (dueIso) fd.append("due_at", dueIso);
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
 
-      if (includePastpaper && pastSel.mode !== "none") {
-        if (pastSel.mode === "pack_legacy") fd.append("practice_test_ids", JSON.stringify(pastSel.testIds));
-        else if (pastSel.mode === "single") fd.append("practice_test", String(pastSel.testId));
+      if (includePastpaper && selectedTestIds.size > 0) {
+        fd.append("practice_test_ids", JSON.stringify([...selectedTestIds]));
         fd.append("practice_scope", practiceScope);
       }
-      if (includePracticeTest && selectedPracticeTestPackId) {
-        fd.append("practice_test_pack", String(selectedPracticeTestPackId));
+      if (includePracticeTest && selectedPackIds.size > 0) {
+        fd.append("practice_test_pack_ids", JSON.stringify([...selectedPackIds]));
         fd.append("practice_scope", practiceScope);
       }
-      if (includeAssessment && selectedAssessmentId) {
-        fd.append("assessment_set_id", String(selectedAssessmentId));
+      if (includeAssessment && selectedAssessmentIds.size > 0) {
+        fd.append("assessment_set_ids", JSON.stringify([...selectedAssessmentIds]));
       }
       for (const f of asgFiles) fd.append("attachment_file", f);
 
@@ -404,9 +447,22 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const cardUnsel = "border-border bg-card hover:border-primary/35 hover:bg-surface-2";
   const cardSel = "border-primary bg-primary/10 ring-2 ring-primary/25 shadow-sm";
 
+  // A card is selected iff ALL its section ids are selected; clicking toggles them together.
+  const cardSelected = (c: CardPastpaperPack | CardSingle): boolean => {
+    const ids = cardSectionIds(c);
+    return ids.length > 0 && ids.every((id) => selectedTestIds.has(id));
+  };
+
   const handleCardSelect = (c: CardPastpaperPack | CardSingle) => {
-    setPastSel(selectFromCard(c));
-    if (!newAsg.title.trim()) {
+    const ids = cardSectionIds(c);
+    const isSel = cardSelected(c);
+    setSelectedTestIds((prev) => {
+      const next = new Set(prev);
+      if (isSel) for (const id of ids) next.delete(id);
+      else for (const id of ids) next.add(id);
+      return next;
+    });
+    if (!isSel && !newAsg.title.trim()) {
       const heading = c.kind === "pastpaper_pack"
         ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
         : singleDisplayTitle(c.test);
@@ -415,14 +471,153 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   };
 
   const handleAssessmentSelect = (aset: AssessmentSetOption) => {
-    setSelectedAssessmentId(aset.id);
-    if (!newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: aset.title }));
+    const wasSel = selectedAssessmentIds.has(aset.id);
+    setSelectedAssessmentIds((prev) => {
+      const next = new Set(prev);
+      if (wasSel) next.delete(aset.id);
+      else next.add(aset.id);
+      return next;
+    });
+    if (!wasSel && !newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: aset.title }));
+  };
+
+  const handlePackSelect = (ptp: PracticeTestPackOption) => {
+    const wasSel = selectedPackIds.has(ptp.id);
+    setSelectedPackIds((prev) => {
+      const next = new Set(prev);
+      if (wasSel) next.delete(ptp.id);
+      else next.add(ptp.id);
+      return next;
+    });
+    if (!wasSel && !newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: ptp.title }));
+  };
+
+  // Small "Already given" chip shown on cards already assigned to this class.
+  const givenBadge = (
+    <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+      Already given
+    </span>
+  );
+
+  const groupHeading = (label: string, count: number) => (
+    <p className="ds-caption mb-2 font-bold uppercase tracking-wider text-muted-foreground">
+      {label} <span className="font-semibold text-muted-foreground/70">({count})</span>
+    </p>
+  );
+
+  const renderPastpaperGroup = (label: string, cards: (CardPastpaperPack | CardSingle)[], given: boolean) => {
+    if (cards.length === 0) return null;
+    return (
+      <div>
+        {groupHeading(label, cards.length)}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {cards.map((c) => {
+            const selected = cardSelected(c);
+            const lineDate = c.kind === "pastpaper_pack"
+              ? c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at
+              : c.test.practice_date || c.test.created_at;
+            const heading = c.kind === "pastpaper_pack"
+              ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
+              : singleDisplayTitle(c.test);
+            const sectionRows = c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
+            return (
+              <button
+                key={cardReactKey(c)}
+                type="button"
+                onClick={() => handleCardSelect(c)}
+                className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Practice test</p>
+                  {given ? givenBadge : null}
+                </div>
+                <p className="mt-1 text-xs font-bold text-muted-foreground">{formatLineDate(lineDate)}</p>
+                <p className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-foreground">{heading}</p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {sectionRows.map((t) => (
+                    <span key={t.id} className="rounded-md bg-primary/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                      {subjectLabel(t.subject)}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderPackGroup = (label: string, packs: PracticeTestPackOption[], given: boolean) => {
+    if (packs.length === 0) return null;
+    return (
+      <div>
+        {groupHeading(label, packs.length)}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {packs.map((ptp) => {
+            const selected = selectedPackIds.has(ptp.id);
+            return (
+              <button
+                key={ptp.id}
+                type="button"
+                onClick={() => handlePackSelect(ptp)}
+                className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="line-clamp-2 text-sm font-bold text-foreground">{ptp.title || `Pack #${ptp.id}`}</p>
+                  {given ? givenBadge : null}
+                </div>
+                {ptp.description && <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{ptp.description}</p>}
+                <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderAssessmentGroup = (label: string, sets: AssessmentSetOption[], given: boolean) => {
+    if (sets.length === 0) return null;
+    return (
+      <div>
+        {groupHeading(label, sets.length)}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {sets.map((aset) => {
+            const selected = selectedAssessmentIds.has(aset.id);
+            return (
+              <button
+                key={aset.id}
+                type="button"
+                onClick={() => handleAssessmentSelect(aset)}
+                className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
+              >
+                <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                  <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
+                    aset.subject === "math" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                  }`}>{aset.subject}</span>
+                  {aset.source && (
+                    <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{sourceLabel(aset.source)}</span>
+                  )}
+                  {aset.category && (
+                    <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">{aset.category}</span>
+                  )}
+                  {given ? givenBadge : null}
+                </div>
+                <p className="line-clamp-2 text-sm font-bold text-foreground">{aset.title}</p>
+                <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{aset.question_count} questions</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
   };
 
   const removeFile = (idx: number) => setAsgFiles((prev) => prev.filter((_, i) => i !== idx));
   const removeEditFile = (idx: number) => setEditAsgFiles((prev) => prev.filter((_, i) => i !== idx));
 
-  const submitDisabled = !newAsg.title.trim() || !newAsg.instructions.trim() || creatingAsg || (includeAssessment && !selectedAssessmentId);
+  const submitDisabled = !newAsg.title.trim() || !newAsg.instructions.trim() || creatingAsg;
   const existingAttachments = readAttachments(editingAssignment);
   const searchInputCls = `${crInputClass} pl-9`;
 
@@ -473,7 +668,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                       else if (key === "assessment") setIncludeAssessment((v) => !v);
                       else {
                         setIncludePastpaper(false); setIncludePracticeTest(false); setIncludeAssessment(false);
-                        setPastSel({ mode: "none" }); setSelectedAssessmentId(null); setSelectedPracticeTestPackId(null);
+                        setSelectedTestIds(new Set()); setSelectedAssessmentIds(new Set()); setSelectedPackIds(new Set());
                       }
                     }}
                     className={`${cardBase} ${active ? cardSel : cardUnsel}`}
@@ -544,7 +739,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         </section>
 
         {/* Pastpaper picker — search + region/year filters */}
-        {(isEditing ? assignmentType === "pastpaper" : includePastpaper) && (
+        {includePastpaper && (
           <section className="cr-pop space-y-4 rounded-2xl border border-border bg-card p-4">
             <p className="ds-section-title text-muted-foreground">Pastpaper</p>
             <div className="space-y-3">
@@ -575,55 +770,21 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
               </div>
             </div>
 
-            <ClassroomField label="Pastpaper (full exam card)" hint="Only sections for this class's subject are shown.">
-              <div className="grid max-h-[320px] grid-cols-1 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={() => setPastSel({ mode: "none" })}
-                  className={`${cardBase} ${pastSel.mode === "none" ? cardSel : cardUnsel}`}
-                >
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Pastpaper</p>
-                  <p className="mt-1 text-sm font-bold text-foreground">No practice test</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">File/link only homework</p>
-                </button>
-                {filteredPastpaperCards.length === 0 ? (
-                  <div className="col-span-full rounded-xl border border-border bg-surface-2 px-4 py-6 text-center text-sm text-muted-foreground">
-                    No pastpapers match these filters.
-                  </div>
-                ) : filteredPastpaperCards.map((c) => {
-                  const selected = selectionMatchesCard(pastSel, c);
-                  const lineDate = c.kind === "pastpaper_pack"
-                    ? c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at
-                    : c.test.practice_date || c.test.created_at;
-                  const heading = c.kind === "pastpaper_pack"
-                    ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
-                    : singleDisplayTitle(c.test);
-                  const sectionRows = c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
-                  return (
-                    <button
-                      key={cardReactKey(c)}
-                      type="button"
-                      onClick={() => handleCardSelect(c)}
-                      className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
-                    >
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Practice test</p>
-                      <p className="mt-1 text-xs font-bold text-muted-foreground">{formatLineDate(lineDate)}</p>
-                      <p className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-foreground">{heading}</p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {sectionRows.map((t) => (
-                          <span key={t.id} className="rounded-md bg-primary/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                            {subjectLabel(t.subject)}
-                          </span>
-                        ))}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+            <ClassroomField label="Pastpaper (full exam card)" hint="Select one or more. Only sections for this class's subject are shown.">
+              {filteredPastpaperCards.length === 0 ? (
+                <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center text-sm text-muted-foreground">
+                  No pastpapers match these filters.
+                </div>
+              ) : (
+                <div className="max-h-[360px] space-y-4 overflow-y-auto pr-1">
+                  {renderPastpaperGroup("Available", availablePastpaperCards, false)}
+                  {renderPastpaperGroup("Already given", givenPastpaperCards, true)}
+                </div>
+              )}
             </ClassroomField>
 
             {/* Section scope — only shown when the class isn't subject-locked (Req 6). */}
-            {pastSel.mode !== "none" && !subjectLocked && (
+            {selectedTestIds.size > 0 && !subjectLocked && (
               <ClassroomField label="Sections to assign" hint="Students only see the sections you choose.">
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {([
@@ -648,13 +809,13 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         )}
 
         {/* Practice test pack picker — search */}
-        {(isEditing ? assignmentType === "practice_test" : includePracticeTest) && (
+        {includePracticeTest && (
           <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <input value={packSearch} onChange={(e) => setPackSearch(e.target.value)} placeholder="Search practice test packs…" className={searchInputCls} />
             </div>
-            <ClassroomField label="Practice test pack" hint="Select a custom practice test to assign.">
+            <ClassroomField label="Practice test pack" hint="Select one or more custom practice tests to assign.">
               {filteredPacks.length === 0 ? (
                 <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center">
                   <FlaskConical className="mx-auto h-8 w-8 text-muted-foreground/60" />
@@ -662,25 +823,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                   <p className="mt-1 text-xs text-muted-foreground/80">Create and publish one in the Builder console first.</p>
                 </div>
               ) : (
-                <div className="grid max-h-[280px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                  {filteredPacks.map((ptp) => {
-                    const selected = selectedPracticeTestPackId === ptp.id;
-                    return (
-                      <button
-                        key={ptp.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedPracticeTestPackId(ptp.id);
-                          if (!newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: ptp.title }));
-                        }}
-                        className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
-                      >
-                        <p className="line-clamp-2 text-sm font-bold text-foreground">{ptp.title || `Pack #${ptp.id}`}</p>
-                        {ptp.description && <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{ptp.description}</p>}
-                        <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</p>
-                      </button>
-                    );
-                  })}
+                <div className="max-h-[320px] space-y-4 overflow-y-auto pr-1">
+                  {renderPackGroup("Available", availablePacks, false)}
+                  {renderPackGroup("Already given", givenPacks, true)}
                 </div>
               )}
             </ClassroomField>
@@ -688,7 +833,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         )}
 
         {/* Assessment picker — search + source filter */}
-        {(isEditing ? assignmentType === "assessment" : includeAssessment) && (
+        {includeAssessment && (
           <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
@@ -704,7 +849,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 </select>
               )}
             </div>
-            <ClassroomField label="Assessment set" hint="Select a quiz/test to assign to students.">
+            <ClassroomField label="Assessment set" hint="Select one or more quizzes/tests to assign to students.">
               {filteredAssessmentSets.length === 0 ? (
                 <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center">
                   <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground/60" />
@@ -712,32 +857,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                   <p className="mt-1 text-xs text-muted-foreground/80">Try clearing filters, or create one in the Builder console.</p>
                 </div>
               ) : (
-                <div className="grid max-h-[280px] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-                  {filteredAssessmentSets.map((aset) => {
-                    const selected = selectedAssessmentId === aset.id;
-                    return (
-                      <button
-                        key={aset.id}
-                        type="button"
-                        onClick={() => handleAssessmentSelect(aset)}
-                        className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
-                      >
-                        <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                          <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
-                            aset.subject === "math" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                          }`}>{aset.subject}</span>
-                          {aset.source && (
-                            <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{sourceLabel(aset.source)}</span>
-                          )}
-                          {aset.category && (
-                            <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">{aset.category}</span>
-                          )}
-                        </div>
-                        <p className="line-clamp-2 text-sm font-bold text-foreground">{aset.title}</p>
-                        <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{aset.question_count} questions</p>
-                      </button>
-                    );
-                  })}
+                <div className="max-h-[320px] space-y-4 overflow-y-auto pr-1">
+                  {renderAssessmentGroup("Available", availableAssessmentSets, false)}
+                  {renderAssessmentGroup("Already given", givenAssessmentSets, true)}
                 </div>
               )}
             </ClassroomField>

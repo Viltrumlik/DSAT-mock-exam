@@ -1,7 +1,7 @@
 import api from "@/lib/api";
 
 import type { components } from "@/lib/openapi-types";
-import type { AttemptAnswerRequest, AttemptStartRequest, AttemptSubmitRequest, Attempt } from "@/features/assessments/types";
+import type { AttemptAnswerRequest, AttemptSubmitRequest, Attempt } from "@/features/assessments/types";
 import type { SaveAnswerResponse, SubmitResponse } from "@/features/assessments/schemas";
 
 type AssessmentAttemptBundleResponse = components["schemas"]["AssessmentAttemptBundleResponse"];
@@ -92,7 +92,9 @@ export type SubmissionQueue = {
  * Shapes match `backend/openapi.yaml` (see `npm run gen:openapi`).
  */
 export const assessmentsStudentApi = {
-  start: async (payload: AttemptStartRequest & { focus_question_ids?: number[] }): Promise<Attempt> => {
+  start: async (
+    payload: { assignment_id?: number; homework_id?: number; focus_question_ids?: number[] },
+  ): Promise<Attempt> => {
     const r = await api.post("/assessments/attempts/start/", payload);
     return r.data as Attempt;
   },
@@ -110,6 +112,11 @@ export const assessmentsStudentApi = {
   },
   myResult: async (assignmentId: number): Promise<AssessmentMyResultResponse> => {
     const r = await api.get(`/assessments/homework/${assignmentId}/my-result/`);
+    return r.data as AssessmentMyResultResponse;
+  },
+  /** Result for ONE assessment homework — unambiguous when a homework bundles several. */
+  myResultByHomework: async (homeworkId: number): Promise<AssessmentMyResultResponse> => {
+    const r = await api.get(`/assessments/homework/by-homework/${homeworkId}/my-result/`);
     return r.data as AssessmentMyResultResponse;
   },
   /** Post-submission pedagogical review: questions WITH correct_answer + explanation + student answers. */

@@ -66,11 +66,24 @@ class StartAttemptView(APIView):
     def post(self, request):
         ser = StartAttemptSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        assignment_id = int(ser.validated_data["assignment_id"])
+        homework_id = ser.validated_data.get("homework_id")
+        assignment_id = ser.validated_data.get("assignment_id")
 
-        hw = HomeworkAssignment.objects.select_related(
+        base_qs = HomeworkAssignment.objects.select_related(
             "assignment", "classroom", "assessment_set", "set_version"
-        ).filter(assignment_id=assignment_id).first()
+        )
+        if homework_id:
+            hw = base_qs.filter(pk=int(homework_id)).first()
+        else:
+            # Back-compat: resolve by assignment. A bundle may hold several
+            # assessments — then homework_id is required to disambiguate.
+            hws = list(base_qs.filter(assignment_id=int(assignment_id)))
+            if len(hws) > 1:
+                return Response(
+                    {"detail": "This homework has multiple assessments — pass homework_id."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            hw = hws[0] if hws else None
         if not hw:
             return Response({"detail": "Assessment homework not found."}, status=status.HTTP_404_NOT_FOUND)
 

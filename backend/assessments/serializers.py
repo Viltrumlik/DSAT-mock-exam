@@ -410,7 +410,16 @@ class AssignHomeworkSerializer(serializers.Serializer):
 
 
 class StartAttemptSerializer(serializers.Serializer):
-    assignment_id = serializers.IntegerField()
+    # Prefer homework_id (unambiguous when an assignment bundles several
+    # assessments). assignment_id is kept for back-compat: it resolves to the
+    # assignment's single homework, and errors if the assignment has several.
+    homework_id = serializers.IntegerField(required=False)
+    assignment_id = serializers.IntegerField(required=False)
+
+    def validate(self, attrs):
+        if not attrs.get("homework_id") and not attrs.get("assignment_id"):
+            raise serializers.ValidationError("Provide homework_id or assignment_id.")
+        return attrs
     # Optional: retry mode — restrict attempt to a subset of question IDs.
     # Used by "retry incorrect only" flow in the pedagogical review page.
     focus_question_ids = serializers.ListField(

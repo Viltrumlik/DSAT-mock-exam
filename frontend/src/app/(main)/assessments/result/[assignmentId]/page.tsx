@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import AuthGuard from "@/components/AuthGuard";
@@ -66,8 +66,11 @@ function answerToDisplay(value: unknown): string {
 export default function AssessmentResultPage() {
   const router = useRouter();
   const { assignmentId } = useParams();
+  const searchParams = useSearchParams();
   const aid = Number(assignmentId);
-  const { data, isLoading, error, refetch } = useMyAssessmentResult(aid);
+  // ?homework=<id> targets one assessment of a bundle (a homework can hold several).
+  const homeworkId = Number(searchParams.get("homework")) || undefined;
+  const { data, isLoading, error, refetch } = useMyAssessmentResult(aid, homeworkId);
 
   const richData = data as MyResultData | undefined;
   const attempt = richData?.attempt ?? null;
@@ -112,7 +115,7 @@ export default function AssessmentResultPage() {
     if (retrying) return;
     setRetrying(true);
     try {
-      const att = await start.mutateAsync({ assignment_id: aid });
+      const att = await start.mutateAsync(homeworkId ? { homework_id: homeworkId } : { assignment_id: aid });
       router.push(`/assessments/attempt/${att.id}`);
     } catch (e) {
       pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });

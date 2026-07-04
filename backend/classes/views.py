@@ -302,10 +302,10 @@ class ClassroomViewSet(ModelViewSet):
             .select_related(
                 "classroom",
                 "created_by",
-                "assessment_homework__assessment_set",
                 "mock_exam",
                 "practice_test_pack",
             )
+            .prefetch_related("assessment_homeworks__assessment_set")
             .annotate(_given_at=Coalesce("published_at", "created_at"))
             .order_by("classroom_id", "-_given_at", "-id")
         )
@@ -337,9 +337,10 @@ class ClassroomViewSet(ModelViewSet):
         # "N questions" line on the To-do cards + the score denominator fallback.
         assess_qcount: dict[int, int] = {}
         set_ids = {
-            a.assessment_homework.assessment_set_id
+            hw.assessment_set_id
             for a in assignments
-            if getattr(a, "assessment_homework", None) and getattr(a.assessment_homework, "assessment_set_id", None)
+            for hw in a.assessment_homeworks.all()
+            if hw.assessment_set_id
         }
         if set_ids:
             try:
@@ -364,13 +365,11 @@ class ClassroomViewSet(ModelViewSet):
             ).select_related("review")
         }
 
-        # Build assessment attempt map (one query via HomeworkAssignment → AssessmentAttempt).
-        assessment_wf_map: dict[int, str] = {}  # assignment_id → workflow_status string
-        # attempt_id for in-progress assessment attempts (enables one-click resume)
-        assessment_attempt_id_map: dict[int, int] = {}  # assignment_id → attempt_id
-        # Rich per-assignment progress so the board cards can show the score inline
-        # (graded → percent/correct/missed; in_progress → answered/total/last-opened).
-        assessment_progress_map: dict[int, dict] = {}
+        # Per-HOMEWORK attempt state — a homework (Assignment) can bundle several
+        # assessments, so progress is keyed by homework_id (each carries its own
+        # workflow_status + score) and grouped by assignment for the payload.
+        hw_progress_by_id: dict[int, dict] = {}   # homework_id → progress payload
+        hws_by_assignment: dict[int, list] = {}   # assignment_id → [HomeworkAssignment]
         try:
             from assessments.models import (
                 HomeworkAssignment as AssessHW,
@@ -381,10 +380,11 @@ class ClassroomViewSet(ModelViewSet):
             from django.db.models import Count
 
             hw_rows = list(
-                AssessHW.objects.filter(classroom_id__in=classroom_ids).select_related("assignment")
+                AssessHW.objects.filter(classroom_id__in=classroom_ids).select_related("assessment_set")
             )
+            for h in hw_rows:
+                hws_by_assignment.setdefault(h.assignment_id, []).append(h)
             if hw_rows:
-                hw_by_assignment = {h.assignment_id: h for h in hw_rows}
                 latest_by_hw: dict[int, AssessmentAttempt] = {}
                 for att in AssessmentAttempt.objects.filter(
                     student=user,
@@ -411,78 +411,74 @@ class ClassroomViewSet(ModelViewSet):
                     ):
                         answered_by_attempt[row["attempt_id"]] = row["n"]
 
-                for assign_id, h in hw_by_assignment.items():
+                for h in hw_rows:
                     att = latest_by_hw.get(h.id)
                     res = res_by_attempt.get(att.id) if att else None
-                    set_total = assess_qcount.get(getattr(h, "assessment_set_id", None), 0)
+                    set_total = assess_qcount.get(h.assessment_set_id, 0)
                     if att is None:
-                        assessment_wf_map[assign_id] = "not_started"
+                        hw_progress_by_id[h.id] = {
+                            "workflow_status": "not_started", "state": "not_started",
+                            "attempt_id": None, "total_questions": set_total,
+                        }
                     elif res is not None:
-                        assessment_wf_map[assign_id] = "graded"
                         correct = int(res.correct_count or 0)
                         r_total = int(res.total_questions or set_total or 0)
-                        assessment_progress_map[assign_id] = {
-                            "state": "completed",
-                            "attempt_id": att.id,
-                            "graded": True,
-                            "percent": round(float(res.percent or 0)),
-                            "correct_count": correct,
-                            "total_questions": r_total,
+                        hw_progress_by_id[h.id] = {
+                            "workflow_status": "graded", "state": "completed", "attempt_id": att.id,
+                            "graded": True, "percent": round(float(res.percent or 0)),
+                            "correct_count": correct, "total_questions": r_total,
                             "missed_count": max(r_total - correct, 0),
                         }
                     elif att.status == "submitted":
-                        assessment_wf_map[assign_id] = "submitted"
-                        assessment_progress_map[assign_id] = {
-                            "state": "completed",
-                            "attempt_id": att.id,
-                            "graded": False,
-                            "total_questions": set_total,
+                        hw_progress_by_id[h.id] = {
+                            "workflow_status": "submitted", "state": "completed",
+                            "attempt_id": att.id, "graded": False, "total_questions": set_total,
                         }
                     elif att.status == "in_progress":
-                        assessment_wf_map[assign_id] = "in_progress"
-                        # Surface the attempt ID so the frontend can deep-link
-                        # directly to the runner, skipping the start-page interstitial.
-                        assessment_attempt_id_map[assign_id] = att.id
                         last_act = getattr(att, "last_activity_at", None) or att.started_at
-                        assessment_progress_map[assign_id] = {
-                            "state": "in_progress",
-                            "attempt_id": att.id,
+                        hw_progress_by_id[h.id] = {
+                            "workflow_status": "in_progress", "state": "in_progress", "attempt_id": att.id,
                             "answered_count": answered_by_attempt.get(att.id, 0),
                             "total_questions": set_total,
                             "last_activity_at": last_act.isoformat() if last_act else None,
                         }
                     else:
-                        assessment_wf_map[assign_id] = att.status or "not_started"
+                        hw_progress_by_id[h.id] = {
+                            "workflow_status": att.status or "not_started", "state": "not_started",
+                            "attempt_id": att.id, "total_questions": set_total,
+                        }
         except Exception:
             logger.exception("my_assignments: assessment hydration failed user_id=%s", user.pk)
 
         items = []
         for a in assignments:
-            hw = getattr(a, "assessment_homework", None)
+            hws = hws_by_assignment.get(a.id, [])
+            hw = hws[0] if hws else None
             hw_set = getattr(hw, "assessment_set", None) if hw else None
 
-            # Determine workflow_status: assessment path takes precedence.
+            # Per-assessment payload (a bundle can hold several). Each carries its own
+            # set metadata + attempt state so the board renders one card per assessment.
+            assessment_homeworks = []
+            for h in hws:
+                s = getattr(h, "assessment_set", None)
+                assessment_homeworks.append({
+                    "homework_id": h.id,
+                    "set": ({
+                        "id": s.id, "subject": s.subject, "category": s.category,
+                        "title": s.title, "description": getattr(s, "description", ""),
+                    } if s else None),
+                    "progress": hw_progress_by_id.get(h.id),
+                })
+
+            # Determine workflow_status: assessment path takes precedence (first assessment).
+            first_progress = hw_progress_by_id.get(hw.id) if hw else None
             if hw is not None:
-                wf = assessment_wf_map.get(a.id, "not_started")
+                wf = (first_progress or {}).get("workflow_status", "not_started")
             else:
                 wf = submission_workflow_status(subs_map.get(a.id))
 
-            assessment_homework_payload = None
-            if hw is not None:
-                assessment_homework_payload = {
-                    "homework_id": hw.id,
-                    "set": (
-                        {
-                            "id": hw_set.id,
-                            "subject": hw_set.subject,
-                            "category": hw_set.category,
-                            "title": hw_set.title,
-                            "description": getattr(hw_set, "description", ""),
-                        }
-                        if hw_set
-                        else None
-                    ),
-                }
+            # Back-compat singular payload = first assessment.
+            assessment_homework_payload = assessment_homeworks[0] if assessment_homeworks else None
 
             classroom = classroom_map.get(a.classroom_id)
             pt_ids = ids_by_assignment.get(a.id, [])
@@ -492,7 +488,7 @@ class ClassroomViewSet(ModelViewSet):
                 content_type = "assessment"
             elif a.mock_exam_id:
                 content_type = "mock"
-            elif a.practice_test_pack_id:
+            elif a.practice_test_pack_id or a.practice_test_pack_ids:
                 content_type = "practice"
             elif a.practice_test_id or a.practice_test_ids:
                 content_type = "pastpaper"
@@ -504,8 +500,14 @@ class ClassroomViewSet(ModelViewSet):
             # Openable contents (name + item count) for the launcher cards — same order
             # the detail launcher renders them: assessment, mock, practice pack, past paper.
             contents = []
-            if hw is not None:
-                contents.append({"kind": "QUIZ", "title": (hw_set.title if hw_set else "Assessment"), "item_count": None})
+            for h in hws:
+                s = getattr(h, "assessment_set", None)
+                contents.append({
+                    "kind": "QUIZ",
+                    "title": (getattr(s, "title", None) or "Assessment"),
+                    "item_count": assess_qcount.get(h.assessment_set_id, 0) or None,
+                    "homework_id": h.id,
+                })
             if a.mock_exam_id:
                 mock = a.mock_exam
                 contents.append({"kind": "MOCK", "title": (getattr(mock, "title", None) or getattr(mock, "name", None) or "Mock Exam"), "item_count": _practice_qcount(a.id)})
@@ -535,11 +537,18 @@ class ClassroomViewSet(ModelViewSet):
 
             # TASKS count.
             if content_type == "assessment":
-                item_count = assess_qcount.get(getattr(hw, "assessment_set_id", None), 0) or None
+                item_count = sum(assess_qcount.get(h.assessment_set_id, 0) for h in hws) or None
             elif content_type in ("pastpaper", "practice", "mock"):
                 item_count = _practice_qcount(a.id)
             else:
                 item_count = None
+
+            # Back-compat resume attempt_id = first assessment's in-progress attempt.
+            first_attempt_id = (
+                first_progress.get("attempt_id")
+                if first_progress and first_progress.get("workflow_status") == "in_progress"
+                else None
+            )
 
             items.append({
                 "id": a.id,
@@ -556,14 +565,14 @@ class ClassroomViewSet(ModelViewSet):
                 "subject": content_subject,
                 "workflow_status": wf,
                 "assessment_homework": assessment_homework_payload,
-                "assessment_progress": assessment_progress_map.get(a.id),
+                # Full per-assessment list (a bundle can hold several) — the board
+                # renders one card per entry keyed by homework_id.
+                "assessment_homeworks": assessment_homeworks,
+                "assessment_progress": first_progress,
                 # attempt_id is present only when workflow_status == "in_progress".
-                # Enables the frontend to deep-link directly to the runner
-                # (/assessments/attempt/{attempt_id}), bypassing the start-page
-                # interstitial for one-click resume UX.
-                "attempt_id": assessment_attempt_id_map.get(a.id),
+                "attempt_id": first_attempt_id,
                 "has_practice_content": bool(
-                    assignment_target_practice_test_ids(a) or hw is not None
+                    assignment_target_practice_test_ids(a) or bool(hws)
                 ),
             })
 
@@ -833,6 +842,25 @@ class ClassroomViewSet(ModelViewSet):
         if platform_subject:
             pt_qs = pt_qs.filter(subject=platform_subject)
 
+        # Already-assigned resources for THIS classroom → the Given/Not-given split
+        # in the picker (so a teacher can see what they've already given the class).
+        from assessments.models import HomeworkAssignment as AssessHW
+
+        assigned_set_ids = set(
+            AssessHW.objects.filter(classroom=classroom).values_list("assessment_set_id", flat=True)
+        )
+        assigned_pt_ids: set[int] = set()
+        assigned_pack_ids: set[int] = set()
+        for a in Assignment.objects.filter(classroom=classroom):
+            assigned_pt_ids.update(assignment_target_practice_test_ids(a))
+            if a.practice_test_pack_id:
+                assigned_pack_ids.add(a.practice_test_pack_id)
+            for x in (a.practice_test_pack_ids or []):
+                try:
+                    assigned_pack_ids.add(int(x))
+                except (TypeError, ValueError):
+                    continue
+
         practice_tests = []
         for pt in pt_qs:
             practice_tests.append(
@@ -847,6 +875,7 @@ class ClassroomViewSet(ModelViewSet):
                     "mock_exam": None,
                     "collection_name": pt.collection_name or "",
                     "is_published": pt.is_published,
+                    "already_assigned": pt.id in assigned_pt_ids,
                 }
             )
 
@@ -865,6 +894,7 @@ class ClassroomViewSet(ModelViewSet):
                 "category": aset.category or "",
                 "description": aset.description or "",
                 "question_count": aset.questions.filter(is_active=True).count(),
+                "already_assigned": aset.id in assigned_set_ids,
             })
 
         # Practice test packs (custom user-created)
@@ -876,6 +906,7 @@ class ClassroomViewSet(ModelViewSet):
                 "title": ptp.title or "",
                 "description": ptp.description or "",
                 "section_count": ptp.sections.count(),
+                "already_assigned": ptp.id in assigned_pack_ids,
             })
 
         # Interactive midterms (MockExam kind=MIDTERM) the teacher may assign to this class.
@@ -1197,7 +1228,7 @@ class ClassroomViewSet(ModelViewSet):
         # All assignments in the classroom.
         assignments = list(
             Assignment.objects.filter(classroom=classroom)
-            .select_related("assessment_homework__assessment_set")
+            .prefetch_related("assessment_homeworks__assessment_set")
             .order_by("due_at", "-created_at")
         )
         assignment_ids = [a.id for a in assignments]
@@ -1419,7 +1450,7 @@ class ClassroomViewSet(ModelViewSet):
 
         assignments_qs = (
             Assignment.objects.filter(classroom=classroom)
-            .select_related("created_by", "assessment_homework__assessment_set")
+            .select_related("created_by").prefetch_related("assessment_homeworks__assessment_set")
             .order_by("-created_at")
         )
         # Students see only PUBLISHED work; staff see everything except ARCHIVED.
@@ -1806,50 +1837,75 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                 getattr(assignment, "pk", None),
             )
 
-        # Handle assessment_set_id — create linked HomeworkAssignment
-        assessment_set_id = request.data.get("assessment_set_id")
-        if assessment_set_id:
+        # Handle assessment_set_ids (multi) + legacy assessment_set_id — create one
+        # HomeworkAssignment per set so a homework can bundle several assessments.
+        raw_ids = request.data.get("assessment_set_ids")
+        wanted_ids: list[int] = []
+        if raw_ids:
+            if isinstance(raw_ids, str):
+                try:
+                    raw_ids = json.loads(raw_ids)
+                except Exception:
+                    raw_ids = []
+            if isinstance(raw_ids, (list, tuple)):
+                for x in raw_ids:
+                    try:
+                        wanted_ids.append(int(x))
+                    except (TypeError, ValueError):
+                        continue
+        legacy_id = request.data.get("assessment_set_id")
+        if legacy_id:
+            try:
+                wanted_ids.append(int(legacy_id))
+            except (TypeError, ValueError):
+                pass
+        # Dedup, preserve order.
+        seen_ids: set[int] = set()
+        ordered_ids = [sid for sid in wanted_ids if not (sid in seen_ids or seen_ids.add(sid))]
+
+        for sid in ordered_ids:
             try:
                 from assessments.models import AssessmentSet, AssessmentSetVersion, HomeworkAssignment as AssessHW
-                aset = AssessmentSet.objects.get(pk=int(assessment_set_id))
+                aset = AssessmentSet.objects.get(pk=sid)
                 pinned_version = (
                     AssessmentSetVersion.objects.filter(assessment_set=aset)
                     .order_by("-version_number")
                     .first()
                 )
-                # If the assessment set has no pinned version yet (newly created
-                # set with questions but no version snapshot), create one now so
-                # the homework can be assigned. Without a version, students
-                # cannot start attempts.
+                # If the set has no pinned version yet, create one now so students
+                # can start attempts.
                 if pinned_version is None:
                     try:
                         from assessments.domain.publish_service import publish_assessment_set
-                        pinned_version = publish_assessment_set(
-                            set_id=aset.pk, actor=request.user
-                        )
+                        pinned_version = publish_assessment_set(set_id=aset.pk, actor=request.user)
                     except Exception:
                         logger.exception(
                             "publish_assessment_set failed for assessment_set_id=%s; "
                             "assigning without pinned_version",
                             aset.pk,
                         )
-                with transaction.atomic():
-                    AssessHW.objects.create(
-                        classroom=classroom,
-                        assessment_set=aset,
-                        assignment=assignment,
-                        assigned_by=request.user,
-                        set_version=pinned_version,
+                try:
+                    with transaction.atomic():
+                        AssessHW.objects.create(
+                            classroom=classroom,
+                            assessment_set=aset,
+                            assignment=assignment,
+                            assigned_by=request.user,
+                            set_version=pinned_version,
+                        )
+                except IntegrityError:
+                    # Set already assigned to this classroom (uniq_assessment_hw_classroom_set):
+                    # a re-assign of an already-given set is idempotent — skip it.
+                    logger.info(
+                        "assessment set %s already assigned to classroom %s; skipping",
+                        sid, classroom.pk,
                     )
-            except IntegrityError:
-                logger.exception(
-                    "IntegrityError creating assessment homework for assignment_id=%s set_id=%s",
-                    assignment.pk, assessment_set_id,
-                )
+            except AssessmentSet.DoesNotExist:
+                logger.warning("assessment_set_id=%s not found; skipping", sid)
             except Exception:
                 logger.exception(
                     "Failed to create assessment homework for assignment_id=%s set_id=%s",
-                    assignment.pk, assessment_set_id,
+                    assignment.pk, sid,
                 )
 
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
@@ -2263,26 +2319,27 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                     assignment.pk,
                     request.user.pk,
                 )
-            # Also lazy-sync assessment homework
-            hw_link = getattr(assignment, "assessment_homework", None)
-            if hw_link is not None:
+            # Also lazy-sync assessment homework (a bundle can hold several).
+            hw_links = list(assignment.assessment_homeworks.all())
+            if hw_links:
                 from assessments.models import AssessmentAttempt
                 from classes.homework_auto_submit import sync_assessment_submission
 
-                att = AssessmentAttempt.objects.filter(
-                    homework=hw_link,
-                    student=request.user,
-                    status__in=[AssessmentAttempt.STATUS_SUBMITTED, AssessmentAttempt.STATUS_GRADED],
-                ).order_by("-submitted_at").first()
-                if att:
-                    try:
-                        sync_assessment_submission(att)
-                    except Exception:
-                        logger.exception(
-                            "sync_assessment_submission_failed assignment_id=%s user_id=%s",
-                            assignment.pk,
-                            request.user.pk,
-                        )
+                for hw_link in hw_links:
+                    att = AssessmentAttempt.objects.filter(
+                        homework=hw_link,
+                        student=request.user,
+                        status__in=[AssessmentAttempt.STATUS_SUBMITTED, AssessmentAttempt.STATUS_GRADED],
+                    ).order_by("-submitted_at").first()
+                    if att:
+                        try:
+                            sync_assessment_submission(att)
+                        except Exception:
+                            logger.exception(
+                                "sync_assessment_submission_failed assignment_id=%s user_id=%s",
+                                assignment.pk,
+                                request.user.pk,
+                            )
         sub = (
             Submission.objects.filter(assignment=assignment, student=request.user)
             .select_related("attempt", "attempt__practice_test", "review", "review__teacher")
@@ -2319,14 +2376,14 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                         uid,
                     )
 
-        # Lazy-sync assessment homework submissions
-        hw_link = getattr(assignment, "assessment_homework", None)
-        if hw_link is not None:
+        # Lazy-sync assessment homework submissions (a bundle can hold several).
+        hw_links = list(assignment.assessment_homeworks.all())
+        if hw_links:
             from assessments.models import AssessmentAttempt
             from classes.homework_auto_submit import sync_assessment_submission
 
             submitted_attempts = AssessmentAttempt.objects.filter(
-                homework=hw_link,
+                homework__in=hw_links,
                 status__in=[AssessmentAttempt.STATUS_SUBMITTED, AssessmentAttempt.STATUS_GRADED],
             ).select_related("student")
             for att in submitted_attempts:

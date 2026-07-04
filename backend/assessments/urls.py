@@ -22,6 +22,7 @@ from .views import (
     SubmitAttemptView,
     AbandonAttemptView,
     MyAssessmentResultForAssignmentView,
+    MyAssessmentResultForHomeworkView,
     AdminGradingMetricsView,
     AdminGradingPrometheusMetricsView,
     AdminHomeworkPrometheusMetricsView,
@@ -83,7 +84,9 @@ urlpatterns = [
     path("attempts/answer/", SaveAnswerView.as_view(), name="assessment-attempt-answer"),
     path("attempts/submit/", SubmitAttemptView.as_view(), name="assessment-attempt-submit"),
     path("attempts/abandon/", AbandonAttemptView.as_view(), name="assessment-attempt-abandon"),
-    # Student result (by assignment id)
+    # Student result (by assignment id — back-compat, first assessment of a bundle)
     path("homework/<int:assignment_id>/my-result/", MyAssessmentResultForAssignmentView.as_view(), name="assessment-homework-my-result"),
+    # Student result (by homework id — unambiguous for bundles with many assessments)
+    path("homework/by-homework/<int:homework_id>/my-result/", MyAssessmentResultForHomeworkView.as_view(), name="assessment-homework-my-result-by-hw"),
 ]
 

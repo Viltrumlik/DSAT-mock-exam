@@ -276,6 +276,9 @@ class Assignment(models.Model):
         related_name="class_assignments",
     )
     practice_test_ids = models.JSONField(null=True, blank=True)
+    # Multiple custom practice-test packs on one homework (mirrors practice_test_ids).
+    # Expanded to section ids at query time by raw_target_practice_test_ids_from_fks().
+    practice_test_pack_ids = models.JSONField(null=True, blank=True)
     module = models.ForeignKey(
         Module, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_assignments"
     )
@@ -367,8 +370,16 @@ class Assignment(models.Model):
         n = 0
         if self.mock_exam_id:
             n += 1
+        # Packs: legacy single FK + the multi list, deduped.
+        pack_ids = set()
         if self.practice_test_pack_id:
-            n += 1
+            pack_ids.add(self.practice_test_pack_id)
+        for x in (self.practice_test_pack_ids or []):
+            try:
+                pack_ids.add(int(x))
+            except (TypeError, ValueError):
+                pass
+        n += len(pack_ids)
         if self.module_id:
             n += 1
         if self.practice_test_id or self.practice_test_ids:
@@ -382,9 +393,9 @@ class Assignment(models.Model):
                     n += 1
             except Exception:
                 pass
+        # Each attached assessment is its own openable content.
         try:
-            if self.assessment_homework is not None:
-                n += 1
+            n += self.assessment_homeworks.count()
         except Exception:
             pass
         return n
@@ -411,10 +422,11 @@ class Assignment(models.Model):
             or self.practice_test_pack_id
             or self.module_id
             or self.practice_test_ids
+            or self.practice_test_pack_ids
         ):
             return True
         try:
-            return self.assessment_homework is not None
+            return self.assessment_homeworks.exists()
         except Exception:
             return False
 
@@ -427,10 +439,15 @@ class Assignment(models.Model):
             return "Mock Exam"
         if self.module_id:
             return "Module Test"
-        if self.practice_test_id or self.practice_test_pack_id or self.practice_test_ids:
+        if (
+            self.practice_test_id
+            or self.practice_test_pack_id
+            or self.practice_test_ids
+            or self.practice_test_pack_ids
+        ):
             return "Practice Test"
         try:
-            if self.assessment_homework is not None:
+            if self.assessment_homeworks.exists():
                 return "Quiz"
         except Exception:
             pass
@@ -456,37 +473,66 @@ def raw_target_practice_test_ids_from_fks(
     practice_test_ids: list | None,
     practice_test_id: int | None,
     practice_test_pack_id: int | None = None,
+    practice_test_pack_ids: list | None = None,
 ) -> list[int]:
     """
-    Practice test row ids before practice_scope filtering (mock, pack, bundle, or single).
+    Practice test row ids before practice_scope filtering.
+
+    A mock exam is exclusive (its sections are the whole assignment). Otherwise the
+    result is the UNION of every attached pack's sections (single ``practice_test_pack``
+    FK + the ``practice_test_pack_ids`` list), the ``practice_test_ids`` bundle, and the
+    single ``practice_test`` FK — deduped, Reading & Writing before Math.
     """
+    order = {"READING_WRITING": 0, "MATH": 1}
     if mock_exam_id:
-        order = {"READING_WRITING": 0, "MATH": 1}
         rows = list(
             PracticeTest.objects.filter(mock_exam_id=mock_exam_id).values_list("id", "subject")
         )
         rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
         return [r[0] for r in rows]
+
+    # Gather every pack id (legacy single FK + multi list).
+    pack_ids: list[int] = []
     if practice_test_pack_id:
-        order = {"READING_WRITING": 0, "MATH": 1}
+        try:
+            pack_ids.append(int(practice_test_pack_id))
+        except (TypeError, ValueError):
+            pass
+    for x in (practice_test_pack_ids or []):
+        try:
+            pack_ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+
+    seen: set[int] = set()
+    ordered: list[int] = []
+
+    def _add(pk: int) -> None:
+        if pk not in seen:
+            seen.add(pk)
+            ordered.append(pk)
+
+    if pack_ids:
         rows = list(
-            PracticeTest.objects.filter(practice_test_pack_id=practice_test_pack_id).values_list(
-                "id", "subject"
-            )
+            PracticeTest.objects.filter(practice_test_pack_id__in=pack_ids).values_list("id", "subject")
         )
         rows.sort(key=lambda r: (order.get(r[1], 9), r[0]))
-        return [r[0] for r in rows]
-    if practice_test_ids:
-        out: list[int] = []
-        for x in practice_test_ids:
-            try:
-                out.append(int(x))
-            except (TypeError, ValueError):
-                continue
-        return out
+        for pk, _subj in rows:
+            _add(pk)
+
+    for x in (practice_test_ids or []):
+        try:
+            _add(int(x))
+        except (TypeError, ValueError):
+            continue
+
     if practice_test_id:
-        return [practice_test_id]
-    return []
+        try:
+            _add(int(practice_test_id))
+        except (TypeError, ValueError):
+            pass
+
+    return ordered
 
 
 def filter_practice_targets_by_scope(raw_ids: list[int], scope: str) -> list[int]:
@@ -513,6 +559,7 @@ def assignment_target_practice_test_ids(assignment: Assignment) -> list[int]:
         assignment.practice_test_ids,
         assignment.practice_test_id,
         practice_test_pack_id=getattr(assignment, "practice_test_pack_id", None),
+        practice_test_pack_ids=getattr(assignment, "practice_test_pack_ids", None),
     )
     scope = assignment.practice_scope or Assignment.PRACTICE_SCOPE_BOTH
     return filter_practice_targets_by_scope(raw, scope)

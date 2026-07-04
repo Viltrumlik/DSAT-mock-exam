@@ -31,9 +31,9 @@ import { pushGlobalToast } from "@/lib/toastBus";
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type AssessmentSet = { id: number; subject: string; category: string; title: string; description: string };
-type AssessmentHomework = { homework_id: number; set?: AssessmentSet | null };
 type AssessmentProgress = {
   state: string;
+  workflow_status?: string | null;
   attempt_id?: number | null;
   graded?: boolean;
   percent?: number;
@@ -43,25 +43,26 @@ type AssessmentProgress = {
   answered_count?: number;
   last_activity_at?: string | null;
 };
+type AssessmentHomework = { homework_id: number; set?: AssessmentSet | null; progress?: AssessmentProgress | null };
 type AssignmentWithStatus = Assignment & {
+  assessment_homeworks?: AssessmentHomework[] | null;
   assessment_homework?: AssessmentHomework | null;
-  assessment_progress?: AssessmentProgress | null;
   workflow_status?: string | null;
-  attempt_id?: number | null;
   item_count?: number | null;
 };
+// One card per ASSESSMENT (a homework can bundle several) — keyed by homework_id.
 type Entry = {
   assignment: AssignmentWithStatus;
+  hw: AssessmentHomework;
   classroomId: number;
   classroomName: string;
   subject?: string;
-  resumeHref?: string;
 };
 
 type State = "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "NOT_STARTED";
 
 function deriveState(e: Entry): State {
-  const ws = e.assignment.workflow_status;
+  const ws = e.hw.progress?.workflow_status;
   if (ws === "graded" || ws === "completed") return "COMPLETED";
   if (ws === "submitted") return "SUBMITTED";
   if (ws === "in_progress") return "IN_PROGRESS";
@@ -137,11 +138,12 @@ function Board() {
   // launcher page. The backend reuses an in-progress attempt or creates a fresh one.
   const start = useStartAttempt();
   const [startingId, setStartingId] = useState<number | null>(null);
-  const beginAssessment = async (assignmentId: number) => {
+  // Start (or resume) a specific assessment by its homework id.
+  const beginAssessment = async (homeworkId: number) => {
     if (startingId != null) return;
-    setStartingId(assignmentId);
+    setStartingId(homeworkId);
     try {
-      const att = await start.mutateAsync({ assignment_id: assignmentId });
+      const att = await start.mutateAsync({ homework_id: homeworkId });
       router.push(`/assessments/attempt/${att.id}`);
     } catch (e) {
       pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
@@ -156,12 +158,15 @@ function Board() {
       const collected: Entry[] = [];
       for (const a of items) {
         const rich = a as AssignmentWithStatus & { classroom_id?: number; classroom_name?: string };
-        if (!rich.assessment_homework) continue;
+        // A homework can bundle several assessments — one card per assessment.
+        const hws = rich.assessment_homeworks
+          ?? (rich.assessment_homework ? [rich.assessment_homework] : []);
+        if (!hws.length) continue;
         const classroomId = rich.classroom_id ?? 0;
         const classroomName = rich.classroom_name ?? `Class #${classroomId}`;
-        const resumeHref = rich.workflow_status === "in_progress" && rich.attempt_id
-          ? `/assessments/attempt/${rich.attempt_id}` : undefined;
-        collected.push({ assignment: rich, classroomId, classroomName, subject: rich.assessment_homework?.set?.subject, resumeHref });
+        for (const hw of hws) {
+          collected.push({ assignment: rich, hw, classroomId, classroomName, subject: hw.set?.subject });
+        }
       }
       setEntries(collected);
     } catch {
@@ -217,11 +222,11 @@ function Board() {
                   ) : (
                     byCol[col.key].map((e) => (
                       <AssessCard
-                        key={`${e.classroomId}-${e.assignment.id}`}
+                        key={`${e.classroomId}-${e.assignment.id}-${e.hw.homework_id}`}
                         entry={e}
                         onGo={(href) => router.push(href)}
                         onStart={beginAssessment}
-                        starting={startingId === e.assignment.id}
+                        starting={startingId === e.hw.homework_id}
                       />
                     ))
                   )}
@@ -235,22 +240,26 @@ function Board() {
   );
 }
 
-function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (href: string) => void; onStart: (assignmentId: number) => void; starting: boolean }) {
+function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (href: string) => void; onStart: (homeworkId: number) => void; starting: boolean }) {
   const state = deriveState(entry);
   const a = entry.assignment;
-  const set = a.assessment_homework?.set;
-  const prog = a.assessment_progress ?? null;
-  const title = a.title ?? set?.title ?? "Assignment";
+  const hw = entry.hw;
+  const set = hw.set;
+  const prog = hw.progress ?? null;
+  // Prefer the assessment's own title; fall back to the homework title.
+  const title = set?.title ?? a.title ?? "Assignment";
   const subj = subjectStyle(set?.subject ?? entry.subject);
   const category = set?.category;
   const aid = a.id;
+  const hwId = hw.homework_id;
   const col = colOf(state);
   const accent = subj.accent;
   const soft = subj.soft;
 
   // Category → tags (a set carries one category; split on comma/slash if authored that way).
   const tags = (category ? category.split(/[,/·]/).map((t) => t.trim()).filter(Boolean) : []).slice(0, 3);
-  const qCount = a.item_count ?? prog?.total_questions ?? 0;
+  const qCount = prog?.total_questions ?? 0;
+  const resumeHref = prog?.attempt_id ? `/assessments/attempt/${prog.attempt_id}` : undefined;
 
   return (
     <div className="dz-statecard" style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderTop: `3px solid ${accent}`, borderRadius: 14, padding: 16, cursor: "default" }}>
@@ -289,13 +298,13 @@ function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (h
           disabled={starting}
           icon={starting ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}
           label={starting ? "Starting…" : "Start"}
-          onClick={() => onStart(aid)}
+          onClick={() => onStart(hwId)}
         />
       ) : col === "progress" ? (
-        <ActionBtn amber icon={<PlayCircle size={15} />} label="Continue" onClick={() => (entry.resumeHref ? onGo(entry.resumeHref) : onStart(aid))} />
+        <ActionBtn amber icon={<PlayCircle size={15} />} label="Continue" onClick={() => (resumeHref ? onGo(resumeHref) : onStart(hwId))} />
       ) : (
         // Completed: just Review — retry lives inside the result/review page.
-        <ActionBtn outline icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
+        <ActionBtn outline icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}?homework=${hwId}`)} />
       )}
     </div>
   );

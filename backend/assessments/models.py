@@ -289,10 +289,12 @@ class HomeworkAssignment(models.Model):
         blank=True,
         db_index=True,
     )
-    assignment = models.OneToOneField(
+    # A homework (Assignment) can bundle MANY assessments, so this is a FK, not
+    # a OneToOne. Reverse accessor: ``assignment.assessment_homeworks`` (queryset).
+    assignment = models.ForeignKey(
         "classes.Assignment",
         on_delete=models.CASCADE,
-        related_name="assessment_homework",
+        related_name="assessment_homeworks",
     )
     assigned_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -305,7 +307,9 @@ class HomeworkAssignment(models.Model):
         db_table = "assessment_homework_assignments"
         ordering = ["-created_at", "-id"]
         constraints = [
-            models.UniqueConstraint(fields=["classroom", "assignment"], name="uniq_assessment_hw_class_assignment"),
+            # NOTE: the former uniq_assessment_hw_class_assignment (one homework per
+            # assignment) was dropped so an assignment can carry multiple assessments.
+            # One assessment set is still assigned at most once per classroom.
             models.UniqueConstraint(
                 fields=["classroom", "assessment_set"],
                 name="uniq_assessment_hw_classroom_set",

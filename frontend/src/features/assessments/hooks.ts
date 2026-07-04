@@ -117,7 +117,7 @@ export function useAssignAssessmentHomework() {
 export function useStartAttempt() {
   const { assertCriticalAuth } = useAuthCriticalGate();
   return useMutation({
-    mutationFn: async (payload: { assignment_id: number }): Promise<Attempt> => {
+    mutationFn: async (payload: { assignment_id?: number; homework_id?: number }): Promise<Attempt> => {
       if (!assertCriticalAuth()) {
         throw new Error("AUTH_ACTION_BLOCKED");
       }
@@ -166,11 +166,19 @@ export function useSubmitAttempt() {
   });
 }
 
-export function useMyAssessmentResult(assignmentId: number) {
+export function useMyAssessmentResult(assignmentId: number, homeworkId?: number) {
+  // When a homework id is given (a bundle can hold several assessments), fetch the
+  // result for THAT specific assessment; otherwise fall back to the assignment route.
+  const byHomework = Number.isFinite(homeworkId) && (homeworkId as number) > 0;
   return useQuery<components["schemas"]["AssessmentMyResultResponse"]>({
-    queryKey: assessmentsKeys.myResult(assignmentId),
-    queryFn: () => assessmentsStudentApi.myResult(assignmentId),
-    enabled: Number.isFinite(assignmentId) && assignmentId > 0,
+    queryKey: byHomework
+      ? [...assessmentsKeys.myResult(assignmentId), "hw", homeworkId]
+      : assessmentsKeys.myResult(assignmentId),
+    queryFn: () =>
+      byHomework
+        ? assessmentsStudentApi.myResultByHomework(homeworkId as number)
+        : assessmentsStudentApi.myResult(assignmentId),
+    enabled: byHomework || (Number.isFinite(assignmentId) && assignmentId > 0),
     retry: (count, err: any) => {
       const status = err?.response?.status;
       if (status === 404) return false;
