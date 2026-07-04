@@ -224,7 +224,7 @@ export default function LoginPage() {
         <div className="ds-app flex min-h-screen bg-background text-foreground">
             {/* Brand panel — desktop only */}
             <aside
-                className="authbrand relative hidden w-[44%] max-w-xl flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+                className="authbrand relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white lg:flex"
                 style={{ background: "linear-gradient(160deg,#2a68c0,#1f4d9a)" }}
             >
                 {/* floating decorative shapes */}

@@ -148,7 +148,7 @@ export default function RegisterPage() {
         <div className="ds-app flex min-h-screen bg-background text-foreground">
             {/* Brand panel — desktop only */}
             <aside
-                className="authbrand relative hidden w-[44%] max-w-xl flex-col justify-between overflow-hidden p-12 text-white lg:flex"
+                className="authbrand relative hidden w-1/2 flex-col justify-between overflow-hidden p-12 text-white lg:flex"
                 style={{ background: "linear-gradient(160deg,#2a68c0,#1f4d9a)" }}
             >
                 <span aria-hidden className="pointer-events-none absolute -right-[70px] -top-[50px] h-[280px] w-[280px] rounded-full bg-white/10" style={{ animation: "dz-floatA 14s ease-in-out infinite" }} />
