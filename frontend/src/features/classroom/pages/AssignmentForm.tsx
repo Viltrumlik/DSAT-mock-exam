@@ -23,6 +23,7 @@ import {
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
+import { formatApiErrorForToast } from "@/lib/apiError";
 import { ArrowLeft, BookOpen, ClipboardList, FileText, FlaskConical, Loader2, Paperclip, Search, X } from "lucide-react";
 
 type PastpaperRow = Record<string, unknown> & {
@@ -391,9 +392,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       const createdId = created && typeof created === "object" && "id" in created ? Number((created as { id: number }).id) : undefined;
       await onSaved(Number.isFinite(createdId) ? createdId : undefined);
     } catch (e: unknown) {
-      const d = (e as { response?: { data?: { detail?: string; instructions?: string[] } } })?.response?.data;
-      const msg = d?.detail || (Array.isArray(d?.instructions) ? d?.instructions[0] : undefined);
-      setFormError(typeof msg === "string" ? msg : editingAssignment ? "Could not save assignment." : "Could not create assignment.");
+      // Surface the backend message (e.g. "File type not allowed (.jar). Allowed: …")
+      // or any DRF field error, instead of a blank generic failure.
+      setFormError(formatApiErrorForToast(e));
     } finally {
       setCreatingAsg(false);
     }
@@ -759,7 +760,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
             </ClassroomField>
           )}
 
-          <ClassroomField label={isEditing ? "Teacher attachments" : "Files (optional)"} hint="Files will be available for students to download.">
+          <ClassroomField label={isEditing ? "Teacher attachments" : "Files (optional)"} hint="PDF, Word, Excel, PowerPoint, text, or images. Students can download them.">
             {isEditing ? (
               <div className="space-y-3">
                 {existingAttachments.length > 0 ? (
@@ -787,6 +788,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                   </span>
                 </label>
                 <input id="asg-files-edit" name="attachment_file" type="file" multiple
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp"
                   onChange={(e) => setEditAsgFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
                   className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/15"
                 />
@@ -805,6 +807,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
             ) : (
               <>
                 <input id="asg-files" name="attachment_file" type="file" multiple
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp"
                   onChange={(e) => {
                     const incoming = Array.from(e.target.files || []);
                     setAsgFiles((prev) => {

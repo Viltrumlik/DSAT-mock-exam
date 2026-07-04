@@ -47,6 +47,19 @@ class AssignmentFileUploadTests(TestCase):
         a = Assignment.objects.get(pk=resp.json()["id"])
         self.assertTrue(a.attachment_file)  # primary file stored
 
+    def test_create_with_disallowed_file_type_returns_400_not_500(self):
+        # A .jar (or any non-allowlisted type) must fail gracefully with a 400 +
+        # readable detail — never bubble the Django ValidationError up as a 500.
+        bad = SimpleUploadedFile("payload.jar", b"PK\x03\x04 fake", content_type="application/java-archive")
+        resp = self.client.post(
+            self._url(),
+            {"title": "Bad file", "instructions": "do it", "attachment_file": bad},
+            format="multipart",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertIn("detail", resp.json())
+        self.assertIn("File type not allowed", resp.json()["detail"])
+
     def test_update_with_temp_file_upload_succeeds(self):
         a = Assignment.objects.create(
             classroom=self.classroom, created_by=self.owner, title="Edit me",

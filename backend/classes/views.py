@@ -1691,7 +1691,11 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if not files:
             files = list(request.FILES.getlist("attachment_file[]"))
         for f in files:
-            validate_submission_upload(f)
+            try:
+                validate_submission_upload(f)
+            except DjangoValidationError as e:
+                msg = e.messages[0] if getattr(e, "messages", None) else str(e)
+                return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
 
         # Make a mutable copy of request.data with attachment_file removed so
         # the serializer doesn't consume any uploaded file. IMPORTANT: drop the file
@@ -1790,7 +1794,11 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if not files:
             files = list(request.FILES.getlist("attachment_file[]"))
         for f in files:
-            validate_submission_upload(f)
+            try:
+                validate_submission_upload(f)
+            except DjangoValidationError as e:
+                msg = e.messages[0] if getattr(e, "messages", None) else str(e)
+                return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
 
         # Make a sanitized copy of request.data without attachment_file fields,
         # and temporarily swap it in so the super().update() serializer call
