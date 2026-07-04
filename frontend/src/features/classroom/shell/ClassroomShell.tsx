@@ -94,7 +94,7 @@ export function ClassroomShell({
         <ArrowLeft className="h-4 w-4" /> {backLabel}
       </Link>
 
-      <header className="cr-rise mt-4 flex flex-wrap items-center justify-between gap-4 rounded-[18px] border-4 border-primary bg-card px-[22px] py-[18px] shadow-[0_6px_16px_rgba(15,23,41,0.06)]">
+      <header className="cr-rise mt-4 flex flex-wrap items-center justify-between gap-4 rounded-[18px] border-t-4 border-l-[5px] border-r border-b border-t-primary border-l-primary border-r-border border-b-border bg-card px-[22px] py-[18px] shadow-[0_6px_16px_rgba(15,23,41,0.06)]">
         <div className="flex min-w-0 items-center gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             <SubjectIcon className="h-7 w-7" />
