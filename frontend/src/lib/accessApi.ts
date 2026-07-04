@@ -199,7 +199,7 @@ export const accessApi = {
 };
 
 export const RESOURCE_TYPE_LABELS: Record<string, string> = {
-  practice_test: "Practice / Past paper section",
+  practice_test: "Past paper",
   mock_exam: "Mock exam",
   midterm: "Midterm",
   practice_test_pack: "Practice test pack",

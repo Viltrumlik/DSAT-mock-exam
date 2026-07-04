@@ -168,7 +168,9 @@ export function StudentMultiSelect({
               <button
                 type="button"
                 key={u.id}
-                onClick={() => toggle(u.id)}
+                // Clear the search box after picking a student so the admin can
+                // immediately search the next one without manually erasing it.
+                onClick={() => { toggle(u.id); setSearch(""); }}
                 className={cn(
                   "flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-2",
                   checked && "bg-primary/5",
