@@ -493,10 +493,39 @@ class AssignmentSerializer(serializers.ModelSerializer):
         )
         if att is None:
             return {"state": "not_started", "attempt_id": None}
+        # Total questions in the set — used for the progress bar / score denominator.
+        total = self._assessment_question_count(getattr(hw, "assessment_set", None))
         if att.status in ("submitted", "graded"):
-            return {"state": "completed", "attempt_id": att.id}
+            # Surface the graded result inline so the completed card ("pack") can show
+            # the score, correct count, and how many were missed without a second fetch.
+            result = getattr(att, "result", None)
+            payload = {"state": "completed", "attempt_id": att.id, "total_questions": total}
+            if result is not None:
+                correct = int(result.correct_count or 0)
+                res_total = int(result.total_questions or total or 0)
+                payload.update(
+                    {
+                        "graded": True,
+                        "percent": round(float(result.percent or 0)),
+                        "correct_count": correct,
+                        "total_questions": res_total,
+                        "missed_count": max(res_total - correct, 0),
+                    }
+                )
+            else:
+                # Submitted but not yet graded — no score to show.
+                payload["graded"] = False
+            return payload
         if att.status == "in_progress":
-            return {"state": "in_progress", "attempt_id": att.id}
+            answered = att.answers.exclude(answer__isnull=True).count()
+            last_activity = getattr(att, "last_activity_at", None) or att.started_at
+            return {
+                "state": "in_progress",
+                "attempt_id": att.id,
+                "answered_count": answered,
+                "total_questions": total,
+                "last_activity_at": last_activity.isoformat() if last_activity else None,
+            }
         return {"state": "not_started", "attempt_id": att.id}
 
     @staticmethod

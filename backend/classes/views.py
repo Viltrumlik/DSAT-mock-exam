@@ -333,6 +333,28 @@ class ClassroomViewSet(ModelViewSet):
         def _practice_qcount(assign_id: int) -> int:
             return sum(pt_meta.get(i, {}).get("qcount", 0) for i in ids_by_assignment.get(assign_id, []))
 
+        # Assessment set active-question counts (one grouped query) — powers the
+        # "N questions" line on the To-do cards + the score denominator fallback.
+        assess_qcount: dict[int, int] = {}
+        set_ids = {
+            a.assessment_homework.assessment_set_id
+            for a in assignments
+            if getattr(a, "assessment_homework", None) and getattr(a.assessment_homework, "assessment_set_id", None)
+        }
+        if set_ids:
+            try:
+                from assessments.models import AssessmentQuestion
+                from django.db.models import Count
+
+                for row in (
+                    AssessmentQuestion.objects.filter(assessment_set_id__in=set_ids, is_active=True)
+                    .values("assessment_set_id")
+                    .annotate(n=Count("id"))
+                ):
+                    assess_qcount[row["assessment_set_id"]] = row["n"]
+            except Exception:
+                logger.exception("my_assignments: assessment qcount failed user_id=%s", user.pk)
+
         # Build submission map for this student (one query).
         subs_map = {
             s.assignment_id: s
@@ -346,8 +368,17 @@ class ClassroomViewSet(ModelViewSet):
         assessment_wf_map: dict[int, str] = {}  # assignment_id → workflow_status string
         # attempt_id for in-progress assessment attempts (enables one-click resume)
         assessment_attempt_id_map: dict[int, int] = {}  # assignment_id → attempt_id
+        # Rich per-assignment progress so the board cards can show the score inline
+        # (graded → percent/correct/missed; in_progress → answered/total/last-opened).
+        assessment_progress_map: dict[int, dict] = {}
         try:
-            from assessments.models import HomeworkAssignment as AssessHW, AssessmentAttempt, AssessmentResult
+            from assessments.models import (
+                HomeworkAssignment as AssessHW,
+                AssessmentAttempt,
+                AssessmentResult,
+                AssessmentAnswer,
+            )
+            from django.db.models import Count
 
             hw_rows = list(
                 AssessHW.objects.filter(classroom_id__in=classroom_ids).select_related("assignment")
@@ -369,20 +400,57 @@ class ClassroomViewSet(ModelViewSet):
                     )
                 }
 
+                # Answered-question counts for in-progress attempts (one grouped query).
+                inprog_ids = [a.id for a in latest_by_hw.values() if a.status == "in_progress"]
+                answered_by_attempt: dict[int, int] = {}
+                if inprog_ids:
+                    for row in (
+                        AssessmentAnswer.objects.filter(attempt_id__in=inprog_ids, answer__isnull=False)
+                        .values("attempt_id")
+                        .annotate(n=Count("id"))
+                    ):
+                        answered_by_attempt[row["attempt_id"]] = row["n"]
+
                 for assign_id, h in hw_by_assignment.items():
                     att = latest_by_hw.get(h.id)
                     res = res_by_attempt.get(att.id) if att else None
+                    set_total = assess_qcount.get(getattr(h, "assessment_set_id", None), 0)
                     if att is None:
                         assessment_wf_map[assign_id] = "not_started"
                     elif res is not None:
                         assessment_wf_map[assign_id] = "graded"
+                        correct = int(res.correct_count or 0)
+                        r_total = int(res.total_questions or set_total or 0)
+                        assessment_progress_map[assign_id] = {
+                            "state": "completed",
+                            "attempt_id": att.id,
+                            "graded": True,
+                            "percent": round(float(res.percent or 0)),
+                            "correct_count": correct,
+                            "total_questions": r_total,
+                            "missed_count": max(r_total - correct, 0),
+                        }
                     elif att.status == "submitted":
                         assessment_wf_map[assign_id] = "submitted"
+                        assessment_progress_map[assign_id] = {
+                            "state": "completed",
+                            "attempt_id": att.id,
+                            "graded": False,
+                            "total_questions": set_total,
+                        }
                     elif att.status == "in_progress":
                         assessment_wf_map[assign_id] = "in_progress"
                         # Surface the attempt ID so the frontend can deep-link
                         # directly to the runner, skipping the start-page interstitial.
                         assessment_attempt_id_map[assign_id] = att.id
+                        last_act = getattr(att, "last_activity_at", None) or att.started_at
+                        assessment_progress_map[assign_id] = {
+                            "state": "in_progress",
+                            "attempt_id": att.id,
+                            "answered_count": answered_by_attempt.get(att.id, 0),
+                            "total_questions": set_total,
+                            "last_activity_at": last_act.isoformat() if last_act else None,
+                        }
                     else:
                         assessment_wf_map[assign_id] = att.status or "not_started"
         except Exception:
@@ -467,7 +535,7 @@ class ClassroomViewSet(ModelViewSet):
 
             # TASKS count.
             if content_type == "assessment":
-                item_count = None  # assessment question count not loaded in the list query
+                item_count = assess_qcount.get(getattr(hw, "assessment_set_id", None), 0) or None
             elif content_type in ("pastpaper", "practice", "mock"):
                 item_count = _practice_qcount(a.id)
             else:
@@ -488,6 +556,7 @@ class ClassroomViewSet(ModelViewSet):
                 "subject": content_subject,
                 "workflow_status": wf,
                 "assessment_homework": assessment_homework_payload,
+                "assessment_progress": assessment_progress_map.get(a.id),
                 # attempt_id is present only when workflow_status == "in_progress".
                 # Enables the frontend to deep-link directly to the runner
                 # (/assessments/attempt/{attempt_id}), bypassing the start-page

@@ -1,34 +1,54 @@
 "use client";
 
 /**
- * /assessments — Student assessment workspace, rebuilt as a 3-column board
- * (To-do / In progress / Completed) to match the MasterSAT Assessments mockup.
+ * /assessments — Student assessment workspace, a 3-column board
+ * (To-do / In progress / Completed) matched 1:1 to the MasterSAT Assessments mockup.
  * Uses the shared `.dzboard` design scope. Data: GET /api/classes/my-assignments/.
- * Growth-oriented framing — no punishing "Overdue"/red labels (see memory).
+ *
+ * Card variants:
+ *  - To-do      → question count · ~time, due chip, category tags, Start
+ *  - In progress→ Progress N/M + bar, "Last opened …", Continue
+ *  - Completed  → big score % + "N / M correct" + green bar, "Review N missed",
+ *                 Review (outlined) + retry icon
+ *
+ * Growth-oriented framing — no "Overdue"/"Failed" wording (see memory); a past
+ * deadline reads as "Catch up · <day>".
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen, Calculator, Clock, Calendar, CheckCircle2,
-  PlayCircle, RefreshCw, AlertTriangle, Hourglass, Loader2,
+  PlayCircle, RefreshCw, AlertTriangle, Hourglass, Loader2, Flag,
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { classesApi } from "@/lib/api";
 import type { Assignment } from "@/lib/criticalApiContract";
-import {
-  deriveAssignmentLifecycleState, formatAssignmentDue,
-} from "@/lib/assignmentLifecycle";
 import { useStartAttempt } from "@/features/assessments/hooks";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 
+// ─── Types ──────────────────────────────────────────────────────────────────
+
 type AssessmentSet = { id: number; subject: string; category: string; title: string; description: string };
 type AssessmentHomework = { homework_id: number; set?: AssessmentSet | null };
+type AssessmentProgress = {
+  state: string;
+  attempt_id?: number | null;
+  graded?: boolean;
+  percent?: number;
+  correct_count?: number;
+  total_questions?: number;
+  missed_count?: number;
+  answered_count?: number;
+  last_activity_at?: string | null;
+};
 type AssignmentWithStatus = Assignment & {
   assessment_homework?: AssessmentHomework | null;
+  assessment_progress?: AssessmentProgress | null;
   workflow_status?: string | null;
   attempt_id?: number | null;
+  item_count?: number | null;
 };
 type Entry = {
   assignment: AssignmentWithStatus;
@@ -38,16 +58,13 @@ type Entry = {
   resumeHref?: string;
 };
 
-type State = "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "OVERDUE" | "DUE_SOON" | "NOT_STARTED";
+type State = "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "NOT_STARTED";
 
 function deriveState(e: Entry): State {
   const ws = e.assignment.workflow_status;
   if (ws === "graded" || ws === "completed") return "COMPLETED";
   if (ws === "submitted") return "SUBMITTED";
   if (ws === "in_progress") return "IN_PROGRESS";
-  const t = deriveAssignmentLifecycleState(e.assignment);
-  if (t === "OVERDUE") return "OVERDUE";
-  if (t === "DUE_SOON") return "DUE_SOON";
   return "NOT_STARTED";
 }
 
@@ -59,15 +76,55 @@ function colOf(s: State): ColKey {
 }
 
 const COLUMNS: { key: ColKey; name: string; dot: string; emptyHint: string }[] = [
-  { key: "todo", name: "To-do", dot: "var(--dz-indigo)", emptyHint: "New work from your teachers shows up here." },
+  { key: "todo", name: "To do", dot: "var(--dz-indigo)", emptyHint: "New work from your teachers shows up here." },
   { key: "progress", name: "In progress", dot: "var(--dz-amber)", emptyHint: "Anything you've started appears here." },
   { key: "done", name: "Completed", dot: "#16a34a", emptyHint: "Finished work lands here." },
 ];
 
-function subjectMeta(subject?: string): { label: string; isMath: boolean } {
-  if (subject === "MATH") return { label: "Math", isMath: true };
-  if (subject === "READING_WRITING" || subject === "ENGLISH") return { label: "R&W", isMath: false };
-  return { label: subject || "General", isMath: false };
+// Math → blue, English/R&W → purple (matches the MasterSAT Assessments mockup).
+// Subjects arrive in either platform form (MATH / READING_WRITING) or domain
+// form (math / english), so normalise case before matching.
+function subjectStyle(subject?: string): { label: string; isMath: boolean; accent: string; soft: string } {
+  const s = (subject || "").toUpperCase();
+  if (s === "MATH") return { label: "Math", isMath: true, accent: "var(--dz-indigo)", soft: "var(--dz-indigo-soft)" };
+  if (s === "ENGLISH" || s === "READING_WRITING" || s === "READING" || s === "RW")
+    return { label: "English", isMath: false, accent: "#6d4ec7", soft: "rgba(109,78,199,.14)" };
+  const label = subject ? subject.charAt(0).toUpperCase() + subject.slice(1) : "General";
+  return { label, isMath: false, accent: "var(--dz-indigo)", soft: "var(--dz-indigo-soft)" };
+}
+
+/** "Due Fri" / "Due Jul 12"; a past deadline reads "Catch up · <day>" (never "overdue"). */
+function dueLabel(iso?: string | null): { text: string; overdue: boolean } | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const overdue = d.getTime() < Date.now();
+  const days = Math.abs(Math.round((d.getTime() - Date.now()) / 86_400_000));
+  const label =
+    days <= 6
+      ? d.toLocaleDateString("en-US", { weekday: "short" })
+      : d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return { text: overdue ? `Catch up · ${label}` : `Due ${label}`, overdue };
+}
+
+/** Relative "…ago" for the in-progress "Last opened" line. */
+function timeAgo(iso?: string | null): string {
+  if (!iso) return "recently";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "recently";
+  const diff = Date.now() - d.getTime();
+  const m = Math.floor(diff / 60_000), h = Math.floor(diff / 3_600_000), day = Math.floor(diff / 86_400_000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  if (h < 24) return `${h}h ago`;
+  if (day === 1) return "yesterday";
+  if (day < 7) return `${day} days ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** SAT-style estimate ≈ 1.25 min / question. */
+function estMinutes(q: number): number {
+  return Math.max(1, Math.round(q * 1.25));
 }
 
 function Board() {
@@ -150,7 +207,7 @@ function Board() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {loading ? (
                     Array.from({ length: 2 }).map((_, i) => (
-                      <div key={i} className="dz-skel" style={{ height: 132, borderRadius: 16 }} />
+                      <div key={i} className="dz-skel" style={{ height: 150, borderRadius: 14 }} />
                     ))
                   ) : byCol[col.key].length === 0 ? (
                     <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "26px 16px", textAlign: "center" }}>
@@ -180,98 +237,180 @@ function Board() {
 
 function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (href: string) => void; onStart: (assignmentId: number) => void; starting: boolean }) {
   const state = deriveState(entry);
-  const set = entry.assignment.assessment_homework?.set;
-  const title = entry.assignment.title ?? set?.title ?? "Assignment";
-  const subj = subjectMeta(set?.subject ?? entry.subject);
+  const a = entry.assignment;
+  const set = a.assessment_homework?.set;
+  const prog = a.assessment_progress ?? null;
+  const title = a.title ?? set?.title ?? "Assignment";
+  const subj = subjectStyle(set?.subject ?? entry.subject);
   const category = set?.category;
-  const aid = entry.assignment.id;
-  const dueRel = formatAssignmentDue(entry.assignment.due_at);
+  const aid = a.id;
   const col = colOf(state);
+  const accent = subj.accent;
+  const soft = subj.soft;
 
-  const accent = subj.isMath ? "#0d9488" : "var(--dz-indigo)";
-  const accentSoft = subj.isMath ? "rgba(13,148,136,.12)" : "var(--dz-indigo-soft)";
+  // Category → tags (a set carries one category; split on comma/slash if authored that way).
+  const tags = (category ? category.split(/[,/·]/).map((t) => t.trim()).filter(Boolean) : []).slice(0, 3);
+  const qCount = a.item_count ?? prog?.total_questions ?? 0;
 
   return (
-    <div className="dz-statecard" style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 16, padding: 16, cursor: "default" }}>
+    <div className="dz-statecard" style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderTop: `3px solid ${accent}`, borderRadius: 14, padding: 16, cursor: "default" }}>
+      {/* Header: icon tile + solid subject badge + status glyph */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 12 }}>
-        <span style={{ width: 30, height: 30, borderRadius: 9, background: accentSoft, color: accent, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
-          {subj.isMath ? <Calculator size={16} /> : <BookOpen size={16} />}
+        <span style={{ width: 36, height: 36, borderRadius: 10, background: soft, color: accent, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+          {subj.isMath ? <Calculator size={18} /> : <BookOpen size={18} />}
         </span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: accent, background: accentSoft, padding: "3px 9px", borderRadius: 8 }}>
-          {subj.label}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, color: "#fff", background: accent, padding: "4px 10px", borderRadius: 8 }}>
+          {subj.isMath ? <Calculator size={12} /> : <BookOpen size={12} />} {subj.label}
         </span>
         <div style={{ flex: 1 }} />
-        {col === "done" ? <span style={{ color: "#16a34a", display: "flex" }}><CheckCircle2 size={20} /></span> : null}
-        {col === "progress" ? (
+        {col === "done" ? (
+          <span style={{ color: "#16a34a", display: "flex" }}><CheckCircle2 size={20} /></span>
+        ) : col === "progress" ? (
           <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 9, color: "var(--dz-amber)", background: "color-mix(in srgb, var(--dz-amber) 15%, transparent)" }}>
             <Hourglass size={15} />
           </span>
         ) : null}
       </div>
 
-      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dz-ink)", lineHeight: 1.3, marginBottom: 8 }}>{title}</div>
+      {/* Title + class · subject subtitle */}
+      <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dz-ink)", lineHeight: 1.3, marginBottom: 6 }}>{title}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: 12 }}>
-        <BookOpen size={13} /> {entry.classroomName}
+        <BookOpen size={13} /> {entry.classroomName} · {subj.label}
       </div>
 
+      {col === "todo" ? <TodoBody qCount={qCount} due={a.due_at} tags={tags} /> : null}
+      {col === "progress" ? <ProgressBody prog={prog} qCount={qCount} /> : null}
+      {col === "done" ? <DoneBody state={state} prog={prog} /> : null}
+
+      {/* Actions */}
       {col === "todo" ? (
-        <>
-          {entry.assignment.due_at ? (
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--dz-amber)", border: "1px solid color-mix(in srgb, var(--dz-amber) 35%, transparent)", background: "color-mix(in srgb, var(--dz-amber) 12%, transparent)", padding: "4px 10px", borderRadius: 8 }}>
-                <Calendar size={13} /> {state === "OVERDUE" ? `Catch up · ${dueRel}` : `Due ${dueRel}`}
-              </span>
-            </div>
+        <ActionBtn
+          primary
+          disabled={starting}
+          icon={starting ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}
+          label={starting ? "Starting…" : "Start"}
+          onClick={() => onStart(aid)}
+        />
+      ) : col === "progress" ? (
+        <ActionBtn amber icon={<PlayCircle size={15} />} label="Continue" onClick={() => (entry.resumeHref ? onGo(entry.resumeHref) : onStart(aid))} />
+      ) : (
+        <div style={{ display: "flex", gap: 8 }}>
+          <ActionBtn outline icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
+          {state === "COMPLETED" ? (
+            <button
+              type="button"
+              title="Retry assessment"
+              disabled={starting}
+              onClick={() => onStart(aid)}
+              className="dz-actionbtn"
+              style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 47, padding: "9px 0", borderRadius: 11, border: "1.5px solid var(--dz-border)", background: "var(--dz-panel)", color: "var(--dz-mute)", cursor: starting ? "not-allowed" : "pointer", opacity: starting ? 0.6 : 1 }}
+            >
+              {starting ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            </button>
           ) : null}
-          {category ? (
-            <div style={{ display: "flex", gap: 7, marginBottom: 14, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "var(--dz-mute)", background: "var(--dz-card)", padding: "4px 10px", borderRadius: 7 }}>{category}</span>
-            </div>
-          ) : null}
-        </>
-      ) : null}
-
-      {col === "progress" ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: 14 }}>
-          <Clock size={13} /> Continue where you left off
         </div>
-      ) : null}
-
-      {col === "done" ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: state === "SUBMITTED" ? "var(--dz-mute)" : "#16a34a", marginBottom: 14 }}>
-          <CheckCircle2 size={13} /> {state === "SUBMITTED" ? "Submitted — grading in progress" : "Completed & graded"}
-        </div>
-      ) : null}
-
-      <div style={{ display: "flex", gap: 8 }}>
-        {col === "todo" ? (
-          <ActionBtn
-            primary
-            disabled={starting}
-            icon={starting ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}
-            label={starting ? "Starting…" : "Start"}
-            onClick={() => onStart(aid)}
-          />
-        ) : col === "progress" ? (
-          <ActionBtn amber icon={<PlayCircle size={15} />} label="Resume" onClick={() => (entry.resumeHref ? onGo(entry.resumeHref) : onStart(aid))} />
-        ) : (
-          // Completed: just Review — retry now lives inside the review (result) page.
-          <ActionBtn icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}`)} />
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-function ActionBtn({ label, icon, onClick, primary, amber, ghost, disabled }: {
-  label: string; icon: React.ReactNode; onClick: () => void; primary?: boolean; amber?: boolean; ghost?: boolean; disabled?: boolean;
+// ─── Card bodies ────────────────────────────────────────────────────────────
+
+function TodoBody({ qCount, due, tags }: { qCount: number; due?: string | null; tags: string[] }) {
+  const dl = dueLabel(due);
+  return (
+    <>
+      {qCount > 0 ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: dl || tags.length ? 12 : 14 }}>
+          <Clock size={13} /> {qCount} questions · ~{estMinutes(qCount)} min
+        </div>
+      ) : null}
+      {dl ? (
+        <div style={{ marginBottom: tags.length ? 12 : 14 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "#dc2626", background: "color-mix(in srgb, #dc2626 12%, transparent)", border: "1px solid color-mix(in srgb, #dc2626 30%, transparent)", padding: "4px 10px", borderRadius: 8 }}>
+            <Calendar size={13} /> {dl.text}
+          </span>
+        </div>
+      ) : null}
+      {tags.length ? (
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 14 }}>
+          {tags.map((t) => (
+            <span key={t} style={{ fontSize: 11, fontWeight: 700, color: "var(--dz-mute)", background: "var(--dz-card)", padding: "4px 10px", borderRadius: 7 }}>{t}</span>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function ProgressBody({ prog, qCount }: { prog: AssessmentProgress | null; qCount: number }) {
+  const total = prog?.total_questions || qCount || 0;
+  const answered = prog?.answered_count ?? 0;
+  const pct = total > 0 ? Math.min(100, Math.round((answered / total) * 100)) : 0;
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--dz-mute)" }}>Progress</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--dz-ink)" }}>{answered} / {total}</span>
+      </div>
+      <Bar pct={pct} fill="var(--dz-amber)" />
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", margin: "12px 0 14px" }}>
+        <Clock size={13} /> Last opened {timeAgo(prog?.last_activity_at)}
+      </div>
+    </>
+  );
+}
+
+function DoneBody({ state, prog }: { state: State; prog: AssessmentProgress | null }) {
+  // Submitted but not yet graded — no score to show.
+  if (state === "SUBMITTED" || !prog?.graded) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--dz-mute)", marginBottom: 14 }}>
+        <Clock size={13} /> Submitted — grading in progress
+      </div>
+    );
+  }
+  const percent = prog.percent ?? 0;
+  const correct = prog.correct_count ?? 0;
+  const total = prog.total_questions ?? 0;
+  const missed = prog.missed_count ?? Math.max(total - correct, 0);
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 10, marginBottom: 12 }}>
+        <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-.03em", lineHeight: 1, color: "var(--dz-ink)" }}>{percent}%</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--dz-mute)", paddingBottom: 2 }}>{correct} / {total} correct</span>
+      </div>
+      <Bar pct={percent} fill="#16a34a" />
+      {missed > 0 ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800, color: "var(--dz-indigo)", margin: "12px 0 14px" }}>
+          <Flag size={13} /> Review {missed} missed
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 800, color: "#16a34a", margin: "12px 0 14px" }}>
+          <CheckCircle2 size={13} /> Perfect score
+        </div>
+      )}
+    </>
+  );
+}
+
+function Bar({ pct, fill }: { pct: number; fill: string }) {
+  return (
+    <div style={{ height: 8, borderRadius: 6, background: "var(--dz-card)", overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${pct}%`, background: fill, borderRadius: 6, transition: "width .3s ease" }} />
+    </div>
+  );
+}
+
+function ActionBtn({ label, icon, onClick, primary, amber, outline, disabled }: {
+  label: string; icon: React.ReactNode; onClick: () => void; primary?: boolean; amber?: boolean; outline?: boolean; disabled?: boolean;
 }) {
-  const bg = primary ? "var(--dz-indigo)" : amber ? "var(--dz-amber)" : ghost ? "transparent" : "var(--dz-card)";
-  const color = primary || amber ? "#fff" : "var(--dz-ink)";
-  const border = ghost ? "1px solid var(--dz-border)" : "none";
+  const bg = primary ? "var(--dz-indigo)" : amber ? "var(--dz-amber)" : "transparent";
+  const color = primary || amber ? "#fff" : "var(--dz-indigo)";
+  const border = outline ? "1.5px solid var(--dz-indigo)" : "none";
   return (
     <button type="button" onClick={onClick} disabled={disabled} className="dz-actionbtn"
-      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "9px 12px", borderRadius: 11, border, background: bg, color, fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.7 : 1 }}>
+      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 14px", borderRadius: 11, border, background: bg, color, fontFamily: "inherit", fontSize: 14, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.7 : 1 }}>
       {icon} {label}
     </button>
   );
