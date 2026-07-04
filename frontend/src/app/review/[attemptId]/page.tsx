@@ -20,6 +20,9 @@ interface QuestionReviewModalProps {
 const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, onPrevious }: QuestionReviewModalProps) => {
     if (!question) return null;
 
+    // Unanswered question — labelled "Omitted" (not "Incorrect") in the header.
+    const isOmitted = !question.student_answer || String(question.student_answer).trim() === "";
+
     const getImageUrl = (path: string | null | undefined) => {
         if (!path) return undefined;
         if (path.startsWith('http')) return path;
@@ -39,7 +42,7 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                         </div>
                         <div>
                             <h2 className={`text-lg font-bold ${question.is_correct ? 'text-emerald-700' : 'text-red-700'}`}>Question {question.index_in_module}</h2>
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{question.type} · {question.is_correct ? 'Correct' : 'Incorrect'}</p>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{question.type} · {question.is_correct ? 'Correct' : isOmitted ? 'Omitted' : 'Incorrect'}</p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 rounded-xl hover:bg-surface-2 transition-colors border border-border">
@@ -91,20 +94,6 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
 
                             {!question.is_math_input ? (
                                 <div className="space-y-3">
-                                    {/* "You skipped this question" banner — surfaces the omitted
-                                        state above the choices so the student can see at a glance
-                                        why no option is marked as their answer. */}
-                                    {showCorrectAnswers &&
-                                        (!question.student_answer || String(question.student_answer).trim() === "") && (
-                                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                                                <p className="text-sm font-bold text-amber-900">
-                                                    You did not answer this question.
-                                                </p>
-                                                <p className="text-xs text-amber-800 mt-1">
-                                                    The correct answer is highlighted in green below.
-                                                </p>
-                                            </div>
-                                        )}
                                     {Object.entries(question.options || {}).map(([key, val]) => {
                                         // Normalise both sides so "D" vs "d" vs trailing spaces
                                         // can't make the green/red highlight disappear.
