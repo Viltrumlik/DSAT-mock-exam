@@ -397,7 +397,7 @@ function ActionBtn({ label, icon, onClick, primary, amber, outline, disabled }: 
   const border = outline ? "1.5px solid var(--dz-indigo)" : "none";
   return (
     <button type="button" onClick={onClick} disabled={disabled} className="dz-actionbtn"
-      style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 14px", borderRadius: 11, border, background: bg, color, fontFamily: "inherit", fontSize: 14, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.7 : 1 }}>
+      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, padding: "11px 14px", borderRadius: 11, border, background: bg, color, fontFamily: "inherit", fontSize: 14, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.7 : 1 }}>
       {icon} {label}
     </button>
   );
