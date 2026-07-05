@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { CheckCircle2, Circle, Eye } from "lucide-react";
 import { renderMath } from "@/lib/mathRender";
-import { MathText } from "@/components/MathText";
+import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
 // ─── Live SAT preview ─────────────────────────────────────────────────────────
@@ -48,7 +48,7 @@ export function SATQuestionPreview({
   // 1. WHY THIS FALLBACK EXISTS
   //    KaTeX is loaded as a CDN script (layout.tsx `<Script>`), not a bundled
   //    module. On slow networks the CDN load completes after React's initial
-  //    render and useEffect batch. Individual <MathText> useEffects fire while
+  //    render and useEffect batch. Individual <AssessmentText> useEffects fire while
   //    renderMathInElement is still undefined, becoming silent no-ops. This
   //    container sweep runs on every content keystroke, so the first character
   //    typed after CDN load triggers a full re-pass across the entire preview.
@@ -62,23 +62,23 @@ export function SATQuestionPreview({
   // 3. SURFACES THAT RELY ON THIS FALLBACK
   //    SATQuestionPreview inside this container — author-facing preview only.
   //    The student runner, review page, and choice live previews do NOT rely
-  //    on this sweep; they have per-element MathText useEffects and the CDN
+  //    on this sweep; they have per-element AssessmentText useEffects and the CDN
   //    is typically warm by the time students reach those pages.
   //
   // 4. WHEN THIS FALLBACK IS REMOVABLE
   //    If KaTeX is migrated from CDN script to a bundled npm import
   //    (`katex` + `katex/contrib/auto-render`), the race condition disappears.
-  //    Individual <MathText> useEffects become sufficient. To remove safely:
+  //    Individual <AssessmentText> useEffects become sufficient. To remove safely:
   //      a) Bundle KaTeX via npm (remove <Script> from layout.tsx)
   //      b) Verify preview renders math immediately on fresh load (no flash)
   //      c) Confirm full test suite passes
   //    Do NOT remove until (a) is confirmed in production.
   //
   // 5. WHY THIS IS NOT PRIMARY RENDERING OWNERSHIP
-  //    Each <MathText> owns rendering of its content through its own useEffect.
+  //    Each <AssessmentText> owns rendering of its content through its own useEffect.
   //    This sweep is a CDN-timing guard, not an authority over what renders.
   //    If math on a new sub-component only renders because of this sweep, that
-  //    sub-component is missing its own <MathText> — fix the sub-component,
+  //    sub-component is missing its own <AssessmentText> — fix the sub-component,
   //    do not expand the scope of this sweep to cover the gap.
   //
   // ──────────────────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ export function SATQuestionPreview({
             <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               Passage context
             </p>
-            <MathText
+            <AssessmentText
               text={stimulusContext}
               block
               className="text-sm leading-relaxed text-foreground/80 italic"
@@ -119,7 +119,7 @@ export function SATQuestionPreview({
           </div>
         )}
         {/* Question stem */}
-        <MathText
+        <AssessmentText
           text={prompt}
           block
           className="text-sm font-medium leading-relaxed text-foreground"
@@ -151,7 +151,7 @@ export function SATQuestionPreview({
                     {letter}
                   </span>
                   {c.text
-                    ? <MathText text={c.text} className="pt-0.5 text-sm leading-relaxed" />
+                    ? <AssessmentText text={c.text} className="pt-0.5 text-sm leading-relaxed" />
                     : <em className="pt-0.5 text-sm opacity-40">empty</em>
                   }
                   {isCorrect && (
@@ -209,7 +209,7 @@ export function SATQuestionPreview({
             <p className="text-[10px] font-bold uppercase tracking-widest text-primary mb-1">
               Explanation
             </p>
-            <MathText
+            <AssessmentText
               text={explanation}
               block
               className="text-sm text-foreground leading-relaxed"

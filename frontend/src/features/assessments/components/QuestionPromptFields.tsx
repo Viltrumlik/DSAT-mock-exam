@@ -1,7 +1,7 @@
 "use client";
 
 import type { AssessmentQuestion } from "@/features/assessments/types";
-import { MathText } from "@/components/MathText";
+import { AssessmentText } from "@/lib/assessmentText";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
 import { ImageUpload } from "@/features/assessments/components/ImageUpload";
 import type {
@@ -50,7 +50,7 @@ export function QuestionPromptFields({
         {draft.prompt.trim() && (
           <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/50 px-3 py-2.5">
             <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">Preview</p>
-            <MathText text={draft.prompt} block className="text-sm leading-relaxed text-foreground" />
+            <AssessmentText text={draft.prompt} block className="text-sm leading-relaxed text-foreground" />
           </div>
         )}
       </div>

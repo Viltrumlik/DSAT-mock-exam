@@ -44,8 +44,7 @@ import {
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { useFullscreen } from "@/features/testing-simulation/tools/useFullscreen";
 import { FullscreenWarning } from "@/features/testing-simulation/components/FullscreenWarning";
-import { MathText } from "@/components/MathText";
-import { processInstructionalText } from "@/lib/assessmentText";
+import { AssessmentText, processInstructionalText } from "@/lib/assessmentText";
 import StableHtml from "@/features/assessments/components/StableHtml";
 import { useAnnotator } from "@/features/testing-simulation/tools/highlight/useAnnotator";
 import { AnnotationToolbar } from "@/features/testing-simulation/tools/highlight/AnnotationToolbar";
@@ -973,10 +972,10 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
             <img
               src={questionFigureUrl(current)}
               alt="Question figure"
-              className="mb-4 max-h-[360px] max-w-full rounded-xl border border-border object-contain"
+              className="mb-4 mx-auto max-h-[360px] max-w-full rounded-xl border border-border object-contain"
             />
           )}
-          <MathText
+          <AssessmentText
             text={String(current?.prompt || "").trim() || "—"}
             block
             className="text-base font-semibold text-foreground leading-relaxed"
@@ -984,7 +983,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           {/* Question instruction / stimulus — between the stem and the options */}
           {Boolean(current?.question_prompt) && (
             <div className="mt-4 border-l-4 border-primary/40 pl-4 py-1 bg-surface-2/50 rounded-r-xl">
-              <MathText
+              <AssessmentText
                 text={String(current!.question_prompt)}
                 block
                 className="text-sm text-foreground leading-relaxed font-[Georgia,serif] italic"
@@ -1510,7 +1509,7 @@ function ExamSimulationView({
             <img
               src={questionFigureUrl(current)}
               alt="Question figure"
-              className="mb-5 max-h-[420px] max-w-full rounded-xl border border-slate-200 object-contain"
+              className="mb-5 mx-auto max-h-[420px] max-w-full rounded-xl border border-slate-200 object-contain"
             />
           )}
 

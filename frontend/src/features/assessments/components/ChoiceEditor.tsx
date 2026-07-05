@@ -4,7 +4,7 @@ import { useCallback, useRef } from "react";
 import { ImagePlus, Plus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { AssessmentChoice } from "@/features/assessments/types";
-import { MathText } from "@/components/MathText";
+import { AssessmentText } from "@/lib/assessmentText";
 
 // ─── Normalization ────────────────────────────────────────────────────────────
 
@@ -188,7 +188,7 @@ function ChoiceRow({
       {/* Live math preview */}
       {choice.text.trim() && (
         <div className="ml-10 rounded-lg border border-border/50 bg-surface-2/40 px-2.5 py-1.5">
-          <MathText text={choice.text} className="text-xs leading-relaxed text-foreground" />
+          <AssessmentText text={choice.text} className="text-xs leading-relaxed text-foreground" />
         </div>
       )}
 

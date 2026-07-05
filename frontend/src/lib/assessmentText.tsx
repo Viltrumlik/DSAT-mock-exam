@@ -35,19 +35,54 @@ export function applyBlanks(text: string): string {
 }
 
 /**
+ * flowSoftWraps — reflow prose so a single line-break behaves like a SOFT wrap
+ * (a space) instead of a HARD break, while PRESERVING intentional paragraph
+ * breaks (a blank line — two or more newlines).
+ *
+ * WHY: passages/stems are authored (or pasted) into a plain <textarea>. Source
+ * text copied from PDFs/sites carries hard `\n` at ~80 columns, and MathText's
+ * `applyNewlines` turns every `\n` into a <br>. At the narrow builder-preview
+ * width those breaks coincidentally align with where the text would wrap anyway
+ * (so the author sees clean prose and assumes no breaks), but at the wider
+ * student width the same <br>s land mid-line and strand short, ugly fragments
+ * ("…such as the bat-like" / "…bodies. For instance,").
+ *
+ * By splitting on blank lines and joining single-newline lines with a space, a
+ * lone Enter reflows to fill the container at ANY width, and only a deliberate
+ * blank line (double Enter) survives as a visible break — matching the intent
+ * the author sees in the builder. Runs BEFORE `prepareRichText`, so the
+ * preserved `\n\n` is what `applyNewlines` later turns into <br><br>.
+ *
+ * NOTE: line-structured content (verse, hand-numbered lists) authored with
+ * single Enters will reflow too; use a blank line between such lines to keep a
+ * visible break. Scoped to assessment surfaces only — the exam runner keeps its
+ * own newline contract.
+ */
+export function flowSoftWraps(raw: string): string {
+  return raw
+    .split(/\n[^\S\n]*\n\s*/) // paragraph boundaries: one or more blank lines
+    .map((para) => para.replace(/[^\S\n]*\n[^\S\n]*/g, " ").trim()) // soft-wrap → space
+    .filter((para) => para.length > 0)
+    .join("\n\n"); // restore paragraph breaks for applyNewlines → <br><br>
+}
+
+/**
  * processInstructionalText — string → HTML for assessment content.
  *
  * Order is load-bearing and mirrors MathText's pipeline:
+ *   0. flowSoftWraps       — single-newline soft wraps to spaces (keep blank-line breaks)
  *   1. prepareRichText     — sanitize, newline-to-break, bold/italic markdown
  *   2. applyBlanks         — runs of underscores to an underline blank span
  *   3. renderMathInString  — LaTeX delimiters to KaTeX HTML
  *
- * Blanks are applied AFTER prepareRichText so the injected <span> survives the
- * sanitizer (it is not present when sanitization runs) and BEFORE KaTeX so the
- * span is never inserted inside a rendered formula.
+ * flowSoftWraps runs FIRST so only intentional (blank-line) breaks reach
+ * prepareRichText's newline-to-break step. Blanks are applied AFTER
+ * prepareRichText so the injected <span> survives the sanitizer (it is not
+ * present when sanitization runs) and BEFORE KaTeX so the span is never
+ * inserted inside a rendered formula.
  */
 export function processInstructionalText(raw: string): string {
-  return renderMathInString(applyBlanks(prepareRichText(raw)));
+  return renderMathInString(applyBlanks(prepareRichText(flowSoftWraps(raw))));
 }
 
 type AssessmentTextProps = {
