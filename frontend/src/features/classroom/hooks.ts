@@ -77,26 +77,9 @@ export function useJoinClass() {
   });
 }
 
-export interface CreateClassInput {
-  name: string;
-  subject: "ENGLISH" | "MATH";
-  lesson_days: "ODD" | "EVEN";
-  lesson_time?: string;
-  lesson_hours?: number;
-  start_date?: string;
-  room_number?: string;
-  telegram_chat_id?: string;
-  teacher?: number;
-  max_students?: number;
-}
-
-export function useCreateClass() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CreateClassInput) => classesApi.create(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: classroomKeys.list() }),
-  });
-}
+// Classrooms are created by admins (in the admin console) who assign the teacher — teachers
+// do not create their own. There is intentionally no teacher-facing create hook here; the
+// admin create flow calls classesApi.create + classesApi.assignTeacher directly.
 
 export function useUpdateClass(id: number) {
   const qc = useQueryClient();

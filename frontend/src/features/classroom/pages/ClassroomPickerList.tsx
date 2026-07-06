@@ -33,7 +33,7 @@ export function ClassroomPickerList({
           <ErrorState message="We couldn't load your classrooms." onRetry={() => refetch()} />
         ) : classes.length === 0 ? (
           <Card>
-            <EmptyState icon={GraduationCap} title="No classrooms yet" description="Create a classroom first, then manage it here." />
+            <EmptyState icon={GraduationCap} title="No classrooms yet" description="You haven't been assigned to a classroom yet. Once an administrator assigns you as a teacher, your classrooms will appear here." />
           </Card>
         ) : (
           <div className="space-y-3">

@@ -1,14 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { Users, Plus, GraduationCap, Calculator, BookOpen, Archive } from "lucide-react";
+import { Users, GraduationCap, Calculator, BookOpen, Archive } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { normalizeApiError } from "@/lib/apiError";
-import { pushGlobalToast } from "@/lib/toastBus";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
-import { PageHeader, Card, Button, Dialog, Field, Select, TextField, EmptyState, LoadingState, ErrorState, Pill } from "../ui";
-import { useClassrooms, useCreateClass, type CreateClassInput } from "../hooks";
+import { PageHeader, Card, EmptyState, LoadingState, ErrorState, Pill } from "../ui";
+import { useClassrooms } from "../hooks";
 import type { ClassroomWithRole } from "../types";
 
 function ClassCard({ c }: { c: ClassroomWithRole }) {
@@ -50,38 +47,22 @@ function ClassCard({ c }: { c: ClassroomWithRole }) {
   );
 }
 
-/** Teacher's classroom hub: create + open. Edit/archive happen in the classroom Settings tab. */
+/**
+ * Teacher's classroom hub: open + manage the classes you've been assigned to.
+ * Classrooms are created by administrators (in the admin console), who assign the
+ * teacher — teachers do not create their own classrooms. Edit/archive happen in the
+ * classroom Settings tab.
+ */
 export function TeacherClassrooms() {
   const { data, isLoading, isError, refetch } = useClassrooms();
-  const create = useCreateClass();
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState<CreateClassInput>({ name: "", subject: "ENGLISH", lesson_days: "ODD" });
-  const [createErr, setCreateErr] = useState<string | null>(null);
 
   const classes = (data?.items ?? []) as ClassroomWithRole[];
-
-  async function submitCreate() {
-    setCreateErr(null);
-    if (!form.name.trim()) return setCreateErr("Give the class a name.");
-    try {
-      const created = await create.mutateAsync(form);
-      pushGlobalToast({ tone: "success", message: `Classroom “${created?.name ?? form.name.trim()}” created.` });
-      setCreateOpen(false);
-      setForm({ name: "", subject: "ENGLISH", lesson_days: "ODD" });
-    } catch (e) {
-      setCreateErr(normalizeApiError(e).message);
-    }
-  }
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6 sm:px-6">
       <PageHeader
         title="Classrooms"
-        description="Create and manage your classes, students, assignments, materials, and midterms."
-        actions={
-          <Button icon={Plus} onClick={() => setCreateOpen(true)}>Create classroom</Button>
-        }
+        description="Manage your classes, students, assignments, materials, and midterms."
       />
 
       <div className="mt-6">
@@ -94,8 +75,7 @@ export function TeacherClassrooms() {
             <EmptyState
               icon={GraduationCap}
               title="No classrooms yet"
-              description="Create your first classroom to start assigning work."
-              action={<Button icon={Plus} onClick={() => setCreateOpen(true)}>Create classroom</Button>}
+              description="You haven't been added to any classrooms yet. Your administrator sets up classrooms and assigns you as the teacher — once that happens, they'll appear here."
             />
           </Card>
         ) : (
@@ -106,41 +86,6 @@ export function TeacherClassrooms() {
           </div>
         )}
       </div>
-
-      <Dialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Create a classroom"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button loading={create.isPending} onClick={submitCreate}>Create classroom</Button>
-          </>
-        }
-      >
-        <div className="space-y-4">
-          {createErr && <p className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-600">{createErr}</p>}
-          <TextField label="Class name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="SAT Math — Evening Group" />
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Subject" htmlFor="cls-subject">
-              <Select id="cls-subject" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value as CreateClassInput["subject"] })}>
-                <option value="ENGLISH">English</option>
-                <option value="MATH">Math</option>
-              </Select>
-            </Field>
-            <Field label="Lesson days" htmlFor="cls-days">
-              <Select id="cls-days" value={form.lesson_days} onChange={(e) => setForm({ ...form, lesson_days: e.target.value as CreateClassInput["lesson_days"] })}>
-                <option value="ODD">Odd days</option>
-                <option value="EVEN">Even days</option>
-              </Select>
-            </Field>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <TextField label="Lesson time" value={form.lesson_time ?? ""} onChange={(e) => setForm({ ...form, lesson_time: e.target.value })} placeholder="18:00" />
-            <TextField label="Room" value={form.room_number ?? ""} onChange={(e) => setForm({ ...form, room_number: e.target.value })} placeholder="Optional" />
-          </div>
-        </div>
-      </Dialog>
     </div>
   );
 }
