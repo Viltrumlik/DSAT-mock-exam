@@ -36,7 +36,7 @@ export function MultipleChoiceEditor({
   savedQuestion?: AssessmentQuestion | null;
   imageState: AssessmentImageState;
   onSetImage: (key: AssessmentImageKey, file: File | null, clear: boolean) => void;
-  onChoiceFocus: (el: HTMLInputElement, setVal: (v: string) => void) => void;
+  onChoiceFocus: (el: HTMLTextAreaElement | HTMLInputElement, setVal: (v: string) => void) => void;
 }) {
   const choices = useMemo(() => parseAndNormalizeChoices(draft.choicesText), [draft.choicesText]);
 

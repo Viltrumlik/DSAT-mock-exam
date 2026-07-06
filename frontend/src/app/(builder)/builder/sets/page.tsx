@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useAssessmentSetsList } from "@/features/assessments/hooks";
+import { useAssessmentSetsList, useDeleteAssessmentSet } from "@/features/assessments/hooks";
 import { getRole, getSubject } from "@/lib/permissions";
-import { Plus, Search, RefreshCw, SendHorizonal } from "lucide-react";
+import { Plus, Search, RefreshCw, SendHorizonal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, SetLineage } from "@/components/governance";
+import { ConfirmDialog } from "@/features/classroom/ui";
+import { levelLabel } from "@/lib/levels";
 
 const SUBJECT_COLORS: Record<string, string> = {
   math: "bg-purple-100 text-purple-800",
@@ -20,10 +22,27 @@ export default function BuilderSetsPage() {
   const scopedSubject = role === "teacher" ? getSubject() : null;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [pendingDelete, setPendingDelete] = useState<{ id: number; title: string } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteSet = useDeleteAssessmentSet();
 
   const { data, isLoading, error, refetch } = useAssessmentSetsList(
     scopedSubject ? { subject: scopedSubject } : undefined,
   );
+
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    setDeleteError(null);
+    deleteSet.mutate(pendingDelete.id, {
+      onSuccess: () => setPendingDelete(null),
+      onError: (e) => setDeleteError((e as { message?: string })?.message || "Could not delete this set."),
+    });
+  };
+
+  const closeDelete = () => {
+    setPendingDelete(null);
+    setDeleteError(null);
+  };
 
   const sets = data?.results ?? (Array.isArray(data) ? data : []);
 
@@ -200,6 +219,11 @@ export default function BuilderSetsPage() {
                         </span>
                       )}
                       <StateTag state={s.is_active ? "PUBLISHED" : "DRAFT"} size="xs" />
+                      {s.level && (
+                        <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-700">
+                          {levelLabel(s.level)}
+                        </span>
+                      )}
                     </div>
                     {s.category && (
                       <p className="text-xs text-muted-foreground mb-0.5">{s.category}</p>
@@ -228,6 +252,19 @@ export default function BuilderSetsPage() {
                     >
                       Open editor →
                     </Link>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteError(null);
+                        setPendingDelete({ id: s.id, title: s.title });
+                      }}
+                      title="Delete set"
+                      aria-label={`Delete set ${s.title}`}
+                      className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </div>
               );
@@ -235,6 +272,27 @@ export default function BuilderSetsPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        tone="danger"
+        title="Delete assessment set?"
+        description={
+          pendingDelete
+            ? `“#${pendingDelete.id} · ${pendingDelete.title}” and its draft questions will be permanently removed. A set that has been published or assigned to a class can’t be deleted — deactivate it instead.`
+            : undefined
+        }
+        confirmLabel="Delete set"
+        loading={deleteSet.isPending}
+        onConfirm={confirmDelete}
+        onCancel={closeDelete}
+      >
+        {deleteError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+            {deleteError}
+          </div>
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }

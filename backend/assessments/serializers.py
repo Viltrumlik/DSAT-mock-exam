@@ -266,6 +266,7 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
             "id",
             "subject",
             "source",
+            "level",
             "category",
             "title",
             "description",
@@ -292,6 +293,7 @@ class AssessmentSetAdminSerializer(serializers.ModelSerializer):
             "id",
             "subject",
             "source",
+            "level",
             "category",
             "title",
             "description",
@@ -309,6 +311,7 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
             "id",
             "subject",
             "source",
+            "level",
             "category",
             "title",
             "description",
@@ -317,9 +320,10 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        # Resolve the effective subject/source (fall back to the instance on PATCH).
+        # Resolve the effective subject/source/level (fall back to the instance on PATCH).
         subject = attrs.get("subject") or getattr(self.instance, "subject", None)
         source = attrs.get("source", getattr(self.instance, "source", ""))
+        level = attrs.get("level", getattr(self.instance, "level", ""))
         creating = self.instance is None
         if creating and not source:
             raise serializers.ValidationError(
@@ -330,6 +334,14 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
             if source not in allowed:
                 raise serializers.ValidationError(
                     {"source": f"'{source}' is not a valid source for {subject} sets."}
+                )
+        # Level is required in the authoring UI but not hard-blocked here (blank =
+        # legacy/untagged, valid for existing sets). If provided it must fit the subject.
+        if level:
+            allowed_levels = AssessmentSet.allowed_levels_for_subject(subject)
+            if level not in allowed_levels:
+                raise serializers.ValidationError(
+                    {"level": f"'{level}' is not a valid level for {subject} sets."}
                 )
         return attrs
 

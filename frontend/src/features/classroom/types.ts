@@ -21,6 +21,8 @@ export type RawRole = MembershipRole | "ADMIN" | "CO_TEACHER" | "REMOVED" | stri
 export type ClassroomWithRole = Classroom & {
   my_role?: RawRole;
   subject?: string;
+  /** Difficulty tier; see lib/levels. Blank on untagged classes. */
+  level?: string;
   student_count?: number;
   members_count?: number;
   join_code?: string;

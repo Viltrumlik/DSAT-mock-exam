@@ -930,6 +930,11 @@ class ClassroomViewSet(ModelViewSet):
         aset_qs = AssessmentSet.objects.filter(is_active=True)
         if domain_subject:
             aset_qs = aset_qs.filter(subject=domain_subject)
+        # Level-scope the picker: a Middle class only sees Middle assessment sets.
+        # An untagged classroom (blank level) keeps seeing every level; untagged sets
+        # are excluded from a leveled class until an author tags them.
+        if classroom.level:
+            aset_qs = aset_qs.filter(level=classroom.level)
         assessment_sets = []
         for aset in aset_qs.order_by("-created_at"):
             assessment_sets.append({
@@ -937,6 +942,7 @@ class ClassroomViewSet(ModelViewSet):
                 "title": aset.title,
                 "subject": aset.subject,
                 "source": aset.source or "",
+                "level": aset.level or "",
                 "category": aset.category or "",
                 "description": aset.description or "",
                 "question_count": aset.questions.filter(is_active=True).count(),
@@ -971,6 +977,7 @@ class ClassroomViewSet(ModelViewSet):
 
         return Response({
             "classroom_subject": classroom.subject,
+            "classroom_level": classroom.level or "",
             "practice_tests": practice_tests,
             "assessment_sets": assessment_sets,
             "practice_test_packs": practice_test_packs,
@@ -1997,7 +2004,111 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
             assignment.attachment_file = files[0]
             assignment.save(update_fields=["attachment_file", "updated_at"])
+
+        # Reconcile attached assessments on EDIT. create() builds these from
+        # assessment_set_ids, but update() historically ignored them — so a teacher
+        # who edited an assignment to add/change an assessment saw nothing happen
+        # (reported bug). Only reconcile when the client actually sends the key so a
+        # partial edit that omits assessments leaves existing links untouched.
+        if "assessment_set_ids" in request.data or "assessment_set_id" in request.data:
+            self._reconcile_assessment_homeworks(request, assignment)
+
         return Response(self.get_serializer(assignment).data)
+
+    def _reconcile_assessment_homeworks(self, request, assignment):
+        """Bring an assignment's attached assessments in line with the selection sent
+        on edit. Adds newly-selected sets (mirroring create()) and detaches de-selected
+        ones — but never deletes a homework that has student attempts (they would
+        CASCADE-delete with the HomeworkAssignment)."""
+        from assessments.models import AssessmentSet, HomeworkAssignment as AssessHW
+        from assessments.domain.homework_versioning import (
+            ensure_current_version,
+            resync_stale_homeworks,
+        )
+
+        classroom = assignment.classroom
+
+        # Parse wanted set ids the same way create() does (JSON string or list + legacy id).
+        raw_ids = request.data.get("assessment_set_ids")
+        wanted_ids: list[int] = []
+        if raw_ids:
+            if isinstance(raw_ids, str):
+                try:
+                    raw_ids = json.loads(raw_ids)
+                except Exception:
+                    raw_ids = []
+            if isinstance(raw_ids, (list, tuple)):
+                for x in raw_ids:
+                    try:
+                        wanted_ids.append(int(x))
+                    except (TypeError, ValueError):
+                        continue
+        legacy_id = request.data.get("assessment_set_id")
+        if legacy_id:
+            try:
+                wanted_ids.append(int(legacy_id))
+            except (TypeError, ValueError):
+                pass
+        seen_ids: set[int] = set()
+        wanted = [sid for sid in wanted_ids if not (sid in seen_ids or seen_ids.add(sid))]
+        wanted_set = set(wanted)
+
+        existing = {hw.assessment_set_id: hw for hw in assignment.assessment_homeworks.all()}
+
+        # Attach newly-selected sets.
+        for sid in wanted:
+            if sid in existing:
+                continue
+            try:
+                aset = AssessmentSet.objects.get(pk=sid)
+            except AssessmentSet.DoesNotExist:
+                logger.warning("assessment_set_id=%s not found on edit; skipping", sid)
+                continue
+            try:
+                pinned_version = ensure_current_version(set_id=aset.pk, actor=request.user)
+                try:
+                    with transaction.atomic():
+                        AssessHW.objects.create(
+                            classroom=classroom,
+                            assessment_set=aset,
+                            assignment=assignment,
+                            assigned_by=request.user,
+                            set_version=pinned_version,
+                        )
+                except IntegrityError:
+                    # Set already assigned to this classroom via another assignment
+                    # (uniq_assessment_hw_classroom_set) — can't attach it here too.
+                    logger.info(
+                        "assessment set %s already assigned to classroom %s; not re-attaching on edit",
+                        sid, classroom.pk,
+                    )
+                try:
+                    resync_stale_homeworks(assessment_set=aset, version=pinned_version)
+                except Exception:
+                    logger.exception("resync_stale_homeworks failed for set %s", sid)
+            except Exception:
+                logger.exception(
+                    "Failed to attach assessment homework on edit assignment_id=%s set_id=%s",
+                    assignment.pk, sid,
+                )
+
+        # Detach de-selected sets — but keep any a student has already started.
+        for set_id, hw in existing.items():
+            if set_id in wanted_set:
+                continue
+            if hw.attempts.exists():
+                logger.info(
+                    "keeping assessment set %s on assignment %s: has student attempts",
+                    set_id, assignment.pk,
+                )
+                continue
+            try:
+                hw.delete()
+            except Exception:
+                logger.exception(
+                    "Failed to detach assessment set %s from assignment %s",
+                    set_id, assignment.pk,
+                )
 
     def partial_update(self, request, *args, **kwargs):
         kwargs["partial"] = True

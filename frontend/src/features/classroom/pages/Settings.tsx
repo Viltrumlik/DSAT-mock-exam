@@ -7,6 +7,7 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import { Card, CardHeader, Button, Field, Select, TextField, ConfirmDialog } from "../ui";
 import { useUpdateClass, useRegenerateCode } from "../hooks";
 import type { ClassroomWithRole } from "../types";
+import { levelsForSubject, levelLabel } from "@/lib/levels";
 
 /** Edit core class details + join code. Owner/Teacher only (gated by the workspace). */
 export function Settings({ classroom }: { classroom: ClassroomWithRole }) {
@@ -15,9 +16,13 @@ export function Settings({ classroom }: { classroom: ClassroomWithRole }) {
   const regen = useRegenerateCode(id);
   const c = classroom as Record<string, unknown>;
 
+  const subject = String(c.subject ?? "");
+  const levelOptions = levelsForSubject(subject);
+
   const [form, setForm] = useState({
     name: String(c.name ?? ""),
     description: String(c.description ?? ""),
+    level: String(c.level ?? ""),
     lesson_days: String(c.lesson_days ?? "ODD"),
     lesson_time: String(c.lesson_time ?? ""),
     room_number: String(c.room_number ?? ""),
@@ -39,6 +44,7 @@ export function Settings({ classroom }: { classroom: ClassroomWithRole }) {
       await update.mutateAsync({
         name: form.name.trim(),
         description: form.description.trim(),
+        level: form.level,
         lesson_days: form.lesson_days,
         lesson_time: form.lesson_time.trim(),
         room_number: form.room_number.trim(),
@@ -96,13 +102,24 @@ export function Settings({ classroom }: { classroom: ClassroomWithRole }) {
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
+            <Field label="Level" htmlFor="set-level" hint="Controls which assessments this class can be assigned.">
+              <Select id="set-level" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })}>
+                <option value="">— No level —</option>
+                {levelOptions.map((l) => (
+                  <option key={l} value={l}>{levelLabel(l)}</option>
+                ))}
+              </Select>
+            </Field>
             <Field label="Lesson days" htmlFor="set-days">
               <Select id="set-days" value={form.lesson_days} onChange={(e) => setForm({ ...form, lesson_days: e.target.value })}>
                 <option value="ODD">Odd days</option>
                 <option value="EVEN">Even days</option>
               </Select>
             </Field>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <TextField label="Lesson time" value={form.lesson_time} onChange={(e) => setForm({ ...form, lesson_time: e.target.value })} placeholder="18:00" />
+            <div />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <TextField label="Room" value={form.room_number} onChange={(e) => setForm({ ...form, room_number: e.target.value })} placeholder="Optional" />

@@ -2,19 +2,32 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { classesApi, examsAdminApi } from "@/lib/api";
-import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2 } from "lucide-react";
+import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { levelsForSubject, levelLabel } from "@/lib/levels";
 
-// ADMIN GOVERNANCE ONLY. Admins may view all classrooms, assign teacher, transfer ownership,
-// and delete. Operational classroom management (create/edit/assign content/materials) lives
-// exclusively in the Teacher Portal — there are intentionally no such controls here.
+// ADMIN GOVERNANCE. Admins create classrooms and assign a teacher here, and may view all
+// classrooms, transfer ownership, and delete. Teachers do NOT create their own classrooms —
+// the create control lives only in this admin console. Operational, day-to-day management
+// (edit/assign content/materials) still lives in the Teacher Portal.
 
 type TeacherDetails = { id: number; email: string; first_name?: string; last_name?: string } | null;
 type Row = {
-  id: number; name: string; subject?: string; members_count?: number; student_count?: number;
+  id: number; name: string; subject?: string; level?: string; members_count?: number; student_count?: number;
   teacher_details?: TeacherDetails;
 };
 type TeacherOpt = { id: number; email: string; name: string };
+
+type CreateForm = {
+  name: string;
+  subject: "ENGLISH" | "MATH";
+  level: string;
+  lesson_days: "ODD" | "EVEN";
+  lesson_time: string;
+  room_number: string;
+  teacherId: string; // "" = assign a teacher later
+};
+const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "" };
 
 function normList(d: unknown): Row[] {
   if (Array.isArray(d)) return d as Row[];
@@ -32,6 +45,8 @@ export default function OpsClassroomGovernancePage() {
   const [pickTeacher, setPickTeacher] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateForm>(BLANK_CREATE);
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -79,6 +94,31 @@ export default function OpsClassroomGovernancePage() {
     } finally { setBusy(false); }
   }
 
+  async function submitCreate() {
+    if (!createForm.name.trim()) { setError("Give the classroom a name."); return; }
+    if (!createForm.level) { setError("Choose a level for the classroom."); return; }
+    setBusy(true); setError(null);
+    try {
+      // The teacher is assigned server-side in the same request (teacher_id): the backend
+      // sets the classroom teacher AND auto-enrolls them as an active member atomically.
+      await classesApi.create({
+        name: createForm.name.trim(),
+        subject: createForm.subject,
+        level: createForm.level,
+        lesson_days: createForm.lesson_days,
+        lesson_time: createForm.lesson_time.trim() || undefined,
+        room_number: createForm.room_number.trim() || undefined,
+        teacher_id: createForm.teacherId ? Number(createForm.teacherId) : undefined,
+      });
+      const assigned = createForm.teacherId ? " Teacher assigned and added to the classroom." : "";
+      setNotice(`Classroom “${createForm.name.trim()}” created.${assigned}`);
+      setCreateOpen(false); setCreateForm(BLANK_CREATE); await load();
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not create the classroom.");
+    } finally { setBusy(false); }
+  }
+
   async function del(row: Row) {
     if (!window.confirm(`Delete classroom “${row.name}”? This cannot be undone.`)) return;
     setBusy(true); setError(null);
@@ -100,9 +140,14 @@ export default function OpsClassroomGovernancePage() {
             management lives in the Teacher Portal.
           </p>
         </div>
-        <button type="button" onClick={load} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2">
-          <RefreshCw className="h-4 w-4" /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={load} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2">
+            <RefreshCw className="h-4 w-4" /> Refresh
+          </button>
+          <button type="button" onClick={() => { setError(null); setCreateForm(BLANK_CREATE); setCreateOpen(true); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+            <Plus className="h-4 w-4" /> Create classroom
+          </button>
+        </div>
       </div>
 
       {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
@@ -132,6 +177,7 @@ export default function OpsClassroomGovernancePage() {
                     <div className="flex flex-wrap items-center gap-2 mb-0.5">
                       <p className="font-extrabold text-foreground truncate">{c.name}</p>
                       {c.subject && <span className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase", c.subject.toLowerCase().includes("math") ? "bg-purple-100 text-purple-800" : "bg-teal-100 text-teal-800")}>{c.subject}</span>}
+                      {c.level && <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-700">{levelLabel(c.level)}</span>}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                       <span>ID #{c.id}</span>
@@ -163,6 +209,70 @@ export default function OpsClassroomGovernancePage() {
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setModal(null)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2">Cancel</button>
               <button disabled={busy || !pickTeacher} onClick={submitModal} className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{busy ? "Working…" : "Confirm"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCreateOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-base font-bold text-foreground">Create classroom</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Set up a classroom and assign its teacher. Teachers can’t create their own.</p>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Class name</label>
+                <input autoFocus value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="SAT Math — Evening Group" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Subject</label>
+                  <select value={createForm.subject} onChange={(e) => {
+                    const subject = e.target.value as CreateForm["subject"];
+                    // Reset level if it isn't valid for the new subject (English has no Foundation).
+                    const levelOk = levelsForSubject(subject).includes(createForm.level as never);
+                    setCreateForm({ ...createForm, subject, level: levelOk ? createForm.level : "" });
+                  }} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
+                    <option value="ENGLISH">English</option>
+                    <option value="MATH">Math</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Level</label>
+                  <select value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
+                    <option value="">— Choose level —</option>
+                    {levelsForSubject(createForm.subject).map((l) => <option key={l} value={l}>{levelLabel(l)}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Lesson days</label>
+                  <select value={createForm.lesson_days} onChange={(e) => setCreateForm({ ...createForm, lesson_days: e.target.value as CreateForm["lesson_days"] })} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
+                    <option value="ODD">Odd days</option>
+                    <option value="EVEN">Even days</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Lesson time</label>
+                  <input value={createForm.lesson_time} onChange={(e) => setCreateForm({ ...createForm, lesson_time: e.target.value })} placeholder="18:00" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Room</label>
+                  <input value={createForm.room_number} onChange={(e) => setCreateForm({ ...createForm, room_number: e.target.value })} placeholder="Optional" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Teacher</label>
+                <select value={createForm.teacherId} onChange={(e) => setCreateForm({ ...createForm, teacherId: e.target.value })} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
+                  <option value="">— Assign a teacher later —</option>
+                  {teachers.map((t) => <option key={t.id} value={String(t.id)}>{t.name} ({t.email})</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setCreateOpen(false)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2">Cancel</button>
+              <button disabled={busy || !createForm.name.trim() || !createForm.level} onClick={submitCreate} className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{busy ? "Creating…" : "Create classroom"}</button>
             </div>
           </div>
         </div>

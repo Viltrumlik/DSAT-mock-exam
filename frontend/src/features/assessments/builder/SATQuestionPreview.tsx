@@ -122,6 +122,7 @@ export function SATQuestionPreview({
         <AssessmentText
           text={prompt}
           block
+          preserveNewlines
           className="text-sm font-medium leading-relaxed text-foreground"
         />
 
@@ -151,7 +152,7 @@ export function SATQuestionPreview({
                     {letter}
                   </span>
                   {c.text
-                    ? <AssessmentText text={c.text} className="pt-0.5 text-sm leading-relaxed" />
+                    ? <AssessmentText text={c.text} preserveNewlines className="pt-0.5 text-sm leading-relaxed" />
                     : <em className="pt-0.5 text-sm opacity-40">empty</em>
                   }
                   {isCorrect && (

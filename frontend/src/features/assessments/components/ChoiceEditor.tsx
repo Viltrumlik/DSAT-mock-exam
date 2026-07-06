@@ -44,6 +44,13 @@ export function defaultMcChoices(): AssessmentChoice[] {
   return ["A", "B", "C", "D"].map((id) => ({ id, text: "" }));
 }
 
+/** Grow a choice textarea to fit its content so multi-line options aren't clipped. */
+function autoGrowTextarea(el: HTMLTextAreaElement | null): void {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
 // ─── Validation ───────────────────────────────────────────────────────────────
 
 export type ChoiceIssue =
@@ -114,17 +121,20 @@ function ChoiceRow({
   onRemove: () => void;
   onAddAfter: () => void;
   disabled?: boolean;
-  textareaRef?: React.Ref<HTMLInputElement>;
+  textareaRef?: (el: HTMLTextAreaElement | null) => void;
   hasDuplicateError: boolean;
   canRemove: boolean;
-  onFocusTextarea?: (el: HTMLInputElement, setVal: (v: string) => void) => void;
+  onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
   inputClassName: string;
   imageProps?: ChoiceImageProps;
 }) {
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter now inserts a real newline (textarea default) so an option can span
+    // multiple lines. Cmd/Ctrl+Enter is the power-user shortcut to add a new option.
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       onAddAfter();
+      return;
     }
     if (e.key === "Backspace" && choice.text === "" && canRemove) {
       e.preventDefault();
@@ -152,19 +162,25 @@ function ChoiceRow({
           {choice.id}
         </button>
 
-        {/* Input */}
-        <input
-          ref={textareaRef}
-          type="text"
+        {/* Input — a textarea so Enter inserts a newline; auto-grows to fit content. */}
+        <textarea
+          ref={(el) => {
+            textareaRef?.(el);
+            autoGrowTextarea(el);
+          }}
+          rows={1}
           disabled={disabled}
           placeholder={`Option ${choice.id}`}
           value={choice.text}
-          onChange={(e) => onChangeText(e.target.value)}
+          onChange={(e) => {
+            onChangeText(e.target.value);
+            autoGrowTextarea(e.currentTarget);
+          }}
           onKeyDown={handleKeyDown}
           onFocus={(e) => onFocusTextarea?.(e.currentTarget, onChangeText)}
           className={cn(
             inputClassName,
-            "flex-1",
+            "flex-1 resize-none overflow-hidden",
             isCorrect && "border-emerald-400 ring-1 ring-emerald-300 focus:border-emerald-400",
             hasDuplicateError && "border-amber-400",
           )}
@@ -188,7 +204,7 @@ function ChoiceRow({
       {/* Live math preview */}
       {choice.text.trim() && (
         <div className="ml-10 rounded-lg border border-border/50 bg-surface-2/40 px-2.5 py-1.5">
-          <AssessmentText text={choice.text} className="text-xs leading-relaxed text-foreground" />
+          <AssessmentText text={choice.text} preserveNewlines className="text-xs leading-relaxed text-foreground" />
         </div>
       )}
 
@@ -259,11 +275,11 @@ export function ChoiceEditor({
   correctId: string;
   onChange: (choices: AssessmentChoice[], correctId: string) => void;
   disabled?: boolean;
-  onFocusTextarea?: (el: HTMLInputElement, setVal: (v: string) => void) => void;
+  onFocusTextarea?: (el: HTMLTextAreaElement, setVal: (v: string) => void) => void;
   inputClassName: string;
   getChoiceImageProps?: (choiceId: string) => ChoiceImageProps | null;
 }) {
-  const rowRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const rowRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
 
   const issues = validateChoices(choices, correctId);
   const dupSet = new Set(
@@ -382,7 +398,7 @@ export function ChoiceEditor({
         >
           <Plus className="h-3.5 w-3.5" />
           Add option
-          <kbd className="ml-0.5 rounded bg-surface-2 px-1 py-0.5 text-[9px] font-mono text-muted-foreground/60">↵</kbd>
+          <kbd className="ml-0.5 rounded bg-surface-2 px-1 py-0.5 text-[9px] font-mono text-muted-foreground/60">⌘↵</kbd>
         </button>
 
         {tooFew && (

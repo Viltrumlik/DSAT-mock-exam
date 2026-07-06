@@ -789,7 +789,7 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/`);
         return r.data;
     },
-    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; max_students?: number; is_active?: boolean }) => {
+    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; level?: string; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; teacher_id?: number; max_students?: number; is_active?: boolean }) => {
         const r = await api.post('/classes/', data);
         return r.data;
     },
@@ -1259,6 +1259,8 @@ export const assessmentsAdminApi = {
     },
     adminCreateSet: async (payload: {
         subject: "math" | "english";
+        source?: string;
+        level?: string;
         category?: string;
         title: string;
         description?: string;
@@ -1271,6 +1273,8 @@ export const assessmentsAdminApi = {
         id: number,
         payload: Partial<{
             subject: "math" | "english";
+            source: string;
+            level: string;
             category: string;
             title: string;
             description: string;
@@ -1283,6 +1287,9 @@ export const assessmentsAdminApi = {
     adminGetSet: async (id: number) => {
         const r = await api.get(`/assessments/admin/sets/${id}/`);
         return r.data;
+    },
+    adminDeleteSet: async (id: number) => {
+        await api.delete(`/assessments/admin/sets/${id}/`);
     },
     adminCreateQuestion: async (
         setId: number,

@@ -7,6 +7,8 @@ export type AssessmentSet = {
   subject: Subject;
   /** Provenance of the questions; see lib/assessmentSources. Blank on legacy sets. */
   source?: string;
+  /** Difficulty tier; see lib/levels. Blank on legacy/untagged sets. */
+  level?: string;
   category: string;
   title: string;
   description: string;

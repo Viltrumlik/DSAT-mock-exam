@@ -103,6 +103,21 @@ export function useDeleteAssessmentQuestion(setId: number) {
   });
 }
 
+export function useDeleteAssessmentSet() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (setId: number) => {
+      await assessmentsAdminApi.deleteSet(setId);
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
 export function useAssignAssessmentHomework() {
   return useMutation({
     mutationFn: async (vars: { payload: HomeworkAssignmentCreateRequest; idempotencyKey?: string }) => {

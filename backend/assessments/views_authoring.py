@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.db import transaction
+from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.pagination import LimitOffsetPagination
@@ -121,7 +122,29 @@ class AdminAssessmentSetDetailView(APIView):
             ds = user_domain_subject(actor)
             if ds and inst.subject != ds:
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        inst.delete()
+
+        # A set that was ever published (has a version) or assigned to a class is an
+        # academic record protected by on_delete=PROTECT — a bare delete() would 500.
+        # Block it with a clear message; the author can deactivate it instead. Only
+        # pristine drafts delete (their questions cascade cleanly).
+        if inst.versions.exists() or inst.homework_assignments.exists() or inst.homework_audit_events.exists():
+            return Response(
+                {
+                    "detail": (
+                        "This set has been published or assigned to a class and cannot be "
+                        "deleted. Deactivate it instead."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            inst.delete()
+        except ProtectedError:
+            # Belt-and-suspenders: a PROTECT relation added later would land here.
+            return Response(
+                {"detail": "This set is referenced elsewhere and cannot be deleted."},
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

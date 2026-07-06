@@ -81,8 +81,17 @@ export function flowSoftWraps(raw: string): string {
  * present when sanitization runs) and BEFORE KaTeX so the span is never
  * inserted inside a rendered formula.
  */
-export function processInstructionalText(raw: string): string {
-  return renderMathInString(applyBlanks(prepareRichText(flowSoftWraps(raw))));
+export function processInstructionalText(
+  raw: string,
+  opts?: { preserveNewlines?: boolean },
+): string {
+  // preserveNewlines: skip the soft-wrap reflow so a single authored Enter renders
+  // as a visible <br> (via prepareRichText's applyNewlines) — used for SHORT fields
+  // (question stem, answer choices) where a lone newline is always intentional.
+  // Left OFF for passages/stimulus, which keep flowSoftWraps so PDF-pasted prose
+  // still reflows to the reader's width instead of hard-breaking at ~80 columns.
+  const flowed = opts?.preserveNewlines ? raw : flowSoftWraps(raw);
+  return renderMathInString(applyBlanks(prepareRichText(flowed)));
 }
 
 type AssessmentTextProps = {
@@ -90,6 +99,12 @@ type AssessmentTextProps = {
   className?: string;
   /** Render as a block element (div) instead of inline-block (span). */
   block?: boolean;
+  /**
+   * Honor single authored newlines as visible breaks instead of reflowing them
+   * (soft-wrap → space). Use for short fields (stem, answer choices); leave off
+   * for passages so pasted prose still reflows.
+   */
+  preserveNewlines?: boolean;
 };
 
 /**
@@ -97,13 +112,13 @@ type AssessmentTextProps = {
  * MathText component contract (ref + useEffect KaTeX pass keyed on text) so
  * math, markdown, and blanks render identically to the assessment runner.
  */
-export function AssessmentText({ text, className, block = false }: AssessmentTextProps) {
+export function AssessmentText({ text, className, block = false, preserveNewlines = false }: AssessmentTextProps) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (ref.current) renderMath({ root: ref.current });
   }, [text]);
 
-  const html = processInstructionalText(text);
+  const html = processInstructionalText(text, { preserveNewlines });
 
   if (block) {
     return (

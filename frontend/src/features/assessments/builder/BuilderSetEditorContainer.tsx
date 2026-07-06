@@ -14,6 +14,7 @@ import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assess
 import { QuestionBankPickerModal } from "./QuestionBankPickerModal";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
+import { levelsForSubject, levelLabel } from "@/lib/levels";
 import { AssessmentQuestionEditorFields } from "@/features/assessments/components/AssessmentQuestionEditorFields";
 import type {
   AssessmentQuestion,
@@ -605,7 +606,7 @@ export default function BuilderSetEditorContainer() {
     try {
       await upsertSet.mutateAsync({
         id: view.id,
-        payload: { title: view.title, category: view.category, description: view.description, source: view.source ?? "" },
+        payload: { title: view.title, category: view.category, description: view.description, source: view.source ?? "", level: view.level ?? "" },
       });
       toast.push({ tone: "success", message: "Set metadata saved." });
     } catch (e) {
@@ -906,6 +907,20 @@ export default function BuilderSetEditorContainer() {
                     <option value="">None</option>
                     {allowedSourcesForSubject(view.subject).map((s) => (
                       <option key={s} value={s}>{sourceLabel(s)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <p className={cn(LABEL, "mb-1.5")}>Level</p>
+                  <select
+                    className={INPUT}
+                    value={String(view.level || "")}
+                    onChange={(e) => patchSetTracked({ level: e.target.value })}
+                    disabled={upsertSet.isPending || versionOutdated}
+                  >
+                    <option value="">None</option>
+                    {levelsForSubject(view.subject).map((l) => (
+                      <option key={l} value={l}>{levelLabel(l)}</option>
                     ))}
                   </select>
                 </div>

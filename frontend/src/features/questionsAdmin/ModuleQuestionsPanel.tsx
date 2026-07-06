@@ -549,11 +549,22 @@ function QuestionEditor({
                     <div className="mt-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-xs font-extrabold text-foreground">
                       {letter.toUpperCase()}
                     </div>
-                    <input
-                      className={`${INPUT} flex-1`}
+                    <textarea
+                      className={`${INPUT} flex-1 resize-none overflow-hidden`}
+                      rows={1}
                       placeholder={`Option ${letter.toUpperCase()}`}
                       value={val}
-                      onChange={(e) => patch({ [key]: e.target.value } as Partial<QuestionDraft>)}
+                      ref={(el) => {
+                        if (el) {
+                          el.style.height = "auto";
+                          el.style.height = `${el.scrollHeight}px`;
+                        }
+                      }}
+                      onChange={(e) => {
+                        patch({ [key]: e.target.value } as Partial<QuestionDraft>);
+                        e.currentTarget.style.height = "auto";
+                        e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`;
+                      }}
                       onFocus={(e) => {
                         activeFieldRef.current = {
                           el: e.currentTarget,

@@ -41,8 +41,29 @@ class Classroom(models.Model):
         (DAYS_EVEN, "Even days"),
     ]
 
+    # Difficulty tier. Codes match assessments.AssessmentSet.level verbatim so a
+    # classroom's level filters assessments directly. Subject-dependent: English
+    # has no Foundation.
+    LEVEL_FOUNDATION = "foundation"
+    LEVEL_JUNIOR = "junior"
+    LEVEL_MIDDLE = "middle"
+    LEVEL_SENIOR = "senior"
+    LEVEL_CHOICES = [
+        (LEVEL_FOUNDATION, "Foundation"),
+        (LEVEL_JUNIOR, "Junior"),
+        (LEVEL_MIDDLE, "Middle"),
+        (LEVEL_SENIOR, "Senior"),
+    ]
+    LEVELS_BY_SUBJECT = {
+        SUBJECT_ENGLISH: (LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
+        SUBJECT_MATH: (LEVEL_FOUNDATION, LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
+    }
+
     name = models.CharField(max_length=120, db_index=True)
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, db_index=True)
+    level = models.CharField(
+        max_length=16, choices=LEVEL_CHOICES, blank=True, default="", db_index=True
+    )
     description = models.TextField(
         blank=True,
         default="",
@@ -92,6 +113,11 @@ class Classroom(models.Model):
     def domain_subject(self) -> str | None:
         """english / math — for AssessmentSet and access filtering."""
         return self._DOMAIN_SUBJECT.get(self.subject)
+
+    @classmethod
+    def allowed_levels_for_subject(cls, subject: str) -> tuple[str, ...]:
+        """Level keys valid for the given subject (empty for unknown subjects)."""
+        return cls.LEVELS_BY_SUBJECT.get(subject, ())
 
     def ensure_join_code(self) -> None:
         if self.join_code:

@@ -86,7 +86,7 @@ export function MultipleChoiceInput({
                 </span>
                 <div className="min-w-0 flex-1">
                   <StableHtml
-                    html={processInstructionalText(c.text)}
+                    html={processInstructionalText(c.text, { preserveNewlines: true })}
                     className={`text-base text-slate-900 leading-snug ${
                       highlighterActive ? "cursor-text" : ""
                     } ${isEliminated ? "line-through decoration-2 decoration-slate-500" : ""}`}

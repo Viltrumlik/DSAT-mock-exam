@@ -8,6 +8,7 @@ import { normalizeApiError } from "@/lib/apiError";
 import { getSubject } from "@/lib/permissions";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
+import { levelsForSubject, levelLabel } from "@/lib/levels";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
@@ -20,6 +21,7 @@ export default function NewAssessmentSetPage() {
   const [form, setForm] = useState<{
     subject: Subject;
     source: string;
+    level: string;
     category: string;
     title: string;
     description: string;
@@ -27,6 +29,7 @@ export default function NewAssessmentSetPage() {
   }>({
     subject: subj || "math",
     source: "",
+    level: "",
     category: "",
     title: "",
     description: "",
@@ -35,11 +38,16 @@ export default function NewAssessmentSetPage() {
   const [error, setError] = useState<string | null>(null);
 
   const sourceOptions = allowedSourcesForSubject(form.subject);
+  const levelOptions = levelsForSubject(form.subject);
 
   const save = async () => {
     setError(null);
     if (!form.source) {
       setError("Please choose a source for this set.");
+      return;
+    }
+    if (!form.level) {
+      setError("Please choose a level for this set.");
       return;
     }
     try {
@@ -84,9 +92,16 @@ export default function NewAssessmentSetPage() {
               value={form.subject}
               onChange={(e) => {
                 const subject = e.target.value as Subject;
-                // Reset source if it isn't valid for the newly-selected subject.
-                const stillValid = allowedSourcesForSubject(subject).includes(form.source as never);
-                setForm({ ...form, subject, source: stillValid ? form.source : "" });
+                // Reset source/level if they aren't valid for the newly-selected subject
+                // (e.g. English has no Foundation level).
+                const sourceOk = allowedSourcesForSubject(subject).includes(form.source as never);
+                const levelOk = levelsForSubject(subject).includes(form.level as never);
+                setForm({
+                  ...form,
+                  subject,
+                  source: sourceOk ? form.source : "",
+                  level: levelOk ? form.level : "",
+                });
               }}
               disabled={Boolean(subj)}
             >
@@ -107,18 +122,33 @@ export default function NewAssessmentSetPage() {
           </div>
         </div>
 
-        <div>
-          <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Source *</p>
-          <select
-            className={INPUT}
-            value={form.source}
-            onChange={(e) => setForm({ ...form, source: e.target.value })}
-          >
-            <option value="">Select a source…</option>
-            {sourceOptions.map((s) => (
-              <option key={s} value={s}>{sourceLabel(s)}</option>
-            ))}
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Source *</p>
+            <select
+              className={INPUT}
+              value={form.source}
+              onChange={(e) => setForm({ ...form, source: e.target.value })}
+            >
+              <option value="">Select a source…</option>
+              {sourceOptions.map((s) => (
+                <option key={s} value={s}>{sourceLabel(s)}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Level *</p>
+            <select
+              className={INPUT}
+              value={form.level}
+              onChange={(e) => setForm({ ...form, level: e.target.value })}
+            >
+              <option value="">Select a level…</option>
+              {levelOptions.map((l) => (
+                <option key={l} value={l}>{levelLabel(l)}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div>

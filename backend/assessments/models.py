@@ -40,11 +40,34 @@ class AssessmentSet(models.Model):
         ),
     }
 
+    # Difficulty tier. Subject-dependent: English has no Foundation. The codes are
+    # lowercase and shared verbatim with classes.Classroom.level so a classroom's
+    # level can be compared/filtered directly against a set's level.
+    LEVEL_FOUNDATION = "foundation"
+    LEVEL_JUNIOR = "junior"
+    LEVEL_MIDDLE = "middle"
+    LEVEL_SENIOR = "senior"
+    LEVEL_CHOICES = [
+        (LEVEL_FOUNDATION, "Foundation"),
+        (LEVEL_JUNIOR, "Junior"),
+        (LEVEL_MIDDLE, "Middle"),
+        (LEVEL_SENIOR, "Senior"),
+    ]
+    ALLOWED_LEVELS_BY_SUBJECT = {
+        SUBJECT_ENGLISH: (LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
+        SUBJECT_MATH: (LEVEL_FOUNDATION, LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
+    }
+
     subject = models.CharField(max_length=16, choices=SUBJECT_CHOICES, db_index=True)
     # Blank = legacy/None; new sets require a source valid for their subject (enforced
     # in the admin write serializer). Editable later from set metadata.
     source = models.CharField(
         max_length=32, choices=SOURCE_CHOICES, blank=True, default="", db_index=True
+    )
+    # Blank = legacy/untagged (shows in every classroom regardless of level). New sets
+    # pick a level valid for their subject; enforced in the admin write serializer.
+    level = models.CharField(
+        max_length=16, choices=LEVEL_CHOICES, blank=True, default="", db_index=True
     )
     category = models.CharField(max_length=255, db_index=True, blank=True, default="")
     title = models.CharField(max_length=200, db_index=True)
@@ -73,6 +96,11 @@ class AssessmentSet(models.Model):
     def allowed_sources_for_subject(cls, subject: str) -> tuple[str, ...]:
         """Source keys valid for the given subject (empty for unknown subjects)."""
         return cls.ALLOWED_SOURCES_BY_SUBJECT.get(subject, ())
+
+    @classmethod
+    def allowed_levels_for_subject(cls, subject: str) -> tuple[str, ...]:
+        """Level keys valid for the given subject (empty for unknown subjects)."""
+        return cls.ALLOWED_LEVELS_BY_SUBJECT.get(subject, ())
 
 
 class AssessmentSetVersion(models.Model):

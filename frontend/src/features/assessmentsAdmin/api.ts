@@ -71,6 +71,7 @@ export const assessmentsAdminApi = {
   createSet: async (payload: {
     subject: Subject;
     source?: string;
+    level?: string;
     category?: string;
     title: string;
     description?: string;
@@ -80,6 +81,9 @@ export const assessmentsAdminApi = {
   },
   updateSet: async (id: number, payload: Partial<Omit<AssessmentSet, "id">>): Promise<AssessmentSet> => {
     return (await assessmentsAdminClient.adminUpdateSet(id, payload as any)) as AssessmentSet;
+  },
+  deleteSet: async (id: number) => {
+    await assessmentsAdminClient.adminDeleteSet(id);
   },
   createQuestion: async (
     setId: number,

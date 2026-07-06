@@ -81,6 +81,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "subject",
+            "level",
             "lesson_days",
             "lesson_time",
             "lesson_hours",
@@ -140,6 +141,20 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("lesson_hours must be at least 1.")
         return value
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Level must fit the classroom subject (English has no Foundation). Blank is
+        # allowed (untagged classroom → sees every level in the assignment picker).
+        subject = attrs.get("subject") or getattr(self.instance, "subject", None)
+        level = attrs.get("level", getattr(self.instance, "level", ""))
+        if level:
+            allowed = Classroom.allowed_levels_for_subject(subject)
+            if level not in allowed:
+                raise serializers.ValidationError(
+                    {"level": f"'{level}' is not a valid level for {subject} classrooms."}
+                )
+        return attrs
+
     def validate_teacher(self, value):
         from access import constants as acc_const
         from access.services import actor_subject_probe_for_domain_perm, authorize
@@ -167,6 +182,7 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
             "id",
             "name",
             "subject",
+            "level",
             "lesson_days",
             "lesson_time",
             "lesson_hours",
