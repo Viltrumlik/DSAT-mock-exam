@@ -358,9 +358,23 @@ class AdminPublishAssessmentSetView(APIView):
         new_count = AssessmentSetVersion.objects.filter(assessment_set_id=pk).count()
         created = new_count > existing_count
 
+        # When a NEW version was created (content changed), propagate it to this
+        # set's not-yet-started homeworks so a teacher's edits reach assigned
+        # classes — students already engaged (in_progress/submitted/graded) keep
+        # their frozen snapshot.
+        resynced = 0
+        if created:
+            try:
+                from .domain.homework_versioning import resync_stale_homeworks
+                resynced = resync_stale_homeworks(assessment_set=version.assessment_set, version=version)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("resync_stale_homeworks failed for set %s", pk)
+
         data = {
             "version": AssessmentSetVersionSerializer(version).data,
             "created": created,
+            "homeworks_resynced": resynced,
         }
         return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 

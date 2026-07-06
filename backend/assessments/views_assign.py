@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from django.db import (
     IntegrityError,
     transaction,
@@ -42,6 +44,8 @@ from .serializers import (
     AssignHomeworkSerializer,
     HomeworkAssignmentSerializer,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AssignAssessmentHomeworkView(APIView):
@@ -137,13 +141,11 @@ class AssignAssessmentHomeworkView(APIView):
                     instructions=instructions,
                     due_at=due_at,
                 )
-                # Resolve the latest published version to pin on this assignment.
-                # NULL = set has never been published (legacy / pre-snapshot path).
-                pinned_version = (
-                    AssessmentSetVersion.objects.filter(assessment_set=aset)
-                    .order_by("-version_number")
-                    .first()
-                )
+                # Snapshot the set's CURRENT content (idempotent; publishes a fresh
+                # version only if the live set changed since the last one). Fixes
+                # stale snapshots when a set was edited after its first version.
+                from .domain.homework_versioning import ensure_current_version, resync_stale_homeworks
+                pinned_version = ensure_current_version(set_id=aset.pk, actor=request.user)
 
                 try:
                     with transaction.atomic():
@@ -170,6 +172,11 @@ class AssignAssessmentHomeworkView(APIView):
                             context={"actor_id": request.user.pk, "classroom_id": classroom.pk, "set_id": aset.pk},
                         )
                         raise
+                # Propagate current content to this set's other not-started homeworks.
+                try:
+                    resync_stale_homeworks(assessment_set=aset, version=pinned_version, exclude_homework_ids=[hw.pk])
+                except Exception:
+                    logger.exception("resync_stale_homeworks failed for set %s", aset.pk)
         from .models import AssessmentHomeworkAuditEvent, GovernanceEvent
 
         AssessmentHomeworkAuditEvent.objects.create(

@@ -709,6 +709,16 @@ class ClassroomViewSet(ModelViewSet):
             raise NotFound()
 
     def create(self, request, *args, **kwargs):
+        # Classroom creation is an admin governance action: admins create classrooms and
+        # assign a teacher (see AssignTeacherView). Teachers never create their own — block
+        # them server-side even though they still hold PERM_CREATE_CLASSROOM (that permission
+        # also gates the "assignable as class teacher" list, so it is intentionally NOT
+        # revoked from the teacher role — only the create endpoint is restricted).
+        if not is_global_scope_staff(request.user):
+            return Response(
+                {"detail": "Only administrators can create classrooms. Ask an admin to create the classroom and assign you as its teacher."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         # Permission + subject-domain enforced via authorize(...).
         subj = (request.data or {}).get("subject")
         platform_subject = (
@@ -744,6 +754,13 @@ class ClassroomViewSet(ModelViewSet):
             classroom=classroom,
             defaults={"granted_by": request.user},
         )
+        # Optional: assign the classroom's teacher at creation (admin picks them in the
+        # create form). Done server-side so the teacher is auto-enrolled as an ACTIVE
+        # teacher member in the SAME request — no fragile client-side second call that can
+        # partially fail. Parity with AssignTeacherView.
+        assigned = self._assign_initial_teacher(classroom, (request.data or {}).get("teacher_id"))
+        if assigned is not None:
+            teacher = assigned
         logger.info(
             "classroom_created id=%s subject=%s created_by_id=%s teacher_id=%s",
             classroom.pk,
@@ -753,6 +770,35 @@ class ClassroomViewSet(ModelViewSet):
         )
         out = ClassroomSerializer(classroom, context={"request": request}).data
         return Response(out, status=status.HTTP_201_CREATED)
+
+    def _assign_initial_teacher(self, classroom, teacher_id):
+        """Set ``classroom.teacher`` and enroll them as an ACTIVE teacher member.
+
+        Used at creation so an admin who picks a teacher in the create form gets the teacher
+        auto-added in the same request (parity with :class:`AssignTeacherView`). Returns the
+        assigned teacher, or ``None`` when no valid ``teacher_id`` was supplied.
+        """
+        if not teacher_id:
+            return None
+        from django.contrib.auth import get_user_model
+
+        teacher = get_user_model().objects.filter(pk=teacher_id).first()
+        if teacher is None:
+            return None
+        role = str(getattr(teacher, "role", "") or "").strip().lower()
+        if role not in ("teacher", "super_admin"):
+            return None
+        classroom.teacher = teacher
+        classroom.save(update_fields=["teacher", "updated_at"])
+        ClassroomMembership.objects.update_or_create(
+            classroom=classroom,
+            user=teacher,
+            defaults={
+                "role": ClassroomMembership.ROLE_TEACHER,
+                "status": ClassroomMembership.STATUS_ACTIVE,
+            },
+        )
+        return teacher
 
     def _ensure_class_admin(self, classroom):
         if not has_cap(self.request.user, classroom, "can_manage_class"):
@@ -1865,25 +1911,13 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
         for sid in ordered_ids:
             try:
-                from assessments.models import AssessmentSet, AssessmentSetVersion, HomeworkAssignment as AssessHW
+                from assessments.models import AssessmentSet, HomeworkAssignment as AssessHW
+                from assessments.domain.homework_versioning import ensure_current_version, resync_stale_homeworks
                 aset = AssessmentSet.objects.get(pk=sid)
-                pinned_version = (
-                    AssessmentSetVersion.objects.filter(assessment_set=aset)
-                    .order_by("-version_number")
-                    .first()
-                )
-                # If the set has no pinned version yet, create one now so students
-                # can start attempts.
-                if pinned_version is None:
-                    try:
-                        from assessments.domain.publish_service import publish_assessment_set
-                        pinned_version = publish_assessment_set(set_id=aset.pk, actor=request.user)
-                    except Exception:
-                        logger.exception(
-                            "publish_assessment_set failed for assessment_set_id=%s; "
-                            "assigning without pinned_version",
-                            aset.pk,
-                        )
+                # Snapshot the set's CURRENT content (idempotent — reuses the last
+                # version if unchanged). Fixes stale snapshots when a set was edited
+                # after its first version/assign.
+                pinned_version = ensure_current_version(set_id=aset.pk, actor=request.user)
                 try:
                     with transaction.atomic():
                         AssessHW.objects.create(
@@ -1900,6 +1934,12 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                         "assessment set %s already assigned to classroom %s; skipping",
                         sid, classroom.pk,
                     )
+                # Propagate the current content to this set's other not-started
+                # homeworks (teacher edits reach not-yet-started classes).
+                try:
+                    resync_stale_homeworks(assessment_set=aset, version=pinned_version)
+                except Exception:
+                    logger.exception("resync_stale_homeworks failed for set %s", sid)
             except AssessmentSet.DoesNotExist:
                 logger.warning("assessment_set_id=%s not found; skipping", sid)
             except Exception:
