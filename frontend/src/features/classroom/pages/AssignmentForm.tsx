@@ -24,7 +24,10 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { formatApiErrorForToast } from "@/lib/apiError";
-import { ArrowLeft, ClipboardList, FlaskConical, Loader2, Paperclip, Search, X } from "lucide-react";
+import {
+  ArrowLeft, BookOpen, Check, ClipboardList, Clock, FlaskConical, Inbox, Layers,
+  Link2, Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
+} from "lucide-react";
 
 type PastpaperRow = Record<string, unknown> & {
   id: number;
@@ -52,6 +55,8 @@ type PracticeTestPackOption = {
   section_count: number;
   already_assigned?: boolean;
 };
+
+type TabKey = "pastpapers" | "packs" | "assessments" | "submission";
 
 type Props = {
   classId: number;
@@ -106,6 +111,12 @@ function cardSectionIds(c: CardPastpaperPack | CardSingle): number[] {
   return c.kind === "single" ? [c.test.id] : c.tests.map((t) => t.id);
 }
 
+function cardHeading(c: CardPastpaperPack | CardSingle): string {
+  return c.kind === "pastpaper_pack"
+    ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
+    : singleDisplayTitle(c.test);
+}
+
 /** Attachment objects on an assignment (backend returns {url,file_name,...}). */
 type AttachmentObj = { url: string; file_name?: string; content_type?: string; size?: number | null };
 function readAttachments(a: Record<string, unknown> | null | undefined): AttachmentObj[] {
@@ -119,6 +130,9 @@ function readAttachments(a: Record<string, unknown> | null | undefined): Attachm
     })
     .filter((x): x is AttachmentObj => x != null);
 }
+
+// A live-cart entry (aggregates selections across every tab in the left column).
+type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment"; title: string; meta: string; assigned: boolean; onRemove: () => void };
 
 export default function AssignmentForm({ classId, editingAssignment = null, onCancel, onSaved }: Props) {
   const isEditing = editingAssignment != null;
@@ -138,9 +152,11 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [editAsgFiles, setEditAsgFiles] = useState<File[]>([]);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [classroomSubject, setClassroomSubject] = useState<string>("");
+  // The content library shows one tab at a time (Pastpapers/Packs/Assessments/Submission).
+  const [activeTab, setActiveTab] = useState<TabKey>("pastpapers");
 
-  // Picker filters (Reqs 5, 8): search + region/year for pastpapers, search for
-  // practice packs, search + source for assessments.
+  // Picker filters: search + region/year for pastpapers, search for packs,
+  // search + source for assessments.
   const [pastpaperSearch, setPastpaperSearch] = useState("");
   const [pastpaperRegion, setPastpaperRegion] = useState<"ALL" | "US" | "INTL">("ALL");
   const [pastpaperYear, setPastpaperYear] = useState("ALL");
@@ -160,8 +176,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
 
   const domainSubject = classroomSubject === "MATH" ? "math" : classroomSubject === "ENGLISH" ? "english" : "";
   const allowedSources = useMemo(() => allowedSourcesForSubject(domainSubject), [domainSubject]);
-  // The class is a single subject → the scope is implied; hide the Both/Eng/Math selector.
-  const subjectLocked = classroomSubject === "MATH" || classroomSubject === "ENGLISH";
+  const classSubjectLabel = classroomSubject === "MATH" ? "Math" : classroomSubject === "ENGLISH" ? "English" : "";
 
   const pastpaperCards = useMemo(
     () => buildHomeworkPastpaperCards(assignmentOptions.practice_tests as any[]),
@@ -279,7 +294,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     return () => { cancelled = true; };
   }, [classId]);
 
-  // Auto-set the section scope from the class subject (Req 6); selector stays hidden.
+  // Auto-set the section scope from the class subject; selector stays hidden.
   useEffect(() => {
     if (classroomSubject === "MATH") setPracticeScope("MATH");
     else if (classroomSubject === "ENGLISH") setPracticeScope("ENGLISH");
@@ -384,6 +399,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           practice_test: null,
           practice_test_ids: testIds.length > 0 ? testIds : null,
           practice_test_pack_ids: packIds.length > 0 ? packIds : null,
+          // Reconcile attached assessments on edit — always send the full selection
+          // (including empty) so the backend can attach AND detach.
+          assessment_set_ids: [...selectedAssessmentIds],
           practice_scope: practiceScope,
           allow_file_upload: allowFileUpload,
         };
@@ -404,8 +422,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       if (dueIso) fd.append("due_at", dueIso);
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
 
-      // A resource counts only if the teacher actually selected it — otherwise
-      // it's simply ignored (no content type to pick first).
+      // A resource counts only if the teacher actually selected it.
       if (selectedTestIds.size > 0) {
         fd.append("practice_test_ids", JSON.stringify([...selectedTestIds]));
         fd.append("practice_scope", practiceScope);
@@ -425,24 +442,17 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       const createdId = created && typeof created === "object" && "id" in created ? Number((created as { id: number }).id) : undefined;
       await onSaved(Number.isFinite(createdId) ? createdId : undefined);
     } catch (e: unknown) {
-      // Surface the backend message (e.g. "File type not allowed (.jar). Allowed: …")
-      // or any DRF field error, instead of a blank generic failure.
       setFormError(formatApiErrorForToast(e));
     } finally {
       setCreatingAsg(false);
     }
   };
 
-  const cardBase = "cr-press text-left rounded-xl border px-4 py-3 transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/90 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
-  const cardUnsel = "border-border bg-card hover:border-primary/35 hover:bg-surface-2";
-  const cardSel = "border-primary bg-primary/10 ring-2 ring-primary/25 shadow-sm";
-
-  // A card is selected iff ALL its section ids are selected; clicking toggles them together.
+  // ── Selection handlers (toggle a resource in/out of its Set) ────────────────
   const cardSelected = (c: CardPastpaperPack | CardSingle): boolean => {
     const ids = cardSectionIds(c);
     return ids.length > 0 && ids.every((id) => selectedTestIds.has(id));
   };
-
   const handleCardSelect = (c: CardPastpaperPack | CardSingle) => {
     const ids = cardSectionIds(c);
     const isSel = cardSelected(c);
@@ -453,13 +463,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       return next;
     });
     if (!isSel && !newAsg.title.trim()) {
-      const heading = c.kind === "pastpaper_pack"
-        ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
-        : singleDisplayTitle(c.test);
+      const heading = cardHeading(c);
       if (heading) setNewAsg((prev) => ({ ...prev, title: heading }));
     }
   };
-
   const handleAssessmentSelect = (aset: AssessmentSetOption) => {
     const wasSel = selectedAssessmentIds.has(aset.id);
     setSelectedAssessmentIds((prev) => {
@@ -470,7 +477,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     });
     if (!wasSel && !newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: aset.title }));
   };
-
   const handlePackSelect = (ptp: PracticeTestPackOption) => {
     const wasSel = selectedPackIds.has(ptp.id);
     setSelectedPackIds((prev) => {
@@ -482,469 +488,483 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     if (!wasSel && !newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: ptp.title }));
   };
 
-  // Small "Already given" chip shown on cards already assigned to this class.
-  const givenBadge = (
-    <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-      Already given
-    </span>
-  );
-
-  const groupHeading = (label: string, count: number) => (
-    <p className="ds-caption mb-2 font-bold uppercase tracking-wider text-muted-foreground">
-      {label} <span className="font-semibold text-muted-foreground/70">({count})</span>
-    </p>
-  );
-
-  const renderPastpaperGroup = (label: string, cards: (CardPastpaperPack | CardSingle)[], given: boolean) => {
-    if (cards.length === 0) return null;
-    return (
-      <div>
-        {groupHeading(label, cards.length)}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {cards.map((c) => {
-            const selected = cardSelected(c);
-            const lineDate = c.kind === "pastpaper_pack"
-              ? c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at
-              : c.test.practice_date || c.test.created_at;
-            const heading = c.kind === "pastpaper_pack"
-              ? (c.pack?.title && String(c.pack.title).trim()) || sharedPastpaperPackTitle(c.tests)
-              : singleDisplayTitle(c.test);
-            const sectionRows = c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
-            return (
-              <button
-                key={cardReactKey(c)}
-                type="button"
-                onClick={() => handleCardSelect(c)}
-                className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Practice test</p>
-                  {given ? givenBadge : null}
-                </div>
-                <p className="mt-1 text-xs font-bold text-muted-foreground">{formatLineDate(lineDate)}</p>
-                <p className="mt-2 line-clamp-2 text-sm font-bold leading-snug text-foreground">{heading}</p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {sectionRows.map((t) => (
-                    <span key={t.id} className="rounded-md bg-primary/12 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                      {subjectLabel(t.subject)}
-                    </span>
-                  ))}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const renderPackGroup = (label: string, packs: PracticeTestPackOption[], given: boolean) => {
-    if (packs.length === 0) return null;
-    return (
-      <div>
-        {groupHeading(label, packs.length)}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {packs.map((ptp) => {
-            const selected = selectedPackIds.has(ptp.id);
-            return (
-              <button
-                key={ptp.id}
-                type="button"
-                onClick={() => handlePackSelect(ptp)}
-                className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="line-clamp-2 text-sm font-bold text-foreground">{ptp.title || `Pack #${ptp.id}`}</p>
-                  {given ? givenBadge : null}
-                </div>
-                {ptp.description && <p className="mt-0.5 line-clamp-2 text-[10px] text-muted-foreground">{ptp.description}</p>}
-                <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  const renderAssessmentGroup = (label: string, sets: AssessmentSetOption[], given: boolean) => {
-    if (sets.length === 0) return null;
-    return (
-      <div>
-        {groupHeading(label, sets.length)}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {sets.map((aset) => {
-            const selected = selectedAssessmentIds.has(aset.id);
-            return (
-              <button
-                key={aset.id}
-                type="button"
-                onClick={() => handleAssessmentSelect(aset)}
-                className={`${cardBase} ${selected ? cardSel : cardUnsel}`}
-              >
-                <div className="mb-1 flex flex-wrap items-center gap-1.5">
-                  <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
-                    aset.subject === "math" ? "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                  }`}>{aset.subject}</span>
-                  {aset.source && (
-                    <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{sourceLabel(aset.source)}</span>
-                  )}
-                  {aset.category && (
-                    <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">{aset.category}</span>
-                  )}
-                  {given ? givenBadge : null}
-                </div>
-                <p className="line-clamp-2 text-sm font-bold text-foreground">{aset.title}</p>
-                <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{aset.question_count} questions</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   const removeFile = (idx: number) => setAsgFiles((prev) => prev.filter((_, i) => i !== idx));
   const removeEditFile = (idx: number) => setEditAsgFiles((prev) => prev.filter((_, i) => i !== idx));
 
-  const submitDisabled = !newAsg.title.trim() || !newAsg.instructions.trim() || creatingAsg;
+  // ── Live cart — every selection across the tabs, shown in the left column ────
+  const cartItems = useMemo<CartItem[]>(() => {
+    const out: CartItem[] = [];
+    for (const c of pastpaperCards) {
+      if (!cardSelected(c)) continue;
+      const secs = cardSectionIds(c);
+      out.push({
+        key: `pp-${cardReactKey(c)}`,
+        type: "pastpaper",
+        title: cardHeading(c),
+        meta: `Past paper · ${secs.length} section${secs.length !== 1 ? "s" : ""}`,
+        assigned: cardAlreadyGiven(c),
+        onRemove: () => handleCardSelect(c),
+      });
+    }
+    for (const p of assignmentOptions.practice_test_packs) {
+      if (!selectedPackIds.has(p.id)) continue;
+      out.push({
+        key: `pack-${p.id}`,
+        type: "practice",
+        title: p.title || `Pack #${p.id}`,
+        meta: `Practice test · ${p.section_count} section${p.section_count !== 1 ? "s" : ""}`,
+        assigned: !!p.already_assigned,
+        onRemove: () => handlePackSelect(p),
+      });
+    }
+    for (const a of assignmentOptions.assessment_sets) {
+      if (!selectedAssessmentIds.has(a.id)) continue;
+      out.push({
+        key: `as-${a.id}`,
+        type: "assessment",
+        title: a.title,
+        meta: `${a.category ? a.category + " · " : ""}${a.question_count} questions`,
+        assigned: !!a.already_assigned,
+        onRemove: () => handleAssessmentSelect(a),
+      });
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastpaperCards, assignmentOptions, selectedTestIds, selectedPackIds, selectedAssessmentIds, sectionAssigned]);
+
+  const hasTitle = newAsg.title.trim().length > 0;
+  const hasInstructions = newAsg.instructions.trim().length > 0;
+  const ready = hasTitle && hasInstructions;
+  const submitDisabled = !ready || creatingAsg;
   const existingAttachments = readAttachments(editingAssignment);
-  const searchInputCls = `${crInputClass} pl-9`;
+
+  const footerHint = !hasTitle
+    ? "Add a title to get started."
+    : !hasInstructions
+      ? "Add instructions for students."
+      : cartItems.length === 0 && !allowFileUpload && !newAsg.external_url.trim() && asgFiles.length === 0
+        ? "Add content, a file upload, or a link — then publish."
+        : "Ready to publish.";
+
+  // ── Small style helpers ─────────────────────────────────────────────────────
+  const cartDot: Record<CartItem["type"], string> = {
+    pastpaper: "bg-primary",
+    practice: "bg-emerald-500",
+    assessment: "bg-[#6d4ec7]",
+  };
+  const searchInputCls = `${crInputClass} pl-10`;
+
+  // Reusable pick-card shell (check-circle top-right, hover lift, selected accent).
+  function PickCard({ selected, given, onClick, children }: {
+    selected: boolean; given?: boolean; onClick: () => void; children: React.ReactNode;
+  }) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        aria-pressed={selected}
+        className={`cr-press relative flex w-full flex-col gap-1.5 rounded-[14px] border-[1.5px] p-4 pr-9 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-primary hover:shadow-md ${
+          selected ? "border-primary bg-primary/10 shadow-[0_0_0_1px_var(--primary)]" : "border-border bg-card"
+        }`}
+      >
+        <span className={`absolute right-3.5 top-3.5 flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-all ${
+          selected ? "border-primary bg-primary text-white" : "border-border bg-background text-transparent"
+        }`}>
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </span>
+        {children}
+        {given ? (
+          <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+            title="Already assigned to this class in an earlier assignment">
+            <Clock className="h-2.5 w-2.5" /> Already assigned
+          </span>
+        ) : null}
+      </button>
+    );
+  }
+
+  const groupTitle = (label: string) => (
+    <h3 className="text-[15px] font-extrabold text-foreground">{label}</h3>
+  );
+  const cardGrid = "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(228px,1fr))]";
+
+  const renderPastpaperCard = (c: CardPastpaperPack | CardSingle, given: boolean) => {
+    const lineDate = c.kind === "pastpaper_pack"
+      ? c.pack?.practice_date || c.tests[0]?.practice_date || c.tests[0]?.created_at
+      : c.test.practice_date || c.test.created_at;
+    const sectionRows = c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
+    return (
+      <PickCard key={cardReactKey(c)} selected={cardSelected(c)} given={given} onClick={() => handleCardSelect(c)}>
+        <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">{c.kind === "pastpaper_pack" ? "Full exam" : "Practice test"}</span>
+        <span className="text-[12.5px] font-semibold text-muted-foreground">{formatLineDate(lineDate)}</span>
+        <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{cardHeading(c)}</span>
+        <span className="mt-0.5 flex flex-wrap gap-1.5">
+          {sectionRows.map((t) => (
+            <span key={t.id} className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide text-primary">{subjectLabel(t.subject)}</span>
+          ))}
+        </span>
+      </PickCard>
+    );
+  };
+
+  const renderAssessmentCard = (aset: AssessmentSetOption, given: boolean) => (
+    <PickCard key={aset.id} selected={selectedAssessmentIds.has(aset.id)} given={given} onClick={() => handleAssessmentSelect(aset)}>
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
+          aset.subject === "math" ? "bg-[#6d4ec7]/12 text-[#6d4ec7] dark:bg-purple-900/40 dark:text-purple-300" : "bg-primary/10 text-primary"
+        }`}>{aset.subject}</span>
+        {aset.source && <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{sourceLabel(aset.source)}</span>}
+        {aset.category && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">{aset.category}</span>}
+      </span>
+      <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{aset.title}</span>
+      <span className="text-[12px] font-semibold text-muted-foreground">{aset.question_count} questions</span>
+    </PickCard>
+  );
+
+  const renderPackCard = (ptp: PracticeTestPackOption, given: boolean) => (
+    <PickCard key={ptp.id} selected={selectedPackIds.has(ptp.id)} given={given} onClick={() => handlePackSelect(ptp)}>
+      <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Practice test pack</span>
+      <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{ptp.title || `Pack #${ptp.id}`}</span>
+      {ptp.description ? <span className="line-clamp-2 text-[12px] text-muted-foreground">{ptp.description}</span> : null}
+      <span className="text-[12px] font-semibold text-muted-foreground">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</span>
+    </PickCard>
+  );
+
+  const TABS: { key: TabKey; label: string; icon: typeof BookOpen }[] = [
+    { key: "pastpapers", label: "Pastpapers", icon: BookOpen },
+    { key: "packs", label: "Practice test packs", icon: Layers },
+    { key: "assessments", label: "Assessments", icon: ClipboardList },
+    { key: "submission", label: "Submission", icon: SlidersHorizontal },
+  ];
+  const panelCls = "flex flex-col gap-4 rounded-[20px] border border-border bg-background p-6 shadow-sm";
+  const captionCls = "text-[12.5px] font-medium text-muted-foreground/80";
 
   return (
-    <div className="mx-auto w-full max-w-5xl">
-      {/* Header */}
-      <div className="mb-6">
-        <button type="button" onClick={onCancel} className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Back
+    <div className="mx-auto w-full max-w-[1400px]">
+      {/* ── Page head ── */}
+      <div className="mb-5">
+        <button type="button" onClick={onCancel} className="mb-4 inline-flex items-center gap-2 text-[13.5px] font-bold text-muted-foreground transition-colors hover:text-primary">
+          <ArrowLeft className="h-4 w-4" /> Back to classroom
         </button>
-        <p className="ds-section-title text-muted-foreground">{isEditing ? "Edit assignment" : "New assignment"}</p>
-        <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-foreground">{isEditing ? "Update homework" : "Create assignment"}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Choose content, add instructions, set a due date, and attach files.</p>
-      </div>
-
-      <div className="cr-section space-y-6">
-        {formError ? <ClassroomAlert tone="error">{formError}</ClassroomAlert> : null}
-        {asgOptionsLoading ? (
-          <div className="flex items-center gap-2 py-3 text-sm text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading options…
+        <div className="flex items-center gap-4">
+          <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[15px] bg-primary/10 text-primary"><ClipboardList className="h-6 w-6" /></div>
+          <div className="min-w-0">
+            <h1 className="text-[25px] font-extrabold tracking-tight text-foreground">{isEditing ? "Edit assignment" : "New assignment"}</h1>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13.5px] font-semibold text-muted-foreground">
+              {classSubjectLabel && <span>{classSubjectLabel} class</span>}
+              <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">{isEditing ? "Edit" : "Draft"}</span>
+            </div>
           </div>
-        ) : null}
-        {asgOptionsError ? <ClassroomAlert tone="warning">{asgOptionsError}</ClassroomAlert> : null}
-
-        {/* Two-column: homework options (left) · content pickers + upload (right). */}
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,360px)_1fr] lg:items-start">
-        {/* ── LEFT: homework options ── */}
-        <div className="space-y-6 lg:sticky lg:top-4">
-        {/* Details: title / instructions / due date */}
-        <section className="cr-pop space-y-5 rounded-2xl border border-border bg-card p-4">
-          <p className="ds-section-title text-muted-foreground">Details</p>
-
-          <ClassroomField label="Title *" htmlFor="asg-title">
-            <input
-              id="asg-title"
-              value={newAsg.title}
-              onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))}
-              placeholder="e.g. May SAT Reading practice"
-              className={`${crInputClass} font-semibold`}
-            />
-          </ClassroomField>
-
-          {/* Instructions — always shown, required (Req 2) */}
-          <ClassroomField label="Instructions *" htmlFor="asg-inst" hint="Tell students exactly what to do.">
-            <textarea
-              id="asg-inst"
-              value={newAsg.instructions}
-              onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))}
-              placeholder="Short directions for students"
-              rows={3}
-              className={crInputClass}
-            />
-          </ClassroomField>
-
-          {/* Due date — dropdowns, no calendar (Reqs 3, 4) */}
-          <ClassroomField label="Due date & time" hint="Pick a day within the next week, or leave as no deadline.">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <select
-                aria-label="Due date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className={crInputClass}
-              >
-                <option value="">No deadline</option>
-                {dateOptions.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <select
-                aria-label="Due time"
-                value={dueTime}
-                onChange={(e) => setDueTime(e.target.value)}
-                disabled={!dueDate}
-                className={`${crInputClass} disabled:opacity-50`}
-              >
-                {timeOpts.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-          </ClassroomField>
-        </section>
-        </div>{/* end LEFT options */}
-
-        {/* ── RIGHT: content pickers + student submission ── */}
-        <div className="space-y-6">
-
-        {/* Pastpaper picker — always visible; counts only if a card is selected. */}
-        <section className="cr-pop space-y-4 rounded-2xl border border-border bg-card p-4">
-            <p className="ds-section-title text-muted-foreground">Pastpaper <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
-            <div className="space-y-3">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input
-                  value={pastpaperSearch}
-                  onChange={(e) => setPastpaperSearch(e.target.value)}
-                  placeholder="Search pastpapers…"
-                  className={searchInputCls}
-                />
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <SegmentedControl
-                  label="Region"
-                  value={pastpaperRegion}
-                  onChange={(v) => setPastpaperRegion(v as "ALL" | "US" | "INTL")}
-                  options={[{ value: "ALL", label: "All" }, { value: "US", label: "US" }, { value: "INTL", label: "International" }]}
-                />
-                {pastpaperYears.length > 0 && (
-                  <SegmentedControl
-                    label="Year"
-                    value={pastpaperYear}
-                    onChange={setPastpaperYear}
-                    options={[{ value: "ALL", label: "All" }, ...pastpaperYears.map((y) => ({ value: y, label: y }))]}
-                  />
-                )}
-              </div>
-            </div>
-
-            <ClassroomField label="Pastpaper (full exam card)" hint="Select one or more. Only sections for this class's subject are shown.">
-              {filteredPastpaperCards.length === 0 ? (
-                <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center text-sm text-muted-foreground">
-                  No pastpapers match these filters.
-                </div>
-              ) : (
-                <div className="max-h-[360px] space-y-4 overflow-y-auto pr-1">
-                  {renderPastpaperGroup("Available", availablePastpaperCards, false)}
-                  {renderPastpaperGroup("Already given", givenPastpaperCards, true)}
-                </div>
-              )}
-            </ClassroomField>
-
-            {/* Section scope — only shown when the class isn't subject-locked (Req 6). */}
-            {selectedTestIds.size > 0 && !subjectLocked && (
-              <ClassroomField label="Sections to assign" hint="Students only see the sections you choose.">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  {([
-                    { value: "BOTH" as const, title: "Both", sub: "R&W and Math" },
-                    { value: "ENGLISH" as const, title: "English only", sub: "Reading & Writing" },
-                    { value: "MATH" as const, title: "Math only", sub: "Math section" },
-                  ]).map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setPracticeScope(opt.value)}
-                      className={`${cardBase} text-left ${practiceScope === opt.value ? cardSel : cardUnsel}`}
-                    >
-                      <p className="text-sm font-bold text-foreground">{opt.title}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{opt.sub}</p>
-                    </button>
-                  ))}
-                </div>
-              </ClassroomField>
-            )}
-          </section>
-
-        {/* Practice test pack picker — always visible; counts only if selected. */}
-        <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
-            <p className="ds-section-title text-muted-foreground">Practice test <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input value={packSearch} onChange={(e) => setPackSearch(e.target.value)} placeholder="Search practice test packs…" className={searchInputCls} />
-            </div>
-            <ClassroomField label="Practice test pack" hint="Select one or more custom practice tests to assign.">
-              {filteredPacks.length === 0 ? (
-                <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center">
-                  <FlaskConical className="mx-auto h-8 w-8 text-muted-foreground/60" />
-                  <p className="mt-2 text-sm font-semibold text-muted-foreground">No practice test packs found</p>
-                  <p className="mt-1 text-xs text-muted-foreground/80">Create and publish one in the Builder console first.</p>
-                </div>
-              ) : (
-                <div className="max-h-[320px] space-y-4 overflow-y-auto pr-1">
-                  {renderPackGroup("Available", availablePacks, false)}
-                  {renderPackGroup("Already given", givenPacks, true)}
-                </div>
-              )}
-            </ClassroomField>
-          </section>
-
-        {/* Assessment picker — always visible; counts only if selected. */}
-        <section className="cr-pop space-y-3 rounded-2xl border border-border bg-card p-4">
-            <p className="ds-section-title text-muted-foreground">Assessment <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <div className="relative flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input value={assessmentSearch} onChange={(e) => setAssessmentSearch(e.target.value)} placeholder="Search assessments…" className={searchInputCls} />
-              </div>
-              {allowedSources.length > 0 && (
-                <select aria-label="Source" value={assessmentSource} onChange={(e) => setAssessmentSource(e.target.value)} className={`${crInputClass} sm:w-56`}>
-                  <option value="ALL">All sources</option>
-                  {allowedSources.map((s) => (
-                    <option key={s} value={s}>{sourceLabel(s)}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <ClassroomField label="Assessment set" hint="Select one or more quizzes/tests to assign to students.">
-              {filteredAssessmentSets.length === 0 ? (
-                <div className="rounded-xl border border-border bg-surface-2 px-4 py-6 text-center">
-                  <ClipboardList className="mx-auto h-8 w-8 text-muted-foreground/60" />
-                  <p className="mt-2 text-sm font-semibold text-muted-foreground">No assessment sets found</p>
-                  <p className="mt-1 text-xs text-muted-foreground/80">Try clearing filters, or create one in the Builder console.</p>
-                </div>
-              ) : (
-                <div className="max-h-[320px] space-y-4 overflow-y-auto pr-1">
-                  {renderAssessmentGroup("Available", availableAssessmentSets, false)}
-                  {renderAssessmentGroup("Already given", givenAssessmentSets, true)}
-                </div>
-              )}
-            </ClassroomField>
-          </section>
-
-        {/* Student file submission — teacher decides whether students upload work.
-            Independent of any pastpaper/assessment above (both can coexist). */}
-        <section className="cr-pop rounded-2xl border border-border bg-card p-4">
-          <p className="ds-section-title text-muted-foreground">File submission <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
-          <label className="mt-3 flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
-              checked={allowFileUpload}
-              onChange={(e) => setAllowFileUpload(e.target.checked)}
-            />
-            <span>
-              <span className="text-sm font-bold text-foreground">Allow students to upload files</span>
-              <span className="block text-xs text-muted-foreground">Students can turn in a file for manual grading — even alongside a pastpaper or assessment they solve.</span>
-            </span>
-          </label>
-        </section>
-
-        {/* Resources: external link + teacher attachments */}
-        <section className="cr-pop space-y-5 rounded-2xl border border-border bg-card p-4">
-          <p className="ds-section-title text-muted-foreground">Resources <span className="font-normal normal-case text-muted-foreground/70">· optional</span></p>
-
-            <ClassroomField label="External link (optional)" htmlFor="asg-url">
-              <input
-                id="asg-url"
-                value={newAsg.external_url}
-                onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))}
-                placeholder="https://…"
-                className={crInputClass}
-              />
-            </ClassroomField>
-
-          <ClassroomField label={isEditing ? "Teacher attachments" : "Files (optional)"} hint="PDF, Word, Excel, PowerPoint, text, or images. Students can download them.">
-            {isEditing ? (
-              <div className="space-y-3">
-                {existingAttachments.length > 0 ? (
-                  <div className="space-y-1">
-                    {existingAttachments.map((f, i) => {
-                      const meta = materialMeta(f.file_name || f.url);
-                      const Icon = meta.Icon;
-                      return (
-                        <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
-                          className="cr-press flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-2">
-                          <span className={`flex h-6 w-6 items-center justify-center rounded-md ${meta.iconWrap}`}><Icon className="h-3.5 w-3.5" /></span>
-                          <span className="truncate">{f.file_name || "Attachment"}</span>
-                        </a>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs text-muted-foreground">No files on this assignment yet.</p>
-                )}
-                <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
-                  <input type="checkbox" className="mt-0.5 rounded border-border text-primary focus:ring-primary" checked={replaceAttachments} onChange={(e) => setReplaceAttachments(e.target.checked)} />
-                  <span>
-                    <span className="font-semibold">Replace all existing attachments</span>
-                    <span className="block text-xs font-normal text-muted-foreground">Check this before uploading to replace current files.</span>
-                  </span>
-                </label>
-                <input id="asg-files-edit" name="attachment_file" type="file" multiple
-                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp"
-                  onChange={(e) => setEditAsgFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
-                  className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/15"
-                />
-                {editAsgFiles.length > 0 && (
-                  <div className="space-y-1">
-                    {editAsgFiles.map((f, i) => (
-                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-1.5">
-                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
-                        <button type="button" onClick={() => removeEditFile(i)} className="text-muted-foreground hover:text-red-500"><X className="h-3.5 w-3.5" /></button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <input id="asg-files" name="attachment_file" type="file" multiple
-                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp"
-                  onChange={(e) => {
-                    const incoming = Array.from(e.target.files || []);
-                    setAsgFiles((prev) => {
-                      const combined = [...prev, ...incoming];
-                      if (combined.length > 10) { setFormError("Maximum 10 files allowed."); return prev; }
-                      setFormError(null);
-                      return combined;
-                    });
-                    e.target.value = "";
-                  }}
-                  className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/15"
-                />
-                {asgFiles.length > 0 && <p className="mt-1 text-[10px] font-semibold text-muted-foreground">{asgFiles.length}/10 files</p>}
-                {asgFiles.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {asgFiles.map((f, i) => (
-                      <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-1.5">
-                        <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
-                        <button type="button" onClick={() => removeFile(i)} className="text-muted-foreground hover:text-red-500"><X className="h-3.5 w-3.5" /></button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </ClassroomField>
-        </section>
-        </div>{/* end RIGHT content */}
-        </div>{/* end two-column grid */}
-
-        {/* Actions */}
-        <div className="flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row">
-          <ClassroomButton type="button" variant="secondary" className="flex-1" onClick={onCancel}>Cancel</ClassroomButton>
-          {!isEditing && (
-            <ClassroomButton type="button" variant="secondary" className="cr-press cr-ripple flex-1" onPointerDown={spawnRipple} onClick={() => handleSubmit("DRAFT")} disabled={submitDisabled}>
-              Save as draft
-            </ClassroomButton>
-          )}
-          <ClassroomButton type="button" variant="primary" className="cr-press cr-ripple flex-1" onPointerDown={spawnRipple} onClick={() => handleSubmit("PUBLISHED")} disabled={submitDisabled}>
-            {creatingAsg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {isEditing ? "Save changes" : "Publish"}
-          </ClassroomButton>
         </div>
       </div>
+
+      {formError ? <div className="mb-4"><ClassroomAlert tone="error">{formError}</ClassroomAlert></div> : null}
+      {asgOptionsError ? <div className="mb-4"><ClassroomAlert tone="warning">{asgOptionsError}</ClassroomAlert></div> : null}
+
+      {/* ── Builder split pane ── */}
+      <div className="grid items-start gap-6 lg:grid-cols-[400px_1fr]">
+
+        {/* LEFT — details · live cart · sticky footer */}
+        <section className="flex flex-col overflow-hidden rounded-[20px] border border-border bg-panel shadow-md lg:sticky lg:top-4 lg:max-h-[calc(100vh-120px)]">
+          <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-y-auto p-5">
+
+            {/* Assignment details */}
+            <div className="flex flex-col gap-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-primary/10 text-primary"><ClipboardList className="h-[17px] w-[17px]" /></span>
+                <h2 className="flex-1 text-[15.5px] font-extrabold text-foreground">Assignment details</h2>
+              </div>
+
+              <ClassroomField label="Title *" htmlFor="asg-title">
+                <input id="asg-title" value={newAsg.title} onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))} placeholder="e.g. May SAT Reading practice" className={`${crInputClass} font-semibold`} />
+              </ClassroomField>
+
+              <ClassroomField label="Instructions *" htmlFor="asg-inst" hint="Tell students exactly what to do.">
+                <textarea id="asg-inst" value={newAsg.instructions} onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))} placeholder="Short directions for students" rows={3} className={crInputClass} />
+              </ClassroomField>
+
+              <ClassroomField label="Due date & time" hint="Pick a day within the next week, or leave with no deadline.">
+                <div className="flex gap-2">
+                  <select aria-label="Due date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={`${crInputClass} min-w-0 flex-1`}>
+                    <option value="">No deadline</option>
+                    {dateOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <select aria-label="Due time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} disabled={!dueDate} className={`${crInputClass} min-w-0 flex-1 disabled:opacity-50`}>
+                    {timeOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </ClassroomField>
+            </div>
+
+            {/* Selected content (live cart) */}
+            <div className="flex flex-col gap-3.5 border-t border-border pt-[18px]">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-[9px] bg-primary/10 text-primary"><Layers className="h-[17px] w-[17px]" /></span>
+                <h2 className="flex-1 text-[15.5px] font-extrabold text-foreground">Selected content</h2>
+                <span className="whitespace-nowrap rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-bold text-muted-foreground">{cartItems.length} selected</span>
+              </div>
+
+              {cartItems.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-5 text-center">
+                  <Inbox className="h-6 w-6 text-muted-foreground/60" />
+                  <p className="text-[13px] text-muted-foreground">Nothing selected yet. Add a pastpaper, practice test, or assessment from the library on the right.</p>
+                </div>
+              ) : (
+                <ul className="flex flex-col">
+                  {cartItems.map((it) => (
+                    <li key={it.key} className="flex items-center gap-2.5 border-t border-dashed border-border py-2.5 first:border-t-0">
+                      <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${cartDot[it.type]}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13.5px] font-bold text-foreground">{it.title}</div>
+                        <div className="truncate text-[11.5px] text-muted-foreground/80">{it.meta}</div>
+                      </div>
+                      {it.assigned ? (
+                        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-[7px] bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" title="Already assigned to this class before"><Clock className="h-3 w-3" /></span>
+                      ) : null}
+                      <button type="button" onClick={it.onRemove} aria-label={`Remove ${it.title}`} className="flex shrink-0 rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-rose-500/10 hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {/* Sticky footer — readiness + actions */}
+          <div className="border-t border-border bg-panel px-5 pb-[18px] pt-3.5">
+            <p className="mb-2.5 flex items-center gap-2 text-[12.5px] font-semibold text-muted-foreground">
+              <span className={`h-[7px] w-[7px] shrink-0 rounded-full transition-colors ${ready ? "bg-emerald-500" : "bg-amber-500"}`} /> {footerHint}
+            </p>
+            <div className="flex gap-2">
+              <ClassroomButton type="button" variant="secondary" onClick={onCancel}>Cancel</ClassroomButton>
+              {!isEditing && (
+                <ClassroomButton type="button" variant="secondary" className="cr-press cr-ripple" onPointerDown={spawnRipple} onClick={() => handleSubmit("DRAFT")} disabled={submitDisabled}>Save as draft</ClassroomButton>
+              )}
+              <ClassroomButton type="button" variant="primary" className="cr-press cr-ripple flex-1" onPointerDown={spawnRipple} onClick={() => handleSubmit("PUBLISHED")} disabled={submitDisabled}>
+                {creatingAsg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                {isEditing ? "Save changes" : "Publish assignment"}
+                {cartItems.length > 0 ? <span className="ml-1 rounded-md bg-white/25 px-1.5 py-0.5 text-xs">{cartItems.length}</span> : null}
+              </ClassroomButton>
+            </div>
+          </div>
+        </section>
+
+        {/* RIGHT — tabbed content library */}
+        <section className="flex min-w-0 flex-col gap-[18px]">
+          {asgOptionsLoading ? (
+            <div className="flex items-center gap-2 rounded-[20px] border border-border bg-card px-6 py-4 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-primary" /> Loading library…</div>
+          ) : null}
+
+          {/* Tabs */}
+          <div className="flex gap-2 overflow-x-auto pb-0.5" role="tablist">
+            {TABS.map((tab) => {
+              const active = activeTab === tab.key;
+              const Icon = tab.icon;
+              return (
+                <button key={tab.key} type="button" role="tab" aria-selected={active} onClick={() => setActiveTab(tab.key)}
+                  className={`flex items-center gap-2 whitespace-nowrap rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-bold transition-all ${
+                    active ? "border-primary bg-primary/10 text-primary" : "border-border bg-panel text-muted-foreground hover:-translate-y-px hover:border-primary hover:text-primary"
+                  }`}>
+                  <Icon className="h-4 w-4" /> {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Pastpapers */}
+          {activeTab === "pastpapers" && (
+            <div className={panelCls} role="tabpanel">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input value={pastpaperSearch} onChange={(e) => setPastpaperSearch(e.target.value)} placeholder="Search pastpapers…" className={searchInputCls} />
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <SegmentedControl label="Region" value={pastpaperRegion} onChange={(v) => setPastpaperRegion(v as "ALL" | "US" | "INTL")} options={[{ value: "ALL", label: "All" }, { value: "US", label: "US" }, { value: "INTL", label: "International" }]} />
+                {pastpaperYears.length > 0 && (
+                  <SegmentedControl label="Year" value={pastpaperYear} onChange={setPastpaperYear} options={[{ value: "ALL", label: "All" }, ...pastpaperYears.map((y) => ({ value: y, label: y }))]} />
+                )}
+              </div>
+
+              {filteredPastpaperCards.length === 0 ? (
+                <EmptyPanel icon={BookOpen} title="No pastpapers match" text="Try clearing the search or filters." />
+              ) : (
+                <>
+                  {availablePastpaperCards.length > 0 && (
+                    <>
+                      {groupTitle("Available")}
+                      <div className={cardGrid}>{availablePastpaperCards.map((c) => renderPastpaperCard(c, false))}</div>
+                    </>
+                  )}
+                  {givenPastpaperCards.length > 0 && (
+                    <>
+                      {groupTitle("Already assigned")}
+                      <div className={cardGrid}>{givenPastpaperCards.map((c) => renderPastpaperCard(c, true))}</div>
+                    </>
+                  )}
+                </>
+              )}
+              <p className={captionCls}>Select one or more. Only sections for this class&apos;s subject are shown. Items marked &quot;Already assigned&quot; were used in an earlier assignment for this class.</p>
+            </div>
+          )}
+
+          {/* Practice test packs */}
+          {activeTab === "packs" && (
+            <div className={panelCls} role="tabpanel">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <input value={packSearch} onChange={(e) => setPackSearch(e.target.value)} placeholder="Search practice test packs…" className={searchInputCls} />
+              </div>
+              {filteredPacks.length === 0 ? (
+                <EmptyPanel icon={FlaskConical} title="No practice test packs found" text="Create and publish one in the Builder console first." />
+              ) : (
+                <>
+                  {availablePacks.length > 0 && (<>{groupTitle("Available")}<div className={cardGrid}>{availablePacks.map((p) => renderPackCard(p, false))}</div></>)}
+                  {givenPacks.length > 0 && (<>{groupTitle("Already assigned")}<div className={cardGrid}>{givenPacks.map((p) => renderPackCard(p, true))}</div></>)}
+                </>
+              )}
+              <p className={captionCls}>Select one or more custom practice tests to assign.</p>
+            </div>
+          )}
+
+          {/* Assessments */}
+          {activeTab === "assessments" && (
+            <div className={panelCls} role="tabpanel">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="relative flex-1">
+                  <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input value={assessmentSearch} onChange={(e) => setAssessmentSearch(e.target.value)} placeholder="Search assessments…" className={searchInputCls} />
+                </div>
+                {allowedSources.length > 0 && (
+                  <select aria-label="Source" value={assessmentSource} onChange={(e) => setAssessmentSource(e.target.value)} className={`${crInputClass} sm:w-[180px]`}>
+                    <option value="ALL">All sources</option>
+                    {allowedSources.map((s) => <option key={s} value={s}>{sourceLabel(s)}</option>)}
+                  </select>
+                )}
+              </div>
+              {filteredAssessmentSets.length === 0 ? (
+                <EmptyPanel icon={ClipboardList} title="No assessment sets found" text="Try clearing filters, or create one in the Builder console." />
+              ) : (
+                <>
+                  {availableAssessmentSets.length > 0 && (<>{groupTitle("Available")}<div className={cardGrid}>{availableAssessmentSets.map((a) => renderAssessmentCard(a, false))}</div></>)}
+                  {givenAssessmentSets.length > 0 && (<>{groupTitle("Already assigned")}<div className={cardGrid}>{givenAssessmentSets.map((a) => renderAssessmentCard(a, true))}</div></>)}
+                </>
+              )}
+              <p className={captionCls}>Select one or more quizzes and tests to assign. Items marked &quot;Already assigned&quot; were used in an earlier assignment for this class.</p>
+            </div>
+          )}
+
+          {/* Submission & resources */}
+          {activeTab === "submission" && (
+            <div className={panelCls} role="tabpanel">
+              {groupTitle("Submission & resources")}
+
+              {/* Allow file submissions toggle */}
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-sm font-bold text-foreground">Allow file submissions</div>
+                  <p className="mt-1 text-[12.5px] text-muted-foreground">Students can turn in a file for manual grading — even alongside a pastpaper or assessment they solve.</p>
+                </div>
+                <button type="button" role="switch" aria-checked={allowFileUpload} aria-label="Allow file submissions" onClick={() => setAllowFileUpload((v) => !v)}
+                  className={`relative h-[25px] w-[44px] shrink-0 rounded-full transition-colors ${allowFileUpload ? "bg-primary" : "bg-border"}`}>
+                  <span className={`absolute top-[3px] h-[19px] w-[19px] rounded-full bg-white shadow-sm transition-transform ${allowFileUpload ? "translate-x-[22px]" : "translate-x-[3px]"}`} />
+                </button>
+              </div>
+
+              {/* External link */}
+              <ClassroomField label="External link" hint="Add a link to outside material, like a video or article." htmlFor="asg-url">
+                <div className="relative">
+                  <Link2 className="pointer-events-none absolute left-3.5 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-muted-foreground" />
+                  <input id="asg-url" type="url" value={newAsg.external_url} onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))} placeholder="https://example.com/resource" className={`${crInputClass} pl-10`} />
+                </div>
+              </ClassroomField>
+
+              {/* Files */}
+              <ClassroomField label={isEditing ? "Teacher attachments" : "Files"} hint="PDF, Word, Excel, PowerPoint, text, or images — students can download these.">
+                {isEditing ? (
+                  <div className="space-y-3">
+                    {existingAttachments.length > 0 ? (
+                      <div className="space-y-1">
+                        {existingAttachments.map((f, i) => {
+                          const meta = materialMeta(f.file_name || f.url);
+                          const Icon = meta.Icon;
+                          return (
+                            <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" className="cr-press flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-2">
+                              <span className={`flex h-6 w-6 items-center justify-center rounded-md ${meta.iconWrap}`}><Icon className="h-3.5 w-3.5" /></span>
+                              <span className="truncate">{f.file_name || "Attachment"}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="rounded-xl border border-border bg-card px-3 py-2 text-xs text-muted-foreground">No files on this assignment yet.</p>
+                    )}
+                    <label className="flex cursor-pointer items-start gap-2 text-sm text-foreground">
+                      <input type="checkbox" className="mt-0.5 rounded border-border text-primary focus:ring-primary" checked={replaceAttachments} onChange={(e) => setReplaceAttachments(e.target.checked)} />
+                      <span><span className="font-semibold">Replace all existing attachments</span><span className="block text-xs font-normal text-muted-foreground">Check this before uploading to replace current files.</span></span>
+                    </label>
+                    <input id="asg-files-edit" name="attachment_file" type="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp"
+                      onChange={(e) => setEditAsgFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
+                      className="w-full text-sm text-muted-foreground file:mr-3 file:rounded-xl file:border-0 file:bg-primary/10 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-primary hover:file:bg-primary/15" />
+                    {editAsgFiles.length > 0 && (
+                      <div className="space-y-1">
+                        {editAsgFiles.map((f, i) => (
+                          <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-1.5">
+                            <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                            <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
+                            <button type="button" onClick={() => removeEditFile(i)} className="text-muted-foreground hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <label htmlFor="asg-files" className="flex cursor-pointer flex-col items-center gap-1.5 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-6 text-center transition-colors hover:border-primary hover:bg-primary/5">
+                      <Upload className="h-[22px] w-[22px] text-primary" />
+                      <p className="text-[13.5px] text-muted-foreground"><strong className="text-foreground">Click to browse</strong> or drop files</p>
+                    </label>
+                    <input id="asg-files" name="attachment_file" type="file" multiple hidden accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.webp"
+                      onChange={(e) => {
+                        const incoming = Array.from(e.target.files || []);
+                        setAsgFiles((prev) => {
+                          const combined = [...prev, ...incoming];
+                          if (combined.length > 10) { setFormError("Maximum 10 files allowed."); return prev; }
+                          setFormError(null);
+                          return combined;
+                        });
+                        e.target.value = "";
+                      }} />
+                    {asgFiles.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {asgFiles.map((f, i) => (
+                          <div key={`${f.name}-${f.size}-${i}`} className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5">
+                            <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                            <span className="flex-1 truncate text-xs font-medium text-foreground">{f.name}</span>
+                            <span className="shrink-0 text-[10px] text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                            <button type="button" onClick={() => removeFile(i)} className="text-muted-foreground hover:text-rose-500"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </ClassroomField>
+
+              <p className={captionCls}>These settings apply to the whole assignment, alongside anything selected in the other tabs.</p>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+// Small empty-state used inside the right-column panels.
+function EmptyPanel({ icon: Icon, title, text }: { icon: typeof BookOpen; title: string; text: string }) {
+  return (
+    <div className="flex flex-col items-center gap-2.5 rounded-2xl border-[1.5px] border-dashed border-border bg-card px-5 py-10 text-center">
+      <span className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-panel text-muted-foreground shadow-sm"><Icon className="h-6 w-6" /></span>
+      <h4 className="text-base font-extrabold text-foreground">{title}</h4>
+      <p className="max-w-[320px] text-[13.5px] text-muted-foreground">{text}</p>
     </div>
   );
 }
