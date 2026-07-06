@@ -1488,10 +1488,13 @@ function ExamSimulationView({
           viewport and pushes the fixed footer out of the overflow-hidden overlay
           (the footer "disappears"). With min-h-0 the column scrolls internally and
           the header/footer stay pinned. */}
-      <main className="flex-1 min-h-0 overflow-y-auto bg-white">
+      <main className="flex-1 min-h-0 overflow-auto bg-white">
         <div
           className={`mx-auto w-full max-w-3xl px-8 py-10 ${highlighterActive ? "ms-highlighter-cursor" : ""}`}
-          style={{ fontSize: `${zoomLevel}rem` }}
+          // CSS `zoom` scales the WHOLE question (text of any unit + figures) and
+          // reflows — unlike font-size, which never cascades to the content's
+          // rem-based Tailwind sizes or its px images.
+          style={{ zoom: zoomLevel } as React.CSSProperties}
         >
           {/* Question header line (question N of M + per-question time) */}
           <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-200">
