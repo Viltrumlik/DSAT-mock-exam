@@ -18,6 +18,7 @@ from .models import (
     AssessmentAnswer,
     AssessmentResult,
     AssessmentAttemptAuditEvent,
+    AssessmentSetVersion,
 )
 from .throttles import AssessmentAnswerPerAttemptThrottle
 from .async_tasks import grade_attempt_task
@@ -110,13 +111,20 @@ class StartAttemptView(APIView):
                 .first()
             )
         if not att:
-            # Determine question IDs and version source:
-            # - If hw has a pinned set_version, build the question list from the
-            #   immutable snapshot — stable content regardless of live edits.
-            # - Otherwise fall back to live DB query (pre-snapshot assignment).
-            if hw.set_version_id:
+            # Each NEW attempt (a first take OR a retry) uses the set's LATEST
+            # published version, so a student always works on the teacher's most
+            # recent content — not the snapshot frozen when the homework was first
+            # assigned. (An in-progress attempt is reused above so content never
+            # shifts mid-attempt.) Falls back to the homework's pinned version, then
+            # to a live query for pre-snapshot sets.
+            attempt_version = (
+                AssessmentSetVersion.objects.filter(assessment_set_id=hw.assessment_set_id)
+                .order_by("-version_number")
+                .first()
+            ) or hw.set_version
+            if attempt_version is not None:
                 from .domain.snapshot_builder import questions_from_snapshot
-                raw_qs = questions_from_snapshot(hw.set_version.snapshot_json)
+                raw_qs = questions_from_snapshot(attempt_version.snapshot_json)
                 qids = [q["id"] for q in sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))]
             else:
                 qids = list(
@@ -147,9 +155,9 @@ class StartAttemptView(APIView):
                 last_activity_at=timezone.now(),
                 grading_status=AssessmentAttempt.GRADING_PENDING,
                 question_order=qids,
-                # Pin the snapshot version from the homework onto the attempt so
-                # grading always uses the frozen content that was delivered.
-                set_version=hw.set_version,
+                # Pin the resolved (latest) version onto the attempt so grading uses
+                # exactly the content this attempt was served.
+                set_version=attempt_version,
             )
             _audit_attempt(
                 att,
@@ -157,7 +165,8 @@ class StartAttemptView(APIView):
                 event_type=AssessmentAttemptAuditEvent.EVENT_STARTED,
                 payload={
                     "question_count": len(qids),
-                    "snapshot_pinned": hw.set_version_id is not None,
+                    "snapshot_pinned": attempt_version is not None,
+                    "set_version_id": attempt_version.id if attempt_version else None,
                     "retry_mode": bool(focus_ids),
                 },
             )
