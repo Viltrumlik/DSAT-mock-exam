@@ -20,6 +20,9 @@ function MockExamDetailInner() {
   const [loading, setLoading] = useState(true);
   const [startingModuleId, setStartingModuleId] = useState<number | null>(null);
   const [showReadyOverlay, setShowReadyOverlay] = useState(false);
+  // Reason a start attempt was refused (e.g. midterm closed/completed/locked) so the
+  // student sees WHY instead of silently bouncing back to this page.
+  const [startError, setStartError] = useState<string | null>(null);
   const router = useRouter();
   const { isAuthenticated } = useMe();
   const { assertCriticalAuth, criticalAuthReady } = useAuthCriticalGate();
@@ -62,6 +65,7 @@ function MockExamDetailInner() {
       return;
     }
     setStartingModuleId(moduleId);
+    setStartError(null);
     try {
       const attempt = await getOrCreateAttempt(testId);
       // Speed: bootstrap initial attempt payload to exam runner (avoids an extra blank wait).
@@ -71,6 +75,13 @@ function MockExamDetailInner() {
       router.push(`/exam/${attempt.id}${querySuffix}`);
     } catch (e) {
       console.error("Failed to start module", e);
+      // Surface the backend reason (midterm closed/completed/locked, etc.) instead of
+      // silently returning to this page. The guard returns { code, message }.
+      const resp = (e as { response?: { data?: { message?: string; detail?: string } } })?.response?.data;
+      const msg = resp?.message || resp?.detail;
+      if ((e as { message?: string })?.message !== "AUTH_ACTION_BLOCKED") {
+        setStartError(msg || "Couldn’t start the exam. Please try again.");
+      }
       setStartingModuleId(null);
     }
   };
@@ -406,6 +417,7 @@ function MockExamDetailInner() {
                       if (midtermAttempt?.started_at && !midtermAttempt?.is_completed) {
                         router.push(`/exam/${midtermAttempt.id}?midterm=1`);
                       } else if (!midtermAttempt) {
+                        setStartError(null);
                         setShowReadyOverlay(true);
                       }
                     }}
@@ -415,6 +427,11 @@ function MockExamDetailInner() {
                     <Play className="w-5 h-5 fill-current" />
                     {midtermAttempt?.started_at && !midtermAttempt?.is_completed ? "Resume midterm" : "Start midterm exam"}
                   </button>
+                ) : null}
+                {startError ? (
+                  <div className="mt-6 max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-700">
+                    {startError}
+                  </div>
                 ) : null}
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
