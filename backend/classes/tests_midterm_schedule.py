@@ -172,3 +172,33 @@ class PanelAndMyMidtermsTests(ScheduleFixture):
         self.assertTrue(row["results_visible"])
         self.assertEqual(row["score"], 88)
         self.assertTrue(row["certificate"]["available"])
+
+
+class AssignVisibilityTests(ScheduleFixture):
+    def _my_ids(self):
+        self.client.force_authenticate(self.student)
+        return [m["mock_exam_id"] for m in self.client.get("/api/classes/my-midterms/").json().get("midterms", [])]
+
+    def test_classroom_assign_makes_midterm_visible(self):
+        # Full classroom assign path (writes assigned_users via enforcement).
+        from access.engine.classroom_service import ClassroomAccessService
+        from access.resources import RT_MIDTERM
+        ClassroomAccessService.assign_resource_to_classroom(
+            self.classroom, RT_MIDTERM, self.midterm.id, actor=self.owner
+        )
+        self.midterm.refresh_from_db()
+        self.assertIn(self.student.id, list(self.midterm.assigned_users.values_list("id", flat=True)))
+        self.assertIn(self.midterm.id, self._my_ids())
+
+    def test_grant_only_makes_midterm_visible(self):
+        # Regression: an access path that creates ONLY a RESOURCE grant (no assigned_users)
+        # must STILL make the midterm visible to the student.
+        from access.models import ResourceAccessGrant
+        from access.resources import RT_MIDTERM
+        ResourceAccessGrant.objects.create(
+            user=self.student, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            resource_type=RT_MIDTERM, resource_id=self.midterm.id,
+            classroom=self.classroom, status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        self.assertEqual(self.midterm.assigned_users.count(), 0)  # assigned_users NOT written
+        self.assertIn(self.midterm.id, self._my_ids())  # still visible via the grant

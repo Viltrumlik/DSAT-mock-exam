@@ -201,22 +201,47 @@ class MyMidtermsView(APIView):
             ).values_list("classroom_id", flat=True)
         )
 
-        # Assigned (legacy M2M) ∪ any midterm the student has attempted.
+        # A student "has" a midterm through ANY of the access signals the platform uses,
+        # so visibility never depends on which grant path was taken:
+        #   1) the authoritative RESOURCE grant (what the teacher panel + issuance read),
+        #   2) the legacy assigned_users M2M on MockExam / PortalMockExam,
+        #   3) any attempt they've already made.
+        from access.models import ResourceAccessGrant
+        from access.resources import RT_MIDTERM
+        from exams.models import PortalMockExam
+
+        granted_ids = set(
+            ResourceAccessGrant.objects.filter(
+                user=user, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+                resource_type=RT_MIDTERM, status=ResourceAccessGrant.STATUS_ACTIVE,
+            ).values_list("resource_id", flat=True)
+        )
         assigned_ids = set(
             MockExam.objects.filter(
-                kind=MockExam.KIND_MIDTERM, is_active=True, assigned_users=user
+                kind=MockExam.KIND_MIDTERM, assigned_users=user
             ).values_list("id", flat=True)
+        )
+        portal_ids = set(
+            PortalMockExam.objects.filter(
+                mock_exam__kind=MockExam.KIND_MIDTERM, assigned_users=user
+            ).values_list("mock_exam_id", flat=True)
         )
         attempted_ids = set(
             TestAttempt.objects.filter(
                 student=user, mock_exam__kind=MockExam.KIND_MIDTERM
             ).values_list("mock_exam_id", flat=True)
         )
-        midterm_ids = [mid for mid in (assigned_ids | attempted_ids) if mid]
+        midterm_ids = [mid for mid in (granted_ids | assigned_ids | portal_ids | attempted_ids) if mid]
         if not midterm_ids:
             return Response({"midterms": []})
 
-        mocks = {m.id: m for m in MockExam.objects.filter(id__in=midterm_ids)}
+        # Only real, active midterms.
+        mocks = {
+            m.id: m
+            for m in MockExam.objects.filter(
+                id__in=midterm_ids, kind=MockExam.KIND_MIDTERM, is_active=True
+            )
+        }
 
         schedules_by_mid: dict[int, list[MidtermSchedule]] = {}
         for s in MidtermSchedule.objects.filter(mock_exam_id__in=midterm_ids, classroom_id__in=classroom_ids):
