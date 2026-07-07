@@ -424,17 +424,33 @@ export default function BuilderSetEditorContainer() {
           toast.push({ tone: "error", message: "Enter a correct value for the numeric question." });
           return;
         }
-        const raw = String(ca).trim();
-        const isFraction = /^-?\d+(?:\.\d+)?\/-?\d+(?:\.\d+)?$/.test(raw);
-        const asNumber = Number(raw);
-        if (isFraction) {
-          payload.correct_answer = raw;
-        } else if (Number.isFinite(asNumber) && raw !== "") {
-          payload.correct_answer = asNumber;
-        } else {
-          toast.push({ tone: "error", message: "Correct value must be a number or a fraction like 1/2." });
+        // Accept one value OR several comma-separated acceptable values (SAT grid-in,
+        // e.g. "10.25, 21/2"). Each token is a plain number or a simple fraction.
+        const tokens = (Array.isArray(ca) ? ca.map((x) => String(x)) : String(ca).split(","))
+          .map((t) => t.trim())
+          .filter((t) => t !== "");
+        if (tokens.length === 0) {
+          toast.push({ tone: "error", message: "Enter a correct value for the numeric question." });
           return;
         }
+        const coerced: Array<string | number> = [];
+        let invalidToken = false;
+        for (const tok of tokens) {
+          if (/^-?\d+(?:\.\d+)?\/-?\d+(?:\.\d+)?$/.test(tok)) {
+            coerced.push(tok); // fraction — kept as a string, graded as a decimal
+          } else if (Number.isFinite(Number(tok))) {
+            coerced.push(Number(tok));
+          } else {
+            invalidToken = true;
+            break;
+          }
+        }
+        if (invalidToken) {
+          toast.push({ tone: "error", message: "Each value must be a number or a fraction like 1/2." });
+          return;
+        }
+        // Scalar for a single answer (unchanged); a list only for several.
+        payload.correct_answer = coerced.length === 1 ? coerced[0] : coerced;
       }
       // Use FormData when any image is attached or cleared (read from the frozen snapshot)
       const hasImages = Object.keys(capturedImageFiles).length > 0 || Object.values(capturedImageClears).some(Boolean);
