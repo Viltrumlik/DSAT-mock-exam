@@ -111,3 +111,37 @@ class SetDeleteGuardTests(TestCase):
         resp = self._delete(s.id)
         self.assertEqual(resp.status_code, 409, resp.content)
         self.assertTrue(AssessmentSet.objects.filter(pk=s.id).exists())
+
+    def test_force_delete_removes_published_assigned_set_with_attempts(self):
+        from assessments.models import AssessmentAttempt, AssessmentAnswer
+        s = self._mk_set("Force me")
+        version = AssessmentSetVersion.objects.create(
+            assessment_set=s, version_number=1,
+            snapshot_json={"schema_version": 1}, snapshot_checksum="f" * 64,
+        )
+        classroom = Classroom.objects.create(
+            name="C", subject=Classroom.SUBJECT_MATH,
+            lesson_days=Classroom.DAYS_ODD, created_by=self.admin,
+        )
+        assignment = Assignment.objects.create(
+            classroom=classroom, created_by=self.admin, title="HW",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+        )
+        hw = HomeworkAssignment.objects.create(
+            classroom=classroom, assessment_set=s, assignment=assignment,
+            assigned_by=self.admin, set_version=version,
+        )
+        student = User.objects.create_user("force_student@test.com", "secret123")
+        attempt = AssessmentAttempt.objects.create(homework=hw, student=student, set_version=version)
+        AssessmentAnswer.objects.create(attempt=attempt, question_id=1, answer="B")
+
+        # Without force: blocked.
+        self.assertEqual(self._delete(s.id).status_code, 409)
+
+        # With force: gone, along with version + homework + attempt + answers.
+        resp = self.client.delete(f"/api/assessments/admin/sets/{s.id}/?force=true")
+        self.assertEqual(resp.status_code, 204, resp.content)
+        self.assertFalse(AssessmentSet.objects.filter(pk=s.id).exists())
+        self.assertFalse(AssessmentSetVersion.objects.filter(pk=version.id).exists())
+        self.assertFalse(HomeworkAssignment.objects.filter(pk=hw.id).exists())
+        self.assertFalse(AssessmentAttempt.objects.filter(pk=attempt.id).exists())

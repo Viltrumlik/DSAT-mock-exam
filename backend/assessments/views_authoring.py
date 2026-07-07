@@ -125,18 +125,58 @@ class AdminAssessmentSetDetailView(APIView):
 
         # A set that was ever published (has a version) or assigned to a class is an
         # academic record protected by on_delete=PROTECT — a bare delete() would 500.
-        # Block it with a clear message; the author can deactivate it instead. Only
-        # pristine drafts delete (their questions cascade cleanly).
-        if inst.versions.exists() or inst.homework_assignments.exists() or inst.homework_audit_events.exists():
+        # Block it by default; the author can deactivate it, or pass ?force=true to
+        # remove it ALONG WITH its student attempts/grades and homework links.
+        force = str(request.query_params.get("force", "")).strip().lower() in ("1", "true", "yes", "on")
+        has_refs = (
+            inst.versions.exists()
+            or inst.homework_assignments.exists()
+            or inst.homework_audit_events.exists()
+        )
+        if has_refs and not force:
             return Response(
                 {
                     "detail": (
-                        "This set has been published or assigned to a class and cannot be "
-                        "deleted. Deactivate it instead."
+                        "This set has been published or assigned to a class. Deactivate it, "
+                        "or force-delete to remove it along with its student attempts and grades."
                     )
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+
+        if force and has_refs:
+            # DESTRUCTIVE force-delete. Remove everything that PROTECTs the set, in
+            # dependency order, inside one transaction:
+            #   1. student attempts (cascades their answers, results, audit events)
+            #   2. homework links (the classroom homework loses this assessment)
+            #   3. assessment homework audit events
+            #   4. version snapshots — bulk QuerySet.delete() bypasses the per-instance
+            #      immutability guard (INV-S02); drop the self-referential lineage first
+            #      so PROTECT on previous_version doesn't block the bulk delete
+            # Then the set itself (its questions cascade).
+            from django.db.models import Q
+            from .models import (
+                AssessmentAttempt,
+                HomeworkAssignment,
+                AssessmentHomeworkAuditEvent,
+            )
+            try:
+                with transaction.atomic():
+                    AssessmentAttempt.objects.filter(
+                        Q(homework__assessment_set=inst) | Q(set_version__assessment_set=inst)
+                    ).delete()
+                    HomeworkAssignment.objects.filter(assessment_set=inst).delete()
+                    AssessmentHomeworkAuditEvent.objects.filter(assessment_set=inst).delete()
+                    AssessmentSetVersion.objects.filter(assessment_set=inst).update(previous_version=None)
+                    AssessmentSetVersion.objects.filter(assessment_set=inst).delete()
+                    inst.delete()
+            except ProtectedError:
+                return Response(
+                    {"detail": "This set is still referenced by protected records and could not be force-deleted."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
         try:
             inst.delete()
         except ProtectedError:

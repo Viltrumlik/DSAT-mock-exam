@@ -24,24 +24,38 @@ export default function BuilderSetsPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [pendingDelete, setPendingDelete] = useState<{ id: number; title: string } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Set becomes true after a 409 (the set is published/assigned) — reveals the
+  // force-delete action, which removes it along with student attempts & grades.
+  const [deleteBlocked, setDeleteBlocked] = useState(false);
   const deleteSet = useDeleteAssessmentSet();
 
   const { data, isLoading, error, refetch } = useAssessmentSetsList(
     scopedSubject ? { subject: scopedSubject } : undefined,
   );
 
-  const confirmDelete = () => {
+  const runDelete = (force: boolean) => {
     if (!pendingDelete) return;
     setDeleteError(null);
-    deleteSet.mutate(pendingDelete.id, {
-      onSuccess: () => setPendingDelete(null),
-      onError: (e) => setDeleteError((e as { message?: string })?.message || "Could not delete this set."),
-    });
+    deleteSet.mutate(
+      { setId: pendingDelete.id, force },
+      {
+        onSuccess: () => {
+          setPendingDelete(null);
+          setDeleteBlocked(false);
+        },
+        onError: (e) => {
+          const err = e as { message?: string; status?: number };
+          setDeleteError(err?.message || "Could not delete this set.");
+          if (err?.status === 409) setDeleteBlocked(true);
+        },
+      },
+    );
   };
 
   const closeDelete = () => {
     setPendingDelete(null);
     setDeleteError(null);
+    setDeleteBlocked(false);
   };
 
   const sets = data?.results ?? (Array.isArray(data) ? data : []);
@@ -279,17 +293,37 @@ export default function BuilderSetsPage() {
         title="Delete assessment set?"
         description={
           pendingDelete
-            ? `“#${pendingDelete.id} · ${pendingDelete.title}” and its draft questions will be permanently removed. A set that has been published or assigned to a class can’t be deleted — deactivate it instead.`
+            ? `“#${pendingDelete.id} · ${pendingDelete.title}” and its draft questions will be permanently removed.`
             : undefined
         }
         confirmLabel="Delete set"
         loading={deleteSet.isPending}
-        onConfirm={confirmDelete}
+        onConfirm={() => runDelete(false)}
         onCancel={closeDelete}
       >
         {deleteError ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-            {deleteError}
+          <div className="space-y-3">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+              {deleteError}
+            </div>
+            {deleteBlocked ? (
+              <div className="rounded-xl border border-red-300 bg-red-50 p-3">
+                <p className="text-sm font-bold text-red-800">Force delete?</p>
+                <p className="mt-1 text-xs text-red-700">
+                  This permanently deletes the set together with every student attempt, grade, and
+                  result on it, and removes it from any classroom homework. This can’t be undone.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => runDelete(true)}
+                  disabled={deleteSet.isPending}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {deleteSet.isPending ? "Deleting…" : "Force delete (removes attempts & grades)"}
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </ConfirmDialog>

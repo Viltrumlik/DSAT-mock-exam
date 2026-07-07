@@ -106,8 +106,10 @@ export function useDeleteAssessmentQuestion(setId: number) {
 export function useDeleteAssessmentSet() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (setId: number) => {
-      await assessmentsAdminApi.deleteSet(setId);
+    mutationFn: async (vars: number | { setId: number; force?: boolean }) => {
+      const setId = typeof vars === "number" ? vars : vars.setId;
+      const force = typeof vars === "number" ? false : Boolean(vars.force);
+      await assessmentsAdminApi.deleteSet(setId, force);
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
