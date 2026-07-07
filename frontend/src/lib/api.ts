@@ -814,9 +814,9 @@ export const classesApi = {
     deleteMaterial: async (classId: number, materialId: number) => {
         await api.delete(`/classes/${classId}/materials/${materialId}/`);
     },
-    // Teacher: assign an existing interactive midterm to the whole classroom
-    assignMidterm: async (classId: number, mockExamId: number) => {
-        const r = await api.post(`/classes/${classId}/assign-midterm/`, { mock_exam_id: mockExamId });
+    // Teacher: assign an existing interactive midterm to the whole classroom (optionally scheduled)
+    assignMidterm: async (classId: number, mockExamId: number, schedule?: { starts_at?: string | null; deadline?: string | null }) => {
+        const r = await api.post(`/classes/${classId}/assign-midterm/`, { mock_exam_id: mockExamId, ...(schedule || {}) });
         return r.data;
     },
     // Admin governance
@@ -831,6 +831,41 @@ export const classesApi = {
     // Results (read-only aggregation)
     midtermResults: async (classId: number) => {
         const r = await api.get(`/classes/${classId}/midterm-results/`);
+        return r.data;
+    },
+    // Midterm control panel: roster + stats + schedule + certificate state.
+    midtermPanel: async (classId: number, mockExamId: number) => {
+        const r = await api.get(`/classes/${classId}/midterms/${mockExamId}/panel/`);
+        return r.data;
+    },
+    // Update the per-midterm schedule (start countdown / deadline / ignore-start override).
+    updateMidtermSchedule: async (classId: number, mockExamId: number, patch: { starts_at?: string | null; deadline?: string | null; ignore_start?: boolean }) => {
+        const r = await api.patch(`/classes/${classId}/midterms/${mockExamId}/panel/`, patch);
+        return r.data;
+    },
+    // Compute rankings, issue certificates, and release results.
+    issueMidtermCertificates: async (classId: number, mockExamId: number, force = false) => {
+        const r = await api.post(`/classes/${classId}/midterms/${mockExamId}/certificates/issue/`, force ? { force: true } : {});
+        return r.data;
+    },
+    // Certificate display data (for the certificate view page).
+    certificateDetail: async (code: string) => {
+        const r = await api.get(`/classes/certificates/midterm/${code}/`);
+        return r.data;
+    },
+    // Download one certificate PDF by code (owner student, class staff, or admin).
+    downloadCertificate: async (code: string) => {
+        const r = await api.get(`/classes/certificates/midterm/${code}/download/`, { responseType: "blob" });
+        return r.data as Blob;
+    },
+    // Download every issued certificate for a midterm as one ZIP (staff only).
+    downloadAllCertificates: async (classId: number, mockExamId: number) => {
+        const r = await api.get(`/classes/${classId}/midterms/${mockExamId}/certificates/download-all/`, { responseType: "blob" });
+        return r.data as Blob;
+    },
+    // Student: my assigned midterms with schedule + release state.
+    myMidterms: async () => {
+        const r = await api.get(`/classes/my-midterms/`);
         return r.data;
     },
     unifiedResults: async (classId: number, params?: { student?: number; type?: string; date_from?: string; date_to?: string }) => {
@@ -1288,8 +1323,8 @@ export const assessmentsAdminApi = {
         const r = await api.get(`/assessments/admin/sets/${id}/`);
         return r.data;
     },
-    adminDeleteSet: async (id: number) => {
-        await api.delete(`/assessments/admin/sets/${id}/`);
+    adminDeleteSet: async (id: number, force = false) => {
+        await api.delete(`/assessments/admin/sets/${id}/`, force ? { params: { force: true } } : undefined);
     },
     adminCreateQuestion: async (
         setId: number,
