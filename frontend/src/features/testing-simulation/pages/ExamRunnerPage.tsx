@@ -413,8 +413,14 @@ export function ExamRunnerPage() {
       router.push(`/mock/${meid}/results${qs}`);
       return;
     }
+    // Midterms never show a result inline: the student returns to the midterm page and
+    // sees their score only after the teacher releases it (by issuing certificates).
+    if (isMidtermExam || search.get("midterm") === "1") {
+      router.push(`/midterm`);
+      return;
+    }
     router.push(`/review/${attemptId}`);
-  }, [attempt, mockFlow, search, router, attemptId]);
+  }, [attempt, mockFlow, search, router, attemptId, isMidtermExam]);
 
   // ── Resizable split divider ─────────────────────────────────────────────────
   const mainRef = useRef<HTMLDivElement | null>(null);

@@ -163,12 +163,75 @@ export function useAssignmentOptions(id: number) {
 export function useAssignMidterm(id: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (mockExamId: number) => classesApi.assignMidterm(id, mockExamId),
+    mutationFn: (vars: { mockExamId: number; startsAt?: string | null; deadline?: string | null }) =>
+      classesApi.assignMidterm(id, vars.mockExamId, { starts_at: vars.startsAt ?? null, deadline: vars.deadline ?? null }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: classroomKeys.assignments(id) });
       qc.invalidateQueries({ queryKey: classroomKeys.detail(id) });
       qc.invalidateQueries({ queryKey: classroomKeys.midtermResults(id) });
     },
+  });
+}
+
+// ── Midterm control panel + scheduling + certificates ───────────────────────
+export interface MidtermScheduleState {
+  exists: boolean; starts_at: string | null; deadline: string | null; ignore_start: boolean;
+  available_at: string | null; is_open: boolean; is_before_start: boolean;
+  results_released: boolean; results_released_at: string | null;
+}
+export interface MidtermPanelStudent {
+  student_id: number; student: string; state: string; score: number | null;
+  rank: number | null; attempt_date: string | null; attempt_count: number; certificate_code: string | null;
+}
+export interface MidtermPanel {
+  midterm: { mock_exam_id: number; title: string; subject: string; scoring_scale: string };
+  schedule: MidtermScheduleState;
+  summary: { assigned: number; started: number; completed: number; average: number | null; highest: number | null; lowest: number | null };
+  certificates_issued: boolean; all_finished: boolean;
+  students: MidtermPanelStudent[];
+}
+
+export function useMidtermPanel(classId: number, midtermId: number) {
+  return useQuery<MidtermPanel>({
+    queryKey: classroomKeys.midtermPanel(classId, midtermId),
+    queryFn: () => classesApi.midtermPanel(classId, midtermId),
+    enabled: enabledId(classId) && enabledId(midtermId),
+  });
+}
+
+export function useUpdateMidtermSchedule(classId: number, midtermId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: { starts_at?: string | null; deadline?: string | null; ignore_start?: boolean }) =>
+      classesApi.updateMidtermSchedule(classId, midtermId, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: classroomKeys.midtermPanel(classId, midtermId) });
+      qc.invalidateQueries({ queryKey: classroomKeys.midtermResults(classId) });
+    },
+  });
+}
+
+export function useIssueMidtermCertificates(classId: number, midtermId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (force?: boolean) => classesApi.issueMidtermCertificates(classId, midtermId, force),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: classroomKeys.midtermPanel(classId, midtermId) });
+      qc.invalidateQueries({ queryKey: classroomKeys.midtermResults(classId) });
+    },
+  });
+}
+
+export interface MyMidterm {
+  mock_exam_id: number; title: string; subject: string; scoring_scale: string;
+  available_at: string | null; is_open: boolean; is_before_start: boolean;
+  has_attempt: boolean; submitted: boolean; results_visible: boolean; score: number | null;
+  certificate: { available: boolean; code: string | null; download_url: string | null; rank: number | null; cohort_size: number | null };
+}
+export function useMyMidterms() {
+  return useQuery<{ midterms: MyMidterm[] }>({
+    queryKey: classroomKeys.myMidterms(),
+    queryFn: () => classesApi.myMidterms(),
   });
 }
 

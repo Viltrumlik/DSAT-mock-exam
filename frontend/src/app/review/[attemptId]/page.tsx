@@ -338,6 +338,25 @@ export default function ReviewPage() {
         );
     }
 
+    if (review?.score_only && review?.released === false) {
+        return (
+            <AuthGuard>
+                <div className="min-h-screen flex items-center justify-center bg-background px-6 text-center">
+                    <div className="max-w-md">
+                        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                            <Lock className="h-7 w-7" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-foreground">Results not released yet</h1>
+                        <p className="mt-2 text-sm text-muted-foreground">You’ve submitted this midterm. Your teacher will release your score soon — check the Midterm page.</p>
+                        <button onClick={() => router.push("/midterm")} className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-white hover:bg-[var(--primary-hover)]">
+                            Back to midterms
+                        </button>
+                    </div>
+                </div>
+            </AuthGuard>
+        );
+    }
+
     return (
         <AuthGuard>
             <div className="min-h-screen bg-background relative pb-20" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
