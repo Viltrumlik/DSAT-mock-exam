@@ -626,7 +626,12 @@ export function ExamRunnerPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white">
+    <div className="flex h-screen flex-col bg-slate-100">
+      {/* Center the whole simulation as one balanced white sheet (header + panes +
+          footer) on a light canvas, so it never sprawls edge-to-edge on wide screens.
+          Shared by every exam type (pastpaper / practice / midterm) since they all
+          render this runner. */}
+      <div className="mx-auto flex h-full w-full max-w-[1200px] flex-col bg-white shadow-sm">
       <ExamHeader
         moduleTitle={moduleLabel(attempt)}
         secondsLeft={secondsLeft}
@@ -731,6 +736,7 @@ export function ExamRunnerPage() {
         studentName={studentName}
         navLocked={navLocked}
       />
+      </div>
 
       <QuestionNavigator
         open={navigatorOpen}
