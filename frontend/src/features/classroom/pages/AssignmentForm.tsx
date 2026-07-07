@@ -864,8 +864,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                   <p className="mt-1 text-[12.5px] text-muted-foreground">Students can turn in a file for manual grading — even alongside a pastpaper or assessment they solve.</p>
                 </div>
                 <button type="button" role="switch" aria-checked={allowFileUpload} aria-label="Allow file submissions" onClick={() => setAllowFileUpload((v) => !v)}
-                  className={`relative h-[25px] w-[44px] shrink-0 rounded-full transition-colors ${allowFileUpload ? "bg-primary" : "bg-border"}`}>
-                  <span className={`absolute top-[3px] h-[19px] w-[19px] rounded-full bg-white shadow-sm transition-transform ${allowFileUpload ? "translate-x-[22px]" : "translate-x-[3px]"}`} />
+                  className={`inline-flex h-[25px] w-[44px] shrink-0 items-center rounded-full transition-colors ${allowFileUpload ? "bg-primary" : "bg-border"}`}>
+                  <span className={`inline-block h-[19px] w-[19px] transform rounded-full bg-white shadow-sm transition-transform duration-200 ${allowFileUpload ? "translate-x-[22px]" : "translate-x-[3px]"}`} />
                 </button>
               </div>
 
