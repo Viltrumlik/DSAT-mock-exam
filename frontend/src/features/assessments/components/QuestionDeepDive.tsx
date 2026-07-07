@@ -34,6 +34,11 @@ export function optionImageForKey(q: PedagogicalReviewQuestion, key: string): st
 export function normalizeAnswer(val: unknown): string | null {
   if (val === null || val === undefined) return null;
   if (typeof val === "string") return val.trim() === "" ? null : val.trim();
+  // A numeric/short-text question may accept several answers — show them all.
+  if (Array.isArray(val)) {
+    const parts = val.map((x) => String(x).trim()).filter((x) => x !== "");
+    return parts.length ? parts.join(", ") : null;
+  }
   return String(val);
 }
 

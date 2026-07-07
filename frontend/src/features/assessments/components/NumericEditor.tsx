@@ -41,17 +41,18 @@ export function NumericEditor({
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <div>
-        <label className={LABEL}>Correct value</label>
+        <label className={LABEL}>Correct value(s)</label>
         <input
           className={INPUT}
           disabled={disabled}
           type="text"
-          inputMode="decimal"
-          placeholder="e.g. 42, 3.14, or 1/2"
+          placeholder="e.g. 42, 3.14, 1/2 — or 10.25, 21/2"
           value={(() => {
             try {
               const parsed = JSON.parse(draft.correctAnswerText);
               if (parsed === null || parsed === undefined) return "";
+              // A list = several acceptable answers; show them comma-separated.
+              if (Array.isArray(parsed)) return parsed.map((x) => String(x)).join(", ");
               return String(parsed);
             } catch {
               return draft.correctAnswerText ?? "";
@@ -63,17 +64,15 @@ export function NumericEditor({
               onPatch({ correctAnswerText: JSON.stringify(null) });
               return;
             }
-            // Allow partial numeric typing (e.g. "3.", ".5", "-2") by
-            // preserving the raw string. The save handler coerces to a
-            // number before sending to the backend.
-            const n = Number(raw);
-            if (Number.isFinite(n) && String(n) === raw.trim()) {
-              onPatch({ correctAnswerText: JSON.stringify(n) });
-            } else {
-              onPatch({ correctAnswerText: JSON.stringify(raw) });
-            }
+            // Preserve the raw text (commas, partial typing like "3." or "1/") so the
+            // field types smoothly. On save the backend splits comma-separated values
+            // into a list of acceptable answers and coerces each to a number/fraction.
+            onPatch({ correctAnswerText: JSON.stringify(raw) });
           }}
         />
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Separate multiple accepted answers with commas (e.g. <span className="font-mono">10.25, 21/2</span>).
+        </p>
       </div>
       <div>
         <label className={LABEL}>Tolerance (±)</label>

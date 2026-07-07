@@ -167,9 +167,9 @@ export function SATQuestionPreview({
         {question_type === "numeric" && (
           <div className="rounded-xl border border-border bg-surface-2/40 px-3 py-3 text-sm text-muted-foreground">
             Student enters a number
-            {correctId && (
+            {correctId != null && correctId !== "" && (
               <span className="ml-2 font-bold text-emerald-700">
-                (Correct: {String(correctId)})
+                (Correct: {Array.isArray(correctId) ? (correctId as unknown[]).map((x) => String(x)).join(", ") : String(correctId)})
               </span>
             )}
           </div>

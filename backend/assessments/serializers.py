@@ -201,18 +201,32 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
                 attrs["correct_answer"] = cstr
 
         elif qtype == AssessmentQuestion.TYPE_NUMERIC and ("correct_answer" in attrs):
-            raw = "" if correct is None else str(correct).strip()
-            if raw == "":
-                raise serializers.ValidationError({"correct_answer": "Enter a correct numeric value."})
-            if _FRACTION_RE.match(raw):
-                attrs["correct_answer"] = raw
+            # Accept a single value OR several acceptable values (SAT grid-in: 10.25
+            # and 21/2 are both correct). Input may be a JSON list or a
+            # comma-separated string; each token is a number or a simple fraction.
+            if isinstance(correct, list):
+                tokens = [str(x).strip() for x in correct]
             else:
+                raw = "" if correct is None else str(correct).strip()
+                tokens = [t.strip() for t in raw.split(",")]
+            tokens = [t for t in tokens if t != ""]
+            if not tokens:
+                raise serializers.ValidationError({"correct_answer": "Enter a correct numeric value."})
+
+            def _coerce_numeric(tok: str):
+                if _FRACTION_RE.match(tok):
+                    return tok
                 try:
-                    attrs["correct_answer"] = float(raw) if ("." in raw or "e" in raw.lower()) else int(raw)
+                    return float(tok) if ("." in tok or "e" in tok.lower()) else int(tok)
                 except (TypeError, ValueError):
                     raise serializers.ValidationError(
-                        {"correct_answer": "Value must be a number or a fraction like 1/2."}
+                        {"correct_answer": "Each value must be a number or a fraction like 1/2."}
                     )
+
+            normalized = [_coerce_numeric(t) for t in tokens]
+            # Store a bare value for a single answer (unchanged behavior); a list only
+            # when there are genuinely several acceptable answers.
+            attrs["correct_answer"] = normalized[0] if len(normalized) == 1 else normalized
 
         elif qtype == AssessmentQuestion.TYPE_BOOLEAN and ("correct_answer" in attrs):
             if isinstance(correct, bool):

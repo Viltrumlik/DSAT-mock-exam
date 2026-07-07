@@ -62,13 +62,22 @@ def grade_answer(*, question_type: str, correct_answer: object, answer: object, 
 
     if qt == "numeric":
         a = _as_decimal(answer)
-        c = _as_decimal(correct_answer)
-        if a is None or c is None:
+        if a is None:
             return False
         tol = _as_decimal((config or {}).get("tolerance"))
-        if tol is None:
-            return a == c
-        return abs(a - c) <= tol
+        # correct_answer may be a single value or a list of acceptable values
+        # (SAT grid-in: 10.25 and 21/2 are both correct). Match if it equals ANY.
+        targets = correct_answer if isinstance(correct_answer, list) else [correct_answer]
+        for target in targets:
+            c = _as_decimal(target)
+            if c is None:
+                continue
+            if tol is None:
+                if a == c:
+                    return True
+            elif abs(a - c) <= tol:
+                return True
+        return False
 
     # short_text (default)
     if isinstance(correct_answer, list):

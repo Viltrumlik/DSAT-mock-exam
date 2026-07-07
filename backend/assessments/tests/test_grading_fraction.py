@@ -33,3 +33,28 @@ class FractionGradingTests(SimpleTestCase):
         self.assertTrue(self._num("42", "42"))
         self.assertTrue(self._num(3.14, "3.14"))
         self.assertFalse(self._num("42", "43"))
+
+
+class MultipleNumericAnswerGradingTests(SimpleTestCase):
+    """A numeric question can accept several answers (SAT grid-in)."""
+
+    def _num(self, correct, answer, config=None):
+        return grade_answer(question_type="numeric", correct_answer=correct, answer=answer, config=config or {})
+
+    def test_matches_any_value_in_list(self):
+        accepted = [10.25, "21/2"]  # 10.25 or 10.5 (21/2)
+        self.assertTrue(self._num(accepted, "10.25"))
+        self.assertTrue(self._num(accepted, "10.5"))
+        self.assertTrue(self._num(accepted, "21/2"))
+
+    def test_no_match_in_list_is_wrong(self):
+        self.assertFalse(self._num([10.25, "21/2"], "10.4"))
+        self.assertFalse(self._num([10.25, "21/2"], "abc"))
+
+    def test_list_respects_tolerance(self):
+        self.assertTrue(self._num([10.25, "21/2"], "10.3", config={"tolerance": 0.1}))
+        self.assertFalse(self._num([10.25, "21/2"], "10.9", config={"tolerance": 0.1}))
+
+    def test_single_value_list_behaves_like_scalar(self):
+        self.assertTrue(self._num(["1/2"], "0.5"))
+        self.assertFalse(self._num(["1/2"], "0.6"))
