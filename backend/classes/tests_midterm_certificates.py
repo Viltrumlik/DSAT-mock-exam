@@ -194,3 +194,21 @@ class EndpointTests(MidtermCertificateFixture):
 
         self.client.force_authenticate(self.s0)
         self.assertEqual(self.client.get(self._download_all_url()).status_code, 403)
+
+    def test_certificate_detail_json(self):
+        self._complete_all()
+        issue_certificates(self.classroom, self.midterm, self.owner)
+        cert = MidtermCertificate.objects.get(student=self.s0)
+        url = f"/api/classes/certificates/midterm/{cert.code}/"
+
+        self.client.force_authenticate(self.s0)  # owner
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(data["student_name"], "Stu Dent0")
+        self.assertEqual(data["subject_label"], "MATHEMATICS")
+        self.assertTrue(data["number"].startswith("MS-"))
+        self.assertTrue(data["teacher_name"])  # issuing teacher snapshot
+
+        self.client.force_authenticate(self.s1)  # non-owner student
+        self.assertEqual(self.client.get(url).status_code, 403)

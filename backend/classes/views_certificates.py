@@ -49,6 +49,27 @@ def serialize_certificate(cert: MidtermCertificate) -> dict:
     }
 
 
+def serialize_certificate_full(cert: MidtermCertificate) -> dict:
+    """All display fields for the certificate view page (matches the mockup)."""
+    return {
+        "code": cert.code,
+        "number": cert.number,
+        "student_name": cert.student_name,
+        "midterm_title": cert.midterm_title,
+        "subject": cert.subject,
+        "subject_label": cert.subject_label,
+        "subject_glyph": cert.subject_glyph,
+        "score": cert.score,
+        "score_ceiling": cert.score_ceiling,
+        "score_display": cert.score_display(),
+        "date": cert.date_display,
+        "teacher_name": cert.issued_by_name or "MasterSAT Instructor",
+        "rank": cert.rank,
+        "cohort_size": cert.cohort_size,
+        "download_url": cert_api_path(cert.code),
+    }
+
+
 def _safe_filename(text: str, fallback: str = "certificate") -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", (text or "").strip()).strip("_")
     return cleaned or fallback
@@ -142,6 +163,29 @@ class MidtermCertificatesDownloadAllView(_ClassroomScopedView):
         return resp
 
 
+def _cert_or_403(request, code):
+    """Fetch a certificate by code, enforcing owner|staff|admin. Returns (cert, error)."""
+    cert = get_object_or_404(
+        MidtermCertificate.objects.select_related("classroom", "mock_exam"), code=code
+    )
+    user = request.user
+    if user.id == cert.student_id or classroom_capabilities(user, cert.classroom).is_staff:
+        return cert, None
+    return None, Response({"detail": "Not allowed."}, status=http.HTTP_403_FORBIDDEN)
+
+
+class MidtermCertificateDetailView(APIView):
+    """JSON for the certificate view page (owner student | class staff | admin)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, code):
+        cert, err = _cert_or_403(request, code)
+        if err:
+            return err
+        return Response(serialize_certificate_full(cert))
+
+
 class MidtermCertificateDownloadView(APIView):
     """Download a single certificate PDF by its code.
 
@@ -152,14 +196,9 @@ class MidtermCertificateDownloadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, code):
-        cert = get_object_or_404(
-            MidtermCertificate.objects.select_related("classroom", "mock_exam"), code=code
-        )
-        user = request.user
-        is_owner = user.id == cert.student_id
-        is_staff = classroom_capabilities(user, cert.classroom).is_staff
-        if not (is_owner or is_staff):
-            return Response({"detail": "Not allowed."}, status=http.HTTP_403_FORBIDDEN)
+        cert, err = _cert_or_403(request, code)
+        if err:
+            return err
 
         pdf = render_midterm_certificate_pdf(cert)
         filename = _safe_filename(

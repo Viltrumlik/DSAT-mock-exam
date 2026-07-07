@@ -223,7 +223,8 @@ export function useIssueMidtermCertificates(classId: number, midtermId: number) 
 }
 
 export interface MyMidterm {
-  mock_exam_id: number; title: string; subject: string; scoring_scale: string;
+  mock_exam_id: number; title: string; subject: string; subject_label: string; scoring_scale: string;
+  duration_minutes: number; question_count: number;
   available_at: string | null; is_open: boolean; is_before_start: boolean;
   has_attempt: boolean; submitted: boolean; results_visible: boolean; score: number | null;
   certificate: { available: boolean; code: string | null; download_url: string | null; rank: number | null; cohort_size: number | null };

@@ -58,6 +58,8 @@ class MidtermCertificate(models.Model):
         blank=True,
         related_name="+",
     )
+    # Snapshot of the issuing teacher's name at issue time (printed as INSTRUCTOR).
+    issued_by_name = models.CharField(max_length=200, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -86,3 +88,21 @@ class MidtermCertificate(models.Model):
 
     def score_display(self) -> str:
         return f"{self.score} / {self.score_ceiling}"
+
+    @property
+    def number(self) -> str:
+        """Human certificate number, e.g. 'MS-2026-0417'."""
+        year = self.issued_at.year if self.issued_at else 0
+        return f"MS-{year}-{(self.pk or 0):04d}"
+
+    @property
+    def subject_label(self) -> str:
+        return "MATHEMATICS" if self.subject == "MATH" else "READING & WRITING"
+
+    @property
+    def subject_glyph(self) -> str:
+        return "Σ" if self.subject == "MATH" else "A"  # Σ for Math
+
+    @property
+    def date_display(self) -> str:
+        return self.issued_at.strftime("%B %d, %Y") if self.issued_at else ""

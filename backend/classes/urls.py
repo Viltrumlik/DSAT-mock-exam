@@ -31,6 +31,7 @@ from .views_certificates import (
     IssueMidtermCertificatesView,
     MidtermCertificatesDownloadAllView,
     MidtermCertificateDownloadView,
+    MidtermCertificateDetailView,
 )
 from .views_midterm_panel import MidtermPanelView, MyMidtermsView
 from .views_roster import MemberManageView
@@ -83,6 +84,7 @@ urlpatterns = [
     # Midterm control panel + certificates + scheduling
     path("my-midterms/", MyMidtermsView.as_view(), name="my-midterms"),
     path("certificates/midterm/<str:code>/download/", MidtermCertificateDownloadView.as_view(), name="midterm-certificate-download"),
+    path("certificates/midterm/<str:code>/", MidtermCertificateDetailView.as_view(), name="midterm-certificate-detail"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/panel/", MidtermPanelView.as_view(), name="class-midterm-panel"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/issue/", IssueMidtermCertificatesView.as_view(), name="class-midterm-certificates-issue"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/download-all/", MidtermCertificatesDownloadAllView.as_view(), name="class-midterm-certificates-download-all"),

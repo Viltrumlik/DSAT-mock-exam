@@ -150,6 +150,8 @@ def issue_certificates(classroom, mock_exam, actor, *, force: bool = False) -> d
     title = mock_exam.title or f"Midterm #{mock_exam.id}"
     subject = getattr(mock_exam, "midterm_subject", "") or ""
 
+    actor_valid = actor if getattr(actor, "is_authenticated", False) else None
+    actor_name = _display_name(actor) if actor_valid else ""
     users = {u.id: u for u in User.objects.filter(id__in=latest.keys())}
     certificates = []
     for student_id, attempt in latest.items():
@@ -167,7 +169,8 @@ def issue_certificates(classroom, mock_exam, actor, *, force: bool = False) -> d
                 "scoring_scale": scale,
                 "rank": ranks[student_id],
                 "cohort_size": cohort_size,
-                "issued_by": actor if getattr(actor, "is_authenticated", False) else None,
+                "issued_by": actor_valid,
+                "issued_by_name": actor_name,
             },
         )
         certificates.append(cert)

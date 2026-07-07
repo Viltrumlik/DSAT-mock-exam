@@ -255,10 +255,22 @@ class MyMidtermsView(APIView):
                 latest = sorted(completed, key=lambda x: x.created_at)[-1]
                 score = latest.score
 
+            module_count = getattr(mock, "midterm_module_count", 1) or 1
+            duration = (getattr(mock, "midterm_module1_minutes", 0) or 0)
+            if module_count >= 2:
+                duration += (getattr(mock, "midterm_module2_minutes", 0) or 0)
+            question_count = getattr(mock, "midterm_target_question_count", None) or (
+                (getattr(mock, "midterm_module_question_limit", 0) or 0) * module_count
+            )
+            subject_label = "Math" if mock.midterm_subject == "MATH" else "Reading & Writing"
+
             out.append({
                 "mock_exam_id": mid,
                 "title": mock.title or f"Midterm #{mid}",
                 "subject": mock.midterm_subject,
+                "subject_label": subject_label,
+                "duration_minutes": duration,
+                "question_count": question_count,
                 "scoring_scale": getattr(mock, "midterm_scoring_scale", MockExam.SCALE_100),
                 "available_at": available_at.isoformat() if available_at else None,
                 "is_open": is_open,

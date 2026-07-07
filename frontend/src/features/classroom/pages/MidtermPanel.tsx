@@ -70,6 +70,8 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
 
   async function downloadOne(code: string, student: string) {
     setBusyCode(code);
+    // Open the certificate view window AND download the PDF (must open synchronously).
+    window.open(`/certificate/${code}`, "_blank", "noopener");
     try {
       const blob = await classesApi.downloadCertificate(code);
       downloadBlob(blob, `certificate-${fileSlug(title)}-${fileSlug(student)}.pdf`);
