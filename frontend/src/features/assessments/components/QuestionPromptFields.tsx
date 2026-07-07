@@ -50,7 +50,7 @@ export function QuestionPromptFields({
         {draft.prompt.trim() && (
           <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/50 px-3 py-2.5">
             <p className="mb-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">Preview</p>
-            <AssessmentText text={draft.prompt} block preserveNewlines className="text-sm leading-relaxed text-foreground" />
+            <AssessmentText text={draft.prompt} block className="text-sm leading-relaxed text-foreground" />
           </div>
         )}
       </div>

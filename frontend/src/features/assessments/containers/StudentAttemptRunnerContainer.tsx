@@ -978,7 +978,6 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           <AssessmentText
             text={String(current?.prompt || "").trim() || "—"}
             block
-            preserveNewlines
             className="text-base font-semibold text-foreground leading-relaxed"
           />
           {/* Question instruction / stimulus — between the stem and the options */}
@@ -1521,7 +1520,7 @@ function ExamSimulationView({
           <StableHtml
             id="assessment-question-content"
             className={`text-lg font-normal text-slate-900 leading-relaxed font-[Georgia,serif] ${highlighterActive ? "cursor-text" : ""}`}
-            html={processInstructionalText(String(current?.prompt || "").trim() || "—", { preserveNewlines: true })}
+            html={processInstructionalText(String(current?.prompt || "").trim() || "—")}
           />
 
           {/* Question instruction / stimulus — sits BETWEEN the stem and the

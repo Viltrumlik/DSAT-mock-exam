@@ -122,7 +122,6 @@ export function SATQuestionPreview({
         <AssessmentText
           text={prompt}
           block
-          preserveNewlines
           className="text-sm font-medium leading-relaxed text-foreground"
         />
 

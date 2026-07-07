@@ -215,7 +215,6 @@ function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; i
         <AssessmentText
           text={q.prompt}
           block
-          preserveNewlines
           className="rounded-2xl border border-border bg-surface-2 p-6 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
         />
 
