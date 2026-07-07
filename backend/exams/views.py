@@ -351,12 +351,51 @@ class MockExamViewSet(viewsets.ReadOnlyModelViewSet):
         if acc_const.PERM_MANAGE_TESTS in perms or acc_const.PERM_ASSIGN_ACCESS in perms:
             return filter_mock_exams_for_user(user, base).prefetch_related(tests_prefetch)
 
-        allowed_mock_ids = PortalMockExam.objects.filter(
-            is_active=True,
-            mock_exam__is_active=True,
-            mock_exam__is_published=True,
-            assigned_users=user,
-        ).values_list("mock_exam_id", flat=True)
+        allowed_mock_ids = set(
+            PortalMockExam.objects.filter(
+                is_active=True,
+                mock_exam__is_active=True,
+                mock_exam__is_published=True,
+                assigned_users=user,
+            ).values_list("mock_exam_id", flat=True)
+        )
+        # Assigned/granted MIDTERMS are gated by the classroom grant + schedule, NOT the
+        # legacy is_published flag — so a student granted a midterm through ANY access
+        # path can open it to take it (its sections + start are otherwise gated by
+        # filter_practice_tests_for_user + the schedule guard). Mirrors the access
+        # resolution in classes.views_midterm_panel.MyMidtermsView.
+        if user.is_authenticated:
+            from access.models import ResourceAccessGrant
+            from access.resources import RT_MIDTERM
+            midterm_ids = set(
+                ResourceAccessGrant.objects.filter(
+                    user=user,
+                    scope=ResourceAccessGrant.SCOPE_RESOURCE,
+                    resource_type=RT_MIDTERM,
+                    status=ResourceAccessGrant.STATUS_ACTIVE,
+                ).values_list("resource_id", flat=True)
+            )
+            midterm_ids |= set(
+                MockExam.objects.filter(
+                    kind=MockExam.KIND_MIDTERM, assigned_users=user
+                ).values_list("id", flat=True)
+            )
+            midterm_ids |= set(
+                PortalMockExam.objects.filter(
+                    mock_exam__kind=MockExam.KIND_MIDTERM, assigned_users=user
+                ).values_list("mock_exam_id", flat=True)
+            )
+            midterm_ids |= set(
+                TestAttempt.objects.filter(
+                    student=user, mock_exam__kind=MockExam.KIND_MIDTERM
+                ).values_list("mock_exam_id", flat=True)
+            )
+            if midterm_ids:
+                allowed_mock_ids |= set(
+                    MockExam.objects.filter(
+                        id__in=midterm_ids, kind=MockExam.KIND_MIDTERM, is_active=True
+                    ).values_list("id", flat=True)
+                )
         return (
             base.filter(id__in=allowed_mock_ids)
             .prefetch_related(tests_prefetch)
