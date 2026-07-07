@@ -112,6 +112,97 @@ def _revoke_midterm_access_after_result(attempt: TestAttempt, mock) -> None:
             "midterm access revoke failed for student=%s mock=%s", student_id, getattr(mock, "pk", None)
         )
 
+def _midterm_start_guard(user, mock_exam):
+    """Return a blocking Response if the student may not START this midterm now, else None.
+
+    Rules (all conditional on a per-classroom ``MidtermSchedule`` existing — unscheduled
+    midterms behave as before):
+      - already has a completed attempt → blocked (no retake);
+      - has an active (in-progress) attempt → allowed (resume), window not re-checked;
+      - fresh start → allowed only while a schedule for one of the student's classrooms is open.
+    """
+    # No retake once completed.
+    if TestAttempt.objects.filter(student=user, mock_exam=mock_exam, is_completed=True).exists():
+        return Response(
+            {"code": "midterm_completed", "message": "You have already completed this midterm."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    # Resuming an existing in-progress attempt is always allowed.
+    has_active = (
+        TestAttempt.objects.filter(student=user, mock_exam=mock_exam, is_completed=False)
+        .exclude(current_state=TestAttempt.STATE_ABANDONED)
+        .exists()
+    )
+    if has_active:
+        return None
+
+    from classes.models import ClassroomMembership
+    from classes.models_schedule import MidtermSchedule
+
+    classroom_ids = list(
+        ClassroomMembership.objects.filter(
+            user=user, role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE
+        ).values_list("classroom_id", flat=True)
+    )
+    scheds = list(MidtermSchedule.objects.filter(mock_exam=mock_exam, classroom_id__in=classroom_ids))
+    if not scheds:
+        return None  # unscheduled → backward compatible (allow)
+
+    now = timezone.now()
+    if any(s.is_open(now) for s in scheds):
+        return None
+    future = sorted(s.available_at for s in scheds if s.available_at and s.available_at > now)
+    if future:
+        return Response(
+            {"code": "midterm_locked", "message": "This midterm has not opened yet.",
+             "available_at": future[0].isoformat()},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return Response(
+        {"code": "midterm_closed", "message": "This midterm is closed."},
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+def _midterm_results_state(student_id, mock_exam_id) -> dict:
+    """Whether the student's midterm results are released, plus certificate info.
+
+    Results are visible when no schedule exists (legacy) or a schedule has released them.
+    Best-effort — never breaks the result view.
+    """
+    state = {
+        "results_visible": True,
+        "certificate": {"available": False, "code": None, "download_url": None, "rank": None, "cohort_size": None},
+    }
+    try:
+        from classes.models import ClassroomMembership
+        from classes.models_schedule import MidtermSchedule
+        from classes.models_certificates import MidtermCertificate
+
+        classroom_ids = list(
+            ClassroomMembership.objects.filter(
+                user_id=student_id, role=ClassroomMembership.ROLE_STUDENT,
+                status=ClassroomMembership.STATUS_ACTIVE,
+            ).values_list("classroom_id", flat=True)
+        )
+        scheds = list(MidtermSchedule.objects.filter(mock_exam_id=mock_exam_id, classroom_id__in=classroom_ids))
+        if scheds:
+            state["results_visible"] = any(s.results_released for s in scheds)
+        cert = (
+            MidtermCertificate.objects.filter(student_id=student_id, mock_exam_id=mock_exam_id)
+            .order_by("-issued_at").first()
+        )
+        if cert:
+            state["certificate"] = {
+                "available": True, "code": cert.code,
+                "download_url": f"/classes/certificates/midterm/{cert.code}/download/",
+                "rank": cert.rank, "cohort_size": cert.cohort_size,
+            }
+    except Exception:  # pragma: no cover - defensive
+        pass
+    return state
+
+
 def _expected_attempt_version(request) -> int | None:
     raw = request.data.get("expected_version_number")
     if raw is None:
@@ -539,6 +630,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        # Scheduled-midterm gate: enforce the start window + no-retake (conditional on a
+        # MidtermSchedule existing; unscheduled midterms are unaffected).
+        _mock = getattr(test, "mock_exam", None)
+        if _mock is not None and _mock.kind == MockExam.KIND_MIDTERM:
+            blocked = _midterm_start_guard(user, _mock)
+            if blocked is not None:
+                return blocked
 
         # NOTE: Section-order and 10-minute break enforcement removed.
         # Students can now start any section (R&W or Math) in any order.
@@ -1101,17 +1200,27 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
         # Midterm policy: a STUDENT only ever sees their final score — never the
         # questions, their answers, or which were right/wrong. Teachers see the full
-        # breakdown through the dedicated admin results endpoint, not this one (this
-        # viewset is scoped to the caller's own attempts). Viewing the result also
-        # consumes the student's access so the midterm can't be retaken.
+        # breakdown through the dedicated admin results endpoint. The score itself is
+        # release-gated: until the teacher issues certificates, the student sees only
+        # that they submitted (no score). Retake is prevented at the start gate, so we
+        # no longer revoke access on view.
         if is_midterm:
-            _revoke_midterm_access_after_result(attempt, mock0)
+            state = _midterm_results_state(attempt.student_id, mock0.id)
+            if not state["results_visible"]:
+                return Response({
+                    'score_only': True,
+                    'released': False,
+                    'mock_kind': mock0.kind,
+                    'subject': getattr(pt0, 'subject', None),
+                })
             return Response({
                 'score_only': True,
+                'released': True,
                 'total_score': attempt.score,
                 'mock_kind': mock0.kind,
                 'scoring_scale': getattr(mock0, 'midterm_scoring_scale', MockExam.SCALE_100),
                 'subject': getattr(pt0, 'subject', None),
+                'certificate': state["certificate"],
             })
 
         module_id_param = request.query_params.get('module_id')

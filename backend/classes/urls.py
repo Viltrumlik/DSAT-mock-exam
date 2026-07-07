@@ -27,6 +27,12 @@ from .views_gradebook import GradebookOverviewView, GradebookAssignmentView
 from .views_materials import ClassroomMaterialsView, ClassroomMaterialDetailView
 from .views_assign import AssignMidtermView, AssignTeacherView, TransferOwnershipView, ClassroomGovernanceDeleteView
 from .views_results import ClassroomMidtermResultsView, ClassroomUnifiedResultsView
+from .views_certificates import (
+    IssueMidtermCertificatesView,
+    MidtermCertificatesDownloadAllView,
+    MidtermCertificateDownloadView,
+)
+from .views_midterm_panel import MidtermPanelView, MyMidtermsView
 from .views_roster import MemberManageView
 
 
@@ -74,6 +80,12 @@ urlpatterns = [
     # Classroom materials (downloadable PDF/DOCX)
     path("<int:classroom_pk>/materials/", ClassroomMaterialsView.as_view(), name="class-materials"),
     path("<int:classroom_pk>/materials/<int:material_id>/", ClassroomMaterialDetailView.as_view(), name="class-material-detail"),
+    # Midterm control panel + certificates + scheduling
+    path("my-midterms/", MyMidtermsView.as_view(), name="my-midterms"),
+    path("certificates/midterm/<str:code>/download/", MidtermCertificateDownloadView.as_view(), name="midterm-certificate-download"),
+    path("<int:classroom_pk>/midterms/<int:mock_exam_id>/panel/", MidtermPanelView.as_view(), name="class-midterm-panel"),
+    path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/issue/", IssueMidtermCertificatesView.as_view(), name="class-midterm-certificates-issue"),
+    path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/download-all/", MidtermCertificatesDownloadAllView.as_view(), name="class-midterm-certificates-download-all"),
     # Teacher gradebook
     path("<int:classroom_pk>/midterm-results/", ClassroomMidtermResultsView.as_view(), name="class-midterm-results"),
     path("<int:classroom_pk>/results/", ClassroomUnifiedResultsView.as_view(), name="class-unified-results"),

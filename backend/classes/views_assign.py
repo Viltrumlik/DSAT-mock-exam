@@ -23,13 +23,29 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+
 from access.engine.classroom_service import ClassroomAccessService
 from access.resources import RT_MIDTERM
 from exams.models import MockExam
 
 from .capabilities import classroom_capabilities
 from .models import Classroom, ClassroomMembership
+from .models_schedule import MidtermSchedule
 from .views_rankings import _ClassroomScopedView
+
+
+def _parse_schedule_dt(value):
+    """Parse an ISO/datetime-local string to an aware datetime. '' / None → None; bad → 'INVALID'."""
+    if value in (None, ""):
+        return None
+    dt = parse_datetime(value)
+    if dt is None:
+        return "INVALID"
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
 
 User = get_user_model()
 
@@ -69,8 +85,21 @@ class AssignMidtermView(_ClassroomScopedView):
                 status=http.HTTP_400_BAD_REQUEST,
             )
 
+        starts_at = _parse_schedule_dt(request.data.get("starts_at"))
+        deadline = _parse_schedule_dt(request.data.get("deadline"))
+        if "INVALID" in (starts_at, deadline):
+            return Response({"detail": "Invalid schedule datetime."}, status=http.HTTP_400_BAD_REQUEST)
+
         result = ClassroomAccessService.assign_resource_to_classroom(
             classroom, RT_MIDTERM, exam.id, actor=request.user, note="teacher midterm assignment",
+            expires_at=deadline,
+        )
+
+        # Upsert the per-classroom schedule (start countdown + deadline). Assigning never
+        # releases results — that happens when certificates are issued.
+        MidtermSchedule.objects.update_or_create(
+            classroom=classroom, mock_exam=exam,
+            defaults={"starts_at": starts_at, "deadline": deadline, "created_by": request.user},
         )
         return Response({"detail": "Midterm assigned to classroom.", **result}, status=http.HTTP_200_OK)
 

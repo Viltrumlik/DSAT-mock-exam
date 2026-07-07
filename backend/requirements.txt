@@ -19,6 +19,9 @@ Pillow==12.1.1
 # Question Bank PDF import — per-page text + embedded-image extraction
 PyMuPDF==1.27.2.3
 
+# Certificate PDF generation (midterm certificates) — pure-Python, no system libs
+reportlab==4.2.5
+
 # Config
 python-dotenv==1.2.2
 google-auth==2.40.3
