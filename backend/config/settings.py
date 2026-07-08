@@ -99,6 +99,7 @@ INSTALLED_APPS = [
     'assessments.apps.AssessmentsConfig',
     'questionbank.apps.QuestionBankConfig',
     'midterms.apps.MidtermsConfig',
+    'mocks.apps.MocksConfig',
 ]
 
 MIDDLEWARE = [
