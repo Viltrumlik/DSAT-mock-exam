@@ -32,6 +32,8 @@ _REASON_DETAIL = {
     "midterm_unpublished": "This midterm is not available yet.",
     "midterm_completed": "You have already completed this midterm.",
     "no_access": "You do not have access to this midterm.",
+    "midterm_not_open": "This midterm has not opened yet.",
+    "midterm_closed": "This midterm's deadline has passed.",
 }
 
 

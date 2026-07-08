@@ -106,11 +106,24 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
         current_state=MidtermAttempt.STATE_ABANDONED
     ).first()
     if active is not None:
-        return True, "resume"
+        return True, "resume"  # an in-progress attempt is always resumable
     if has_completed_attempt(user, midterm):
         return False, "midterm_completed"
-    if int(midterm.id) not in granted_midterm_ids(user):
+    grant = winning_grant(user, midterm)
+    if grant is None:
         return False, "no_access"
+    # Classroom flavor respects the scheduled access window (standalone has no schedule).
+    if grant.classroom_id:
+        try:
+            from classes.models_schedule import MidtermSchedule
+
+            sched = MidtermSchedule.objects.filter(
+                classroom_id=grant.classroom_id, midterm=midterm
+            ).first()
+            if sched is not None and not sched.is_open():
+                return False, ("midterm_not_open" if sched.is_before_start() else "midterm_closed")
+        except Exception:  # pragma: no cover - defensive
+            pass
     return True, "ok"
 
 

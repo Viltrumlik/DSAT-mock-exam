@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import MidtermAttemptViewSet
+from .views_student import MyMidtermsView
 from .views_teacher import (
     MidtermCatalogView,
     MidtermGrantView,
@@ -13,6 +14,8 @@ router = DefaultRouter()
 router.register(r"attempts", MidtermAttemptViewSet, basename="midterm-attempt")
 
 urlpatterns = [
+    # Student list of accessible midterms (both flavors).
+    path("mine/", MyMidtermsView.as_view(), name="midterm-my-list"),
     # Teacher standalone-midterm area (grant access + results).
     path("teacher/midterms/", MidtermCatalogView.as_view(), name="midterm-teacher-catalog"),
     path("teacher/midterms/<int:pk>/grant/", MidtermGrantView.as_view(), name="midterm-teacher-grant"),
