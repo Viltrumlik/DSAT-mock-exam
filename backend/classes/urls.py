@@ -34,6 +34,13 @@ from .views_certificates import (
     MidtermCertificateDetailView,
 )
 from .views_midterm_panel import MidtermPanelView, MyMidtermsView
+from .views_midterm_v2 import (
+    AssignMidtermV2View,
+    ClassroomMidtermsV2ListView,
+    IssueMidtermV2CertificatesView,
+    MidtermV2CertificatesDownloadAllView,
+    MidtermV2PanelView,
+)
 from .views_roster import MemberManageView
 
 
@@ -88,6 +95,12 @@ urlpatterns = [
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/panel/", MidtermPanelView.as_view(), name="class-midterm-panel"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/issue/", IssueMidtermCertificatesView.as_view(), name="class-midterm-certificates-issue"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/download-all/", MidtermCertificatesDownloadAllView.as_view(), name="class-midterm-certificates-download-all"),
+    # New separated-midterm (midterms.Midterm) classroom flavor
+    path("<int:classroom_pk>/midterms-v2/", ClassroomMidtermsV2ListView.as_view(), name="class-midterm-v2-list"),
+    path("<int:classroom_pk>/midterms-v2/assign/", AssignMidtermV2View.as_view(), name="class-midterm-v2-assign"),
+    path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/certificates/download-all/", MidtermV2CertificatesDownloadAllView.as_view(), name="class-midterm-v2-download-all"),
+    path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/panel/", MidtermV2PanelView.as_view(), name="class-midterm-v2-panel"),
+    path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/certificates/issue/", IssueMidtermV2CertificatesView.as_view(), name="class-midterm-v2-issue"),
     # Teacher gradebook
     path("<int:classroom_pk>/midterm-results/", ClassroomMidtermResultsView.as_view(), name="class-midterm-results"),
     path("<int:classroom_pk>/results/", ClassroomUnifiedResultsView.as_view(), name="class-unified-results"),

@@ -2,19 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, ArrowRight, Download, Lock } from "lucide-react";
 import { classesApi } from "@/lib/api";
+import { midtermApi, subjectLabel, type MidtermRow } from "@/lib/midtermApi";
 import { downloadBlob } from "@/lib/download";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
-import { useMyMidterms, type MyMidterm } from "@/features/classroom/hooks";
-import { classroomKeys } from "@/features/classroom/queryKeys";
 
 /**
  * Student midterm page — matches the MasterSAT "Midterm" mockup 1:1 (filter tabs +
  * timeline sections). Schedule-aware states: Available (Enter) · Scheduled (countdown) ·
- * Past (score + certificate once released).
+ * Past (score + certificate once released). Backed by the new /api/midterms system.
  */
 
 const C = { navy: "#0f1729", blue: "#2a68c0", blueHover: "#21539e", slate: "#64748b", border: "#e7ebf3" };
@@ -36,20 +35,16 @@ function useCountdown(targetIso: string | null) {
 }
 
 const fmtDuration = (min: number) => (!min ? null : min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}m`);
-const scaleMax = (s: string) => (s === "SCALE_800" ? 800 : 100);
 
 function Badge({ text, bg, color }: { text: string; bg: string; color: string }) {
   return <span className="rounded-md px-2.5 py-0.5 text-[11px] font-bold" style={{ background: bg, color }}>{text}</span>;
 }
 
-function Row({ m, kind, onUnlock }: { m: MyMidterm; kind: "available" | "scheduled" | "past"; onUnlock: () => void }) {
+function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "scheduled" | "past"; onUnlock: () => void }) {
   const router = useRouter();
   const cd = useCountdown(kind === "scheduled" ? m.available_at : null);
   const [busy, setBusy] = useState(false);
   const unlocked = kind === "scheduled" && cd.done;
-  // Fire the unlock refetch at most once per row. `onUnlock` is recreated every
-  // render, so without this latch a scheduled midterm that stays in the bucket
-  // (closed/undated window) would refetch → re-render → refetch in a tight loop.
   const unlockFiredRef = useRef(false);
   useEffect(() => {
     if (unlocked && !unlockFiredRef.current) {
@@ -58,25 +53,38 @@ function Row({ m, kind, onUnlock }: { m: MyMidterm; kind: "available" | "schedul
     }
   }, [unlocked, onUnlock]);
 
-  const meta = [fmtDuration(m.duration_minutes), m.question_count ? `${m.question_count} questions` : null, m.subject_label]
+  const meta = [fmtDuration(m.duration_minutes), m.question_count ? `${m.question_count} questions` : null, subjectLabel(m.subject)]
     .filter(Boolean).join(" · ");
 
   const dot = kind === "available" ? C.blue : kind === "past" ? "#0b7a4f" : "#94a3b8";
-  const enter = () => router.push(`/mock/${m.mock_exam_id}?midterm=1`);
+
+  async function enter() {
+    setBusy(true);
+    try {
+      const attemptId = await midtermApi.createAttempt(m.midterm_id);
+      router.push(`/exam/${attemptId}?src=midterm&welcome=1`);
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+      setBusy(false);
+    }
+  }
 
   async function download() {
-    if (!m.certificate.code) return;
+    const code = m.certificate?.code;
+    if (!code) return;
     setBusy(true);
-    window.open(`/certificate/${m.certificate.code}`, "_blank", "noopener");
+    window.open(`/certificate/${code}`, "_blank", "noopener");
     try {
-      const blob = await classesApi.downloadCertificate(m.certificate.code);
-      downloadBlob(blob, `certificate-${m.certificate.code}.pdf`);
+      const blob = await classesApi.downloadCertificate(code);
+      downloadBlob(blob, `certificate-${code}.pdf`);
     } catch (e) {
       pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
     } finally {
       setBusy(false);
     }
   }
+
+  const hasAttempt = m.attempt_id != null && m.state !== "NOT_STARTED";
 
   return (
     <div className="relative pl-7">
@@ -93,10 +101,9 @@ function Row({ m, kind, onUnlock }: { m: MyMidterm; kind: "available" | "schedul
           <p className="mt-0.5 text-[13px] font-semibold" style={{ color: C.slate }}>{meta}</p>
         </div>
 
-        {/* Right action */}
         {kind === "available" || unlocked ? (
-          <button onClick={enter} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90" style={{ background: C.blue }}>
-            {m.has_attempt ? "Resume timed mock" : "Enter timed mock"} <ArrowRight className="h-4 w-4" />
+          <button onClick={enter} disabled={busy} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60" style={{ background: C.blue }}>
+            {busy ? "…" : hasAttempt ? "Resume timed mock" : "Enter timed mock"} <ArrowRight className="h-4 w-4" />
           </button>
         ) : kind === "scheduled" ? (
           <div className="shrink-0 text-right">
@@ -109,9 +116,9 @@ function Row({ m, kind, onUnlock }: { m: MyMidterm; kind: "available" | "schedul
           <div className="flex shrink-0 items-center gap-4">
             <div className="text-right leading-none">
               <span className="text-[20px] font-extrabold" style={{ color: C.navy }}>{m.score ?? "—"}</span>
-              <span className="text-[12px] font-semibold text-slate-400"> /{scaleMax(m.scoring_scale)}</span>
+              <span className="text-[12px] font-semibold text-slate-400"> /{m.score_ceiling}</span>
             </div>
-            {m.certificate.available && (
+            {m.certificate?.available && (
               <button onClick={download} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition hover:bg-slate-50 disabled:opacity-60" style={{ borderColor: C.border, color: C.navy }}>
                 <Download className="h-4 w-4" /> {busy ? "…" : "Download"}
               </button>
@@ -145,12 +152,12 @@ function Section({ title, count, dot, children }: { title: string; count: number
 type Tab = "all" | "available" | "scheduled" | "past";
 
 export default function MidtermList() {
-  const { data, isLoading } = useMyMidterms();
+  const { data, isLoading } = useQuery({ queryKey: ["midterm", "mine"], queryFn: midtermApi.myMidterms });
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("all");
-  const refetch = () => qc.invalidateQueries({ queryKey: classroomKeys.myMidterms() });
+  const refetch = () => qc.invalidateQueries({ queryKey: ["midterm", "mine"] });
 
-  const midterms = useMemo(() => data?.midterms ?? [], [data]);
+  const midterms = useMemo(() => data ?? [], [data]);
   const available = midterms.filter((m) => m.is_open && !m.submitted);
   const scheduled = midterms.filter((m) => !m.is_open && !m.submitted);
   const past = midterms.filter((m) => m.submitted);
@@ -190,17 +197,17 @@ export default function MidtermList() {
           <>
             {show("available") && (
               <Section title="Available now" count={available.length} dot={C.blue}>
-                {available.map((m) => <Row key={m.mock_exam_id} m={m} kind="available" onUnlock={refetch} />)}
+                {available.map((m) => <Row key={m.midterm_id} m={m} kind="available" onUnlock={refetch} />)}
               </Section>
             )}
             {show("scheduled") && (
               <Section title="Scheduled" count={scheduled.length} dot="#94a3b8">
-                {scheduled.map((m) => <Row key={m.mock_exam_id} m={m} kind="scheduled" onUnlock={refetch} />)}
+                {scheduled.map((m) => <Row key={m.midterm_id} m={m} kind="scheduled" onUnlock={refetch} />)}
               </Section>
             )}
             {show("past") && (
               <Section title="Past attempts" count={past.length} dot="#0b7a4f">
-                {past.map((m) => <Row key={m.mock_exam_id} m={m} kind="past" onUnlock={refetch} />)}
+                {past.map((m) => <Row key={m.midterm_id} m={m} kind="past" onUnlock={refetch} />)}
               </Section>
             )}
           </>

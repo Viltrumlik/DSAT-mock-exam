@@ -2,7 +2,7 @@
 import { useCallback, useRef, useState } from "react";
 import { isAxiosError } from "axios";
 import { type Attempt, InvalidAttemptPayloadError, parseAttempt } from "../types";
-import { examApi } from "../services/examApiClient";
+import { type ExamApi, examApi } from "../services/examApiClient";
 import { clearDraft } from "../services/draftStore";
 import { submitKey } from "../utils/idempotency";
 
@@ -13,6 +13,8 @@ interface UseModuleSubmitArgs {
   flagged: number[];
   applyAttempt: (next: Attempt) => void;
   assertCriticalAuth: () => boolean;
+  /** Attempt-engine client. Defaults to the pastpaper/mock client; midterm passes its own. */
+  api?: ExamApi;
 }
 
 interface UseModuleSubmitResult {
@@ -41,6 +43,7 @@ export function useModuleSubmit({
   flagged,
   applyAttempt,
   assertCriticalAuth,
+  api = examApi,
 }: UseModuleSubmitArgs): UseModuleSubmitResult {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -81,7 +84,7 @@ export function useModuleSubmit({
     // Watchdog: if the POST hangs, see whether the backend already advanced.
     const watchdog = setTimeout(async () => {
       try {
-        const snap = await examApi.getStatus(attemptId);
+        const snap = await api.getStatus(attemptId);
         if (snap.version_number > baseVersion || snap.is_completed || snap.current_state === "SCORING") {
           finish(snap);
         }
@@ -93,7 +96,7 @@ export function useModuleSubmit({
     const attemptSubmit = async (retry = 0): Promise<void> => {
       if (settled) return;
       try {
-        const snap = await examApi.submitModule(attemptId, ans, flg, {
+        const snap = await api.submitModule(attemptId, ans, flg, {
           idempotencyKey: retry === 0 ? key : `${key}.r${retry}`,
           expectedVersionNumber: baseVersion,
         });
@@ -111,7 +114,7 @@ export function useModuleSubmit({
               const conflict = parseAttempt(rawAttempt, "submit 409 body");
               applyAttempt(conflict);
               if (conflict.current_state === "MODULE_1_ACTIVE" && retry === 0) {
-                const snap2 = await examApi.submitModule(attemptId, ans, flg, {
+                const snap2 = await api.submitModule(attemptId, ans, flg, {
                   idempotencyKey: `${submitKey(attemptId, conflict.current_module_details?.id ?? moduleId, conflict.version_number)}.retry`,
                   expectedVersionNumber: conflict.version_number,
                 });
@@ -136,7 +139,7 @@ export function useModuleSubmit({
         // submit never landed, and silently finishing would strand the student
         // on a "submitted" exam that didn't move.
         try {
-          const snap = await examApi.getStatus(attemptId);
+          const snap = await api.getStatus(attemptId);
           if (snap.version_number > baseVersion || snap.is_completed || snap.current_state === "SCORING") {
             finish(snap);
             return;
@@ -158,7 +161,7 @@ export function useModuleSubmit({
 
     await attemptSubmit();
     clearTimeout(watchdog);
-  }, [attemptId, attempt, answers, flagged, applyAttempt, assertCriticalAuth]);
+  }, [attemptId, attempt, answers, flagged, applyAttempt, assertCriticalAuth, api]);
 
   return { submit, submitting, submitError, clearSubmitError: useCallback(() => setSubmitError(null), []) };
 }

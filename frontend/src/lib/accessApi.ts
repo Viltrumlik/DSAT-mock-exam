@@ -16,8 +16,9 @@ export const SUBJECT_SCOPED_TYPES = new Set(["practice_test_pack"]);
 /** Resource types intentionally hidden from the access-console picker.
  *  practice_test IS shown now: pastpaper packs were removed, so standalone sections
  *  (grouped by collection_name) are granted individually. module/assessment_set stay
- *  hidden (granted indirectly / not assignable from this console). */
-export const HIDDEN_PICKER_TYPES = new Set(["module", "assessment_set"]);
+ *  hidden (granted indirectly / not assignable from this console). midterm/midterm_v2
+ *  are managed from the TEACHER panel (classroom-assign + standalone grant), never here. */
+export const HIDDEN_PICKER_TYPES = new Set(["module", "assessment_set", "midterm", "midterm_v2"]);
 export type GrantStatus = "ACTIVE" | "REVOKED" | "EXPIRED";
 export type GrantSource = "MANUAL" | "BULK" | "CLASSROOM" | "PURCHASE" | "SYSTEM";
 

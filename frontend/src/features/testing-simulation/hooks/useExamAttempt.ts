@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Attempt, ATTEMPT_STATE, InvalidAttemptPayloadError } from "../types";
-import { examApi } from "../services/examApiClient";
+import { type ExamApi, examApi } from "../services/examApiClient";
 import { isScoring, mergeAttempt } from "../state/attemptMerge";
 import { startKey } from "../utils/idempotency";
 import { useServerClock } from "./useServerClock";
@@ -18,6 +18,8 @@ interface UseExamAttemptArgs {
    * Start button). Defaults to true to preserve the legacy auto-start flow.
    */
   autoStart?: boolean;
+  /** Attempt-engine client. Defaults to the pastpaper/mock client; midterm passes its own. */
+  api?: ExamApi;
 }
 
 export interface UseExamAttemptResult {
@@ -40,7 +42,7 @@ export interface UseExamAttemptResult {
  * go through `applyAttempt`, which enforces the forward-only merge guard and
  * recalibrates the server clock.
  */
-export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled = true, autoStart = true }: UseExamAttemptArgs): UseExamAttemptResult {
+export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled = true, autoStart = true, api = examApi }: UseExamAttemptArgs): UseExamAttemptResult {
   const clock = useServerClock();
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,17 +73,17 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
   const start = useCallback(async () => {
     if (!assertCriticalAuth()) return;
     try {
-      const snap = await examApi.start(attemptId, startKey(attemptId));
+      const snap = await api.start(attemptId, startKey(attemptId));
       applyAttempt(snap);
     } catch (e) {
       if (e instanceof InvalidAttemptPayloadError) console.error(e);
     }
     try {
-      applyAttempt(await examApi.getStatus(attemptId));
+      applyAttempt(await api.getStatus(attemptId));
     } catch {
       /* background polling will reconcile */
     }
-  }, [attemptId, assertCriticalAuth, applyAttempt]);
+  }, [attemptId, assertCriticalAuth, applyAttempt, api]);
 
   // ── Initial load (+ engine start for NOT_STARTED) ──────────────────────────
   useEffect(() => {
@@ -89,7 +91,7 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
     (async () => {
       try {
         setError(null);
-        let snap = await examApi.getStatus(attemptId);
+        let snap = await api.getStatus(attemptId);
         if (cancelled) return;
         applyAttempt(snap);
 
@@ -99,12 +101,12 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
             return;
           }
           try {
-            snap = await examApi.start(attemptId, startKey(attemptId));
+            snap = await api.start(attemptId, startKey(attemptId));
             if (!cancelled) applyAttempt(snap);
           } catch (e) {
             if (e instanceof InvalidAttemptPayloadError) console.error(e);
           }
-          snap = await examApi.getStatus(attemptId);
+          snap = await api.getStatus(attemptId);
           if (cancelled) return;
           applyAttempt(snap);
         }
@@ -140,7 +142,7 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
 
     const tick = async () => {
       try {
-        const snap = await examApi.getStatus(attemptId);
+        const snap = await api.getStatus(attemptId);
         if (cancelled) return; // discard stale in-flight response
         applyAttempt(snap);
         if (snap.is_expired && !snap.is_completed) {

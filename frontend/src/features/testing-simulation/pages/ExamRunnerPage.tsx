@@ -11,7 +11,8 @@ import { useModuleSubmit } from "../hooks/useModuleSubmit";
 import { useAutosave } from "../hooks/useAutosave";
 import { useMathRendering } from "../hooks/useMathRendering";
 
-import { examApi } from "../services/examApiClient";
+import { examApi, midtermExamApi, mockExamApi } from "../services/examApiClient";
+import { mockApi } from "@/lib/mockApi";
 import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attemptMerge";
 import { isMath, moduleLabel, pauseAllowed, questions as selectQuestions, subjectKind } from "../state/selectors";
 import { FIVE_MINUTE_WARNING_SECONDS } from "../utils/time";
@@ -27,6 +28,7 @@ import { QuestionNavigator } from "../components/QuestionNavigator";
 import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
 import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusScreens";
 import { WelcomeScreen } from "../components/WelcomeScreen";
+import { MockBreakScreen } from "../components/MockBreakScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
 import { CheckYourWorkPage } from "../components/CheckYourWorkPage";
 import { StudentProducedResponseGuide } from "../components/StudentProducedResponseGuide";
@@ -66,6 +68,11 @@ export function ExamRunnerPage() {
   // Fresh pastpaper starts arrive with ?welcome=1 (set by the pastpaper card);
   // resumes don't, so they skip the welcome screen.
   const welcomeParam = search.get("welcome") === "1";
+  // The separated midterm/mock reuse this runner (identical protocol) but talk to their own
+  // backends. Selected by ?src=midterm (or legacy ?midterm=1) / ?src=mock.
+  const isMidtermSrc = search.get("src") === "midterm" || search.get("midterm") === "1";
+  const isMockSrc = search.get("src") === "mock";
+  const engineApi = isMockSrc ? mockExamApi : isMidtermSrc ? midtermExamApi : examApi;
 
   const { assertCriticalAuth } = useAuthCriticalGate();
   // Load-error recovery actions are admin-only; students never see a Retry button.
@@ -91,6 +98,7 @@ export function ExamRunnerPage() {
     // screen; mock-exam flow keeps its existing auto-start (it has its own
     // break/intro orchestration upstream).
     autoStart: mockFlow,
+    api: engineApi,
   });
 
   const { answers, flagged, eliminated, currentIndex, moduleId, selectAnswer, toggleFlag, toggleEliminate, goTo, next, prev } =
@@ -311,6 +319,7 @@ export function ExamRunnerPage() {
     flagged,
     applyAttempt,
     assertCriticalAuth,
+    api: engineApi,
   });
 
   const onExpire = useCallback(() => {
@@ -337,6 +346,7 @@ export function ExamRunnerPage() {
     applyAttempt,
     enabled: !submitting && transitionTo === null && !(paused && pauseAllowed(attempt, mockFlow)) && !multiTab.blocked,
     online,
+    api: engineApi,
   });
 
   const mathQuestions = isMath(attempt);
@@ -413,14 +423,18 @@ export function ExamRunnerPage() {
       router.push(`/mock/${meid}/results${qs}`);
       return;
     }
-    // Midterms never show a result inline: the student returns to the midterm page and
-    // sees their score only after the teacher releases it (by issuing certificates).
-    if (isMidtermExam || search.get("midterm") === "1") {
-      router.push(`/midterm`);
+    // Midterms route to their own result page: standalone shows the score + certificate
+    // immediately; a classroom midterm shows "awaiting release" until the teacher publishes.
+    if (isMidtermExam || isMidtermSrc) {
+      router.push(`/midterm/result/${attemptId}`);
+      return;
+    }
+    if (isMockSrc) {
+      router.push(`/mock-exam/result/${attemptId}`);
       return;
     }
     router.push(`/review/${attemptId}`);
-  }, [attempt, mockFlow, search, router, attemptId, isMidtermExam]);
+  }, [attempt, mockFlow, search, router, attemptId, isMidtermExam, isMidtermSrc, isMockSrc]);
 
   // ── Resizable split divider ─────────────────────────────────────────────────
   const mainRef = useRef<HTMLDivElement | null>(null);
@@ -456,12 +470,12 @@ export function ExamRunnerPage() {
     const nextPaused = !paused;
     setPaused(nextPaused); // optimistic
     try {
-      const snap = nextPaused ? await examApi.pause(attemptId) : await examApi.resumePause(attemptId);
+      const snap = nextPaused ? await engineApi.pause(attemptId) : await engineApi.resumePause(attemptId);
       applyAttempt(snap);
     } catch {
       setPaused(!nextPaused); // revert on failure
     }
-  }, [attempt, mockFlow, paused, attemptId, applyAttempt]);
+  }, [attempt, mockFlow, paused, attemptId, applyAttempt, engineApi]);
 
   // ── Save & Exit ─────────────────────────────────────────────────────────────
   // Force-majeure stop: persist current work (and pause the clock where allowed),
@@ -473,18 +487,18 @@ export function ExamRunnerPage() {
     try {
       if (attempt && pauseAllowed(attempt, mockFlow)) {
         try {
-          applyAttempt(await examApi.pause(attemptId));
+          applyAttempt(await engineApi.pause(attemptId));
         } catch {
           /* best-effort pause */
         }
       }
-      applyAttempt(await examApi.saveAttempt(attemptId, answers, flagged, { expectedVersionNumber: attempt?.version_number }));
+      applyAttempt(await engineApi.saveAttempt(attemptId, answers, flagged, { expectedVersionNumber: attempt?.version_number }));
     } catch {
       /* progress is also continuously autosaved; proceed to exit regardless */
     } finally {
       router.push("/");
     }
-  }, [attempt, mockFlow, attemptId, answers, flagged, applyAttempt, router]);
+  }, [attempt, mockFlow, attemptId, answers, flagged, applyAttempt, router, engineApi]);
 
   // Keep the off-fullscreen kick action current without restarting the countdown
   // when handleSaveAndExit's identity changes (e.g. on autosave).
@@ -506,7 +520,7 @@ export function ExamRunnerPage() {
     const order = attempt.current_module_details?.module_order ?? 0;
     if (order <= 0 || isCompleted(attempt) || paused || submitting || exiting) return;
     setPaused(true); // freeze the local countdown immediately
-    examApi.pauseKeepalive(attemptId); // persist; keepalive survives a tab close
+    engineApi.pauseKeepalive(attemptId); // persist; keepalive survives a tab close
   };
   useEffect(() => {
     const onVisibility = () => {
@@ -547,6 +561,23 @@ export function ExamRunnerPage() {
   }
   if (transitionTo !== null) {
     return <ModuleTransitionOverlay toModuleOrder={transitionTo} subjectLabel={moduleLabel(attempt)} />;
+  }
+  // Full-mock between-sections break (server-authoritative timer).
+  if (isMockSrc && attempt && (attempt as unknown as { is_on_break?: boolean }).is_on_break) {
+    const remaining = (attempt as unknown as { break_remaining_seconds?: number }).break_remaining_seconds ?? 0;
+    return (
+      <MockBreakScreen
+        initialSeconds={remaining}
+        onEnd={async () => {
+          try {
+            await mockApi.endBreak(attemptId);
+          } catch {
+            /* the reload below reconciles from the server */
+          }
+          reload();
+        }}
+      />
+    );
   }
   if (isScoring(attempt)) {
     return <ScoringScreen notice={null} />;
@@ -626,12 +657,11 @@ export function ExamRunnerPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-slate-100">
-      {/* Center the whole simulation as one balanced white sheet (header + panes +
-          footer) on a light canvas, so it never sprawls edge-to-edge on wide screens.
-          Shared by every exam type (pastpaper / practice / midterm) since they all
-          render this runner. */}
-      <div className="mx-auto flex h-full w-full max-w-[1200px] flex-col bg-white shadow-sm">
+    <div className="flex h-screen flex-col bg-white">
+      {/* The simulation fills the full viewport edge-to-edge — no side gutters or capped
+          width. Shared by every exam type (pastpaper / practice / midterm / mock) since
+          they all render this runner. */}
+      <div className="flex h-full w-full flex-col bg-white">
       <ExamHeader
         moduleTitle={moduleLabel(attempt)}
         secondsLeft={secondsLeft}

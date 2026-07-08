@@ -98,6 +98,8 @@ INSTALLED_APPS = [
     'vocabulary',
     'assessments.apps.AssessmentsConfig',
     'questionbank.apps.QuestionBankConfig',
+    'midterms.apps.MidtermsConfig',
+    'mocks.apps.MocksConfig',
 ]
 
 MIDDLEWARE = [

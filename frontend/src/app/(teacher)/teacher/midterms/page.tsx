@@ -1,12 +1,5 @@
-import { ClassroomPickerList } from "@/features/classroom/pages/ClassroomPickerList";
+import { StandaloneMidtermsList } from "@/features/midterm/StandaloneMidterms";
 
 export default function TeacherMidtermsPage() {
-  return (
-    <ClassroomPickerList
-      tab="midterms"
-      title="Midterms"
-      description="Pick a classroom to assign an existing interactive midterm and review results."
-    />
-  );
+  return <StandaloneMidtermsList />;
 }
-

@@ -697,10 +697,16 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
         if module is not None:
             pt = module.practice_test
-            exam = getattr(pt, "mock_exam", None)
-            if exam is None and pt.mock_exam_id:
+            # A midterm owns a standalone Module (practice_test=NULL) via the reverse
+            # ``module.midterm`` accessor (Django makes RelatedObjectDoesNotExist subclass
+            # AttributeError, so getattr-with-default is safe). Such questions are exempt
+            # from SAT rules, exactly like the legacy MockExam(kind=MIDTERM) case.
+            owned_by_midterm = getattr(module, "midterm", None) is not None
+            exam = getattr(pt, "mock_exam", None) if pt is not None else None
+            if exam is None and pt is not None and pt.mock_exam_id:
                 exam = MockExam.objects.filter(pk=pt.mock_exam_id).first()
-            if exam is not None and exam.kind == MockExam.KIND_MIDTERM:
+            is_midterm = owned_by_midterm or (exam is not None and exam.kind == MockExam.KIND_MIDTERM)
+            if is_midterm:
                 # Midterms are graded as a percentage of the actual total (SCALE_100 =
                 # correct/total × 100, weight-independent; SCALE_800 = proportional), so
                 # there is no fixed total-points cap and per-question points are free —
@@ -715,7 +721,6 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
             # question_type matches the section subject.  Midterms are exempt
             # (institution-controlled, flexible authoring).
             from .sat_rules import is_question_type_allowed, allowed_question_types_for_subject
-            is_midterm = exam is not None and exam.kind == MockExam.KIND_MIDTERM
             if not is_midterm:
                 q_type = attrs.get("question_type")
                 if self.instance is not None and q_type is None:

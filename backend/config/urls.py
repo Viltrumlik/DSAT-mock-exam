@@ -44,4 +44,6 @@ urlpatterns = [
     path("api/vocab/", include("vocabulary.vocab_urls")),
     path('api/assessments/', include('assessments.urls')),
     path('api/questionbank/', include('questionbank.urls')),
+    path('api/midterms/', include('midterms.urls')),
+    path('api/mocks/', include('mocks.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
