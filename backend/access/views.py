@@ -406,6 +406,11 @@ class EngineGrantResourceView(APIView):
         targets, err = _merge_targets_from_payload(data)
         if err:
             return Response({"detail": err}, status=400)
+        if any(not resources.is_admin_grantable(t[0]) for t in targets):
+            return Response(
+                {"detail": "Midterm access is managed from the teacher panel, not the admin console."},
+                status=403,
+            )
         ok, serr = _targets_within_actor_scope(request.user, targets)
         if not ok:
             return Response({"detail": serr}, status=403)
@@ -438,6 +443,11 @@ class EngineGrantClassroomView(APIView):
         targets, err = _merge_targets_from_payload(data)
         if err:
             return Response({"detail": err}, status=400)
+        if any(not resources.is_admin_grantable(t[0]) for t in targets):
+            return Response(
+                {"detail": "Midterm access is managed from the teacher panel, not the admin console."},
+                status=403,
+            )
         ok, serr = _targets_within_actor_scope(request.user, targets)
         if not ok:
             return Response({"detail": serr}, status=403)
@@ -495,7 +505,7 @@ class EngineResourceSearchView(APIView):
     def get(self, request):
         rt_key = str(request.query_params.get("type") or "").strip()
         rt = resources.get(rt_key)
-        if rt is None:
+        if rt is None or not resources.is_admin_grantable(rt_key):
             return Response({"detail": "Unknown or missing ?type."}, status=400)
         q = (request.query_params.get("q") or "").strip()
         try:
@@ -544,4 +554,6 @@ class EngineResourceTypesView(APIView):
     permission_classes = [HasManageUsersOrAssignTestAccess]
 
     def get(self, request):
-        return Response({"results": sorted(rt.key for rt in resources.all_types())})
+        return Response(
+            {"results": sorted(rt.key for rt in resources.all_types() if resources.is_admin_grantable(rt.key))}
+        )

@@ -29,6 +29,10 @@ RT_MIDTERM = "midterm"
 RT_PRACTICE_TEST_PACK = "practice_test_pack"
 RT_ASSESSMENT_SET = "assessment_set"
 RT_MODULE = "module"
+# NEW separated single-module midterm (midterms.Midterm). The legacy RT_MIDTERM
+# ("midterm") stays bound to exams.MockExam until the data migration re-keys grants,
+# so the two systems run in parallel with zero cross-talk during the cutover.
+RT_MIDTERM_V2 = "midterm_v2"
 
 # MockExam.kind values (string literals to avoid importing exams.models at load).
 _MOCK_KIND_FULL = "MOCK_SAT"
@@ -86,6 +90,14 @@ def _practice_test_domains(pt) -> list[str]:
 def _module_domains(mod) -> list[str]:
     pt = getattr(mod, "practice_test", None)
     return _practice_test_domains(pt) if pt is not None else []
+
+
+def _midterm_v2_domains(m) -> list[str]:
+    return _platform_to_domain_single(getattr(m, "subject", None))
+
+
+def _midterm_v2_subject_qs(qs, domains):
+    return qs.filter(subject__in=_domains_to_platforms(domains))
 
 
 def _mock_exam_domains(exam) -> list[str]:
@@ -312,3 +324,22 @@ register(
         subject_queryset_resolver=_module_subject_qs,
     )
 )
+register(
+    ResourceType(
+        RT_MIDTERM_V2,
+        "midterms.Midterm",
+        _midterm_v2_domains,
+        is_published_resolver=lambda m: bool(getattr(m, "is_published", False)),
+        subject_queryset_resolver=_midterm_v2_subject_qs,
+    )
+)
+
+
+# Midterm access is owned by the TEACHER panel (classroom-assign + standalone per-student
+# grant), never the admin /ops/access console. Both midterm resource types stay in the
+# registry (so the resolver + labels keep working) but are hidden from admin granting.
+ADMIN_GRANT_EXCLUDED_TYPES = frozenset({RT_MIDTERM, RT_MIDTERM_V2})
+
+
+def is_admin_grantable(resource_type: str) -> bool:
+    return resource_type not in ADMIN_GRANT_EXCLUDED_TYPES

@@ -17,7 +17,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from access.models import ResourceAccessGrant
-from access.resources import RT_MIDTERM
+from access.resources import RT_MIDTERM_V2
 
 from .models import Midterm, MidtermAttempt
 
@@ -30,7 +30,7 @@ def _active_resource_grants(user):
     return ResourceAccessGrant.objects.filter(
         user=user,
         scope=ResourceAccessGrant.SCOPE_RESOURCE,
-        resource_type=RT_MIDTERM,
+        resource_type=RT_MIDTERM_V2,
         status=ResourceAccessGrant.STATUS_ACTIVE,
     ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
 

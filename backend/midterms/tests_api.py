@@ -36,10 +36,12 @@ def make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a"):
 
 
 def grant(user, midterm, classroom=None):
+    from access.resources import RT_MIDTERM_V2
+
     return ResourceAccessGrant.objects.create(
         user=user,
         scope=ResourceAccessGrant.SCOPE_RESOURCE,
-        resource_type="midterm",
+        resource_type=RT_MIDTERM_V2,
         resource_id=midterm.id,
         status=ResourceAccessGrant.STATUS_ACTIVE,
         classroom=classroom,

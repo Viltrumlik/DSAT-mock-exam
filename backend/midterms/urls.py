@@ -1,8 +1,21 @@
+from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import MidtermAttemptViewSet
+from .views_teacher import (
+    MidtermCatalogView,
+    MidtermGrantView,
+    MidtermRevokeView,
+    MidtermStandaloneResultsView,
+)
 
 router = DefaultRouter()
 router.register(r"attempts", MidtermAttemptViewSet, basename="midterm-attempt")
 
-urlpatterns = router.urls
+urlpatterns = [
+    # Teacher standalone-midterm area (grant access + results).
+    path("teacher/midterms/", MidtermCatalogView.as_view(), name="midterm-teacher-catalog"),
+    path("teacher/midterms/<int:pk>/grant/", MidtermGrantView.as_view(), name="midterm-teacher-grant"),
+    path("teacher/midterms/<int:pk>/revoke/", MidtermRevokeView.as_view(), name="midterm-teacher-revoke"),
+    path("teacher/midterms/<int:pk>/results/", MidtermStandaloneResultsView.as_view(), name="midterm-teacher-results"),
+] + router.urls
