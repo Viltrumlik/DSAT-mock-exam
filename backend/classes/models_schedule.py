@@ -28,8 +28,13 @@ class MidtermSchedule(models.Model):
     classroom = models.ForeignKey(
         "classes.Classroom", on_delete=models.CASCADE, related_name="midterm_schedules"
     )
+    # Legacy exams midterm (nullable — new schedules use ``midterm`` below). Backfilled by
+    # the data migration; kept so in-flight legacy schedules keep working during the cutover.
     mock_exam = models.ForeignKey(
-        "exams.MockExam", on_delete=models.CASCADE, related_name="midterm_schedules"
+        "exams.MockExam", on_delete=models.CASCADE, null=True, blank=True, related_name="midterm_schedules"
+    )
+    midterm = models.ForeignKey(
+        "midterms.Midterm", on_delete=models.CASCADE, null=True, blank=True, related_name="schedules"
     )
 
     # Access window (both optional). ignore_start overrides the start countdown.
@@ -57,12 +62,19 @@ class MidtermSchedule(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["classroom", "mock_exam"], name="uniq_midterm_schedule_per_classroom"
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["classroom", "midterm"], name="uniq_midterm_schedule_per_classroom_v2"
+            ),
         ]
-        indexes = [models.Index(fields=["mock_exam", "classroom"])]
+        indexes = [
+            models.Index(fields=["mock_exam", "classroom"]),
+            models.Index(fields=["midterm", "classroom"]),
+        ]
 
     def __str__(self) -> str:
-        return f"Schedule classroom={self.classroom_id} midterm={self.mock_exam_id}"
+        ref = self.midterm_id or self.mock_exam_id
+        return f"Schedule classroom={self.classroom_id} midterm={ref}"
 
     # ── Window helpers ────────────────────────────────────────────────────────
     def is_before_start(self, now=None) -> bool:

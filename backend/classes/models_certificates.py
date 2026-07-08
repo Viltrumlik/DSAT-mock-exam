@@ -24,13 +24,31 @@ def _new_code() -> str:
 
 
 class MidtermCertificate(models.Model):
-    """One student's certificate for one midterm within one classroom."""
+    """One student's certificate for one midterm.
 
+    Two flavors: CLASSROOM (class-ranked, issued on teacher publish) and STANDALONE
+    (per-student grant, auto-issued on submit, instructor = grantor, NO rank). The legacy
+    ``mock_exam``/``attempt`` FKs (exams system) stay for in-flight legacy certs and are
+    backfilled onto ``midterm``/``midterm_attempt`` by the data migration; the ``code`` +
+    PK are preserved so existing ``/certificate/<code>`` links keep resolving.
+    """
+
+    FLAVOR_CLASSROOM = "CLASSROOM"
+    FLAVOR_STANDALONE = "STANDALONE"
+    FLAVOR_CHOICES = [(FLAVOR_CLASSROOM, "Classroom"), (FLAVOR_STANDALONE, "Standalone")]
+
+    flavor = models.CharField(max_length=16, choices=FLAVOR_CHOICES, default=FLAVOR_CLASSROOM, db_index=True)
+
+    # Nullable: standalone certs have no classroom; new certs have no legacy MockExam.
     classroom = models.ForeignKey(
-        "classes.Classroom", on_delete=models.CASCADE, related_name="midterm_certificates"
+        "classes.Classroom", on_delete=models.CASCADE, null=True, blank=True, related_name="midterm_certificates"
     )
     mock_exam = models.ForeignKey(
-        "exams.MockExam", on_delete=models.CASCADE, related_name="midterm_certificates"
+        "exams.MockExam", on_delete=models.CASCADE, null=True, blank=True, related_name="midterm_certificates"
+    )
+    # New separated midterm this certificate belongs to.
+    midterm = models.ForeignKey(
+        "midterms.Midterm", on_delete=models.CASCADE, null=True, blank=True, related_name="certificates"
     )
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="midterm_certificates"
@@ -39,6 +57,9 @@ class MidtermCertificate(models.Model):
     attempt = models.ForeignKey(
         "exams.TestAttempt", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
+    midterm_attempt = models.ForeignKey(
+        "midterms.MidtermAttempt", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
 
     # Frozen snapshot at issue time — the certificate prints from these, not live data.
     student_name = models.CharField(max_length=200)
@@ -46,8 +67,9 @@ class MidtermCertificate(models.Model):
     subject = models.CharField(max_length=32, blank=True)
     score = models.IntegerField()
     scoring_scale = models.CharField(max_length=16, blank=True)
-    rank = models.PositiveIntegerField()
-    cohort_size = models.PositiveIntegerField()
+    # Nullable: standalone certificates carry no class rank / cohort.
+    rank = models.PositiveIntegerField(null=True, blank=True)
+    cohort_size = models.PositiveIntegerField(null=True, blank=True)
 
     code = models.CharField(max_length=32, unique=True, default=_new_code, db_index=True)
     issued_at = models.DateTimeField(auto_now_add=True)
@@ -65,26 +87,43 @@ class MidtermCertificate(models.Model):
     class Meta:
         db_table = "classroom_midterm_certificates"
         constraints = [
+            # Legacy (exams MockExam) — retained so existing rows stay protected.
             models.UniqueConstraint(
                 fields=["classroom", "mock_exam", "student"],
                 name="uniq_midterm_certificate_per_student",
-            )
+            ),
+            # New CLASSROOM flavor: one class-ranked cert per (classroom, midterm, student).
+            models.UniqueConstraint(
+                fields=["classroom", "midterm", "student"],
+                condition=models.Q(flavor="CLASSROOM"),
+                name="uniq_midterm_cert_classroom",
+            ),
+            # New STANDALONE flavor: one cert per (midterm, student), no classroom.
+            models.UniqueConstraint(
+                fields=["midterm", "student"],
+                condition=models.Q(flavor="STANDALONE"),
+                name="uniq_midterm_cert_standalone",
+            ),
         ]
         indexes = [
             models.Index(fields=["mock_exam", "student"]),
             models.Index(fields=["classroom", "mock_exam"]),
+            models.Index(fields=["midterm", "student"]),
         ]
-        ordering = ["rank"]
+        # Nulls last so standalone certs (rank=None) sort after ranked ones.
+        ordering = [models.F("rank").asc(nulls_last=True), "flavor"]
 
     def __str__(self) -> str:
-        return f"Cert #{self.rank}/{self.cohort_size} student={self.student_id} midterm={self.mock_exam_id}"
+        where = f"midterm={self.midterm_id}" if self.midterm_id else f"mock_exam={self.mock_exam_id}"
+        rank = f"#{self.rank}/{self.cohort_size}" if self.rank is not None else "(standalone)"
+        return f"Cert {rank} student={self.student_id} {where}"
 
     @property
     def score_ceiling(self) -> int:
         # SCALE_800 midterms print out of 800; everything else is the 0–100 scale.
-        from exams.models import MockExam
-
-        return 800 if self.scoring_scale == MockExam.SCALE_800 else 100
+        # Compare the stored string (identical across exams.MockExam + midterms.Midterm) so a
+        # migrated cert prints its correct ceiling without importing the legacy exams model.
+        return 800 if self.scoring_scale == "SCALE_800" else 100
 
     def score_display(self) -> str:
         return f"{self.score} / {self.score_ceiling}"

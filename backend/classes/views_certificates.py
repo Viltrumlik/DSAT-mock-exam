@@ -151,9 +151,10 @@ class MidtermCertificatesDownloadAllView(_ClassroomScopedView):
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             used: set[str] = set()
             for cert in certs:
-                name = f"{cert.rank:02d}_{_safe_filename(cert.student_name, 'student')}.pdf"
+                idx = f"{cert.rank:02d}" if cert.rank is not None else "00"
+                name = f"{idx}_{_safe_filename(cert.student_name, 'student')}.pdf"
                 if name in used:
-                    name = f"{cert.rank:02d}_{_safe_filename(cert.student_name, 'student')}_{cert.code[:6]}.pdf"
+                    name = f"{idx}_{_safe_filename(cert.student_name, 'student')}_{cert.code[:6]}.pdf"
                 used.add(name)
                 zf.writestr(name, render_midterm_certificate_pdf(cert))
 
@@ -164,13 +165,28 @@ class MidtermCertificatesDownloadAllView(_ClassroomScopedView):
 
 
 def _cert_or_403(request, code):
-    """Fetch a certificate by code, enforcing owner|staff|admin. Returns (cert, error)."""
+    """Fetch a certificate by code, enforcing owner|staff|admin. Returns (cert, error).
+
+    Classroom certs authorize the owning student or any classroom staff (global admins count
+    as staff). STANDALONE certs have no classroom, so they authorize the owning student, the
+    issuing instructor (``issued_by``), or a global admin.
+    """
     cert = get_object_or_404(
-        MidtermCertificate.objects.select_related("classroom", "mock_exam"), code=code
+        MidtermCertificate.objects.select_related("classroom", "mock_exam", "midterm"), code=code
     )
     user = request.user
-    if user.id == cert.student_id or classroom_capabilities(user, cert.classroom).is_staff:
+    if user.id == cert.student_id:
         return cert, None
+    if cert.classroom_id is not None:
+        if classroom_capabilities(user, cert.classroom).is_staff:
+            return cert, None
+    else:
+        from access.constants import ROLE_ADMIN, ROLE_SUPER_ADMIN
+        from access.services import normalized_role
+
+        is_admin = normalized_role(user) in (ROLE_ADMIN, ROLE_SUPER_ADMIN) or user.is_staff or user.is_superuser
+        if user.id == cert.issued_by_id or is_admin:
+            return cert, None
     return None, Response({"detail": "Not allowed."}, status=http.HTTP_403_FORBIDDEN)
 
 
