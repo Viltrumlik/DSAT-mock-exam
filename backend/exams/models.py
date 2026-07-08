@@ -534,7 +534,13 @@ def create_default_modules(sender, instance, created, **kwargs):
     )
 
 class Module(TimestampedModel):
-    practice_test = models.ForeignKey(PracticeTest, on_delete=models.CASCADE, related_name='modules')
+    # Nullable: a Module normally belongs to a PracticeTest, but a midterm owns a
+    # standalone Module (practice_test=NULL) via ``midterms.Midterm.question_module``.
+    # (Postgres treats NULLs as distinct, so uniq_module_order_per_test does not
+    # collide across midterm modules.)
+    practice_test = models.ForeignKey(
+        PracticeTest, on_delete=models.CASCADE, related_name='modules', null=True, blank=True
+    )
     MODULE_ORDERS = [(1, 'Module 1'), (2, 'Module 2')]
     module_order = models.IntegerField(choices=MODULE_ORDERS, db_index=True)
     time_limit_minutes = models.IntegerField()
@@ -562,12 +568,14 @@ class Module(TimestampedModel):
         ]
 
     def __str__(self):
-        exam_title = (
-            self.practice_test.mock_exam.title
-            if self.practice_test and self.practice_test.mock_exam
-            else "Unassigned"
-        )
-        return f"{exam_title} - {self.practice_test.get_subject_display()} - Mod {self.module_order}"
+        pt = self.practice_test
+        if pt is None:
+            # Midterm-owned module (no PracticeTest); label via the reverse midterm link.
+            midterm = getattr(self, "midterm", None)
+            owner = f"Midterm: {midterm.title}" if midterm is not None else "Standalone"
+            return f"{owner} - Mod {self.module_order}"
+        exam_title = pt.mock_exam.title if pt.mock_exam else "Unassigned"
+        return f"{exam_title} - {pt.get_subject_display()} - Mod {self.module_order}"
 
 
 def ensure_full_mock_practice_test_modules(practice_test: PracticeTest) -> None:
