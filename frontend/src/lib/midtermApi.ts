@@ -103,7 +103,19 @@ export const midtermApi = {
   },
 
   // ── teacher: classroom (v2) flavor ─────────────────────────────────────────
-  async assignToClassroom(classroomId: number, midtermId: number, schedule?: { starts_at?: string; deadline?: string }) {
+  async classroomMidterms(
+    classroomId: number,
+  ): Promise<{ midterm_id: number; title: string; subject: string; assigned: number; completed: number }[]> {
+    const r = await api.get(`/classes/${classroomId}/midterms-v2/`);
+    return r.data?.midterms ?? [];
+  },
+  async downloadClassroomCertificates(classroomId: number, midtermId: number): Promise<Blob> {
+    const r = await api.get(`/classes/${classroomId}/midterms-v2/${midtermId}/certificates/download-all/`, {
+      responseType: "blob",
+    });
+    return r.data as Blob;
+  },
+  async assignToClassroom(classroomId: number, midtermId: number, schedule?: { starts_at?: string | null; deadline?: string | null }) {
     const r = await api.post(`/classes/${classroomId}/midterms-v2/assign/`, { midterm_id: midtermId, ...schedule });
     return r.data;
   },

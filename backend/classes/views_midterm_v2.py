@@ -11,11 +11,16 @@ views_certificates) but targeting the new Midterm model + midterm_v2 grants:
 
 from __future__ import annotations
 
+import io
+import zipfile
+
 from django.contrib.auth import get_user_model
+from django.http import HttpResponse
 from rest_framework import status as http
 from rest_framework.response import Response
 
 from access.engine.classroom_service import ClassroomAccessService
+from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
 from midterms.certificate_service import (
     _classroom_cohort_ids,
@@ -38,7 +43,17 @@ User = get_user_model()
 
 def _serialize_schedule(sched):
     if sched is None:
-        return None
+        # No schedule row → open now, results visible (legacy/unscheduled semantics).
+        return {
+            "midterm_id": None,
+            "starts_at": None,
+            "deadline": None,
+            "ignore_start": False,
+            "results_released": False,
+            "available_at": None,
+            "is_before_start": False,
+            "is_open": True,
+        }
     return {
         "midterm_id": sched.midterm_id,
         "starts_at": sched.starts_at.isoformat() if sched.starts_at else None,
@@ -46,6 +61,8 @@ def _serialize_schedule(sched):
         "ignore_start": sched.ignore_start,
         "results_released": sched.results_released,
         "available_at": sched.available_at.isoformat() if sched.available_at else None,
+        "is_before_start": sched.is_before_start(),
+        "is_open": sched.is_open(),
     }
 
 
@@ -58,6 +75,71 @@ def _midterm_brief(m: Midterm) -> dict:
         "score_ceiling": m.score_ceiling,
         "duration_minutes": m.duration_minutes,
     }
+
+
+class ClassroomMidtermsV2ListView(_ClassroomScopedView):
+    """GET /classes/<pk>/midterms-v2/ — midterms already assigned to this classroom."""
+
+    def get(self, request, classroom_pk):
+        classroom = self.get_classroom()
+        caps = classroom_capabilities(request.user, classroom)
+        if not caps.is_staff:
+            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
+        mids = list(
+            ResourceAccessGrant.objects.filter(
+                scope=ResourceAccessGrant.SCOPE_RESOURCE,
+                resource_type=RT_MIDTERM_V2,
+                classroom=classroom,
+                status=ResourceAccessGrant.STATUS_ACTIVE,
+            )
+            .values_list("resource_id", flat=True)
+            .distinct()
+        )
+        out = []
+        for midterm in Midterm.objects.filter(pk__in=mids):
+            cohort = _classroom_cohort_ids(midterm, classroom)
+            out.append({
+                "midterm_id": midterm.id,
+                "title": midterm.title,
+                "subject": midterm.subject,
+                "assigned": len(cohort),
+                "completed": len(_latest_completed_attempts(midterm, cohort)),
+            })
+        out.sort(key=lambda r: r["title"])
+        return Response({"midterms": out})
+
+
+class MidtermV2CertificatesDownloadAllView(_ClassroomScopedView):
+    """GET /classes/<pk>/midterms-v2/<midterm_id>/certificates/download-all/ — ZIP of classroom certs."""
+
+    def get(self, request, classroom_pk, midterm_id):
+        classroom = self.get_classroom()
+        caps = classroom_capabilities(request.user, classroom)
+        if not caps.is_staff:
+            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
+        from .certificate_pdf import render_midterm_certificate_pdf
+        from .views_certificates import _safe_filename
+
+        certs = list(
+            MidtermCertificate.objects.filter(
+                classroom=classroom, midterm_id=midterm_id, flavor=MidtermCertificate.FLAVOR_CLASSROOM
+            ).order_by("rank")
+        )
+        if not certs:
+            return Response({"detail": "No certificates issued yet."}, status=http.HTTP_404_NOT_FOUND)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for cert in certs:
+                idx = f"{cert.rank:02d}" if cert.rank is not None else "00"
+                zf.writestr(
+                    f"{idx}_{_safe_filename(cert.student_name, 'student')}.pdf",
+                    render_midterm_certificate_pdf(cert),
+                )
+        resp = HttpResponse(buf.getvalue(), content_type="application/zip")
+        resp["Content-Disposition"] = (
+            f'attachment; filename="certificates-{_safe_filename(certs[0].midterm_title, "midterm")}.zip"'
+        )
+        return resp
 
 
 class AssignMidtermV2View(_ClassroomScopedView):

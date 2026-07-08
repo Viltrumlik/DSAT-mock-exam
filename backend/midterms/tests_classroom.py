@@ -69,6 +69,11 @@ class ClassroomMidtermTests(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(MidtermSchedule.objects.filter(classroom=self.room, midterm=self.mt).exists())
 
+        # The "given midterms" list surfaces the newly-assigned midterm.
+        gl = self.tc.get(f"/api/classes/{cid}/midterms-v2/")
+        self.assertEqual(gl.status_code, 200, gl.content)
+        self.assertTrue(any(x["midterm_id"] == self.mt.id for x in gl.json()["midterms"]))
+
         # Students take it (s1: 4/4=100, s2: 2/4=50).
         c1, a1 = self._take(self.s1, 4)
         c2, a2 = self._take(self.s2, 2)
