@@ -143,6 +143,15 @@ class PanelAndMyMidtermsTests(ScheduleFixture):
         self.assertTrue(patched.json()["is_before_start"])
         self.assertEqual(MidtermSchedule.objects.get(classroom=self.classroom, mock_exam=self.midterm).ignore_start, False)
 
+    def test_schedule_patch_rejects_deadline_before_start(self):
+        self.client.force_authenticate(self.owner)
+        start = (timezone.now() + timedelta(days=2)).isoformat()
+        deadline = (timezone.now() + timedelta(days=1)).isoformat()
+        resp = self.client.patch(
+            self._panel_url(), {"starts_at": start, "deadline": deadline}, format="json"
+        )
+        self.assertEqual(resp.status_code, 400)
+
     def test_my_midterms_states(self):
         # Locked (future start), student is assigned via assigned_users.
         self.midterm.assigned_users.add(self.student)
@@ -202,3 +211,46 @@ class AssignVisibilityTests(ScheduleFixture):
         )
         self.assertEqual(self.midterm.assigned_users.count(), 0)  # assigned_users NOT written
         self.assertIn(self.midterm.id, self._my_ids())  # still visible via the grant
+
+
+class AssignScheduleTests(ScheduleFixture):
+    """Assign endpoint: re-assign must not wipe an existing window; reject inverted windows."""
+
+    def _assign_url(self):
+        return f"/api/classes/{self.classroom.id}/assign-midterm/"
+
+    def test_reassign_without_schedule_fields_keeps_window(self):
+        self.client.force_authenticate(self.owner)
+        starts = (timezone.now() + timedelta(days=1)).isoformat()
+        deadline = (timezone.now() + timedelta(days=2)).isoformat()
+        first = self.client.post(
+            self._assign_url(),
+            {"mock_exam_id": self.midterm.id, "starts_at": starts, "deadline": deadline},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200)
+        sched = MidtermSchedule.objects.get(classroom=self.classroom, mock_exam=self.midterm)
+        saved_starts, saved_deadline = sched.starts_at, sched.deadline
+        self.assertIsNotNone(saved_starts)
+        self.assertIsNotNone(saved_deadline)
+
+        # Re-assign with NO schedule fields (e.g. adding a late student) — window preserved.
+        again = self.client.post(self._assign_url(), {"mock_exam_id": self.midterm.id}, format="json")
+        self.assertEqual(again.status_code, 200)
+        sched.refresh_from_db()
+        self.assertEqual(sched.starts_at, saved_starts)
+        self.assertEqual(sched.deadline, saved_deadline)
+
+    def test_assign_rejects_deadline_before_start(self):
+        self.client.force_authenticate(self.owner)
+        starts = (timezone.now() + timedelta(days=2)).isoformat()
+        deadline = (timezone.now() + timedelta(days=1)).isoformat()
+        resp = self.client.post(
+            self._assign_url(),
+            {"mock_exam_id": self.midterm.id, "starts_at": starts, "deadline": deadline},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(
+            MidtermSchedule.objects.filter(classroom=self.classroom, mock_exam=self.midterm).exists()
+        )

@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings as django_settings
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
@@ -14,6 +15,39 @@ from .attempt_state_machine import (
 from .engine_db_guard import TransitionConflict, conditional_attempt_update
 
 logger = logging.getLogger(__name__)
+
+# Grid-in answers are graded numerically (0.5 == 1/2 == .5, 5 == 5.0), so a
+# small tolerance absorbs decimal-rounding variants. Mirrors the Decimal/fraction
+# approach in ``assessments.grading``.
+_GRID_IN_TOLERANCE = Decimal("0.0001")
+
+
+def _grid_in_decimal(value):
+    """Parse a grid-in answer (integer, decimal, or simple ``a/b`` fraction) to Decimal.
+
+    Returns ``None`` when the value isn't numeric or a fraction denominator is zero.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if "/" in s:
+        num, _, den = s.partition("/")
+        try:
+            denom = Decimal(den.strip())
+        except (InvalidOperation, ValueError):
+            return None
+        if denom == 0:
+            return None
+        try:
+            return Decimal(num.strip()) / denom
+        except (InvalidOperation, ArithmeticError, ValueError):
+            return None
+    try:
+        return Decimal(s)
+    except (InvalidOperation, ValueError):
+        return None
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -168,11 +202,26 @@ class Question(TimestampedModel):
             return False
             
         student_ans_str = str(student_answer).strip().lower()
-        
+
         if self.is_math_input and self.correct_answers:
-            valid_answers = [v.strip().lower() for v in self.correct_answers.split(',')]
-            return student_ans_str in valid_answers
-            
+            # Grid-in answers are numeric: compare the student's value to each
+            # accepted variant numerically (integers, decimals, and simple a/b
+            # fractions) within a small tolerance, so 0.5 == 1/2, .5 == 0.5 and
+            # 5.0 == 5. Fall back to an exact case-insensitive string match for
+            # any non-numeric variant.
+            student_num = _grid_in_decimal(student_ans_str)
+            for variant in self.correct_answers.split(','):
+                variant = variant.strip()
+                if not variant:
+                    continue
+                variant_num = _grid_in_decimal(variant)
+                if student_num is not None and variant_num is not None:
+                    if abs(student_num - variant_num) <= _GRID_IN_TOLERANCE:
+                        return True
+                elif student_ans_str == variant.lower():
+                    return True
+            return False
+
         if self.correct_answers:
             return student_ans_str == self.correct_answers.strip().lower()
             

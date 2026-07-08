@@ -35,6 +35,7 @@ from access.services import (
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
     student_has_any_subject_grant,
+    visible_practice_test_platform_subjects_for_query,
 )
 from access.subject_mapping import platform_subject_to_domain
 
@@ -1724,6 +1725,11 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         base = PracticeTest.objects.all().prefetch_related("modules", "assigned_users")
+        # Subject scoping: a subject-scoped teacher only sees their platform subject's
+        # tests; global staff (None) are unrestricted.
+        subjs = visible_practice_test_platform_subjects_for_query(self.request.user)
+        if subjs is not None:
+            base = base.filter(subject__in=subjs)
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
             return base.filter(mock_exam__isnull=True)
@@ -1763,7 +1769,12 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
     serializer_class = AdminModuleSerializer
 
     def get_queryset(self):
-        return Module.objects.filter(practice_test_id=self.kwargs['test_pk'])
+        qs = Module.objects.filter(practice_test_id=self.kwargs['test_pk'])
+        # Subject scoping: don't expose modules of another subject's test to a teacher.
+        subjs = visible_practice_test_platform_subjects_for_query(self.request.user)
+        if subjs is not None:
+            qs = qs.filter(practice_test__subject__in=subjs)
+        return qs
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
@@ -1824,13 +1835,16 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
 
     def get_queryset(self):
-        return (
-            Question.objects.filter(
-                module_id=self.kwargs["module_pk"],
-                module__practice_test_id=self.kwargs["test_pk"],
-            )
-            .order_by("order", "id")
+        qs = Question.objects.filter(
+            module_id=self.kwargs["module_pk"],
+            module__practice_test_id=self.kwargs["test_pk"],
         )
+        # Subject scoping: a teacher may not read/edit another subject's questions
+        # (incl. correct_answer + explanation); global staff (None) are unrestricted.
+        subjs = visible_practice_test_platform_subjects_for_query(self.request.user)
+        if subjs is not None:
+            qs = qs.filter(module__practice_test__subject__in=subjs)
+        return qs.order_by("order", "id")
 
     def create(self, request, *args, **kwargs):
         merged = _merge_admin_question_create_defaults(request, self.kwargs)

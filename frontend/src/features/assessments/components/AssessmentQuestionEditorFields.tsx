@@ -84,7 +84,12 @@ export function AssessmentQuestionEditorFields({
     [],
   );
 
-  if (insertHandlerRef) insertHandlerRef.current = handleFormulaInsert;
+  // Expose the formula-insert handler to the parent via the ref after render
+  // (assigning a ref during render is disallowed). The parent reads it inside
+  // event handlers, so an effect-time assignment preserves the behaviour.
+  useEffect(() => {
+    if (insertHandlerRef) insertHandlerRef.current = handleFormulaInsert;
+  });
 
   const trackFocus = useCallback(
     (setVal: (v: string) => void) =>

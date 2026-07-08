@@ -2,7 +2,41 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Attempt, normalizeFlagged, normalizeSavedAnswers } from "../types";
 import { questions as selectQuestions } from "../state/selectors";
-import { readDraft } from "../services/draftStore";
+import { type ExamDraft, readDraft } from "../services/draftStore";
+
+/**
+ * Merge the server snapshot with the local crash-safety draft by recency.
+ *
+ * The draft is written synchronously on every change, so it can hold answers
+ * made inside the autosave debounce window or during a failed save that never
+ * reached the server. Its stored `version` is the server `version_number` it was
+ * based on: when that is >= the server's current version (or either is unknown)
+ * the draft is at least as fresh, so it wins on conflicting questions. In every
+ * case the draft fills in answers the server is missing, so nothing pending is
+ * dropped — while a strictly-newer server stays authoritative on conflicts.
+ */
+function mergeServerAndDraft(
+  serverAnswers: Record<string, string>,
+  serverFlagged: number[],
+  serverVersion: number | null,
+  draft: ExamDraft | null,
+): { answers: Record<string, string>; flagged: number[] } {
+  if (!draft) return { answers: serverAnswers, flagged: serverFlagged };
+
+  const draftAtLeastAsFresh =
+    draft.version == null || serverVersion == null || draft.version >= serverVersion;
+
+  const answers: Record<string, string> = { ...serverAnswers };
+  for (const [qid, value] of Object.entries(draft.answers)) {
+    if (draftAtLeastAsFresh || !(qid in serverAnswers)) answers[qid] = value;
+  }
+
+  // Flags are advisory (they don't affect grading): union so neither side's
+  // flags are dropped when restoring from a draft.
+  const flagged = Array.from(new Set([...serverFlagged, ...draft.flagged]));
+
+  return { answers, flagged };
+}
 
 export interface UseAnswersResult {
   answers: Record<string, string>;
@@ -45,16 +79,23 @@ export function useAnswers(attempt: Attempt | null, attemptId: number | string):
     const serverAnswers = normalizeSavedAnswers(attempt?.current_module_saved_answers);
     const serverFlagged = normalizeFlagged(attempt?.current_module_flagged_questions);
 
-    // Prefer server truth; fall back to a local draft only if the server is empty
-    // (covers an offline edit that never reached the server before a refresh).
+    // Merge server truth with the local draft by recency rather than discarding
+    // the draft whenever the server has anything. That "server wins if non-empty"
+    // rule threw away answers that lived only in the draft (made inside the
+    // autosave debounce window, or during a failed save) on resume.
     const draft = readDraft(attemptId, moduleId);
-    const hasServer = Object.keys(serverAnswers).length > 0 || serverFlagged.length > 0;
+    const merged = mergeServerAndDraft(
+      serverAnswers,
+      serverFlagged,
+      attempt?.version_number ?? null,
+      draft,
+    );
 
-    setAnswers(hasServer ? serverAnswers : draft?.answers ?? serverAnswers);
-    setFlagged(hasServer ? serverFlagged : draft?.flagged ?? serverFlagged);
+    setAnswers(merged.answers);
+    setFlagged(merged.flagged);
     setEliminated({});
     setCurrentIndex(0);
-  }, [moduleId, attempt?.current_module_saved_answers, attempt?.current_module_flagged_questions, attemptId]);
+  }, [moduleId, attempt?.current_module_saved_answers, attempt?.current_module_flagged_questions, attempt?.version_number, attemptId]);
 
   const selectAnswer = useCallback((questionId: number, value: string) => {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));

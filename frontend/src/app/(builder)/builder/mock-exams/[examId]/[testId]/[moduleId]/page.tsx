@@ -50,7 +50,7 @@ function MockExamModuleEditor({
   }, [examId]);
 
   const section = exam?.tests.find((t) => t.id === testId) ?? null;
-  const module = section?.modules?.find((m) => m.id === moduleId) ?? null;
+  const moduleData = section?.modules?.find((m) => m.id === moduleId) ?? null;
 
   const subjectLabel =
     section?.subject === "MATH"
@@ -60,7 +60,7 @@ function MockExamModuleEditor({
       : null;
 
   const moduleLabel =
-    module?.module_order != null ? `Module ${module.module_order}` : `Module #${moduleId}`;
+    moduleData?.module_order != null ? `Module ${moduleData.module_order}` : `Module #${moduleId}`;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">

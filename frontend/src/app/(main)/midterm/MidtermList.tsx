@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { FileText, ArrowRight, Download, Lock } from "lucide-react";
@@ -47,7 +47,16 @@ function Row({ m, kind, onUnlock }: { m: MyMidterm; kind: "available" | "schedul
   const cd = useCountdown(kind === "scheduled" ? m.available_at : null);
   const [busy, setBusy] = useState(false);
   const unlocked = kind === "scheduled" && cd.done;
-  useEffect(() => { if (unlocked) onUnlock(); }, [unlocked, onUnlock]);
+  // Fire the unlock refetch at most once per row. `onUnlock` is recreated every
+  // render, so without this latch a scheduled midterm that stays in the bucket
+  // (closed/undated window) would refetch → re-render → refetch in a tight loop.
+  const unlockFiredRef = useRef(false);
+  useEffect(() => {
+    if (unlocked && !unlockFiredRef.current) {
+      unlockFiredRef.current = true;
+      onUnlock();
+    }
+  }, [unlocked, onUnlock]);
 
   const meta = [fmtDuration(m.duration_minutes), m.question_count ? `${m.question_count} questions` : null, m.subject_label]
     .filter(Boolean).join(" · ");

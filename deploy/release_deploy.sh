@@ -204,7 +204,27 @@ PY
 
 DEPLOY_STAGE="git_fetch"
 echo "-> Fetching git objects..."
-git -C "$APP_GIT_DIR" fetch --tags origin 2>/dev/null || git -C "$APP_GIT_DIR" fetch origin 2>/dev/null || true
+FETCH_OK=1
+git -C "$APP_GIT_DIR" fetch --tags origin 2>/dev/null || git -C "$APP_GIT_DIR" fetch origin 2>/dev/null || FETCH_OK=0
+if [[ "$FETCH_OK" != "1" ]]; then
+  echo "[WARN] git fetch failed (often root-owned .git objects — chown -R satapp:satapp $APP_GIT_DIR)."
+fi
+# Guard against silently deploying a STALE ref: if the fetch could not update local
+# refs, the locally-resolved SHA can lag the remote tip and we'd ship old code with a
+# success banner. For branch-style refs (e.g. origin/main), compare against ls-remote.
+case "$GIT_REF" in
+  origin/*)
+    _rd_branch="${GIT_REF#origin/}"
+    _rd_remote_sha="$(git -C "$APP_GIT_DIR" ls-remote origin "refs/heads/$_rd_branch" 2>/dev/null | awk '{print $1}')"
+    _rd_local_sha="$(git -C "$APP_GIT_DIR" rev-parse "${GIT_REF}^{commit}" 2>/dev/null || true)"
+    if [[ -n "$_rd_remote_sha" && -n "$_rd_local_sha" && "$_rd_remote_sha" != "$_rd_local_sha" ]]; then
+      echo "[FAIL] Local $GIT_REF ($_rd_local_sha) != remote tip ($_rd_remote_sha)."
+      echo "       git fetch did not update refs — refusing to deploy stale code."
+      echo "       Fix: chown -R satapp:satapp $APP_GIT_DIR/.git && re-run."
+      exit 1
+    fi
+    ;;
+esac
 
 FULL_SHA="$(git -C "$APP_GIT_DIR" rev-parse "${GIT_REF}^{commit}")"
 SHORT_SHA="$(git -C "$APP_GIT_DIR" rev-parse --short=7 "$FULL_SHA")"
@@ -482,6 +502,15 @@ else
   fi
 fi
 
+# The new release is now LIVE and post-cutover validated. Everything below (state-file
+# write, release/backup pruning) is non-critical bookkeeping. Disarm the destructive ERR
+# trap and clear MIGRATION_APPLIED here so that a failure in those steps — e.g. a
+# root-owned file that `rm` cannot remove — can NEVER trigger an automatic pg_restore
+# that would wipe every write made since cutover. Real post-cutover failures above are
+# already handled explicitly via perform_post_cutover_failure_rollback.
+MIGRATION_APPLIED="0"
+trap - ERR
+
 STATE_FILE="$SHARED/release_state.json"
 PREV_ID=""
 if [[ -n "$OLD_CURRENT_REAL" ]] && [[ -d "$OLD_CURRENT_REAL" ]]; then
@@ -541,7 +570,7 @@ if [[ -d "$APP_DIR/releases" ]] && [[ "$KEEP_LAST_N" =~ ^[0-9]+$ ]] && [[ "$KEEP
       continue
     fi
     echo "   Removing old release: $name"
-    rm -rf "${APP_DIR:?}/releases/${name}"
+    rm -rf "${APP_DIR:?}/releases/${name}" || echo "   [WARN] could not remove old release $name (leftover, non-fatal)"
   done
 fi
 
@@ -562,7 +591,7 @@ if [[ "$KEEP_BACKUP_DUMPS_N" =~ ^[0-9]+$ ]] && [[ "$KEEP_BACKUP_DUMPS_N" -gt 0 ]
       continue
     fi
     echo "   Removing old backup: $f"
-    rm -f "$f"
+    rm -f "$f" || echo "   [WARN] could not remove old backup $f (non-fatal)"
   done
 fi
 

@@ -38,6 +38,34 @@ class AssessmentQuestionSerializer(serializers.ModelSerializer):
         ]
 
 
+@extend_schema_serializer(component_name="AssessmentQuestionRunner")
+class AssessmentQuestionRunnerSerializer(serializers.ModelSerializer):
+    """
+    Student-runner-safe question serializer: like AssessmentQuestionSerializer but
+    OMITS ``explanation`` (the worked solution, shown only AFTER grading), on top of
+    correct_answer/grading_config (never listed). Used for the in-progress attempt
+    bundle so a student can't read the solution before answering.
+    """
+
+    class Meta:
+        model = AssessmentQuestion
+        fields = [
+            "id",
+            "order",
+            "prompt",
+            "question_prompt",
+            "question_type",
+            "choices",
+            "points",
+            "is_active",
+            "question_image",
+            "option_a_image",
+            "option_b_image",
+            "option_c_image",
+            "option_d_image",
+        ]
+
+
 class AssessmentQuestionAdminReadSerializer(serializers.ModelSerializer):
     """
     Admin-only read serializer: identical to AssessmentQuestionSerializer but
@@ -215,6 +243,14 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
 
             def _coerce_numeric(tok: str):
                 if _FRACTION_RE.match(tok):
+                    # Reject a zero (or zero-ish) denominator now — otherwise
+                    # grading swallows the DivisionByZero and the variant is
+                    # silently un-answerable. Catch the teacher typo at save time.
+                    _, _, den = tok.partition("/")
+                    if float(den) == 0:
+                        raise serializers.ValidationError(
+                            {"correct_answer": "A fraction cannot have a zero denominator."}
+                        )
                     return tok
                 try:
                     return float(tok) if ("." in tok or "e" in tok.lower()) else int(tok)
@@ -273,6 +309,33 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
 @extend_schema_serializer(component_name="AssessmentSet")
 class AssessmentSetSerializer(serializers.ModelSerializer):
     questions = AssessmentQuestionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = AssessmentSet
+        fields = [
+            "id",
+            "subject",
+            "source",
+            "level",
+            "category",
+            "title",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "questions",
+        ]
+
+
+@extend_schema_serializer(component_name="AssessmentSetRunner")
+class AssessmentSetRunnerSerializer(serializers.ModelSerializer):
+    """
+    Student-runner-safe set serializer: nests the explanation-free question
+    serializer so the in-progress attempt bundle's ``set.questions`` never leaks
+    worked solutions. Used in place of AssessmentSetSerializer on both bundle paths.
+    """
+
+    questions = AssessmentQuestionRunnerSerializer(many=True, read_only=True)
 
     class Meta:
         model = AssessmentSet
@@ -489,8 +552,10 @@ class SaveAnswerStoredSerializer(serializers.Serializer):
 @extend_schema_serializer(component_name="AssessmentAttemptBundleResponse")
 class AttemptBundleResponseSerializer(serializers.Serializer):
     attempt = AttemptSerializer()
-    set = AssessmentSetSerializer()
-    questions = AssessmentQuestionSerializer(many=True)
+    # Runner-safe: neither set.questions nor the top-level questions expose
+    # explanation/correct_answer during an in-progress attempt.
+    set = AssessmentSetRunnerSerializer()
+    questions = AssessmentQuestionRunnerSerializer(many=True)
 
 
 @extend_schema_serializer(component_name="AssessmentSubmitQueuedResponse")

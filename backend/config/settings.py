@@ -548,6 +548,9 @@ REST_FRAMEWORK = {
         'user': None,
         'burst': None,
         'sustained': None,
+        # Login brute-force / credential-stuffing guard (per-IP). Scope applied only
+        # to the login endpoint via users.views.LoginRateThrottle, not globally.
+        'login': os.getenv('LOGIN_THROTTLE', '10/min'),
         'homework_submit': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_THROTTLE', '120/hour'),
         'homework_submit_global': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_GLOBAL_THROTTLE', '5000/hour'),
         'homework_submit_class': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_PER_CLASS_THROTTLE', '800/hour'),

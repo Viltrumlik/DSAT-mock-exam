@@ -13,7 +13,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from classes.models import Assignment, Classroom, ClassroomMembership
+from classes.models import Assignment, Classroom, ClassroomMembership, Submission
 
 User = get_user_model()
 
@@ -103,3 +103,26 @@ class RemovedMemberAccessTests(TestCase):
         c = self._client(self.stranger)
         self.assertNotIn(self.cls.id, _ids(c.get("/api/classes/")))
         self.assertEqual(c.get(f"/api/classes/{self.cls.id}/").status_code, 403)
+
+    # ── removed teaching staff: can no longer read submissions ────────────────
+    def test_removed_teacher_cannot_read_submissions(self):
+        submission = Submission.objects.create(
+            assignment=self.assignment, student=self.active,
+            status=Submission.STATUS_SUBMITTED,
+        )
+        url = f"/api/classes/submissions/{submission.pk}/"
+
+        # Removal keeps the TEACHER role but flips status=REMOVED; access must still be cut.
+        removed_teacher = User.objects.create_user("rm_teacher@t.com", "pw12345678")
+        ClassroomMembership.objects.create(
+            classroom=self.cls, user=removed_teacher, role=ClassroomMembership.ROLE_TEACHER,
+            status=ClassroomMembership.STATUS_REMOVED,
+        )
+        self.assertEqual(self._client(removed_teacher).get(url).status_code, 403)
+
+        # Sanity: an ACTIVE teacher of the same class can still read it.
+        active_teacher = User.objects.create_user("rm_active_teacher@t.com", "pw12345678")
+        ClassroomMembership.objects.create(
+            classroom=self.cls, user=active_teacher, role=ClassroomMembership.ROLE_TEACHER,
+        )
+        self.assertEqual(self._client(active_teacher).get(url).status_code, 200)

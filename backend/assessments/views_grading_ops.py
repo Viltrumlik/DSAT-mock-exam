@@ -17,6 +17,7 @@ from access.permissions import (
     CanManageQuestions,
     CanViewTests,
 )
+from access.services import is_global_scope_staff
 from users.permissions import IsAuthenticatedAndNotFrozen
 from .models import (
     AssessmentAttempt,
@@ -38,6 +39,30 @@ from .helpers import (
     _audit_attempt,
     _summarise_governance_payload,
 )
+
+
+def _attempt_in_scope(request, att) -> bool:
+    """Whether the requester may read/act on this attempt.
+
+    Global-scope staff are unrestricted; otherwise the attempt's homework
+    classroom must be one the requester owns (classroom.teacher) or teaches
+    (ROLE_TEACHER membership). Mirrors TeacherSubmissionQueueView scoping so a
+    teacher can't touch another class's attempts platform-wide.
+    """
+    if is_global_scope_staff(request.user):
+        return True
+    from classes.models import Classroom, ClassroomMembership
+
+    classroom_id = getattr(getattr(att, "homework", None), "classroom_id", None)
+    if not classroom_id:
+        return False
+    if Classroom.objects.filter(pk=classroom_id, teacher=request.user).exists():
+        return True
+    return ClassroomMembership.objects.filter(
+        classroom_id=classroom_id,
+        user=request.user,
+        role=ClassroomMembership.ROLE_TEACHER,
+    ).exists()
 
 
 class AdminGradingMetricsView(APIView):
@@ -196,6 +221,8 @@ class AdminAttemptStatusView(APIView):
         )
         if not att:
             return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not _attempt_in_scope(request, att):
+            return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
         res = AssessmentResult.objects.filter(attempt=att).first()
         return Response({"attempt": AttemptSerializer(att).data, "result": ResultSerializer(res).data if res else None})
 
@@ -207,6 +234,8 @@ class AdminRequeueAttemptView(APIView):
     def post(self, request, attempt_id: int):
         att = AssessmentAttempt.objects.select_for_update().filter(pk=attempt_id).first()
         if not att:
+            return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not _attempt_in_scope(request, att):
             return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
         if att.status != AssessmentAttempt.STATUS_SUBMITTED:
             return Response({"detail": "Only submitted attempts can be requeued."}, status=status.HTTP_400_BAD_REQUEST)
@@ -238,10 +267,15 @@ class AdminForceGradeAttemptView(APIView):
                 {"detail": "Confirmation required. Send { confirm: 'FORCE' } to force grading."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        res = grade_attempt(attempt_id=int(attempt_id))
-        att = AssessmentAttempt.objects.filter(pk=attempt_id).first()
+        # Resolve + scope-check BEFORE grading so an out-of-scope teacher can't
+        # force-grade another class's attempt as a side effect.
+        att = AssessmentAttempt.objects.select_related("homework").filter(pk=attempt_id).first()
         if not att:
             return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not _attempt_in_scope(request, att):
+            return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+        res = grade_attempt(attempt_id=int(attempt_id))
+        att.refresh_from_db()
         _audit_attempt(att, actor=request.user, event_type=AssessmentAttemptAuditEvent.EVENT_GRADED, payload={"admin_force": True})
         return Response({"attempt": AttemptSerializer(att).data, "result": ResultSerializer(res).data if res else None}, status=status.HTTP_200_OK)
 

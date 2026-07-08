@@ -43,7 +43,7 @@ function PracticeTestModuleEditor({
   }, [packId]);
 
   const section = pack?.sections.find((s) => s.id === testId) ?? null;
-  const module = section?.modules?.find((m) => m.id === moduleId) ?? null;
+  const moduleData = section?.modules?.find((m) => m.id === moduleId) ?? null;
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col px-4 py-5 md:px-8">
@@ -53,7 +53,7 @@ function PracticeTestModuleEditor({
         packId={pack?.id}
         packTitle={pack?.title ?? undefined}
         sectionSubject={section?.subject ?? undefined}
-        moduleOrder={module?.module_order != null ? `Module ${module.module_order}` : undefined}
+        moduleOrder={moduleData?.module_order != null ? `Module ${moduleData.module_order}` : undefined}
       />
     </div>
   );

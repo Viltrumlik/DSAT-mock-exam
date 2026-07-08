@@ -28,6 +28,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useAttemptBundle, useSaveAnswer, useSubmitAttempt } from "@/features/assessments/hooks";
 import { normalizeApiError } from "@/lib/apiError";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
@@ -282,7 +283,8 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // Declared here so draft-persistence effects can reference it
   const offlineQueue = useRef<Record<number, unknown>>({});
   // Stable refs so event listeners always call the latest callbacks / read latest state
-  const flushSaveRef = useRef<(() => Promise<void>) | null>(null);
+  // flushSave resolves to `true` only when every queued answer reached the server.
+  const flushSaveRef = useRef<(() => Promise<boolean>) | null>(null);
   const refetchRef = useRef(refetch);
   const stageRef = useRef(stage);
   refetchRef.current = refetch;
@@ -339,8 +341,18 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   }, [initialByQid]);
 
   useEffect(() => {
-    // Snapshot the offline queue qids for persistence
-    const pendingQids = Object.keys(offlineQueue.current).map(Number).filter(Number.isFinite);
+    // Snapshot EVERY qid still owed to the server for persistence — both the
+    // offline queue AND the debounced/in-flight pending map. Persisting only the
+    // offline queue meant an answer killed inside the 650ms autosave window was
+    // restored into the UI on reload but never re-queued, so it submitted omitted.
+    const pendingQids = Array.from(
+      new Set([
+        ...Object.keys(offlineQueue.current),
+        ...Object.keys(pendingSaves.current),
+      ]),
+    )
+      .map(Number)
+      .filter(Number.isFinite);
     writeAttemptDraftEnvelope(attemptId, {
       v: 2,
       drafts: draftById,
@@ -608,8 +620,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     savedTimerRef.current = setTimeout(() => setSaveState("idle"), 2000);
   };
 
-  const flushSave = useCallback(async () => {
-    if (conflicts.length) return; // wait for conflict resolution
+  // Resolves to `true` only when BOTH the offline queue and the debounced
+  // pending map are fully drained to the server. Callers that gate a
+  // destructive next step (submit → clear-draft) MUST check this so answers
+  // stranded by a failed/partial flush are never treated as sent.
+  const flushSave = useCallback(async (): Promise<boolean> => {
+    if (conflicts.length) return false; // wait for conflict resolution
 
     // Flush offline queue first
     if (online) {
@@ -634,7 +650,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               if (ax.status === 401) {
                 setSaveState("error");
                 setSaveError("Your session has expired. Your answers are saved locally — please sign in again.");
-                return;
+                return false;
               }
               if (![0, 429, 503].includes(ax.status ?? 0) || a === 3) break;
               await backoffDelayMs(a);
@@ -645,7 +661,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           } else {
             setSaveState("error");
             setSaveError("Some answers couldn't sync. They're saved locally and will retry.");
-            return;
+            return false;
           }
         }
       }
@@ -654,43 +670,50 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     // Flush EVERY debounced answer (keyed by qid), not just the most recent, so
     // rapid multi-question answering inside one debounce window is fully saved.
     const pendingIds = Object.keys(pendingSaves.current).map(Number).filter(Number.isFinite);
-    if (!pendingIds.length) return;
-
-    let savedAny = false;
-    for (const qid of pendingIds) {
-      const value = pendingSaves.current[qid];
-      let ok = false;
-      for (let a = 0; a < 4; a++) {
-        try {
-          await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: value });
-          ok = true;
-          break;
-        } catch (e) {
-          const ax = normalizeApiError(e);
-          if (ax.status === 401) {
-            setSaveState("error");
-            setSaveError("Your session has expired. Your answers are saved locally — please sign in again.");
-            return;
+    if (pendingIds.length) {
+      let savedAny = false;
+      for (const qid of pendingIds) {
+        const value = pendingSaves.current[qid];
+        let ok = false;
+        for (let a = 0; a < 4; a++) {
+          try {
+            await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: value });
+            ok = true;
+            break;
+          } catch (e) {
+            const ax = normalizeApiError(e);
+            if (ax.status === 401) {
+              setSaveState("error");
+              setSaveError("Your session has expired. Your answers are saved locally — please sign in again.");
+              return false;
+            }
+            if (![0, 429, 503].includes(ax.status ?? 0) || a === 3) {
+              setSaveState("error");
+              setSaveError("Couldn't save your answer. It's stored locally and will retry.");
+              return false;
+            }
+            await backoffDelayMs(a);
           }
-          if (![0, 429, 503].includes(ax.status ?? 0) || a === 3) {
-            setSaveState("error");
-            setSaveError("Couldn't save your answer. It's stored locally and will retry.");
-            return;
-          }
-          await backoffDelayMs(a);
         }
+        if (!ok) return false; // keep the rest queued; a later flush/submit retries them
+        delete pendingSaves.current[qid];
+        savedAny = true;
       }
-      if (!ok) return; // keep the rest queued; a later flush/submit retries them
-      delete pendingSaves.current[qid];
-      savedAny = true;
+
+      if (savedAny) {
+        const fr = await refetch();
+        if (fr.data?.attempt) applyServerFp(fr.data.attempt);
+        setConflicts([]);
+        showSaved();
+      }
     }
 
-    if (savedAny) {
-      const fr = await refetch();
-      if (fr.data?.attempt) applyServerFp(fr.data.attempt);
-      setConflicts([]);
-      showSaved();
-    }
+    // Fully drained only when nothing remains in either buffer. When offline the
+    // offline queue is intentionally left untouched above, so this returns false.
+    return (
+      Object.keys(offlineQueue.current).length === 0 &&
+      Object.keys(pendingSaves.current).length === 0
+    );
   }, [conflicts.length, online, attemptId, save, refetch, applyServerFp]);
 
   // Keep the ref in sync so the online-event handler always calls the latest version
@@ -794,7 +817,19 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     setSubmitError(null);
     try {
       if (debouncedTimer.current) clearTimeout(debouncedTimer.current);
-      await flushSave();
+      // Persist any unsent answers BEFORE submitting. If the flush can't fully
+      // drain (network/session failure), the submit payload would omit those
+      // answers and clearing the draft below would lose them — so abort, keep
+      // the local draft intact, and tell the student their work is still safe.
+      const flushed = await flushSave();
+      if (!flushed) {
+        submitInflightRef.current = false; // allow the student to retry
+        setStage("confirm-submit");
+        setSubmitError(
+          "Some of your answers haven't finished saving yet. Your work is safe on this device — please check your connection and try submitting again.",
+        );
+        return;
+      }
       const submitResponse = await submit.mutateAsync({
         attempt_id: attemptId,
         question_times: { ...questionTimesRef.current },
@@ -901,12 +936,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               View results
             </a>
           ) : (
-            <a
+            <Link
               href="/classes"
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
             >
               Back to classes
-            </a>
+            </Link>
           )}
         </div>
       </div>
@@ -1043,12 +1078,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               View results
             </a>
           ) : (
-            <a
+            <Link
               href="/classes"
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-5 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
             >
               Back to classes
-            </a>
+            </Link>
           )}
         </div>
       </div>
