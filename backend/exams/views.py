@@ -1592,6 +1592,18 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
 
         # Full SAT mock: admin adds R&W / Math sections via add_test (no forced two-section shell).
 
+    def perform_destroy(self, instance):
+        # Keep the separated midterm mirror in step: drop it (or just hide it if it already
+        # has attempts) before the legacy row goes away.
+        if instance.kind == MockExam.KIND_MIDTERM:
+            try:
+                from midterms.sync import delete_midterm_mirror
+
+                delete_midterm_mirror(instance)
+            except Exception:
+                logger.exception("midterm mirror delete failed exam_id=%s", instance.pk)
+        super().perform_destroy(instance)
+
     @action(detail=True, methods=["get"])
     def results(self, request, pk=None):
         """
@@ -1730,6 +1742,16 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         portal.save(update_fields=["is_active", "updated_at"])
         if exam.assigned_users.exists():
             portal.assigned_users.set(exam.assigned_users.all())
+        # Midterms are separated: mirror the just-published legacy midterm into the new
+        # midterms.Midterm tables so it appears in the teacher standalone area + student
+        # runner. Never let a mirror failure break the legacy publish itself.
+        if exam.kind == MockExam.KIND_MIDTERM:
+            try:
+                from midterms.sync import upsert_midterm_from_legacy
+
+                upsert_midterm_from_legacy(exam, sync_questions=True)
+            except Exception:
+                logger.exception("midterm mirror sync failed on publish exam_id=%s", exam.pk)
         exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
         return Response(AdminMockExamSerializer(exam).data)
 
@@ -1740,6 +1762,13 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         exam.published_at = None
         exam.save(update_fields=["is_published", "published_at", "updated_at"])
         PortalMockExam.objects.filter(mock_exam=exam).update(is_active=False)
+        if exam.kind == MockExam.KIND_MIDTERM:
+            try:
+                from midterms.sync import unpublish_midterm_mirror
+
+                unpublish_midterm_mirror(exam)
+            except Exception:
+                logger.exception("midterm mirror unpublish failed exam_id=%s", exam.pk)
         exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
         return Response(AdminMockExamSerializer(exam).data)
 
