@@ -113,3 +113,6 @@ export const examApi: ExamApi = createExamApi("/exams/attempts");
 
 /** Separated single-module midterm client (same protocol, different backend). */
 export const midtermExamApi: ExamApi = createExamApi("/midterms/attempts");
+
+/** Separated full-mock client (same protocol; break handled via a separate end_break call). */
+export const mockExamApi: ExamApi = createExamApi("/mocks/attempts");

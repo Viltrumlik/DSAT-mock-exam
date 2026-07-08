@@ -32,5 +32,7 @@ export function moduleLabel(attempt: Attempt | null): string {
 
 /** Whether this attempt allows manual pause (pastpapers yes, mocks no). */
 export function pauseAllowed(attempt: Attempt | null, mockFlow: boolean): boolean {
-  return !mockFlow && attempt?.practice_test_details?.mock_kind !== "MIDTERM";
+  // Pastpapers pause; midterms and full mocks are strictly timed (no pause).
+  const kind = attempt?.practice_test_details?.mock_kind;
+  return !mockFlow && kind !== "MIDTERM" && kind !== "MOCK";
 }

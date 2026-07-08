@@ -11,7 +11,8 @@ import { useModuleSubmit } from "../hooks/useModuleSubmit";
 import { useAutosave } from "../hooks/useAutosave";
 import { useMathRendering } from "../hooks/useMathRendering";
 
-import { examApi, midtermExamApi } from "../services/examApiClient";
+import { examApi, midtermExamApi, mockExamApi } from "../services/examApiClient";
+import { mockApi } from "@/lib/mockApi";
 import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attemptMerge";
 import { isMath, moduleLabel, pauseAllowed, questions as selectQuestions, subjectKind } from "../state/selectors";
 import { FIVE_MINUTE_WARNING_SECONDS } from "../utils/time";
@@ -27,6 +28,7 @@ import { QuestionNavigator } from "../components/QuestionNavigator";
 import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
 import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusScreens";
 import { WelcomeScreen } from "../components/WelcomeScreen";
+import { MockBreakScreen } from "../components/MockBreakScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
 import { CheckYourWorkPage } from "../components/CheckYourWorkPage";
 import { StudentProducedResponseGuide } from "../components/StudentProducedResponseGuide";
@@ -66,10 +68,11 @@ export function ExamRunnerPage() {
   // Fresh pastpaper starts arrive with ?welcome=1 (set by the pastpaper card);
   // resumes don't, so they skip the welcome screen.
   const welcomeParam = search.get("welcome") === "1";
-  // The separated midterm reuses this runner (identical protocol) but talks to its own
-  // backend (/midterms/attempts). Selected by ?src=midterm (or the legacy ?midterm=1).
+  // The separated midterm/mock reuse this runner (identical protocol) but talk to their own
+  // backends. Selected by ?src=midterm (or legacy ?midterm=1) / ?src=mock.
   const isMidtermSrc = search.get("src") === "midterm" || search.get("midterm") === "1";
-  const engineApi = isMidtermSrc ? midtermExamApi : examApi;
+  const isMockSrc = search.get("src") === "mock";
+  const engineApi = isMockSrc ? mockExamApi : isMidtermSrc ? midtermExamApi : examApi;
 
   const { assertCriticalAuth } = useAuthCriticalGate();
   // Load-error recovery actions are admin-only; students never see a Retry button.
@@ -426,8 +429,12 @@ export function ExamRunnerPage() {
       router.push(`/midterm/result/${attemptId}`);
       return;
     }
+    if (isMockSrc) {
+      router.push(`/mock-exam/result/${attemptId}`);
+      return;
+    }
     router.push(`/review/${attemptId}`);
-  }, [attempt, mockFlow, search, router, attemptId, isMidtermExam, isMidtermSrc]);
+  }, [attempt, mockFlow, search, router, attemptId, isMidtermExam, isMidtermSrc, isMockSrc]);
 
   // ── Resizable split divider ─────────────────────────────────────────────────
   const mainRef = useRef<HTMLDivElement | null>(null);
@@ -554,6 +561,23 @@ export function ExamRunnerPage() {
   }
   if (transitionTo !== null) {
     return <ModuleTransitionOverlay toModuleOrder={transitionTo} subjectLabel={moduleLabel(attempt)} />;
+  }
+  // Full-mock between-sections break (server-authoritative timer).
+  if (isMockSrc && attempt && (attempt as unknown as { is_on_break?: boolean }).is_on_break) {
+    const remaining = (attempt as unknown as { break_remaining_seconds?: number }).break_remaining_seconds ?? 0;
+    return (
+      <MockBreakScreen
+        initialSeconds={remaining}
+        onEnd={async () => {
+          try {
+            await mockApi.endBreak(attemptId);
+          } catch {
+            /* the reload below reconciles from the server */
+          }
+          reload();
+        }}
+      />
+    );
   }
   if (isScoring(attempt)) {
     return <ScoringScreen notice={null} />;
