@@ -62,6 +62,7 @@ from .submission_limits import max_batch_upload_bytes, max_files_per_submission
 from .submission_uploads import abandon_staged_uploads, stream_upload_to_storage
 from .homework_auto_submit import sync_practice_submission_for_assignment
 from .capabilities import can as has_cap
+from .views_rankings import resolve_ranking_visibility
 from .throttles import HomeworkSubmitClassThrottle, HomeworkSubmitGlobalThrottle, HomeworkSubmitThrottle
 from .submission_state import (
     assert_student_edit_allowed,
@@ -1197,6 +1198,38 @@ class ClassroomViewSet(ModelViewSet):
         global_means = [x["group_mean_score"] for x in assignments_summary if x["group_mean_score"] is not None]
         overall_assignment_mean = round(mean(global_means), 1) if global_means else None
 
+        # Honor the classroom's ranking-visibility config for non-staff viewers: HIDDEN
+        # shows only the requester's own row, ANONYMOUS strips peers' identity, and
+        # hide_score_values omits peers' numeric scores. Staff keep the full board.
+        is_staff = has_cap(request.user, classroom, "is_staff")
+        mode, hide_names, hide_scores, hide_peers = resolve_ranking_visibility(classroom, staff=is_staff)
+        if not is_staff and (hide_peers or hide_names or hide_scores):
+            requester_id = request.user.id
+
+            def _is_own(r):
+                return r.get("user_id") == requester_id
+
+            if hide_peers:
+                rows = [r for r in rows if _is_own(r)]
+                homework_grade_rows = [r for r in homework_grade_rows if _is_own(r)]
+            for r in rows:
+                if _is_own(r):
+                    continue
+                if hide_names:
+                    r["first_name"] = r["last_name"] = r["username"] = r["email"] = ""
+                if hide_scores:
+                    r["practice_average"] = None
+                    r["average_review_grade"] = None
+                    if r.get("latest_practice"):
+                        r["latest_practice"]["score"] = None
+            for r in homework_grade_rows:
+                if _is_own(r):
+                    continue
+                if hide_names:
+                    r["first_name"] = r["last_name"] = r["email"] = ""
+                if hide_scores:
+                    r["average_review_grade"] = None
+
         return Response(
             {
                 "classroom_id": classroom.id,
@@ -1476,6 +1509,13 @@ class ClassroomViewSet(ModelViewSet):
         ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
         qs = ClassroomStreamItem.objects.filter(classroom=classroom).select_related("actor").order_by("-created_at")
+        # Submission stream items carry the submitter's identity, grade, feedback and file
+        # URLs (via SubmissionSerializer). Only teaching staff may see the whole class's
+        # submissions; a non-staff member sees submission items for their OWN work only.
+        if not has_cap(request.user, classroom, "is_staff"):
+            qs = qs.exclude(
+                Q(stream_type=ClassroomStreamItem.TYPE_SUBMISSION) & ~Q(actor_id=request.user.id)
+            )
         paginator = StreamPagination()
         page = paginator.paginate_queryset(qs, request)
         items = list(page) if page is not None else list(qs[: StreamPagination.page_size])
@@ -2567,7 +2607,7 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
         # Graders = the teaching team (TA + Teacher + Owner) per the capability matrix.
         admin_class_ids = ClassroomMembership.objects.filter(
             user=user, role__in=ClassroomMembership.STAFF_ROLES
-        ).values_list("classroom_id", flat=True)
+        ).exclude(status=ClassroomMembership.STATUS_REMOVED).values_list("classroom_id", flat=True)
         return (
             Submission.objects.filter(assignment__classroom_id__in=admin_class_ids)
             .select_related(

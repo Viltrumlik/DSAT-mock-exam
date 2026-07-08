@@ -35,6 +35,7 @@ from access.services import (
     filter_practice_tests_for_user,
     get_effective_permission_codenames,
     student_has_any_subject_grant,
+    visible_practice_test_platform_subjects_for_query,
 )
 from access.subject_mapping import platform_subject_to_domain
 
@@ -121,7 +122,21 @@ def _midterm_start_guard(user, mock_exam):
       - has an active (in-progress) attempt → allowed (resume), window not re-checked;
       - fresh start → allowed only while a schedule for one of the student's classrooms is open.
     """
-    # No retake once completed.
+    from classes.models import ClassroomMembership
+    from classes.models_schedule import MidtermSchedule
+
+    classroom_ids = list(
+        ClassroomMembership.objects.filter(
+            user=user, role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE
+        ).values_list("classroom_id", flat=True)
+    )
+    scheds = list(MidtermSchedule.objects.filter(mock_exam=mock_exam, classroom_id__in=classroom_ids))
+    if not scheds:
+        # Unscheduled midterm → fully backward compatible: no no-retake block and no
+        # window enforcement (main allowed re-attempts here, so we must too).
+        return None
+
+    # The no-retake / completed block is only enforced once a MidtermSchedule exists.
     if TestAttempt.objects.filter(student=user, mock_exam=mock_exam, is_completed=True).exists():
         return Response(
             {"code": "midterm_completed", "message": "You have already completed this midterm."},
@@ -135,18 +150,6 @@ def _midterm_start_guard(user, mock_exam):
     )
     if has_active:
         return None
-
-    from classes.models import ClassroomMembership
-    from classes.models_schedule import MidtermSchedule
-
-    classroom_ids = list(
-        ClassroomMembership.objects.filter(
-            user=user, role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE
-        ).values_list("classroom_id", flat=True)
-    )
-    scheds = list(MidtermSchedule.objects.filter(mock_exam=mock_exam, classroom_id__in=classroom_ids))
-    if not scheds:
-        return None  # unscheduled → backward compatible (allow)
 
     now = timezone.now()
     if any(s.is_open(now) for s in scheds):
@@ -179,15 +182,19 @@ def _midterm_results_state(student_id, mock_exam_id) -> dict:
         from classes.models_schedule import MidtermSchedule
         from classes.models_certificates import MidtermCertificate
 
+        # Fail closed: resolve schedules from ALL of the student's memberships for this
+        # midterm (ACTIVE *or* REMOVED). A student removed after submitting must not slip
+        # past the release gate just because their membership is no longer active — so
+        # we drop the status filter and withhold unless EVERY relevant schedule is
+        # released.
         classroom_ids = list(
             ClassroomMembership.objects.filter(
                 user_id=student_id, role=ClassroomMembership.ROLE_STUDENT,
-                status=ClassroomMembership.STATUS_ACTIVE,
             ).values_list("classroom_id", flat=True)
         )
         scheds = list(MidtermSchedule.objects.filter(mock_exam_id=mock_exam_id, classroom_id__in=classroom_ids))
         if scheds:
-            state["results_visible"] = any(s.results_released for s in scheds)
+            state["results_visible"] = all(s.results_released for s in scheds)
         cert = (
             MidtermCertificate.objects.filter(student_id=student_id, mock_exam_id=mock_exam_id)
             .order_by("-issued_at").first()
@@ -647,6 +654,129 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             )
         )
 
+    def _mask_withheld_midterm(self, data, attempt):
+        """Strip a midterm attempt's score + answer key from a serialized payload until
+        the teacher releases results.
+
+        The release gate previously lived only in the ``review`` action, so the default
+        ``retrieve``, ``status`` and ``list`` responses (all TestAttemptSerializer, which
+        exposes ``score`` and ``module_results``) leaked a completed midterm's score and
+        full per-question correct answers BEFORE release. This masks exactly those
+        surfaces. Regular exams/pastpapers and RELEASED midterms are returned untouched —
+        the runner and result screens depend on their score + module_results.
+        """
+        if attempt is None:
+            return data
+        pt = getattr(attempt, "practice_test", None)
+        mock = getattr(pt, "mock_exam", None) if pt is not None else None
+        if mock is None and pt is not None and getattr(pt, "mock_exam_id", None):
+            mock = MockExam.objects.filter(pk=pt.mock_exam_id).first()
+        if mock is None or mock.kind != MockExam.KIND_MIDTERM:
+            return data
+        if _midterm_results_state(attempt.student_id, mock.id).get("results_visible"):
+            return data
+        data["score"] = None
+        data["module_results"] = None
+        data["results_withheld"] = True
+        return data
+
+    def _student_startable_mock_ids(self, user) -> set:
+        """MockExam ids whose SECTIONS a student may start an attempt on.
+
+        Mirrors the visibility resolution in ``MockExamViewSet.get_queryset`` (assigned
+        full mocks via ``PortalMockExam`` + granted/assigned midterms via resource grant,
+        ``assigned_users``, portal, or an existing attempt) so a student can only start
+        what they can actually SEE. Reuses the existing access model — no new one.
+        """
+        if not getattr(user, "is_authenticated", False):
+            return set()
+        from access.models import ResourceAccessGrant
+        from access.resources import RT_MIDTERM
+
+        # Assigned full mocks (published + assigned via the portal).
+        mock_ids = set(
+            PortalMockExam.objects.filter(
+                is_active=True,
+                mock_exam__is_active=True,
+                mock_exam__is_published=True,
+                assigned_users=user,
+            ).values_list("mock_exam_id", flat=True)
+        )
+        # Granted/assigned midterms are gated by the classroom grant + schedule, NOT the
+        # legacy is_published flag (identical set to MockExamViewSet.get_queryset).
+        midterm_ids = set(
+            ResourceAccessGrant.objects.filter(
+                user=user,
+                scope=ResourceAccessGrant.SCOPE_RESOURCE,
+                resource_type=RT_MIDTERM,
+                status=ResourceAccessGrant.STATUS_ACTIVE,
+            ).values_list("resource_id", flat=True)
+        )
+        midterm_ids |= set(
+            MockExam.objects.filter(
+                kind=MockExam.KIND_MIDTERM, assigned_users=user
+            ).values_list("id", flat=True)
+        )
+        midterm_ids |= set(
+            PortalMockExam.objects.filter(
+                mock_exam__kind=MockExam.KIND_MIDTERM, assigned_users=user
+            ).values_list("mock_exam_id", flat=True)
+        )
+        midterm_ids |= set(
+            TestAttempt.objects.filter(
+                student=user, mock_exam__kind=MockExam.KIND_MIDTERM
+            ).values_list("mock_exam_id", flat=True)
+        )
+        if midterm_ids:
+            mock_ids |= set(
+                MockExam.objects.filter(
+                    id__in=midterm_ids, kind=MockExam.KIND_MIDTERM, is_active=True
+                ).values_list("id", flat=True)
+            )
+        return mock_ids
+
+    def _student_startable_practice_tests(self, user):
+        """PracticeTest rows a STUDENT may start an attempt on.
+
+        ``filter_practice_tests_for_user`` returns the FULL bank for students (it only
+        applies subject visibility), so it must NOT be the create gate — a student could
+        otherwise POST an arbitrary ``practice_test`` id and read an unassigned/unpublished
+        test's questions. Scope to the UNION of:
+          (a) standalone pastpapers explicitly assigned to the student (publish alone never
+              exposes a section — assignment is the single gate, mirroring
+              ``PracticeTestViewSet.get_queryset``), and
+          (b) SECTIONS of a granted/assigned midterm/mock exam (see
+              ``_student_startable_mock_ids``).
+        """
+        from django.db.models import Q
+
+        cond = Q(mock_exam__isnull=True, assigned_users=user)
+        mock_ids = self._student_startable_mock_ids(user)
+        if mock_ids:
+            cond |= Q(mock_exam_id__in=mock_ids)
+        return (
+            PracticeTest.objects.filter(cond).select_related("mock_exam").distinct()
+        )
+
+    def retrieve(self, request, *args, **kwargs):
+        attempt = self.get_object()
+        data = self.get_serializer(attempt).data
+        return Response(self._mask_withheld_midterm(data, attempt))
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        attempts_by_id = {a.pk: a for a in queryset}
+        page = self.paginate_queryset(queryset)
+        target = page if page is not None else queryset
+        serializer = self.get_serializer(target, many=True)
+        rows = [
+            self._mask_withheld_midterm(row, attempts_by_id.get(row.get("id")))
+            for row in serializer.data
+        ]
+        if page is not None:
+            return self.get_paginated_response(rows)
+        return Response(rows)
+
     def create(self, request, *args, **kwargs):
         t0 = monotonic()
         test_id = request.data.get("practice_test")
@@ -654,9 +784,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         # Permission scope for which PracticeTest rows this user may target (questions checked next).
         unrestricted = PracticeTest.objects.all().select_related("mock_exam")
         if can_browse_standalone_practice_library(user):
+            # Staff library browsers keep subject-scoped access (checked before the
+            # student branch so privileged accounts are unaffected).
             allowed = filter_practice_tests_for_user(user, unrestricted).distinct()
         elif normalized_role(user) == acc_const.ROLE_STUDENT:
-            allowed = filter_practice_tests_for_user(user, unrestricted).distinct()
+            # SECURITY: scope students to what they can actually SEE (assigned pastpapers
+            # + granted/assigned midterm/mock sections). filter_practice_tests_for_user
+            # returns the full bank for students, so it must NOT gate attempt creation.
+            allowed = self._student_startable_practice_tests(user)
         else:
             allowed = unrestricted.filter(assigned_users=user).distinct()
 
@@ -727,14 +862,20 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     # Important for SQLite (test runner): avoid SELECT ... FOR UPDATE on the table
                     # before attempting an insert, as it can trigger "database table is locked" under threads.
                     try:
-                        attempt = TestAttempt.objects.create(
-                        student=request.user,
-                        practice_test=test,
-                        mock_exam=getattr(test, "mock_exam", None),
-                    )
+                        # Nested savepoint: on Postgres a unique-constraint IntegrityError
+                        # aborts the *enclosing* transaction, so the follow-up
+                        # select_for_update() recovery query below would raise InternalError
+                        # (only OperationalError/TransitionConflict are caught) → 500 on a
+                        # double-clicked Start. Isolating the insert in a savepoint means the
+                        # IntegrityError only rolls back the savepoint and leaves the outer
+                        # transaction healthy for the "reuse the active attempt" recovery.
+                        with transaction.atomic():
+                            attempt = TestAttempt.objects.create(
+                                student=request.user,
+                                practice_test=test,
+                                mock_exam=getattr(test, "mock_exam", None),
+                            )
                     except IntegrityError:
-                        # Reset rollback flag after IntegrityError so we can still query in this atomic block.
-                        transaction.set_rollback(False)
                         metric_incr("active_attempt_duplicates_prevented")
                         attempt = (
                             TestAttempt.objects.select_for_update(of=("self",))
@@ -1173,8 +1314,21 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
                     timing = get_active_module_timing(attempt)
                     if timing and timing.is_expired:
-                        module_answers = request.data.get('answers', {}) or {}
-                        flagged = request.data.get('flagged', []) or []
+                        # Deadline auto-submit. submit_module_* fully OVERWRITES
+                        # module_answers[mid], so a stale/empty tab autosaving after the
+                        # cutoff could blank answers already saved. MERGE the incoming
+                        # answers on top of what's persisted (mirroring the explicit
+                        # submit_module merge) so a partial/empty autosave can never erase
+                        # saved work.
+                        body_answers = request.data.get('answers', {}) or {}
+                        body_flagged = request.data.get('flagged', []) or []
+                        mid_key = str(int(getattr(attempt.current_module, "id", 0) or 0))
+                        existing_answers = (attempt.module_answers or {}).get(mid_key, {}) or {}
+                        existing_flagged = (attempt.flagged_questions or {}).get(mid_key, []) or []
+                        module_answers = dict(existing_answers)
+                        if isinstance(body_answers, dict):
+                            module_answers.update(body_answers)
+                        flagged = body_flagged if body_flagged else existing_flagged
                         order = int(getattr(attempt.current_module, "module_order", 0) or 0)
                         if order == 1:
                             attempt.submit_module_1(module_answers, flagged)
@@ -1219,11 +1373,11 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         """
         attempt0 = self.get_object()
         attempt = (
-            TestAttempt.objects.select_related("practice_test", "current_module")
+            TestAttempt.objects.select_related("practice_test", "current_module", "practice_test__mock_exam")
             .prefetch_related("practice_test__modules", "current_module__questions")
             .get(pk=attempt0.pk)
         )
-        return Response(self.get_serializer(attempt).data)
+        return Response(self._mask_withheld_midterm(self.get_serializer(attempt).data, attempt))
 
     @action(detail=True, methods=['get'])
     def review(self, request, pk=None):
@@ -1724,6 +1878,11 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         base = PracticeTest.objects.all().prefetch_related("modules", "assigned_users")
+        # Subject scoping: a subject-scoped teacher only sees their platform subject's
+        # tests; global staff (None) are unrestricted.
+        subjs = visible_practice_test_platform_subjects_for_query(self.request.user)
+        if subjs is not None:
+            base = base.filter(subject__in=subjs)
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
             return base.filter(mock_exam__isnull=True)
@@ -1763,7 +1922,12 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
     serializer_class = AdminModuleSerializer
 
     def get_queryset(self):
-        return Module.objects.filter(practice_test_id=self.kwargs['test_pk'])
+        qs = Module.objects.filter(practice_test_id=self.kwargs['test_pk'])
+        # Subject scoping: don't expose modules of another subject's test to a teacher.
+        subjs = visible_practice_test_platform_subjects_for_query(self.request.user)
+        if subjs is not None:
+            qs = qs.filter(practice_test__subject__in=subjs)
+        return qs
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
@@ -1824,13 +1988,16 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
 
     def get_queryset(self):
-        return (
-            Question.objects.filter(
-                module_id=self.kwargs["module_pk"],
-                module__practice_test_id=self.kwargs["test_pk"],
-            )
-            .order_by("order", "id")
+        qs = Question.objects.filter(
+            module_id=self.kwargs["module_pk"],
+            module__practice_test_id=self.kwargs["test_pk"],
         )
+        # Subject scoping: a teacher may not read/edit another subject's questions
+        # (incl. correct_answer + explanation); global staff (None) are unrestricted.
+        subjs = visible_practice_test_platform_subjects_for_query(self.request.user)
+        if subjs is not None:
+            qs = qs.filter(module__practice_test__subject__in=subjs)
+        return qs.order_by("order", "id")
 
     def create(self, request, *args, **kwargs):
         merged = _merge_admin_question_create_defaults(request, self.kwargs)

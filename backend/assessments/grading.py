@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import unicodedata
 from decimal import Decimal
 
 
@@ -7,11 +8,12 @@ def _norm_text(x: object) -> str:
     if x is None:
         return ""
     s = str(x)
-    if hasattr(s, "normalize"):
-        try:
-            s = s.normalize("NFKC")  # type: ignore[attr-defined]
-        except Exception:
-            pass
+    # Normalize NFKC so full-width digits/letters from mobile IMEs (e.g. "４" or
+    # "Ｔ") fold to their ASCII equivalents before matching.
+    try:
+        s = unicodedata.normalize("NFKC", s)
+    except (TypeError, ValueError):
+        pass
     return " ".join(s.strip().lower().split())
 
 

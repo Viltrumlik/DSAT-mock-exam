@@ -29,6 +29,22 @@ def _display_name(user) -> str:
     return name or getattr(user, "username", None) or getattr(user, "email", "Student")
 
 
+def resolve_ranking_visibility(classroom, *, staff: bool) -> tuple[str, bool, bool, bool]:
+    """Effective leaderboard visibility for a viewer, honoring ``ClassroomRankingConfig``.
+
+    Returns ``(mode, hide_names, hide_scores, hide_peers)``. Staff/admin always get the
+    full named board with scores. For students the config governs: HIDDEN hides peer rows
+    entirely, ANONYMOUS strips peers' names/emails, and ``hide_score_values`` omits scores.
+    """
+    cfg, _ = ClassroomRankingConfig.objects.get_or_create(classroom=classroom)
+    if staff:
+        return cfg.leaderboard_mode, False, False, False
+    mode = cfg.leaderboard_mode
+    hide_peers = mode == ClassroomRankingConfig.MODE_HIDDEN
+    hide_names = mode == ClassroomRankingConfig.MODE_ANONYMOUS
+    return mode, hide_names, bool(cfg.hide_score_values), hide_peers
+
+
 class _ClassroomScopedView(APIView):
     permission_classes = [IsAuthenticated, IsClassMemberCap]
 

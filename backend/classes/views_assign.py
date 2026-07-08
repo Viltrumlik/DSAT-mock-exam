@@ -89,6 +89,11 @@ class AssignMidtermView(_ClassroomScopedView):
         deadline = _parse_schedule_dt(request.data.get("deadline"))
         if "INVALID" in (starts_at, deadline):
             return Response({"detail": "Invalid schedule datetime."}, status=http.HTTP_400_BAD_REQUEST)
+        if starts_at is not None and deadline is not None and deadline <= starts_at:
+            return Response(
+                {"detail": "Deadline must be after the start time."},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
 
         result = ClassroomAccessService.assign_resource_to_classroom(
             classroom, RT_MIDTERM, exam.id, actor=request.user, note="teacher midterm assignment",
@@ -96,11 +101,24 @@ class AssignMidtermView(_ClassroomScopedView):
         )
 
         # Upsert the per-classroom schedule (start countdown + deadline). Assigning never
-        # releases results — that happens when certificates are issued.
-        MidtermSchedule.objects.update_or_create(
+        # releases results — that happens when certificates are issued. On RE-assign, only
+        # overwrite window fields that were explicitly provided: a blank starts_at/deadline
+        # must NOT null out a previously-set window (which would open it immediately and
+        # never close it), and a stale ignore_start must not silently survive as "open now".
+        schedule, created = MidtermSchedule.objects.get_or_create(
             classroom=classroom, mock_exam=exam,
             defaults={"starts_at": starts_at, "deadline": deadline, "created_by": request.user},
         )
+        if not created:
+            update_fields = []
+            if starts_at is not None:
+                schedule.starts_at = starts_at
+                update_fields.append("starts_at")
+            if deadline is not None:
+                schedule.deadline = deadline
+                update_fields.append("deadline")
+            if update_fields:
+                schedule.save(update_fields=[*update_fields, "updated_at"])
         return Response({"detail": "Midterm assigned to classroom.", **result}, status=http.HTTP_200_OK)
 
 

@@ -41,6 +41,8 @@ class ExamEngineChaosConcurrencyTests(TestCase):
         Module.objects.create(practice_test=self.pt, module_order=1, time_limit_minutes=35)
         Module.objects.create(practice_test=self.pt, module_order=2, time_limit_minutes=35)
         seed_mc_questions_for_practice_test(self.pt, questions_per_module=2)
+        # Attempt-create is now gated to assigned pastpapers for students; grant access.
+        self.pt.assigned_users.add(self.student)
 
     @unittest.skipUnless(
         django.db.connection.vendor == "postgresql",

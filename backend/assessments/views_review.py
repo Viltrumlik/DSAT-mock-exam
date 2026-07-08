@@ -242,7 +242,7 @@ class AttemptTeacherFeedbackView(APIView):
 
     def _is_teacher_or_admin(self, request, hw) -> bool:
         from classes.security import classroom_authz_for_user
-        authz = classroom_authz_for_user(hw.classroom, request.user)
+        authz = classroom_authz_for_user(classroom=hw.classroom, user=request.user)
         return authz.is_teacher_owner or authz.is_class_admin or is_global_scope_staff(request.user)
 
     def _is_student_owner(self, request, att) -> bool:

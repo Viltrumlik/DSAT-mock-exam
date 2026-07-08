@@ -444,6 +444,20 @@ class UserSerializer(serializers.ModelSerializer):
             return acc_const.ROLE_STUDENT
         return None
 
+    #: Privilege rank used to forbid assigning a role the actor does not outrank.
+    _ROLE_RANK = {
+        acc_const.ROLE_STUDENT: 1,
+        acc_const.ROLE_TEACHER: 2,
+        acc_const.ROLE_TEST_ADMIN: 3,
+        acc_const.ROLE_ADMIN: 3,
+        acc_const.ROLE_SUPER_ADMIN: 4,
+    }
+
+    def _actor_role_rank(self, actor) -> int:
+        if getattr(actor, "is_superuser", False):
+            return self._ROLE_RANK[acc_const.ROLE_SUPER_ADMIN]
+        return self._ROLE_RANK.get(normalized_role(actor), 1)
+
     def _resolve_system_role_for_write(self, *, instance=None):
         rc = self._incoming_role_code()
         request = self.context.get("request")
@@ -461,6 +475,12 @@ class UserSerializer(serializers.ModelSerializer):
             ):
                 raise serializers.ValidationError(
                     {"role": "You do not have permission to assign roles."}
+                )
+            # Privilege escalation guard: only assign a role at or below the actor's
+            # own rank (a plain admin cannot mint a super_admin; only super_admin can).
+            if self._ROLE_RANK.get(rc, 1) > self._actor_role_rank(actor):
+                raise serializers.ValidationError(
+                    {"role": "You cannot assign a role higher than your own."}
                 )
             adom = user_domain_subject(actor)
             if adom and normalized_role(actor) == acc_const.ROLE_TEACHER:

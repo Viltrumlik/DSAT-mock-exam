@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 from exams.models import MockExam, TestAttempt
 
 from .capabilities import classroom_capabilities
-from .certificates_service import _rank_by_student, certificate_codes_for
+from .certificates_service import _assigned_cohort, _rank_by_student, certificate_codes_for
 from .models import ClassroomMembership
 from .models_certificates import MidtermCertificate
 from .models_schedule import MidtermSchedule
@@ -128,6 +128,12 @@ class MidtermPanelView(_ClassroomScopedView):
             })
 
         schedule = MidtermSchedule.objects.filter(classroom=classroom, mock_exam=mock).first()
+        # "Finished" must be judged against the SAME cohort issuance uses (granted ∩ active,
+        # falling back to active-with-attempts). Otherwise a roster student who was never
+        # assigned this midterm keeps all_finished False forever, hiding the issue button.
+        assigned_ids = _assigned_cohort(classroom, mock)
+        finished_ids = set(latest_completed.keys())
+        all_finished = bool(assigned_ids) and assigned_ids.issubset(finished_ids)
         return Response({
             "midterm": {
                 "mock_exam_id": mock.id, "title": mock.title or f"Midterm #{mock.id}",
@@ -135,10 +141,10 @@ class MidtermPanelView(_ClassroomScopedView):
                 "scoring_scale": getattr(mock, "midterm_scoring_scale", MockExam.SCALE_100),
             },
             "schedule": serialize_schedule(schedule),
-            "summary": {"assigned": len(student_ids), "started": started, "completed": completed,
+            "summary": {"assigned": len(assigned_ids), "started": started, "completed": completed,
                         **_agg(completed_scores)},
             "certificates_issued": bool(codes),
-            "all_finished": len(student_ids) > 0 and completed == len(student_ids),
+            "all_finished": all_finished,
             "students": rows,
         })
 
@@ -181,6 +187,18 @@ class MidtermPanelView(_ClassroomScopedView):
         if "ignore_start" in data:
             schedule.ignore_start = bool(data.get("ignore_start"))
             update_fields.append("ignore_start")
+
+        # A window that closes before it opens can never be used — reject it. Validate the
+        # effective post-patch pair (an incoming field may combine with a stored one).
+        if (
+            schedule.starts_at is not None
+            and schedule.deadline is not None
+            and schedule.deadline <= schedule.starts_at
+        ):
+            return Response(
+                {"detail": "Deadline must be after the start time."},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
 
         if update_fields:
             schedule.save(update_fields=[*update_fields, "updated_at"])

@@ -229,6 +229,116 @@ class ClassroomSecurityTests(TestCase):
         self.assertIn(self.classroom.pk, ids)
         self.assertNotIn(other_class.pk, ids)
 
+    def test_stream_hides_peer_submissions_from_students(self):
+        # A second student submits work; the signal creates a submission stream item.
+        peer = User.objects.create_user("peer_scope@test.com", "secret123")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=peer, role=ClassroomMembership.ROLE_STUDENT
+        )
+        peer_sub = Submission.objects.create(
+            assignment=self.assignment, student=peer, status=Submission.STATUS_SUBMITTED,
+        )
+        url = f"/api/classes/{self.classroom.pk}/stream/"
+
+        # The plain student must not see a classmate's submission (identity/grade/files),
+        # but keeps their own submission item.
+        self.client.force_authenticate(self.student)
+        results = self.client.get(url).json()["results"]
+        sub_ids = {r["submission"]["id"] for r in results if "submission" in r}
+        self.assertNotIn(peer_sub.id, sub_ids)
+        self.assertIn(self.submission.id, sub_ids)
+
+        # Teaching staff still see the whole class's submissions.
+        self.client.force_authenticate(self.admin)
+        staff_ids = {r["submission"]["id"] for r in self.client.get(url).json()["results"] if "submission" in r}
+        self.assertIn(peer_sub.id, staff_ids)
+
+
+class LeaderboardVisibilityTests(TestCase):
+    """The classroom leaderboard must honor ClassroomRankingConfig for non-staff viewers."""
+
+    def setUp(self):
+        from exams.models import PracticeTest, TestAttempt
+        from classes.models_ranking import ClassroomRankingConfig
+
+        self.RankingConfig = ClassroomRankingConfig
+        self.client = APIClient()
+        self.owner = User.objects.create_user("lb_owner@test.com", "secret123")
+        self.s1 = User.objects.create_user("lb_s1@test.com", "secret123")
+        self.s2 = User.objects.create_user("lb_s2@test.com", "secret123")
+        self.s2.first_name, self.s2.last_name = "Peer", "Two"
+        self.s2.save(update_fields=["first_name", "last_name"])
+
+        self.classroom = Classroom.objects.create(
+            name="LB class", subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
+        )
+        for s in (self.s1, self.s2):
+            ClassroomMembership.objects.create(
+                classroom=self.classroom, user=s, role=ClassroomMembership.ROLE_STUDENT
+            )
+        self.pt = PracticeTest.objects.create(mock_exam=None, subject="READING_WRITING", title="Sec")
+        self.assignment = Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="HW", practice_test=self.pt,
+        )
+        # s2 has a graded practice score; s1 has none. The completed attempt auto-submits.
+        TestAttempt.objects.create(
+            practice_test=self.pt, student=self.s2, is_completed=True, score=90,
+        )
+        self.cfg, _ = ClassroomRankingConfig.objects.get_or_create(classroom=self.classroom)
+        self.url = f"/api/classes/{self.classroom.pk}/leaderboard/"
+
+    def _rows(self, user):
+        self.client.force_authenticate(user)
+        return self.client.get(self.url).json()["students"]
+
+    def _row_for(self, rows, uid):
+        return next((r for r in rows if r["user_id"] == uid), None)
+
+    def test_full_mode_exposes_everything_to_students(self):
+        self.cfg.leaderboard_mode = self.RankingConfig.MODE_FULL
+        self.cfg.hide_score_values = False
+        self.cfg.save()
+        peer = self._row_for(self._rows(self.s1), self.s2.id)
+        self.assertIsNotNone(peer)
+        self.assertEqual(peer["email"], self.s2.email)
+        self.assertEqual(peer["practice_average"], 90)
+
+    def test_hidden_mode_shows_only_own_row(self):
+        self.cfg.leaderboard_mode = self.RankingConfig.MODE_HIDDEN
+        self.cfg.save()
+        rows = self._rows(self.s1)
+        self.assertEqual([r["user_id"] for r in rows], [self.s1.id])
+
+    def test_anonymous_mode_strips_peer_identity(self):
+        self.cfg.leaderboard_mode = self.RankingConfig.MODE_ANONYMOUS
+        self.cfg.save()
+        rows = self._rows(self.s1)
+        peer = self._row_for(rows, self.s2.id)
+        self.assertEqual(peer["email"], "")
+        self.assertEqual(peer["first_name"], "")
+        self.assertEqual(self._row_for(rows, self.s1.id)["email"], self.s1.email)  # own kept
+
+    def test_hide_scores_omits_peer_scores(self):
+        self.cfg.leaderboard_mode = self.RankingConfig.MODE_FULL
+        self.cfg.hide_score_values = True
+        self.cfg.save()
+        peer = self._row_for(self._rows(self.s1), self.s2.id)
+        self.assertEqual(peer["email"], self.s2.email)  # identity kept in FULL mode
+        self.assertIsNone(peer["practice_average"])
+
+    def test_staff_sees_full_board_regardless_of_config(self):
+        self.cfg.leaderboard_mode = self.RankingConfig.MODE_HIDDEN
+        self.cfg.hide_score_values = True
+        self.cfg.save()
+        peer = self._row_for(self._rows(self.owner), self.s2.id)
+        self.assertIsNotNone(peer)
+        self.assertEqual(peer["email"], self.s2.email)
+        self.assertEqual(peer["practice_average"], 90)
+
 
 class ClassroomListDirectoryTests(TestCase):
     """Global assign staff should list all classrooms for homework / admin flows."""

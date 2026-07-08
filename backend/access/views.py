@@ -23,6 +23,7 @@ from access.services import (
     authorize,
     has_access_for_classroom,
     has_global_subject_access,
+    is_global_scope_staff,
     normalized_role,
     user_domain_subject,
 )
@@ -176,6 +177,85 @@ class GrantsPagination(PageNumberPagination):
 _resource_label = resources.resource_label
 
 
+# ---------------------------------------------------------------------------
+# Subject-scope authorization for the engine grant admin API.
+#
+# The engine services never call ``authorize()``; these helpers add the same
+# teacher↔subject alignment that :class:`GrantAccessView` enforces so a
+# subject-scoped teacher cannot read / mutate / create grants outside their
+# subject. Global staff (``is_global_scope_staff``) are unrestricted.
+# ---------------------------------------------------------------------------
+
+
+def _actor_allowed_domains(actor):
+    """Domain subjects the actor may act on. ``None`` = unrestricted (global staff)."""
+    if is_global_scope_staff(actor):
+        return None
+    dom = user_domain_subject(actor)  # teacher's single domain, or None if misconfigured
+    return frozenset([dom]) if dom else frozenset()
+
+
+def _domains_within(subs, allowed) -> bool:
+    """True when the (non-empty) domain set ``subs`` is entirely within ``allowed``."""
+    return bool(subs) and set(subs) <= set(allowed)
+
+
+def _target_domain_subjects(resource_type, resource_id) -> frozenset:
+    rt = resources.get(resource_type)
+    if rt is None:
+        return frozenset()
+    return rt.domain_subjects(rt.get_instance(resource_id))
+
+
+def _grant_domain_subjects(grant) -> frozenset:
+    """Domain subjects (``math``/``english``) a grant covers (fail-closed = empty)."""
+    if grant.scope == ResourceAccessGrant.SCOPE_SUBJECT:
+        return frozenset([grant.subject]) if grant.subject else frozenset()
+    return _target_domain_subjects(grant.resource_type, grant.resource_id)
+
+
+def _actor_may_act_on_grant(actor, grant) -> bool:
+    allowed = _actor_allowed_domains(actor)
+    if allowed is None:
+        return True
+    return _domains_within(_grant_domain_subjects(grant), allowed)
+
+
+def _targets_within_actor_scope(actor, targets):
+    """Return (ok, error) — every target's subject must be within the actor's scope."""
+    allowed = _actor_allowed_domains(actor)
+    if allowed is None:
+        return True, None
+    for rt_key, rid in targets:
+        if not _domains_within(_target_domain_subjects(rt_key, rid), allowed):
+            return False, "You may only grant resources within your subject."
+    return True, None
+
+
+def _scope_grants_queryset(qs, actor):
+    """Filter a ``ResourceAccessGrant`` queryset to grants within the actor's subject(s)."""
+    allowed = _actor_allowed_domains(actor)
+    if allowed is None:
+        return qs
+    if not allowed:
+        return qs.none()
+    cond = Q(scope=ResourceAccessGrant.SCOPE_SUBJECT, subject__in=list(allowed))
+    for rt in resources.all_types():
+        resolver = getattr(rt, "subject_queryset_resolver", None)
+        if resolver is None:
+            continue
+        try:
+            model_qs = resolver(rt.model().objects.all(), frozenset(allowed))
+        except Exception:  # data-integrity: never widen or crash on one bad type
+            continue
+        cond |= Q(
+            scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            resource_type=rt.key,
+            resource_id__in=model_qs.values_list("pk", flat=True),
+        )
+    return qs.filter(cond)
+
+
 class EngineGrantListView(generics.ListAPIView):
     """GET /api/access/grants/ — search/filter grants for the admin console."""
 
@@ -185,6 +265,8 @@ class EngineGrantListView(generics.ListAPIView):
 
     def get_queryset(self):
         qs = ResourceAccessGrant.objects.select_related("user", "classroom", "granted_by")
+        # Subject-scope isolation: a teacher only sees grants within their subject.
+        qs = _scope_grants_queryset(qs, self.request.user)
         p = self.request.query_params
         if p.get("user"):
             qs = qs.filter(user_id=p["user"])
@@ -218,6 +300,10 @@ class EngineGrantEventsView(generics.ListAPIView):
     serializer_class = AccessGrantEventSerializer
 
     def get_queryset(self):
+        grant = ResourceAccessGrant.objects.filter(pk=self.kwargs["grant_id"]).first()
+        # Out-of-scope (or missing) grant: reveal no events (avoid cross-subject leak).
+        if not grant or not _actor_may_act_on_grant(self.request.user, grant):
+            return AccessGrantEvent.objects.none()
         return AccessGrantEvent.objects.filter(
             grant_id=self.kwargs["grant_id"]
         ).select_related("actor").order_by("-created_at", "-id")
@@ -291,6 +377,9 @@ class EngineGrantSubjectView(APIView):
             return Response({"detail": "user_ids is required."}, status=400)
         if subject not in C.ALL_DOMAIN_SUBJECTS:
             return Response({"detail": "Invalid subject (math/english)."}, status=400)
+        allowed = _actor_allowed_domains(request.user)
+        if allowed is not None and subject not in allowed:
+            return Response({"detail": "You may only grant your own subject."}, status=403)
         users = list(User.objects.filter(pk__in=user_ids))
         try:
             result = AssignmentService.bulk_assign_subject(
@@ -317,6 +406,9 @@ class EngineGrantResourceView(APIView):
         targets, err = _merge_targets_from_payload(data)
         if err:
             return Response({"detail": err}, status=400)
+        ok, serr = _targets_within_actor_scope(request.user, targets)
+        if not ok:
+            return Response({"detail": serr}, status=403)
         users = list(User.objects.filter(pk__in=user_ids))
         try:
             result = AssignmentService.bulk_assign_targets(
@@ -346,6 +438,9 @@ class EngineGrantClassroomView(APIView):
         targets, err = _merge_targets_from_payload(data)
         if err:
             return Response({"detail": err}, status=400)
+        ok, serr = _targets_within_actor_scope(request.user, targets)
+        if not ok:
+            return Response({"detail": serr}, status=403)
         classroom = Classroom.objects.filter(pk=classroom_id).first()
         if not classroom:
             return Response({"detail": "Classroom not found."}, status=404)
@@ -366,7 +461,8 @@ class EngineGrantRevokeView(APIView):
 
     def post(self, request, grant_id):
         grant = ResourceAccessGrant.objects.filter(pk=grant_id).first()
-        if not grant:
+        # Treat out-of-scope grants as not found (no cross-subject IDOR / enumeration).
+        if not grant or not _actor_may_act_on_grant(request.user, grant):
             return Response({"detail": "Grant not found."}, status=404)
         AccessService.revoke(grant, actor=request.user, note=str(request.data.get("note") or ""))
         grant.refresh_from_db()
@@ -380,7 +476,8 @@ class EngineGrantExtendView(APIView):
 
     def post(self, request, grant_id):
         grant = ResourceAccessGrant.objects.filter(pk=grant_id).first()
-        if not grant:
+        # Treat out-of-scope grants as not found (no cross-subject IDOR / enumeration).
+        if not grant or not _actor_may_act_on_grant(request.user, grant):
             return Response({"detail": "Grant not found."}, status=404)
         AccessService.extend(
             grant, expires_at=request.data.get("expires_at") or None,

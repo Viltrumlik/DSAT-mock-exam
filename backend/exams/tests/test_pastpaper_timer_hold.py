@@ -34,6 +34,8 @@ class PastpaperTimerHoldTests(APITestCase):
         self.m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=32)
         self.m2 = Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=32)
         seed_mc_questions_for_practice_test(self.test, questions_per_module=2)
+        # Attempt-create is now gated to assigned pastpapers for students; grant access.
+        self.test.assigned_users.add(self.user)
 
     def _create_attempt(self):
         return self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json")

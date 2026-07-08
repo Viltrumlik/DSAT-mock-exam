@@ -24,13 +24,13 @@ from .throttles import AssessmentAnswerPerAttemptThrottle
 from .async_tasks import grade_attempt_task
 from .grading_service import grade_attempt
 from .serializers import (
-    AssessmentSetSerializer,
+    AssessmentSetRunnerSerializer,
     StartAttemptSerializer,
     SaveAnswerSerializer,
     SubmitAttemptSerializer,
     AttemptSerializer,
     ResultSerializer,
-    AssessmentQuestionSerializer,
+    AssessmentQuestionRunnerSerializer,
     ApiAssessmentDetailSerializer,
     SaveAnswerStaleWriteSerializer,
     SaveAnswerStoredSerializer,
@@ -255,7 +255,9 @@ class AttemptBundleView(APIView):
             return Response(
                 {
                     "attempt": AttemptSerializer(att).data,
-                    "set": AssessmentSetSerializer(aset).data,
+                    # Runner-safe set serializer: its nested questions omit
+                    # explanation so the worked solution never leaks mid-attempt.
+                    "set": AssessmentSetRunnerSerializer(aset).data,
                     "questions": sanitized,
                     "snapshot_version": att.set_version_id,
                     # Outer classes.Assignment PK — used by student UI to navigate
@@ -290,8 +292,10 @@ class AttemptBundleView(APIView):
         return Response(
             {
                 "attempt": AttemptSerializer(att).data,
-                "set": AssessmentSetSerializer(aset).data,
-                "questions": AssessmentQuestionSerializer(questions, many=True).data,
+                # Runner-safe serializers: neither set.questions nor the top-level
+                # questions expose explanation/correct_answer during the attempt.
+                "set": AssessmentSetRunnerSerializer(aset).data,
+                "questions": AssessmentQuestionRunnerSerializer(questions, many=True).data,
                 "assignment_id": hw.assignment_id,
                 # Pedagogical context: classroom name, assignment title, due date.
                 "meta": _build_hw_meta(hw),
@@ -469,10 +473,16 @@ class SubmitAttemptView(APIView):
             AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")
         )
         q_by_id = {q.id: q for q in base_questions}
-        # Validate assessment version: if question snapshot doesn't match active questions, force restart.
+        # Validate assessment version. Only force a restart when the attempt's
+        # snapshot pins a question that NO LONGER EXISTS / is no longer active —
+        # i.e. the frozen content genuinely can't be graded. A snapshot that is a
+        # SUBSET of the active questions is legitimate: focus/retry attempts store a
+        # subset in question_order, and a teacher merely ADDING questions leaves the
+        # existing ones gradeable. Those must be allowed to submit.
         active_now = set(q_by_id.keys())
         snap = set(int(x) for x in (att.question_order or []) if str(x).isdigit())
-        if snap and snap != active_now:
+        stale = snap - active_now
+        if stale:
             return Response(
                 {"detail": "This assessment was updated. Please restart the attempt."},
                 status=status.HTTP_409_CONFLICT,

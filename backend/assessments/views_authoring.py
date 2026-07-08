@@ -226,8 +226,26 @@ class AdminAssessmentQuestionCreateView(APIView):
 class AdminAssessmentQuestionDetailView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
 
+    def _scoped_question_or_none(self, request, pk: int):
+        """Fetch a question, enforcing the same subject scoping the set-level
+        authoring endpoints use: a teacher may only edit/delete questions in
+        their own domain subject; global staff / superusers are unrestricted.
+        Returns None when out of scope (caller returns 404 — never leak).
+        """
+        q = get_object_or_404(
+            AssessmentQuestion.objects.select_related("assessment_set"), pk=pk
+        )
+        actor = request.user
+        if not is_global_scope_staff(actor) and not getattr(actor, "is_superuser", False):
+            ds = user_domain_subject(actor)
+            if ds and q.assessment_set.subject != ds:
+                return None
+        return q
+
     def patch(self, request, pk: int):
-        q = get_object_or_404(AssessmentQuestion, pk=pk)
+        q = self._scoped_question_or_none(request, pk)
+        if q is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         s = AssessmentQuestionAdminWriteSerializer(q, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
         q = s.save()
@@ -235,8 +253,24 @@ class AdminAssessmentQuestionDetailView(APIView):
         return Response(AssessmentQuestionAdminWriteSerializer(q).data)
 
     def delete(self, request, pk: int):
-        q = get_object_or_404(AssessmentQuestion, pk=pk)
-        q.delete()
+        q = self._scoped_question_or_none(request, pk)
+        if q is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        # AssessmentAnswer.question is on_delete=PROTECT — deleting a question a
+        # student has answered would raise ProtectedError (a 500). It's an academic
+        # record; block it with a clear 409 instead.
+        if q.answers.exists():
+            return Response(
+                {"detail": "Cannot delete a question that has student answers."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        try:
+            q.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "Cannot delete a question that has student answers."},
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

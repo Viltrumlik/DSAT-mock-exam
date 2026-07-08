@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -229,9 +229,21 @@ def _apply_telegram_phone_from_claims(user, claims) -> Response | None:
         return None
     return _apply_telegram_phone(user, {"phone_number": raw_phone})
 
+class LoginRateThrottle(AnonRateThrottle):
+    """Per-IP brute-force / credential-stuffing guard for the login endpoint.
+
+    Anonymous login attempts are keyed by client IP (``AnonRateThrottle`` keys by
+    ``get_ident`` when the request is unauthenticated). The rate is read from the
+    ``login`` scope in ``REST_FRAMEWORK['DEFAULT_THROTTLE_RATES']`` (env-tunable);
+    a ``None`` rate disables it.
+    """
+
+    scope = "login"
+
+
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
-    throttle_classes = []
+    throttle_classes = [LoginRateThrottle]
 
 
 def _revoked_key(jti: str) -> str:
@@ -735,6 +747,11 @@ class UserUpdateView(generics.UpdateAPIView):
     permission_classes = [HasManageUsers]
     queryset = User.objects.all()
 
+    def get_queryset(self):
+        # Scope to the actor's manageable set so a subject-scoped manager cannot
+        # update users outside their subject (out-of-scope targets 404).
+        return manageable_users_queryset(self.request.user)
+
     def perform_update(self, serializer):
         super().perform_update(serializer)
         inst = serializer.instance
@@ -753,6 +770,11 @@ class UserUpdateView(generics.UpdateAPIView):
 class UserDeleteView(generics.DestroyAPIView):
     permission_classes = [HasManageUsers]
     queryset = User.objects.all()
+
+    def get_queryset(self):
+        # Scope to the actor's manageable set so a subject-scoped manager cannot
+        # delete users outside their subject (out-of-scope targets 404).
+        return manageable_users_queryset(self.request.user)
 
     def perform_destroy(self, instance):
         actor = self.request.user

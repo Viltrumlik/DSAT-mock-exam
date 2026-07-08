@@ -124,6 +124,35 @@ class IssuanceLogicTests(MidtermCertificateFixture):
         self.assertEqual(again.score, 800)
 
 
+class PanelCohortTests(MidtermCertificateFixture):
+    """The panel's all_finished must track the ASSIGNED cohort (granted ∩ active), not the
+    whole roster — otherwise an unassigned roster student blocks the issue button forever."""
+
+    def _panel_url(self):
+        return f"/api/classes/{self.classroom.id}/midterms/{self.midterm.id}/panel/"
+
+    def test_all_finished_ignores_unassigned_roster_student(self):
+        # A roster student who was never granted this midterm.
+        outsider = User.objects.create_user("cert_outsider@t.com", "secret123")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=outsider, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self._complete(self.s0, 700)
+        self._complete(self.s1, 650)
+        self._complete(self.s2, 600)  # every GRANTED student finished
+        self.client.force_authenticate(self.owner)
+        data = self.client.get(self._panel_url()).json()
+        self.assertTrue(data["all_finished"])
+        self.assertEqual(data["summary"]["assigned"], 3)
+
+    def test_not_all_finished_when_assigned_student_pending(self):
+        self._complete(self.s0, 700)
+        self._complete(self.s1, 650)  # s2 (granted) has NOT finished
+        self.client.force_authenticate(self.owner)
+        data = self.client.get(self._panel_url()).json()
+        self.assertFalse(data["all_finished"])
+
+
 class CertificatePdfTests(MidtermCertificateFixture):
     def test_render_returns_pdf_bytes(self):
         for s, sc in ((self.s0, 700), (self.s1, 650), (self.s2, 600)):
