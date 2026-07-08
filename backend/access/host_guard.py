@@ -136,6 +136,9 @@ class SubdomainAPIGuardMiddleware:
             # Same policy as apex domain: do not deny by host; rely on ``CanManageQuestions`` etc.
             if path.startswith("/api/exams/admin/"):
                 return self.get_response(request)
+            # Separated midterm + full-mock authoring (new builder backends).
+            if path.startswith("/api/midterms/") or path.startswith("/api/mocks/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.
@@ -209,6 +212,10 @@ class SubdomainAPIGuardMiddleware:
             # Assessment HOMEWORK surface (assign + per-classroom results/gradebook).
             # Assessment authoring (``/api/assessments/admin/``) stays on the questions console.
             if path.startswith("/api/assessments/homework/"):
+                return self.get_response(request)
+            # Separated midterm system: teacher standalone-midterm area (catalog + per-student
+            # grant/revoke/results). The classroom flavor rides /api/classes/ (already allowed).
+            if path.startswith("/api/midterms/"):
                 return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
