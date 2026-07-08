@@ -5,6 +5,10 @@
  * Transport is the shared, auth-aware axios instance (`@/lib/api`) — it carries
  * the JWT access token and refresh interceptors. Only the exam-specific request
  * shapes are owned here.
+ *
+ * `createExamApi(base)` lets the SAME runner drive different attempt backends that
+ * speak the identical protocol: `/exams/attempts` (pastpaper/mock) and
+ * `/midterms/attempts` (the separated midterm). The default export stays pastpaper.
  */
 import api, { getCachedCsrfToken } from "@/lib/api";
 import { type Attempt, parseAttempt } from "../types";
@@ -23,85 +27,89 @@ function withVersion(body: Record<string, unknown>, version?: number): Record<st
   return body;
 }
 
-export const examApi = {
-  /** Canonical poll endpoint; falls back to the legacy retrieve route. */
-  async getStatus(attemptId: number): Promise<Attempt> {
-    try {
-      const r = await api.get(`/exams/attempts/${attemptId}/status/`);
-      return parseAttempt(r.data, "GET status");
-    } catch {
-      const r = await api.get(`/exams/attempts/${attemptId}/`);
-      return parseAttempt(r.data, "GET attempt");
-    }
-  },
+/** Build an exam-engine client bound to a base path, e.g. "/exams/attempts". */
+export function createExamApi(base: string) {
+  return {
+    /** Canonical poll endpoint; falls back to the legacy retrieve route. */
+    async getStatus(attemptId: number): Promise<Attempt> {
+      try {
+        const r = await api.get(`${base}/${attemptId}/status/`);
+        return parseAttempt(r.data, "GET status");
+      } catch {
+        const r = await api.get(`${base}/${attemptId}/`);
+        return parseAttempt(r.data, "GET attempt");
+      }
+    },
 
-  /** Transition NOT_STARTED → MODULE_1_ACTIVE. Idempotent via key. */
-  async start(attemptId: number, idempotencyKey?: string): Promise<Attempt> {
-    const r = await api.post(`/exams/attempts/${attemptId}/start/`, {}, { headers: idemHeaders(idempotencyKey) });
-    return parseAttempt(r.data, "POST start");
-  },
+    /** Transition NOT_STARTED → active. Idempotent via key. */
+    async start(attemptId: number, idempotencyKey?: string): Promise<Attempt> {
+      const r = await api.post(`${base}/${attemptId}/start/`, {}, { headers: idemHeaders(idempotencyKey) });
+      return parseAttempt(r.data, "POST start");
+    },
 
-  /** Pause the wall clock (pastpapers only; mocks disallow pause server-side). */
-  async pause(attemptId: number): Promise<Attempt> {
-    const r = await api.post(`/exams/attempts/${attemptId}/pause/`, {});
-    return parseAttempt(r.data, "POST pause");
-  },
+    /** Pause the wall clock (pastpapers only; mocks + midterms disallow pause server-side). */
+    async pause(attemptId: number): Promise<Attempt> {
+      const r = await api.post(`${base}/${attemptId}/pause/`, {});
+      return parseAttempt(r.data, "POST pause");
+    },
 
-  async resumePause(attemptId: number): Promise<Attempt> {
-    const r = await api.post(`/exams/attempts/${attemptId}/resume_pause/`, {});
-    return parseAttempt(r.data, "POST resume_pause");
-  },
+    async resumePause(attemptId: number): Promise<Attempt> {
+      const r = await api.post(`${base}/${attemptId}/resume_pause/`, {});
+      return parseAttempt(r.data, "POST resume_pause");
+    },
 
-  /**
-   * Fire-and-forget pause that survives a tab close / navigation away (`keepalive`),
-   * unlike the awaitable `pause` above. Used by the runner's auto-pause-on-leave so a
-   * pastpaper's wall clock doesn't keep burning while the student is gone. Cookie auth
-   * + cached masked CSRF token (no network) so it works without an interceptor.
-   */
-  pauseKeepalive(attemptId: number): void {
-    try {
-      const token = getCachedCsrfToken();
-      void fetch(`/api/exams/attempts/${attemptId}/pause/`, {
-        method: "POST",
-        credentials: "include",
-        keepalive: true,
-        headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
-        body: "{}",
-      });
-    } catch {
-      /* best-effort: progress is also continuously autosaved and paused on return */
-    }
-  },
+    /** Fire-and-forget pause that survives a tab close (`keepalive`). Pastpaper-only in practice. */
+    pauseKeepalive(attemptId: number): void {
+      try {
+        const token = getCachedCsrfToken();
+        void fetch(`/api${base}/${attemptId}/pause/`, {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
+          body: "{}",
+        });
+      } catch {
+        /* best-effort: progress is also continuously autosaved and paused on return */
+      }
+    },
 
-  /** Submit the active module → advances state (M1→M2, or M2→SCORING). */
-  async submitModule(
-    attemptId: number,
-    answers: Record<string, string>,
-    flagged: number[],
-    opts: MutationOptions = {},
-  ): Promise<Attempt> {
-    const r = await api.post(
-      `/exams/attempts/${attemptId}/submit_module/`,
-      withVersion({ answers, flagged }, opts.expectedVersionNumber),
-      { headers: idemHeaders(opts.idempotencyKey) },
-    );
-    return parseAttempt(r.data, "POST submit_module");
-  },
+    /** Submit the active module → advances state. */
+    async submitModule(
+      attemptId: number,
+      answers: Record<string, string>,
+      flagged: number[],
+      opts: MutationOptions = {},
+    ): Promise<Attempt> {
+      const r = await api.post(
+        `${base}/${attemptId}/submit_module/`,
+        withVersion({ answers, flagged }, opts.expectedVersionNumber),
+        { headers: idemHeaders(opts.idempotencyKey) },
+      );
+      return parseAttempt(r.data, "POST submit_module");
+    },
 
-  /** Persist in-progress answers without advancing state (autosave). */
-  async saveAttempt(
-    attemptId: number,
-    answers: Record<string, string>,
-    flagged: number[],
-    opts: MutationOptions = {},
-  ): Promise<Attempt> {
-    const r = await api.post(
-      `/exams/attempts/${attemptId}/save_attempt/`,
-      withVersion({ answers, flagged }, opts.expectedVersionNumber),
-      { headers: idemHeaders(opts.idempotencyKey) },
-    );
-    return parseAttempt(r.data, "POST save_attempt");
-  },
-};
+    /** Persist in-progress answers without advancing state (autosave). */
+    async saveAttempt(
+      attemptId: number,
+      answers: Record<string, string>,
+      flagged: number[],
+      opts: MutationOptions = {},
+    ): Promise<Attempt> {
+      const r = await api.post(
+        `${base}/${attemptId}/save_attempt/`,
+        withVersion({ answers, flagged }, opts.expectedVersionNumber),
+        { headers: idemHeaders(opts.idempotencyKey) },
+      );
+      return parseAttempt(r.data, "POST save_attempt");
+    },
+  };
+}
 
-export type ExamApi = typeof examApi;
+export type ExamApi = ReturnType<typeof createExamApi>;
+
+/** Default pastpaper/mock client (unchanged path). */
+export const examApi: ExamApi = createExamApi("/exams/attempts");
+
+/** Separated single-module midterm client (same protocol, different backend). */
+export const midtermExamApi: ExamApi = createExamApi("/midterms/attempts");

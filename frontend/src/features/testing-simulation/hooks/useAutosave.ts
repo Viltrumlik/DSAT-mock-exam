@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import type { Attempt } from "../types";
-import { examApi } from "../services/examApiClient";
+import { type ExamApi, examApi } from "../services/examApiClient";
 import { clearDraft, writeDraft } from "../services/draftStore";
 import { saveKey } from "../utils/idempotency";
 import { isActive } from "../state/attemptMerge";
@@ -26,6 +26,8 @@ interface UseAutosaveArgs {
   enabled: boolean;
   /** Browser connectivity. When false, work is kept locally and the save is deferred. */
   online?: boolean;
+  /** Attempt-engine client. Defaults to the pastpaper/mock client; midterm passes its own. */
+  api?: ExamApi;
 }
 
 const DEBOUNCE_MS = 1500;
@@ -45,6 +47,7 @@ export function useAutosave({
   applyAttempt,
   enabled,
   online = true,
+  api = examApi,
 }: UseAutosaveArgs): UseAutosaveResult {
   const inFlightRef = useRef(false);
   const applyRef = useRef(applyAttempt);
@@ -86,7 +89,7 @@ export function useAutosave({
       inFlightRef.current = true;
       setStatus(retries === 0 ? "saving" : "retrying");
       try {
-        const snap = await examApi.saveAttempt(attemptId, answers, flagged, {
+        const snap = await api.saveAttempt(attemptId, answers, flagged, {
           idempotencyKey: saveKey(attemptId, liveModuleId, version ?? 0),
           expectedVersionNumber: version,
         });
