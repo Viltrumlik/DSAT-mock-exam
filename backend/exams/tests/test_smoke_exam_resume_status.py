@@ -28,6 +28,8 @@ class ExamRunnerSmokeTests(APITestCase):
         Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
         Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
         seed_mc_questions_for_practice_test(self.test)
+        # Attempt-create is now gated to assigned pastpapers for students; grant access.
+        self.test.assigned_users.add(self.student)
 
     def test_start_resume_status_smoke(self):
         r = self.client.post("/api/exams/attempts/", {"practice_test": self.test.id}, format="json")

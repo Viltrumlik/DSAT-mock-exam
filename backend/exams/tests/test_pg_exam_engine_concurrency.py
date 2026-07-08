@@ -60,6 +60,8 @@ class ExamEnginePostgresConcurrency(TestCase):
         for _i in range(2):
             Question.objects.create(module=m1, question_type="MATH", question_text="Q1", correct_answers="a")
             Question.objects.create(module=m2, question_type="MATH", question_text="Q2", correct_answers="a")
+        # Attempt-create is now gated to assigned pastpapers for students; grant access.
+        self.pt.assigned_users.add(self.student)
 
     def test_parallel_resume_requests_serializes_and_stays_consistent(self):
         c0 = _exam_client(self.student)
