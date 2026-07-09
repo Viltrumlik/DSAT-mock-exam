@@ -24,9 +24,13 @@ function label(u: StudentRow): string {
 export function StudentMultiSelect({
   value,
   onChange,
+  showClassroomFilter = true,
 }: {
   value: number[];
   onChange: (ids: number[]) => void;
+  /** Show the "filter by classroom" dropdown. Off for the standalone midterm area,
+   *  which grants to individual students with no classroom involved. */
+  showClassroomFilter?: boolean;
 }) {
   const [users, setUsers] = useState<StudentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,18 +51,20 @@ export function StudentMultiSelect({
         if (alive) setLoading(false);
       }
     })();
-    (async () => {
-      try {
-        const data = await classesApi.list();
-        if (alive) setClassrooms((data.items as ClassroomRow[]) ?? []);
-      } catch {
-        /* non-fatal */
-      }
-    })();
+    if (showClassroomFilter) {
+      (async () => {
+        try {
+          const data = await classesApi.list();
+          if (alive) setClassrooms((data.items as ClassroomRow[]) ?? []);
+        } catch {
+          /* non-fatal */
+        }
+      })();
+    }
     return () => {
       alive = false;
     };
-  }, []);
+  }, [showClassroomFilter]);
 
   // When a classroom is picked, fetch its members and restrict the list to those students.
   useEffect(() => {
@@ -131,18 +137,20 @@ export function StudentMultiSelect({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={classroomId}
-          onChange={(e) => setClassroomId(e.target.value ? Number(e.target.value) : "")}
-          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
-        >
-          <option value="">All classrooms</option>
-          {classrooms.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        {showClassroomFilter && (
+          <select
+            value={classroomId}
+            onChange={(e) => setClassroomId(e.target.value ? Number(e.target.value) : "")}
+            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+          >
+            <option value="">All classrooms</option>
+            {classrooms.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="relative min-w-[200px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
