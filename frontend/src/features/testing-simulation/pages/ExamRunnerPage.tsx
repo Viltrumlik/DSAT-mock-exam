@@ -719,7 +719,9 @@ export function ExamRunnerPage() {
             {isStudentProducedResponse(currentQuestion) && (
               <div
                 className="h-full shrink-0 overflow-hidden transition-[width] duration-300 ease-out"
-                style={{ width: sprGuideExpanded ? "min(46%, 640px)" : "3rem" }}
+                // Expanded: exactly half the screen (percentage, no px cap) so the
+                // directions + question split stays 50/50 and centered at any size.
+                style={{ width: sprGuideExpanded ? "50%" : "3rem" }}
               >
                 <StudentProducedResponseGuide expanded={sprGuideExpanded} onToggle={toggleSprGuide} />
               </div>
