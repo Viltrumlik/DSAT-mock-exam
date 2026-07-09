@@ -217,6 +217,12 @@ class SubdomainAPIGuardMiddleware:
             # grant/revoke/results). The classroom flavor rides /api/classes/ (already allowed).
             if path.startswith("/api/midterms/"):
                 return self.get_response(request)
+            # Student picker for the standalone-midterm grant panel. The LIST endpoint only —
+            # it is permission-gated (HasManageUsersOrAssignTestAccess) and scoped
+            # (manageable_users_queryset), so a teacher sees only their own students. The
+            # user-management subpaths (create/update/delete/bulk) stay off the teacher console.
+            if path == "/api/users/":
+                return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "This endpoint is not available on the teacher portal."},
