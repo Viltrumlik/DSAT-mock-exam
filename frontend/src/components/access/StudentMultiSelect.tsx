@@ -44,7 +44,10 @@ export function StudentMultiSelect({
     let alive = true;
     (async () => {
       try {
-        const r = await api.get("/users/");
+        // Standalone midterm grant (no classroom filter) → every student system-wide via the
+        // teacher endpoint; the classroom/admin usage keeps the scoped /users/ list.
+        const endpoint = showClassroomFilter ? "/users/" : "/midterms/teacher/students/";
+        const r = await api.get(endpoint);
         const raw: StudentRow[] = Array.isArray(r.data) ? r.data : (r.data?.results ?? []);
         if (alive) setUsers(raw.filter((u) => String(u.role ?? "student").toLowerCase() === "student"));
       } finally {
