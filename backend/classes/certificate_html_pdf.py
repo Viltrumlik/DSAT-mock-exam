@@ -41,6 +41,14 @@ _A4_H_PX = 210.0 / 25.4 * 96.0  # A4 landscape height in CSS px @96dpi (≈793.7
 A4_SCALE_X = round(_A4_W_PX / CARD_W, 5)  # ≈ 1.47700
 A4_SCALE_Y = round(_A4_H_PX / CARD_H, 5)  # ≈ 1.47528
 
+# `--font-render-hinting=none` is CRITICAL on Linux. Chromium embeds this webfont as a
+# Type-3 PDF font whose glyph advance widths come from the platform font engine. On Linux
+# (FreeType) the default hinting rounds those advances, so words render jammed together
+# ("foroutstandingperformance…") — the exact "ugly" text the certs shipped with. macOS
+# (CoreText) doesn't hint, which is why it always looked fine locally. Disabling hinting
+# makes the PDF text metrics correct on the prod Linux box (no-op on macOS).
+CHROMIUM_ARGS = ["--no-sandbox", "--disable-gpu", "--font-render-hinting=none"]
+
 _SUBJECT_FULL = {
     "MATH": "Mathematics", "MATHEMATICS": "Mathematics",
     "READING": "Reading & Writing", "READING_WRITING": "Reading & Writing",
@@ -184,7 +192,7 @@ def render_certificate_pdf_html(cert: "MidtermCertificate") -> bytes:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--no-sandbox", "--disable-gpu"])
+        browser = p.chromium.launch(args=CHROMIUM_ARGS)
         try:
             return _render_on_browser(browser, cert)
         finally:
@@ -202,7 +210,7 @@ def render_certificates_pdf_batch(certs) -> dict:
 
     out: dict = {}
     with sync_playwright() as p:
-        browser = p.chromium.launch(args=["--no-sandbox", "--disable-gpu"])
+        browser = p.chromium.launch(args=CHROMIUM_ARGS)
         try:
             for cert in certs:
                 out[cert.code] = _render_on_browser(browser, cert)
