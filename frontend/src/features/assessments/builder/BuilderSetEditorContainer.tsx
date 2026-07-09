@@ -847,13 +847,35 @@ export default function BuilderSetEditorContainer() {
                         onDelete={() =>
                           void (async () => {
                             pushUndoPoint();
-                            try {
-                              await delQuestion.mutateAsync(q.id);
+                            const applyLocal = () => {
                               removeQuestionPatch(q.id);
                               if (selectedQuestionId === q.id) selectQuestion(null);
                               toast.push({ tone: "success", message: "Deleted." });
+                            };
+                            try {
+                              await delQuestion.mutateAsync(q.id);
+                              applyLocal();
                             } catch (e) {
-                              toast.push({ tone: "error", message: normalizeApiError(e).message });
+                              const err = normalizeApiError(e);
+                              // 409 = the question has student answers (PROTECT). Offer to
+                              // force-delete it along with those answers; scores are kept.
+                              if (
+                                err.status === 409 &&
+                                window.confirm(
+                                  "This question already has student answers.\n\n" +
+                                    "Delete it anyway? This also removes those answer records " +
+                                    "(existing scores are not changed). This cannot be undone.",
+                                )
+                              ) {
+                                try {
+                                  await delQuestion.mutateAsync({ questionId: q.id, force: true });
+                                  applyLocal();
+                                } catch (e2) {
+                                  toast.push({ tone: "error", message: normalizeApiError(e2).message });
+                                }
+                              } else {
+                                toast.push({ tone: "error", message: err.message });
+                              }
                             }
                           })()
                         }

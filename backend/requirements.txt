@@ -19,7 +19,11 @@ Pillow==12.1.1
 # Question Bank PDF import — per-page text + embedded-image extraction
 PyMuPDF==1.27.2.3
 
-# Certificate PDF generation (midterm certificates) — pure-Python, no system libs
+# Certificate PDF generation (midterm certificates).
+#   playwright renders the HTML design template → PDF via headless Chromium
+#   (primary path). After `pip install`, run `python -m playwright install chromium`
+#   on the host. reportlab is the pure-Python fallback when Chromium is unavailable.
+playwright==1.61.0
 reportlab==4.2.5
 
 # Config

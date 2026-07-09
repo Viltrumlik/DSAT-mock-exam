@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAttemptBundle, useSaveAnswer, useSubmitAttempt } from "@/features/assessments/hooks";
+import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
 import { normalizeApiError } from "@/lib/apiError";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import { AnswerInput, type OptionImageMap } from "@/features/assessments/components/QuestionInputs";
@@ -75,7 +76,9 @@ import {
   Clock,
   Highlighter,
   Loader2,
+  LogOut,
   Monitor,
+  Pause,
   Send,
   Timer,
   Wifi,
@@ -147,6 +150,16 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     | number
     | null
     | undefined;
+  // homework_id pins the SPECIFIC assessment of the assignment. An assignment can
+  // bundle several assessments, so the result/review URL must carry ?homework=<id>
+  // — otherwise it opens the bundle's first assessment, not the one just taken.
+  const homeworkId = (attempt as Record<string, unknown> | undefined)?.homework_id as
+    | number
+    | null
+    | undefined;
+  const resultHref = assignmentId
+    ? `/assessments/result/${assignmentId}${homeworkId ? `?homework=${homeworkId}` : ""}`
+    : "/classes";
   // Pedagogical context: classroom + assignment title from the bundle meta block.
   // Renders in the runner header so students always know which classroom this
   // assessment belongs to. Gracefully absent for older bundles without meta.
@@ -209,8 +222,23 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // Auto-hide "saved" dot after 2s
   const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Pause / resume (save-and-exit) ─────────────────────────────────────────
+  // Assessments are untimed, so pause here freezes the count-up elapsed counter
+  // and preserves position — the student resumes exactly where they left off.
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
+  pausedRef.current = paused;
+  const [exiting, setExiting] = useState(false);
+  const currentIdxRef = useRef(0);
+  currentIdxRef.current = currentIdx;
+
   // ── Count-up timer & per-question time tracking ────────────────────────────
   const examStartRef = useRef(Date.now());
+  // Elapsed seconds banked from the server (and frozen pause windows). The live
+  // display = baseElapsedRef + (now - examStartRef) while running. On resume we
+  // re-anchor examStartRef so the count continues from the frozen value (no jump).
+  const baseElapsedRef = useRef(0);
+  const seededElapsedRef = useRef(false);
   const [elapsedSec, setElapsedSec] = useState(0);
   // Accumulated seconds per question id
   const questionTimesRef = useRef<Record<number, number>>({});
@@ -225,14 +253,35 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // localStorage by region, survive re-renders / refresh / navigation).
   const [highlighterActive, setHighlighterActive] = useState(false);
 
-  // Count-up timer: tick every second while the exam stage is active
+  // Count-up timer: tick every second while the exam stage is active AND not
+  // paused. Pausing freezes the display; resuming continues from the frozen base.
   useEffect(() => {
-    if (stage !== "exam") return;
+    if (stage !== "exam" || paused) return;
     const iv = setInterval(() => {
-      setElapsedSec(Math.floor((Date.now() - examStartRef.current) / 1000));
+      setElapsedSec(baseElapsedRef.current + Math.floor((Date.now() - examStartRef.current) / 1000));
     }, 1000);
     return () => clearInterval(iv);
-  }, [stage]);
+  }, [stage, paused]);
+
+  // Seed the timer + position + pause state from the server ONCE, when the
+  // attempt first loads. elapsed_seconds is the server-authoritative time-on-task
+  // (frozen while paused), so a resumed attempt continues counting instead of
+  // restarting at 0, and lands on the last-viewed question.
+  useEffect(() => {
+    if (seededElapsedRef.current || !attempt) return;
+    seededElapsedRef.current = true;
+    const serverElapsed = Math.max(0, Math.floor(Number((attempt as Record<string, unknown>).elapsed_seconds) || 0));
+    baseElapsedRef.current = serverElapsed;
+    examStartRef.current = Date.now();
+    setElapsedSec(serverElapsed);
+    const savedIdx = Number((attempt as Record<string, unknown>).current_question_index);
+    const maxIdx = Math.max(0, ordered.length - 1);
+    if (Number.isFinite(savedIdx) && savedIdx > 0) {
+      const clamped = Math.min(savedIdx, maxIdx);
+      setCurrentIdx((cur) => (cur === 0 ? clamped : cur));
+    }
+    if ((attempt as Record<string, unknown>).is_paused) setPaused(true);
+  }, [attempt, ordered.length]);
 
   const current = ordered[currentIdx] as Record<string, unknown> | undefined;
   const currentQuestionId = Number(current?.id || 0);
@@ -241,7 +290,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // passive (other-tab) mode, on terminal screens, or where the browser can't
   // do full screen (so unsupported browsers aren't locked out).
   const fsEnforced =
-    stage === "exam" && !isPassive && fsSupported && Boolean(current);
+    stage === "exam" && !isPassive && !paused && fsSupported && Boolean(current);
   // Show the blocking overlay only after the student has stayed OUT of full
   // screen past a short grace window, so the native enter/exit transition never
   // flashes the modal. Hidden the instant they're back in full screen.
@@ -785,6 +834,137 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     void flushSave();
   }, [conflicts, attempt, flushSave]);
 
+  // ── Pause / resume + auto-pause on leave / inactivity + save-and-exit ───────
+  // pauseNow freezes the count-up timer at its current value and persists the
+  // pause + question cursor server-side. `persist` chooses the transport:
+  //   "keepalive" — fire-and-forget fetch that survives a tab close (leave events)
+  //   "await"     — normal request (inactivity timeout / explicit, tab still open)
+  const pauseNowRef = useRef<(persist: "keepalive" | "await") => void>(() => {});
+  // Drain every answer still owed to the server (debounce buffer + offline queue)
+  // via keepalive POSTs, so a just-picked answer is NEVER lost when the student
+  // leaves — even mid-debounce or on a hard tab close. Idempotent with the normal
+  // autosave (same value re-sent is harmless).
+  const flushPendingKeepalive = () => {
+    const ids = new Set(
+      [...Object.keys(pendingSaves.current), ...Object.keys(offlineQueue.current)]
+        .map(Number)
+        .filter(Number.isFinite),
+    );
+    for (const qid of ids) {
+      const value =
+        qid in pendingSaves.current ? pendingSaves.current[qid]
+        : qid in offlineQueue.current ? offlineQueue.current[qid]
+        : draftRef.current[qid];
+      assessmentsStudentApi.saveAnswerKeepalive(attemptId, qid, value, currentIdxRef.current);
+    }
+  };
+
+  pauseNowRef.current = (persist) => {
+    if (pausedRef.current || stageRef.current !== "exam" || submitInflightRef.current) return;
+    // A passive (duplicate) tab doesn't own the attempt — it must never pause the
+    // active tab's work out from under it.
+    if (isPassiveRef.current) return;
+    // Belt-and-braces: push any unsent answers NOW so nothing is stranded in the
+    // 650ms debounce window when the student leaves.
+    flushPendingKeepalive();
+    // Flip the ref synchronously so two events in the same tick can't double-bank
+    // the elapsed window (setPaused only updates the ref on the next render).
+    pausedRef.current = true;
+    // Freeze the timer: bank the running window into the base and stop the tick.
+    baseElapsedRef.current =
+      baseElapsedRef.current + Math.floor((Date.now() - examStartRef.current) / 1000);
+    setElapsedSec(baseElapsedRef.current);
+    setPaused(true);
+    if (persist === "keepalive") {
+      assessmentsStudentApi.pauseKeepalive(attemptId, currentIdxRef.current);
+    } else {
+      void assessmentsStudentApi
+        .pause({ attempt_id: attemptId, current_index: currentIdxRef.current })
+        .catch(() => {});
+    }
+  };
+
+  // resumeNow un-freezes silently — there is NO manual resume button. Resume is
+  // automatic: returning to the tab or any interaction continues the count-up
+  // from exactly where it froze (no jump).
+  const resumeNowRef = useRef<() => void>(() => {});
+  resumeNowRef.current = () => {
+    if (!pausedRef.current) return;
+    // Flip synchronously so rapid events in one tick don't double-fire resume.
+    pausedRef.current = false;
+    examStartRef.current = Date.now();
+    setPaused(false);
+    void assessmentsStudentApi.resume({ attempt_id: attemptId }).catch(() => {});
+  };
+
+  // Auto-pause the moment the student leaves (this is the "abandon" trigger):
+  // tab hidden, page hide (close / hard nav), or this runner unmounts (SPA nav
+  // away). keepalive so it lands even as the page is torn down. Returning to the
+  // tab auto-resumes. Guarded to the live exam stage.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") pauseNowRef.current("keepalive");
+      else if (document.visibilityState === "visible") resumeNowRef.current();
+    };
+    const onPageHide = () => pauseNowRef.current("keepalive");
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      pauseNowRef.current("keepalive");
+    };
+  }, []);
+
+  // Inactivity auto-pause + auto-resume. Interaction listeners stay attached even
+  // while paused so ANY mouse/key/touch/scroll silently resumes; while running,
+  // they re-arm the idle timer that pauses after a stretch of no interaction.
+  useEffect(() => {
+    if (stage !== "exam") return;
+    const IDLE_MS = 60_000;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => pauseNowRef.current("await"), IDLE_MS);
+    };
+    const onActivity = () => {
+      if (pausedRef.current) {
+        resumeNowRef.current(); // idle/leave pause → first interaction resumes
+      }
+      arm();
+    };
+    const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll", "wheel"];
+    events.forEach((e) => window.addEventListener(e, onActivity, { passive: true }));
+    arm();
+    return () => {
+      if (timer) clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, onActivity));
+    };
+  }, [stage]);
+
+  // Save & Exit: flush unsent answers, pause the attempt, then leave. The
+  // student can resume later from the same question with the timer where it froze.
+  const handleSaveAndExit = useCallback(async () => {
+    if (exiting) return;
+    setExiting(true);
+    try {
+      if (debouncedTimer.current) clearTimeout(debouncedTimer.current);
+      await flushSave();
+    } catch {
+      /* answers are also stored locally and will retry on resume */
+    }
+    try {
+      await assessmentsStudentApi.pause({
+        attempt_id: attemptId,
+        current_index: currentIdxRef.current,
+      });
+    } catch {
+      /* best-effort — the attempt stays in progress either way */
+    }
+    void fsExit();
+    window.location.assign(assignmentId ? `/assessments/${assignmentId}` : "/classes");
+  }, [exiting, flushSave, attemptId, assignmentId, fsExit]);
+
   // ── Answered tracking ───────────────────────────────────────────────────────
 
   const answeredIds = useMemo(() => {
@@ -848,7 +1028,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       );
       // Skip the post-submit time-summary screen — go straight to the results
       // page. A full navigation also drops the runner's full-screen takeover.
-      window.location.assign(assignmentId ? `/assessments/result/${assignmentId}` : "/classes");
+      window.location.assign(resultHref);
       // submitInflightRef intentionally stays true — successful submit should
       // never be re-fired even if the user navigates back to this surface.
     } catch (e) {
@@ -930,7 +1110,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           </p>
           {assignmentId ? (
             <a
-              href={`/assessments/result/${assignmentId}`}
+              href={resultHref}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
             >
               View results
@@ -1072,7 +1252,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           </p>
           {assignmentId ? (
             <a
-              href={`/assessments/result/${assignmentId}`}
+              href={resultHref}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
             >
               View results
@@ -1144,6 +1324,7 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         <CompleteScreen
           title={setTitle}
           assignmentId={assignmentId ?? null}
+          homeworkId={homeworkId ?? null}
           attemptId={attemptId}
         />
       </div>
@@ -1211,6 +1392,10 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       setTitle={setTitle}
       subject={subjectLabel}
       classroomName={runnerMeta?.classroom_name ?? null}
+      // Pause / save-and-exit (pause is automatic; only Save & Exit is a button)
+      paused={paused}
+      exiting={exiting}
+      onSaveAndExit={() => void handleSaveAndExit()}
       // Timer
       elapsedSec={elapsedSec}
       questionElapsedSec={
@@ -1287,6 +1472,10 @@ type ExamSimulationProps = {
   subject: string;
   classroomName: string | null;
 
+  paused: boolean;
+  exiting: boolean;
+  onSaveAndExit: () => void;
+
   elapsedSec: number;
   questionElapsedSec: number;
 
@@ -1331,6 +1520,9 @@ function ExamSimulationView({
   setTitle,
   subject,
   classroomName,
+  paused,
+  exiting,
+  onSaveAndExit,
   elapsedSec,
   questionElapsedSec,
   online,
@@ -1437,9 +1629,15 @@ function ExamSimulationView({
 
         {/* Timer (count-up) */}
         <div className="flex-1 flex flex-col items-center">
+          {paused && (
+            <span className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-500">
+              <Pause className="h-2.5 w-2.5" />
+              Paused
+            </span>
+          )}
           {showTimer ? (
             <>
-              <span className="text-lg font-bold font-mono tracking-tight tabular-nums">
+              <span className={`text-lg font-bold font-mono tracking-tight tabular-nums ${paused ? "text-slate-400" : ""}`}>
                 {fmtElapsed(elapsedSec)}
               </span>
               <button
@@ -1493,6 +1691,17 @@ function ExamSimulationView({
               {highlighterActive ? "On" : "Highlight"}
             </span>
           </button>
+          <button
+            onClick={onSaveAndExit}
+            disabled={exiting}
+            title="Save your progress and leave — you can resume later where you left off"
+            className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-slate-900 transition-colors disabled:opacity-50"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="text-[9px] font-bold uppercase tracking-wider">
+              {exiting ? "Saving…" : "Save & Exit"}
+            </span>
+          </button>
           <div className="w-px h-8 bg-slate-100" />
           <div className="flex flex-col items-center pt-0.5 gap-0.5">
             <span className="text-sm font-bold text-slate-700 tabular-nums">{answeredCount}/{totalCount}</span>
@@ -1503,6 +1712,7 @@ function ExamSimulationView({
           </div>
         </div>
       </header>
+
 
       {/* ── Conflict resolution banner (inline so it never blocks layout) ──── */}
       {conflicts.length > 0 && (

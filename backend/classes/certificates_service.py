@@ -153,6 +153,15 @@ def issue_certificates(classroom, mock_exam, actor, *, force: bool = False) -> d
     actor_valid = actor if getattr(actor, "is_authenticated", False) else None
     actor_name = _display_name(actor) if actor_valid else ""
     users = {u.id: u for u in User.objects.filter(id__in=latest.keys())}
+    # The new-app Midterm mirroring this legacy MockExam, so the certificate is
+    # written under BOTH identities — the student area reads by ``midterm`` FK and
+    # would otherwise never see a cert issued under only the ``mock_exam`` FK.
+    midterm_mirror = None
+    try:
+        from midterms.models import Midterm
+        midterm_mirror = Midterm.objects.filter(legacy_mock_exam_id=mock_exam.id).first()
+    except Exception:  # pragma: no cover - defensive during transition
+        midterm_mirror = None
     certificates = []
     for student_id, attempt in latest.items():
         user = users.get(student_id)
@@ -162,6 +171,7 @@ def issue_certificates(classroom, mock_exam, actor, *, force: bool = False) -> d
             student_id=student_id,
             defaults={
                 "attempt": attempt,
+                "midterm": midterm_mirror,
                 "student_name": _display_name(user) if user else f"Student #{student_id}",
                 "midterm_title": title,
                 "subject": subject,

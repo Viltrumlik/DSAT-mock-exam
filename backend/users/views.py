@@ -241,6 +241,23 @@ class LoginRateThrottle(AnonRateThrottle):
     scope = "login"
 
 
+def _deactivated_block(user):
+    """403 when a user has been DEACTIVATED (``is_active=False``) — they may not log
+    in on any path, though their data stays in the database. Returns ``None`` for
+    active users (and freshly-created ones). Password login is already blocked by
+    SimpleJWT/Django; this guards the token-issuing OAuth paths (Telegram/Google)
+    and refresh, which otherwise mint tokens for a deactivated account."""
+    if user is not None and not getattr(user, "is_active", True):
+        return Response(
+            {
+                "detail": "This account has been deactivated. Please contact an administrator.",
+                "code": "account_deactivated",
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     throttle_classes = [LoginRateThrottle]
@@ -485,6 +502,13 @@ class CookieTokenRefreshView(TokenRefreshView):
                 return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
 
             user = User.objects.get(pk=s.user_id)
+            # A user deactivated mid-session can't refresh — their session ends.
+            if not user.is_active:
+                security_metric_incr("refresh_fail", 1)
+                return Response(
+                    {"detail": "This account has been deactivated.", "code": "account_deactivated"},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
             try:
                 step_until = getattr(user, "security_step_up_required_until", None)
                 if step_until and step_until > timezone.now():
@@ -1005,6 +1029,10 @@ class GoogleAuthView(APIView):
             if updated:
                 user.save(update_fields=["first_name", "last_name"])
 
+        blocked = _deactivated_block(user)
+        if blocked is not None:
+            return blocked
+
         clear_security_step_up(user_id=user.pk)
 
         refresh = RefreshToken.for_user(user)
@@ -1180,6 +1208,10 @@ class TelegramAuthView(APIView):
             return phone_err
         user.telegram_id = tg_id
         user.save(update_fields=["telegram_id"])
+
+        blocked = _deactivated_block(user)
+        if blocked is not None:
+            return blocked
 
         clear_security_step_up(user_id=user.pk)
 
@@ -1452,6 +1484,12 @@ class TelegramOAuthCallbackView(APIView):
         user, err = _upsert_user_from_telegram_claims(claims, request)
         if err is not None or user is None:
             err_resp = HttpResponseRedirect("/login?tg_error=user_upsert_failed")
+            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
+            return err_resp
+
+        # Deactivated accounts may not log in.
+        if not user.is_active:
+            err_resp = HttpResponseRedirect("/login?tg_error=account_deactivated")
             err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
             return err_resp
 

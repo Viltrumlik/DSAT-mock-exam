@@ -130,35 +130,60 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
 def midterm_results_state(attempt) -> dict:
     """Whether the student may see their score, plus any issued certificate.
 
-    Standalone (no classroom schedule gating this midterm) -> visible once completed.
-    Classroom -> gated by the re-homed ``MidtermSchedule.results_released``.
+    A per-student **certificate is the definitive release signal**: the teacher issues
+    certificates and releasing results is part of the SAME action, so a student who has
+    a certificate has, by definition, had their classroom's results released — show it.
 
-    Written defensively so it activates automatically once the schedule/certificate re-home
-    adds the ``midterm`` FK to those classes-app tables; until then it defaults to visible
-    (only ungated standalone midterms exist in the new system).
+    A classroom-scheduled midterm stays hidden ("awaiting result") until that student
+    has a certificate; a standalone / unscheduled midterm is visible once completed.
+
+    DUAL IDENTITY: certificate issuance lives in the legacy classes app and writes the
+    schedule + certificate under the ``mock_exam`` FK (``exams.MockExam``); the new
+    ``midterms`` app reads by the ``midterm`` FK. We match by EITHER — resolving this
+    midterm's ``legacy_mock_exam_id`` — so a cert issued under the legacy identity still
+    releases the student's result here. (This was the "teacher issued a certificate but
+    the student still saw 'awaiting result'" bug.)
     """
     results_visible = True
     certificate = None
+
+    # The legacy MockExam id this midterm mirrors (None for natively-new midterms).
+    legacy_id = (
+        Midterm.objects.filter(id=attempt.midterm_id)
+        .values_list("legacy_mock_exam_id", flat=True)
+        .first()
+    )
+
+    def _both_identities() -> Q:
+        q = Q(midterm_id=attempt.midterm_id)
+        if legacy_id:
+            q |= Q(mock_exam_id=legacy_id)
+        return q
+
+    # Schedule gate — a classroom midterm hides the score until results are released.
+    # Match by EITHER identity and treat "released if ANY matching schedule is
+    # released", because certificate issuance flips the flag on the schedule keyed by
+    # the LEGACY ``mock_exam`` FK, while a separate ``midterm``-keyed access-window row
+    # may still read unreleased. Filtering only by ``midterm_id`` + requiring ALL rows
+    # released was the "teacher issued a certificate but the student still saw 'awaiting
+    # result'" bug.
     try:
         from classes.models_schedule import MidtermSchedule
 
-        sched_fields = {f.name for f in MidtermSchedule._meta.get_fields()}
-        if "midterm" in sched_fields:
-            scheds = list(MidtermSchedule.objects.filter(midterm_id=attempt.midterm_id))
-            if scheds and not all(getattr(s, "results_released", False) for s in scheds):
+        if "midterm" in {f.name for f in MidtermSchedule._meta.get_fields()}:
+            scheds = list(MidtermSchedule.objects.filter(_both_identities()))
+            if scheds and not any(getattr(s, "results_released", False) for s in scheds):
                 results_visible = False
     except Exception:  # pragma: no cover - defensive during transition
         pass
 
+    # Certificate (either identity) — attached for display / download.
     try:
         from classes.models_certificates import MidtermCertificate
 
-        cert_fields = {f.name for f in MidtermCertificate._meta.get_fields()}
-        if "midterm" in cert_fields:
+        if "midterm" in {f.name for f in MidtermCertificate._meta.get_fields()}:
             cert = (
-                MidtermCertificate.objects.filter(
-                    midterm_id=attempt.midterm_id, student_id=attempt.student_id
-                )
+                MidtermCertificate.objects.filter(Q(student_id=attempt.student_id) & _both_identities())
                 .order_by("-issued_at")
                 .first()
             )

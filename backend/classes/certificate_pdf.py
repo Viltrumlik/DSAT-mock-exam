@@ -136,7 +136,28 @@ def _star(c, cx, cy, r, color):
     c.restoreState()
 
 
+import logging as _logging
+
+_pdf_logger = _logging.getLogger(__name__)
+
+
 def render_midterm_certificate_pdf(cert: "MidtermCertificate") -> bytes:
+    """PDF bytes for one certificate.
+
+    Primary path: render the ready HTML design template via headless Chromium
+    (``certificate_html_pdf``) — matches the MasterSAT certificate mockup 1:1.
+    Falls back to the legacy reportlab drawing when Chromium/playwright isn't
+    available on the host, so a download never hard-fails.
+    """
+    try:
+        from .certificate_html_pdf import render_certificate_pdf_html
+        return render_certificate_pdf_html(cert)
+    except Exception:  # noqa: BLE001 — any playwright/chromium issue → reportlab
+        _pdf_logger.exception("HTML certificate render failed; falling back to reportlab (cert=%s)", getattr(cert, "code", None))
+        return _render_reportlab_certificate_pdf(cert)
+
+
+def _render_reportlab_certificate_pdf(cert: "MidtermCertificate") -> bytes:
     _ensure_fonts()
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(PAGE_W, PAGE_H))

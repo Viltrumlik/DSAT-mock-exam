@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Search, X } from "lucide-react";
+import { FileText, Loader2, Search } from "lucide-react";
 import { accessApi, resourceTypeLabel, HIDDEN_PICKER_TYPES, type ResourcePickerItem } from "@/lib/accessApi";
 import { cn } from "@/lib/cn";
+import { accClass, Chip, Pill } from "./accessUi";
+import { CheckBox } from "./StudentMultiSelect";
 
 export type SelectedResource = { resource_type: string; resource_id: number; label: string };
 
@@ -97,112 +99,115 @@ export function ResourcePicker({
     return Array.from(groups.entries());
   }, [type, visible]);
 
-  const subjectBadge = (subs: string[]) =>
-    subs.map((s) => (
-      <span key={s} className="ml-1 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">
-        {s}
-      </span>
-    ));
+  const iconTint = (subs: string[]) => {
+    const s = (subs ?? []).map((x) => x.toLowerCase());
+    if (s.includes("math")) return "bg-blue-100 text-blue-700";
+    if (s.includes("english") || s.includes("reading")) return "bg-emerald-100 text-emerald-700";
+    return "bg-primary/10 text-primary";
+  };
 
   const renderRow = (it: ResourcePickerItem) => {
     const checked = selectedKeys.has(`${it.resource_type}:${it.resource_id}`);
+    const subtitle = [
+      (it.subjects ?? []).join(" · "),
+      it.published ? "" : "draft",
+    ].filter(Boolean).join(" · ");
     return (
       <button
         type="button"
         key={`${it.resource_type}:${it.resource_id}`}
         onClick={() => toggle(it)}
         className={cn(
-          "flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-2",
-          checked && "bg-primary/5",
+          "flex w-full items-center gap-3 px-3.5 py-3 text-left",
+          checked ? accClass.selectableOn : accClass.selectable,
         )}
       >
-        <span className="min-w-0 truncate">
-          <span className="font-bold text-foreground">{it.label}</span>
-          {subjectBadge(it.subjects)}
+        <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", iconTint(it.subjects))}>
+          <FileText className="h-4 w-4" />
         </span>
-        <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          {it.published ? "" : "draft · "}#{it.resource_id}
-          {checked && <Check className="h-4 w-4 text-primary" />}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-bold text-foreground">{it.label}</span>
+          {subtitle && <span className="block truncate text-xs text-muted-foreground">{subtitle}</span>}
         </span>
+        <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[11px] font-bold text-muted-foreground">
+          #{it.resource_id}
+        </span>
+        <CheckBox checked={checked} />
       </button>
     );
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={type}
-          onChange={(e) => setType(e.target.value)}
-          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
-        >
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {resourceTypeLabel(t)}
-            </option>
-          ))}
-        </select>
-        <select
-          value={subject}
-          onChange={(e) => setSubject(e.target.value as "all" | "math" | "english")}
-          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold text-foreground outline-none focus:ring-2 focus:ring-primary/40"
-        >
-          {SUBJECT_FILTERS.map((s) => (
-            <option key={s.key} value={s.key}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-        <div className="relative min-w-[200px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by title or id…"
-            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40"
-          />
+    <div className="space-y-3">
+      {/* Resource-type tabs */}
+      {!single && types.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={accClass.eyebrow}>Tests / resources</span>
+          <div className="flex flex-wrap gap-2">
+            {types.map((t) => (
+              <Pill key={t} active={type === t} onClick={() => setType(t)}>
+                {resourceTypeLabel(t)}
+              </Pill>
+            ))}
+          </div>
         </div>
+      )}
+
+      {/* Subject filter pills + search */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={accClass.eyebrow}>Subject</span>
+        {SUBJECT_FILTERS.map((s) => (
+          <Pill key={s.key} active={subject === s.key} onClick={() => setSubject(s.key)}>
+            {s.label}
+          </Pill>
+        ))}
+      </div>
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by title or id…"
+          className={accClass.search}
+        />
       </div>
 
       {/* Selected tests (chips) */}
       {value.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
           {value.map((v) => (
-            <span
+            <Chip
               key={`${v.resource_type}:${v.resource_id}`}
-              className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2 py-1 text-xs font-bold text-primary"
-            >
-              {v.label}
-              <button
-                type="button"
-                aria-label="Remove"
-                onClick={() => onChange(value.filter((x) => !(x.resource_type === v.resource_type && x.resource_id === v.resource_id)))}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
+              label={v.label}
+              onRemove={() =>
+                onChange(value.filter((x) => !(x.resource_type === v.resource_type && x.resource_id === v.resource_id)))
+              }
+            />
           ))}
           <button
             type="button"
             onClick={() => onChange([])}
-            className="text-xs font-semibold text-muted-foreground hover:text-foreground"
+            className="text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             Clear all
           </button>
         </div>
       )}
 
-      <div className="max-h-56 overflow-y-auto rounded-xl border border-border bg-card">
+      {/* Result list */}
+      <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
         {loading ? (
           <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Searching…
           </div>
         ) : visible.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">No resources found.</p>
+          <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            No resources found.
+          </p>
         ) : grouped ? (
           grouped.map(([group, rows]) => (
-            <div key={group}>
-              <div className="sticky top-0 border-b border-border bg-surface-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+            <div key={group} className="space-y-2">
+              <div className="px-1 pt-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 {group}
               </div>
               {rows.map(renderRow)}

@@ -468,6 +468,18 @@ class AssessmentAttempt(models.Model):
     last_activity_at = models.DateTimeField(null=True, blank=True, db_index=True)
     total_time_seconds = models.PositiveIntegerField(default=0)
     active_time_seconds = models.PositiveIntegerField(default=0)
+    # ── Pause / resume (save-and-exit) ─────────────────────────────────────────
+    # Assessments are untimed (count-up timer), so pause here freezes the elapsed
+    # time-on-task counter and preserves position rather than a deadline. Mirrors
+    # the pastpaper engine's derived-timer pattern: ``paused_at`` (null = running)
+    # is the pause flag, ``paused_seconds`` banks completed pause windows. Elapsed
+    # is derived: (now - started_at) - paused_seconds - in-flight-pause, so it
+    # freezes while paused and never counts the paused gap.
+    paused_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    paused_seconds = models.PositiveIntegerField(default=0)
+    # Last-viewed question position (0-based index into question_order) so a
+    # resumed attempt lands exactly where the student left off.
+    current_question_index = models.PositiveIntegerField(default=0)
     # Per-question time spent, keyed by question_id (string). Recorded by the
     # student runner at submit so the result page can show a time breakdown.
     question_times = models.JSONField(blank=True, default=dict)
@@ -516,6 +528,30 @@ class AssessmentAttempt(models.Model):
             return "abandoned"
         return None
 
+    @property
+    def is_paused(self) -> bool:
+        return self.paused_at is not None
+
+    def accumulated_pause_seconds(self, now=None) -> int:
+        """Total paused time = banked windows + the currently in-flight one.
+
+        While ``paused_at`` is set every extra wall-clock second is also counted
+        here, so ``elapsed_seconds`` (which subtracts this) stays frozen.
+        """
+        now = now or timezone.now()
+        base = int(self.paused_seconds or 0)
+        if self.paused_at is not None:
+            base += max(0, int((now - self.paused_at).total_seconds()))
+        return base
+
+    def elapsed_seconds(self, now=None) -> int:
+        """Wall time since start, excluding paused windows. Freezes while paused."""
+        now = now or timezone.now()
+        if not self.started_at:
+            return 0
+        span = int((now - self.started_at).total_seconds())
+        return max(0, span - self.accumulated_pause_seconds(now))
+
 
 class AssessmentAttemptAuditEvent(models.Model):
     EVENT_STARTED = "started"
@@ -524,6 +560,8 @@ class AssessmentAttemptAuditEvent(models.Model):
     EVENT_GRADED = "graded"
     EVENT_ABANDONED = "abandoned"
     EVENT_TIMEOUT_ABANDONED = "timeout_abandoned"
+    EVENT_PAUSED = "paused"
+    EVENT_RESUMED = "resumed"
 
     EVENT_CHOICES = [
         (EVENT_STARTED, "Started"),
@@ -532,6 +570,8 @@ class AssessmentAttemptAuditEvent(models.Model):
         (EVENT_GRADED, "Graded"),
         (EVENT_ABANDONED, "Abandoned"),
         (EVENT_TIMEOUT_ABANDONED, "Timeout abandoned"),
+        (EVENT_PAUSED, "Paused"),
+        (EVENT_RESUMED, "Resumed"),
     ]
 
     attempt = models.ForeignKey(

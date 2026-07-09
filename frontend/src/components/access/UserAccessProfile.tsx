@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Clock, Loader2, Plus, Search, ShieldX, UserCheck } from "lucide-react";
+import { Clock, Loader2, Plus, Search, ShieldX } from "lucide-react";
 import api from "@/lib/api";
 import { accessApi, type ResourceAccessGrant } from "@/lib/accessApi";
 import { cn } from "@/lib/cn";
 import { GrantPanel } from "./GrantPanel";
+import { accClass, Avatar } from "./accessUi";
 
 type UserRow = {
   id: number;
@@ -123,27 +124,28 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search a user by name, username, or email…"
-            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+            className={accClass.search}
           />
         </div>
         {!active && (
-          <div className="mt-2 max-h-56 overflow-y-auto rounded-xl border border-border">
+          <div className="mt-2 max-h-[360px] space-y-2 overflow-y-auto">
             {filtered.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">No users match.</p>
+              <p className="rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">No users match.</p>
             ) : (
               filtered.map((u) => (
                 <button
                   key={u.id}
                   type="button"
                   onClick={() => setActive(u)}
-                  className="flex w-full items-center justify-between gap-2 border-b border-border px-3 py-2 text-left text-sm last:border-b-0 hover:bg-surface-2"
+                  className={cn("flex w-full items-center gap-3 px-3.5 py-3 text-left", accClass.selectable)}
                 >
-                  <span className="min-w-0 truncate">
-                    <span className="font-bold text-foreground">{userLabel(u)}</span>
-                    {u.email && <span className="ml-2 text-xs text-muted-foreground">{u.email}</span>}
+                  <Avatar name={userLabel(u)} seed={u.id} size={40} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-bold text-foreground">{userLabel(u)}</span>
+                    {u.email && <span className="block truncate text-xs text-muted-foreground">{u.email}</span>}
                   </span>
                   {u.role && (
-                    <span className="shrink-0 text-[10px] font-bold uppercase text-muted-foreground">{u.role}</span>
+                    <span className="shrink-0 rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase text-muted-foreground">{u.role}</span>
                   )}
                 </button>
               ))
@@ -155,11 +157,9 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
       {active && (
         <div className="space-y-4">
           {/* Active user header */}
-          <div className="flex items-center justify-between rounded-2xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
-              <span className="rounded-xl bg-surface-2 p-2.5 text-primary">
-                <UserCheck className="h-5 w-5" />
-              </span>
+              <Avatar name={userLabel(active)} seed={active.id} size={44} />
               <div>
                 <div className="text-base font-extrabold text-foreground">{userLabel(active)}</div>
                 <div className="text-xs text-muted-foreground">{active.email}</div>
@@ -169,7 +169,7 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
               <button
                 type="button"
                 onClick={() => setGranting((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:opacity-90"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-[var(--primary-hover)]"
               >
                 <Plus className="h-4 w-4" /> Grant access
               </button>
@@ -180,7 +180,7 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
                   setGranting(false);
                   setGrants([]);
                 }}
-                className="rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-2"
+                className="rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
               >
                 Change user
               </button>

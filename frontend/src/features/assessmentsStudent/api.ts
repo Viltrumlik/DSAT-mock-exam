@@ -1,4 +1,4 @@
-import api from "@/lib/api";
+import api, { getCachedCsrfToken } from "@/lib/api";
 
 import type { components } from "@/lib/openapi-types";
 import type { AttemptAnswerRequest, AttemptSubmitRequest, Attempt } from "@/features/assessments/types";
@@ -106,9 +106,78 @@ export const assessmentsStudentApi = {
     const r = await api.post("/assessments/attempts/answer/", payload);
     return r.data as SaveAnswerResponse;
   },
+  /**
+   * Fire-and-forget answer save that survives a tab close / navigation
+   * (`keepalive`). Used to drain any answer still sitting in the client's
+   * debounce buffer the moment the student leaves, so a just-picked answer can
+   * never be lost (end up "omitted"). Regular autosave persists it too — this is
+   * the last-ditch guarantee for the sub-debounce window.
+   */
+  saveAnswerKeepalive: (attemptId: number, questionId: number, answer: unknown, currentIndex?: number): void => {
+    try {
+      const token = getCachedCsrfToken();
+      void fetch("/api/assessments/attempts/answer/", {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "X-CSRFToken": token } : {}),
+        },
+        body: JSON.stringify({
+          attempt_id: attemptId,
+          question_id: questionId,
+          answer,
+          ...(currentIndex != null ? { current_index: currentIndex } : {}),
+        }),
+      });
+    } catch {
+      /* best-effort — the answer is also autosaved + mirrored to local storage */
+    }
+  },
   submit: async (payload: AttemptSubmitRequest): Promise<SubmitResponse> => {
     const r = await api.post("/assessments/attempts/submit/", payload);
     return r.data as SubmitResponse;
+  },
+  /**
+   * Pause (save-and-exit / auto-pause): freezes the elapsed time-on-task counter
+   * and records the last-viewed question so the attempt resumes in place. The
+   * attempt stays in progress and fully resumable. Returns the updated attempt.
+   */
+  pause: async (payload: { attempt_id: number; current_index?: number }): Promise<Attempt> => {
+    const r = await api.post("/assessments/attempts/pause/", payload);
+    return r.data as Attempt;
+  },
+  /** Resume a paused attempt — the elapsed counter continues from where it froze. */
+  resume: async (payload: { attempt_id: number }): Promise<Attempt> => {
+    const r = await api.post("/assessments/attempts/resume/", payload);
+    return r.data as Attempt;
+  },
+  /**
+   * Fire-and-forget pause that survives a tab close / navigation (`keepalive`).
+   * Used for auto-pause on tab-hide / page-hide so the POST still lands as the
+   * page is torn down. Answers are autosaved separately, so this only persists
+   * pause state + the question cursor. Best-effort: failures are swallowed.
+   */
+  pauseKeepalive: (attemptId: number, currentIndex?: number): void => {
+    try {
+      const token = getCachedCsrfToken();
+      void fetch("/api/assessments/attempts/pause/", {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "X-CSRFToken": token } : {}),
+        },
+        body: JSON.stringify({
+          attempt_id: attemptId,
+          ...(currentIndex != null ? { current_index: currentIndex } : {}),
+        }),
+      });
+    } catch {
+      /* best-effort: progress is also continuously autosaved */
+    }
   },
   myResult: async (assignmentId: number): Promise<AssessmentMyResultResponse> => {
     const r = await api.get(`/assessments/homework/${assignmentId}/my-result/`);

@@ -23,7 +23,6 @@ from .serializers import (
 )
 from .helpers import (
     _img_url,
-    _image_map_for,
     _serialize_feedback,
     _build_hw_meta,
     _QUESTION_IMAGE_FIELDS,
@@ -105,69 +104,11 @@ class AttemptPedagogicalReviewView(APIView):
         result_obj = AssessmentResult.objects.filter(attempt=att).first()
         result_data = ResultSerializer(result_obj).data if result_obj else None
 
-        # ── Snapshot path ─────────────────────────────────────────────────────
-        # Snapshot stores choices + correct_answer but NOT explanation or
-        # question_prompt (they weren't captured at publish time).  We must
-        # supplement from the live DB for those two fields.
-        if att.set_version_id:
-            from .domain.snapshot_builder import questions_from_snapshot
-
-            raw_qs = questions_from_snapshot(att.set_version.snapshot_json)
-            raw_by_id = {q["id"]: q for q in raw_qs}
-
-            # Bulk-fetch live supplement fields (explanation + question_prompt only)
-            snap_ids = list(raw_by_id.keys())
-            live_supplement = {
-                q.id: q
-                for q in AssessmentQuestion.objects.filter(id__in=snap_ids).only(
-                    "id", "explanation", "question_prompt"
-                )
-            }
-            # Snapshots don't pin images — supplement from live rows (freeze-safe).
-            img_map = _image_map_for(snap_ids)
-
-            ordered = (
-                [raw_by_id[qid] for qid in order_ids if qid in raw_by_id]
-                if order_ids
-                else sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))
-            )
-
-            questions_out = []
-            for q in ordered:
-                qid = q["id"]
-                live = live_supplement.get(qid)
-                ans = answer_map.get(qid)
-                questions_out.append(
-                    {
-                        "id": qid,
-                        "order": q.get("order", 0),
-                        "prompt": q.get("prompt", ""),
-                        "question_prompt": live.question_prompt if live else "",
-                        "question_type": q["question_type"],
-                        "choices": q.get("choices") or [],
-                        "points": q.get("points", 1),
-                        "correct_answer": q.get("correct_answer"),
-                        "explanation": live.explanation if live else "",
-                        **img_map.get(qid, {f: None for f in _QUESTION_IMAGE_FIELDS}),
-                        # Student performance fields
-                        "student_answer": ans.answer if ans else None,
-                        "is_correct": ans.is_correct if ans else None,
-                        "points_awarded": float(ans.points_awarded) if ans and ans.points_awarded is not None else None,
-                    }
-                )
-
-            fb = getattr(att, "teacher_feedback", None)
-            return Response(
-                {
-                    "meta": _build_hw_meta(hw),
-                    "result": result_data,
-                    "questions": questions_out,
-                    "snapshot_pinned": True,
-                    "teacher_feedback": _serialize_feedback(fb),
-                }
-            )
-
-        # ── Live path (pre-snapshot attempts) ─────────────────────────────────
+        # Review from LIVE question content (no version snapshot), so if the teacher
+        # edits a question after the attempt, the change shows immediately here —
+        # like the pastpaper review. ``question_order`` selects which questions this
+        # attempt covered; their current prompt/choices/answer/explanation/images are
+        # read live. (``is_correct`` stays as graded at submit.)
         aset = hw.assessment_set
         base_questions = list(
             AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")

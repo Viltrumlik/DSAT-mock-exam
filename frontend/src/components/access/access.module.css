@@ -1,0 +1,118 @@
+/* Scoped design language for the /ops/access redesign (MasterSAT Access mockup).
+   Fonts are wired via next/font CSS variables on the same wrapper; our global
+   design tokens (--primary #2a68c0, --border, --card, …) already match the
+   mockup, so this module only adds the pieces Tailwind can't express cleanly:
+   the Playfair heading font, the navy accent, the stepper connector, avatar
+   palette, and the faint logo watermark. */
+
+.scope {
+  /* The mockup is a light design. Light-LOCK the subtree by overriding the raw
+     design-token inputs (they cascade through the mapped tokens via lazy var()
+     substitution), so every `text-foreground` / `bg-card` / `border-border`
+     renders light even when the surrounding admin console is in dark mode. */
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #eef2f8;
+  --surface-3: #e2e8f0;
+  --text-primary: #0f1729;
+  --text-secondary: #64707e;
+  --background: #ffffff;
+  --foreground: #0f1729;
+  --card: #ffffff;
+  --border: #e5e9f0;
+  --border-subtle: #e5e9f0;
+  --border-strong: #d4dae6;
+  --muted: #64707e;
+  --primary: #2a68c0;
+  --primary-hover: #21539e;
+  --primary-soft: rgba(42, 104, 192, 0.1);
+  --primary-foreground: #ffffff;
+  /* Tailwind v4 maps utilities to the --color-* tokens (emitted at :root, so they
+     don't re-derive from the raw tokens above) — override them directly too. */
+  --color-background: #ffffff;
+  --color-foreground: #0f1729;
+  --color-card: #ffffff;
+  --color-border: #e5e9f0;
+  --color-border-strong: #d4dae6;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #eef2f8;
+  --color-surface-3: #e2e8f0;
+  --color-muted-foreground: #64707e;
+  --color-primary: #2a68c0;
+  --color-primary-hover: #21539e;
+  --color-primary-soft: rgba(42, 104, 192, 0.1);
+  --color-primary-foreground: #ffffff;
+  color-scheme: light;
+
+  --acc-navy: #152c50; /* active pills / resource-type tabs */
+  --acc-heading: #0f1729;
+  --acc-chip-border: #cddffb;
+  --acc-card-sel: #f4f8ff;
+  --acc-muted: #64707e;
+  color: var(--foreground);
+  font-family: var(--font-jakarta), "Plus Jakarta Sans", system-ui, sans-serif;
+
+  /* Self-contained light "Access" panel — the mockup is a full light page, so we
+     paint our own light canvas that fills the console's main column and stays
+     readable whether the surrounding admin is in light or dark mode. */
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #e5e9f0;
+  border-radius: 24px;
+  padding: 28px 32px 44px;
+  min-height: calc(100vh - 2rem);
+  overflow: hidden; /* clip the corner watermark */
+}
+
+/* Playfair Display for display headings. */
+.serif {
+  font-family: var(--font-playfair), Georgia, serif;
+  color: var(--acc-heading);
+  letter-spacing: -0.01em;
+}
+
+/* Faint logo watermark, bottom-right of the content area (mockup). */
+.watermark {
+  position: absolute;
+  right: -40px;
+  bottom: -30px;
+  width: 340px;
+  height: 340px;
+  pointer-events: none;
+  opacity: 0.04;
+  z-index: 0;
+}
+.watermark svg { width: 100%; height: 100%; }
+
+/* Stepper connector line that fills as steps complete. */
+.stepLine {
+  height: 2px;
+  flex: 1;
+  background: var(--border);
+  position: relative;
+  overflow: hidden;
+}
+.stepLineFill {
+  position: absolute;
+  inset: 0;
+  background: var(--primary);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.stepLineFillDone { transform: scaleX(1); }
+
+/* Subtle rise-in used when a wizard step mounts. */
+@keyframes accRise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: accRise 0.28s cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+/* Selectable card "pop" when it becomes selected. */
+@keyframes accPop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.015); }
+  100% { transform: scale(1); }
+}
+.pop { animation: accPop 0.22s ease; }

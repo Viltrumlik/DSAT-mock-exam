@@ -10,6 +10,7 @@ import {
   type ResourceAccessGrant,
 } from "@/lib/accessApi";
 import { cn } from "@/lib/cn";
+import { accClass, Avatar } from "./accessUi";
 
 const STATUS_STYLES: Record<string, string> = {
   ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -86,7 +87,7 @@ export function GrantsManager({ refreshKey = 0 }: { refreshKey?: number }) {
             value={filters.q ?? ""}
             onChange={(e) => setFilter({ q: e.target.value })}
             placeholder="Search by student name or email…"
-            className="w-full rounded-xl border border-border bg-card py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/40"
+            className={accClass.search}
           />
         </div>
         <FilterSelect value={filters.scope ?? ""} onChange={(v) => setFilter({ scope: v as GrantFilters["scope"] })} options={[["", "All scopes"], ["SUBJECT", "Subject"], ["RESOURCE", "Resource"]]} />
@@ -127,8 +128,13 @@ export function GrantsManager({ refreshKey = 0 }: { refreshKey?: number }) {
               grants.map((g) => (
                 <tr key={g.id} className="border-b border-border last:border-b-0 hover:bg-surface-2/50">
                   <td className="px-4 py-3">
-                    <div className="font-bold text-foreground">{g.user_name}</div>
-                    <div className="text-xs text-muted-foreground">{g.user_email}</div>
+                    <div className="flex items-center gap-2.5">
+                      <Avatar name={g.user_name || g.user_email || `#${g.id}`} seed={g.user_email || g.id} size={32} />
+                      <div className="min-w-0">
+                        <div className="truncate font-bold text-foreground">{g.user_name}</div>
+                        <div className="truncate text-xs text-muted-foreground">{g.user_email}</div>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-foreground">
                     {targetLabel(g)}

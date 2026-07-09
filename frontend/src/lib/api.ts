@@ -1365,8 +1365,8 @@ export const assessmentsAdminApi = {
         const r = await api.patch(`/assessments/admin/questions/${id}/`, payload, isFormData ? {} : {});
         return r.data;
     },
-    adminDeleteQuestion: async (id: number) => {
-        await api.delete(`/assessments/admin/questions/${id}/`);
+    adminDeleteQuestion: async (id: number, force = false) => {
+        await api.delete(`/assessments/admin/questions/${id}/`, force ? { params: { force: true } } : undefined);
     },
     assignHomework: async (
         payload: {

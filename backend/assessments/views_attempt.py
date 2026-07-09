@@ -42,12 +42,27 @@ from .serializers import (
 )
 from .helpers import (
     _audit_attempt,
-    _image_map_for,
     _build_hw_meta,
-    _QUESTION_IMAGE_FIELDS,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _frozen_question_ids(assessment_set_id: int, version=None) -> list[int]:
+    """The ordered question ids to pin onto an attempt at start — the set's CURRENT
+    live active order.
+
+    Content is delivered/graded/reviewed LIVE (like the pastpaper runner — no
+    version snapshot), so this pins only WHICH questions the attempt covers, from
+    the live set at start. A NEW attempt (or retry) therefore always picks up the
+    teacher's latest questions; a question ADDED after the student started is not
+    in this frozen list, so it can't grow their in-progress attempt.
+    """
+    return list(
+        AssessmentQuestion.objects.filter(assessment_set_id=assessment_set_id, is_active=True)
+        .order_by("order", "id")
+        .values_list("id", flat=True)
+    )
 
 
 class StartAttemptView(APIView):
@@ -122,19 +137,10 @@ class StartAttemptView(APIView):
                 .order_by("-version_number")
                 .first()
             ) or hw.set_version
-            if attempt_version is not None:
-                from .domain.snapshot_builder import questions_from_snapshot
-                raw_qs = questions_from_snapshot(attempt_version.snapshot_json)
-                qids = [q["id"] for q in sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))]
-            else:
-                qids = list(
-                    AssessmentQuestion.objects.filter(
-                        assessment_set=hw.assessment_set,
-                        is_active=True,
-                    )
-                    .order_by("order", "id")
-                    .values_list("id", flat=True)
-                )
+            # Freeze the question list at start (snapshot when available, else the
+            # current live order). Always non-empty so grading/review/runner all
+            # read this exact list and never track later teacher edits.
+            qids = _frozen_question_ids(hw.assessment_set_id, attempt_version)
 
             # Apply focus filter: only include explicitly requested question IDs
             # (validated against the full set so students can't inject arbitrary IDs).
@@ -171,9 +177,30 @@ class StartAttemptView(APIView):
                 },
             )
         else:
+            update_fields: list[str] = []
             if not att.last_activity_at:
                 att.last_activity_at = timezone.now()
-                att.save(update_fields=["last_activity_at"])
+                update_fields.append("last_activity_at")
+            # Repair a legacy/edge attempt that was never frozen — no snapshot pin
+            # and/or an empty question_order. Such an attempt runs on the live path
+            # and its question count TRACKS the mutable set, so a teacher adding
+            # questions mid-attempt made the student's count grow (27 → 29). Freeze
+            # it now — to its pinned version if it has one, else the latest, else the
+            # current live content — so from here on the attempt is stable.
+            if att.set_version_id is None or not att.question_order:
+                repair_version = att.set_version or (
+                    AssessmentSetVersion.objects.filter(assessment_set_id=hw.assessment_set_id)
+                    .order_by("-version_number")
+                    .first()
+                )
+                if att.set_version_id is None and repair_version is not None:
+                    att.set_version = repair_version
+                    update_fields.append("set_version")
+                if not att.question_order:
+                    att.question_order = _frozen_question_ids(hw.assessment_set_id, repair_version)
+                    update_fields.append("question_order")
+            if update_fields:
+                att.save(update_fields=update_fields)
 
         att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
         return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)
@@ -211,77 +238,11 @@ class AttemptBundleView(APIView):
         aset = hw.assessment_set
         order_ids = [int(x) for x in (att.question_order or []) if isinstance(x, (int, str)) and str(x).isdigit()]
 
-        # ── Snapshot path ─────────────────────────────────────────────────────
-        # When the attempt was created from a pinned snapshot, serve questions
-        # directly from snapshot_json — zero live question lookups. This
-        # guarantees students always see the exact content that was locked at
-        # publish time, even if the live set has been edited since.
-        if att.set_version_id:
-            from .domain.snapshot_builder import questions_from_snapshot
-
-            raw_qs = questions_from_snapshot(att.set_version.snapshot_json)
-            # Build a sanitized list (no correct_answer, no grading_config).
-            raw_by_id = {q["id"]: q for q in raw_qs}
-            sanitized = [
-                {
-                    "id": q["id"],
-                    "order": q.get("order", 0),
-                    "prompt": q.get("prompt", ""),
-                    "question_type": q["question_type"],
-                    "choices": q.get("choices") or [],
-                    "points": q.get("points", 1),
-                    # correct_answer and grading_config intentionally omitted
-                }
-                for q in (
-                    [raw_by_id[qid] for qid in order_ids if qid in raw_by_id]
-                    if order_ids else sorted(raw_qs, key=lambda q: (q.get("order", 0), q["id"]))
-                )
-            ]
-            # Snapshots pin neither images nor the stimulus/passage text —
-            # supplement both from the live rows so diagrams/figures and passages
-            # render in the frozen runner (matches the live + review paths).
-            # Text/choices/answers still come from the snapshot, preserving freeze.
-            sanitized_ids = [s["id"] for s in sanitized]
-            img_map = _image_map_for(sanitized_ids)
-            prompt_map = dict(
-                AssessmentQuestion.objects.filter(id__in=sanitized_ids).values_list(
-                    "id", "question_prompt"
-                )
-            )
-            for s in sanitized:
-                s.update(img_map.get(s["id"], {f: None for f in _QUESTION_IMAGE_FIELDS}))
-                s["question_prompt"] = prompt_map.get(s["id"], "")
-            att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
-            return Response(
-                {
-                    "attempt": AttemptSerializer(att).data,
-                    # Runner-safe set serializer: its nested questions omit
-                    # explanation so the worked solution never leaks mid-attempt.
-                    "set": AssessmentSetRunnerSerializer(aset).data,
-                    "questions": sanitized,
-                    "snapshot_version": att.set_version_id,
-                    # Outer classes.Assignment PK — used by student UI to navigate
-                    # to /assessments/result/{assignment_id} after submit.
-                    "assignment_id": hw.assignment_id,
-                    # Pedagogical context block: classroom name, assignment title,
-                    # due date, question count. Displayed in the runner header so
-                    # students always know which class this assessment is for.
-                    "meta": _build_hw_meta(hw),
-                }
-            )
-
-        # ── Live path (pre-snapshot attempts) ─────────────────────────────────
-        # Emit fallback telemetry — primary signal for sunset monitoring.
-        try:
-            from .domain.governance_events import emit_fallback_path_used
-            emit_fallback_path_used(
-                attempt_id=att.pk,
-                set_id=aset.pk,
-                context="bundle",
-            )
-        except Exception:
-            pass  # never block delivery
-
+        # Deliver LIVE question content (no version snapshot) so a teacher's builder
+        # edits show up immediately — like the pastpaper runner. The frozen
+        # ``question_order`` pins only WHICH questions this attempt covers; their
+        # prompt/choices/images are always read live. Runner-safe serializers omit
+        # correct_answer/explanation so the worked solution never leaks mid-attempt.
         base_questions = list(
             AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")
         )
@@ -333,9 +294,11 @@ class SaveAnswerView(APIView):
             return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
         if att.status != AssessmentAttempt.STATUS_IN_PROGRESS:
             return Response({"detail": f"Attempt is locked ({att.lock_reason()})."}, status=status.HTTP_400_BAD_REQUEST)
-        # Max lifetime gate (server-side).
+        # Max lifetime gate (server-side). Measured on *elapsed* (active) time —
+        # paused windows (save-and-exit) don't burn the lifetime, so a student can
+        # pause overnight and still resume the next day.
         max_life = int(getattr(dj_settings, "ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS", 6 * 60 * 60) or 0)
-        if max_life > 0 and att.started_at and (timezone.now() - att.started_at).total_seconds() > max_life:
+        if max_life > 0 and att.started_at and att.elapsed_seconds(timezone.now()) > max_life:
             now = timezone.now()
             att.status = AssessmentAttempt.STATUS_ABANDONED
             att.abandoned_at = now
@@ -404,6 +367,24 @@ class SaveAnswerView(APIView):
                 ]
             )
 
+        update_fields = ["last_activity_at", "active_time_seconds"]
+
+        # A save is unambiguous activity: if the attempt was paused (e.g. the
+        # runner resumed and immediately flushed a queued answer), bank the pause
+        # window and clear the flag so state can't get stuck "paused".
+        if att.paused_at is not None:
+            att.paused_seconds = int(att.paused_seconds or 0) + max(
+                0, int((now - att.paused_at).total_seconds())
+            )
+            att.paused_at = None
+            update_fields += ["paused_seconds", "paused_at"]
+
+        # Persist the last-viewed question position for resume-in-place.
+        raw_idx = ser.validated_data.get("current_index")
+        if raw_idx is not None:
+            att.current_question_index = int(raw_idx)
+            update_fields.append("current_question_index")
+
         # Active time accumulation: count time between server-observed events, ignore idle gaps.
         idle_threshold = int(getattr(dj_settings, "ASSESSMENT_ACTIVE_IDLE_THRESHOLD_SECONDS", 90) or 90)
         slice_cap = int(getattr(dj_settings, "ASSESSMENT_ACTIVE_SLICE_CAP_SECONDS", 45) or 45)
@@ -416,7 +397,7 @@ class SaveAnswerView(APIView):
             add = min(slice_cap, delta)
         att.active_time_seconds = int(att.active_time_seconds or 0) + int(add)
         att.last_activity_at = now
-        att.save(update_fields=["last_activity_at", "active_time_seconds"])
+        att.save(update_fields=update_fields)
         _audit_attempt(
             att,
             actor=request.user,
@@ -473,22 +454,13 @@ class SubmitAttemptView(APIView):
             AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")
         )
         q_by_id = {q.id: q for q in base_questions}
-        # Validate assessment version. Only force a restart when the attempt's
-        # snapshot pins a question that NO LONGER EXISTS / is no longer active —
-        # i.e. the frozen content genuinely can't be graded. A snapshot that is a
-        # SUBSET of the active questions is legitimate: focus/retry attempts store a
-        # subset in question_order, and a teacher merely ADDING questions leaves the
-        # existing ones gradeable. Those must be allowed to submit.
-        active_now = set(q_by_id.keys())
-        snap = set(int(x) for x in (att.question_order or []) if str(x).isdigit())
-        stale = snap - active_now
-        if stale:
-            return Response(
-                {"detail": "This assessment was updated. Please restart the attempt."},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        # Use the attempt's stored question_order when present; otherwise canonical order.
+        # Mid-attempt teacher edits are IGNORED: the attempt was frozen to a fixed
+        # question list at start (att.question_order + its set_version snapshot), so
+        # a submit is ALWAYS accepted and graded against that frozen list — never
+        # blocked with a "restart" just because the live set changed since. Grading
+        # (grade_attempt) reads the pinned snapshot, so even a question deleted from
+        # the live set after the student started is still gradeable. A brand-new
+        # attempt on the latest version is what the student gets on retry instead.
         order_ids = [int(x) for x in (att.question_order or []) if isinstance(x, (int, str)) and str(x).isdigit()]
         questions = [q_by_id[qid] for qid in order_ids if qid in q_by_id] if order_ids else base_questions
 
@@ -514,8 +486,16 @@ class SubmitAttemptView(APIView):
         prev_activity_for_slice = att.last_activity_at or att.started_at
         att.status = AssessmentAttempt.STATUS_SUBMITTED
         att.submitted_at = now
-        # Harden total time: derive primarily from server attempt span, not per-answer time.
-        span = int((now - att.started_at).total_seconds()) if att.started_at else 0
+        # A submit ends any in-flight pause (student is active here). Bank it so
+        # the paused gap is excluded from total time and never lingers as "paused".
+        if att.paused_at is not None:
+            att.paused_seconds = int(att.paused_seconds or 0) + max(
+                0, int((now - att.paused_at).total_seconds())
+            )
+            att.paused_at = None
+        # Harden total time: derive primarily from the server attempt span, minus
+        # paused windows (save-and-exit), not per-answer time.
+        span = att.elapsed_seconds(now) if att.started_at else 0
         span_cap = 6 * 60 * 60  # 6h safety cap
         span = max(0, min(span_cap, span))
         att.total_time_seconds = max(span, min(span_cap, total_answer_time))
@@ -556,6 +536,8 @@ class SubmitAttemptView(APIView):
             "last_activity_at",
             "active_time_seconds",
             "question_times",
+            "paused_at",
+            "paused_seconds",
         ]
         if use_async:
             att.grading_status = AssessmentAttempt.GRADING_PENDING
@@ -619,3 +601,111 @@ class AbandonAttemptView(APIView):
         att.save(update_fields=["status", "abandoned_at", "last_activity_at"])
         _audit_attempt(att, actor=request.user, event_type=AssessmentAttemptAuditEvent.EVENT_ABANDONED, payload={})
         return Response({"attempt": AttemptSerializer(att).data}, status=status.HTTP_200_OK)
+
+
+def _parse_index(raw) -> int | None:
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return v if v >= 0 else None
+
+
+class PauseAttemptView(APIView):
+    """Freeze an in-progress attempt (save-and-exit / auto-pause on tab-leave).
+
+    Stamps ``paused_at`` so the elapsed time-on-task counter freezes; the attempt
+    stays IN_PROGRESS and fully resumable. Idempotent — pausing an already-paused
+    attempt keeps the original pause start. Optionally records the last-viewed
+    question index so resume lands in place. Answers are autosaved separately;
+    this endpoint only manages pause state + cursor."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="Pause attempt (save and exit / auto-pause)",
+        responses={200: AttemptSerializer, 404: ApiAssessmentDetailSerializer},
+    )
+    @transaction.atomic
+    def post(self, request):
+        attempt_id = int((request.data or {}).get("attempt_id") or 0)
+        if not attempt_id:
+            return Response({"detail": "attempt_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        att = (
+            AssessmentAttempt.objects.select_for_update()
+            .filter(pk=attempt_id, student=request.user)
+            .first()
+        )
+        if not att:
+            return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+        # Only a live attempt can be paused; for any terminal state just echo it
+        # back so the client can no-op gracefully (keepalive pauses may race a submit).
+        if att.status != AssessmentAttempt.STATUS_IN_PROGRESS:
+            att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+            return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)
+
+        now = timezone.now()
+        fields: list[str] = []
+        if att.paused_at is None:
+            att.paused_at = now
+            fields.append("paused_at")
+        idx = _parse_index((request.data or {}).get("current_index"))
+        if idx is not None:
+            att.current_question_index = idx
+            fields.append("current_question_index")
+        if fields:
+            att.save(update_fields=fields)
+            _audit_attempt(
+                att, actor=request.user,
+                event_type=AssessmentAttemptAuditEvent.EVENT_PAUSED,
+                payload={"current_index": att.current_question_index},
+            )
+        att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+        return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)
+
+
+class ResumeAttemptView(APIView):
+    """Un-freeze a paused attempt. Banks the pause window into ``paused_seconds``
+    and clears ``paused_at`` so the elapsed counter continues from where it froze
+    (no jump). Idempotent for a running attempt."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="Resume a paused attempt",
+        responses={200: AttemptSerializer, 404: ApiAssessmentDetailSerializer},
+    )
+    @transaction.atomic
+    def post(self, request):
+        attempt_id = int((request.data or {}).get("attempt_id") or 0)
+        if not attempt_id:
+            return Response({"detail": "attempt_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        att = (
+            AssessmentAttempt.objects.select_for_update()
+            .filter(pk=attempt_id, student=request.user)
+            .first()
+        )
+        if not att:
+            return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+        if att.status != AssessmentAttempt.STATUS_IN_PROGRESS:
+            att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+            return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)
+
+        now = timezone.now()
+        if att.paused_at is not None:
+            att.paused_seconds = int(att.paused_seconds or 0) + max(
+                0, int((now - att.paused_at).total_seconds())
+            )
+            att.paused_at = None
+            # Reset the activity clock so the paused gap isn't billed as active time.
+            att.last_activity_at = now
+            att.save(update_fields=["paused_seconds", "paused_at", "last_activity_at"])
+            _audit_attempt(
+                att, actor=request.user,
+                event_type=AssessmentAttemptAuditEvent.EVENT_RESUMED,
+                payload={"paused_seconds": att.paused_seconds},
+            )
+        att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+        return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)

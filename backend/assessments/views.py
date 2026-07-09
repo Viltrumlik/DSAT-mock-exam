@@ -47,6 +47,8 @@ from .views_attempt import (
     SaveAnswerView,
     SubmitAttemptView,
     AbandonAttemptView,
+    PauseAttemptView,
+    ResumeAttemptView,
 )
 from .views_review import (
     AttemptPedagogicalReviewView,
@@ -87,6 +89,8 @@ __all__ = [
     "SaveAnswerView",
     "SubmitAttemptView",
     "AbandonAttemptView",
+    "PauseAttemptView",
+    "ResumeAttemptView",
     # Review
     "AttemptPedagogicalReviewView",
     "AttemptTeacherFeedbackView",

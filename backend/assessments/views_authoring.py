@@ -34,6 +34,7 @@ from .serializers import (
     ApiAssessmentDetailSerializer,
 )
 from .services.authoring_service import create_question, reorder_questions
+from .domain.question_ordering import dense_compact_set_orders_locked
 
 
 class AdminAssessmentSetListCreateView(APIView):
@@ -256,19 +257,47 @@ class AdminAssessmentQuestionDetailView(APIView):
         q = self._scoped_question_or_none(request, pk)
         if q is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        # AssessmentAnswer.question is on_delete=PROTECT — deleting a question a
-        # student has answered would raise ProtectedError (a 500). It's an academic
-        # record; block it with a clear 409 instead.
-        if q.answers.exists():
+
+        # AssessmentAnswer.question is on_delete=PROTECT, so a question a student
+        # has already answered can't be dropped by a bare delete() (it 500s). But
+        # students attempt against a FROZEN AssessmentSetVersion snapshot and their
+        # scores live on AssessmentResult (a stored aggregate) — neither references
+        # the live question — so removing it and its per-question answer rows leaves
+        # past attempts and grades intact. Mirror the set-delete contract: block by
+        # default with a 409, and let the author pass ?force=true to remove the
+        # question together with those answer records.
+        force = str(request.query_params.get("force", "")).strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        has_answers = q.answers.exists()
+        if has_answers and not force:
             return Response(
-                {"detail": "Cannot delete a question that has student answers."},
+                {
+                    "detail": (
+                        "This question has student answers. Force-delete to remove it "
+                        "along with those answers (existing scores are not changed)."
+                    )
+                },
                 status=status.HTTP_409_CONFLICT,
             )
+
+        set_id = q.assessment_set_id
         try:
-            q.delete()
+            with transaction.atomic():
+                if has_answers:
+                    q.answers.all().delete()
+                q.delete()
+                # Keep the set's question order dense (0..n-1) after removing a row,
+                # under a set row-lock — same invariant the reorder endpoint holds.
+                dense_compact_set_orders_locked(set_id)
         except ProtectedError:
             return Response(
-                {"detail": "Cannot delete a question that has student answers."},
+                {
+                    "detail": (
+                        "This question is still referenced by protected records and "
+                        "could not be deleted."
+                    )
+                },
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -3,9 +3,9 @@
 - The in-progress attempt bundle must NOT leak the worked-solution
   ``explanation`` (nor correct_answer) — neither in ``set.questions`` nor in the
   top-level ``questions``.
-- A focus/retry attempt (question_order = a SUBSET of active questions) must be
-  able to submit; the version gate only fires for genuinely stale snapshots
-  (a pinned question was removed/deactivated).
+- The attempt is frozen at start: teacher edits after the student starts (adding
+  OR removing/deactivating questions) never block submit — the student is never
+  forced to restart, and grading runs on the frozen list / pinned snapshot.
 - Plus tight unit checks for NFKC normalization and zero-denominator rejection.
 """
 from __future__ import annotations
@@ -156,8 +156,12 @@ class AttemptBundleAndSubmitTests(TestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
 
-    def test_stale_snapshot_still_forces_restart(self):
-        # Genuinely stale: a pinned question is deactivated/removed after start.
+    def test_deactivating_question_after_start_does_not_block_submit(self):
+        # The attempt is FROZEN at start, so a teacher deactivating a question
+        # mid-attempt is ignored — the student is never forced to restart. Submit
+        # succeeds and grades on the frozen list. (For a snapshot-pinned attempt
+        # the deactivated question is still graded from the snapshot; on this live-
+        # path attempt it is simply skipped — either way, no 409.)
         attempt_id = self._start({"homework_id": self.hw.id})
         att = AssessmentAttempt.objects.get(pk=attempt_id)
         self.assertEqual(set(att.question_order), {self.q1.id, self.q2.id})
@@ -166,7 +170,7 @@ class AttemptBundleAndSubmitTests(TestCase):
         r = self.client.post(
             "/api/assessments/attempts/submit/", {"attempt_id": attempt_id}, format="json"
         )
-        self.assertEqual(r.status_code, 409, r.content)
+        self.assertIn(r.status_code, (200, 202), r.content)
 
 
 class NfkcNormalizationTests(SimpleTestCase):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Download, Printer } from "lucide-react";
 import { classesApi } from "@/lib/api";
@@ -15,130 +15,128 @@ interface CertData {
 }
 
 const FONT = "var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif";
-const TRK = { letterSpacing: ".34em", textTransform: "uppercase" as const };
-const TRK2 = { letterSpacing: ".2em", textTransform: "uppercase" as const };
 
-/**
- * 1:1 port of the MasterSAT midterm certificate mockup — fixed 760×538 card,
- * rendered at native size and scaled to fit the viewport. Two variants:
- *   • classroom (rank present) → gold "Class Rank #N / of M students" chip
- *   • standalone (no rank)     → certificate number, no chip
- */
-function Certificate({ c }: { c: CertData }) {
-  const hasRank = c.rank != null && c.cohort_size != null;
-  const glyph = c.subject === "MATH" ? "∑" : "A";
+// The certificate card's native size (matches the design template + the PDF).
+const CARD_W = 760;
+const CARD_H = 538;
 
-  return (
-    <div
-      style={{
-        width: 760, height: 538, position: "relative", overflow: "hidden",
-        boxShadow: "0 12px 34px rgba(15,23,41,.16)", borderRadius: 6,
-        background: "#fff", display: "flex", fontFamily: FONT,
-      }}
-    >
-      {/* ── Left blue rail ── */}
-      <div
-        style={{
-          width: 150, flex: "none",
-          background: "linear-gradient(180deg,#2a68c0,#173e7f)",
-          position: "relative", overflow: "hidden", display: "flex",
-          flexDirection: "column", alignItems: "center",
-          justifyContent: "space-between", padding: "34px 0",
-        }}
-      >
-        <div style={{ position: "absolute", top: 0, bottom: 0, width: 50, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent)" }} />
-        <img src="/images/mastersat-cert-logo.png" alt="" style={{ height: 100, filter: "brightness(0) invert(1)" }} />
-        <div style={{ ...TRK2, writingMode: "vertical-rl", transform: "rotate(180deg)", color: "rgba(255,255,255,.9)", fontSize: 18, fontWeight: 700 }}>
-          MasterSAT Midterm
-        </div>
-        <div style={{ width: 46, height: 46, borderRadius: 14, background: "rgba(255,255,255,.16)", border: "1px solid rgba(255,255,255,.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22 }}>
-          {glyph}
-        </div>
-      </div>
-
-      {/* ── Right content ── */}
-      <div style={{ flex: 1, padding: "40px 44px", display: "flex", flexDirection: "column", position: "relative" }}>
-        <img src="/images/mastersat-shield-navy.png" alt="" style={{ position: "absolute", left: "52%", top: "50%", transform: "translate(-50%,-50%)", width: 420, opacity: 0.09, zIndex: 0, pointerEvents: "none" }} />
-
-        {/* Header */}
-        <div style={{ position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <div style={{ ...TRK, fontSize: hasRank ? 20 : 10, color: "#2a68c0" }}>Certificate of Achievement</div>
-          {!hasRank && <div style={{ ...TRK2, fontSize: 8.5, color: "#9aa3b2" }}>No. {c.number}</div>}
-        </div>
-
-        {/* Center cluster */}
-        <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 34, flex: 1, marginTop: 6 }}>
-          <div style={{ position: "relative", width: 174, height: 174, flex: "none" }}>
-            <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid #e4ecf7" }} />
-            <div style={{ position: "absolute", inset: 11, borderRadius: "50%", background: "linear-gradient(135deg,#2a68c0,#173e7f)", boxShadow: "0 10px 24px rgba(42,104,192,.4)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ fontSize: 52, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{c.score}</div>
-              <div style={{ ...TRK2, fontSize: 8.5, color: "rgba(255,255,255,.7)", marginTop: 3 }}>out of {c.score_ceiling}</div>
-            </div>
-            <div style={{ position: "absolute", left: "50%", bottom: -6, transform: "translateX(-50%)", background: "#0f1729", color: "#fff", fontSize: 10, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase", padding: "5px 14px", borderRadius: 99, whiteSpace: "nowrap" }}>
-              {c.subject_label}
-            </div>
-          </div>
-
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, color: "#8a93a2" }}>Awarded to</div>
-            <div style={{ fontSize: 34, fontWeight: 800, color: "#0f1729", letterSpacing: "-.02em", lineHeight: 1.05, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 360 }}>
-              {c.student_name}
-            </div>
-            <div style={{ fontSize: 13.5, color: "#5b6473", marginTop: 12, lineHeight: 1.55 }}>
-              for outstanding performance on the <b style={{ color: "#0f1729" }}>{c.midterm_title}</b>.
-            </div>
-
-            {hasRank && (
-              <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 9, background: "#f4f8ff", border: "1px solid #d6e3f6", borderRadius: 12, padding: "9px 14px" }}>
-                  <span style={{ color: "#e3a008", display: "flex" }}>
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M5 16L3 5l5.5 4L12 4l3.5 5L21 5l-2 11H5zm0 3h14v2H5z" /></svg>
-                  </span>
-                  <div style={{ lineHeight: 1.1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "#0f1729" }}>Class Rank #{c.rank}</div>
-                    <div style={{ ...TRK2, fontSize: 7.5, color: "#9aa3b2", marginTop: 2 }}>of {c.cohort_size} students</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div>
-            <div style={{ fontSize: hasRank ? 18 : 14, fontWeight: hasRank ? 800 : 700, color: "#0f1729" }}>{c.teacher_name}</div>
-            <div style={{ ...TRK2, fontSize: 8, color: "#9aa3b2", marginTop: 2 }}>Instructor</div>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: hasRank ? 18 : 14, fontWeight: hasRank ? 800 : 700, color: "#0f1729" }}>{c.date}</div>
-            <div style={{ ...TRK2, fontSize: 8, color: "#9aa3b2", marginTop: 2 }}>Date issued</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+/** "June 21, 2026" → "June 2026" (the midterm period shown in the description). */
+function monthYearOf(dateStr: string): string {
+  const m = /([A-Za-z]+)\s+\d{1,2},?\s+(\d{4})/.exec(dateStr || "");
+  if (m) return `${m[1]} ${m[2]}`;
+  const d = new Date(dateStr);
+  return Number.isNaN(d.getTime()) ? dateStr : d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
-/** Scales the fixed 760×538 certificate down to fit narrow viewports, preserving 1:1 proportions. */
-function ScaledCertificate({ c }: { c: CertData }) {
-  const ref = useRef<HTMLDivElement>(null);
+/** The values swapped over the template's fixed placeholder text nodes. */
+function injectData(c: CertData) {
+  const subjectShort = /math/i.test(c.subject) ? "Math" : /read|engl/i.test(c.subject) ? "Reading" : (c.subject_label || "Math");
+  return {
+    score: String(c.score),
+    ceiling: String(c.score_ceiling),
+    subjectFull: c.subject_label || "Mathematics",
+    subjectShort,
+    name: c.student_name,
+    monthYear: monthYearOf(c.date),
+    rank: String(c.rank ?? ""),
+    cohort: String(c.cohort_size ?? ""),
+    instructor: c.teacher_name,
+    dateIssued: c.date,
+    certNo: c.number,
+  };
+}
+
+/** Replace the template's placeholder text nodes with the student's data (same
+ *  mapping the backend PDF renderer uses). */
+function applyInjection(doc: Document, d: ReturnType<typeof injectData>): boolean {
+  if (!doc.body || !/Aziz Karimov/.test(doc.body.innerText)) return false;
+  const repl: Record<string, string> = {
+    "740": d.score,
+    "out of 800": "out of " + d.ceiling,
+    "Mathematics": d.subjectFull,
+    "Aziz Karimov": d.name,
+    "for outstanding performance on the MasterSAT June 2026 ":
+      "for outstanding performance on the MasterSAT " + d.monthYear + " ",
+    "Math": d.subjectShort,
+    "Class Rank #3": "Class Rank #" + d.rank,
+    "of 24 students": "of " + d.cohort + " students",
+    "Dr. Sarah Chen": d.instructor,
+    "June 21, 2026": d.dateIssued,
+    "NO. MS-2026-0417": "NO. " + d.certNo,
+  };
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) nodes.push(n as Text);
+  for (const node of nodes) {
+    const v = node.nodeValue ?? "";
+    if (Object.prototype.hasOwnProperty.call(repl, v)) node.nodeValue = repl[v];
+  }
+  // Remove the subject-icon box (Σ / A) — hidden so the rail's text stays centered.
+  const icon = [...doc.querySelectorAll<HTMLElement>("*")].find(
+    (e) => e.children.length === 0 && e.textContent?.trim() === "∑",
+  );
+  if (icon) icon.style.visibility = "hidden";
+  return true;
+}
+
+/**
+ * Live certificate = the ready design template (public/certificates/{variant}.html)
+ * shown in a same-origin iframe, with the student's data injected the moment the
+ * template renders — so the entrance animation plays with the real values. Two
+ * variants: ranked (classroom) → Class Rank chip; norank (standalone) → cert number.
+ */
+function IframeCertificate({ c }: { c: CertData }) {
+  const variant = c.rank != null && c.cohort_size != null ? "ranked" : "norank";
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
   const [scale, setScale] = useState(1);
+  const data = useMemo(() => injectData(c), [c]);
+
+  // Scale the fixed-size card down to fit narrow viewports (1:1 proportions).
   useEffect(() => {
-    const el = ref.current;
+    const el = wrapRef.current;
     if (!el) return;
-    const measure = () => setScale(Math.min(1, el.clientWidth / 760));
+    const measure = () => setScale(Math.min(1, el.clientWidth / CARD_W));
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // Inject data as soon as the bundled template renders (poll fast so the swap
+  // happens while the entrance animation is still running).
+  useEffect(() => {
+    const iframe = frameRef.current;
+    if (!iframe) return;
+    let done = false;
+    let iv: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      let tries = 0;
+      iv = setInterval(() => {
+        const doc = iframe.contentDocument;
+        if (done || tries++ > 120) { if (iv) clearInterval(iv); return; }
+        try {
+          if (doc && applyInjection(doc, data)) { done = true; if (iv) clearInterval(iv); }
+        } catch { /* cross-origin shouldn't happen (same origin) */ }
+      }, 50);
+    };
+    iframe.addEventListener("load", start);
+    // In case it already loaded.
+    if (iframe.contentDocument?.readyState === "complete") start();
+    return () => { done = true; if (iv) clearInterval(iv); iframe.removeEventListener("load", start); };
+  }, [data]);
+
   return (
-    <div ref={ref} style={{ width: "100%", maxWidth: 760 }}>
-      <div style={{ height: 538 * scale, position: "relative" }}>
-        <div style={{ position: "absolute", top: 0, left: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
-          <Certificate c={c} />
-        </div>
+    <div ref={wrapRef} style={{ width: "100%", maxWidth: CARD_W }}>
+      <div style={{ height: CARD_H * scale, position: "relative", borderRadius: 6, overflow: "hidden", boxShadow: "0 12px 34px rgba(15,23,41,.16)" }}>
+        <iframe
+          ref={frameRef}
+          src={`/certificates/${variant}.html`}
+          title="Certificate"
+          scrolling="no"
+          style={{ width: CARD_W, height: CARD_H, border: 0, position: "absolute", top: 0, left: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}
+        />
       </div>
     </div>
   );
@@ -178,7 +176,7 @@ export default function CertificatePage() {
           <p className="text-sm text-slate-500">Loading certificate…</p>
         ) : (
           <>
-            <ScaledCertificate c={cert} />
+            <IframeCertificate c={cert} />
             <div className="flex gap-3 print:hidden">
               <button onClick={downloadPdf} disabled={busy} className="inline-flex items-center gap-2 rounded-xl bg-[#2a68c0] px-5 py-2.5 text-sm font-bold text-white transition hover:bg-[#21539e] disabled:opacity-60">
                 <Download className="h-4 w-4" /> {busy ? "Preparing…" : "Download PDF"}
