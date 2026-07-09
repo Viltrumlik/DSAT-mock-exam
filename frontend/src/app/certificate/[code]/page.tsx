@@ -20,11 +20,19 @@ const FONT = "var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, sans-ser
 const CARD_W = 760;
 const CARD_H = 538;
 
-// Present the live certificate at true A4-landscape proportions (like the PDF) and render
-// it large so it fills the view as a full sheet. The card's native ratio (≈1.413) is a hair
-// off A4 landscape (≈1.414), so the non-uniform stretch to fill is imperceptible.
+// The bundled template is RESPONSIVE to its viewport: at ≲860px wide it shrinks the card
+// (to ~664px) and the title wraps to two lines. So we give the iframe a comfortably wide
+// internal viewport — the card then renders at its full native 760×538 — and reposition it
+// to the origin (see applyInjection) so the outer scale maps it edge-to-edge.
+const FRAME_W = 1000;
+const FRAME_H = 560;
+
+// Present the live certificate at true A4-landscape proportions (like the PDF), rendered as
+// large as fits the viewport (width AND height) so it reads as a full sheet. The card's
+// native ratio (≈1.413) is a hair off A4 landscape (≈1.414) — the stretch is imperceptible.
 const A4_LANDSCAPE_RATIO = 297 / 210; // ≈ 1.4143
-const MAX_DISPLAY_W = 1040;
+const MAX_DISPLAY_W = 1360; // cap on very wide screens
+const VERTICAL_RESERVE = 184; // leave room for the action buttons + page padding
 
 /** "June 21, 2026" → "June 2026" (the midterm period shown in the description). */
 function monthYearOf(dateStr: string): string {
@@ -56,8 +64,9 @@ function injectData(c: CertData) {
  *  mapping the backend PDF renderer uses). */
 function applyInjection(doc: Document, d: ReturnType<typeof injectData>): boolean {
   if (!doc.body || !/Aziz Karimov/.test(doc.body.innerText)) return false;
-  // Square off the card's corners so the on-screen certificate is full-bleed, matching the
-  // PDF (the box that frames it is edge-to-edge, so no rounded gaps show at the corners).
+  // Anchor the card at the iframe's origin (full-bleed) so the outer scale maps it edge-to-
+  // edge, and strip the template's blue backdrop + flex centering. This is what lets us give
+  // the iframe a wide viewport (card renders full 760×538) yet display only the card.
   const card = [...doc.querySelectorAll<HTMLElement>("div")]
     .filter((e) => {
       const r = e.getBoundingClientRect();
@@ -65,7 +74,18 @@ function applyInjection(doc: Document, d: ReturnType<typeof injectData>): boolea
         getComputedStyle(e).borderTopLeftRadius !== "0px";
     })
     .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
-  if (card) card.style.borderRadius = "0";
+  if (card) {
+    card.style.position = "absolute";
+    card.style.left = "0";
+    card.style.top = "0";
+    card.style.margin = "0";
+    card.style.borderRadius = "0";
+    card.style.boxShadow = "none";
+  }
+  doc.documentElement.style.cssText = "margin:0;padding:0";
+  doc.body.style.cssText = "margin:0;padding:0;background:#fff;min-height:0;display:block";
+  const thumb = doc.getElementById("__bundler_thumbnail");
+  if (thumb) thumb.style.display = "none";
   const repl: Record<string, string> = {
     "740": d.score,
     "out of 800": "out of " + d.ceiling,
@@ -109,15 +129,20 @@ function IframeCertificate({ c }: { c: CertData }) {
   const [boxW, setBoxW] = useState(MAX_DISPLAY_W);
   const data = useMemo(() => injectData(c), [c]);
 
-  // Fill the available width (up to MAX_DISPLAY_W); the sheet keeps A4-landscape ratio.
+  // Size the sheet as large as fits the viewport — bounded by width, by height (so the whole
+  // A4-landscape sheet + buttons stay on screen), and by MAX_DISPLAY_W. Keeps A4 ratio.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const measure = () => setBoxW(el.clientWidth);
+    const measure = () => {
+      const availH = window.innerHeight - VERTICAL_RESERVE;
+      setBoxW(Math.max(320, Math.min(el.clientWidth, availH * A4_LANDSCAPE_RATIO, MAX_DISPLAY_W)));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    window.addEventListener("resize", measure);
+    return () => { ro.disconnect(); window.removeEventListener("resize", measure); };
   }, []);
 
   // Inject data as soon as the bundled template renders (poll fast so the swap
@@ -143,17 +168,18 @@ function IframeCertificate({ c }: { c: CertData }) {
     return () => { done = true; if (iv) clearInterval(iv); iframe.removeEventListener("load", start); };
   }, [data]);
 
-  // A4-landscape box; the native card is stretched to fill it edge-to-edge (full-bleed).
+  // A4-landscape box; the wide-viewport iframe (card anchored at its origin) is scaled to fill
+  // it edge-to-edge (full-bleed). The box clips the iframe's empty margin beyond the card.
   const boxH = boxW / A4_LANDSCAPE_RATIO;
   return (
-    <div ref={wrapRef} style={{ width: "100%", maxWidth: MAX_DISPLAY_W }}>
-      <div style={{ width: boxW, height: boxH, position: "relative", overflow: "hidden", boxShadow: "0 18px 48px rgba(15,23,41,.18)" }}>
+    <div ref={wrapRef} style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+      <div style={{ width: boxW, height: boxH, position: "relative", overflow: "hidden", borderRadius: 8, boxShadow: "0 24px 60px rgba(15,23,41,.20)" }}>
         <iframe
           ref={frameRef}
           src={`/certificates/${variant}.html`}
           title="Certificate"
           scrolling="no"
-          style={{ width: CARD_W, height: CARD_H, border: 0, position: "absolute", top: 0, left: 0, transform: `scale(${boxW / CARD_W}, ${boxH / CARD_H})`, transformOrigin: "top left" }}
+          style={{ width: FRAME_W, height: FRAME_H, border: 0, position: "absolute", top: 0, left: 0, transform: `scale(${boxW / CARD_W}, ${boxH / CARD_H})`, transformOrigin: "top left" }}
         />
       </div>
     </div>
