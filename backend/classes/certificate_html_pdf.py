@@ -4,7 +4,8 @@ Chromium (playwright).
 The two design templates live in ``certificate_templates/`` and are self-contained
 (fonts + markup embedded). We load the template, swap the student's data in by DOM
 text replacement (the template ships fixed placeholder text), isolate the certificate
-card, let the entrance animations settle, then print a single landscape page.
+card, wait for the embedded fonts to load and the entrance animations to settle, then
+print a single A4 landscape page (the card is scaled uniformly to fill the sheet).
 
     ranked.html  → classroom certificate (Class Rank #N · of M students chip)
     norank.html  → standalone certificate (certificate number, no rank)
@@ -28,6 +29,17 @@ logger = logging.getLogger(__name__)
 
 TEMPLATE_DIR = os.path.join(settings.BASE_DIR, "classes", "certificate_templates")
 CARD_W, CARD_H = 760, 538  # the certificate card's native size (px)
+
+# We print onto a real A4 landscape sheet (297mm × 210mm), full-bleed — the certificate
+# fills the whole sheet with NO outer frame/margin. The card's aspect ratio (760/538 ≈
+# 1.413) is a hair narrower than A4 landscape (297/210 ≈ 1.414), so we stretch it to fill
+# both axes exactly with an independent x/y scale. The vertical stretch is ~0.12% —
+# imperceptible, and it guarantees edge-to-edge coverage (no white border anywhere).
+A4_LANDSCAPE = ("297mm", "210mm")
+_A4_W_PX = 297.0 / 25.4 * 96.0  # A4 landscape width  in CSS px @96dpi (≈1122.52)
+_A4_H_PX = 210.0 / 25.4 * 96.0  # A4 landscape height in CSS px @96dpi (≈793.70)
+A4_SCALE_X = round(_A4_W_PX / CARD_W, 5)  # ≈ 1.47700
+A4_SCALE_Y = round(_A4_H_PX / CARD_H, 5)  # ≈ 1.47528
 
 _SUBJECT_FULL = {
     "MATH": "Mathematics", "MATHEMATICS": "Mathematics",
@@ -92,7 +104,7 @@ _INJECT = r"""
     "of 24 students": "of " + d.cohort + " students",
     "Dr. Sarah Chen": d.instructor,
     "June 21, 2026": d.dateIssued,
-    "NO. MS-2026-0417": "NO. " + d.certNo,
+    "No. MS-2026-0417": "No. " + d.certNo,  // node is "No." (CSS uppercases it on screen)
   };
   const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes = []; while (w.nextNode()) nodes.push(w.currentNode);
@@ -104,15 +116,30 @@ _INJECT = r"""
 }
 """
 
-# Isolate the card so only it prints, edge-to-edge on a card-sized page.
+# Isolate the card so only it prints, anchored at the page origin and stretched to
+# exactly fill the A4 sheet (full-bleed, no frame). page.pdf() then prints it at scale 1.
 _ISOLATE = (
     "() => { const s = document.createElement('style'); s.textContent = "
     "'html,body{margin:0!important;padding:0!important;background:#fff!important} "
     "body *{visibility:hidden} #__certcard,#__certcard *{visibility:visible} "
     "#__certcard{position:fixed!important;left:0!important;top:0!important;"
     "width:%dpx!important;height:%dpx!important;margin:0!important;"
-    "border-radius:0!important;box-shadow:none!important}'; "
-    "document.head.appendChild(s); }" % (CARD_W, CARD_H)
+    "border-radius:0!important;box-shadow:none!important;"
+    "transform:scale(%s,%s)!important;transform-origin:top left!important}'; "
+    "document.head.appendChild(s); }" % (CARD_W, CARD_H, A4_SCALE_X, A4_SCALE_Y)
+)
+
+# Wait for the embedded @font-face fonts to finish loading BEFORE we capture. This is
+# the fix for the cramped-text bug: a cold headless Chromium can reach the capture step
+# before the fonts are ready, so the text gets laid out with fallback metrics (collapsed
+# word spacing). Resolves once every face is loaded (or immediately if the API is absent).
+_FONTS_READY = "async () => { if (document.fonts && document.fonts.ready) { await document.fonts.ready; } return true; }"
+
+# Snap every running CSS/Web-Animations entrance animation to its final frame so the
+# capture is deterministic regardless of how fast the host renders (no mid-animation frame).
+_FINISH_ANIMATIONS = (
+    "() => { try { document.getAnimations().forEach(a => { try { a.finish(); } catch (e) {} }); } "
+    "catch (e) {} }"
 )
 
 
@@ -135,9 +162,17 @@ def _render_on_browser(browser, cert: "MidtermCertificate") -> bytes:
         page.evaluate(_TAG_CARD)
         page.evaluate(_INJECT, data)
         page.evaluate(_ISOLATE)
-        page.wait_for_timeout(1500)  # let the entrance animations finish
+        # Deterministic capture: fonts loaded (correct spacing), then let the entrance
+        # animations run and snap any still-in-flight ones to their final frame.
+        page.evaluate(_FONTS_READY)
+        page.wait_for_timeout(400)
+        page.evaluate(_FINISH_ANIMATIONS)
+        page.wait_for_timeout(200)
+        # Print onto a real A4 landscape sheet, full-bleed (the card is already stretched
+        # to fill it in _ISOLATE, so we print at scale 1 with zero page margins).
         return page.pdf(
-            width=f"{CARD_W}px", height=f"{CARD_H}px",
+            width=A4_LANDSCAPE[0], height=A4_LANDSCAPE[1], scale=1,
+            margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
             print_background=True, page_ranges="1",
         )
     finally:
