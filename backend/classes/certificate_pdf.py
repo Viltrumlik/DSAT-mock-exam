@@ -12,6 +12,7 @@ Nothing is written to disk — callers stream the returned bytes.
 from __future__ import annotations
 
 import io
+import math
 import os
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,9 @@ BLUE_TXT = HexColor("#2a68c0")
 GRAY = HexColor("#8a93a2")
 BODY = HexColor("#5b6473")
 SHADOW = HexColor("#d9d5ca")
+CHIP_BG = HexColor("#f4f8ff")
+CHIP_BD = HexColor("#d6e3f6")
+GOLD = HexColor("#e3a008")
 
 REG, BOLD = "Helvetica", "Helvetica-Bold"
 _fonts_ready = False
@@ -117,6 +121,21 @@ def _img(path):
     return ImageReader(path) if os.path.exists(path) else None
 
 
+def _star(c, cx, cy, r, color):
+    """Filled 5-point star (the class-rank chip icon)."""
+    c.saveState()
+    c.setFillColor(color)
+    p = c.beginPath()
+    for i in range(10):
+        ang = math.pi / 2 + i * math.pi / 5
+        rr = r if i % 2 == 0 else r * 0.42
+        x, y = cx + rr * math.cos(ang), cy + rr * math.sin(ang)
+        (p.moveTo if i == 0 else p.lineTo)(x, y)
+    p.close()
+    c.drawPath(p, fill=1, stroke=0)
+    c.restoreState()
+
+
 def render_midterm_certificate_pdf(cert: "MidtermCertificate") -> bytes:
     _ensure_fonts()
     buf = io.BytesIO()
@@ -141,11 +160,11 @@ def render_midterm_certificate_pdf(cert: "MidtermCertificate") -> bytes:
 
     band_cx = cx + band_w / 2
 
-    # Shield logo (white) near band top.
-    shield = _img(os.path.join(ASSETS, "shield_white.png"))
-    if shield:
-        lw = 46; lh = lw * 656 / 590
-        c.drawImage(shield, band_cx - lw / 2, cy + ch - 34 - lh, width=lw, height=lh, mask="auto")
+    # MasterSAT logo (white) near band top — the same mark used on the on-screen certificate.
+    logo = _img(os.path.join(ASSETS, "cert_logo.png")) or _img(os.path.join(ASSETS, "shield_white.png"))
+    if logo:
+        lh = 66; lw = lh * 590 / 656
+        c.drawImage(logo, band_cx - lw / 2, cy + ch - 30 - lh, width=lw, height=lh, mask="auto")
 
     # Vertical band label.
     c.saveState()
@@ -175,9 +194,14 @@ def render_midterm_certificate_pdf(cert: "MidtermCertificate") -> bytes:
     mx0 = cx + band_w + pad
     mx1 = cx + cw - pad
 
+    # Classroom flavor (rank present) prints a class-rank chip + a larger heading and no
+    # certificate number; standalone prints the certificate number instead (matches the mockups).
+    has_rank = cert.rank is not None and cert.cohort_size is not None
+
     # Header row.
-    _spaced(c, BOLD, 10, BLUE_TXT, mx0, cy + ch - 46, "CERTIFICATE OF ACHIEVEMENT", ls=2.2)
-    _spaced(c, REG, 10, GRAY, mx1, cy + ch - 46, f"NO. {cert.number}", ls=1.0, align="right")
+    _spaced(c, BOLD, 14 if has_rank else 10, BLUE_TXT, mx0, cy + ch - 46, "CERTIFICATE OF ACHIEVEMENT", ls=2.2)
+    if not has_rank:
+        _spaced(c, REG, 10, GRAY, mx1, cy + ch - 46, f"NO. {cert.number}", ls=1.0, align="right")
 
     # Watermark (faint shield), centred in the main area.
     wm = _img(os.path.join(ASSETS, "shield_wm.png"))
@@ -212,11 +236,27 @@ def render_midterm_certificate_pdf(cert: "MidtermCertificate") -> bytes:
         _spaced(c, REG, 11, BODY, rx, yy, ln)
         yy -= 16
 
+    # Class-rank chip (classroom flavor only) — gold star + "CLASS RANK #N / OF M STUDENTS".
+    if has_rank:
+        l1, l2 = f"CLASS RANK #{cert.rank}", f"OF {cert.cohort_size} STUDENTS"
+        w1 = c.stringWidth(l1, BOLD, 10.5)
+        w2 = c.stringWidth(l2, REG, 7) + 1.2 * max(len(l2) - 1, 0)
+        star_r, gap, padx, ch_h = 7, 9, 13, 30
+        ch_w = padx * 2 + star_r * 2 + gap + max(w1, w2)
+        box_b = yy - ch_h + 4
+        c.setFillColor(CHIP_BG); c.setStrokeColor(CHIP_BD); c.setLineWidth(1)
+        c.roundRect(rx, box_b, ch_w, ch_h, 12, fill=1, stroke=1)
+        _star(c, rx + padx + star_r, box_b + ch_h / 2, star_r, GOLD)
+        tx = rx + padx + star_r * 2 + gap
+        _spaced(c, BOLD, 10.5, NAVY, tx, box_b + ch_h / 2 + 1, l1)
+        _spaced(c, REG, 7, GRAY, tx, box_b + ch_h / 2 - 9, l2, ls=1.2)
+
     # Footer: instructor (left) + date (right).
     fy = cy + 46
-    _spaced(c, BOLD, 12, NAVY, mx0, fy, cert.issued_by_name or "MasterSAT Instructor")
+    fsz = 13 if has_rank else 12
+    _spaced(c, BOLD, fsz, NAVY, mx0, fy, cert.issued_by_name or "MasterSAT Instructor")
     _spaced(c, REG, 8.5, GRAY, mx0, fy - 15, "INSTRUCTOR", ls=1.6)
-    _spaced(c, BOLD, 12, NAVY, mx1, fy, cert.date_display, align="right")
+    _spaced(c, BOLD, fsz, NAVY, mx1, fy, cert.date_display, align="right")
     _spaced(c, REG, 8.5, GRAY, mx1, fy - 15, "DATE ISSUED", ls=1.6, align="right")
 
     c.showPage()

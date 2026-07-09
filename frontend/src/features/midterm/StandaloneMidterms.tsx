@@ -113,7 +113,8 @@ export function StandaloneMidtermDetail({ midtermId }: { midtermId: number }) {
           <UserPlus className="h-4 w-4" /> Give access to students
         </h2>
         <div className="mt-3">
-          <StudentMultiSelect value={picked} onChange={setPicked} />
+          {/* Standalone = individual students only, no classroom (that's the classroom flavor). */}
+          <StudentMultiSelect value={picked} onChange={setPicked} showClassroomFilter={false} />
         </div>
         <button
           onClick={() => grant.mutate()}
