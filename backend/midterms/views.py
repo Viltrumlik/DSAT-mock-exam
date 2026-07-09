@@ -59,6 +59,16 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
             "midterm", "midterm__question_module"
         )
 
+    def _lock_queryset(self):
+        """Row-lock queryset for mutating transitions.
+
+        NEVER select_related the nullable ``midterm__question_module`` here: Postgres
+        rejects ``SELECT ... FOR UPDATE`` on the nullable side of an outer join
+        (``FeatureNotSupported``), which 500s start/save/submit. ``midterm`` is non-null,
+        so its inner join is safe and keeps the instance usable by the transition methods.
+        """
+        return MidtermAttempt.objects.filter(student=self.request.user).select_related("midterm")
+
     def _snapshot(self, attempt) -> Response:
         return Response(MidtermAttemptSerializer(attempt).data)
 
@@ -117,7 +127,7 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
 
         def compute():
             with transaction.atomic():
-                locked = self.get_queryset().select_for_update().get(pk=pk)
+                locked = self._lock_queryset().select_for_update().get(pk=pk)
                 locked.start_attempt()
             return self._snapshot(self.get_queryset().get(pk=pk))
 
@@ -133,7 +143,7 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
 
         def compute():
             with transaction.atomic():
-                locked = self.get_queryset().select_for_update().get(pk=pk)
+                locked = self._lock_queryset().select_for_update().get(pk=pk)
                 if locked.current_state == STATE_ACTIVE:
                     # Late/expired explicit submit is still accepted (merge + advance).
                     locked.submit(answers=answers, flagged=flagged)
@@ -157,7 +167,7 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         def compute():
             auto_submitted = False
             with transaction.atomic():
-                locked = self.get_queryset().select_for_update().get(pk=pk)
+                locked = self._lock_queryset().select_for_update().get(pk=pk)
                 if locked.current_state == STATE_ACTIVE:
                     # Autosave is a HARD conflict on version drift (stale tab) — mirror exams.
                     if expected is not None and int(locked.version_number or 0) != expected:
