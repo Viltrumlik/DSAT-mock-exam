@@ -96,6 +96,17 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
     }
   }
 
+  // Publish for just the students who finished — absent / unfinished students get no
+  // certificate. A later "Re-calculate" folds them in (and refreshes ranks) once they finish.
+  async function publishForFinishers() {
+    const missing = stats.assigned - stats.completed;
+    const ok = window.confirm(
+      `${missing} student${missing !== 1 ? "s" : ""} haven't finished yet. Publish results and issue certificates for the ${stats.completed} who did?\n\n` +
+      `Students who didn't take the midterm won't get a certificate. When they finish later, use "Re-calculate" to include them and refresh class ranks.`,
+    );
+    if (ok) await doIssue(true);
+  }
+
   async function downloadOne(code: string, student: string) {
     setBusyCode(code);
     window.open(`/certificate/${code}`, "_blank", "noopener");
@@ -143,8 +154,17 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
               </>
             ) : all_finished ? (
               <Button icon={Award} loading={issue.isPending} onClick={() => doIssue(false)}>Publish results &amp; certificates</Button>
+            ) : stats.completed > 0 ? (
+              <div className="flex flex-col items-end gap-1">
+                <Button icon={Award} loading={issue.isPending} onClick={publishForFinishers}>
+                  Publish for {stats.completed} finisher{stats.completed !== 1 ? "s" : ""}
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {stats.assigned - stats.completed} haven&rsquo;t finished — they won&rsquo;t get a certificate yet
+                </span>
+              </div>
             ) : (
-              <span className="text-xs text-muted-foreground">Publishing unlocks once everyone finishes</span>
+              <span className="text-xs text-muted-foreground">No one has finished this midterm yet</span>
             )}
           </div>
         </div>
