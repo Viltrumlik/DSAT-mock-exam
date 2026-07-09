@@ -70,6 +70,42 @@ class MidtermCatalogView(APIView):
         return Response({"results": [_midterm_brief(m) for m in qs]})
 
 
+class MidtermStudentsView(APIView):
+    """GET /midterms/teacher/students/ — EVERY student, for the standalone grant picker.
+
+    The standalone flavor is grantor-instructor with NO classroom, so a teacher may grant a
+    midterm to any student in the system — this is intentionally system-wide (all active
+    ``role=student`` users), unlike the classroom-scoped ``/api/users/`` list. Optional
+    ``?search=`` narrows by name/username/email server-side.
+    """
+
+    permission_classes = [IsTeacherOrStaff]
+
+    def get(self, request):
+        qs = User.objects.filter(role="student", is_active=True)
+        search = (request.query_params.get("search") or "").strip()
+        if search:
+            qs = qs.filter(
+                Q(first_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(username__icontains=search)
+                | Q(email__icontains=search)
+            )
+        qs = qs.order_by("first_name", "last_name", "username")
+        rows = [
+            {
+                "id": u.id,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "username": u.username,
+                "email": u.email,
+                "role": "student",
+            }
+            for u in qs[:1000]
+        ]
+        return Response({"results": rows})
+
+
 def _standalone_grants(midterm_id: int):
     return ResourceAccessGrant.objects.filter(
         scope=ResourceAccessGrant.SCOPE_RESOURCE,

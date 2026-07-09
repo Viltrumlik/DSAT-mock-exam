@@ -9,6 +9,7 @@ from .views_teacher import (
     MidtermGrantView,
     MidtermRevokeView,
     MidtermStandaloneResultsView,
+    MidtermStudentsView,
 )
 
 router = DefaultRouter()
@@ -26,6 +27,7 @@ urlpatterns = [
     path("mine/", MyMidtermsView.as_view(), name="midterm-my-list"),
     # Teacher standalone-midterm area (grant access + results).
     path("teacher/midterms/", MidtermCatalogView.as_view(), name="midterm-teacher-catalog"),
+    path("teacher/students/", MidtermStudentsView.as_view(), name="midterm-teacher-students"),
     path("teacher/midterms/<int:pk>/grant/", MidtermGrantView.as_view(), name="midterm-teacher-grant"),
     path("teacher/midterms/<int:pk>/revoke/", MidtermRevokeView.as_view(), name="midterm-teacher-revoke"),
     path("teacher/midterms/<int:pk>/results/", MidtermStandaloneResultsView.as_view(), name="midterm-teacher-results"),
