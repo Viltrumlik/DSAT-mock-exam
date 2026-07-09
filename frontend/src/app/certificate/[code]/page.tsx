@@ -20,6 +20,12 @@ const FONT = "var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, sans-ser
 const CARD_W = 760;
 const CARD_H = 538;
 
+// Present the live certificate at true A4-landscape proportions (like the PDF) and render
+// it large so it fills the view as a full sheet. The card's native ratio (≈1.413) is a hair
+// off A4 landscape (≈1.414), so the non-uniform stretch to fill is imperceptible.
+const A4_LANDSCAPE_RATIO = 297 / 210; // ≈ 1.4143
+const MAX_DISPLAY_W = 1040;
+
 /** "June 21, 2026" → "June 2026" (the midterm period shown in the description). */
 function monthYearOf(dateStr: string): string {
   const m = /([A-Za-z]+)\s+\d{1,2},?\s+(\d{4})/.exec(dateStr || "");
@@ -50,6 +56,16 @@ function injectData(c: CertData) {
  *  mapping the backend PDF renderer uses). */
 function applyInjection(doc: Document, d: ReturnType<typeof injectData>): boolean {
   if (!doc.body || !/Aziz Karimov/.test(doc.body.innerText)) return false;
+  // Square off the card's corners so the on-screen certificate is full-bleed, matching the
+  // PDF (the box that frames it is edge-to-edge, so no rounded gaps show at the corners).
+  const card = [...doc.querySelectorAll<HTMLElement>("div")]
+    .filter((e) => {
+      const r = e.getBoundingClientRect();
+      return /Aziz Karimov/.test(e.textContent ?? "") && r.width > 500 && r.width < 1100 &&
+        getComputedStyle(e).borderTopLeftRadius !== "0px";
+    })
+    .sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
+  if (card) card.style.borderRadius = "0";
   const repl: Record<string, string> = {
     "740": d.score,
     "out of 800": "out of " + d.ceiling,
@@ -62,7 +78,7 @@ function applyInjection(doc: Document, d: ReturnType<typeof injectData>): boolea
     "of 24 students": "of " + d.cohort + " students",
     "Dr. Sarah Chen": d.instructor,
     "June 21, 2026": d.dateIssued,
-    "NO. MS-2026-0417": "NO. " + d.certNo,
+    "No. MS-2026-0417": "No. " + d.certNo, // node is "No." (CSS uppercases it on screen)
   };
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
@@ -90,14 +106,14 @@ function IframeCertificate({ c }: { c: CertData }) {
   const variant = c.rank != null && c.cohort_size != null ? "ranked" : "norank";
   const wrapRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [scale, setScale] = useState(1);
+  const [boxW, setBoxW] = useState(MAX_DISPLAY_W);
   const data = useMemo(() => injectData(c), [c]);
 
-  // Scale the fixed-size card down to fit narrow viewports (1:1 proportions).
+  // Fill the available width (up to MAX_DISPLAY_W); the sheet keeps A4-landscape ratio.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
-    const measure = () => setScale(Math.min(1, el.clientWidth / CARD_W));
+    const measure = () => setBoxW(el.clientWidth);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -127,15 +143,17 @@ function IframeCertificate({ c }: { c: CertData }) {
     return () => { done = true; if (iv) clearInterval(iv); iframe.removeEventListener("load", start); };
   }, [data]);
 
+  // A4-landscape box; the native card is stretched to fill it edge-to-edge (full-bleed).
+  const boxH = boxW / A4_LANDSCAPE_RATIO;
   return (
-    <div ref={wrapRef} style={{ width: "100%", maxWidth: CARD_W }}>
-      <div style={{ height: CARD_H * scale, position: "relative", borderRadius: 6, overflow: "hidden", boxShadow: "0 12px 34px rgba(15,23,41,.16)" }}>
+    <div ref={wrapRef} style={{ width: "100%", maxWidth: MAX_DISPLAY_W }}>
+      <div style={{ width: boxW, height: boxH, position: "relative", overflow: "hidden", boxShadow: "0 18px 48px rgba(15,23,41,.18)" }}>
         <iframe
           ref={frameRef}
           src={`/certificates/${variant}.html`}
           title="Certificate"
           scrolling="no"
-          style={{ width: CARD_W, height: CARD_H, border: 0, position: "absolute", top: 0, left: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}
+          style={{ width: CARD_W, height: CARD_H, border: 0, position: "absolute", top: 0, left: 0, transform: `scale(${boxW / CARD_W}, ${boxH / CARD_H})`, transformOrigin: "top left" }}
         />
       </div>
     </div>
