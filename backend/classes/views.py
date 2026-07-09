@@ -61,7 +61,7 @@ from .metrics import record_homework_submit_attempt, record_homework_submit_erro
 from .submission_limits import max_batch_upload_bytes, max_files_per_submission
 from .submission_uploads import abandon_staged_uploads, stream_upload_to_storage
 from .homework_auto_submit import sync_practice_submission_for_assignment
-from .capabilities import can as has_cap
+from .capabilities import can as has_cap, is_global_admin
 from .views_rankings import resolve_ranking_visibility
 from .throttles import HomeworkSubmitClassThrottle, HomeworkSubmitGlobalThrottle, HomeworkSubmitThrottle
 from .submission_state import (
@@ -241,29 +241,27 @@ class ClassroomViewSet(ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Membership is a soft delete (status=REMOVED). Gate visibility on a
-        # non-removed membership, and count only non-removed members.
+        # Count only non-removed members (membership is a soft delete, status=REMOVED).
+        base = Classroom.objects.annotate(
+            members_count=Count(
+                "memberships",
+                filter=~Q(memberships__status=ClassroomMembership.STATUS_REMOVED),
+            )
+        ).distinct()
+        # Global admins (super_admin / admin / Django superuser) oversee EVERY classroom — the
+        # SAME predicate that grants GLOBAL_ADMIN capabilities in classroom_capabilities(). This
+        # lets an admin list, open, and manage (e.g. assign midterms to) any classroom from the
+        # teacher console — not just ones they happen to be a member of. Without this, list hides
+        # non-member classrooms AND retrieve 404s, so an admin can't reach them at all.
+        if is_global_admin(user):
+            return base
+        # Everyone else stays strictly membership-scoped (fail-closed): the student/teacher
+        # "Classes" UX stays private and never exposes the classroom directory. Admin/ops use
+        # the separate `directory` action for the org-wide list.
         active_membership = ClassroomMembership.objects.filter(
             classroom=OuterRef("pk"), user=user
         ).exclude(status=ClassroomMembership.STATUS_REMOVED)
-        member_qs = (
-            Classroom.objects.filter(Exists(active_membership))
-            .annotate(
-                members_count=Count(
-                    "memberships",
-                    filter=~Q(memberships__status=ClassroomMembership.STATUS_REMOVED),
-                )
-            )
-            .distinct()
-        )
-        # Default visibility for classroom resources is membership-scoped. This keeps the
-        # student/teacher "Classes" UX private and prevents accidental directory-wide exposure.
-        #
-        # Superusers and super_admin may still need a global list for operational tasks.
-        # Fail-closed: `/api/classes/` is always membership-scoped for everyone.
-        # A directory-wide list (ops/admin use) is exposed via a separate endpoint action.
-        out = member_qs if getattr(self, "action", None) == "list" else member_qs
-        return out
+        return base.filter(Exists(active_membership))
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
