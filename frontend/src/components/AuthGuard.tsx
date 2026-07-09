@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
+import { FrozenOverlay } from "@/components/FrozenOverlay";
 
 const BOOT_TIMEOUT_MS = 12_000;
 const BOOT_SLOW_MS = 5_000;
@@ -100,10 +101,9 @@ export default function AuthGuard({
             window.location.replace(`${MAIN_SITE_URL}/?denied=teacher-portal`);
             return;
         }
-        if (frozen && !hasStaff) {
-            router.replace("/frozen");
-            return;
-        }
+        // Frozen students are NOT redirected — they stay on the dashboard with a
+        // non-dismissible blocking overlay (rendered below). Handled inline so the
+        // student can't escape by changing the URL.
         if (consoleMode === "questions" && isStudent) {
             router.replace("/");
             return;
@@ -199,7 +199,6 @@ export default function AuthGuard({
 
     const willRedirectAway =
         (consoleMode === "teacher" && !teacherPortalAllowed) ||
-        (frozen && !hasStaff) ||
         (consoleMode === "questions" && isStudent) ||
         (consoleMode === "admin" && (isStudent || isTester)) ||
         (adminOnly && (!hasStaff || (consoleMode === "admin" && isTester)));
@@ -209,6 +208,17 @@ export default function AuthGuard({
             <div className="min-h-screen bg-background flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary/60" aria-label="Redirecting" />
             </div>
+        );
+    }
+
+    // Frozen (non-staff): show the dashboard behind a non-dismissible blocking
+    // overlay. The underlying app is made `inert` so it can't be tabbed/clicked.
+    if (frozen && !hasStaff) {
+        return (
+            <>
+                <div className="contents" inert>{children}</div>
+                <FrozenOverlay />
+            </>
         );
     }
 

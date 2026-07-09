@@ -90,8 +90,10 @@ export function useUpsertAssessmentQuestion(setId: number) {
 export function useDeleteAssessmentQuestion(setId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (questionId: number) => {
-      await assessmentsAdminApi.deleteQuestion(questionId);
+    mutationFn: async (vars: number | { questionId: number; force?: boolean }) => {
+      const questionId = typeof vars === "number" ? vars : vars.questionId;
+      const force = typeof vars === "number" ? false : Boolean(vars.force);
+      await assessmentsAdminApi.deleteQuestion(questionId, force);
     },
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });

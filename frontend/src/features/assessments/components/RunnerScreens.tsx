@@ -299,17 +299,22 @@ export function SubmitConfirmScreen({
 export function ReviewScreen({
   title,
   assignmentId,
+  homeworkId,
   questionIds,
   questionTimes,
   totalElapsed,
 }: {
   title: string;
   assignmentId: number | null;
+  homeworkId?: number | null;
   questionIds: number[];
   questionTimes: Record<number, number>;
   totalElapsed: number;
 }) {
   const totalTracked = Object.values(questionTimes).reduce((a, b) => a + b, 0);
+  const resultHref = assignmentId
+    ? `/assessments/result/${assignmentId}${homeworkId ? `?homework=${homeworkId}` : ""}`
+    : "/classes";
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
       <div className="rounded-2xl border border-border bg-card p-8 text-center space-y-4">
@@ -367,7 +372,7 @@ export function ReviewScreen({
       <div className="flex justify-center gap-3">
         {assignmentId ? (
           <Link
-            href={`/assessments/result/${assignmentId}`}
+            href={resultHref}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             View results
@@ -391,14 +396,20 @@ export function ReviewScreen({
 export function CompleteScreen({
   title,
   assignmentId,
+  homeworkId,
   attemptId,
 }: {
   title: string;
   assignmentId: number | null;
+  /** Targets the SPECIFIC assessment of a multi-assessment assignment bundle. */
+  homeworkId?: number | null;
   attemptId: number;
 }) {
   const receipt = readSubmitReceipt(attemptId);
   const timeLabel = receipt ? formatReceiptTime(receipt.ts) : null;
+  const resultHref = assignmentId
+    ? `/assessments/result/${assignmentId}${homeworkId ? `?homework=${homeworkId}` : ""}`
+    : "/classes";
   return (
     <div className="mx-auto w-full max-w-lg">
       <div className="rounded-2xl border border-border bg-card p-10 text-center space-y-5">
@@ -417,7 +428,7 @@ export function CompleteScreen({
         </p>
         {assignmentId ? (
           <Link
-            href={`/assessments/result/${assignmentId}`}
+            href={resultHref}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-extrabold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             View results

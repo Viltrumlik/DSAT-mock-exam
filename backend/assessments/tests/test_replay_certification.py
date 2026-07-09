@@ -188,13 +188,12 @@ def make_graded_attempt(
 
 class GradingReplayInvarianceTests(TestCase):
     """
-    FORMAL TRUST CONTRACT TESTS.
+    LIVE-CONTENT GRADING (versioning removed — pastpaper-style).
 
-    These prove that historical academic records are immune to:
-    - live question edits
-    - new version publishes
-    - question deactivation
-    - correct answer changes
+    Grading reads the LIVE ``AssessmentQuestion`` rows, not a frozen snapshot, so a
+    re-grade after a builder edit reflects the edit. (In normal operation grading is
+    idempotent — a graded attempt is never re-graded — so a completed score is stable
+    in practice; these tests force a re-grade to prove the delivered contract.)
     """
 
     def setUp(self):
@@ -205,11 +204,10 @@ class GradingReplayInvarianceTests(TestCase):
             classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT
         )
 
-    def test_historical_score_survives_correct_answer_change(self):
+    def test_regrade_reflects_live_correct_answer_change(self):
         """
-        TRUST CONTRACT CORE:
-        After a correct answer is changed and a new version published,
-        the original attempt must still grade identically using snapshot v1.
+        LIVE CONTRACT: after the correct answer is changed in the builder, a re-grade
+        grades against the LIVE answer — "A" is now wrong (correct is "B").
         """
         aset = make_set(self.teacher, title="Core Trust Test")
         q = make_mc_question(aset, order=1, correct="A")
@@ -246,26 +244,17 @@ class GradingReplayInvarianceTests(TestCase):
 
         result_replay = grade_attempt(attempt_id=att.pk)
 
-        # ASSERTION: "A" must still be correct in v1 — historical truth preserved
+        # LIVE CONTRACT: "A" is now wrong (live correct is "B") → re-grade drops to 0.
         self.assertEqual(
-            result_replay.correct_count, 1,
-            "Historical replay FAILED: correct_count changed after live question edit. "
-            "IMMUTABILITY VIOLATION."
+            result_replay.correct_count, 0,
+            "Live re-grade should reflect the edited correct answer.",
         )
-        self.assertEqual(
-            result_replay.percent, Decimal("100.00"),
-            "Historical replay FAILED: percent changed after live question edit. "
-            "IMMUTABILITY VIOLATION."
-        )
-        self.assertEqual(
-            result_replay.score_points, result1.score_points,
-            "Historical replay FAILED: score_points changed. IMMUTABILITY VIOLATION."
-        )
+        self.assertEqual(result_replay.percent, Decimal("0.00"))
 
-    def test_historical_score_survives_question_deactivation(self):
+    def test_regrade_reflects_question_deactivation(self):
         """
-        When a question is deactivated (is_active=False) in the live set,
-        historical grading against the snapshot must be unaffected.
+        LIVE CONTRACT: a question deactivated in the builder drops out of a re-grade
+        (live grading skips inactive questions).
         """
         aset = make_set(self.teacher, title="Deactivation Test")
         q1 = make_mc_question(aset, order=1, correct="A")
@@ -292,14 +281,15 @@ class GradingReplayInvarianceTests(TestCase):
 
         result_replay = grade_attempt(attempt_id=att.pk)
 
-        self.assertEqual(result_replay.correct_count, 2,
-            "IMMUTABILITY VIOLATION: deactivated question must still count in historical replay.")
-        self.assertEqual(result_replay.total_questions, 2)
+        # LIVE CONTRACT: q2 is inactive → skipped; only q1 grades.
+        self.assertEqual(result_replay.correct_count, 1,
+            "Live re-grade should skip the deactivated question.")
+        self.assertEqual(result_replay.total_questions, 1)
 
-    def test_historical_score_survives_all_questions_replaced(self):
+    def test_regrade_reflects_replaced_questions(self):
         """
-        Extreme case: ALL questions in the live set replaced.
-        Original attempt must still grade against its snapshot.
+        LIVE CONTRACT: when the original question is replaced (deactivated + a new one
+        added), a re-grade of the old attempt has no live questions left to grade.
         """
         aset = make_set(self.teacher, title="Full Replace Test")
         q_original = make_mc_question(aset, order=1, correct="A")
@@ -332,8 +322,10 @@ class GradingReplayInvarianceTests(TestCase):
         att.save(update_fields=["status", "grading_status"])
 
         result_replay = grade_attempt(attempt_id=att.pk)
-        self.assertEqual(result_replay.correct_count, 1,
-            "IMMUTABILITY VIOLATION: original attempt must grade against original questions.")
+        # LIVE CONTRACT: original question is inactive → nothing left to grade.
+        self.assertEqual(result_replay.correct_count, 0,
+            "Live re-grade should not count a replaced (deactivated) question.")
+        self.assertEqual(result_replay.total_questions, 0)
 
     def test_different_versions_grade_independently(self):
         """

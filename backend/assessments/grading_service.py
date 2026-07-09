@@ -18,74 +18,16 @@ from .models import (
 
 def _questions_from_attempt(att: AssessmentAttempt) -> tuple[list[Any], dict[int, Any]]:
     """
-    Resolve the canonical question list for grading, preferring the immutable
-    snapshot pinned on the attempt (att.set_version) and falling back to live
-    database lookup for pre-snapshot attempts.
+    Resolve the canonical question list for grading — from the LIVE
+    ``AssessmentQuestion`` rows (no version snapshot), like the pastpaper runner.
 
-    Returns:
-        (questions_list, q_by_id_dict)
+    Grading uses the same live content the runner delivered, so a teacher's builder
+    edit is reflected on the next attempt / re-grade. The caller filters this to the
+    attempt's frozen ``question_order`` (so a question added after the student
+    started isn't graded; one edited is graded on its current content).
 
-    SNAPSHOT PATH (att.set_version_id is not None):
-      - Reads from att.set_version.snapshot_json — zero live question lookups.
-      - Validates schema compatibility before grading.
-      - Returns lightweight dicts wrapped in _SnapshotQuestion namedtuple-likes.
-
-    LIVE PATH (att.set_version_id is None):
-      - Legacy behaviour: reads active AssessmentQuestion rows from DB.
-      - Used for all attempts created before the snapshot architecture.
-      - Emits a GovernanceEvent.EVENT_FALLBACK_PATH_USED for sunset monitoring.
+    Returns ``(questions_list, q_by_id_dict)``.
     """
-    if att.set_version_id is not None:
-        # Snapshot path — grade against the frozen content that was delivered.
-        from .domain.snapshot_builder import questions_from_snapshot
-        from .domain.snapshot_compat import adapt_snapshot, can_grade_snapshot
-
-        snapshot_json = att.set_version.snapshot_json
-
-        # Schema compatibility check — raise early if this code is too old.
-        ok, reason = can_grade_snapshot(snapshot_json)
-        if not ok:
-            raise ValueError(
-                f"Cannot grade attempt #{att.pk}: snapshot schema incompatible. "
-                f"Reason: {reason}"
-            )
-
-        # Adapt to current schema (no-op for current version; upgrades older ones).
-        snapshot_json = adapt_snapshot(snapshot_json)
-        raw_questions = questions_from_snapshot(snapshot_json)
-
-        class _SnapshotQuestion:
-            """Thin wrapper so snapshot question dicts work like ORM instances."""
-            __slots__ = ("id", "order", "prompt", "question_type", "choices",
-                         "correct_answer", "grading_config", "points")
-
-            def __init__(self, d: dict):
-                self.id = d["id"]
-                self.order = d.get("order", 0)
-                self.prompt = d.get("prompt", "")
-                self.question_type = d["question_type"]
-                self.choices = d.get("choices") or []
-                self.correct_answer = d.get("correct_answer")
-                self.grading_config = d.get("grading_config") or {}
-                self.points = d.get("points", 1)
-
-        questions = [_SnapshotQuestion(q) for q in raw_questions]
-        q_by_id = {q.id: q for q in questions}
-        return questions, q_by_id
-
-    # Live path — legacy behaviour for pre-snapshot attempts.
-    # Emit fallback telemetry for sunset monitoring.
-    try:
-        from .domain.governance_events import emit_fallback_path_used
-        aset_id = att.homework.assessment_set_id if att.homework_id else 0
-        emit_fallback_path_used(
-            attempt_id=att.pk,
-            set_id=aset_id,
-            context="grading",
-        )
-    except Exception:
-        pass  # telemetry must not block grading
-
     aset = att.homework.assessment_set
     base_questions = list(
         AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")

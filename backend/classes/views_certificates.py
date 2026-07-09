@@ -147,6 +147,15 @@ class MidtermCertificatesDownloadAllView(_ClassroomScopedView):
                 status=http.HTTP_404_NOT_FOUND,
             )
 
+        # Render the whole batch in ONE headless Chromium (instead of one launch
+        # per certificate). Falls back to per-cert (HTML → reportlab) if the batch
+        # renderer is unavailable.
+        try:
+            from .certificate_html_pdf import render_certificates_pdf_batch
+            batch = render_certificates_pdf_batch(certs)
+        except Exception:  # noqa: BLE001
+            batch = {}
+
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             used: set[str] = set()
@@ -156,7 +165,8 @@ class MidtermCertificatesDownloadAllView(_ClassroomScopedView):
                 if name in used:
                     name = f"{idx}_{_safe_filename(cert.student_name, 'student')}_{cert.code[:6]}.pdf"
                 used.add(name)
-                zf.writestr(name, render_midterm_certificate_pdf(cert))
+                pdf = batch.get(cert.code) or render_midterm_certificate_pdf(cert)
+                zf.writestr(name, pdf)
 
         title = _safe_filename(certs[0].midterm_title, "midterm")
         resp = HttpResponse(buf.getvalue(), content_type="application/zip")

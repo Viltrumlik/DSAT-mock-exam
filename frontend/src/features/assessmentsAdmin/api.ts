@@ -94,8 +94,8 @@ export const assessmentsAdminApi = {
   updateQuestion: async (id: number, payload: Partial<AssessmentQuestion> | FormData) => {
     return (await assessmentsAdminClient.adminUpdateQuestion(id, payload as any)) as AssessmentQuestion;
   },
-  deleteQuestion: async (id: number) => {
-    await assessmentsAdminClient.adminDeleteQuestion(id);
+  deleteQuestion: async (id: number, force = false) => {
+    await assessmentsAdminClient.adminDeleteQuestion(id, force);
   },
   /**
    * Atomically persist a full question ordering for a set. The backend reindexes

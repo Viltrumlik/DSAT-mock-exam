@@ -452,6 +452,13 @@ class AttemptAnswerSerializer(serializers.ModelSerializer):
 class AttemptSerializer(serializers.ModelSerializer):
     answers = AttemptAnswerSerializer(many=True, read_only=True)
     homework_id = serializers.IntegerField(read_only=True)
+    # Pause / resume state for save-and-exit. ``elapsed_seconds`` is the
+    # server-authoritative time-on-task (frozen while paused) the runner seeds
+    # its count-up timer from so it never resets to 0 on resume; ``server_now``
+    # lets the client anchor a drift-free local clock.
+    is_paused = serializers.BooleanField(read_only=True)
+    elapsed_seconds = serializers.SerializerMethodField()
+    server_now = serializers.SerializerMethodField()
 
     class Meta:
         model = AssessmentAttempt
@@ -471,7 +478,20 @@ class AttemptSerializer(serializers.ModelSerializer):
             "grading_attempts",
             "question_order",
             "answers",
+            "is_paused",
+            "paused_at",
+            "paused_seconds",
+            "current_question_index",
+            "elapsed_seconds",
+            "server_now",
         ]
+
+    def get_elapsed_seconds(self, obj) -> int:
+        return obj.elapsed_seconds()
+
+    def get_server_now(self, obj) -> str:
+        from django.utils import timezone as _tz
+        return _tz.now().isoformat()
 
 
 @extend_schema_serializer(component_name="AssessmentResult")
@@ -526,6 +546,9 @@ class SaveAnswerSerializer(serializers.Serializer):
     client_seq = serializers.IntegerField(required=False, min_value=0)
     # Client may send these, but server will ignore for time tracking.
     answered_at = serializers.DateTimeField(required=False)
+    # Optional: last-viewed question position, persisted so a resumed attempt
+    # lands where the student left off (also stamped on pause).
+    current_index = serializers.IntegerField(required=False, min_value=0)
 
 
 class SubmitAttemptSerializer(serializers.Serializer):

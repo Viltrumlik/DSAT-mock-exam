@@ -21,6 +21,8 @@ from .views import (
     SaveAnswerView,
     SubmitAttemptView,
     AbandonAttemptView,
+    PauseAttemptView,
+    ResumeAttemptView,
     MyAssessmentResultForAssignmentView,
     MyAssessmentResultForHomeworkView,
     AdminGradingMetricsView,
@@ -84,6 +86,8 @@ urlpatterns = [
     path("attempts/answer/", SaveAnswerView.as_view(), name="assessment-attempt-answer"),
     path("attempts/submit/", SubmitAttemptView.as_view(), name="assessment-attempt-submit"),
     path("attempts/abandon/", AbandonAttemptView.as_view(), name="assessment-attempt-abandon"),
+    path("attempts/pause/", PauseAttemptView.as_view(), name="assessment-attempt-pause"),
+    path("attempts/resume/", ResumeAttemptView.as_view(), name="assessment-attempt-resume"),
     # Student result (by assignment id — back-compat, first assessment of a bundle)
     path("homework/<int:assignment_id>/my-result/", MyAssessmentResultForAssignmentView.as_view(), name="assessment-homework-my-result"),
     # Student result (by homework id — unambiguous for bundles with many assessments)
