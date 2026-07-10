@@ -26,7 +26,9 @@ export interface MidtermRow {
   state: string;
   submitted: boolean;
   is_open: boolean;
+  is_before_start: boolean; // scheduled window hasn't opened yet (countdown)
   available_at: string | null;
+  deadline: string | null; // classroom deadline; past it + not started = missed
   results_visible: boolean;
   score: number | null;
   certificate: MidtermCertificate | null;

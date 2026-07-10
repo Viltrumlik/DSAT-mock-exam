@@ -40,7 +40,7 @@ function Badge({ text, bg, color }: { text: string; bg: string; color: string })
   return <span className="rounded-md px-2.5 py-0.5 text-[11px] font-bold" style={{ background: bg, color }}>{text}</span>;
 }
 
-function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "scheduled" | "past"; onUnlock: () => void }) {
+function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "scheduled" | "past" | "missed"; onUnlock: () => void }) {
   const router = useRouter();
   const cd = useCountdown(kind === "scheduled" ? m.available_at : null);
   const [busy, setBusy] = useState(false);
@@ -56,7 +56,7 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
   const meta = [fmtDuration(m.duration_minutes), m.question_count ? `${m.question_count} questions` : null, subjectLabel(m.subject)]
     .filter(Boolean).join(" · ");
 
-  const dot = kind === "available" ? C.blue : kind === "past" ? "#0b7a4f" : "#94a3b8";
+  const dot = kind === "available" ? C.blue : kind === "past" ? "#0b7a4f" : kind === "missed" ? "#b91c1c" : "#94a3b8";
 
   async function enter() {
     setBusy(true);
@@ -94,8 +94,9 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-[16px] font-extrabold" style={{ color: C.navy }}>{m.title}</p>
-            {kind === "available" && <Badge text="Available" bg="#e7effb" color="#21539e" />}
+            {kind === "available" && <Badge text={hasAttempt ? "In progress" : "Available"} bg="#e7effb" color="#21539e" />}
             {kind === "scheduled" && !unlocked && <Badge text="Scheduled" bg="#f1f5f9" color={C.slate} />}
+            {kind === "missed" && <Badge text="Missed" bg="#fdeaea" color="#b91c1c" />}
             {kind === "past" && <Badge text="Completed" bg="#dcf2e3" color="#0b7a4f" />}
           </div>
           <p className="mt-0.5 text-[13px] font-semibold" style={{ color: C.slate }}>{meta}</p>
@@ -111,6 +112,13 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
               <Lock className="h-3.5 w-3.5" /> {m.available_at ? `Opens ${new Date(m.available_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Scheduled"}
             </span>
             {cd.label && <p className="mt-1 text-[11px] font-semibold" style={{ color: C.slate }}>starts in {cd.label}</p>}
+          </div>
+        ) : kind === "missed" ? (
+          <div className="shrink-0 text-right">
+            <span className="inline-flex items-center gap-1.5 rounded-xl border px-[18px] py-[11px] text-sm font-semibold" style={{ borderColor: "#f0d4d4", background: "#fdf2f2", color: "#b91c1c" }}>
+              <Lock className="h-3.5 w-3.5" /> Deadline passed
+            </span>
+            {m.deadline && <p className="mt-1 text-[11px] font-semibold text-slate-400">closed {new Date(m.deadline).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</p>}
           </div>
         ) : m.results_visible ? (
           <div className="flex shrink-0 items-center gap-4">
@@ -158,8 +166,12 @@ export default function MidtermList() {
   const refetch = () => qc.invalidateQueries({ queryKey: ["midterm", "mine"] });
 
   const midterms = useMemo(() => data ?? [], [data]);
-  const available = midterms.filter((m) => m.is_open && !m.submitted);
-  const scheduled = midterms.filter((m) => !m.is_open && !m.submitted);
+  // A started-but-unfinished attempt is always resumable (even past the deadline), so it
+  // belongs in "Available"; a not-started midterm past its deadline is "Missed".
+  const resumable = (m: MidtermRow) => !m.submitted && m.attempt_id != null && m.state !== "NOT_STARTED";
+  const available = midterms.filter((m) => !m.submitted && (resumable(m) || m.is_open));
+  const scheduled = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && m.is_before_start);
+  const missed = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && !m.is_before_start);
   const past = midterms.filter((m) => m.submitted);
 
   const tabs: { id: Tab; label: string }[] = [
@@ -203,6 +215,11 @@ export default function MidtermList() {
             {show("scheduled") && (
               <Section title="Scheduled" count={scheduled.length} dot="#94a3b8">
                 {scheduled.map((m) => <Row key={m.midterm_id} m={m} kind="scheduled" onUnlock={refetch} />)}
+              </Section>
+            )}
+            {(tab === "all" || tab === "past") && (
+              <Section title="Missed" count={missed.length} dot="#b91c1c">
+                {missed.map((m) => <Row key={m.midterm_id} m={m} kind="missed" onUnlock={refetch} />)}
               </Section>
             )}
             {show("past") && (

@@ -40,6 +40,8 @@ class MyMidtermsView(APIView):
 
             is_open = True
             available_at = None
+            is_before_start = False
+            deadline = None
             if flavor == FLAVOR_CLASSROOM and grant is not None and grant.classroom_id:
                 from classes.models_schedule import MidtermSchedule
 
@@ -47,6 +49,8 @@ class MyMidtermsView(APIView):
                 if sched is not None:
                     is_open = sched.is_open()
                     available_at = sched.available_at
+                    is_before_start = sched.is_before_start()
+                    deadline = sched.deadline
 
             if att is not None:
                 state = midterm_results_state(att)
@@ -69,7 +73,9 @@ class MyMidtermsView(APIView):
                 "state": att.current_state if att else "NOT_STARTED",
                 "submitted": submitted,
                 "is_open": is_open,
+                "is_before_start": is_before_start,
                 "available_at": available_at.isoformat() if available_at else None,
+                "deadline": deadline.isoformat() if deadline else None,
                 "results_visible": visible,
                 "score": att.score if (submitted and visible) else None,
                 "certificate": state.get("certificate"),
