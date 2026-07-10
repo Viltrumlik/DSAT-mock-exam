@@ -129,22 +129,22 @@ export function NumericInput({
   value,
   onChange,
 }: {
-  value: number | null;
-  onChange: (next: number | null) => void;
+  value: number | string | null;
+  onChange: (next: number | string | null) => void;
 }) {
   // Hold the raw keystroke string locally so the student can type intermediate,
-  // not-yet-numeric states ("-", ".", "1.", "0.0") without the controlled value
-  // reformatting them away. We commit a finite number upward (the backend grades
-  // via Decimal(str(answer)) so a number is canonical); transient tokens leave
-  // the committed value untouched until they parse.
+  // not-yet-complete states ("-", ".", "1.", "25/") without the controlled value
+  // reformatting them away. We commit a finite number OR a complete fraction upward
+  // (the backend grades via Decimal(num)/Decimal(den), so "25/7" is canonical);
+  // transient tokens leave the committed value untouched until they parse.
   //
-  // Regression fixed: the previous controlled input bound to String(Number(v)),
-  // which dropped a trailing "." and a lone "-", making decimals/negatives
-  // impossible to type and clobbering in-progress edits.
+  // Fractions (SAT grid-in, e.g. 25/7 == -1/3) are committed as the raw string —
+  // Number("25/7") is NaN, so the earlier Number()-only path silently dropped every
+  // fraction even though the grader accepts them.
   const [raw, setRaw] = useState<string>(value == null ? "" : String(value));
   // Track the last value we committed so we can tell an external change
   // (draft restore / conflict resolution) apart from our own echo.
-  const lastCommitted = useRef<number | null>(value);
+  const lastCommitted = useRef<number | string | null>(value);
 
   useEffect(() => {
     if (value !== lastCommitted.current) {
@@ -162,9 +162,20 @@ export function NumericInput({
       onChange(null);
       return;
     }
-    // Transient tokens that are not yet a complete number — keep typing, don't
-    // commit (so the controlled value never snaps them back).
-    if (t === "-" || t === "." || t === "-." || /[.\-+eE]$/.test(t)) return;
+    // Transient tokens that are not yet a complete value — keep typing, don't commit
+    // (a trailing "/" means the denominator hasn't been typed yet).
+    if (t === "-" || t === "." || t === "-." || /[.\-+eE/]$/.test(t)) return;
+    // Fraction like "25/7" or "-1/3": commit the raw string once both sides parse.
+    if (t.includes("/")) {
+      const [num, den] = t.split("/");
+      const numOk = num.trim() !== "" && Number.isFinite(Number(num));
+      const denOk = den != null && den.trim() !== "" && Number.isFinite(Number(den)) && Number(den) !== 0;
+      if (numOk && denOk) {
+        lastCommitted.current = t;
+        onChange(t);
+      }
+      return;
+    }
     const n = Number(t);
     if (Number.isFinite(n)) {
       lastCommitted.current = n;
@@ -176,11 +187,10 @@ export function NumericInput({
     <input
       className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 min-h-[52px] text-base shadow-sm focus:border-primary focus:outline-none"
       type="text"
-      inputMode="decimal"
-      pattern="-?[0-9]*\.?[0-9]*"
+      inputMode="text"
       value={raw}
       onChange={(e) => handle(e.target.value)}
-      placeholder="Enter a number…"
+      placeholder="Number or fraction (e.g. 3.5 or 25/7)…"
     />
   );
 }
@@ -235,7 +245,10 @@ export function AnswerInput({
     );
   }
   if (type === "numeric") {
-    return <NumericInput value={typeof value === "number" ? value : value == null ? null : Number(value)} onChange={onChange} />;
+    // Pass numbers AND fraction/decimal strings straight through — never Number()-coerce,
+    // which turns "25/7" into NaN and drops the student's fraction.
+    const numericValue = value == null ? null : typeof value === "number" || typeof value === "string" ? value : Number(value);
+    return <NumericInput value={numericValue} onChange={onChange} />;
   }
   return <ShortTextInput value={String(value ?? "")} onChange={onChange} />;
 }
