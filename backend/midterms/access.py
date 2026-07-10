@@ -130,72 +130,108 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
 def midterm_results_state(attempt) -> dict:
     """Whether the student may see their score, plus any issued certificate.
 
-    A per-student **certificate is the definitive release signal**: the teacher issues
-    certificates and releasing results is part of the SAME action, so a student who has
-    a certificate has, by definition, had their classroom's results released — show it.
+    CLASSROOM-flavored access is PUBLISH-GATED: the score (and certificate) stay hidden
+    ("awaiting result") until the teacher publishes — publishing releases the classroom's
+    schedule AND issues the class-ranked certificates in one action. STANDALONE access is
+    visible as soon as the attempt is completed.
 
-    A classroom-scheduled midterm stays hidden ("awaiting result") until that student
-    has a certificate; a standalone / unscheduled midterm is visible once completed.
+    The flavor is decided from the student's WINNING grant (a classroom grant beats a
+    standalone one) — NOT merely from whether a ``MidtermSchedule`` row happens to exist.
+    A classroom midterm granted without a schedule row (e.g. via the admin access page)
+    must still be gated; keying off the schedule alone let those scores leak.
 
-    DUAL IDENTITY: certificate issuance lives in the legacy classes app and writes the
-    schedule + certificate under the ``mock_exam`` FK (``exams.MockExam``); the new
-    ``midterms`` app reads by the ``midterm`` FK. We match by EITHER — resolving this
-    midterm's ``legacy_mock_exam_id`` — so a cert issued under the legacy identity still
-    releases the student's result here. (This was the "teacher issued a certificate but
-    the student still saw 'awaiting result'" bug.)
+    Release signals, SCOPED TO THE STUDENT'S OWN CLASSROOM (a release of the same midterm
+    in a different classroom must never leak here) and matched across the DUAL IDENTITY
+    (this midterm's own FK ∪ the legacy ``mock_exam`` FK it mirrors, so a release written
+    under the legacy identity still counts):
+      * that classroom's ``MidtermSchedule`` has ``results_released=True``, OR
+      * a CLASSROOM-flavor certificate for this student in that classroom.
+    A STANDALONE auto-certificate is deliberately NOT a release signal — otherwise a
+    classroom student's own submit-time auto-cert would unlock their score before publish.
     """
-    results_visible = True
-    certificate = None
+    student_id = attempt.student_id
+    midterm_id = attempt.midterm_id
 
     # The legacy MockExam id this midterm mirrors (None for natively-new midterms).
     legacy_id = (
-        Midterm.objects.filter(id=attempt.midterm_id)
+        Midterm.objects.filter(id=midterm_id)
         .values_list("legacy_mock_exam_id", flat=True)
         .first()
     )
 
     def _both_identities() -> Q:
-        q = Q(midterm_id=attempt.midterm_id)
+        q = Q(midterm_id=midterm_id)
         if legacy_id:
             q |= Q(mock_exam_id=legacy_id)
         return q
 
-    # Schedule gate — a classroom midterm hides the score until results are released.
-    # Match by EITHER identity and treat "released if ANY matching schedule is
-    # released", because certificate issuance flips the flag on the schedule keyed by
-    # the LEGACY ``mock_exam`` FK, while a separate ``midterm``-keyed access-window row
-    # may still read unreleased. Filtering only by ``midterm_id`` + requiring ALL rows
-    # released was the "teacher issued a certificate but the student still saw 'awaiting
-    # result'" bug.
+    # Flavor + the student's OWN classroom (release must be scoped to it — a release in a
+    # DIFFERENT classroom that happens to run the same midterm must never leak here).
+    grant = winning_grant(attempt.student, midterm_id)
+    classroom_id = grant.classroom_id if grant is not None else None
+    classroom_flavored = bool(classroom_id)
+    standalone_flavored = grant is not None and not classroom_id
+
+    # Release signal 1 — a released schedule. For a classroom student, only THEIR classroom's
+    # schedule counts (any() over the dual-identity rows within that one classroom); with no
+    # classroom to scope to (legacy / grant removed) fall back to any matching schedule.
+    schedule_released = False
+    schedule_exists = False
     try:
         from classes.models_schedule import MidtermSchedule
 
         if "midterm" in {f.name for f in MidtermSchedule._meta.get_fields()}:
             scheds = list(MidtermSchedule.objects.filter(_both_identities()))
-            if scheds and not any(getattr(s, "results_released", False) for s in scheds):
-                results_visible = False
+            schedule_exists = bool(scheds)
+            relevant = [s for s in scheds if s.classroom_id == classroom_id] if classroom_flavored else scheds
+            schedule_released = any(getattr(s, "results_released", False) for s in relevant)
     except Exception:  # pragma: no cover - defensive during transition
         pass
 
-    # Certificate (either identity) — attached for display / download.
+    # Release signal 2 — a CLASSROOM-flavor certificate for this student (scoped to their
+    # classroom). A standalone auto-cert must NOT release a classroom result.
+    cert = None
+    classroom_cert_released = False
     try:
         from classes.models_certificates import MidtermCertificate
 
-        if "midterm" in {f.name for f in MidtermCertificate._meta.get_fields()}:
-            cert = (
-                MidtermCertificate.objects.filter(Q(student_id=attempt.student_id) & _both_identities())
-                .order_by("-issued_at")
-                .first()
-            )
+        fields = {f.name for f in MidtermCertificate._meta.get_fields()}
+        if "midterm" in fields:
+            cert_q = Q(student_id=student_id) & _both_identities()
+            if classroom_flavored and "classroom" in fields:
+                cert_q &= Q(classroom_id=classroom_id)
+            cert = MidtermCertificate.objects.filter(cert_q).order_by("-issued_at").first()
+            # If the model predates the flavor field, any cert counts.
             if cert is not None:
-                certificate = {
-                    "available": True,
-                    "code": cert.code,
-                    "download_url": f"/classes/certificates/midterm/{cert.code}/download/",
-                    "rank": cert.rank,
-                    "cohort_size": cert.cohort_size,
-                }
+                classroom_cert_released = (
+                    "flavor" not in fields
+                    or getattr(cert, "flavor", None) == MidtermCertificate.FLAVOR_CLASSROOM
+                )
     except Exception:  # pragma: no cover - defensive during transition
         pass
+
+    released = schedule_released or classroom_cert_released
+
+    if classroom_flavored:
+        results_visible = released
+    elif standalone_flavored:
+        results_visible = True
+    elif schedule_exists:
+        # No live grant, but a schedule governs this midterm (legacy / grant later removed).
+        results_visible = released
+    else:
+        results_visible = True
+
+    # Surface the certificate only once results are visible — so a gated classroom student
+    # never sees a stray standalone auto-cert issued before the classroom issuance guard.
+    certificate = None
+    if results_visible and cert is not None:
+        certificate = {
+            "available": True,
+            "code": cert.code,
+            "download_url": f"/classes/certificates/midterm/{cert.code}/download/",
+            "rank": cert.rank,
+            "cohort_size": cert.cohort_size,
+        }
 
     return {"results_visible": results_visible, "certificate": certificate}

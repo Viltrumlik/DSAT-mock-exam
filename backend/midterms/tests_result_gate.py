@@ -12,6 +12,8 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from access.models import ResourceAccessGrant
+from access.resources import RT_MIDTERM_V2
 from classes.models import Classroom
 from classes.models_certificates import MidtermCertificate
 from classes.models_schedule import MidtermSchedule
@@ -60,10 +62,71 @@ class MidtermResultGateTests(TestCase):
             score=650, scoring_scale="SCALE_800", rank=2, cohort_size=5,
         )
 
+    def _grant(self, classroom):
+        return ResourceAccessGrant.objects.create(
+            user=self.student, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            resource_type=RT_MIDTERM_V2, resource_id=self.mt.id,
+            classroom=classroom, granted_by=self.teacher,
+        )
+
+    def _standalone_cert(self):
+        return MidtermCertificate.objects.create(
+            midterm=self.mt, student=self.student,
+            flavor=MidtermCertificate.FLAVOR_STANDALONE,
+            student_name="S", midterm_title="Mid", subject="MATH",
+            score=650, scoring_scale="SCALE_800",
+        )
+
     def test_ungated_is_visible(self):
-        # No schedule → not classroom-gated → visible on completion.
+        # No grant + no schedule → nothing governs release → visible on completion.
         state = midterm_results_state(self.att)
         self.assertTrue(state["results_visible"])
+
+    def test_classroom_grant_without_schedule_is_awaiting(self):
+        # THE FIX: a CLASSROOM-granted midterm with NO schedule row must still be gated —
+        # keying the gate off the schedule alone leaked classroom scores before publish.
+        self._grant(self.classroom)
+        state = midterm_results_state(self.att)
+        self.assertFalse(state["results_visible"])
+        self.assertIsNone(state["certificate"])
+
+    def test_classroom_grant_released_by_classroom_certificate(self):
+        self._grant(self.classroom)
+        self._legacy_cert()  # CLASSROOM-flavor cert (teacher published)
+        state = midterm_results_state(self.att)
+        self.assertTrue(state["results_visible"])
+        self.assertIsNotNone(state["certificate"])
+
+    def test_standalone_autocert_does_not_release_classroom(self):
+        # A classroom student's stray STANDALONE auto-cert must NOT unlock their score.
+        self._grant(self.classroom)
+        self._standalone_cert()
+        state = midterm_results_state(self.att)
+        self.assertFalse(state["results_visible"])
+        self.assertIsNone(state["certificate"])
+
+    def test_standalone_grant_is_visible_on_submit(self):
+        self._grant(None)  # standalone (classroom=None) → visible once completed
+        state = midterm_results_state(self.att)
+        self.assertTrue(state["results_visible"])
+
+    def test_release_in_other_classroom_does_not_leak(self):
+        # THE LIVE BUG: the same midterm is released in ANOTHER classroom, but THIS student's
+        # classroom hasn't published. Their score must stay gated (was leaking via any()).
+        self._grant(self.classroom)  # student is in self.classroom
+        MidtermSchedule.objects.create(  # this classroom: NOT released
+            classroom=self.classroom, midterm=self.mt, results_released=False, created_by=self.teacher,
+        )
+        other = Classroom.objects.create(
+            name="Other", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.teacher,
+        )
+        MidtermSchedule.objects.create(  # a DIFFERENT classroom: released
+            classroom=other, midterm=self.mt, results_released=True, created_by=self.teacher,
+        )
+        state = midterm_results_state(self.att)
+        self.assertFalse(state["results_visible"], "another classroom's release must not leak")
+        self.assertIsNone(state["certificate"])
 
     def test_gated_without_cert_is_awaiting(self):
         self._schedule(released=False)
