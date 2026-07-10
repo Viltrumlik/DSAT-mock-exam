@@ -69,6 +69,16 @@ def issue_standalone_certificate(attempt_id: int):
         return None
     midterm = attempt.midterm
     student = attempt.student
+
+    # Only STANDALONE access auto-issues here. A classroom student's certificate is issued
+    # by the teacher at publish (class-ranked, publish-gated); auto-issuing a standalone
+    # cert for them would be wrong and would leak their score before publish.
+    from .access import winning_grant
+
+    grant = winning_grant(student, midterm.id)
+    if grant is None or grant.classroom_id:
+        return None
+
     instructor = _standalone_instructor(student.id, midterm.id)
     defaults = _snapshot(
         cert_defaults={

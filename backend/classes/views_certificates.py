@@ -174,18 +174,56 @@ class MidtermCertificatesDownloadAllView(_ClassroomScopedView):
         return resp
 
 
+def _student_results_released(cert) -> bool:
+    """Whether the OWNING student may see this certificate yet (results released).
+
+    A classroom result is publish-gated, so a student must not reach their certificate —
+    which shows the score — before the teacher publishes. Reuses the single result gate;
+    standalone (and unresolvable/legacy) certs are always visible. Never hard-fails.
+    """
+    try:
+        from midterms.access import midterm_results_state
+        from midterms.models import Midterm, MidtermAttempt
+
+        mid = cert.midterm_id
+        if mid is None and cert.mock_exam_id:
+            mid = (
+                Midterm.objects.filter(legacy_mock_exam_id=cert.mock_exam_id)
+                .values_list("id", flat=True)
+                .first()
+            )
+        if mid is None:
+            return True
+        att = (
+            MidtermAttempt.objects.filter(student_id=cert.student_id, midterm_id=mid, is_completed=True)
+            .order_by("-created_at")
+            .first()
+        )
+        if att is None:
+            return True
+        return bool(midterm_results_state(att)["results_visible"])
+    except Exception:  # pragma: no cover - never block cert access on a gate error
+        return True
+
+
 def _cert_or_403(request, code):
     """Fetch a certificate by code, enforcing owner|staff|admin. Returns (cert, error).
 
     Classroom certs authorize the owning student or any classroom staff (global admins count
     as staff). STANDALONE certs have no classroom, so they authorize the owning student, the
-    issuing instructor (``issued_by``), or a global admin.
+    issuing instructor (``issued_by``), or a global admin. The owning student is additionally
+    gated on results being RELEASED — a classroom result (or a stray pre-publish certificate)
+    stays hidden until the teacher publishes.
     """
     cert = get_object_or_404(
         MidtermCertificate.objects.select_related("classroom", "mock_exam", "midterm"), code=code
     )
     user = request.user
     if user.id == cert.student_id:
+        if not _student_results_released(cert):
+            return None, Response(
+                {"detail": "Results have not been released yet."}, status=http.HTTP_403_FORBIDDEN
+            )
         return cert, None
     if cert.classroom_id is not None:
         if classroom_capabilities(user, cert.classroom).is_staff:
