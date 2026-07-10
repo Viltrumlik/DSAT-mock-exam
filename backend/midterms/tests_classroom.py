@@ -128,3 +128,23 @@ class ClassroomMidtermTests(TestCase):
         r = self.tc.post(f"/api/classes/{cid}/midterms-v2/{self.mt.id}/certificates/issue/?force=1", {}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["issued"], 1)
+
+    def test_removed_student_excluded_from_ranking(self):
+        # A student removed from the classroom (grant lingers) must NOT be ranked/certified,
+        # and must not inflate the cohort size for the students who remain.
+        cid = self.room.id
+        self.tc.post(f"/api/classes/{cid}/midterms-v2/assign/", {"midterm_id": self.mt.id}, format="json")
+        self._take(self.s1, 4)  # 100
+        self._take(self.s2, 2)  # 50 — will be removed
+        ClassroomMembership.objects.filter(classroom=self.room, user=self.s2).update(
+            status=ClassroomMembership.STATUS_REMOVED
+        )
+        # All *remaining* members finished, so no force needed.
+        r = self.tc.post(f"/api/classes/{cid}/midterms-v2/{self.mt.id}/certificates/issue/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["issued"], 1)  # only s1
+        self.assertTrue(MidtermCertificate.objects.filter(midterm=self.mt, student=self.s1, flavor="CLASSROOM").exists())
+        self.assertFalse(MidtermCertificate.objects.filter(midterm=self.mt, student=self.s2, flavor="CLASSROOM").exists())
+        c_s1 = MidtermCertificate.objects.get(midterm=self.mt, student=self.s1, flavor="CLASSROOM")
+        self.assertEqual(c_s1.rank, 1)
+        self.assertEqual(c_s1.cohort_size, 1)  # removed s2 not counted

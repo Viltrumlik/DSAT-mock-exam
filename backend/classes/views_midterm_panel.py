@@ -290,7 +290,10 @@ class MyMidtermsView(APIView):
             future_starts = [s.available_at for s in scheds if s.available_at and s.available_at > now]
             available_at = min(future_starts) if future_starts else None
             is_before_start = bool(available_at) and not is_open
-            results_released = any(s.results_released for s in scheds) if scheds else True
+            # Publish-gated: a classroom score stays hidden until a schedule is released. NEVER
+            # default to released when no schedule row exists (that leaked the score before
+            # publish — the same bug fixed in midterms/access.py::midterm_results_state).
+            results_released = any(s.results_released for s in scheds)
 
             cert = certs.get(mid)
             score = None
