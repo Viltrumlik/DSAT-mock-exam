@@ -103,8 +103,17 @@ def issue_standalone_certificate(attempt_id: int):
 
 
 def _classroom_cohort_ids(midterm: Midterm, classroom) -> set[int]:
-    """Students assigned this midterm in this classroom (active classroom-scoped grants)."""
-    return set(
+    """Students in this classroom assigned this midterm — active classroom-scoped grants
+    INTERSECTED with current (non-removed) student members.
+
+    A student removed from the classroom must NOT be ranked or certified: their grant can
+    linger after removal, and counting them would skew everyone else's rank and inflate the
+    cohort size. Normal assignment grants every active member, so this intersection is a
+    no-op there and only drops removed / non-member grant-holders.
+    """
+    from classes.models import ClassroomMembership
+
+    granted = set(
         ResourceAccessGrant.objects.filter(
             scope=ResourceAccessGrant.SCOPE_RESOURCE,
             resource_type=RT_MIDTERM_V2,
@@ -113,6 +122,12 @@ def _classroom_cohort_ids(midterm: Midterm, classroom) -> set[int]:
             status=ResourceAccessGrant.STATUS_ACTIVE,
         ).values_list("user_id", flat=True)
     )
+    active_members = set(
+        ClassroomMembership.objects.filter(
+            classroom=classroom, role=ClassroomMembership.ROLE_STUDENT
+        ).exclude(status=ClassroomMembership.STATUS_REMOVED).values_list("user_id", flat=True)
+    )
+    return granted & active_members
 
 
 def _latest_completed_attempts(midterm: Midterm, student_ids):
