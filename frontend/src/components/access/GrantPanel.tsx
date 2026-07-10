@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, BookMarked, Check, Loader2, School, Sparkles, Users,
+  ArrowLeft, ArrowRight, BookMarked, Check, Loader2, School, Sparkles, Users, X,
 } from "lucide-react";
 import {
   accessApi,
@@ -113,7 +113,12 @@ export function GrantPanel({
     if (s === "recipients") {
       return mode === "resource_classroom" ? classroomId !== "" : userIds.length > 0;
     }
-    if (s === "tests") return resources.length > 0;
+    if (s === "tests") {
+      // Recipients can now be emptied here (chip ✕), so re-validate them — never advance
+      // to Confirm with zero recipients.
+      const hasRecipients = mode === "resource_classroom" ? classroomId !== "" : (lockUserIds?.length ?? userIds.length) > 0;
+      return resources.length > 0 && hasRecipients;
+    }
     return canSubmit; // confirm
   };
 
@@ -161,6 +166,12 @@ export function GrantPanel({
     else setStepIdx((i) => i + 1);
   };
   const goBack = () => setStepIdx((i) => Math.max(0, i - 1));
+
+  // Deselect a recipient from the compact bar shown on the Tests step.
+  const removeStudent = (id: number) => {
+    setUserIds((ids) => ids.filter((x) => x !== id));
+    setStudentRows((rows) => rows.filter((r) => r.id !== id));
+  };
 
   // ── Success screen ──────────────────────────────────────────────────────────
   if (result) {
@@ -241,7 +252,17 @@ export function GrantPanel({
 
         {/* ── Step: Tests ──────────────────────────────────────────────────── */}
         {step === "tests" && (
-          <ResourcePicker value={resources} onChange={setResources} />
+          <div className="space-y-4">
+            {/* Keep the chosen recipients in view (compact) while picking tests. */}
+            <SelectedRecipientsBar
+              mode={mode}
+              studentRows={studentRows}
+              userCount={lockUserIds?.length ?? userIds.length}
+              chosenClassroom={chosenClassroom}
+              onRemove={lockUserIds ? undefined : removeStudent}
+            />
+            <ResourcePicker value={resources} onChange={setResources} />
+          </div>
         )}
 
         {/* ── Step: Confirm ────────────────────────────────────────────────── */}
@@ -375,6 +396,74 @@ export function GrantPanel({
             {isLast && !submitting && <Check className="h-4 w-4" />}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Selected-recipients bar (shown atop the Tests step) ─────────────────────────
+// Keeps the students (or classroom) chosen in step 1 visible — as small chips — so the
+// admin never loses sight of who they are granting to while choosing the tests.
+function SelectedRecipientsBar({
+  mode,
+  studentRows,
+  userCount,
+  chosenClassroom,
+  onRemove,
+}: {
+  mode: Mode;
+  studentRows: StudentRow[];
+  userCount: number;
+  chosenClassroom: ClassroomRow | null;
+  onRemove?: (id: number) => void;
+}) {
+  if (mode === "resource_classroom") {
+    if (!chosenClassroom) return null;
+    return (
+      <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
+        <p className={cn(accClass.eyebrow, "mb-2")}><School className="h-3.5 w-3.5" /> Recipient</p>
+        <span className="inline-flex items-center gap-2 rounded-full border border-[var(--acc-chip-border)] bg-card py-1 pl-1.5 pr-3 text-[13px] font-semibold text-foreground">
+          <span className="grid h-5 w-5 place-items-center rounded-md bg-primary/10 text-primary"><School className="h-3 w-3" /></span>
+          <span className="max-w-[220px] truncate">{chosenClassroom.name}</span>
+        </span>
+      </div>
+    );
+  }
+  // Embedded By-user flow: rows aren't loaded, so just show the count.
+  if (studentRows.length === 0) {
+    if (userCount <= 0) return null;
+    return (
+      <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
+        <p className={cn(accClass.eyebrow, "mb-1.5")}><Users className="h-3.5 w-3.5" /> Recipients</p>
+        <span className="text-sm font-bold text-foreground">{userCount} student{userCount === 1 ? "" : "s"} selected</span>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-border bg-surface-2 px-4 py-3">
+      <p className={cn(accClass.eyebrow, "mb-2")}>
+        <Users className="h-3.5 w-3.5" /> {studentRows.length} recipient{studentRows.length === 1 ? "" : "s"} selected
+      </p>
+      <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+        {studentRows.map((u) => (
+          <span
+            key={u.id}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--acc-chip-border)] bg-card py-1 pl-1 pr-2 text-[12px] font-semibold text-foreground"
+          >
+            <Avatar name={studentLabel(u)} seed={u.id} size={18} />
+            <span className="max-w-[130px] truncate">{studentLabel(u)}</span>
+            {onRemove && (
+              <button
+                type="button"
+                aria-label={`Remove ${studentLabel(u)}`}
+                onClick={() => onRemove(u.id)}
+                className="-my-1 grid h-6 w-6 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </span>
+        ))}
       </div>
     </div>
   );
