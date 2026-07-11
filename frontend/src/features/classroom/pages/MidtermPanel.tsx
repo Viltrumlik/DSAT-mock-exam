@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Award, Download, RefreshCw, Save, Clock, CheckCircle2, KeyRound } from "lucide-react";
+import { ArrowLeft, Award, Download, RefreshCw, Save, Clock, CheckCircle2, KeyRound, Shuffle } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { classesApi } from "@/lib/api";
 import { midtermApi } from "@/lib/midtermApi";
 import { downloadBlob } from "@/lib/download";
 import { Card, CardHeader, Button, Field, Input, Tabs, LoadingState, ErrorState, StatCard } from "../ui";
+import { AssignVersionModal } from "./AssignVersionModal";
 
 const fileSlug = (t: string) => (t || "").trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "midterm";
 
@@ -28,6 +29,8 @@ interface PanelStudent {
   score: number | null;
   rank: number | null;
   certificate_code: string | null;
+  version_number: number | null;
+  version_label: string | null;
 }
 interface PanelData {
   midterm: { id: number; title: string; subject: string; scoring_scale: string; score_ceiling: number };
@@ -40,6 +43,8 @@ interface PanelData {
   stats: { assigned: number; completed: number; average: number | null; highest: number | null; lowest: number | null };
   all_finished: boolean;
   certificates_issued: boolean;
+  has_versions: boolean;
+  versions: { id: number; version_number: number; label: string }[];
 }
 
 export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: number; midtermId: number; title: string; onBack: () => void }) {
@@ -73,6 +78,7 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
   const [ignoreStart, setIgnoreStart] = useState(false);
   const [busyCode, setBusyCode] = useState<string | null>(null);
   const [busyAll, setBusyAll] = useState(false);
+  const [assignVersionOpen, setAssignVersionOpen] = useState(false);
 
   useEffect(() => {
     if (!data) return;
@@ -210,13 +216,29 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
               <StatCard label="Highest" value={stats.highest ?? "—"} />
               <StatCard label="Lowest" value={stats.lowest ?? "—"} />
             </div>
+            {data.has_versions && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface-2/40 px-4 py-3">
+                <div>
+                  <p className="text-sm font-bold text-foreground">This midterm has {data.versions.length} versions</p>
+                  <p className="text-xs text-muted-foreground">Randomly split the class across them — students never see their version.</p>
+                </div>
+                <Button variant="secondary" icon={Shuffle} onClick={() => setAssignVersionOpen(true)}>Assign versions</Button>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th><th>State</th><th>Score</th><th>Rank</th>{certificates_issued && <th>Certificate</th>}</tr></thead>
+                <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th>{data.has_versions && <th>Version</th>}<th>State</th><th>Score</th><th>Rank</th>{certificates_issued && <th>Certificate</th>}</tr></thead>
                 <tbody>
                   {students.map((s) => (
                     <tr key={s.student_id} className="border-t border-border">
                       <td className="py-1.5 font-medium text-foreground">{s.student_name}</td>
+                      {data.has_versions && (
+                        <td className="text-muted-foreground">
+                          {s.version_label ? (
+                            <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{s.version_label}</span>
+                          ) : "—"}
+                        </td>
+                      )}
                       <td className="text-muted-foreground">{s.state.replace(/_/g, " ")}</td>
                       <td className="text-foreground">{s.score != null ? `${s.score} / ${scale}` : "—"}</td>
                       <td className="text-muted-foreground">{s.rank ?? "—"}</td>
@@ -253,6 +275,15 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
           </div>
         )}
       </Card>
+
+      {assignVersionOpen && (
+        <AssignVersionModal
+          classId={classId}
+          midtermId={midtermId}
+          onClose={() => setAssignVersionOpen(false)}
+          onDone={() => { setAssignVersionOpen(false); invalidate(); }}
+        />
+      )}
     </div>
   );
 }

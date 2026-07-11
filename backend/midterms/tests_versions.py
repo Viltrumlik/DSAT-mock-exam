@@ -82,3 +82,44 @@ class MidtermVersionTests(TestCase):
         import json
 
         self.assertNotIn("version", json.dumps(snap.get("practice_test_details", {})))
+
+
+class VersionAssignmentApiTests(TestCase):
+    def setUp(self):
+        self.teacher = User.objects.create(username="tva", email="tva@x.io", is_staff=True)
+        self.s1 = User.objects.create(username="va1", email="va1@x.io")
+        self.s2 = User.objects.create(username="va2", email="va2@x.io")
+        self.room = make_classroom(self.teacher)
+        enroll(self.room, self.s1)
+        enroll(self.room, self.s2)
+        self.mt = Midterm.objects.create(
+            title="V", subject=Midterm.READING_WRITING,
+            scoring_scale=Midterm.SCALE_100, duration_minutes=30, is_published=True,
+        )
+        self.vA = _add_version(self.mt, 1, "a")
+        self.vB = _add_version(self.mt, 2, "b")
+        self.tc = APIClient(); self.tc.force_authenticate(self.teacher)
+        self.tc.post(f"/api/classes/{self.room.id}/midterms-v2/assign/", {"midterm_id": self.mt.id}, format="json")
+
+    def test_preview_is_not_saved_then_commit_persists(self):
+        cid = self.room.id
+        url = f"/api/classes/{cid}/midterms-v2/{self.mt.id}/versions/"
+        # Preview a random distribution — must not persist.
+        r = self.tc.post(url, {"action": "preview"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(len(r.json()["assignments"]), 2)
+        self.assertFalse(MidtermVersionAssignment.objects.filter(midterm=self.mt).exists())
+
+        # Commit an explicit mapping.
+        mapping = {str(self.s1.id): self.vA.id, str(self.s2.id): self.vB.id}
+        r = self.tc.post(url, {"action": "commit", "assignments": mapping}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(MidtermVersionAssignment.objects.get(midterm=self.mt, student=self.s1).version_id, self.vA.id)
+        self.assertEqual(MidtermVersionAssignment.objects.get(midterm=self.mt, student=self.s2).version_id, self.vB.id)
+
+        # Panel roster surfaces the version + has_versions.
+        body = self.tc.get(f"/api/classes/{cid}/midterms-v2/{self.mt.id}/panel/").json()
+        self.assertTrue(body["has_versions"])
+        vnums = {row["student_id"]: row["version_number"] for row in body["students"]}
+        self.assertEqual(vnums[self.s1.id], 1)
+        self.assertEqual(vnums[self.s2.id], 2)

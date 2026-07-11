@@ -147,7 +147,31 @@ export const midtermApi = {
     const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/start-code/`, {});
     return r.data as { access_code: string; schedule: Record<string, unknown> };
   },
+  // ── version assignment (classroom flavor) ──────────────────────────────────
+  async getVersions(classroomId: number, midtermId: number): Promise<VersionAssignData> {
+    const r = await api.get(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`);
+    return r.data as VersionAssignData;
+  },
+  /** A fresh random even distribution across versions (NOT saved). */
+  async previewVersions(classroomId: number, midtermId: number): Promise<{ assignments: VersionAssignRow[]; versions: MidtermVersionBrief[] }> {
+    const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`, { action: "preview" });
+    return r.data;
+  },
+  /** Persist a { student_id: version_id } mapping. */
+  async commitVersions(classroomId: number, midtermId: number, assignments: Record<number, number>): Promise<{ detail: string; assignments: VersionAssignRow[] }> {
+    const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`, { action: "commit", assignments });
+    return r.data;
+  },
 };
+
+export interface MidtermVersionBrief { id: number; version_number: number; label: string }
+export interface VersionAssignRow { student_id: number; student_name: string; version_id: number; version_number: number; version_label: string }
+export interface VersionAssignData {
+  has_versions: boolean;
+  versions: MidtermVersionBrief[];
+  assignments: VersionAssignRow[];
+  unassigned_count: number;
+}
 
 export const scaleMax = (scale: string, ceiling?: number) => ceiling ?? (scale === "SCALE_800" ? 800 : 100);
 export const subjectLabel = (subject: string) => (subject === "MATH" ? "Mathematics" : "Reading & Writing");
