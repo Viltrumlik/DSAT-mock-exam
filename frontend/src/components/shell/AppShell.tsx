@@ -14,6 +14,7 @@ import {
   LogIn,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
@@ -24,7 +25,9 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import {
   flattenNav,
   isNavItemActive,
+  navGroupHasActiveChild,
   pageTitleFor,
+  type NavItem,
   type NavSection,
 } from "./navConfig";
 
@@ -62,6 +65,7 @@ export function AppShell({
   const [cmd, setCmd] = useState("");
   const [cmdOpen, setCmdOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const cmdRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
@@ -96,10 +100,31 @@ export function AppShell({
   const filteredNav = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
     if (!q) return nav;
+    const matches = (i: NavItem) => i.label.toLowerCase().includes(q);
+    const filterItems = (items: NavItem[]): NavItem[] =>
+      items.flatMap((i) => {
+        if (i.children && i.children.length) {
+          // Keep the whole group if its own label matches, else keep matching children.
+          if (matches(i)) return [i];
+          const kids = i.children.filter(matches);
+          return kids.length ? [{ ...i, children: kids }] : [];
+        }
+        return matches(i) ? [i] : [];
+      });
     return nav
-      .map((s) => ({ ...s, items: s.items.filter((i) => i.label.toLowerCase().includes(q)) }))
+      .map((s) => ({ ...s, items: filterItems(s.items) }))
       .filter((s) => s.items.length > 0);
   }, [nav, navQuery]);
+
+  const searching = navQuery.trim().length > 0;
+  // A group is open when the user has toggled it, else auto-open if it holds the
+  // active route or a menu filter is active (so matches are always visible).
+  const isGroupOpen = (item: NavItem) =>
+    item.label in openGroups
+      ? openGroups[item.label]
+      : searching || navGroupHasActiveChild(item, pathname);
+  const toggleGroup = (item: NavItem) =>
+    setOpenGroups((m) => ({ ...m, [item.label]: !isGroupOpen(item) }));
 
   const cmdResults = useMemo(() => {
     const flat = flattenNav(nav);
@@ -123,6 +148,89 @@ export function AppShell({
 
   const title = pageTitleFor(nav, pathname, brand.name);
   const signedIn = !!user;
+
+  const renderLeaf = (item: NavItem, opts?: { nested?: boolean }) => {
+    const active = isNavItemActive(item.href, pathname);
+    const Icon = item.icon;
+    const link = (
+      <Link
+        key={item.href}
+        href={item.href ?? "#"}
+        onClick={() => setMobileOpen(false)}
+        onPointerDown={addRipple}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "ds-ring group relative flex items-center gap-[13px] overflow-hidden rounded-[13px] border-[1.5px] px-3.5 py-[11px] text-[15px] font-semibold transition-[background-color,color,transform,border-color,box-shadow] duration-200 active:scale-[0.96]",
+          collapsed && "md:justify-center md:px-2",
+          opts?.nested && !collapsed && "ml-3 py-[9px] text-[14px]",
+          active
+            ? "border-primary bg-primary-soft font-bold text-primary hover:translate-x-0.5 hover:shadow-[0_6px_16px_rgba(42,104,192,0.18)]"
+            : "border-border bg-transparent text-muted-foreground hover:translate-x-[3px] hover:border-primary hover:text-primary",
+        )}
+      >
+        <Icon
+          className={cn("h-5 w-5 shrink-0", active && "[animation:dz-navPop_0.4s_ease]")}
+          strokeWidth={2}
+        />
+        {!collapsed ? <span className="flex-1 truncate">{item.label}</span> : null}
+        {!collapsed && item.isNew ? (
+          <span className="rounded-md bg-success-soft px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-success-foreground">
+            New
+          </span>
+        ) : null}
+      </Link>
+    );
+    return collapsed ? (
+      <Tooltip key={item.href} content={item.label} side="right">
+        {link}
+      </Tooltip>
+    ) : (
+      link
+    );
+  };
+
+  const renderNode = (item: NavItem): React.ReactNode => {
+    if (!item.children || item.children.length === 0) return renderLeaf(item);
+    // Collapsed icon rail has no room for a dropdown — surface children as flat icons.
+    if (collapsed) return item.children.map((c) => renderLeaf(c));
+    const open = isGroupOpen(item);
+    const hasActive = navGroupHasActiveChild(item, pathname);
+    const Icon = item.icon;
+    return (
+      <div key={item.label} className="flex flex-col gap-[7px]">
+        <button
+          type="button"
+          onClick={() => toggleGroup(item)}
+          onPointerDown={addRipple}
+          aria-expanded={open}
+          className={cn(
+            "ds-ring group relative flex items-center gap-[13px] overflow-hidden rounded-[13px] border-[1.5px] px-3.5 py-[11px] text-left text-[15px] font-semibold transition-[background-color,color,transform,border-color,box-shadow] duration-200 active:scale-[0.96]",
+            hasActive
+              ? "border-border bg-surface-2 text-foreground"
+              : "border-border bg-transparent text-muted-foreground hover:translate-x-[3px] hover:border-primary hover:text-primary",
+          )}
+        >
+          <Icon className="h-5 w-5 shrink-0" strokeWidth={2} />
+          <span className="flex-1 truncate">{item.label}</span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 transition-transform duration-200",
+              open ? "rotate-0" : "-rotate-90",
+            )}
+            strokeWidth={2.5}
+          />
+        </button>
+        {open ? (
+          <div
+            className="flex flex-col gap-[7px]"
+            style={{ animation: "dz-sectionIn .3s cubic-bezier(.22,1,.36,1) both" }}
+          >
+            {item.children.map((c) => renderLeaf(c, { nested: true }))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <div className="ds-app flex min-h-screen flex-col bg-background text-foreground md:h-[100dvh] md:flex-row md:overflow-hidden">
@@ -218,43 +326,7 @@ export function AppShell({
                     {section}
                   </p>
                 ) : null}
-                {items.map(({ href, label, icon: Icon, isNew }) => {
-                  const active = isNavItemActive(href, pathname);
-                  const link = (
-                    <Link
-                      key={href}
-                      href={href}
-                      onClick={() => setMobileOpen(false)}
-                      onPointerDown={addRipple}
-                      aria-current={active ? "page" : undefined}
-                      className={cn(
-                        "ds-ring group relative flex items-center gap-[13px] overflow-hidden rounded-[13px] border-[1.5px] px-3.5 py-[11px] text-[15px] font-semibold transition-[background-color,color,transform,border-color,box-shadow] duration-200 active:scale-[0.96]",
-                        collapsed && "md:justify-center md:px-2",
-                        active
-                          ? "border-primary bg-primary-soft font-bold text-primary hover:translate-x-0.5 hover:shadow-[0_6px_16px_rgba(42,104,192,0.18)]"
-                          : "border-border bg-transparent text-muted-foreground hover:translate-x-[3px] hover:border-primary hover:text-primary",
-                      )}
-                    >
-                      <Icon
-                        className={cn("h-5 w-5 shrink-0", active && "[animation:dz-navPop_0.4s_ease]")}
-                        strokeWidth={2}
-                      />
-                      {!collapsed ? <span className="flex-1 truncate">{label}</span> : null}
-                      {!collapsed && isNew ? (
-                        <span className="rounded-md bg-success-soft px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-success-foreground">
-                          New
-                        </span>
-                      ) : null}
-                    </Link>
-                  );
-                  return collapsed ? (
-                    <Tooltip key={href} content={label} side="right">
-                      {link}
-                    </Tooltip>
-                  ) : (
-                    link
-                  );
-                })}
+                {items.map((item) => renderNode(item))}
               </div>
             ))
           )}
@@ -325,9 +397,9 @@ export function AppShell({
             {cmdOpen && cmdResults.length > 0 ? (
               <ul className="ds-anim-fade absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-72 overflow-auto rounded-xl border border-border bg-card py-1 shadow-modal">
                 {cmdResults.map((r) => (
-                  <li key={r.href}>
+                  <li key={r.href ?? r.label}>
                     <Link
-                      href={r.href}
+                      href={r.href ?? "#"}
                       onClick={() => {
                         setCmdOpen(false);
                         setCmd("");
