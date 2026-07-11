@@ -685,6 +685,7 @@ export function ExamRunnerPage() {
         onSubmit={() => void submit()}
         submitting={submitting}
         isLastModule={isLastModule}
+        submitLocked={isMidtermExam || isMidtermSrc}
         studentName={studentName}
       />
     );

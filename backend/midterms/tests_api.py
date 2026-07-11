@@ -4,9 +4,11 @@
 """
 
 import json
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access.models import ResourceAccessGrant
@@ -33,6 +35,12 @@ def make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a"):
             correct_answers=correct, is_math_input=False, score=10, order=i,
         )
     return mt
+
+
+def force_expire(aid):
+    """Push an attempt's timer well past its deadline so an explicit submit is
+    accepted (midterms otherwise refuse a submit before time runs out)."""
+    MidtermAttempt.objects.filter(pk=aid).update(started_at=timezone.now() - timedelta(hours=3))
 
 
 def grant(user, midterm, classroom=None):
@@ -97,7 +105,16 @@ class MidtermApiTests(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["current_module_saved_answers"], {qids[0]: "a"})
 
-        # submit all correct -> inline score -> COMPLETED
+        # a midterm can't be submitted early — before the deadline this is 403
+        r = self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {q: "a" for q in qids}},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 403, r.content)
+
+        # once the timer runs out, submit all correct -> inline score -> COMPLETED
+        MidtermAttempt.objects.filter(pk=aid).update(started_at=timezone.now() - timedelta(minutes=45))
         r = self.client.post(
             f"/api/midterms/attempts/{aid}/submit_module/",
             {"answers": {q: "a" for q in qids}},

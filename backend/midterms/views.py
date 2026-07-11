@@ -138,6 +138,17 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="submit_module")
     def submit_module(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        # A midterm can't be submitted early — it may only end when its timer runs
+        # out (the deadline is authoritative, enforced here regardless of client).
+        # Checked before the idempotency wrapper so the 403 is never cached and a
+        # legitimate post-deadline submit with the same key still succeeds.
+        if attempt.current_state == STATE_ACTIVE:
+            timing = attempt.get_timing()
+            if timing is not None and not timing.is_expired:
+                return Response(
+                    {"detail": "This midterm can only be submitted when its time runs out."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         answers = request.data.get("answers") or {}
         flagged = request.data.get("flagged")
 

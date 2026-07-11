@@ -11,7 +11,7 @@ from classes.models import Classroom, ClassroomMembership
 from classes.models_certificates import MidtermCertificate
 from classes.models_schedule import MidtermSchedule
 from midterms.models import Midterm
-from midterms.tests_api import make_published_midterm
+from midterms.tests_api import make_published_midterm, force_expire
 
 User = get_user_model()
 
@@ -59,6 +59,7 @@ class ClassroomMidtermTests(TestCase):
         aid = r.json()["id"]
         c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
         ans = {qids[i]: ("a" if i < correct_n else "b") for i in range(4)}
+        force_expire(aid)  # midterms only submit once the timer runs out
         c.post(f"/api/midterms/attempts/{aid}/submit_module/", {"answers": ans}, format="json")
         return c, aid
 
