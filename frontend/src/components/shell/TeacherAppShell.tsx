@@ -21,6 +21,18 @@ export default function TeacherAppShell({ children }: { children: React.ReactNod
   const m = me as { first_name?: string; last_name?: string; profile_image_url?: string | null } | undefined;
   const name = [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim() || undefined;
 
+  // The assignment creator/editor takes the whole window (no sidebar) so the
+  // instructions + content library get the full screen.
+  const isAssignmentEditor =
+    /^\/teacher\/classrooms\/[^/]+\/assignments\/(new|[^/]+\/edit)(\/|$)/.test(pathname || "");
+  if (isAssignmentEditor) {
+    return (
+      <AuthGuard>
+        <div className="min-h-dvh bg-background">{children}</div>
+      </AuthGuard>
+    );
+  }
+
   return (
     <AuthGuard>
       <AppShell

@@ -22,8 +22,13 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   //  - the assessment runner (/assessments/attempt/<id>) — its `fixed inset-0 z-50`
   //    exam view must not be trapped inside the shell <main>'s stacking context;
   //  - the assessment result & review pages (/assessments/result|review/<id>) —
-  //    full-screen, past-paper-style review with no sidebar.
-  const isImmersiveRunner = /^\/assessments\/(attempt|result|review)\/[^/]+/.test(pathname || "");
+  //    full-screen, past-paper-style review with no sidebar;
+  //  - the assignment creator/editor (/classes/<id>/assignments/new|.../edit) —
+  //    full-window so the instructions + content library get the whole screen.
+  const p = pathname || "";
+  const isImmersiveRunner =
+    /^\/assessments\/(attempt|result|review)\/[^/]+/.test(p) ||
+    /^\/classes\/[^/]+\/assignments\/(new|[^/]+\/edit)(\/|$)/.test(p);
   if (isImmersiveRunner) {
     return (
       <AuthGuard>

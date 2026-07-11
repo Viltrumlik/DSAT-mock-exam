@@ -51,6 +51,7 @@ import { AssessmentText, processInstructionalText } from "@/lib/assessmentText";
 import StableHtml from "@/features/assessments/components/StableHtml";
 import { useAnnotator } from "@/features/testing-simulation/tools/highlight/useAnnotator";
 import { AnnotationToolbar } from "@/features/testing-simulation/tools/highlight/AnnotationToolbar";
+import { DesmosCalculator } from "@/features/testing-simulation/tools/calculator/DesmosCalculator";
 import {
   answersMapFromAttempt,
   detectAnswerConflicts,
@@ -69,6 +70,7 @@ import {
   writeSubmitReceipt,
 } from "@/features/assessments/attemptDraftStorage";
 import {
+  Calculator,
   CheckCircle2,
   ChevronLeft,
   AlertTriangle,
@@ -1387,12 +1389,18 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       .map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
       .join(" ");
   })();
+  // The Desmos calculator is offered only for Middle/Senior Math assessments
+  // (gated on the raw set subject + level, not the pretty `subjectLabel`).
+  const rawSubject = String(set?.subject ?? "").trim().toLowerCase();
+  const setLevel = String((set as Record<string, unknown> | undefined)?.level ?? "").trim().toLowerCase();
+  const calculatorEnabled = rawSubject === "math" && (setLevel === "middle" || setLevel === "senior");
   return (
     <>
     <ExamSimulationView
       // Header / meta
       setTitle={setTitle}
       subject={subjectLabel}
+      calculatorEnabled={calculatorEnabled}
       classroomName={runnerMeta?.classroom_name ?? null}
       // Pause / save-and-exit (pause is automatic; only Save & Exit is a button)
       paused={paused}
@@ -1472,6 +1480,8 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
 type ExamSimulationProps = {
   setTitle: string;
   subject: string;
+  /** Show the Desmos calculator tool (Middle/Senior Math only). */
+  calculatorEnabled: boolean;
   classroomName: string | null;
 
   paused: boolean;
@@ -1521,6 +1531,7 @@ type ExamSimulationProps = {
 function ExamSimulationView({
   setTitle,
   subject,
+  calculatorEnabled,
   classroomName,
   paused,
   exiting,
@@ -1560,6 +1571,12 @@ function ExamSimulationView({
   const [showTimer, setShowTimer] = useState(true);
   const [showMap, setShowMap] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcEnlarged, setCalcEnlarged] = useState(false);
+  const toggleCalc = () => {
+    setCalcEnlarged(false);
+    setCalcOpen((v) => !v);
+  };
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const zoomIn = () => setZoomLevel((z) => Math.min(1.5, +(z + 0.1).toFixed(2)));
   const zoomOut = () => setZoomLevel((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
@@ -1694,6 +1711,18 @@ function ExamSimulationView({
               {highlighterActive ? "On" : "Highlight"}
             </span>
           </button>
+          {calculatorEnabled && (
+            <button
+              onClick={toggleCalc}
+              title={calcOpen ? "Hide calculator" : "Open the Desmos calculator"}
+              className={`flex flex-col items-center gap-0.5 transition-colors ${
+                calcOpen ? "text-primary" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Calculator className="w-5 h-5" />
+              <span className="text-[9px] font-bold uppercase tracking-wider">Calculator</span>
+            </button>
+          )}
           <button
             onClick={() => setReportOpen(true)}
             title="Report a problem with this question"
@@ -1730,6 +1759,15 @@ function ExamSimulationView({
         target={questionId ? { system: "assessment", questionId, attemptId } : null}
         questionNumber={currentIdx + 1}
       />
+
+      {/* Desmos calculator — Middle/Senior Math only; floats over the exam surface. */}
+      {calculatorEnabled && calcOpen && (
+        <DesmosCalculator
+          onClose={toggleCalc}
+          enlarged={calcEnlarged}
+          onToggleEnlarge={() => setCalcEnlarged((v) => !v)}
+        />
+      )}
 
 
       {/* ── Conflict resolution banner (inline so it never blocks layout) ──── */}
