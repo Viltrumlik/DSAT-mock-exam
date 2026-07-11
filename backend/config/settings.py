@@ -78,6 +78,8 @@ TELEGRAM_SYNTHETIC_EMAIL_DOMAIN = os.getenv(
 QUESTION_REPORT_TELEGRAM_BOT_TOKEN = os.getenv('QUESTION_REPORT_TELEGRAM_BOT_TOKEN', '').strip()
 # Fixed staff group/channel chat id (optional; subscribers via /start also receive reports).
 QUESTION_REPORT_TELEGRAM_CHAT_ID = os.getenv('QUESTION_REPORT_TELEGRAM_CHAT_ID', '').strip()
+# Forum topic (message_thread_id) inside that group to post reports into (optional).
+QUESTION_REPORT_TELEGRAM_TOPIC_ID = os.getenv('QUESTION_REPORT_TELEGRAM_TOPIC_ID', '').strip()
 # Shared secret echoed by Telegram as X-Telegram-Bot-Api-Secret-Token on the inbound webhook.
 QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET = os.getenv('QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET', '').strip()
 # Optional passcode to gate /start (empty = anyone who messages the bot can subscribe).
