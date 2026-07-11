@@ -107,6 +107,9 @@ export default function AssessmentResultPage() {
 
   // Which question is open in the pop-up review modal (null = closed).
   const [reviewIndex, setReviewIndex] = useState<number | null>(null);
+  // "Show correct answers" — shared by the summary table AND the review modal so
+  // hiding answers actually hides them everywhere (not just in the table).
+  const [showAnswers, setShowAnswers] = useState(false);
 
   // Retry the assessment from within the review page (starts a fresh attempt).
   const start = useStartAttempt();
@@ -137,7 +140,7 @@ export default function AssessmentResultPage() {
 
   return (
     <AuthGuard>
-      <div className="mx-auto w-full max-w-4xl pb-12">
+      <div className="mx-auto w-full max-w-4xl px-4 py-6 pb-12 sm:px-6 sm:py-8">
         {isLoading ? (
           <Card><CardContent className="flex justify-center py-12"><Spinner className="h-8 w-8 text-primary" /></CardContent></Card>
         ) : null}
@@ -178,6 +181,8 @@ export default function AssessmentResultPage() {
             maxPoints={result.max_points}
             avgPerQuestionLabel={`${avgPerQuestion} sec`}
             rows={rows}
+            showAnswers={showAnswers}
+            onToggleShowAnswers={() => setShowAnswers((v) => !v)}
             onBack={() => router.push(`/assessments`)}
             onRetry={retryAssessment}
             retrying={retrying}
@@ -193,6 +198,7 @@ export default function AssessmentResultPage() {
           <QuestionReviewModal
             questions={sortedQuestions}
             index={reviewIndex}
+            showAnswers={showAnswers}
             onIndexChange={setReviewIndex}
             onClose={() => setReviewIndex(null)}
           />
