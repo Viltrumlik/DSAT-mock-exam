@@ -27,6 +27,7 @@ import {
   EyeOff,
   FileText,
   GraduationCap,
+  Layers,
   Loader2,
   Pencil,
   Plus,
@@ -404,6 +405,8 @@ function MidtermModal({
 
 // ─── Midterm row ──────────────────────────────────────────────────────────────
 
+const VERSION_LETTERS = ["A", "B", "C", "D"];
+
 function MidtermRow({
   exam,
   onEdit,
@@ -411,6 +414,9 @@ function MidtermRow({
   onPublish,
   onUnpublish,
   onResults,
+  onAddVersion,
+  onRemoveVersion,
+  versionBusy,
   publishing,
 }: {
   exam: AdminMidterm;
@@ -419,6 +425,9 @@ function MidtermRow({
   onPublish: () => void;
   onUnpublish: () => void;
   onResults: () => void;
+  onAddVersion: () => void;
+  onRemoveVersion: (testId: number) => void;
+  versionBusy: boolean;
   publishing: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -581,34 +590,63 @@ function MidtermRow({
         </div>
       )}
 
-      {/* Section → module links */}
-      {exam.tests.length > 0 && (
-        <div className="mt-4 space-y-1.5">
-          {exam.tests.map((test) => {
-            const modules = test.modules ?? [];
-            return modules.map((mod) => (
-              <Link
-                key={mod.id}
-                href={`/builder/mock-exams/${exam.id}/${test.id}/${mod.id}`}
-                className="flex items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-4 py-2.5 text-xs font-semibold text-foreground hover:border-primary/30 hover:bg-primary/5 transition-colors group"
-              >
-                <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                <span className="flex-1">
-                  {subjectLabel(test.subject)} ·{" "}
-                  {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
-                  {mod.time_limit_minutes != null && (
-                    <span className="ml-2 text-muted-foreground">{mod.time_limit_minutes} min</span>
-                  )}
+      {/* Versions → each is a parallel copy with its own questions (max 4). */}
+      <div className="mt-4 space-y-3">
+        {exam.tests.map((test, vIdx) => {
+          const modules = test.modules ?? [];
+          return (
+            <div key={test.id} className="rounded-xl border border-border bg-surface-2/30 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-foreground">
+                  <Layers className="h-3.5 w-3.5 text-primary" />
+                  Version {VERSION_LETTERS[vIdx] ?? vIdx + 1}
                 </span>
-                <span className="text-xs font-bold text-primary group-hover:underline">
-                  Edit questions →
-                </span>
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
-              </Link>
-            ));
-          })}
-        </div>
-      )}
+                {exam.tests.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveVersion(test.id)}
+                    disabled={versionBusy}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                  >
+                    <Trash2 className="h-3 w-3" /> Remove
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {modules.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] italic text-muted-foreground">No modules yet.</p>
+                ) : (
+                  modules.map((mod) => (
+                    <Link
+                      key={mod.id}
+                      href={`/builder/mock-exams/${exam.id}/${test.id}/${mod.id}`}
+                      className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5"
+                    >
+                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                      <span className="flex-1">
+                        {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
+                        {mod.time_limit_minutes != null && <span className="ml-2 text-muted-foreground">{mod.time_limit_minutes} min</span>}
+                      </span>
+                      <span className="text-xs font-bold text-primary group-hover:underline">Edit questions →</span>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                    </Link>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {exam.tests.length < 4 && (
+          <button
+            type="button"
+            onClick={onAddVersion}
+            disabled={versionBusy}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add version{exam.tests.length > 0 ? ` (${exam.tests.length}/4)` : ""}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -700,6 +738,30 @@ export default function BuilderMidtermsPage() {
       await load();
     } catch (e) {
       setError(parseError(e));
+    }
+  };
+
+  const [versionBusyId, setVersionBusyId] = useState<number | null>(null);
+  const handleAddVersion = async (examId: number) => {
+    setVersionBusyId(examId);
+    try {
+      await examsAdminApi.addMidtermVersion(examId);
+      await load();
+    } catch (e) {
+      setError(parseError(e));
+    } finally {
+      setVersionBusyId(null);
+    }
+  };
+  const handleRemoveVersion = async (examId: number, testId: number) => {
+    setVersionBusyId(examId);
+    try {
+      await examsAdminApi.removeMidtermVersion(examId, testId);
+      await load();
+    } catch (e) {
+      setError(parseError(e));
+    } finally {
+      setVersionBusyId(null);
     }
   };
 
@@ -902,6 +964,9 @@ export default function BuilderMidtermsPage() {
               onPublish={() => void handlePublish(m.id)}
               onUnpublish={() => void handleUnpublish(m.id)}
               onResults={() => setResultsExam(m)}
+              onAddVersion={() => void handleAddVersion(m.id)}
+              onRemoveVersion={(testId) => void handleRemoveVersion(m.id, testId)}
+              versionBusy={versionBusyId === m.id}
               publishing={publishingId === m.id}
             />
           ))}

@@ -1079,6 +1079,14 @@ export const examsAdminApi = {
         const r = await api.delete(`/exams/admin/mock-exams/${examId}/remove_test/`, { data: { test_id: testId } });
         return r.data;
     },
+    addMidtermVersion: async (examId: number) => {
+        const r = await api.post(`/exams/admin/mock-exams/${examId}/add-midterm-version/`, {});
+        return r.data;
+    },
+    removeMidtermVersion: async (examId: number, testId: number) => {
+        const r = await api.delete(`/exams/admin/mock-exams/${examId}/remove-midterm-version/`, { data: { test_id: testId } });
+        return r.data;
+    },
     assignStudentsToExam: async (examId: number, userIds: number[]) => {
         const r = await api.post(`/exams/admin/mock-exams/${examId}/assign_users/`, { user_ids: userIds });
         return r.data;

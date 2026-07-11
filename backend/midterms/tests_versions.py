@@ -84,6 +84,33 @@ class MidtermVersionTests(TestCase):
         self.assertNotIn("version", json.dumps(snap.get("practice_test_details", {})))
 
 
+class MidtermVersionSyncTests(TestCase):
+    def test_sync_mirrors_two_practice_tests_into_two_versions(self):
+        from exams.models import MockExam, PracticeTest
+        from exams.models import Module as XModule, Question as XQuestion
+        from midterms.sync import upsert_midterm_from_legacy
+
+        mock = MockExam.objects.create(
+            title="Versioned MT", kind=MockExam.KIND_MIDTERM, midterm_subject="READING_WRITING",
+            midterm_scoring_scale="SCALE_100", midterm_module_count=1, midterm_module1_minutes=30, is_published=True,
+        )
+        for correct in ["a", "b"]:  # two PracticeTests = two versions, different keys
+            pt = PracticeTest.objects.create(mock_exam=mock, subject="READING_WRITING", form_type="INTERNATIONAL", skip_default_modules=True)
+            mod = XModule.objects.create(practice_test=pt, module_order=1, time_limit_minutes=30)
+            for i in range(3):
+                XQuestion.objects.create(
+                    module=mod, question_type="READING", question_text=f"q{i}",
+                    option_a="A", option_b="B", option_c="C", option_d="D",
+                    correct_answers=correct, is_math_input=False, score=10, order=i,
+                )
+        midterm = upsert_midterm_from_legacy(mock)
+        self.assertEqual(midterm.versions.count(), 2)
+        for v in midterm.versions.all():
+            self.assertEqual(v.questions().count(), 3)
+        # Single-set fallback: the flattened module is left empty for versioned midterms.
+        self.assertEqual(midterm.questions().count(), 0)
+
+
 class VersionAssignmentApiTests(TestCase):
     def setUp(self):
         self.teacher = User.objects.create(username="tva", email="tva@x.io", is_staff=True)
