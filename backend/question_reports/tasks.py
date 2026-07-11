@@ -9,7 +9,7 @@ from django.db import connection, transaction
 
 from .models import QuestionErrorReport
 from .targets import build_report_keyboard, build_report_message
-from .telegram import report_bot_token, report_target_chat_ids, send_telegram_message
+from .telegram import report_bot_token, report_targets, send_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +30,16 @@ def notify_question_report_async(self, report_id: int) -> dict:
     text = build_report_message(report)
     markup = build_report_keyboard(report)
     deliveries = []
-    for chat_id in report_target_chat_ids():
+    for target in report_targets():
         message_id = send_telegram_message(
-            token=token, chat_id=chat_id, text=text, reply_markup=markup
+            token=token,
+            chat_id=target["chat_id"],
+            text=text,
+            reply_markup=markup,
+            message_thread_id=target.get("message_thread_id"),
         )
         if message_id:
-            deliveries.append({"chat_id": str(chat_id), "message_id": message_id})
+            deliveries.append({"chat_id": str(target["chat_id"]), "message_id": message_id})
     # Record where each copy landed so a "Fixed" tap can update them all.
     report.telegram_messages = deliveries
     report.save(update_fields=["telegram_messages", "updated_at"])

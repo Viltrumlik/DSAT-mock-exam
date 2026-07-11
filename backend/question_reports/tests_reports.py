@@ -237,6 +237,36 @@ class NotificationFanoutTests(TestCase):
         self.assertIn("1 &lt; 2 &amp; 3 &gt; 2", msg)
 
 
+@override_settings(
+    QUESTION_REPORT_TELEGRAM_BOT_TOKEN="TESTTOKEN",
+    QUESTION_REPORT_TELEGRAM_CHAT_ID="-100grp",
+    QUESTION_REPORT_TELEGRAM_TOPIC_ID="65",
+)
+class TopicRoutingTests(TestCase):
+    """The staff-group copy goes to the configured forum topic; DM subscribers don't."""
+
+    def test_group_goes_to_topic_subscribers_do_not(self):
+        from question_reports import tasks
+
+        TelegramReportSubscriber.objects.create(chat_id="555", is_active=True)
+        mt = make_published_midterm(n=1)
+        report = QuestionErrorReport.objects.create(
+            system="exam",
+            question_id=mt.questions().first().id,
+            resource_type=QuestionErrorReport.RESOURCE_MIDTERM,
+            resource_title="U",
+            question_order=1,
+            category="other",
+        )
+        with patch.object(tasks, "send_telegram_message", side_effect=[10, 11]) as send:
+            tasks.notify_question_report_async(report.id)
+        by_chat = {
+            c.kwargs["chat_id"]: c.kwargs.get("message_thread_id") for c in send.call_args_list
+        }
+        self.assertEqual(by_chat.get("-100grp"), 65)  # group -> topic 65
+        self.assertIsNone(by_chat.get("555"))  # subscriber -> plain DM
+
+
 @override_settings(QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET="sek", QUESTION_REPORT_TELEGRAM_BOT_TOKEN="")
 class WebhookTests(TestCase):
     URL = "/api/question-reports/telegram/webhook/"
