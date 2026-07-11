@@ -32,7 +32,6 @@ import Link from "next/link";
 import { useAttemptBundle, useSaveAnswer, useSubmitAttempt } from "@/features/assessments/hooks";
 import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
 import { normalizeApiError } from "@/lib/apiError";
-import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
 import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import { AnswerInput, type OptionImageMap } from "@/features/assessments/components/QuestionInputs";
@@ -80,7 +79,6 @@ import {
   Highlighter,
   Loader2,
   LogOut,
-  MoreVertical,
   Monitor,
   Pause,
   Send,
@@ -1697,6 +1695,14 @@ function ExamSimulationView({
             </span>
           </button>
           <button
+            onClick={() => setReportOpen(true)}
+            title="Report a problem with this question"
+            className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-slate-900 transition-colors"
+          >
+            <Flag className="w-5 h-5" />
+            <span className="text-[9px] font-bold uppercase tracking-wider">Report</span>
+          </button>
+          <button
             onClick={onSaveAndExit}
             disabled={exiting}
             title="Save your progress and leave — you can resume later where you left off"
@@ -1707,25 +1713,6 @@ function ExamSimulationView({
               {exiting ? "Saving…" : "Save & Exit"}
             </span>
           </button>
-          <DropdownMenu
-            align="end"
-            trigger={
-              <button
-                type="button"
-                title="More"
-                aria-haspopup="menu"
-                className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-slate-900 transition-colors"
-              >
-                <MoreVertical className="w-5 h-5" />
-                <span className="text-[9px] font-bold uppercase tracking-wider">More</span>
-              </button>
-            }
-          >
-            <DropdownMenuItem onClick={() => setReportOpen(true)}>
-              <Flag className="w-4 h-4" />
-              Report a problem
-            </DropdownMenuItem>
-          </DropdownMenu>
           <div className="w-px h-8 bg-slate-100" />
           <div className="flex flex-col items-center pt-0.5 gap-0.5">
             <span className="text-sm font-bold text-slate-700 tabular-nums">{answeredCount}/{totalCount}</span>
