@@ -3,10 +3,9 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
-import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy, Flag, MoreVertical } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy, Flag } from 'lucide-react';
 import { MathText } from '@/components/MathText';
 import { spawnRipple } from "@/features/classroom/ui/ripple";
-import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
 import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 
 const examsPublicApi = examsStudentApi;
@@ -49,24 +48,14 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
-                        <DropdownMenu
-                            align="end"
-                            trigger={
-                                <button
-                                    type="button"
-                                    title="More"
-                                    aria-haspopup="menu"
-                                    className="p-2 rounded-xl hover:bg-surface-2 transition-colors border border-border"
-                                >
-                                    <MoreVertical className="w-5 h-5 text-muted-foreground" />
-                                </button>
-                            }
+                        <button
+                            type="button"
+                            onClick={() => setReportOpen(true)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
                         >
-                            <DropdownMenuItem onClick={() => setReportOpen(true)}>
-                                <Flag className="w-4 h-4" />
-                                Report a problem
-                            </DropdownMenuItem>
-                        </DropdownMenu>
+                            <Flag className="w-4 h-4" />
+                            Report
+                        </button>
                         <button onClick={onClose} className="p-2 rounded-xl hover:bg-surface-2 transition-colors border border-border">
                             <X className="w-5 h-5 text-muted-foreground" />
                         </button>

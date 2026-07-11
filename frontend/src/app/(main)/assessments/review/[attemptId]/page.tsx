@@ -20,13 +20,13 @@ import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
 import type { PedagogicalReviewQuestion, TeacherFeedback } from "@/features/assessmentsStudent/api";
 import {
   ArrowLeft, BookOpen, CheckCircle2, ChevronRight, Flag, GraduationCap,
-  Lightbulb, MessageSquare, MoreVertical, RefreshCw, XCircle,
+  Lightbulb, MessageSquare, RefreshCw, XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { AssessmentText } from "@/lib/assessmentText";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
-import { DropdownMenu, DropdownMenuItem, Spinner } from "@/components/ui";
+import { Spinner } from "@/components/ui";
 import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 
 const JAKARTA = "var(--font-plus-jakarta), system-ui, sans-serif";
@@ -195,24 +195,14 @@ function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; i
           <span className={cn("inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider", meta.badge)}>
             {meta.label}
           </span>
-          <DropdownMenu
-            align="end"
-            trigger={
-              <button
-                type="button"
-                title="More"
-                aria-haspopup="menu"
-                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-              >
-                <MoreVertical className="h-5 w-5" />
-              </button>
-            }
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
           >
-            <DropdownMenuItem onClick={() => setReportOpen(true)}>
-              <Flag className="h-4 w-4" />
-              Report a problem
-            </DropdownMenuItem>
-          </DropdownMenu>
+            <Flag className="h-4 w-4" />
+            Report
+          </button>
         </div>
       </div>
 
