@@ -314,6 +314,56 @@ class MockExam(TimestampedModel):
         default=30,
         help_text="Only used when kind=MIDTERM. Max questions allowed per module.",
     )
+    # ── Midterm taxonomy (builder-authored, kind=MIDTERM only) ──────────────
+    # Level uses the shared lowercase codes so it lines up with classroom /
+    # assessment levels (foundation is Math-only). Period buckets a midterm into
+    # a monthly round; type separates the pre-midterm / midterm / retake variants.
+    # All three are used for filtering in the builder and teacher panel.
+    MIDTERM_LEVEL_CHOICES = [
+        ("foundation", "Foundation"),
+        ("junior", "Junior"),
+        ("middle", "Middle"),
+        ("senior", "Senior"),
+    ]
+    midterm_level = models.CharField(
+        max_length=16,
+        choices=MIDTERM_LEVEL_CHOICES,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Only used when kind=MIDTERM. Foundation applies to Math only.",
+    )
+    PERIOD_FIRST = "FIRST_MONTH"
+    PERIOD_SECOND = "SECOND_MONTH"
+    PERIOD_THIRD = "THIRD_MONTH"
+    MIDTERM_PERIOD_CHOICES = [
+        (PERIOD_FIRST, "First month"),
+        (PERIOD_SECOND, "Second month"),
+        (PERIOD_THIRD, "Third month"),
+    ]
+    midterm_period = models.CharField(
+        max_length=16,
+        choices=MIDTERM_PERIOD_CHOICES,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Only used when kind=MIDTERM. Monthly round the midterm belongs to.",
+    )
+    TYPE_PRE_MIDTERM = "PRE_MIDTERM"
+    TYPE_MIDTERM = "MIDTERM"
+    TYPE_RETAKE = "RETAKE"
+    MIDTERM_TYPE_CHOICES = [
+        (TYPE_PRE_MIDTERM, "Pre-midterm"),
+        (TYPE_MIDTERM, "Midterm"),
+        (TYPE_RETAKE, "Retake midterm"),
+    ]
+    midterm_type = models.CharField(
+        max_length=16,
+        choices=MIDTERM_TYPE_CHOICES,
+        default=TYPE_MIDTERM,
+        db_index=True,
+        help_text="Only used when kind=MIDTERM. Pre-midterm / midterm / retake.",
+    )
     # Who may open this mock in the app (full SAT / midterm flow). Separate from PracticeTest rows below.
     assigned_users = models.ManyToManyField(
         User,
