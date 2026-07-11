@@ -71,6 +71,8 @@ export interface SummaryResultViewProps {
   avgPerQuestionLabel: string;
   rows: SummaryRow[];
   onBack: () => void;
+  /** Label for the top-left back button (default "Back to assignment"). */
+  backLabel?: string;
   onReview: (row: SummaryRow) => void;
   /** Reveal-correct-answers toggle — controlled so the review modal can honour it too. */
   showAnswers: boolean;
@@ -91,6 +93,7 @@ export function SummaryResultView({
   avgPerQuestionLabel,
   rows,
   onBack,
+  backLabel = "Back to assignment",
   onReview,
   showAnswers,
   onToggleShowAnswers,
@@ -141,7 +144,7 @@ export function SummaryResultView({
           onClick={onBack}
           className="ds-ring group inline-flex w-fit items-center gap-2 rounded-lg text-sm font-bold text-muted-foreground transition-colors hover:text-primary"
         >
-          <ArrowLeft className="h-[17px] w-[17px]" /> Back to assignment
+          <ArrowLeft className="h-[17px] w-[17px]" /> {backLabel}
         </button>
         {onRetry ? (
           <button

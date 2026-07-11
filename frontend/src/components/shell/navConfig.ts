@@ -81,6 +81,7 @@ export const teacherNav: NavSection[] = [
     section: "Classroom",
     items: [
       { href: "/teacher/classrooms", label: "Classrooms", icon: School },
+      { href: "/teacher/assessments", label: "Assessments", icon: ClipboardCheck },
       { href: "/teacher/midterms", label: "Midterms", icon: Timer },
       { href: "/teacher/materials", label: "Materials", icon: FolderOpen },
       { href: "/teacher/students", label: "Students", icon: Users },
