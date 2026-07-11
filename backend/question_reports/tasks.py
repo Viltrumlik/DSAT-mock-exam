@@ -8,7 +8,7 @@ from django.conf import settings
 from django.db import connection, transaction
 
 from .models import QuestionErrorReport
-from .targets import build_report_message
+from .targets import build_report_keyboard, build_report_message
 from .telegram import report_bot_token, report_target_chat_ids, send_telegram_message
 
 logger = logging.getLogger(__name__)
@@ -28,11 +28,18 @@ def notify_question_report_async(self, report_id: int) -> dict:
         return {"status": "noop", "reason": "no_token", "report_id": report_id}
 
     text = build_report_message(report)
-    sent = 0
+    markup = build_report_keyboard(report)
+    deliveries = []
     for chat_id in report_target_chat_ids():
-        if send_telegram_message(token=token, chat_id=chat_id, text=text):
-            sent += 1
-    return {"status": "ok", "report_id": report_id, "sent": sent}
+        message_id = send_telegram_message(
+            token=token, chat_id=chat_id, text=text, reply_markup=markup
+        )
+        if message_id:
+            deliveries.append({"chat_id": str(chat_id), "message_id": message_id})
+    # Record where each copy landed so a "Fixed" tap can update them all.
+    report.telegram_messages = deliveries
+    report.save(update_fields=["telegram_messages", "updated_at"])
+    return {"status": "ok", "report_id": report_id, "sent": len(deliveries)}
 
 
 def _deliver_off_thread(report_id: int) -> None:

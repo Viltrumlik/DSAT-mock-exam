@@ -43,7 +43,7 @@ class Command(BaseCommand):
             getattr(settings, "QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET", "") or ""
         ).strip()
 
-        data = {"url": webhook_url, "allowed_updates": json.dumps(["message"])}
+        data = {"url": webhook_url, "allowed_updates": json.dumps(["message", "callback_query"])}
         if secret:
             data["secret_token"] = secret
 

@@ -35,6 +35,8 @@ class QuestionErrorReportAdmin(admin.ModelAdmin):
         "category",
         "message",
         "reporter",
+        "resolved_by_label",
+        "telegram_messages",
         "created_at",
         "updated_at",
     )

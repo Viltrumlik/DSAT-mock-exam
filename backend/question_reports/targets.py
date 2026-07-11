@@ -159,8 +159,16 @@ def build_report_message(report: QuestionErrorReport) -> str:
     category_label = _CATEGORY_LABELS.get(report.category, report.category)
     qnum = f"#{report.question_order}" if report.question_order else f"id {report.question_id}"
 
+    if report.status == QuestionErrorReport.STATUS_FIXED:
+        status_line = "<b>Status:</b> ✅ Fixed" + (
+            f" — {e(report.resolved_by_label)}" if report.resolved_by_label else ""
+        )
+    else:
+        status_line = "<b>Status:</b> 🔴 Not fixed"
+
     lines = [
         "🚩 <b>Question error report</b>",
+        status_line,
         f"<b>Resource:</b> {e(resource_label)} — {e(report.resource_title or '—')}",
         f"<b>Question:</b> {e(qnum)}"
         + (f" · <code>{e(report.qb_id)}</code>" if report.qb_id else ""),
@@ -175,3 +183,18 @@ def build_report_message(report: QuestionErrorReport) -> str:
         f"\n<code>report #{report.id} · {e(report.system)} qid {report.question_id}</code>"
     )
     return "\n".join(lines)
+
+
+def build_report_keyboard(report: QuestionErrorReport) -> dict:
+    """Inline keyboard: a toggle between 'Mark as fixed' and 'Reopen' by current status."""
+    if report.status == QuestionErrorReport.STATUS_FIXED:
+        return {
+            "inline_keyboard": [
+                [{"text": "↩️ Reopen (not fixed)", "callback_data": f"qr:reopen:{report.id}"}]
+            ]
+        }
+    return {
+        "inline_keyboard": [
+            [{"text": "✅ Mark as fixed", "callback_data": f"qr:fix:{report.id}"}]
+        ]
+    }

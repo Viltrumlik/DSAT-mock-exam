@@ -202,15 +202,23 @@ class NotificationFanoutTests(TestCase):
             message="No option is right",
             reporter=self.user,
         )
-        with patch.object(tasks, "send_telegram_message", return_value=True) as send:
+        with patch.object(tasks, "send_telegram_message", side_effect=[101, 102]) as send:
             result = tasks.notify_question_report_async(report.id)
 
         self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["sent"], 2)
         chats = {c.kwargs["chat_id"] for c in send.call_args_list}
         self.assertEqual(chats, {"-100group", "555"})
         text = send.call_args_list[0].kwargs["text"]
         self.assertIn("Question error report", text)
         self.assertIn("Unit 1 Midterm", text)
+        self.assertIn("Not fixed", text)  # status line
+        # Each sent copy is recorded so a later "Fixed" tap can update them all.
+        report.refresh_from_db()
+        self.assertEqual(
+            report.telegram_messages,
+            [{"chat_id": "-100group", "message_id": 101}, {"chat_id": "555", "message_id": 102}],
+        )
 
     def test_message_escapes_html(self):
         report = QuestionErrorReport.objects.create(
@@ -229,7 +237,7 @@ class NotificationFanoutTests(TestCase):
         self.assertIn("1 &lt; 2 &amp; 3 &gt; 2", msg)
 
 
-@override_settings(QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET="sek")
+@override_settings(QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET="sek", QUESTION_REPORT_TELEGRAM_BOT_TOKEN="")
 class WebhookTests(TestCase):
     URL = "/api/question-reports/telegram/webhook/"
 
@@ -314,6 +322,7 @@ class EnqueueDispatchTests(TestCase):
 @override_settings(
     QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET="sek",
     QUESTION_REPORT_BOT_JOIN_CODE="letmein",
+    QUESTION_REPORT_TELEGRAM_BOT_TOKEN="",
 )
 class WebhookJoinCodeTests(TestCase):
     URL = "/api/question-reports/telegram/webhook/"
@@ -339,3 +348,107 @@ class WebhookJoinCodeTests(TestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(TelegramReportSubscriber.objects.filter(chat_id="42", is_active=True).exists())
+
+
+class KeyboardAndStatusTests(TestCase):
+    """The Telegram message shows a status line and a status-appropriate inline button."""
+
+    def _report(self, **kw):
+        base = dict(
+            id=5, system="exam", question_id=1,
+            resource_type=QuestionErrorReport.RESOURCE_MIDTERM,
+            resource_title="Unit 1", question_order=1, category="other",
+            status=QuestionErrorReport.STATUS_NEW,
+        )
+        base.update(kw)
+        return QuestionErrorReport(**base)  # unsaved is fine for the pure builders
+
+    def test_not_fixed_shows_mark_fixed_button(self):
+        from question_reports.targets import build_report_keyboard, build_report_message
+
+        r = self._report()
+        self.assertIn("Not fixed", build_report_message(r))
+        kb = build_report_keyboard(r)
+        self.assertEqual(kb["inline_keyboard"][0][0]["callback_data"], "qr:fix:5")
+        self.assertIn("fixed", kb["inline_keyboard"][0][0]["text"].lower())
+
+    def test_fixed_shows_status_label_and_reopen_button(self):
+        from question_reports.targets import build_report_keyboard, build_report_message
+
+        r = self._report(status=QuestionErrorReport.STATUS_FIXED, resolved_by_label="@admin")
+        msg = build_report_message(r)
+        self.assertIn("Fixed", msg)
+        self.assertIn("@admin", msg)
+        kb = build_report_keyboard(r)
+        self.assertEqual(kb["inline_keyboard"][0][0]["callback_data"], "qr:reopen:5")
+
+
+@override_settings(QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET="sek", QUESTION_REPORT_TELEGRAM_BOT_TOKEN="")
+class WebhookCallbackTests(TestCase):
+    """Inline 'Mark as fixed' / 'Reopen' taps update the DB + sync every posted copy."""
+
+    URL = "/api/question-reports/telegram/webhook/"
+
+    def setUp(self):
+        self.client = APIClient()
+        self.report = QuestionErrorReport.objects.create(
+            system="exam", question_id=1,
+            resource_type=QuestionErrorReport.RESOURCE_MIDTERM,
+            resource_title="Unit 1", question_order=1, category="other",
+            status=QuestionErrorReport.STATUS_NEW,
+            telegram_messages=[
+                {"chat_id": "-100group", "message_id": 10},
+                {"chat_id": "555", "message_id": 20},
+            ],
+        )
+
+    def _callback(self, data, username="adminx"):
+        return {"callback_query": {"id": "cbq1", "data": data, "from": {"username": username}}}
+
+    def _post(self, payload, secret="sek"):
+        return self.client.post(
+            self.URL, payload, format="json", HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN=secret
+        )
+
+    def test_fix_marks_fixed_and_edits_all_copies(self):
+        from question_reports import views
+
+        with patch.object(views, "edit_telegram_message", return_value=True) as edit, \
+             patch.object(views, "answer_callback_query", return_value=True) as ans:
+            r = self._post(self._callback(f"qr:fix:{self.report.id}"))
+        self.assertEqual(r.status_code, 200, r.content)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, QuestionErrorReport.STATUS_FIXED)
+        self.assertEqual(self.report.resolved_by_label, "@adminx")
+        edited = {c.kwargs["chat_id"]: c.kwargs["message_id"] for c in edit.call_args_list}
+        self.assertEqual(edited, {"-100group": 10, "555": 20})
+        self.assertIn("Fixed", edit.call_args_list[0].kwargs["text"])
+        ans.assert_called_once()
+
+    def test_reopen_clears_fixed(self):
+        from question_reports import views
+
+        self.report.status = QuestionErrorReport.STATUS_FIXED
+        self.report.resolved_by_label = "@x"
+        self.report.save()
+        with patch.object(views, "edit_telegram_message", return_value=True), \
+             patch.object(views, "answer_callback_query", return_value=True):
+            r = self._post(self._callback(f"qr:reopen:{self.report.id}"))
+        self.assertEqual(r.status_code, 200, r.content)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, QuestionErrorReport.STATUS_NEW)
+        self.assertEqual(self.report.resolved_by_label, "")
+
+    def test_unknown_report_answers_without_crash(self):
+        from question_reports import views
+
+        with patch.object(views, "answer_callback_query", return_value=True) as ans:
+            r = self._post(self._callback("qr:fix:999999"))
+        self.assertEqual(r.status_code, 200, r.content)
+        ans.assert_called_once()
+
+    def test_bad_secret_callback_is_403_and_no_change(self):
+        r = self._post(self._callback(f"qr:fix:{self.report.id}"), secret="wrong")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.report.refresh_from_db()
+        self.assertEqual(self.report.status, QuestionErrorReport.STATUS_NEW)
