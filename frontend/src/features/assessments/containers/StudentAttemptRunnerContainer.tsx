@@ -32,6 +32,8 @@ import Link from "next/link";
 import { useAttemptBundle, useSaveAnswer, useSubmitAttempt } from "@/features/assessments/hooks";
 import { assessmentsStudentApi } from "@/features/assessmentsStudent/api";
 import { normalizeApiError } from "@/lib/apiError";
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
+import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
 import { AnswerInput, type OptionImageMap } from "@/features/assessments/components/QuestionInputs";
 import {
@@ -74,9 +76,11 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  Flag,
   Highlighter,
   Loader2,
   LogOut,
+  MoreVertical,
   Monitor,
   Pause,
   Send,
@@ -1557,6 +1561,7 @@ function ExamSimulationView({
 }: ExamSimulationProps) {
   const [showTimer, setShowTimer] = useState(true);
   const [showMap, setShowMap] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1.0);
   const zoomIn = () => setZoomLevel((z) => Math.min(1.5, +(z + 0.1).toFixed(2)));
   const zoomOut = () => setZoomLevel((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
@@ -1702,6 +1707,25 @@ function ExamSimulationView({
               {exiting ? "Saving…" : "Save & Exit"}
             </span>
           </button>
+          <DropdownMenu
+            align="end"
+            trigger={
+              <button
+                type="button"
+                title="More"
+                aria-haspopup="menu"
+                className="flex flex-col items-center gap-0.5 text-slate-600 hover:text-slate-900 transition-colors"
+              >
+                <MoreVertical className="w-5 h-5" />
+                <span className="text-[9px] font-bold uppercase tracking-wider">More</span>
+              </button>
+            }
+          >
+            <DropdownMenuItem onClick={() => setReportOpen(true)}>
+              <Flag className="w-4 h-4" />
+              Report a problem
+            </DropdownMenuItem>
+          </DropdownMenu>
           <div className="w-px h-8 bg-slate-100" />
           <div className="flex flex-col items-center pt-0.5 gap-0.5">
             <span className="text-sm font-bold text-slate-700 tabular-nums">{answeredCount}/{totalCount}</span>
@@ -1712,6 +1736,13 @@ function ExamSimulationView({
           </div>
         </div>
       </header>
+
+      <ReportProblemModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        target={questionId ? { system: "assessment", questionId, attemptId } : null}
+        questionNumber={currentIdx + 1}
+      />
 
 
       {/* ── Conflict resolution banner (inline so it never blocks layout) ──── */}

@@ -3,9 +3,11 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
-import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy, Flag, MoreVertical } from 'lucide-react';
 import { MathText } from '@/components/MathText';
 import { spawnRipple } from "@/features/classroom/ui/ripple";
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
+import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 
 const examsPublicApi = examsStudentApi;
 
@@ -18,6 +20,7 @@ interface QuestionReviewModalProps {
 }
 
 const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, onPrevious }: QuestionReviewModalProps) => {
+    const [reportOpen, setReportOpen] = useState(false);
     if (!question) return null;
 
     // Unanswered question — labelled "Omitted" (not "Incorrect") in the header.
@@ -45,10 +48,37 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{question.type} · {question.is_correct ? 'Correct' : isOmitted ? 'Omitted' : 'Incorrect'}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-xl hover:bg-surface-2 transition-colors border border-border">
-                        <X className="w-5 h-5 text-muted-foreground" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <DropdownMenu
+                            align="end"
+                            trigger={
+                                <button
+                                    type="button"
+                                    title="More"
+                                    aria-haspopup="menu"
+                                    className="p-2 rounded-xl hover:bg-surface-2 transition-colors border border-border"
+                                >
+                                    <MoreVertical className="w-5 h-5 text-muted-foreground" />
+                                </button>
+                            }
+                        >
+                            <DropdownMenuItem onClick={() => setReportOpen(true)}>
+                                <Flag className="w-4 h-4" />
+                                Report a problem
+                            </DropdownMenuItem>
+                        </DropdownMenu>
+                        <button onClick={onClose} className="p-2 rounded-xl hover:bg-surface-2 transition-colors border border-border">
+                            <X className="w-5 h-5 text-muted-foreground" />
+                        </button>
+                    </div>
                 </div>
+
+                <ReportProblemModal
+                    open={reportOpen}
+                    onClose={() => setReportOpen(false)}
+                    target={question.id ? { system: "exam", questionId: Number(question.id) } : null}
+                    questionNumber={question.index_in_module}
+                />
 
                 {/* Modal Body */}
                 <div className="flex-1 overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-border">

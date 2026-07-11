@@ -98,6 +98,13 @@ class SubdomainAPIGuardMiddleware:
         if path.startswith("/api/ops/alertmanager/"):
             return self.get_response(request)
 
+        # Question error reports: the inbound Telegram webhook is unauthenticated (no
+        # cookie/role) and the student POST can originate from any console the runner
+        # renders on. Allow the whole namespace before the role gate; the create view
+        # still enforces IsAuthenticatedAndNotFrozen and the webhook checks its secret.
+        if path.startswith("/api/question-reports/"):
+            return self.get_response(request)
+
         # Role-level gate (before endpoint allowlists).
         # - testers (test_admin) may use admin console for users/bulk-assign
         # - testers MAY use questions console subdomain

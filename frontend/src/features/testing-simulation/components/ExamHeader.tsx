@@ -21,6 +21,7 @@ interface ExamHeaderProps {
   paused: boolean;
   onTogglePause: () => void;
   onSaveAndExit: () => void;
+  onReportProblem?: () => void;
 }
 
 function ToolButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -53,6 +54,7 @@ export function ExamHeader({
   paused,
   onTogglePause,
   onSaveAndExit,
+  onReportProblem,
 }: ExamHeaderProps) {
   return (
     <header className="grid shrink-0 grid-cols-3 items-center bg-white px-6 py-3">
@@ -110,6 +112,7 @@ export function ExamHeader({
           paused={paused}
           onTogglePause={onTogglePause}
           onSaveAndExit={onSaveAndExit}
+          onReportProblem={onReportProblem}
         />
       </div>
     </header>

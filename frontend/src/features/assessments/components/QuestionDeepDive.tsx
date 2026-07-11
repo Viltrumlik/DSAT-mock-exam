@@ -6,11 +6,14 @@
  * shown inline on the review page AND inside the pop-up modal on the result page.
  */
 
-import { BookOpen, CheckCircle2, Lightbulb, XCircle } from "lucide-react";
+import { useState } from "react";
+import { BookOpen, CheckCircle2, Flag, Lightbulb, MoreVertical, XCircle } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { AssessmentText } from "@/lib/assessmentText";
 import type { PedagogicalReviewQuestion } from "@/features/assessmentsStudent/api";
+import { DropdownMenu, DropdownMenuItem } from "@/components/ui";
+import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 
 export type Outcome = "correct" | "incorrect" | "unanswered";
 
@@ -117,6 +120,7 @@ function ChoiceRow({
 // ─── Question deep-dive ──────────────────────────────────────────────────────
 
 export function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; index: number; total: number }) {
+  const [reportOpen, setReportOpen] = useState(false);
   const outcome = getQuestionOutcome(q);
   const meta = OUTCOME_META[outcome];
   const choices = Array.isArray(q.choices) ? q.choices : [];
@@ -136,10 +140,37 @@ export function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQues
           <span className="text-sm font-extrabold text-foreground">Question {index + 1}</span>
           <span className="text-xs font-semibold text-muted-foreground">of {total}</span>
         </div>
-        <span className={cn("inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider", meta.badge)}>
-          {meta.label}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={cn("inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider", meta.badge)}>
+            {meta.label}
+          </span>
+          <DropdownMenu
+            align="end"
+            trigger={
+              <button
+                type="button"
+                title="More"
+                aria-haspopup="menu"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+              >
+                <MoreVertical className="h-5 w-5" />
+              </button>
+            }
+          >
+            <DropdownMenuItem onClick={() => setReportOpen(true)}>
+              <Flag className="h-4 w-4" />
+              Report a problem
+            </DropdownMenuItem>
+          </DropdownMenu>
+        </div>
       </div>
+
+      <ReportProblemModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        target={q.id ? { system: "assessment", questionId: Number(q.id) } : null}
+        questionNumber={index + 1}
+      />
 
       <div className="space-y-5 p-6 sm:p-7">
         {/* passage / stimulus */}
