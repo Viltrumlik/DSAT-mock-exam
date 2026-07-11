@@ -1,5 +1,5 @@
 "use client";
-import { Calculator, ChevronDown, Highlighter, StickyNote } from "lucide-react";
+import { Calculator, ChevronDown, Flag, Highlighter, StickyNote } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -97,6 +97,11 @@ export function ExamHeader({
         <ToolButton label="Highlights" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
           <Highlighter className="h-5 w-5" />
         </ToolButton>
+        {onReportProblem && (
+          <ToolButton label="Report" onClick={onReportProblem}>
+            <Flag className="h-5 w-5" />
+          </ToolButton>
+        )}
         <ToolButton label="Notes" active={tools.notesOpen} onClick={tools.toggleNotes}>
           <StickyNote className="h-5 w-5" />
         </ToolButton>
@@ -112,7 +117,6 @@ export function ExamHeader({
           paused={paused}
           onTogglePause={onTogglePause}
           onSaveAndExit={onSaveAndExit}
-          onReportProblem={onReportProblem}
         />
       </div>
     </header>
