@@ -1,16 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Check, Timer, ChevronRight } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { midtermApi } from "@/lib/midtermApi";
-import { Card, CardHeader, Button, Field, Input, LoadingState, ConfirmDialog } from "../ui";
+import { nextNDays, timeSlots, combineLocalDateTimeIso } from "@/lib/scheduleOptions";
+import { Card, CardHeader, Button, Field, LoadingState, ConfirmDialog } from "../ui";
 import { MidtermPanel } from "./MidtermPanel";
 import type { ClassroomWithRole } from "../types";
 
-const localToIso = (v: string): string | null => (v ? new Date(v).toISOString() : null);
+const scheduleSelectCls =
+  "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-50";
+
+/** Curated date (next 7 days) + time (08:00–18:00, 15-min) picker pair. */
+function SchedulePicker({
+  dateValue, timeValue, onDate, onTime, days, slots,
+}: {
+  dateValue: string; timeValue: string;
+  onDate: (v: string) => void; onTime: (v: string) => void;
+  days: { value: string; label: string }[]; slots: { value: string; label: string }[];
+}) {
+  return (
+    <div className="flex gap-2">
+      <select aria-label="Date" value={dateValue} onChange={(e) => onDate(e.target.value)} className={`${scheduleSelectCls} min-w-0 flex-1`}>
+        <option value="">No date</option>
+        {days.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+      </select>
+      <select aria-label="Time" value={timeValue} onChange={(e) => onTime(e.target.value)} disabled={!dateValue} className={`${scheduleSelectCls} min-w-0 flex-1`}>
+        {slots.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+      </select>
+    </div>
+  );
+}
 
 // Classroom subject (ENGLISH/MATH) → midterm subject (READING_WRITING/MATH).
 const MIDTERM_SUBJECT: Record<string, string> = { MATH: "MATH", ENGLISH: "READING_WRITING" };
@@ -69,9 +92,13 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   const [assignedId, setAssignedId] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<Catalog | null>(null);
-  const [startsInput, setStartsInput] = useState("");
-  const [deadlineInput, setDeadlineInput] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [startTime, setStartTime] = useState("08:00");
+  const [deadlineDate, setDeadlineDate] = useState("");
+  const [deadlineTime, setDeadlineTime] = useState("18:00");
   const [open, setOpen] = useState<{ id: number; title: string } | null>(null);
+  const days = useMemo(() => nextNDays(7), []);
+  const slots = useMemo(() => timeSlots(8, 18, 15), []);
 
   const wanted = MIDTERM_SUBJECT[classSubject];
   const all = ((catalog ?? []) as Catalog[]);
@@ -79,7 +106,10 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
 
   const assign = useMutation({
     mutationFn: (m: Catalog) =>
-      midtermApi.assignToClassroom(id, m.id, { starts_at: localToIso(startsInput) ?? undefined, deadline: localToIso(deadlineInput) ?? undefined }),
+      midtermApi.assignToClassroom(id, m.id, {
+        starts_at: combineLocalDateTimeIso(startDate, startTime) ?? undefined,
+        deadline: combineLocalDateTimeIso(deadlineDate, deadlineTime) ?? undefined,
+      }),
     onSuccess: (_data, m) => {
       setPending(null);
       setAssignedId(m.id);
@@ -96,8 +126,10 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   });
 
   function startAssign(m: Catalog) {
-    setStartsInput("");
-    setDeadlineInput("");
+    setStartDate("");
+    setStartTime("08:00");
+    setDeadlineDate("");
+    setDeadlineTime("18:00");
     setPending(m);
   }
 
@@ -153,11 +185,11 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
         onCancel={() => setPending(null)}
       >
         <div className="mt-4 space-y-3">
-          <Field label="Opens at (optional)" hint="Leave empty to open immediately.">
-            <Input type="datetime-local" value={startsInput} onChange={(e) => setStartsInput(e.target.value)} />
+          <Field label="Opens at (optional)" hint="Pick a day this week and a time (8:00 AM – 6:00 PM). Leave the day empty to open immediately.">
+            <SchedulePicker dateValue={startDate} timeValue={startTime} onDate={setStartDate} onTime={setStartTime} days={days} slots={slots} />
           </Field>
-          <Field label="Deadline (optional)">
-            <Input type="datetime-local" value={deadlineInput} onChange={(e) => setDeadlineInput(e.target.value)} />
+          <Field label="Deadline (optional)" hint="After this the midterm can no longer be started.">
+            <SchedulePicker dateValue={deadlineDate} timeValue={deadlineTime} onDate={setDeadlineDate} onTime={setDeadlineTime} days={days} slots={slots} />
           </Field>
         </div>
       </ConfirmDialog>
