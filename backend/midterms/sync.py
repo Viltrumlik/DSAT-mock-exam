@@ -90,16 +90,54 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     # Rebuild questions from the legacy sections — but NEVER once an attempt exists
     # (answers key on Question.id; a rebuild would orphan them).
     if sync_questions and not MidtermAttempt.objects.filter(midterm=midterm).exists():
-        Question.objects.filter(module_id=module.id).delete()
-        order = 0
-        for section in mock.tests.all().order_by("id"):
-            for src_mod in section.modules.all().order_by("module_order"):
-                for src_q in src_mod.questions.all().order_by("order", "id"):
-                    fields = {f: getattr(src_q, f) for f in _QUESTION_FIELDS}
-                    Question.objects.create(module=module, order=order, **fields)
-                    order += 1
+        practice_tests = list(mock.tests.all().order_by("id"))
+        if len(practice_tests) >= 2:
+            # Multiple PracticeTests = multiple VERSIONS: mirror each into its own
+            # MidtermVersion. The flattened question_module is left empty (unused).
+            _sync_versions(midterm, practice_tests)
+            Question.objects.filter(module_id=module.id).delete()
+        else:
+            # Single set: drop any stale versions and flatten questions into the
+            # midterm's own module (legacy single-version behavior).
+            for v in list(midterm.versions.all()):
+                v.delete()
+            Question.objects.filter(module_id=module.id).delete()
+            order = 0
+            for section in practice_tests:
+                for src_mod in section.modules.all().order_by("module_order"):
+                    for src_q in src_mod.questions.all().order_by("order", "id"):
+                        fields = {f: getattr(src_q, f) for f in _QUESTION_FIELDS}
+                        Question.objects.create(module=module, order=order, **fields)
+                        order += 1
 
     return midterm
+
+
+def _sync_versions(midterm, practice_tests) -> None:
+    """Mirror up to 4 legacy PracticeTests into ``midterm.versions`` (one per version),
+    each owning its own Module of copied questions. Full rebuild — only reached when the
+    midterm has no attempts yet."""
+    from exams.models import Module, Question
+    from .models import MidtermVersion
+
+    for v in list(midterm.versions.all()):
+        v.delete()  # deletes version + its module (cascading questions)
+    duration = midterm.duration_minutes or 1
+    for idx, pt in enumerate(practice_tests[:4], start=1):
+        module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=duration)
+        MidtermVersion.objects.create(
+            midterm=midterm,
+            version_number=idx,
+            label=f"Version {chr(64 + idx)}",
+            question_module=module,
+            legacy_practice_test_id=pt.id,
+        )
+        order = 0
+        for src_mod in pt.modules.all().order_by("module_order"):
+            for src_q in src_mod.questions.all().order_by("order", "id"):
+                fields = {f: getattr(src_q, f) for f in _QUESTION_FIELDS}
+                Question.objects.create(module=module, order=order, **fields)
+                order += 1
 
 
 def unpublish_midterm_mirror(mock) -> None:

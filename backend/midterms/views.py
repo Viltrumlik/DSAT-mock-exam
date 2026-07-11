@@ -19,7 +19,12 @@ from rest_framework.response import Response
 
 from config.reliability import idempotency_key_from_request
 
-from .access import can_start_midterm, midterm_results_state, resolve_midterm_schedule
+from .access import (
+    can_start_midterm,
+    midterm_results_state,
+    resolve_midterm_schedule,
+    resolve_version_for_student,
+)
 from .idempotency import consume_idempotency_key
 from .models import Midterm, MidtermAttempt
 from .serializers import MidtermAttemptSerializer
@@ -102,8 +107,11 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         existing = self._active_attempt(midterm)
         if existing is not None:
             return Response(MidtermAttemptSerializer(existing).data, status=status.HTTP_200_OK)
+        # Pin the student's assigned version (random-assigned if the midterm has versions
+        # and none was set yet). None → single-set midterm (uses the midterm's own module).
+        version = resolve_version_for_student(request.user, midterm)
         try:
-            attempt = MidtermAttempt.objects.create(midterm=midterm, student=request.user)
+            attempt = MidtermAttempt.objects.create(midterm=midterm, student=request.user, version=version)
         except IntegrityError:
             attempt = self._active_attempt(midterm)
             if attempt is None:

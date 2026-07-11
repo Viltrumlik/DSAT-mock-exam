@@ -143,6 +143,39 @@ def resolve_midterm_schedule(user, midterm):
         return None
 
 
+def resolve_version_for_student(user, midterm):
+    """The MidtermVersion this student takes, or None when the midterm has no versions.
+
+    Uses the teacher's saved random assignment (classroom flavor); if versions exist but
+    none is assigned yet, auto-assigns one at random so no student is ever blocked (and
+    persists it for the classroom so a re-open is stable).
+    """
+    from .models import MidtermVersion, MidtermVersionAssignment
+
+    versions = list(MidtermVersion.objects.filter(midterm=midterm).order_by("version_number"))
+    if not versions:
+        return None
+    grant = winning_grant(user, midterm)
+    classroom_id = grant.classroom_id if grant else None
+    if classroom_id:
+        existing = (
+            MidtermVersionAssignment.objects.filter(midterm=midterm, classroom_id=classroom_id, student=user)
+            .select_related("version")
+            .first()
+        )
+        if existing is not None:
+            return existing.version
+    import secrets
+
+    chosen = versions[secrets.randbelow(len(versions))]
+    if classroom_id:
+        assignment, _ = MidtermVersionAssignment.objects.get_or_create(
+            midterm=midterm, classroom_id=classroom_id, student=user, defaults={"version": chosen}
+        )
+        return assignment.version
+    return chosen
+
+
 def midterm_results_state(attempt) -> dict:
     """Whether the student may see their score, plus any issued certificate.
 

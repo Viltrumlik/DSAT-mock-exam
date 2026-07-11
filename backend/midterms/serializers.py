@@ -28,7 +28,9 @@ class MidtermAttemptSerializer(serializers.Serializer):
     def to_representation(self, attempt):
         now = timezone.now()
         midterm = attempt.midterm
-        module = midterm.question_module
+        # Version-aware: serve the assigned version's questions when the midterm has
+        # versions (else the midterm's own module). The version itself is never exposed.
+        module = attempt.effective_module
         state = attempt.current_state
         is_active = state == STATE_ACTIVE
 
@@ -47,7 +49,7 @@ class MidtermAttemptSerializer(serializers.Serializer):
                 "id": module.id,
                 "module_order": 1,
                 "time_limit_minutes": int(midterm.duration_minutes or 0),
-                "questions": QuestionSerializer(midterm.questions(), many=True).data,
+                "questions": QuestionSerializer(attempt.effective_questions(), many=True).data,
             }
             current_module_id = module.id
             current_module_start = attempt.started_at.isoformat() if attempt.started_at else None
