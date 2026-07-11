@@ -29,6 +29,7 @@ import { QuestionNavigator } from "../components/QuestionNavigator";
 import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
 import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusScreens";
 import { WelcomeScreen } from "../components/WelcomeScreen";
+import { MidtermRulesScreen } from "../components/MidtermRulesScreen";
 import { MockBreakScreen } from "../components/MockBreakScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
 import { CheckYourWorkPage } from "../components/CheckYourWorkPage";
@@ -594,10 +595,24 @@ export function ExamRunnerPage() {
     const startMinutes =
       attempt.current_module_details?.time_limit_minutes ??
       attempt.practice_test_details.modules.find((m) => m.module_order === 1)?.time_limit_minutes;
+    const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
+    if (isMidtermSrc || isMidtermExam) {
+      return (
+        <MidtermRulesScreen
+          title={attempt.practice_test_details.title || moduleLabel(attempt)}
+          subjectLabel={subjLabel}
+          minutes={startMinutes}
+          questionCount={attempt.current_module_details?.questions.length}
+          starting={starting}
+          fullscreenSupported={tools.fullscreen.supported}
+          onProceed={() => void handleStart()}
+        />
+      );
+    }
     return (
       <WelcomeScreen
         moduleTitle={moduleLabel(attempt)}
-        subjectLabel={subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing"}
+        subjectLabel={subjLabel}
         minutes={startMinutes}
         questionCount={attempt.current_module_details?.questions.length}
         starting={starting}
@@ -623,10 +638,24 @@ export function ExamRunnerPage() {
   // by now the module is loaded; show the welcome until the student clicks Start
   // (which enters fullscreen + acknowledges it). Resumes have no ?welcome=1.
   if (showWelcome) {
+    const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
+    if (isMidtermSrc || isMidtermExam) {
+      return (
+        <MidtermRulesScreen
+          title={attempt.practice_test_details.title || moduleLabel(attempt)}
+          subjectLabel={subjLabel}
+          minutes={attempt.current_module_details.time_limit_minutes}
+          questionCount={attempt.current_module_details.questions.length}
+          starting={starting}
+          fullscreenSupported={tools.fullscreen.supported}
+          onProceed={() => void handleStart()}
+        />
+      );
+    }
     return (
       <WelcomeScreen
         moduleTitle={moduleLabel(attempt)}
-        subjectLabel={subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing"}
+        subjectLabel={subjLabel}
         minutes={attempt.current_module_details.time_limit_minutes}
         questionCount={attempt.current_module_details.questions.length}
         starting={starting}
