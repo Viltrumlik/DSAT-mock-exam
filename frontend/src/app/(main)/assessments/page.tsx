@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen, Calculator, Clock, Calendar, CheckCircle2,
-  PlayCircle, RefreshCw, AlertTriangle, Hourglass, Loader2, Flag,
+  PlayCircle, RefreshCw, AlertTriangle, Hourglass, Loader2, Flag, Search,
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { classesApi } from "@/lib/api";
@@ -128,11 +128,25 @@ function estMinutes(q: number): number {
   return Math.max(1, Math.round(q * 1.25));
 }
 
+/** Lowercased searchable text for one card (title, class, subject, category). */
+function entryHaystack(e: Entry): string {
+  const set = e.hw.set;
+  return [
+    set?.title ?? e.assignment.title ?? "",
+    e.classroomName,
+    subjectStyle(e.subject).label,
+    set?.category ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 function Board() {
   const router = useRouter();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [query, setQuery] = useState("");
 
   // Start (or resume) the assessment directly from the card — no intermediate
   // launcher page. The backend reuses an in-progress attempt or creates a fresh one.
@@ -179,9 +193,14 @@ function Board() {
 
   const byCol = useMemo(() => {
     const m: Record<ColKey, Entry[]> = { todo: [], progress: [], done: [] };
-    for (const e of entries) m[colOf(deriveState(e))].push(e);
+    const q = query.trim().toLowerCase();
+    for (const e of entries) {
+      if (q && !entryHaystack(e).includes(q)) continue;
+      m[colOf(deriveState(e))].push(e);
+    }
     return m;
-  }, [entries]);
+  }, [entries, query]);
+  const matchCount = byCol.todo.length + byCol.progress.length + byCol.done.length;
 
   return (
     <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
@@ -190,11 +209,25 @@ function Board() {
           <h1 style={{ flex: 1, minWidth: 280, margin: 0, fontSize: 38, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)" }}>
             My assessments
           </h1>
-          <button type="button" onClick={() => void load()} className="dz-secbtn"
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 16px", borderRadius: 12, border: "1px solid var(--dz-border)", background: "var(--dz-panel)", color: "var(--dz-mute)", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-            <RefreshCw size={16} /> Refresh
-          </button>
+          <div className="dz-headin" style={{ position: "relative", width: "100%", maxWidth: 340 }}>
+            <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--dz-faint)", display: "flex", pointerEvents: "none" }}>
+              <Search size={17} />
+            </span>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search assessments…"
+              aria-label="Search assessments"
+              style={{ width: "100%", border: "1px solid var(--dz-border)", background: "var(--dz-panel)", borderRadius: 12, padding: "11px 14px 11px 44px", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--dz-ink)", outline: "none" }}
+            />
+          </div>
         </div>
+
+        {!loading && !error && query.trim() && matchCount === 0 ? (
+          <div style={{ marginBottom: 18, border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "22px 16px", textAlign: "center", color: "var(--dz-mute)", fontSize: 14, fontWeight: 600 }}>
+            No assessments match “{query.trim()}”.
+          </div>
+        ) : null}
 
         {error ? (
           <AssessError onRetry={() => void load()} />
