@@ -40,6 +40,7 @@ from .views_midterm_v2 import (
     IssueMidtermV2CertificatesView,
     MidtermV2CertificatesDownloadAllView,
     MidtermV2PanelView,
+    MidtermV2StartCodeView,
 )
 from .views_roster import MemberManageView
 
@@ -100,6 +101,7 @@ urlpatterns = [
     path("<int:classroom_pk>/midterms-v2/assign/", AssignMidtermV2View.as_view(), name="class-midterm-v2-assign"),
     path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/certificates/download-all/", MidtermV2CertificatesDownloadAllView.as_view(), name="class-midterm-v2-download-all"),
     path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/panel/", MidtermV2PanelView.as_view(), name="class-midterm-v2-panel"),
+    path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/start-code/", MidtermV2StartCodeView.as_view(), name="class-midterm-v2-start-code"),
     path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/certificates/issue/", IssueMidtermV2CertificatesView.as_view(), name="class-midterm-v2-issue"),
     # Teacher gradebook
     path("<int:classroom_pk>/midterm-results/", ClassroomMidtermResultsView.as_view(), name="class-midterm-results"),

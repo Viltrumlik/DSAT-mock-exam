@@ -53,6 +53,8 @@ def _serialize_schedule(sched):
             "available_at": None,
             "is_before_start": False,
             "is_open": True,
+            "access_code": None,
+            "requires_code": False,
         }
     return {
         "midterm_id": sched.midterm_id,
@@ -63,6 +65,9 @@ def _serialize_schedule(sched):
         "available_at": sched.available_at.isoformat() if sched.available_at else None,
         "is_before_start": sched.is_before_start(),
         "is_open": sched.is_open(),
+        # Teacher-only panel — safe to surface the code so it can be shared with the room.
+        "access_code": sched.access_code or None,
+        "requires_code": sched.requires_code(),
     }
 
 
@@ -288,6 +293,26 @@ class MidtermV2PanelView(_ClassroomScopedView):
             return Response({"detail": "Deadline must be after the start time."}, status=http.HTTP_400_BAD_REQUEST)
         sched.save()
         return Response({"schedule": _serialize_schedule(sched)})
+
+
+class MidtermV2StartCodeView(_ClassroomScopedView):
+    """POST /classes/<pk>/midterms-v2/<midterm_id>/start-code/ — generate/rotate the
+    6-digit access code students must enter to begin ("Start midterm")."""
+
+    def post(self, request, classroom_pk, midterm_id):
+        classroom = self.get_classroom()
+        caps = classroom_capabilities(request.user, classroom)
+        if not caps.can_manage_assignments:
+            return Response({"detail": "Only the teaching team can start a midterm."}, status=http.HTTP_403_FORBIDDEN)
+        midterm = Midterm.objects.filter(pk=midterm_id).first()
+        if midterm is None:
+            return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
+        sched, _ = MidtermSchedule.objects.get_or_create(
+            classroom=classroom, midterm=midterm, defaults={"created_by": request.user}
+        )
+        code = sched.generate_access_code()
+        sched.save(update_fields=["access_code", "access_code_set_at", "updated_at"])
+        return Response({"access_code": code, "schedule": _serialize_schedule(sched)})
 
 
 class IssueMidtermV2CertificatesView(_ClassroomScopedView):

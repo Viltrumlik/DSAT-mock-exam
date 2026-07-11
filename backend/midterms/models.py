@@ -147,6 +147,10 @@ class MidtermAttempt(TimestampedModel):
     is_completed = models.BooleanField(default=False, db_index=True)
     score = models.IntegerField(null=True, blank=True)
 
+    # Set once the student enters the correct classroom access code (if one is
+    # required). start() refuses until this is set when the schedule has a code.
+    code_verified_at = models.DateTimeField(null=True, blank=True)
+
     started_at = models.DateTimeField(null=True, blank=True)  # single timer anchor, written `or now`, never rewound
     scoring_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
     submitted_at = models.DateTimeField(null=True, blank=True)

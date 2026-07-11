@@ -127,6 +127,22 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
     return True, "ok"
 
 
+def resolve_midterm_schedule(user, midterm):
+    """The classroom MidtermSchedule governing this student's attempt, or None.
+
+    Standalone (classroom-less) grants have no schedule → None (no access code).
+    """
+    grant = winning_grant(user, midterm)
+    if grant is None or not grant.classroom_id:
+        return None
+    try:
+        from classes.models_schedule import MidtermSchedule
+
+        return MidtermSchedule.objects.filter(classroom_id=grant.classroom_id, midterm=midterm).first()
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
 def midterm_results_state(attempt) -> dict:
     """Whether the student may see their score, plus any issued certificate.
 

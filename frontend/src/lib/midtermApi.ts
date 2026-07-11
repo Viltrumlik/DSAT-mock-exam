@@ -82,6 +82,15 @@ export const midtermApi = {
     const r = await api.get(`/midterms/attempts/${attemptId}/review/`);
     return r.data as MidtermReview;
   },
+  /**
+   * Check the classroom access code before starting. Pass "" to probe whether a
+   * code is required (returns {ok:true, requires_code:false} when none is set).
+   * A wrong code rejects with HTTP 403.
+   */
+  async verifyCode(attemptId: number, code: string): Promise<{ ok: boolean; requires_code: boolean }> {
+    const r = await api.post(`/midterms/attempts/${attemptId}/verify_code/`, { code });
+    return r.data as { ok: boolean; requires_code: boolean };
+  },
 
   // ── teacher: standalone area ───────────────────────────────────────────────
   async catalog(): Promise<MidtermCatalogItem[]> {
@@ -132,6 +141,11 @@ export const midtermApi = {
   async issueClassroomCertificates(classroomId: number, midtermId: number, force = false) {
     const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/certificates/issue/${force ? "?force=1" : ""}`, {});
     return r.data;
+  },
+  /** Generate/rotate the 6-digit access code students must enter ("Start midterm"). */
+  async generateStartCode(classroomId: number, midtermId: number): Promise<{ access_code: string; schedule: Record<string, unknown> }> {
+    const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/start-code/`, {});
+    return r.data as { access_code: string; schedule: Record<string, unknown> };
   },
 };
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Award, Download, RefreshCw, Save, Clock, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Award, Download, RefreshCw, Save, Clock, CheckCircle2, KeyRound } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { classesApi } from "@/lib/api";
@@ -34,6 +34,7 @@ interface PanelData {
   schedule: {
     starts_at: string | null; deadline: string | null; ignore_start: boolean;
     results_released: boolean; available_at: string | null; is_before_start: boolean; is_open: boolean;
+    access_code: string | null; requires_code: boolean;
   };
   students: PanelStudent[];
   stats: { assigned: number; completed: number; average: number | null; highest: number | null; lowest: number | null };
@@ -56,6 +57,14 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
   const issue = useMutation({
     mutationFn: (force: boolean) => midtermApi.issueClassroomCertificates(classId, midtermId, force),
     onSuccess: invalidate,
+  });
+  const startCode = useMutation({
+    mutationFn: () => midtermApi.generateStartCode(classId, midtermId),
+    onSuccess: (res) => {
+      invalidate();
+      pushGlobalToast({ tone: "success", message: `Access code: ${res.access_code}` });
+    },
+    onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
   });
 
   const [tab, setTab] = useState<"students" | "schedule">("students");
@@ -167,6 +176,26 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
               <span className="text-xs text-muted-foreground">No one has finished this midterm yet</span>
             )}
           </div>
+        </div>
+
+        {/* Access code — "Start midterm" generates the 6-digit code students enter to begin. */}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface-2/40 px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Access code</p>
+            {schedule.access_code ? (
+              <p className="mt-0.5 font-mono text-2xl font-extrabold tracking-[0.3em] text-foreground tabular-nums">{schedule.access_code}</p>
+            ) : (
+              <p className="mt-0.5 text-sm text-muted-foreground">No code yet — students can start without one. Generate a code to gate entry.</p>
+            )}
+          </div>
+          <Button
+            variant={schedule.access_code ? "secondary" : "primary"}
+            icon={KeyRound}
+            loading={startCode.isPending}
+            onClick={() => startCode.mutate()}
+          >
+            {schedule.access_code ? "Regenerate code" : "Start midterm — generate code"}
+          </Button>
         </div>
 
         <div className="mt-4">
