@@ -100,6 +100,12 @@ class QuestionErrorReport(models.Model):
         blank=True,
         related_name="+",
     )
+    # Telegram identity that resolved it via the bot's inline "Fixed" button
+    # (the tapper may not map to a Django user), e.g. "@admin".
+    resolved_by_label = models.CharField(max_length=128, blank=True, default="")
+    # Every posted copy [{ "chat_id": "...", "message_id": 123 }, ...] so a "Fixed"
+    # tap can update the status on ALL copies (staff group + each subscriber) at once.
+    telegram_messages = models.JSONField(default=list, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)

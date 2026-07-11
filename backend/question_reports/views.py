@@ -13,9 +13,14 @@ from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .models import QuestionErrorReport, TelegramReportSubscriber
 from .serializers import QuestionReportCreateSerializer
-from .targets import resolve_target
+from .targets import build_report_keyboard, build_report_message, resolve_target
 from .tasks import enqueue_question_report_notification
-from .telegram import report_bot_token, send_telegram_message
+from .telegram import (
+    answer_callback_query,
+    edit_telegram_message,
+    report_bot_token,
+    send_telegram_message,
+)
 
 DEDUP_WINDOW = timedelta(minutes=5)
 
@@ -98,6 +103,13 @@ class TelegramReportWebhookView(APIView):
             return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
         payload = request.data if isinstance(request.data, dict) else {}
+
+        # Inline-button tap (e.g. "Mark as fixed") arrives as a callback_query.
+        callback = payload.get("callback_query")
+        if isinstance(callback, dict):
+            self._handle_callback(callback, report_bot_token())
+            return Response({"ok": True}, status=status.HTTP_200_OK)
+
         message = payload.get("message") or payload.get("edited_message") or {}
         if not isinstance(message, dict):
             return Response({"ok": True}, status=status.HTTP_200_OK)
@@ -150,3 +162,64 @@ class TelegramReportWebhookView(APIView):
             )
 
         return Response({"ok": True}, status=status.HTTP_200_OK)
+
+    def _handle_callback(self, callback: dict, token: str) -> None:
+        """Handle a 'Mark as fixed' / 'Reopen' inline-button tap and sync every posted copy."""
+        cq_id = str(callback.get("id") or "")
+        data = str(callback.get("data") or "")
+        frm = callback.get("from") if isinstance(callback.get("from"), dict) else {}
+
+        parts = data.split(":")
+        if len(parts) != 3 or parts[0] != "qr":
+            answer_callback_query(token=token, callback_query_id=cq_id)
+            return
+        action, raw_id = parts[1], parts[2]
+        try:
+            report_id = int(raw_id)
+        except (TypeError, ValueError):
+            answer_callback_query(token=token, callback_query_id=cq_id)
+            return
+
+        report = QuestionErrorReport.objects.filter(pk=report_id).first()
+        if report is None:
+            answer_callback_query(token=token, callback_query_id=cq_id, text="Report not found.")
+            return
+
+        username = str((frm or {}).get("username") or "").strip()
+        label = f"@{username}" if username else (
+            str((frm or {}).get("first_name") or "").strip() or "admin"
+        )
+
+        if action == "fix":
+            report.status = QuestionErrorReport.STATUS_FIXED
+            report.resolved_by_label = label[:128]
+            toast = "✅ Marked as fixed"
+        elif action == "reopen":
+            report.status = QuestionErrorReport.STATUS_NEW
+            report.resolved_by_label = ""
+            toast = "↩️ Reopened — not fixed"
+        else:
+            answer_callback_query(token=token, callback_query_id=cq_id)
+            return
+
+        report.save(update_fields=["status", "resolved_by_label", "updated_at"])
+
+        # Reflect the new status on EVERY posted copy (staff group + all subscribers),
+        # so no other admin re-works an already-fixed question.
+        new_text = build_report_message(report)
+        new_markup = build_report_keyboard(report)
+        for d in report.telegram_messages or []:
+            if not isinstance(d, dict):
+                continue
+            chat_id = str(d.get("chat_id") or "").strip()
+            message_id = d.get("message_id")
+            if not chat_id or not isinstance(message_id, int):
+                continue
+            edit_telegram_message(
+                token=token,
+                chat_id=chat_id,
+                message_id=message_id,
+                text=new_text,
+                reply_markup=new_markup,
+            )
+        answer_callback_query(token=token, callback_query_id=cq_id, text=toast)
