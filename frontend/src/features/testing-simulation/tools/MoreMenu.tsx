@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Highlighter, Keyboard, LogOut, Maximize, Minimize, MoreVertical, Pause, Play, ZoomIn, ZoomOut } from "lucide-react";
+import { Flag, Highlighter, Keyboard, LogOut, Maximize, Minimize, MoreVertical, Pause, Play, ZoomIn, ZoomOut } from "lucide-react";
 
 export interface MoreMenuProps {
   isFullscreen: boolean;
@@ -14,6 +14,8 @@ export interface MoreMenuProps {
   paused: boolean;
   onTogglePause: () => void;
   onSaveAndExit: () => void;
+  /** Opens the "Report a problem with this question" dialog. Omitted = no report item. */
+  onReportProblem?: () => void;
 }
 
 /** "More" dropdown housing the secondary SAT tools. Each item is a plain callback. */
@@ -64,6 +66,12 @@ export function MoreMenu(props: MoreMenuProps) {
           {item(<ZoomOut className="h-4 w-4" />, "Zoom out", props.onZoomOut)}
           {props.pauseAllowed && item(props.paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />, props.paused ? "Resume" : "Pause", props.onTogglePause)}
           {item(<Keyboard className="h-4 w-4" />, "Keyboard shortcuts", props.onToggleHelp)}
+          {props.onReportProblem && (
+            <>
+              <div className="my-1 border-t border-slate-100" />
+              {item(<Flag className="h-4 w-4" />, "Report a problem", props.onReportProblem)}
+            </>
+          )}
           <div className="my-1 border-t border-slate-100" />
           <button
             type="button"

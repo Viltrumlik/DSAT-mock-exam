@@ -72,6 +72,17 @@ TELEGRAM_SYNTHETIC_EMAIL_DOMAIN = os.getenv(
     'telegram.mastersat.local',
 )
 
+# Question error-report bot (separate, dedicated bot; NOT the login/OIDC bot).
+# Students report a bad question -> stored + pushed to this bot, which forwards to a
+# staff group and to everyone who pressed /start (see question_reports app).
+QUESTION_REPORT_TELEGRAM_BOT_TOKEN = os.getenv('QUESTION_REPORT_TELEGRAM_BOT_TOKEN', '').strip()
+# Fixed staff group/channel chat id (optional; subscribers via /start also receive reports).
+QUESTION_REPORT_TELEGRAM_CHAT_ID = os.getenv('QUESTION_REPORT_TELEGRAM_CHAT_ID', '').strip()
+# Shared secret echoed by Telegram as X-Telegram-Bot-Api-Secret-Token on the inbound webhook.
+QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET = os.getenv('QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET', '').strip()
+# Optional passcode to gate /start (empty = anyone who messages the bot can subscribe).
+QUESTION_REPORT_BOT_JOIN_CODE = os.getenv('QUESTION_REPORT_BOT_JOIN_CODE', '').strip()
+
 
 # ─── Application Definition ───────────────────────────────────────────────────
 
@@ -100,6 +111,7 @@ INSTALLED_APPS = [
     'questionbank.apps.QuestionBankConfig',
     'midterms.apps.MidtermsConfig',
     'mocks.apps.MocksConfig',
+    'question_reports.apps.QuestionReportsConfig',
 ]
 
 MIDDLEWARE = [
@@ -565,6 +577,8 @@ REST_FRAMEWORK = {
         'assessment_assign_global': os.getenv('ASSESSMENT_ASSIGN_GLOBAL_THROTTLE', '2000/hour'),
         # SPA auth client telemetry (batched; default allows ~1 flush/min + beacons + retries).
         'client_auth_telemetry': os.getenv('AUTH_CLIENT_TELEMETRY_THROTTLE', '120/hour'),
+        # Student-submitted question error reports (per user).
+        'question_report': os.getenv('QUESTION_REPORT_THROTTLE', '20/hour'),
         # Tighter limit when a classroom is under mitigation (auto after abuse spike).
         'assessment_assign_classroom_mitigated': os.getenv(
             'ASSESSMENT_ASSIGN_CLASSROOM_MITIGATED_THROTTLE',

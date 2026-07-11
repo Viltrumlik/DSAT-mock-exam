@@ -20,6 +20,7 @@ import { clamp } from "../utils/time";
 import { parseOptions } from "../utils/options";
 
 import { ExamHeader } from "../components/ExamHeader";
+import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 import { SatColorRule } from "../components/SatColorRule";
 import { PassagePane } from "../components/PassagePane";
 import { AnswerPane } from "../components/AnswerPane";
@@ -126,6 +127,7 @@ export function ExamRunnerPage() {
   const [timerHidden, setTimerHidden] = useState(false);
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [showDirections, setShowDirections] = useState(false);
   // Welcome screen — shown once per fresh pastpaper start, acknowledged via the
   // Start button (persisted per attempt for the tab session so a refresh on the
@@ -298,7 +300,10 @@ export function ExamRunnerPage() {
 
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
-    enabled: !loading && Boolean(currentQuestion) && transitionTo === null && !multiTab.blocked,
+    // `!reportOpen`: while the "Report a problem" dialog is open the exam UI stays
+    // mounted underneath; without this, letter/arrow keys typed toward the dialog
+    // would leak into the exam and silently change the graded answer / navigate.
+    enabled: !loading && Boolean(currentQuestion) && transitionTo === null && !multiTab.blocked && !reportOpen,
     onPrev: guardedPrev,
     onNext: guardedNext,
     onToggleMark: () => currentQuestion && toggleFlag(currentQuestion.id),
@@ -677,8 +682,16 @@ export function ExamRunnerPage() {
         paused={paused}
         onTogglePause={handlePauseToggle}
         onSaveAndExit={handleSaveAndExit}
+        onReportProblem={currentQuestion ? () => setReportOpen(true) : undefined}
       />
       <SatColorRule />
+
+      <ReportProblemModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        target={currentQuestion ? { system: "exam", questionId: currentQuestion.id, attemptId } : null}
+        questionNumber={currentIndex + 1}
+      />
 
       <main
         ref={mainRef}
