@@ -235,34 +235,35 @@ def validate_mock_exam(exam: "MockExam") -> list[SatViolation]:
     tests = list(exam.tests.all())
 
     if exam.kind == MockExamModel.KIND_MIDTERM:
-        # Midterms are institution-controlled: question counts are flexible.
-        if len(tests) != 1:
+        # Midterms are institution-controlled: 1–4 parallel VERSIONS (each a section),
+        # each with the configured module count (1 or 2). Question counts are flexible.
+        if len(tests) < 1 or len(tests) > 4:
             violations.append(
                 SatViolation(
                     code="MIDTERM_SECTION_COUNT",
-                    message="Midterm must have exactly one section.",
+                    message="A midterm must have between 1 and 4 versions.",
                     blocking=True,
                 )
             )
             return violations
-        pt = tests[0]
         need_mods = max(1, min(2, exam.midterm_module_count or 1))
-        mods = list(pt.modules.all().order_by("module_order"))
-        if len(mods) < need_mods:
-            violations.append(
-                SatViolation(
-                    code="MIDTERM_MISSING_MODULES",
-                    message=f"Midterm needs {need_mods} module(s) with questions.",
-                    blocking=True,
+        for vi, pt in enumerate(tests, start=1):
+            mods = list(pt.modules.all().order_by("module_order"))
+            if len(mods) < need_mods:
+                violations.append(
+                    SatViolation(
+                        code="MIDTERM_MISSING_MODULES",
+                        message=f"Version {vi} needs {need_mods} module(s) with questions.",
+                        blocking=True,
+                    )
                 )
-            )
-        else:
+                continue
             for m in mods[:need_mods]:
                 if not list(m.questions.all()):
                     violations.append(
                         SatViolation(
                             code="MIDTERM_EMPTY_MODULE",
-                            message=f"Module {m.module_order} must have at least one question.",
+                            message=f"Version {vi}, module {m.module_order} must have at least one question.",
                             blocking=True,
                         )
                     )

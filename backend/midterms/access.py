@@ -112,7 +112,8 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
     grant = winning_grant(user, midterm)
     if grant is None:
         return False, "no_access"
-    # Classroom flavor respects the scheduled access window (standalone has no schedule).
+    # Classroom flavor respects the scheduled access window AND requires the teacher to
+    # have started it (generated the 6-digit code). Standalone has no schedule/code.
     if grant.classroom_id:
         try:
             from classes.models_schedule import MidtermSchedule
@@ -122,6 +123,11 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
             ).first()
             if sched is not None and not sched.is_open():
                 return False, ("midterm_not_open" if sched.is_before_start() else "midterm_closed")
+            # A scheduled classroom midterm can't be entered until the teacher has generated
+            # the access code ("Start midterm") — an open window with no code hasn't started.
+            # (A classroom grant with no schedule at all is a legacy/edge state — left open.)
+            if sched is not None and not sched.access_code:
+                return False, "midterm_no_code"
         except Exception:  # pragma: no cover - defensive
             pass
     return True, "ok"

@@ -39,6 +39,7 @@ _REASON_DETAIL = {
     "no_access": "You do not have access to this midterm.",
     "midterm_not_open": "This midterm has not opened yet.",
     "midterm_closed": "This midterm's deadline has passed.",
+    "midterm_no_code": "This midterm hasn't started yet. Wait for your teacher to start it and share the access code.",
 }
 
 

@@ -51,12 +51,28 @@ class ClassroomMidtermTests(TestCase):
         self.mt = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
         self.tc = APIClient(); self.tc.force_authenticate(self.teacher)
 
-    def _take(self, student, correct_n):
+    def _start_midterm(self):
+        """Teacher 'starts' the classroom midterm by generating its 6-digit access code.
+
+        A classroom midterm can't be entered until this happens; returns the code.
+        """
+        sched = MidtermSchedule.objects.filter(classroom=self.room, midterm=self.mt).first()
+        assert sched is not None, "schedule must exist (assign first)"
+        if not sched.access_code:
+            sched.generate_access_code()
+            sched.save(update_fields=["access_code", "access_code_set_at"])
+        return sched.access_code
+
+    def _take(self, student, correct_n, code=None):
         c = APIClient(); c.force_authenticate(student)
         qids = [str(q.id) for q in self.mt.questions()]
+        # Classroom midterms require the teacher-generated access code before they open.
+        if code is None:
+            code = self._start_midterm()
         r = c.post("/api/midterms/attempts/", {"midterm": self.mt.id}, format="json")
         assert r.status_code == 201, r.content
         aid = r.json()["id"]
+        c.post(f"/api/midterms/attempts/{aid}/verify_code/", {"code": code}, format="json")
         c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
         ans = {qids[i]: ("a" if i < correct_n else "b") for i in range(4)}
         force_expire(aid)  # midterms only submit once the timer runs out
@@ -180,3 +196,27 @@ class ClassroomMidtermTests(TestCase):
         r = c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["current_state"], "MODULE_1_ACTIVE")
+
+    def test_no_attempt_until_teacher_generates_code(self):
+        # Regression: an assigned (open-window) classroom midterm must NOT be enterable
+        # until the teacher generates the access code. Previously a student could create
+        # an attempt with no code and slip straight into the runner.
+        cid = self.room.id
+        self.tc.post(f"/api/classes/{cid}/midterms-v2/assign/", {"midterm_id": self.mt.id}, format="json")
+        c = APIClient(); c.force_authenticate(self.s1)
+
+        # No code yet → creating an attempt is blocked, and the list marks it "awaiting code".
+        r = c.post("/api/midterms/attempts/", {"midterm": self.mt.id}, format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(r.json().get("error"), "midterm_no_code")
+        row = next(x for x in c.get("/api/midterms/mine/").json()["results"] if x["midterm_id"] == self.mt.id)
+        self.assertTrue(row["awaiting_code"])
+        self.assertFalse(row["is_open"])
+
+        # Teacher "starts" the midterm → code exists → the gate opens.
+        self.tc.post(f"/api/classes/{cid}/midterms-v2/{self.mt.id}/start-code/", {}, format="json")
+        r = c.post("/api/midterms/attempts/", {"midterm": self.mt.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        row = next(x for x in c.get("/api/midterms/mine/").json()["results"] if x["midterm_id"] == self.mt.id)
+        self.assertFalse(row["awaiting_code"])
+        self.assertTrue(row["is_open"])

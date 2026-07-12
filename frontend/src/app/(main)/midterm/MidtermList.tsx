@@ -42,9 +42,11 @@ function Badge({ text, bg, color }: { text: string; bg: string; color: string })
 
 function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "scheduled" | "past" | "missed"; onUnlock: () => void }) {
   const router = useRouter();
-  const cd = useCountdown(kind === "scheduled" ? m.available_at : null);
+  const cd = useCountdown(kind === "scheduled" && !m.awaiting_code ? m.available_at : null);
   const [busy, setBusy] = useState(false);
-  const unlocked = kind === "scheduled" && cd.done;
+  // `awaiting_code` is gated by the teacher generating the access code, not by the clock —
+  // never auto-unlock it from a (past) available_at countdown.
+  const unlocked = kind === "scheduled" && cd.done && !m.awaiting_code;
   const unlockFiredRef = useRef(false);
   useEffect(() => {
     if (unlocked && !unlockFiredRef.current) {
@@ -95,23 +97,42 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
           <div className="flex items-center gap-2">
             <p className="truncate text-[16px] font-extrabold" style={{ color: C.navy }}>{m.title}</p>
             {kind === "available" && <Badge text={hasAttempt ? "In progress" : "Available"} bg="#e7effb" color="#21539e" />}
-            {kind === "scheduled" && !unlocked && <Badge text="Scheduled" bg="#f1f5f9" color={C.slate} />}
+            {kind === "scheduled" && !unlocked && <Badge text={m.awaiting_code ? "Not started" : "Scheduled"} bg="#f1f5f9" color={C.slate} />}
             {kind === "missed" && <Badge text="Missed" bg="#fdeaea" color="#b91c1c" />}
             {kind === "past" && <Badge text="Completed" bg="#dcf2e3" color="#0b7a4f" />}
           </div>
           <p className="mt-0.5 text-[13px] font-semibold" style={{ color: C.slate }}>{meta}</p>
         </div>
 
-        {kind === "available" || unlocked ? (
+        {kind === "available" ? (
           <button onClick={enter} disabled={busy} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60" style={{ background: C.blue }}>
             {busy ? "…" : hasAttempt ? "Resume timed mock" : "Enter timed mock"} <ArrowRight className="h-4 w-4" />
           </button>
+        ) : unlocked ? (
+          // Countdown just hit zero — DON'T expose a live Enter yet. A classroom midterm's
+          // window can open before the teacher generates the access code, so enterability is
+          // the server's call. onUnlock has fired a refetch; this row will re-bucket to
+          // "available" (live Enter) or stay "Waiting for teacher". Disabled avoids a 403 click.
+          <button disabled className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white opacity-60" style={{ background: C.blue }}>
+            Starting… <ArrowRight className="h-4 w-4" />
+          </button>
         ) : kind === "scheduled" ? (
           <div className="shrink-0 text-right">
-            <span className="inline-flex items-center gap-1.5 rounded-xl border px-[18px] py-[11px] text-sm font-semibold" style={{ borderColor: C.border, color: "#94a3b8" }}>
-              <Lock className="h-3.5 w-3.5" /> {m.available_at ? `Opens ${new Date(m.available_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Scheduled"}
-            </span>
-            {cd.label && <p className="mt-1 text-[11px] font-semibold" style={{ color: C.slate }}>starts in {cd.label}</p>}
+            {m.awaiting_code ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-xl border px-[18px] py-[11px] text-sm font-semibold" style={{ borderColor: C.border, color: "#94a3b8" }}>
+                  <Lock className="h-3.5 w-3.5" /> Waiting for teacher
+                </span>
+                <p className="mt-1 text-[11px] font-semibold" style={{ color: C.slate }}>your teacher hasn’t started this yet</p>
+              </>
+            ) : (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-xl border px-[18px] py-[11px] text-sm font-semibold" style={{ borderColor: C.border, color: "#94a3b8" }}>
+                  <Lock className="h-3.5 w-3.5" /> {m.available_at ? `Opens ${new Date(m.available_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Scheduled"}
+                </span>
+                {cd.label && <p className="mt-1 text-[11px] font-semibold" style={{ color: C.slate }}>starts in {cd.label}</p>}
+              </>
+            )}
           </div>
         ) : kind === "missed" ? (
           <div className="shrink-0 text-right">
@@ -170,8 +191,8 @@ export default function MidtermList() {
   // belongs in "Available"; a not-started midterm past its deadline is "Missed".
   const resumable = (m: MidtermRow) => !m.submitted && m.attempt_id != null && m.state !== "NOT_STARTED";
   const available = midterms.filter((m) => !m.submitted && (resumable(m) || m.is_open));
-  const scheduled = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && m.is_before_start);
-  const missed = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && !m.is_before_start);
+  const scheduled = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && (m.is_before_start || m.awaiting_code));
+  const missed = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && !m.is_before_start && !m.awaiting_code);
   const past = midterms.filter((m) => m.submitted);
 
   const tabs: { id: Tab; label: string }[] = [
