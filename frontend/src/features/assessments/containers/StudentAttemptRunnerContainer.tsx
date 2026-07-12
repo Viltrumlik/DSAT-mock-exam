@@ -1581,6 +1581,11 @@ function ExamSimulationView({
   const zoomIn = () => setZoomLevel((z) => Math.min(1.5, +(z + 0.1).toFixed(2)));
   const zoomOut = () => setZoomLevel((z) => Math.max(0.7, +(z - 0.1).toFixed(2)));
 
+  // When the Desmos calculator is open it docks on the LEFT and floats over the
+  // surface; reserve space on the left so the question content slides RIGHT out from
+  // under it (same behaviour + widths as the pastpaper runner's AnswerPane calcReserve).
+  const calcReserve = calcOpen ? (calcEnlarged ? 760 : 500) : 0;
+
   const isLast = currentIdx >= totalCount - 1;
 
   // ── Offset-based highlighter (reuses the pastpaper/exam annotator) ────────
@@ -1789,9 +1794,12 @@ function ExamSimulationView({
           viewport and pushes the fixed footer out of the overflow-hidden overlay
           (the footer "disappears"). With min-h-0 the column scrolls internally and
           the header/footer stay pinned. */}
-      <main className="flex-1 min-h-0 overflow-auto bg-white">
+      <main
+        className="flex-1 min-h-0 overflow-auto bg-white transition-[padding] duration-300 ease-out"
+        style={calcReserve > 0 ? { paddingLeft: calcReserve } : undefined}
+      >
         <div
-          className={`mx-auto w-full max-w-3xl px-8 py-10 ${highlighterActive ? "ms-highlighter-cursor" : ""}`}
+          className={`w-full max-w-3xl px-8 py-10 ${calcReserve > 0 ? "mr-auto" : "mx-auto"} ${highlighterActive ? "ms-highlighter-cursor" : ""}`}
           // CSS `zoom` scales the WHOLE question (text of any unit + figures) and
           // reflows — unlike font-size, which never cascades to the content's
           // rem-based Tailwind sizes or its px images.
