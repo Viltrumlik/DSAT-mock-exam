@@ -54,14 +54,27 @@ class Command(BaseCommand):
                 # Dry-run: report the drift without writing.
                 after = live
 
-            drift = "" if before == after else f"  <-- {before} -> {after}"
+            drift = "" if before == after else f"  <-- COUNT {before} -> {after}"
             if before != after:
                 changed += 1
             self.stdout.write(
                 f"  MockExam#{exam.id} {exam.title!r} live={live} mirror_before={before} mirror_after={after}{drift}"
             )
 
-        self.stdout.write(self.style.SUCCESS(f"Done. {'Refreshed' if commit else 'Would refresh'} {changed} mirror(s)."))
+        total = qs.count()
+        if commit:
+            self.stdout.write(self.style.SUCCESS(
+                f"Done. Refreshed {total} mirror(s) in place ({changed} had a question-COUNT change; "
+                f"content is refreshed for all regardless)."
+            ))
+        else:
+            # Dry-run compares COUNTS only — a content-only fix (same count, e.g. a corrected
+            # answer key) won't show as drift here but IS refreshed by --commit. Never read a
+            # zero count-drift as "nothing to do".
+            self.stdout.write(self.style.WARNING(
+                f"DRY-RUN: {changed} mirror(s) have a question-COUNT drift. This does NOT capture "
+                f"content-only edits — run with --commit to refresh all {total} mirror(s) in place."
+            ))
 
     @staticmethod
     def _live_count(exam) -> int:

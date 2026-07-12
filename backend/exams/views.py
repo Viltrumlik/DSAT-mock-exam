@@ -2006,13 +2006,13 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
         _resync_midterm_mirror(getattr(instance, "pk", None))
 
     def perform_destroy(self, instance):
-        module_id = instance.pk
-        test = instance.practice_test
+        # Capture the owning exam BEFORE delete so we can resync via the exam (not a
+        # sibling module): deleting a version's LAST module leaves no sibling, and the
+        # sibling route would then silently skip the resync and leave the mirror stale.
+        pt = instance.practice_test
+        exam = getattr(pt, "mock_exam", None) if pt is not None else None
         super().perform_destroy(instance)
-        # The module is gone; resync via a surviving sibling module of the same test.
-        if test is not None:
-            sib = test.modules.first()
-            _resync_midterm_mirror(sib.pk if sib is not None else None)
+        _resync_midterm_mirror_for_exam(exam) if exam is not None else None
 
 
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser

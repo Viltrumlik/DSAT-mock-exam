@@ -100,9 +100,12 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
         practice_tests = list(mock.tests.all().order_by("id"))
         if len(practice_tests) >= 2:
             # Multiple PracticeTests = multiple VERSIONS: mirror each into its own
-            # MidtermVersion. The flattened question_module is left empty (unused).
+            # MidtermVersion. Leave the flat question_module INTACT — emptying it would
+            # orphan any legacy single-set attempts (an attempt with version_id=NULL
+            # resolves effective_questions() to the flat module). It is simply dormant for
+            # new (version-pinned) attempts, and display counts are version-aware. A midterm
+            # that was versioned from the start has an empty flat module anyway.
             _sync_versions(midterm, practice_tests)
-            _sync_module_questions_in_place(module, [])
         else:
             # Single set: drop any stale versions and flatten questions into the
             # midterm's own module (legacy single-version behavior).

@@ -132,6 +132,39 @@ class UpsertMidtermFromLegacyTests(TestCase):
         mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
         self.assertEqual(mt2.questions().count(), 2)
 
+    def test_convert_single_to_versioned_preserves_flat_attempt_questions(self):
+        # Regression: adding a version to a single-set midterm that already has attempts
+        # must NOT empty the flat module — those attempts (version_id=NULL) resolve
+        # effective_questions() to the flat module and would otherwise be orphaned.
+        exam, _mod = _legacy_midterm(n_questions=3)
+        mt = upsert_midterm_from_legacy(exam)
+        self.assertEqual(mt.questions().count(), 3)
+
+        from django.contrib.auth import get_user_model
+
+        student = get_user_model().objects.create(username="conv-s1")
+        attempt = MidtermAttempt.objects.create(midterm=mt, student=student)
+        flat_ids_before = sorted(q.id for q in mt.questions())
+
+        # Add a SECOND section (version) → the midterm becomes versioned.
+        pt2 = PracticeTest.objects.create(
+            mock_exam=exam, subject="MATH", form_type="INTERNATIONAL", skip_default_modules=True
+        )
+        mod2 = Module.objects.create(practice_test=pt2, module_order=1, time_limit_minutes=25)
+        for i in range(3):
+            Question.objects.create(
+                module=mod2, question_type="MATH", question_text=f"V2Q{i}",
+                option_a="A", option_b="B", option_c="C", option_d="D",
+                correct_answers="b", score=10, order=i,
+            )
+        mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
+
+        # Versions provisioned...
+        self.assertEqual(mt2.versions.count(), 2)
+        # ...but the flat module is INTACT so the legacy attempt isn't orphaned.
+        self.assertEqual(sorted(q.id for q in mt2.questions()), flat_ids_before)
+        self.assertEqual(sorted(q.id for q in attempt.effective_questions()), flat_ids_before)
+
     def test_non_midterm_is_ignored(self):
         exam = MockExam.objects.create(title="Full Mock", kind=MockExam.KIND_MOCK_SAT)
         self.assertIsNone(upsert_midterm_from_legacy(exam))
