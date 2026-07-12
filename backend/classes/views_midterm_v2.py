@@ -29,7 +29,7 @@ from midterms.certificate_service import (
     _latest_completed_attempts,
     issue_classroom_certificates,
 )
-from midterms.models import Midterm
+from midterms.models import Midterm, MidtermVersion, MidtermVersionAssignment
 
 from .capabilities import classroom_capabilities
 from .models_certificates import MidtermCertificate
@@ -53,6 +53,8 @@ def _serialize_schedule(sched):
             "available_at": None,
             "is_before_start": False,
             "is_open": True,
+            "access_code": None,
+            "requires_code": False,
         }
     return {
         "midterm_id": sched.midterm_id,
@@ -63,6 +65,9 @@ def _serialize_schedule(sched):
         "available_at": sched.available_at.isoformat() if sched.available_at else None,
         "is_before_start": sched.is_before_start(),
         "is_open": sched.is_open(),
+        # Teacher-only panel — safe to surface the code so it can be shared with the room.
+        "access_code": sched.access_code or None,
+        "requires_code": sched.requires_code(),
     }
 
 
@@ -74,6 +79,18 @@ def _midterm_brief(m: Midterm) -> dict:
         "scoring_scale": m.scoring_scale,
         "score_ceiling": m.score_ceiling,
         "duration_minutes": m.duration_minutes,
+    }
+
+
+def _version_brief(v: MidtermVersion) -> dict:
+    return {"id": v.id, "version_number": v.version_number, "label": v.label or f"Version {v.version_number}"}
+
+
+def _assignment_map(midterm, classroom):
+    """student_id -> MidtermVersion for this classroom+midterm (current saved assignments)."""
+    return {
+        a.student_id: a.version
+        for a in MidtermVersionAssignment.objects.filter(midterm=midterm, classroom=classroom).select_related("version")
     }
 
 
@@ -223,6 +240,7 @@ class MidtermV2PanelView(_ClassroomScopedView):
             )
         }
 
+        assign_map = _assignment_map(midterm, classroom)
         students = []
         scores = []
         for sid in cohort:
@@ -230,6 +248,7 @@ class MidtermV2PanelView(_ClassroomScopedView):
             score = att.score if att else None
             if score is not None:
                 scores.append(score)
+            ver = assign_map.get(sid)
             students.append({
                 "student_id": sid,
                 "student_name": _display_name(users.get(sid)),
@@ -238,11 +257,14 @@ class MidtermV2PanelView(_ClassroomScopedView):
                 "score": score,
                 "rank": ranks.get(sid),
                 "certificate_code": codes.get(sid),
+                "version_number": ver.version_number if ver else None,
+                "version_label": (ver.label or f"Version {ver.version_number}") if ver else None,
             })
         students.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0), r["student_name"]))
 
         sched = MidtermSchedule.objects.filter(classroom=classroom, midterm=midterm).first()
         all_finished = bool(cohort) and cohort <= set(latest.keys())
+        versions = list(MidtermVersion.objects.filter(midterm=midterm))
         stats = {
             "assigned": len(cohort),
             "completed": len(latest),
@@ -257,6 +279,8 @@ class MidtermV2PanelView(_ClassroomScopedView):
             "stats": stats,
             "all_finished": all_finished,
             "certificates_issued": bool(codes),
+            "has_versions": bool(versions),
+            "versions": [_version_brief(v) for v in versions],
         })
 
     def patch(self, request, classroom_pk, midterm_id):
@@ -288,6 +312,125 @@ class MidtermV2PanelView(_ClassroomScopedView):
             return Response({"detail": "Deadline must be after the start time."}, status=http.HTTP_400_BAD_REQUEST)
         sched.save()
         return Response({"schedule": _serialize_schedule(sched)})
+
+
+class MidtermV2StartCodeView(_ClassroomScopedView):
+    """POST /classes/<pk>/midterms-v2/<midterm_id>/start-code/ — generate/rotate the
+    6-digit access code students must enter to begin ("Start midterm")."""
+
+    def post(self, request, classroom_pk, midterm_id):
+        classroom = self.get_classroom()
+        caps = classroom_capabilities(request.user, classroom)
+        if not caps.can_manage_assignments:
+            return Response({"detail": "Only the teaching team can start a midterm."}, status=http.HTTP_403_FORBIDDEN)
+        midterm = Midterm.objects.filter(pk=midterm_id).first()
+        if midterm is None:
+            return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
+        sched, _ = MidtermSchedule.objects.get_or_create(
+            classroom=classroom, midterm=midterm, defaults={"created_by": request.user}
+        )
+        code = sched.generate_access_code()
+        sched.save(update_fields=["access_code", "access_code_set_at", "updated_at"])
+        return Response({"access_code": code, "schedule": _serialize_schedule(sched)})
+
+
+class AssignVersionsView(_ClassroomScopedView):
+    """Random version assignment for a versioned midterm.
+
+    GET  → versions + current per-student assignments.
+    POST {action:"preview"}  → a fresh random EVEN distribution of the cohort across the
+         versions (NOT saved), so the teacher can re-random before committing.
+    POST {action:"commit", assignments:{student_id: version_id}} → persist the mapping.
+    Students never see any of this; the version is applied silently on their next start.
+    """
+
+    def _cohort_and_versions(self, classroom, midterm):
+        cohort = list(_classroom_cohort_ids(midterm, classroom))
+        versions = list(MidtermVersion.objects.filter(midterm=midterm).order_by("version_number"))
+        return cohort, versions
+
+    def _rows(self, mapping):
+        users = {u.id: u for u in User.objects.filter(pk__in=mapping.keys())}
+        out = [
+            {
+                "student_id": sid,
+                "student_name": _display_name(users.get(sid)),
+                "version_id": ver.id,
+                "version_number": ver.version_number,
+                "version_label": ver.label or f"Version {ver.version_number}",
+            }
+            for sid, ver in mapping.items()
+        ]
+        out.sort(key=lambda r: r["student_name"])
+        return out
+
+    def get(self, request, classroom_pk, midterm_id):
+        classroom = self.get_classroom()
+        caps = classroom_capabilities(request.user, classroom)
+        if not caps.is_staff:
+            return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
+        midterm = Midterm.objects.filter(pk=midterm_id).first()
+        if midterm is None:
+            return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
+        cohort, versions = self._cohort_and_versions(classroom, midterm)
+        assign_map = _assignment_map(midterm, classroom)
+        mapping = {sid: assign_map[sid] for sid in cohort if sid in assign_map}
+        return Response({
+            "has_versions": bool(versions),
+            "versions": [_version_brief(v) for v in versions],
+            "assignments": self._rows(mapping),
+            "unassigned_count": len([sid for sid in cohort if sid not in assign_map]),
+        })
+
+    def post(self, request, classroom_pk, midterm_id):
+        classroom = self.get_classroom()
+        caps = classroom_capabilities(request.user, classroom)
+        if not caps.can_manage_assignments:
+            return Response({"detail": "Only the teaching team can assign versions."}, status=http.HTTP_403_FORBIDDEN)
+        midterm = Midterm.objects.filter(pk=midterm_id).first()
+        if midterm is None:
+            return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
+        cohort, versions = self._cohort_and_versions(classroom, midterm)
+        if not versions:
+            return Response({"detail": "This midterm has no versions."}, status=http.HTTP_400_BAD_REQUEST)
+        action = str(request.data.get("action") or "preview")
+
+        if action == "preview":
+            import secrets
+
+            shuffled = list(cohort)
+            for i in range(len(shuffled) - 1, 0, -1):  # Fisher–Yates (secrets = unbiased)
+                j = secrets.randbelow(i + 1)
+                shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+            mapping = {sid: versions[idx % len(versions)] for idx, sid in enumerate(shuffled)}
+            return Response({"assignments": self._rows(mapping), "versions": [_version_brief(v) for v in versions]})
+
+        if action == "commit":
+            raw = request.data.get("assignments") or {}
+            vmap = {v.id: v for v in versions}
+            cohort_set = set(cohort)
+            valid = {}
+            for sid_str, vid in raw.items():
+                try:
+                    sid, vid = int(sid_str), int(vid)
+                except (TypeError, ValueError):
+                    continue
+                if sid in cohort_set and vid in vmap:
+                    valid[sid] = vmap[vid]
+            if not valid:
+                return Response({"detail": "No valid assignments to save."}, status=http.HTTP_400_BAD_REQUEST)
+            MidtermVersionAssignment.objects.filter(
+                midterm=midterm, classroom=classroom, student_id__in=list(valid.keys())
+            ).delete()
+            MidtermVersionAssignment.objects.bulk_create([
+                MidtermVersionAssignment(
+                    midterm=midterm, classroom=classroom, student_id=sid, version=ver, assigned_by=request.user
+                )
+                for sid, ver in valid.items()
+            ])
+            return Response({"detail": f"Assigned {len(valid)} student(s).", "assignments": self._rows(valid)})
+
+        return Response({"detail": "Unknown action."}, status=http.HTTP_400_BAD_REQUEST)
 
 
 class IssueMidtermV2CertificatesView(_ClassroomScopedView):

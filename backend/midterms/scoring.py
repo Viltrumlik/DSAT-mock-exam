@@ -60,10 +60,10 @@ def grade_questions(questions, answers, scoring_scale: str) -> dict:
 
 
 def score_midterm_attempt(attempt) -> dict:
-    """Compute the score for a MidtermAttempt from the midterm's authoritative question set."""
-    midterm = attempt.midterm
-    questions = list(midterm.questions())
-    return grade_questions(questions, attempt.answers or {}, midterm.scoring_scale)
+    """Compute the score for a MidtermAttempt from its authoritative question set
+    (the assigned version's questions when versioned, else the midterm's own)."""
+    questions = list(attempt.effective_questions())
+    return grade_questions(questions, attempt.answers or {}, attempt.midterm.scoring_scale)
 
 
 def build_midterm_review(attempt, *, include_answer_key: bool = False) -> dict:
@@ -77,7 +77,7 @@ def build_midterm_review(attempt, *, include_answer_key: bool = False) -> dict:
     review is byte-consistent with the stored score for freshly-scored attempts.
     """
     midterm = attempt.midterm
-    questions = list(midterm.questions())
+    questions = list(attempt.effective_questions())
     answers = attempt.answers or {}
     correct_count = 0
     rows = []

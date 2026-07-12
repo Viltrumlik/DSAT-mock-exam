@@ -17,6 +17,11 @@ interface CheckYourWorkPageProps {
   submitting: boolean;
   /** Drives the primary button label: last module finishes; otherwise continues. */
   isLastModule: boolean;
+  /**
+   * When true (midterms), the student can't submit or advance manually — the
+   * button is replaced by a note; the test submits only when the timer expires.
+   */
+  submitLocked?: boolean;
   studentName?: string;
 }
 
@@ -36,6 +41,7 @@ export function CheckYourWorkPage({
   onSubmit,
   submitting,
   isLastModule,
+  submitLocked = false,
   studentName,
 }: CheckYourWorkPageProps) {
   const answeredCount = questions.filter((q) => Boolean(answers[q.id])).length;
@@ -96,15 +102,21 @@ export function CheckYourWorkPage({
                 <span className="h-4 w-4 rounded border-2 border-slate-200 bg-slate-50" /> Unanswered ({unansweredCount})
               </span>
             </div>
-            <button
-              type="button"
-              onClick={onSubmit}
-              disabled={submitting}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-7 py-3 text-sm font-bold text-white shadow-md transition-opacity hover:opacity-95 disabled:opacity-60"
-            >
-              {submitting ? "Submitting…" : isLastModule ? "Submit Exam" : "Continue to Next Module"}
-              {!submitting && <span aria-hidden>→</span>}
-            </button>
+            {submitLocked ? (
+              <p className="max-w-md rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900">
+                Keep reviewing your answers — you can&apos;t submit early. The midterm submits automatically when time runs out.
+              </p>
+            ) : (
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-7 py-3 text-sm font-bold text-white shadow-md transition-opacity hover:opacity-95 disabled:opacity-60"
+              >
+                {submitting ? "Submitting…" : isLastModule ? "Submit Exam" : "Continue to Next Module"}
+                {!submitting && <span aria-hidden>→</span>}
+              </button>
+            )}
           </div>
         </div>
       </main>

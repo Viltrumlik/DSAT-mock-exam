@@ -27,6 +27,7 @@ import {
   EyeOff,
   FileText,
   GraduationCap,
+  Layers,
   Loader2,
   Pencil,
   Plus,
@@ -66,6 +67,9 @@ type AdminMidterm = {
   midterm_module2_minutes: number;
   midterm_target_question_count: number;
   midterm_module_question_limit: number;
+  midterm_level: string | null;
+  midterm_period: string | null;
+  midterm_type: string | null;
   tests: AdminTestSection[];
   publish_ready: boolean;
   publish_block_reason: string;
@@ -81,6 +85,9 @@ type MidtermForm = {
   midterm_module2_minutes: string;
   midterm_target_question_count: string;
   midterm_module_question_limit: string;
+  midterm_level: string;
+  midterm_period: string;
+  midterm_type: string;
 };
 
 const DEFAULT_FORM: MidtermForm = {
@@ -93,6 +100,35 @@ const DEFAULT_FORM: MidtermForm = {
   midterm_module2_minutes: "60",
   midterm_target_question_count: "44",
   midterm_module_question_limit: "30",
+  midterm_level: "",
+  midterm_period: "",
+  midterm_type: "MIDTERM",
+};
+
+// Midterm taxonomy option sets (mirror backend MockExam midterm_* choices).
+const MIDTERM_LEVEL_LABELS: Record<string, string> = {
+  foundation: "Foundation", junior: "Junior", middle: "Middle", senior: "Senior",
+};
+function levelOptionsForSubject(subject: string): { v: string; l: string }[] {
+  const codes = subject === "MATH" ? ["foundation", "junior", "middle", "senior"] : ["junior", "middle", "senior"];
+  return [{ v: "", l: "Any level" }, ...codes.map((c) => ({ v: c, l: MIDTERM_LEVEL_LABELS[c] }))];
+}
+const PERIOD_OPTIONS: { v: string; l: string }[] = [
+  { v: "", l: "Any period" },
+  { v: "FIRST_MONTH", l: "First month" },
+  { v: "SECOND_MONTH", l: "Second month" },
+  { v: "THIRD_MONTH", l: "Third month" },
+];
+const TYPE_OPTIONS: { v: string; l: string }[] = [
+  { v: "PRE_MIDTERM", l: "Pre-midterm" },
+  { v: "MIDTERM", l: "Midterm" },
+  { v: "RETAKE", l: "Retake midterm" },
+];
+const PERIOD_LABELS: Record<string, string> = {
+  FIRST_MONTH: "First month", SECOND_MONTH: "Second month", THIRD_MONTH: "Third month",
+};
+const TYPE_LABELS: Record<string, string> = {
+  PRE_MIDTERM: "Pre-midterm", MIDTERM: "Midterm", RETAKE: "Retake",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -214,9 +250,49 @@ function MidtermModal({
             </div>
             <div>
               <label className={FL}>Subject</label>
-              <select value={form.midterm_subject} onChange={set("midterm_subject")} className={SI}>
+              <select
+                value={form.midterm_subject}
+                onChange={(e) => {
+                  const subj = e.target.value as "READING_WRITING" | "MATH";
+                  // Foundation is Math-only — drop it when switching to R&W.
+                  setForm((p) => ({
+                    ...p,
+                    midterm_subject: subj,
+                    midterm_level: subj !== "MATH" && p.midterm_level === "foundation" ? "" : p.midterm_level,
+                  }));
+                }}
+                className={SI}
+              >
                 <option value="READING_WRITING">Reading &amp; Writing</option>
                 <option value="MATH">Mathematics</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Taxonomy — level (by subject) · type · period. Used for filtering. */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={FL}>Level</label>
+              <select value={form.midterm_level} onChange={set("midterm_level")} className={SI}>
+                {levelOptionsForSubject(form.midterm_subject).map((o) => (
+                  <option key={o.v} value={o.v}>{o.l}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={FL}>Type</label>
+              <select value={form.midterm_type} onChange={set("midterm_type")} className={SI}>
+                {TYPE_OPTIONS.map((o) => (
+                  <option key={o.v} value={o.v}>{o.l}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={FL}>Period</label>
+              <select value={form.midterm_period} onChange={set("midterm_period")} className={SI}>
+                {PERIOD_OPTIONS.map((o) => (
+                  <option key={o.v} value={o.v}>{o.l}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -329,6 +405,8 @@ function MidtermModal({
 
 // ─── Midterm row ──────────────────────────────────────────────────────────────
 
+const VERSION_LETTERS = ["A", "B", "C", "D"];
+
 function MidtermRow({
   exam,
   onEdit,
@@ -336,6 +414,9 @@ function MidtermRow({
   onPublish,
   onUnpublish,
   onResults,
+  onAddVersion,
+  onRemoveVersion,
+  versionBusy,
   publishing,
 }: {
   exam: AdminMidterm;
@@ -344,6 +425,9 @@ function MidtermRow({
   onPublish: () => void;
   onUnpublish: () => void;
   onResults: () => void;
+  onAddVersion: () => void;
+  onRemoveVersion: (testId: number) => void;
+  versionBusy: boolean;
   publishing: boolean;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -369,6 +453,21 @@ function MidtermRow({
             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusColors}`}>
               {statusLabel}
             </span>
+            {exam.midterm_type && exam.midterm_type !== "MIDTERM" ? (
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                {TYPE_LABELS[exam.midterm_type] ?? exam.midterm_type}
+              </span>
+            ) : null}
+            {exam.midterm_level ? (
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                {MIDTERM_LEVEL_LABELS[exam.midterm_level] ?? exam.midterm_level}
+              </span>
+            ) : null}
+            {exam.midterm_period ? (
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                {PERIOD_LABELS[exam.midterm_period] ?? exam.midterm_period}
+              </span>
+            ) : null}
           </div>
 
           <div className="mt-2 flex flex-wrap gap-3">
@@ -491,34 +590,63 @@ function MidtermRow({
         </div>
       )}
 
-      {/* Section → module links */}
-      {exam.tests.length > 0 && (
-        <div className="mt-4 space-y-1.5">
-          {exam.tests.map((test) => {
-            const modules = test.modules ?? [];
-            return modules.map((mod) => (
-              <Link
-                key={mod.id}
-                href={`/builder/mock-exams/${exam.id}/${test.id}/${mod.id}`}
-                className="flex items-center gap-3 rounded-xl border border-border bg-surface-2/40 px-4 py-2.5 text-xs font-semibold text-foreground hover:border-primary/30 hover:bg-primary/5 transition-colors group"
-              >
-                <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
-                <span className="flex-1">
-                  {subjectLabel(test.subject)} ·{" "}
-                  {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
-                  {mod.time_limit_minutes != null && (
-                    <span className="ml-2 text-muted-foreground">{mod.time_limit_minutes} min</span>
-                  )}
+      {/* Versions → each is a parallel copy with its own questions (max 4). */}
+      <div className="mt-4 space-y-3">
+        {exam.tests.map((test, vIdx) => {
+          const modules = test.modules ?? [];
+          return (
+            <div key={test.id} className="rounded-xl border border-border bg-surface-2/30 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-foreground">
+                  <Layers className="h-3.5 w-3.5 text-primary" />
+                  Version {VERSION_LETTERS[vIdx] ?? vIdx + 1}
                 </span>
-                <span className="text-xs font-bold text-primary group-hover:underline">
-                  Edit questions →
-                </span>
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary shrink-0" />
-              </Link>
-            ));
-          })}
-        </div>
-      )}
+                {exam.tests.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveVersion(test.id)}
+                    disabled={versionBusy}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                  >
+                    <Trash2 className="h-3 w-3" /> Remove
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {modules.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] italic text-muted-foreground">No modules yet.</p>
+                ) : (
+                  modules.map((mod) => (
+                    <Link
+                      key={mod.id}
+                      href={`/builder/mock-exams/${exam.id}/${test.id}/${mod.id}`}
+                      className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5"
+                    >
+                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                      <span className="flex-1">
+                        {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
+                        {mod.time_limit_minutes != null && <span className="ml-2 text-muted-foreground">{mod.time_limit_minutes} min</span>}
+                      </span>
+                      <span className="text-xs font-bold text-primary group-hover:underline">Edit questions →</span>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                    </Link>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {exam.tests.length < 4 && (
+          <button
+            type="button"
+            onClick={onAddVersion}
+            disabled={versionBusy}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add version{exam.tests.length > 0 ? ` (${exam.tests.length}/4)` : ""}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -536,6 +664,10 @@ export default function BuilderMidtermsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<number | null>(null);
   const [resultsExam, setResultsExam] = useState<AdminMidterm | null>(null);
+  // Builder filters — by monthly period and midterm type (and level).
+  const [filterLevel, setFilterLevel] = useState("ALL");
+  const [filterPeriod, setFilterPeriod] = useState("ALL");
+  const [filterType, setFilterType] = useState("ALL");
 
   const load = async () => {
     setLoading(true);
@@ -582,6 +714,9 @@ export default function BuilderMidtermsPage() {
         midterm_module2_minutes: Number(form.midterm_module2_minutes),
         midterm_target_question_count: Number(form.midterm_target_question_count),
         midterm_module_question_limit: Number(form.midterm_module_question_limit),
+        midterm_level: form.midterm_level,
+        midterm_period: form.midterm_period,
+        midterm_type: form.midterm_type,
       };
       if (editingMidterm) {
         await examsAdminApi.updateMockExam(editingMidterm.id, payload);
@@ -603,6 +738,30 @@ export default function BuilderMidtermsPage() {
       await load();
     } catch (e) {
       setError(parseError(e));
+    }
+  };
+
+  const [versionBusyId, setVersionBusyId] = useState<number | null>(null);
+  const handleAddVersion = async (examId: number) => {
+    setVersionBusyId(examId);
+    try {
+      await examsAdminApi.addMidtermVersion(examId);
+      await load();
+    } catch (e) {
+      setError(parseError(e));
+    } finally {
+      setVersionBusyId(null);
+    }
+  };
+  const handleRemoveVersion = async (examId: number, testId: number) => {
+    setVersionBusyId(examId);
+    try {
+      await examsAdminApi.removeMidtermVersion(examId, testId);
+      await load();
+    } catch (e) {
+      setError(parseError(e));
+    } finally {
+      setVersionBusyId(null);
     }
   };
 
@@ -641,11 +800,20 @@ export default function BuilderMidtermsPage() {
         midterm_module2_minutes: String(editingMidterm.midterm_module2_minutes ?? 60),
         midterm_target_question_count: String(editingMidterm.midterm_target_question_count ?? 44),
         midterm_module_question_limit: String(editingMidterm.midterm_module_question_limit ?? 30),
+        midterm_level: editingMidterm.midterm_level ?? "",
+        midterm_period: editingMidterm.midterm_period ?? "",
+        midterm_type: editingMidterm.midterm_type ?? "MIDTERM",
       }
     : DEFAULT_FORM;
 
   const published = midterms.filter((m) => m.is_published).length;
   const drafts = midterms.filter((m) => !m.is_published).length;
+  const filteredMidterms = midterms.filter((m) => {
+    if (filterLevel !== "ALL" && (m.midterm_level || "") !== filterLevel) return false;
+    if (filterPeriod !== "ALL" && (m.midterm_period || "") !== filterPeriod) return false;
+    if (filterType !== "ALL" && (m.midterm_type || "MIDTERM") !== filterType) return false;
+    return true;
+  });
 
   return (
     <div className="space-y-5">
@@ -705,6 +873,37 @@ export default function BuilderMidtermsPage() {
         </div>
       )}
 
+      {/* Filters — period + type (+ level) */}
+      {!loading && midterms.length > 0 && (
+        <div className="flex flex-wrap items-end gap-3">
+          {[
+            { label: "Level", value: filterLevel, set: setFilterLevel, opts: [{ v: "ALL", l: "All levels" }, { v: "foundation", l: "Foundation" }, { v: "junior", l: "Junior" }, { v: "middle", l: "Middle" }, { v: "senior", l: "Senior" }] },
+            { label: "Type", value: filterType, set: setFilterType, opts: [{ v: "ALL", l: "All types" }, ...TYPE_OPTIONS] },
+            { label: "Period", value: filterPeriod, set: setFilterPeriod, opts: [{ v: "ALL", l: "All periods" }, ...PERIOD_OPTIONS.filter((o) => o.v !== "")] },
+          ].map((f) => (
+            <div key={f.label} className="flex flex-col gap-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">{f.label}</span>
+              <select
+                value={f.value}
+                onChange={(e) => f.set(e.target.value)}
+                className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                {f.opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+            </div>
+          ))}
+          {(filterLevel !== "ALL" || filterType !== "ALL" || filterPeriod !== "ALL") && (
+            <button
+              type="button"
+              onClick={() => { setFilterLevel("ALL"); setFilterType("ALL"); setFilterPeriod("ALL"); }}
+              className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Domain clarification note */}
       <div className="rounded-2xl border border-border bg-surface-2/30 px-4 py-3">
         <p className="text-xs text-muted-foreground leading-relaxed">
@@ -749,9 +948,14 @@ export default function BuilderMidtermsPage() {
             New midterm
           </button>
         </div>
+      ) : filteredMidterms.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
+          <p className="font-extrabold text-foreground">No midterms match these filters</p>
+          <p className="mt-1 text-sm text-muted-foreground">Try a different level, type, or period.</p>
+        </div>
       ) : (
         <div className="space-y-4">
-          {midterms.map((m) => (
+          {filteredMidterms.map((m) => (
             <MidtermRow
               key={m.id}
               exam={m}
@@ -760,6 +964,9 @@ export default function BuilderMidtermsPage() {
               onPublish={() => void handlePublish(m.id)}
               onUnpublish={() => void handleUnpublish(m.id)}
               onResults={() => setResultsExam(m)}
+              onAddVersion={() => void handleAddVersion(m.id)}
+              onRemoveVersion={(testId) => void handleRemoveVersion(m.id, testId)}
+              versionBusy={versionBusyId === m.id}
               publishing={publishingId === m.id}
             />
           ))}

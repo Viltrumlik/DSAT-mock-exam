@@ -18,12 +18,17 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   const m = me as { first_name?: string; last_name?: string; profile_image_url?: string | null } | undefined;
   const name = [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim() || undefined;
 
-  // The assessment runner is an immersive, exam-style takeover (like the
-  // pastpaper /exam route): no sidebar/header — only the testing simulation.
-  // Rendering the shell here would also trap the runner's `fixed inset-0 z-50`
-  // exam view inside the shell <main>'s z-10 stacking context, letting the
-  // header/sidebar poke through (especially in full screen). Mount it bare.
-  const isImmersiveRunner = /^\/assessments\/attempt\/[^/]+/.test(pathname || "");
+  // Immersive, sidebar-less takeovers (like the pastpaper /exam & /review routes):
+  //  - the assessment runner (/assessments/attempt/<id>) — its `fixed inset-0 z-50`
+  //    exam view must not be trapped inside the shell <main>'s stacking context;
+  //  - the assessment result & review pages (/assessments/result|review/<id>) —
+  //    full-screen, past-paper-style review with no sidebar;
+  //  - the assignment creator/editor (/classes/<id>/assignments/new|.../edit) —
+  //    full-window so the instructions + content library get the whole screen.
+  const p = pathname || "";
+  const isImmersiveRunner =
+    /^\/assessments\/(attempt|result|review)\/[^/]+/.test(p) ||
+    /^\/classes\/[^/]+\/assignments\/(new|[^/]+\/edit)(\/|$)/.test(p);
   if (isImmersiveRunner) {
     return (
       <AuthGuard>

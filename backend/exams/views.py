@@ -1570,24 +1570,34 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         exam = serializer.save()
         self._provision_exam_after_create(exam)
 
+    def _provision_midterm_version(self, exam: MockExam):
+        """Create one midterm VERSION (a PracticeTest with the midterm's module structure).
+
+        A midterm's PracticeTests are its parallel versions; the first is made on create,
+        further ones via add_midterm_version (up to 4). Each carries the configured module
+        count + per-module minutes so every version is a true copy of the midterm shell.
+        """
+        cnt = min(2, max(1, exam.midterm_module_count or 1))
+        m1 = max(1, exam.midterm_module1_minutes or 60)
+        m2 = max(1, exam.midterm_module2_minutes or 60)
+        subj = exam.midterm_subject or "READING_WRITING"
+        pt = PracticeTest.objects.create(
+            mock_exam=exam,
+            subject=subj,
+            form_type="INTERNATIONAL",
+            skip_default_modules=True,
+        )
+        Module.objects.create(practice_test=pt, module_order=1, time_limit_minutes=m1)
+        if cnt >= 2:
+            Module.objects.create(practice_test=pt, module_order=2, time_limit_minutes=m2)
+        return pt
+
     def _provision_exam_after_create(self, exam: MockExam):
-        """Auto-create practice tests: full mock → RW + Math; midterm → one test + custom modules."""
+        """Auto-create practice tests: full mock → RW + Math; midterm → one version + custom modules."""
         if exam.kind == MockExam.KIND_MIDTERM:
             if exam.tests.exists():
                 return
-            cnt = min(2, max(1, exam.midterm_module_count or 1))
-            m1 = max(1, exam.midterm_module1_minutes or 60)
-            m2 = max(1, exam.midterm_module2_minutes or 60)
-            subj = exam.midterm_subject or "READING_WRITING"
-            pt = PracticeTest.objects.create(
-                mock_exam=exam,
-                subject=subj,
-                form_type="INTERNATIONAL",
-                skip_default_modules=True,
-            )
-            Module.objects.create(practice_test=pt, module_order=1, time_limit_minutes=m1)
-            if cnt >= 2:
-                Module.objects.create(practice_test=pt, module_order=2, time_limit_minutes=m2)
+            self._provision_midterm_version(exam)
             return
 
         # Full SAT mock: admin adds R&W / Math sections via add_test (no forced two-section shell).
@@ -1805,6 +1815,31 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         """Remove a PracticeTest from this MockExam."""
         test_id = request.data.get('test_id')
         test = get_object_or_404(PracticeTest, id=test_id, mock_exam=self.get_object())
+        test.delete()
+        return Response({'status': 'removed'})
+
+    @action(detail=True, methods=['post'], url_path='add-midterm-version')
+    def add_midterm_version(self, request, pk=None):
+        """Add a VERSION (parallel PracticeTest) to a midterm — up to 4 total."""
+        exam = self.get_object()
+        if exam.kind != MockExam.KIND_MIDTERM:
+            return Response({'error': 'Only midterms have versions.'}, status=status.HTTP_400_BAD_REQUEST)
+        if exam.tests.count() >= 4:
+            return Response({'error': 'A midterm can have at most 4 versions.'}, status=status.HTTP_400_BAD_REQUEST)
+        pt = self._provision_midterm_version(exam)
+        from .serializers import AdminPracticeTestSerializer
+        return Response(AdminPracticeTestSerializer(pt).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['delete'], url_path='remove-midterm-version')
+    def remove_midterm_version(self, request, pk=None):
+        """Remove a midterm version (PracticeTest) — the last version can't be removed."""
+        exam = self.get_object()
+        if exam.kind != MockExam.KIND_MIDTERM:
+            return Response({'error': 'Only midterms have versions.'}, status=status.HTTP_400_BAD_REQUEST)
+        if exam.tests.count() <= 1:
+            return Response({'error': 'A midterm must keep at least one version.'}, status=status.HTTP_400_BAD_REQUEST)
+        test_id = request.data.get('test_id') or request.query_params.get('test_id')
+        test = get_object_or_404(PracticeTest, id=test_id, mock_exam=exam)
         test.delete()
         return Response({'status': 'removed'})
 

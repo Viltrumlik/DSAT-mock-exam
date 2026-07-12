@@ -44,6 +44,12 @@ class MidtermSchedule(models.Model):
         default=False, help_text="Teacher override: open immediately, ignoring starts_at."
     )
 
+    # Access code — a 6-digit numeric code a student must enter to begin. Blank =
+    # no code required (backwards compatible). The teacher generates/rotates it
+    # from the control panel via the "Start midterm" action.
+    access_code = models.CharField(max_length=6, blank=True, default="", db_index=True)
+    access_code_set_at = models.DateTimeField(null=True, blank=True)
+
     # Results release (issuing certificates flips this true).
     results_released = models.BooleanField(default=False, db_index=True)
     results_released_at = models.DateTimeField(null=True, blank=True)
@@ -96,6 +102,22 @@ class MidtermSchedule(models.Model):
         if self.ignore_start:
             return True
         return self.starts_at is None or self.starts_at <= now
+
+    # ── Access code ───────────────────────────────────────────────────────────
+    def requires_code(self) -> bool:
+        """True when students must enter an access code to begin this midterm."""
+        return bool(self.access_code)
+
+    def code_matches(self, code) -> bool:
+        return bool(self.access_code) and str(code or "").strip() == self.access_code
+
+    def generate_access_code(self, now=None) -> str:
+        """Set (or rotate) a random 6-digit numeric access code and return it."""
+        import secrets
+
+        self.access_code = f"{secrets.randbelow(1_000_000):06d}"
+        self.access_code_set_at = now or timezone.now()
+        return self.access_code
 
     @property
     def available_at(self):

@@ -122,6 +122,52 @@ class Midterm(TimestampedModel):
         return result
 
 
+class MidtermVersion(models.Model):
+    """One of a midterm's parallel question sets (up to 4).
+
+    Each version is a full copy of the midterm with its OWN questions (hung off its own
+    ``exams.Module``, mirrored from a legacy PracticeTest by sync). Students are randomly
+    distributed across versions; the assigned version is pinned on the attempt so the
+    runner + scorer serve that version's questions. A midterm with NO versions is a plain
+    single-set midterm (uses ``Midterm.question_module`` as before).
+    """
+
+    midterm = models.ForeignKey(Midterm, on_delete=models.CASCADE, related_name="versions", db_index=True)
+    version_number = models.PositiveSmallIntegerField()  # 1..4
+    label = models.CharField(max_length=64, blank=True, default="")
+    question_module = models.OneToOneField(
+        "exams.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="midterm_version"
+    )
+    # Idempotency anchor: the legacy exams.PracticeTest this version mirrors.
+    legacy_practice_test_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "midterms_version"
+        ordering = ["version_number"]
+        constraints = [
+            models.UniqueConstraint(fields=["midterm", "version_number"], name="uniq_midterm_version_number"),
+        ]
+
+    def __str__(self):
+        return f"MidtermVersion #{self.pk} (midterm={self.midterm_id} v{self.version_number})"
+
+    def questions(self):
+        from exams.models import Question
+
+        if not self.question_module_id:
+            return Question.objects.none()
+        return Question.objects.filter(module_id=self.question_module_id).order_by("order", "id")
+
+    def delete(self, *args, **kwargs):
+        mod = self.question_module
+        result = super().delete(*args, **kwargs)
+        if mod is not None:
+            mod.delete()
+        return result
+
+
 class MidtermAttempt(TimestampedModel):
     """One student's attempt at a midterm — own single-timer state machine."""
 
@@ -133,6 +179,11 @@ class MidtermAttempt(TimestampedModel):
     STATE_CHOICES = STATE_CHOICES
 
     midterm = models.ForeignKey(Midterm, on_delete=models.CASCADE, related_name="attempts", db_index=True)
+    # The assigned version's question set, if this midterm has versions (else None → the
+    # midterm's own question_module). Pinned at attempt creation; never exposed to students.
+    version = models.ForeignKey(
+        "MidtermVersion", on_delete=models.SET_NULL, null=True, blank=True, related_name="attempts", db_index=True
+    )
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="midterm_attempts", db_index=True
     )
@@ -146,6 +197,10 @@ class MidtermAttempt(TimestampedModel):
     version_number = models.PositiveIntegerField(default=0, db_index=True)
     is_completed = models.BooleanField(default=False, db_index=True)
     score = models.IntegerField(null=True, blank=True)
+
+    # Set once the student enters the correct classroom access code (if one is
+    # required). start() refuses until this is set when the schedule has a code.
+    code_verified_at = models.DateTimeField(null=True, blank=True)
 
     started_at = models.DateTimeField(null=True, blank=True)  # single timer anchor, written `or now`, never rewound
     scoring_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -208,6 +263,21 @@ class MidtermAttempt(TimestampedModel):
             )
         except Exception:  # audit must never break a transition
             logger.exception("midterm engine audit write failed for attempt %s", self.pk)
+
+    # ── question source (version-aware) ───────────────────────────────────────
+    @property
+    def effective_module(self):
+        """The exams.Module whose questions this attempt is graded/served from —
+        the assigned version's module when set, else the midterm's own module."""
+        if self.version_id and self.version.question_module_id:
+            return self.version.question_module
+        return self.midterm.question_module
+
+    def effective_questions(self):
+        """Ordered question set for this attempt (version-aware)."""
+        if self.version_id:
+            return self.version.questions()
+        return self.midterm.questions()
 
     # ── timing ───────────────────────────────────────────────────────────────
     def get_timing(self, *, now=None):
@@ -369,3 +439,31 @@ class MidtermAttemptEngineAudit(models.Model):
 
     class Meta:
         db_table = "midterms_attempt_engine_audit"
+
+
+class MidtermVersionAssignment(models.Model):
+    """Which version of a midterm a student was given (classroom flavor).
+
+    Written by the teacher's random-assignment step and consumed at attempt creation to
+    pin ``MidtermAttempt.version``. Students never see this — the version is invisible to
+    them. Scoped per (midterm, classroom, student) so the same midterm can be assigned
+    independently in different classrooms.
+    """
+
+    midterm = models.ForeignKey(Midterm, on_delete=models.CASCADE, related_name="version_assignments", db_index=True)
+    classroom = models.ForeignKey("classes.Classroom", on_delete=models.CASCADE, related_name="+", db_index=True)
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+", db_index=True)
+    version = models.ForeignKey(MidtermVersion, on_delete=models.CASCADE, related_name="assignments")
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "midterms_version_assignment"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["midterm", "classroom", "student"], name="uniq_midterm_version_assignment"
+            ),
+        ]

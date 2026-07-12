@@ -29,6 +29,9 @@ import { QuestionNavigator } from "../components/QuestionNavigator";
 import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
 import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusScreens";
 import { WelcomeScreen } from "../components/WelcomeScreen";
+import { MidtermRulesScreen } from "../components/MidtermRulesScreen";
+import { MidtermCodeScreen } from "../components/MidtermCodeScreen";
+import { midtermApi } from "@/lib/midtermApi";
 import { MockBreakScreen } from "../components/MockBreakScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
 import { CheckYourWorkPage } from "../components/CheckYourWorkPage";
@@ -229,6 +232,28 @@ export function ExamRunnerPage() {
       setStarting(false);
     }
   }, [tools.fullscreen, start, attempt?.current_state, ackWelcome]);
+
+  // Midterm access-code gate (classroom flavor). After the rules screen we probe
+  // whether a code is required: no code → start immediately; code required → show
+  // the code-entry screen. The code screen verifies then starts.
+  const [codeGateOpen, setCodeGateOpen] = useState(false);
+  const handleMidtermProceed = useCallback(async () => {
+    if (!attempt) return;
+    try {
+      await midtermApi.verifyCode(attempt.id, ""); // succeeds only when no code is required
+      await handleStart();
+    } catch {
+      setCodeGateOpen(true);
+    }
+  }, [attempt, handleStart]);
+  const verifyThenStart = useCallback(
+    async (code: string) => {
+      if (!attempt) return;
+      await midtermApi.verifyCode(attempt.id, code); // throws on an incorrect code
+      await handleStart();
+    },
+    [attempt, handleStart],
+  );
 
   // Close the Check Your Work page whenever the module changes (after a submit
   // advances M1→M2, or a fresh module loads) so it never lingers over new work.
@@ -594,10 +619,34 @@ export function ExamRunnerPage() {
     const startMinutes =
       attempt.current_module_details?.time_limit_minutes ??
       attempt.practice_test_details.modules.find((m) => m.module_order === 1)?.time_limit_minutes;
+    const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
+    if (isMidtermSrc || isMidtermExam) {
+      if (codeGateOpen) {
+        return (
+          <MidtermCodeScreen
+            onSubmitCode={verifyThenStart}
+            onBack={() => setCodeGateOpen(false)}
+            starting={starting}
+            fullscreenSupported={tools.fullscreen.supported}
+          />
+        );
+      }
+      return (
+        <MidtermRulesScreen
+          title={attempt.practice_test_details.title || moduleLabel(attempt)}
+          subjectLabel={subjLabel}
+          minutes={startMinutes}
+          questionCount={attempt.current_module_details?.questions.length}
+          starting={starting}
+          fullscreenSupported={tools.fullscreen.supported}
+          onProceed={() => void handleMidtermProceed()}
+        />
+      );
+    }
     return (
       <WelcomeScreen
         moduleTitle={moduleLabel(attempt)}
-        subjectLabel={subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing"}
+        subjectLabel={subjLabel}
         minutes={startMinutes}
         questionCount={attempt.current_module_details?.questions.length}
         starting={starting}
@@ -623,10 +672,34 @@ export function ExamRunnerPage() {
   // by now the module is loaded; show the welcome until the student clicks Start
   // (which enters fullscreen + acknowledges it). Resumes have no ?welcome=1.
   if (showWelcome) {
+    const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
+    if (isMidtermSrc || isMidtermExam) {
+      if (codeGateOpen) {
+        return (
+          <MidtermCodeScreen
+            onSubmitCode={verifyThenStart}
+            onBack={() => setCodeGateOpen(false)}
+            starting={starting}
+            fullscreenSupported={tools.fullscreen.supported}
+          />
+        );
+      }
+      return (
+        <MidtermRulesScreen
+          title={attempt.practice_test_details.title || moduleLabel(attempt)}
+          subjectLabel={subjLabel}
+          minutes={attempt.current_module_details.time_limit_minutes}
+          questionCount={attempt.current_module_details.questions.length}
+          starting={starting}
+          fullscreenSupported={tools.fullscreen.supported}
+          onProceed={() => void handleMidtermProceed()}
+        />
+      );
+    }
     return (
       <WelcomeScreen
         moduleTitle={moduleLabel(attempt)}
-        subjectLabel={subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing"}
+        subjectLabel={subjLabel}
         minutes={attempt.current_module_details.time_limit_minutes}
         questionCount={attempt.current_module_details.questions.length}
         starting={starting}
@@ -656,6 +729,7 @@ export function ExamRunnerPage() {
         onSubmit={() => void submit()}
         submitting={submitting}
         isLastModule={isLastModule}
+        submitLocked={isMidtermExam || isMidtermSrc}
         studentName={studentName}
       />
     );

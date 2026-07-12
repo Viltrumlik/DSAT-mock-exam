@@ -71,7 +71,12 @@ export interface SummaryResultViewProps {
   avgPerQuestionLabel: string;
   rows: SummaryRow[];
   onBack: () => void;
+  /** Label for the top-left back button (default "Back to assignment"). */
+  backLabel?: string;
   onReview: (row: SummaryRow) => void;
+  /** Reveal-correct-answers toggle — controlled so the review modal can honour it too. */
+  showAnswers: boolean;
+  onToggleShowAnswers: () => void;
   /** Retry the whole assessment (start a fresh attempt). Optional. */
   onRetry?: () => void;
   retrying?: boolean;
@@ -88,11 +93,13 @@ export function SummaryResultView({
   avgPerQuestionLabel,
   rows,
   onBack,
+  backLabel = "Back to assignment",
   onReview,
+  showAnswers,
+  onToggleShowAnswers,
   onRetry,
   retrying,
 }: SummaryResultViewProps) {
-  const [showAnswers, setShowAnswers] = useState(false);
   const [filter, setFilter] = useState<SummaryFilterKey>("all");
   const [perPage, setPerPage] = useState<SummaryPerPage>(10);
   const [page, setPage] = useState(1);
@@ -118,10 +125,10 @@ export function SummaryResultView({
   const pageRows = filteredRows.slice((safePage - 1) * effectivePerPage, (safePage - 1) * effectivePerPage + effectivePerPage);
   const pager = pageWindow(safePage, pageCount);
 
+  // No "Correct" filter — a student reviews what they got wrong, not what they got right.
   const filterDefs: { key: SummaryFilterKey; label: string; count: number }[] = [
     { key: "all", label: "All", count: counts.all },
     { key: "wrong", label: "Incorrect & Omitted", count: counts.wrong },
-    { key: "correct", label: "Correct", count: counts.correct },
   ];
   const viewDefs: { key: SummaryPerPage; label: string }[] = [
     { key: 10, label: "10" },
@@ -137,7 +144,7 @@ export function SummaryResultView({
           onClick={onBack}
           className="ds-ring group inline-flex w-fit items-center gap-2 rounded-lg text-sm font-bold text-muted-foreground transition-colors hover:text-primary"
         >
-          <ArrowLeft className="h-[17px] w-[17px]" /> Back to assignment
+          <ArrowLeft className="h-[17px] w-[17px]" /> {backLabel}
         </button>
         {onRetry ? (
           <button
@@ -184,7 +191,7 @@ export function SummaryResultView({
           {/* toggle */}
           <button
             type="button"
-            onClick={() => setShowAnswers((v) => !v)}
+            onClick={onToggleShowAnswers}
             className="ds-ring inline-flex select-none items-center gap-2.5 rounded-lg"
           >
             <span
@@ -278,7 +285,6 @@ export function SummaryResultView({
           ) : (
             pageRows.map((row, i) => {
               const sm = STATUS_META[row.status];
-              const slow = row.seconds > 15;
               return (
                 <div
                   key={row.id}
@@ -290,7 +296,7 @@ export function SummaryResultView({
                     {showAnswers ? (row.correctDisplay || "—") : "—"}
                   </div>
                   <div className={cn("px-[18px] py-4 text-[15px] font-extrabold", sm.tone)}>{sm.label}</div>
-                  <div className={cn("ds-num px-[18px] py-4 text-[15px] font-semibold", slow ? "text-rose-500" : "text-foreground")}>
+                  <div className="ds-num px-[18px] py-4 text-[15px] font-semibold text-foreground">
                     {row.seconds > 0 ? fmtSummarySec(row.seconds) : "—"}
                   </div>
                   <div className="px-[18px] py-4 text-right">

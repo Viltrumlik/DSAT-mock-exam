@@ -15,59 +15,55 @@ import {
   Timer,
   FolderOpen,
   Database,
+  GraduationCap,
+  MonitorPlay,
 } from "lucide-react";
 
 export type NavItem = {
-  href: string;
+  /** Present on leaf items (real routes). Omitted on collapsible group parents. */
+  href?: string;
   label: string;
   icon: React.ElementType;
   /** Marks a page introduced by the rebuild's gap analysis. */
   isNew?: boolean;
+  /** When present, this item is a collapsible category whose children are the routes. */
+  children?: NavItem[];
 };
 /** An empty `section` string renders the items as top-level (no header). */
 export type NavSection = { section: string; items: NavItem[] };
 
 /**
- * Student information architecture (see docs/UI_REBUILD_IA.md §4).
- * Dashboard + Analytics are top-level; the rest are grouped. Notifications
- * live in the top-bar bell, not the sidebar.
+ * Student information architecture.
+ * Dashboard, Midterm, Question Bank and Profile are top-level links; "Learn"
+ * and "Simulation" are collapsible categories that expand to reveal their
+ * routes on click. Notifications live in the top-bar bell, not the sidebar.
  */
 export const studentNav: NavSection[] = [
   {
     section: "",
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/analytics", label: "Analytics", icon: LineChart, isNew: true },
-    ],
-  },
-  {
-    section: "Learn",
-    items: [
-      { href: "/classes", label: "Classes", icon: Users },
-      { href: "/assessments", label: "Assessments", icon: ClipboardCheck },
-    ],
-  },
-  {
-    section: "Practice",
-    items: [
-      { href: "/question-bank", label: "Question Bank", icon: Database, isNew: true },
-      { href: "/pastpapers", label: "Past papers", icon: BookOpen },
-      { href: "/practice-tests", label: "Practice tests", icon: BookOpenCheck },
-      { href: "/vocabulary", label: "Vocabulary", icon: Languages },
-    ],
-  },
-  {
-    section: "Simulation",
-    items: [
-      { href: "/mock-exam", label: "Timed mock", icon: ClipboardList },
+      {
+        label: "Learn",
+        icon: GraduationCap,
+        children: [
+          { href: "/classes", label: "Classroom", icon: Users },
+          { href: "/assessments", label: "Assessment", icon: ClipboardCheck },
+          { href: "/vocabulary", label: "Vocabulary", icon: Languages },
+        ],
+      },
+      {
+        label: "Simulation",
+        icon: MonitorPlay,
+        children: [
+          { href: "/pastpapers", label: "Past Paper", icon: BookOpen },
+          { href: "/mock-exam", label: "Mock Exam", icon: ClipboardList },
+          { href: "/practice-tests", label: "Practice test", icon: BookOpenCheck },
+        ],
+      },
       { href: "/midterm", label: "Midterm", icon: FileText },
-    ],
-  },
-  {
-    section: "Account",
-    items: [
+      { href: "/question-bank", label: "Question Bank", icon: Database },
       { href: "/profile", label: "Profile", icon: UserCircle },
-      // Settings is a planned future page — not linked until built (no dead-ends).
     ],
   },
 ];
@@ -85,6 +81,7 @@ export const teacherNav: NavSection[] = [
     section: "Classroom",
     items: [
       { href: "/teacher/classrooms", label: "Classrooms", icon: School },
+      { href: "/teacher/assessments", label: "Assessments", icon: ClipboardCheck },
       { href: "/teacher/midterms", label: "Midterms", icon: Timer },
       { href: "/teacher/materials", label: "Materials", icon: FolderOpen },
       { href: "/teacher/students", label: "Students", icon: Users },
@@ -100,11 +97,26 @@ export const teacherNav: NavSection[] = [
   },
 ];
 
+/** Returns only the leaf items (those with an href), recursing into collapsible groups. */
 export function flattenNav(nav: NavSection[]): NavItem[] {
-  return nav.flatMap((s) => s.items);
+  const out: NavItem[] = [];
+  const walk = (items: NavItem[]) => {
+    for (const item of items) {
+      if (item.children && item.children.length) walk(item.children);
+      else if (item.href) out.push(item);
+    }
+  };
+  nav.forEach((s) => walk(s.items));
+  return out;
 }
 
-export function isNavItemActive(href: string, pathname: string): boolean {
+/** True when a collapsible group contains the currently-active route. */
+export function navGroupHasActiveChild(item: NavItem, pathname: string): boolean {
+  return (item.children ?? []).some((c) => c.href != null && isNavItemActive(c.href, pathname));
+}
+
+export function isNavItemActive(href: string | undefined, pathname: string): boolean {
+  if (!href) return false;
   if (href === "/" || href === "/teacher") return pathname === href;
   return pathname === href || pathname.startsWith(href + "/");
 }

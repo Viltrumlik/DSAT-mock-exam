@@ -21,6 +21,21 @@ export default function TeacherAppShell({ children }: { children: React.ReactNod
   const m = me as { first_name?: string; last_name?: string; profile_image_url?: string | null } | undefined;
   const name = [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim() || undefined;
 
+  // Full-window, sidebar-less takeovers:
+  //  - the assignment creator/editor (instructions + content library);
+  //  - the teacher assessment practice runner (student-style solve view).
+  const p = pathname || "";
+  const isAssignmentEditor =
+    /^\/teacher\/classrooms\/[^/]+\/assignments\/(new|[^/]+\/edit)(\/|$)/.test(p) ||
+    /^\/teacher\/assessments\/[^/]+\/practice(\/|$)/.test(p);
+  if (isAssignmentEditor) {
+    return (
+      <AuthGuard>
+        <div className="min-h-dvh bg-background">{children}</div>
+      </AuthGuard>
+    );
+  }
+
   return (
     <AuthGuard>
       <AppShell

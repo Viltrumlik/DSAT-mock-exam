@@ -19,6 +19,7 @@ import {
   ClassroomButton,
   ClassroomField,
   crInputClass,
+  crTextareaClass,
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
@@ -152,6 +153,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [editAsgFiles, setEditAsgFiles] = useState<File[]>([]);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [classroomSubject, setClassroomSubject] = useState<string>("");
+  // Classroom level (foundation/junior/middle/senior, "" = untagged). Past papers
+  // are only offered to Middle/Senior groups.
+  const [classroomLevel, setClassroomLevel] = useState<string>("");
   // The content library shows one tab at a time (Pastpapers/Packs/Assessments/Submission).
   const [activeTab, setActiveTab] = useState<TabKey>("pastpapers");
 
@@ -280,6 +284,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           });
           const subj = typeof d.classroom_subject === "string" ? d.classroom_subject : "";
           setClassroomSubject(subj);
+          setClassroomLevel(typeof d.classroom_level === "string" ? d.classroom_level : "");
         }
       } catch (e: unknown) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -299,6 +304,14 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     if (classroomSubject === "MATH") setPracticeScope("MATH");
     else if (classroomSubject === "ENGLISH") setPracticeScope("ENGLISH");
   }, [classroomSubject]);
+
+  // Past papers are only offered to Middle/Senior groups — Junior English/Math and
+  // Foundation Math (and untagged classes) don't get the Pastpapers tab.
+  const showPastpapers = classroomLevel === "middle" || classroomLevel === "senior";
+  // If the Pastpapers tab is hidden but currently selected, fall back to Assessments.
+  useEffect(() => {
+    if (!showPastpapers && activeTab === "pastpapers") setActiveTab("assessments");
+  }, [showPastpapers, activeTab]);
 
   // Prefill from the assignment being edited.
   useEffect(() => {
@@ -630,9 +643,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     </PickCard>
   );
 
+  // Practice test packs are no longer offered when creating an assignment.
+  // Pastpapers only appear for Middle/Senior classes.
   const TABS: { key: TabKey; label: string; icon: typeof BookOpen }[] = [
-    { key: "pastpapers", label: "Pastpapers", icon: BookOpen },
-    { key: "packs", label: "Practice test packs", icon: Layers },
+    ...(showPastpapers ? [{ key: "pastpapers" as const, label: "Pastpapers", icon: BookOpen }] : []),
     { key: "assessments", label: "Assessments", icon: ClipboardList },
     { key: "submission", label: "Submission", icon: SlidersHorizontal },
   ];
@@ -679,8 +693,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 <input id="asg-title" value={newAsg.title} onChange={(e) => setNewAsg((p) => ({ ...p, title: e.target.value }))} placeholder="e.g. May SAT Reading practice" className={`${crInputClass} font-semibold`} />
               </ClassroomField>
 
-              <ClassroomField label="Instructions *" htmlFor="asg-inst" hint="Tell students exactly what to do.">
-                <textarea id="asg-inst" value={newAsg.instructions} onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))} placeholder="Short directions for students" rows={3} className={crInputClass} />
+              <ClassroomField label="Instructions *" htmlFor="asg-inst" hint="Tell students exactly what to do — this is the main brief, so use as much space as you need.">
+                <textarea id="asg-inst" value={newAsg.instructions} onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))} placeholder="Write clear, detailed directions for students" rows={10} className={crTextareaClass} />
               </ClassroomField>
 
               <ClassroomField label="Due date & time" hint="Pick a day within the next week, or leave with no deadline.">

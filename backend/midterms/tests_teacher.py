@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from access import resources
 from access.models import ResourceAccessGrant
 from midterms.models import Midterm
-from midterms.tests_api import make_published_midterm
+from midterms.tests_api import make_published_midterm, force_expire
 
 User = get_user_model()
 
@@ -50,6 +50,7 @@ class StandaloneTeacherTests(TestCase):
         self.assertEqual(r.status_code, 201, r.content)
         aid = r.json()["id"]
         self.sc.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
+        force_expire(aid)  # midterms only submit once the timer runs out
         r = self.sc.post(
             f"/api/midterms/attempts/{aid}/submit_module/",
             {"answers": {qids[0]: "a", qids[1]: "a", qids[2]: "b", qids[3]: "b"}},  # 2/4 = 50

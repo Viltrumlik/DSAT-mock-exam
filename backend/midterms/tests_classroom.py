@@ -11,7 +11,7 @@ from classes.models import Classroom, ClassroomMembership
 from classes.models_certificates import MidtermCertificate
 from classes.models_schedule import MidtermSchedule
 from midterms.models import Midterm
-from midterms.tests_api import make_published_midterm
+from midterms.tests_api import make_published_midterm, force_expire
 
 User = get_user_model()
 
@@ -59,6 +59,7 @@ class ClassroomMidtermTests(TestCase):
         aid = r.json()["id"]
         c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
         ans = {qids[i]: ("a" if i < correct_n else "b") for i in range(4)}
+        force_expire(aid)  # midterms only submit once the timer runs out
         c.post(f"/api/midterms/attempts/{aid}/submit_module/", {"answers": ans}, format="json")
         return c, aid
 
@@ -148,3 +149,34 @@ class ClassroomMidtermTests(TestCase):
         c_s1 = MidtermCertificate.objects.get(midterm=self.mt, student=self.s1, flavor="CLASSROOM")
         self.assertEqual(c_s1.rank, 1)
         self.assertEqual(c_s1.cohort_size, 1)  # removed s2 not counted
+
+    def test_access_code_gate(self):
+        cid = self.room.id
+        self.tc.post(f"/api/classes/{cid}/midterms-v2/assign/", {"midterm_id": self.mt.id}, format="json")
+
+        # Teacher generates the 6-digit access code ("Start midterm").
+        r = self.tc.post(f"/api/classes/{cid}/midterms-v2/{self.mt.id}/start-code/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        code = r.json()["access_code"]
+        self.assertRegex(code, r"^\d{6}$")
+        wrong = "111111" if code != "111111" else "222222"
+
+        # Student can create an attempt but can't start without the code.
+        c = APIClient(); c.force_authenticate(self.s1)
+        aid = c.post("/api/midterms/attempts/", {"midterm": self.mt.id}, format="json").json()["id"]
+        r = c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(r.json().get("reason"), "code_required")
+
+        # Wrong code is rejected and does not unlock start.
+        r = c.post(f"/api/midterms/attempts/{aid}/verify_code/", {"code": wrong}, format="json")
+        self.assertEqual(r.status_code, 403, r.content)
+        self.assertEqual(c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json").status_code, 403)
+
+        # Correct code verifies → start now succeeds.
+        r = c.post(f"/api/midterms/attempts/{aid}/verify_code/", {"code": code}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["ok"])
+        r = c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["current_state"], "MODULE_1_ACTIVE")

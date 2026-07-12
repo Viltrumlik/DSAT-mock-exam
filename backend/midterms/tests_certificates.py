@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from classes.models_certificates import MidtermCertificate
 from midterms.certificate_service import _competition_ranks
 from midterms.models import Midterm
-from midterms.tests_api import make_published_midterm
+from midterms.tests_api import make_published_midterm, force_expire
 
 User = get_user_model()
 
@@ -35,6 +35,7 @@ class StandaloneCertificateTests(TestCase):
         aid = r.json()["id"]
         self.sc.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
         ans = {qids[i]: ("a" if i < correct_n else "b") for i in range(4)}
+        force_expire(aid)  # midterms only submit once the timer runs out
         self.sc.post(f"/api/midterms/attempts/{aid}/submit_module/", {"answers": ans}, format="json")
         return aid
 

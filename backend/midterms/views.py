@@ -19,7 +19,12 @@ from rest_framework.response import Response
 
 from config.reliability import idempotency_key_from_request
 
-from .access import can_start_midterm, midterm_results_state
+from .access import (
+    can_start_midterm,
+    midterm_results_state,
+    resolve_midterm_schedule,
+    resolve_version_for_student,
+)
 from .idempotency import consume_idempotency_key
 from .models import Midterm, MidtermAttempt
 from .serializers import MidtermAttemptSerializer
@@ -102,8 +107,11 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         existing = self._active_attempt(midterm)
         if existing is not None:
             return Response(MidtermAttemptSerializer(existing).data, status=status.HTTP_200_OK)
+        # Pin the student's assigned version (random-assigned if the midterm has versions
+        # and none was set yet). None → single-set midterm (uses the midterm's own module).
+        version = resolve_version_for_student(request.user, midterm)
         try:
-            attempt = MidtermAttempt.objects.create(midterm=midterm, student=request.user)
+            attempt = MidtermAttempt.objects.create(midterm=midterm, student=request.user, version=version)
         except IntegrityError:
             attempt = self._active_attempt(midterm)
             if attempt is None:
@@ -121,9 +129,42 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
         return self._snapshot(attempt)
 
+    @action(detail=True, methods=["post"], url_path="verify_code")
+    def verify_code(self, request, pk=None):
+        """Check the classroom access code before a midterm may start.
+
+        Returns ``{ok, requires_code}``. When the schedule has no code (or none is
+        scheduled — standalone), this is a no-op success. On a correct code the
+        attempt is flagged verified so ``start`` will proceed; a wrong code is 403.
+        """
+        attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        sched = resolve_midterm_schedule(request.user, attempt.midterm)
+        if sched is None or not sched.requires_code():
+            return Response({"ok": True, "requires_code": False})
+        code = request.data.get("code")
+        if not sched.code_matches(code):
+            return Response(
+                {"ok": False, "requires_code": True, "detail": "Incorrect access code."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        from django.utils import timezone
+
+        MidtermAttempt.objects.filter(pk=attempt.pk).update(code_verified_at=timezone.now())
+        return Response({"ok": True, "requires_code": True})
+
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        # Access-code gate: if the classroom requires a code, it must have been
+        # verified first (see verify_code). Resuming an already-started attempt is
+        # unaffected (only NOT_STARTED transitions actually begin the timer).
+        if attempt.current_state == MidtermAttempt.STATE_NOT_STARTED:
+            sched = resolve_midterm_schedule(request.user, attempt.midterm)
+            if sched is not None and sched.requires_code() and attempt.code_verified_at is None:
+                return Response(
+                    {"detail": "Enter the access code from your teacher to begin.", "reason": "code_required"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         def compute():
             with transaction.atomic():
@@ -138,6 +179,17 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="submit_module")
     def submit_module(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        # A midterm can't be submitted early — it may only end when its timer runs
+        # out (the deadline is authoritative, enforced here regardless of client).
+        # Checked before the idempotency wrapper so the 403 is never cached and a
+        # legitimate post-deadline submit with the same key still succeeds.
+        if attempt.current_state == STATE_ACTIVE:
+            timing = attempt.get_timing()
+            if timing is not None and not timing.is_expired:
+                return Response(
+                    {"detail": "This midterm can only be submitted when its time runs out."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
         answers = request.data.get("answers") or {}
         flagged = request.data.get("flagged")
 

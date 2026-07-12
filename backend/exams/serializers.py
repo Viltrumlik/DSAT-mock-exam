@@ -232,6 +232,9 @@ class MockExamSerializer(serializers.ModelSerializer):
             "midterm_module_count",
             "midterm_module1_minutes",
             "midterm_module2_minutes",
+            "midterm_level",
+            "midterm_period",
+            "midterm_type",
             "tests",
         ]
 
@@ -867,6 +870,9 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
             "midterm_module2_minutes",
             "midterm_target_question_count",
             "midterm_module_question_limit",
+            "midterm_level",
+            "midterm_period",
+            "midterm_type",
             "tests",
             "publish_ready",
             "publish_block_reason",
