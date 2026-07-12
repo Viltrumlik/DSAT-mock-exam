@@ -104,9 +104,17 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
           <p className="mt-0.5 text-[13px] font-semibold" style={{ color: C.slate }}>{meta}</p>
         </div>
 
-        {kind === "available" || unlocked ? (
+        {kind === "available" ? (
           <button onClick={enter} disabled={busy} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60" style={{ background: C.blue }}>
             {busy ? "…" : hasAttempt ? "Resume timed mock" : "Enter timed mock"} <ArrowRight className="h-4 w-4" />
+          </button>
+        ) : unlocked ? (
+          // Countdown just hit zero — DON'T expose a live Enter yet. A classroom midterm's
+          // window can open before the teacher generates the access code, so enterability is
+          // the server's call. onUnlock has fired a refetch; this row will re-bucket to
+          // "available" (live Enter) or stay "Waiting for teacher". Disabled avoids a 403 click.
+          <button disabled className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white opacity-60" style={{ background: C.blue }}>
+            Starting… <ArrowRight className="h-4 w-4" />
           </button>
         ) : kind === "scheduled" ? (
           <div className="shrink-0 text-right">
