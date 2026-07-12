@@ -82,12 +82,14 @@ class UpsertMidtermFromLegacyTests(TestCase):
         mt = upsert_midterm_from_legacy(exam)
         self.assertEqual(mt.questions().count(), 3)
 
-    def test_questions_frozen_once_attempt_exists(self):
+    def test_questions_stay_live_but_ids_preserved_with_attempts(self):
+        # Live-content contract: adding a question in the builder AFTER an attempt exists
+        # must show live (count grows), while the ORIGINAL question ids are preserved so the
+        # attempt's answers (keyed on Question.id) survive.
         exam, mod = _legacy_midterm(n_questions=2)
         mt = upsert_midterm_from_legacy(exam)
         original_ids = sorted(q.id for q in mt.questions())
 
-        # A student has an attempt → questions must not be rebuilt (ids are answer anchors).
         from django.contrib.auth import get_user_model
 
         student = get_user_model().objects.create(username="s1")
@@ -99,7 +101,36 @@ class UpsertMidtermFromLegacyTests(TestCase):
             correct_answers="b", score=10, order=2,
         )
         mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
-        self.assertEqual(sorted(q.id for q in mt2.questions()), original_ids)
+        new_ids = sorted(q.id for q in mt2.questions())
+        self.assertEqual(mt2.questions().count(), 3)  # live, not frozen
+        self.assertTrue(set(original_ids).issubset(set(new_ids)))  # original ids preserved
+
+    def test_content_edit_updates_in_place_same_id(self):
+        # Editing a question's text/answer in the builder updates the mirror IN PLACE
+        # (same Question.id, new content) — the edited variant shows, no second version.
+        exam, mod = _legacy_midterm(n_questions=2)
+        mt = upsert_midterm_from_legacy(exam)
+        first = mt.questions().order_by("order").first()
+        first_id = first.id
+
+        src = mod.questions.order_by("order").first()
+        src.question_text = "EDITED STEM"
+        src.correct_answers = "c"
+        src.save()
+
+        mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
+        refreshed = mt2.questions().order_by("order").first()
+        self.assertEqual(refreshed.id, first_id)  # same row, not a new copy
+        self.assertEqual(refreshed.question_text, "EDITED STEM")
+        self.assertEqual(refreshed.correct_answers, "c")
+
+    def test_removed_question_is_trimmed(self):
+        exam, mod = _legacy_midterm(n_questions=3)
+        mt = upsert_midterm_from_legacy(exam)
+        self.assertEqual(mt.questions().count(), 3)
+        mod.questions.order_by("-order").first().delete()  # remove the last live question
+        mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
+        self.assertEqual(mt2.questions().count(), 2)
 
     def test_non_midterm_is_ignored(self):
         exam = MockExam.objects.create(title="Full Mock", kind=MockExam.KIND_MOCK_SAT)

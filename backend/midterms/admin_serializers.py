@@ -8,7 +8,9 @@ from .models import Midterm
 
 
 def _publish_check(midterm: Midterm):
-    if not midterm.question_module_id or midterm.questions().count() < 1:
+    # Version-aware: a versioned midterm keeps its questions on the versions, so its flat
+    # ``question_module`` is empty by design — don't treat that as "no questions".
+    if not midterm.has_questions():
         return False, "Add at least one question before publishing."
     return True, ""
 
@@ -46,7 +48,7 @@ class AdminMidtermSerializer(serializers.ModelSerializer):
         ]
 
     def get_question_count(self, obj) -> int:
-        return obj.questions().count()
+        return obj.display_question_count()
 
     def get_publish_ready(self, obj) -> bool:
         return _publish_check(obj)[0]

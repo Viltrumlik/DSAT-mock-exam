@@ -108,6 +108,20 @@ class Midterm(TimestampedModel):
             return Question.objects.none()
         return Question.objects.filter(module_id=self.question_module_id).order_by("order", "id")
 
+    def display_question_count(self) -> int:
+        """Questions a student actually gets: for a versioned midterm the versions are
+        equal-length parallel forms, so use the first version's count; otherwise the flat
+        module count. Version-aware so multi-version midterms don't read as empty (their
+        flat ``question_module`` is intentionally unused)."""
+        v = self.versions.order_by("version_number").first()
+        if v is not None:
+            return v.questions().count()
+        return self.questions().count()
+
+    def has_questions(self) -> bool:
+        """True when the midterm has at least one question to serve (version-aware)."""
+        return self.display_question_count() > 0
+
     @property
     def score_ceiling(self) -> int:
         return 800 if self.scoring_scale == self.SCALE_800 else 100

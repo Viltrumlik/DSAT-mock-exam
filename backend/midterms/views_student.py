@@ -73,7 +73,7 @@ class MyMidtermsView(APIView):
                 "scoring_scale": m.scoring_scale,
                 "score_ceiling": m.score_ceiling,
                 "duration_minutes": m.duration_minutes,
-                "question_count": m.questions().count(),
+                "question_count": m.display_question_count(),
                 "flavor": flavor,
                 "attempt_id": att.id if att else None,
                 "state": att.current_state if att else "NOT_STARTED",
