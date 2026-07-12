@@ -27,6 +27,7 @@ export interface MidtermRow {
   submitted: boolean;
   is_open: boolean;
   is_before_start: boolean; // scheduled window hasn't opened yet (countdown)
+  awaiting_code: boolean; // classroom window is open but teacher hasn't started it (no access code yet)
   available_at: string | null;
   deadline: string | null; // classroom deadline; past it + not started = missed
   results_visible: boolean;

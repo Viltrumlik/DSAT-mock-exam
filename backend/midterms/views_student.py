@@ -42,6 +42,7 @@ class MyMidtermsView(APIView):
             available_at = None
             is_before_start = False
             deadline = None
+            awaiting_code = False
             if flavor == FLAVOR_CLASSROOM and grant is not None and grant.classroom_id:
                 from classes.models_schedule import MidtermSchedule
 
@@ -51,6 +52,11 @@ class MyMidtermsView(APIView):
                     available_at = sched.available_at
                     is_before_start = sched.is_before_start()
                     deadline = sched.deadline
+                    # A classroom midterm within its open window still can't be entered until
+                    # the teacher has generated the 6-digit access code ("Start midterm").
+                    if is_open and not sched.access_code:
+                        awaiting_code = True
+                        is_open = False
 
             if att is not None:
                 state = midterm_results_state(att)
@@ -74,6 +80,7 @@ class MyMidtermsView(APIView):
                 "submitted": submitted,
                 "is_open": is_open,
                 "is_before_start": is_before_start,
+                "awaiting_code": awaiting_code,
                 "available_at": available_at.isoformat() if available_at else None,
                 "deadline": deadline.isoformat() if deadline else None,
                 "results_visible": visible,
