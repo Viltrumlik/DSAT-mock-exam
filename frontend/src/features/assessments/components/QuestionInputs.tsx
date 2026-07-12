@@ -125,6 +125,23 @@ export function MultipleChoiceInput({
   );
 }
 
+/** Renders an "a/b" answer as a stacked fraction; otherwise plain text.
+ *  Mirrors the pastpaper SPR input's answer preview so grid-ins read the same way. */
+function RecordedAnswer({ text }: { text: string }) {
+  const t = (text ?? "").trim();
+  if (!t) return <span className="text-slate-400">—</span>;
+  if (t.includes("/")) {
+    const [num, den] = t.split("/");
+    return (
+      <span className="inline-flex flex-col items-center justify-center font-black leading-none">
+        <span className="border-b-[2.5px] border-slate-900 px-[2px] pb-[1px]">{num}</span>
+        <span className="px-[2px] pt-[1px]">{den}</span>
+      </span>
+    );
+  }
+  return <span>{t}</span>;
+}
+
 export function NumericInput({
   value,
   onChange,
@@ -184,14 +201,24 @@ export function NumericInput({
   };
 
   return (
-    <input
-      className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 min-h-[52px] text-base shadow-sm focus:border-primary focus:outline-none"
-      type="text"
-      inputMode="text"
-      value={raw}
-      onChange={(e) => handle(e.target.value)}
-      placeholder="Number or fraction (e.g. 3.5 or 25/7)…"
-    />
+    <div>
+      <input
+        className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 min-h-[52px] text-base shadow-sm focus:border-primary focus:outline-none"
+        type="text"
+        inputMode="text"
+        value={raw}
+        onChange={(e) => handle(e.target.value)}
+        placeholder="Number or fraction (e.g. 3.5 or 25/7)…"
+      />
+      {/* Answer preview — like the pastpaper SPR input: shows what's recorded and renders
+          an "a/b" grid-in as a stacked fraction so the student can confirm it. */}
+      <div className="mt-3 flex items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Answer preview</span>
+        <span className="flex min-h-[32px] min-w-[36px] items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-base font-black text-slate-900">
+          <RecordedAnswer text={raw} />
+        </span>
+      </div>
+    </div>
   );
 }
 
