@@ -1827,6 +1827,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         if exam.tests.count() >= 4:
             return Response({'error': 'A midterm can have at most 4 versions.'}, status=status.HTTP_400_BAD_REQUEST)
         pt = self._provision_midterm_version(exam)
+        _resync_midterm_mirror_for_exam(exam)
         from .serializers import AdminPracticeTestSerializer
         return Response(AdminPracticeTestSerializer(pt).data, status=status.HTTP_201_CREATED)
 
@@ -1841,6 +1842,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         test_id = request.data.get('test_id') or request.query_params.get('test_id')
         test = get_object_or_404(PracticeTest, id=test_id, mock_exam=exam)
         test.delete()
+        _resync_midterm_mirror_for_exam(exam)
         return Response({'status': 'removed'})
 
 
@@ -2000,7 +2002,17 @@ class AdminModuleViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         test = get_object_or_404(PracticeTest, pk=self.kwargs['test_pk'])
-        serializer.save(practice_test=test)
+        instance = serializer.save(practice_test=test)
+        _resync_midterm_mirror(getattr(instance, "pk", None))
+
+    def perform_destroy(self, instance):
+        module_id = instance.pk
+        test = instance.practice_test
+        super().perform_destroy(instance)
+        # The module is gone; resync via a surviving sibling module of the same test.
+        if test is not None:
+            sib = test.modules.first()
+            _resync_midterm_mirror(sib.pk if sib is not None else None)
 
 
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -2043,6 +2055,31 @@ def _merge_admin_question_create_defaults(request, kwargs) -> dict:
         data["score"] = 10
 
     return data
+
+
+def _resync_midterm_mirror(module_id) -> None:
+    """Refresh the midterm mirror owning ``module_id`` so builder question edits show LIVE
+    in the runner (no frozen snapshot). No-op for non-midterm modules; never raises so a
+    mirror failure can't break the builder edit."""
+    if module_id is None:
+        return
+    try:
+        from midterms.sync import resync_midterm_for_module
+
+        resync_midterm_for_module(module_id)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("midterm mirror resync hook failed module_id=%s", module_id)
+
+
+def _resync_midterm_mirror_for_exam(exam) -> None:
+    """Refresh the midterm mirror for a MockExam directly (structure changes: add/remove
+    version). No-op for non-midterms; never raises."""
+    try:
+        from midterms.sync import resync_midterm_for_exam
+
+        resync_midterm_for_exam(exam)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("midterm mirror resync-for-exam hook failed exam_id=%s", getattr(exam, "pk", None))
 
 
 class AdminQuestionViewSet(viewsets.ModelViewSet):
@@ -2125,14 +2162,17 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         n = Question.objects.filter(module_id=module.pk).count()
         # ``order`` is the dense insert index (append); ``Question.save`` reindexes under a module lock.
         serializer.save(module=module, order=n)
+        _resync_midterm_mirror(module.pk)
 
     def perform_update(self, serializer):
-        serializer.save()
+        instance = serializer.save()
+        _resync_midterm_mirror(getattr(instance, "module_id", None))
 
     def perform_destroy(self, instance):
         module_id = instance.module_id
         super().perform_destroy(instance)
         dense_compact_module_orders_locked(module_id)
+        _resync_midterm_mirror(module_id)
 
     @action(detail=True, methods=['post'])
     def reorder(self, request, test_pk=None, module_pk=None, pk=None):
@@ -2168,6 +2208,7 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
             reindex_module_questions_dense_locked(mid, rows)
 
+        _resync_midterm_mirror(mid)
         return Response({"status": "reordered"})
 
     @action(detail=False, methods=["post"], url_path="bulk-reorder")
@@ -2245,6 +2286,7 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
 
             reindex_module_questions_dense_locked(module.pk, ordered)
 
+        _resync_midterm_mirror(module.pk)
         return Response({"status": "reordered", "count": len(ordered_ids)})
 
 
