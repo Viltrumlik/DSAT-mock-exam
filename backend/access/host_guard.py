@@ -220,6 +220,11 @@ class SubdomainAPIGuardMiddleware:
             # Assessment authoring (``/api/assessments/admin/``) stays on the questions console.
             if path.startswith("/api/assessments/homework/"):
                 return self.get_response(request)
+            # Teacher assessment practice (/teacher/assessments): READ-ONLY browse of
+            # assessment sets (list + detail-with-answers) so a teacher can solve them in
+            # a student-style preview. Authoring (POST/PATCH/DELETE) stays on questions.
+            if path.startswith("/api/assessments/admin/sets/") and method == "GET":
+                return self.get_response(request)
             # Separated midterm system: teacher standalone-midterm area (catalog + per-student
             # grant/revoke/results + the all-students grant picker at /midterms/teacher/students/).
             # The classroom flavor rides /api/classes/ (already allowed).
