@@ -654,7 +654,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const captionCls = "text-[12.5px] font-medium text-muted-foreground/80";
 
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
+    <div className="mx-auto w-full max-w-[1600px]">
       {/* ── Page head ── */}
       <div className="mb-5">
         <button type="button" onClick={onCancel} className="mb-4 inline-flex items-center gap-2 text-[13.5px] font-bold text-muted-foreground transition-colors hover:text-primary">
@@ -676,7 +676,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       {asgOptionsError ? <div className="mb-4"><ClassroomAlert tone="warning">{asgOptionsError}</ClassroomAlert></div> : null}
 
       {/* ── Builder split pane ── */}
-      <div className="grid items-start gap-6 lg:grid-cols-[400px_1fr]">
+      <div className="grid items-start gap-6 lg:grid-cols-2">
 
         {/* LEFT — details · live cart · sticky footer */}
         <section className="flex flex-col overflow-hidden rounded-[20px] border border-border bg-panel shadow-md lg:sticky lg:top-4 lg:max-h-[calc(100vh-120px)]">
