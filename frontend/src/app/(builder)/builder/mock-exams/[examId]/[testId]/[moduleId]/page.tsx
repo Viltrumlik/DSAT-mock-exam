@@ -70,8 +70,8 @@ function MockExamModuleEditor({
         packTitle={exam?.title ?? undefined}
         sectionSubject={section?.subject ?? undefined}
         moduleOrder={moduleLabel}
-        backHref={`/builder/mock-exams`}
-        backLabel="Mock exams"
+        backHref={exam?.kind === "MIDTERM" ? `/builder/midterms` : `/builder/mock-exams`}
+        backLabel={exam?.kind === "MIDTERM" ? "Midterms" : "Mock exams"}
         examKind={exam?.kind ?? undefined}
         scoringScale={exam?.midterm_scoring_scale ?? undefined}
         midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
