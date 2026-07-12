@@ -188,27 +188,6 @@ export function SummaryResultView({
       <div className="rounded-[20px] border border-border bg-card px-7 py-6">
         <div className="mb-[18px] flex flex-wrap items-center gap-3.5">
           <h2 className="text-[19px] font-extrabold tracking-tight text-foreground">Question breakdown</h2>
-          {/* toggle */}
-          <button
-            type="button"
-            onClick={onToggleShowAnswers}
-            className="ds-ring inline-flex select-none items-center gap-2.5 rounded-lg"
-          >
-            <span
-              className={cn(
-                "relative inline-block h-6 w-11 shrink-0 rounded-full transition-colors",
-                showAnswers ? "bg-primary" : "bg-slate-300 dark:bg-slate-600",
-              )}
-            >
-              <span
-                className={cn(
-                  "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]",
-                  showAnswers ? "left-[22px]" : "left-0.5",
-                )}
-              />
-            </span>
-            <span className="text-sm font-bold text-foreground">Show correct answers</span>
-          </button>
 
           <div className="ml-auto inline-flex items-center gap-2.5">
             <span className="text-sm font-bold text-label-foreground">View:</span>
@@ -262,6 +241,29 @@ export function SummaryResultView({
               </button>
             );
           })}
+
+          {/* Show correct answers — right-aligned on the filter row so it sits under the
+              View selector, parallel to the filter pills. */}
+          <button
+            type="button"
+            onClick={onToggleShowAnswers}
+            className="ds-ring ml-auto inline-flex select-none items-center gap-2.5 rounded-lg"
+          >
+            <span
+              className={cn(
+                "relative inline-block h-6 w-11 shrink-0 rounded-full transition-colors",
+                showAnswers ? "bg-primary" : "bg-slate-300 dark:bg-slate-600",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]",
+                  showAnswers ? "left-[22px]" : "left-0.5",
+                )}
+              />
+            </span>
+            <span className="text-sm font-bold text-foreground">Show correct answers</span>
+          </button>
         </div>
 
         {/* table */}
