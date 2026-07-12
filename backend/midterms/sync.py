@@ -18,6 +18,10 @@ callers wrap it so a mirror failure never breaks the legacy publish itself.
 
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # exams.Question content fields copied verbatim onto the mirror's question rows.
 # Kept in lock-step with migrate_midterms_to_new_tables._QUESTION_FIELDS.
 _QUESTION_FIELDS = [
@@ -45,8 +49,8 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     if not _is_legacy_midterm(mock):
         return None
 
-    from exams.models import Module, Question
-    from .models import Midterm, MidtermAttempt
+    from exams.models import Module
+    from .models import Midterm
 
     m1 = int(getattr(mock, "midterm_module1_minutes", 60) or 60)
     m2 = int(getattr(mock, "midterm_module2_minutes", 60) or 60)
@@ -87,57 +91,153 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
             module.save(update_fields=["time_limit_minutes"])
     midterm.save()
 
-    # Rebuild questions from the legacy sections — but NEVER once an attempt exists
-    # (answers key on Question.id; a rebuild would orphan them).
-    if sync_questions and not MidtermAttempt.objects.filter(midterm=midterm).exists():
+    # Mirror questions from the legacy sections LIVE — refresh IN PLACE on every sync so
+    # builder edits/additions show immediately (no frozen snapshot). Question.id is
+    # preserved per position, so existing attempt answers (keyed on Question.id) survive.
+    # No longer gated on attempts — historical immutability was intentionally dropped to
+    # match assessments/pastpapers.
+    if sync_questions:
         practice_tests = list(mock.tests.all().order_by("id"))
         if len(practice_tests) >= 2:
             # Multiple PracticeTests = multiple VERSIONS: mirror each into its own
-            # MidtermVersion. The flattened question_module is left empty (unused).
+            # MidtermVersion. Leave the flat question_module INTACT — emptying it would
+            # orphan any legacy single-set attempts (an attempt with version_id=NULL
+            # resolves effective_questions() to the flat module). It is simply dormant for
+            # new (version-pinned) attempts, and display counts are version-aware. A midterm
+            # that was versioned from the start has an empty flat module anyway.
             _sync_versions(midterm, practice_tests)
-            Question.objects.filter(module_id=module.id).delete()
         else:
             # Single set: drop any stale versions and flatten questions into the
             # midterm's own module (legacy single-version behavior).
             for v in list(midterm.versions.all()):
                 v.delete()
-            Question.objects.filter(module_id=module.id).delete()
-            order = 0
-            for section in practice_tests:
-                for src_mod in section.modules.all().order_by("module_order"):
-                    for src_q in src_mod.questions.all().order_by("order", "id"):
-                        fields = {f: getattr(src_q, f) for f in _QUESTION_FIELDS}
-                        Question.objects.create(module=module, order=order, **fields)
-                        order += 1
+            _sync_module_questions_in_place(module, _iter_live_questions(practice_tests))
 
     return midterm
 
 
+def _iter_live_questions(practice_tests) -> list:
+    """Flatten the live builder questions of the given PracticeTests, in authoring order."""
+    live = []
+    for section in practice_tests:
+        for src_mod in section.modules.all().order_by("module_order"):
+            live.extend(src_mod.questions.all().order_by("order", "id"))
+    return live
+
+
+def _sync_module_questions_in_place(module, live_questions) -> None:
+    """Make ``module``'s mirrored Questions match ``live_questions`` (ordered) BY POSITION.
+
+    Updates content in place (preserving ``Question.id`` so attempt answers survive),
+    appends new questions, and trims extras. This is what makes midterm content live:
+    re-running it after a builder edit refreshes the mirror without orphaning attempts.
+    """
+    from exams.models import Question
+
+    existing = list(Question.objects.filter(module_id=module.id).order_by("order", "id"))
+    for i, src in enumerate(live_questions):
+        fields = {f: getattr(src, f) for f in _QUESTION_FIELDS}
+        if i < len(existing):
+            q = existing[i]
+            dirty = []
+            if q.order != i:
+                q.order = i
+                dirty.append("order")
+            for f, val in fields.items():
+                if getattr(q, f) != val:
+                    setattr(q, f, val)
+                    dirty.append(f)
+            if dirty:
+                # _plain_db_save: order is already finalized densely (0..n-1) by position,
+                # so bypass the dense-reindex-under-lock in Question.save (its intended use).
+                q.save(update_fields=list(dict.fromkeys(dirty)) + ["updated_at"], _plain_db_save=True)
+        else:
+            q = Question(module_id=module.id, order=i, **fields)
+            q.save(_plain_db_save=True)
+    # Trim questions the builder no longer has (orphans any attempt answer for them — the
+    # accepted live-content tradeoff).
+    for q in existing[len(live_questions):]:
+        q.delete()
+
+
 def _sync_versions(midterm, practice_tests) -> None:
     """Mirror up to 4 legacy PracticeTests into ``midterm.versions`` (one per version),
-    each owning its own Module of copied questions. Full rebuild — only reached when the
-    midterm has no attempts yet."""
-    from exams.models import Module, Question
+    each owning its own Module of questions. IN-PLACE: versions are matched by
+    ``legacy_practice_test_id`` and their questions refreshed by position, so re-syncing
+    after a builder edit keeps content live while preserving Question.id for attempts."""
+    from exams.models import Module
     from .models import MidtermVersion
 
-    for v in list(midterm.versions.all()):
-        v.delete()  # deletes version + its module (cascading questions)
     duration = midterm.duration_minutes or 1
-    for idx, pt in enumerate(practice_tests[:4], start=1):
-        module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=duration)
-        MidtermVersion.objects.create(
-            midterm=midterm,
-            version_number=idx,
-            label=f"Version {chr(64 + idx)}",
-            question_module=module,
-            legacy_practice_test_id=pt.id,
+    keep_pt_ids = set()
+    # Existing versions keep their number; new ones take the next FREE number so a
+    # remove-then-add-version sequence can't collide with the (midterm, version_number)
+    # unique constraint.
+    used = set(midterm.versions.values_list("version_number", flat=True))
+
+    def _next_free() -> int:
+        n = 1
+        while n in used:
+            n += 1
+        used.add(n)
+        return n
+
+    for pt in practice_tests[:4]:
+        keep_pt_ids.add(pt.id)
+        version = midterm.versions.filter(legacy_practice_test_id=pt.id).first()
+        if version is None:
+            num = _next_free()
+            module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=duration)
+            version = MidtermVersion.objects.create(
+                midterm=midterm,
+                version_number=num,
+                label=f"Version {chr(64 + num)}" if num <= 26 else f"Version {num}",
+                question_module=module,
+                legacy_practice_test_id=pt.id,
+            )
+        else:
+            module = version.question_module
+            if module is None:
+                module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=duration)
+                version.question_module = module
+                version.save(update_fields=["question_module"])
+        _sync_module_questions_in_place(module, _iter_live_questions([pt]))
+    # Drop versions whose legacy PracticeTest no longer exists.
+    for v in list(midterm.versions.exclude(legacy_practice_test_id__in=keep_pt_ids)):
+        v.delete()
+
+
+def resync_midterm_for_module(module_id) -> None:
+    """Re-mirror the midterm owning this legacy ``exams.Module``, if any.
+
+    Called from the builder's question/module mutation paths so edits/additions show live
+    in the runner. No-op for non-midterm modules; never raises (a mirror failure must not
+    break the builder edit itself)."""
+    try:
+        from exams.models import Module, MockExam
+
+        mod = (
+            Module.objects.select_related("practice_test__mock_exam")
+            .filter(pk=module_id)
+            .first()
         )
-        order = 0
-        for src_mod in pt.modules.all().order_by("module_order"):
-            for src_q in src_mod.questions.all().order_by("order", "id"):
-                fields = {f: getattr(src_q, f) for f in _QUESTION_FIELDS}
-                Question.objects.create(module=module, order=order, **fields)
-                order += 1
+        pt = getattr(mod, "practice_test", None) if mod is not None else None
+        exam = getattr(pt, "mock_exam", None) if pt is not None else None
+        if exam is not None and exam.kind == MockExam.KIND_MIDTERM:
+            upsert_midterm_from_legacy(exam, sync_questions=True)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("midterm mirror resync failed for module_id=%s", module_id)
+
+
+def resync_midterm_for_exam(exam) -> None:
+    """Re-mirror a midterm MockExam directly (e.g. after add/remove version). Never raises."""
+    try:
+        from exams.models import MockExam
+
+        if getattr(exam, "kind", None) == MockExam.KIND_MIDTERM:
+            upsert_midterm_from_legacy(exam, sync_questions=True)
+    except Exception:  # pragma: no cover - defensive
+        logger.exception("midterm mirror resync failed for exam_id=%s", getattr(exam, "pk", None))
 
 
 def unpublish_midterm_mirror(mock) -> None:

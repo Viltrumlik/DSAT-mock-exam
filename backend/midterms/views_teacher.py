@@ -55,7 +55,7 @@ def _midterm_brief(m: Midterm) -> dict:
         "scoring_scale": m.scoring_scale,
         "score_ceiling": m.score_ceiling,
         "duration_minutes": m.duration_minutes,
-        "question_count": m.questions().count(),
+        "question_count": m.display_question_count(),
         "is_published": m.is_published,
     }
 

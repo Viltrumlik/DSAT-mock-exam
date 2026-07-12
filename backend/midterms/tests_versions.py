@@ -83,6 +83,14 @@ class MidtermVersionTests(TestCase):
 
         self.assertNotIn("version", json.dumps(snap.get("practice_test_details", {})))
 
+    def test_versioned_midterm_reports_per_version_count_not_zero(self):
+        # A versioned midterm's flat question_module is empty by design; display counts
+        # must be version-aware (per-version length) so it doesn't read as an empty/hidden
+        # midterm in listings. Each version here has 4 questions.
+        self.assertEqual(self.mt.questions().count(), 0)  # flat module intentionally empty
+        self.assertEqual(self.mt.display_question_count(), 4)
+        self.assertTrue(self.mt.has_questions())
+
 
 class MidtermVersionSyncTests(TestCase):
     def test_sync_mirrors_two_practice_tests_into_two_versions(self):
