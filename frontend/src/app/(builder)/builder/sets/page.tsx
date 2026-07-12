@@ -8,7 +8,7 @@ import { Plus, Search, RefreshCw, SendHorizonal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, SetLineage } from "@/components/governance";
 import { ConfirmDialog } from "@/features/classroom/ui";
-import { levelLabel } from "@/lib/levels";
+import { levelLabel, LEVEL_LABELS, type LevelKey } from "@/lib/levels";
 
 const SUBJECT_COLORS: Record<string, string> = {
   math: "bg-purple-100 text-purple-800",
@@ -22,6 +22,8 @@ export default function BuilderSetsPage() {
   const scopedSubject = role === "teacher" ? getSubject() : null;
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [levelFilter, setLevelFilter] = useState<"all" | LevelKey>("all");
+  const [subjectFilter, setSubjectFilter] = useState<"all" | "english" | "math">("all");
   const [pendingDelete, setPendingDelete] = useState<{ id: number; title: string } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // Set becomes true after a 409 (the set is published/assigned) — reveals the
@@ -70,8 +72,10 @@ export default function BuilderSetsPage() {
     }
     if (statusFilter === "active") result = result.filter((s) => s.is_active);
     if (statusFilter === "inactive") result = result.filter((s) => !s.is_active);
+    if (levelFilter !== "all") result = result.filter((s) => s.level === levelFilter);
+    if (subjectFilter !== "all") result = result.filter((s) => s.subject === subjectFilter);
     return result;
-  }, [sets, search, statusFilter]);
+  }, [sets, search, statusFilter, levelFilter, subjectFilter]);
 
   const activeCount = sets.filter((s) => s.is_active).length;
   const draftCount = sets.filter((s) => !s.is_active).length;
@@ -166,6 +170,31 @@ export default function BuilderSetsPage() {
           <option value="active">Active only</option>
           <option value="inactive">Draft / inactive</option>
         </select>
+        {/* Filter 1: level */}
+        <select
+          value={levelFilter}
+          onChange={(e) => setLevelFilter(e.target.value as typeof levelFilter)}
+          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
+        >
+          <option value="all">All levels</option>
+          {(["foundation", "junior", "middle", "senior"] as LevelKey[]).map((lv) => (
+            <option key={lv} value={lv}>
+              {LEVEL_LABELS[lv]}
+            </option>
+          ))}
+        </select>
+        {/* Filter 2: subject — only for global staff (a scoped teacher already sees one subject) */}
+        {!scopedSubject && (
+          <select
+            value={subjectFilter}
+            onChange={(e) => setSubjectFilter(e.target.value as typeof subjectFilter)}
+            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
+          >
+            <option value="all">All subjects</option>
+            <option value="english">English</option>
+            <option value="math">Math</option>
+          </select>
+        )}
       </div>
 
       {/* Error */}
