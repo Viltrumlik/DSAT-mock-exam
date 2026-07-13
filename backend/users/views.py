@@ -4,7 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, SAFE_METHODS
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
@@ -239,23 +239,6 @@ class LoginRateThrottle(AnonRateThrottle):
     """
 
     scope = "login"
-
-
-def _deactivated_block(user):
-    """403 when a user has been DEACTIVATED (``is_active=False``) — they may not log
-    in on any path, though their data stays in the database. Returns ``None`` for
-    active users (and freshly-created ones). Password login is already blocked by
-    SimpleJWT/Django; this guards the token-issuing OAuth paths (Telegram/Google)
-    and refresh, which otherwise mint tokens for a deactivated account."""
-    if user is not None and not getattr(user, "is_active", True):
-        return Response(
-            {
-                "detail": "This account has been deactivated. Please contact an administrator.",
-                "code": "account_deactivated",
-            },
-            status=status.HTTP_403_FORBIDDEN,
-        )
-    return None
 
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
@@ -502,13 +485,6 @@ class CookieTokenRefreshView(TokenRefreshView):
                 return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
 
             user = User.objects.get(pk=s.user_id)
-            # A user deactivated mid-session can't refresh — their session ends.
-            if not user.is_active:
-                security_metric_incr("refresh_fail", 1)
-                return Response(
-                    {"detail": "This account has been deactivated.", "code": "account_deactivated"},
-                    status=status.HTTP_401_UNAUTHORIZED,
-                )
             try:
                 step_until = getattr(user, "security_step_up_required_until", None)
                 if step_until and step_until > timezone.now():
@@ -816,7 +792,7 @@ class UserDeleteView(generics.DestroyAPIView):
 class UserBulkActionView(APIView):
     """Apply a management action to many users at once (admin console).
 
-    Body: ``{"action": "freeze|unfreeze|activate|deactivate|delete", "ids": [..]}``.
+    Body: ``{"action": "freeze|unfreeze|delete", "ids": [..]}``.
     Scope-safe: an actor may only affect users that ``manageable_users_queryset``
     would return for them, so a subject-scoped teacher cannot touch out-of-scope
     accounts. Returns a per-id ``results`` list so the UI can report partial
@@ -862,14 +838,6 @@ class UserBulkActionView(APIView):
                         target.is_frozen = False
                         target.save(update_fields=["is_frozen"])
                         results.append({"id": uid, "ok": True, "is_frozen": False})
-                    elif action == "activate":
-                        target.is_active = True
-                        target.save(update_fields=["is_active"])
-                        results.append({"id": uid, "ok": True, "is_active": True})
-                    elif action == "deactivate":
-                        target.is_active = False
-                        target.save(update_fields=["is_active"])
-                        results.append({"id": uid, "ok": True, "is_active": False})
                     else:  # delete
                         email = target.email
                         target.delete()
@@ -908,8 +876,18 @@ class UserRegistrationView(generics.CreateAPIView):
 
 class UserMeView(generics.RetrieveUpdateAPIView):
     serializer_class = UserMeSerializer
-    permission_classes = [IsAuthenticatedAndNotFrozen]
     parser_classes = [JSONParser, MultiPartParser, FormParser]
+
+    def get_permissions(self):
+        # A FROZEN student must still be able to READ their own identity: the
+        # frontend boots the dashboard shell from ``/users/me`` and, seeing
+        # ``is_frozen=True``, renders the non-dismissible frozen overlay. Every
+        # *other* endpoint stays blocked by the global ``IsAuthenticatedAndNotFrozen``
+        # default, and WRITES to ``/users/me`` (profile edits) remain blocked for
+        # frozen users — the overlay is the only thing they may interact with.
+        if self.request.method in SAFE_METHODS:
+            return [IsAuthenticated()]
+        return [IsAuthenticatedAndNotFrozen()]
 
     def get_object(self):
         return self.request.user
@@ -1028,10 +1006,6 @@ class GoogleAuthView(APIView):
                 updated = True
             if updated:
                 user.save(update_fields=["first_name", "last_name"])
-
-        blocked = _deactivated_block(user)
-        if blocked is not None:
-            return blocked
 
         clear_security_step_up(user_id=user.pk)
 
@@ -1208,10 +1182,6 @@ class TelegramAuthView(APIView):
             return phone_err
         user.telegram_id = tg_id
         user.save(update_fields=["telegram_id"])
-
-        blocked = _deactivated_block(user)
-        if blocked is not None:
-            return blocked
 
         clear_security_step_up(user_id=user.pk)
 
@@ -1484,12 +1454,6 @@ class TelegramOAuthCallbackView(APIView):
         user, err = _upsert_user_from_telegram_claims(claims, request)
         if err is not None or user is None:
             err_resp = HttpResponseRedirect("/login?tg_error=user_upsert_failed")
-            err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
-            return err_resp
-
-        # Deactivated accounts may not log in.
-        if not user.is_active:
-            err_resp = HttpResponseRedirect("/login?tg_error=account_deactivated")
             err_resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
             return err_resp
 

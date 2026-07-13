@@ -465,6 +465,11 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=3),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'AUTH_HEADER_TYPES': ('Bearer',),
+    # An account with is_active=False (only reachable via Django admin now that the
+    # app-level "deactivate" feature is removed) must never authenticate a request.
+    # This is SimpleJWT's default, but pin it explicitly: it is now the single
+    # load-bearing guard, so a future config change must not silently drop it.
+    'CHECK_USER_IS_ACTIVE': True,
 }
 
 
