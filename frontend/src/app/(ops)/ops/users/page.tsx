@@ -5,7 +5,6 @@ import api from "@/lib/api";
 import {
   Search,
   UserCheck,
-  UserX,
   RefreshCw,
   Users,
   ChevronDown,
@@ -36,13 +35,12 @@ type RoleFilter = "all" | "student" | "teacher" | "test_admin" | "admin" | "supe
 
 // ─── Bulk actions ────────────────────────────────────────────────────────────
 
-type BulkAction = "freeze" | "unfreeze" | "activate" | "deactivate" | "delete";
+type BulkAction = "freeze" | "unfreeze" | "delete";
 
 type BulkResult = {
   id: number;
   ok: boolean;
   is_frozen?: boolean;
-  is_active?: boolean;
   deleted?: boolean;
   error?: string;
 };
@@ -50,16 +48,12 @@ type BulkResult = {
 const ACTION_LABEL: Record<BulkAction, string> = {
   freeze: "Freeze",
   unfreeze: "Unfreeze",
-  activate: "Activate",
-  deactivate: "Deactivate",
   delete: "Delete",
 };
 
 const ACTION_PAST: Record<BulkAction, string> = {
   freeze: "frozen",
   unfreeze: "unfrozen",
-  activate: "activated",
-  deactivate: "deactivated",
   delete: "deleted",
 };
 
@@ -110,7 +104,6 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
   const [phone, setPhone] = useState(user.phone_number ?? "");
   const [role, setRole] = useState(user.role);
   const [subject, setSubject] = useState(user.subject ?? "");
-  const [isActive, setIsActive] = useState(user.is_active);
   const [isFrozen, setIsFrozen] = useState(user.is_frozen);
   const [newPassword, setNewPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -130,7 +123,6 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
         email: email.trim(),
         phone_number: phone.trim() || null,
         role,
-        is_active: isActive,
         is_frozen: isFrozen,
       };
       if (needsSubject) payload.subject = subject || null;
@@ -265,7 +257,7 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
           </div>
         )}
 
-        {/* Status toggles */}
+        {/* Status toggle */}
         <div className="space-y-2">
           <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
             Account status
@@ -273,22 +265,9 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
           <div className="flex flex-col gap-2">
             <label className="flex items-center justify-between rounded-xl border border-border bg-surface-2/50 px-4 py-3 cursor-pointer">
               <div className="flex items-center gap-2">
-                <UserCheck className="h-4 w-4 text-emerald-600" />
-                <span className="text-sm font-semibold text-foreground">Active</span>
-                <span className="text-xs text-muted-foreground">— can log in</span>
-              </div>
-              <input
-                type="checkbox"
-                checked={isActive}
-                onChange={(e) => setIsActive(e.target.checked)}
-                className="h-4 w-4 rounded accent-primary"
-              />
-            </label>
-            <label className="flex items-center justify-between rounded-xl border border-border bg-surface-2/50 px-4 py-3 cursor-pointer">
-              <div className="flex items-center gap-2">
                 <Snowflake className="h-4 w-4 text-blue-500" />
                 <span className="text-sm font-semibold text-foreground">Frozen</span>
-                <span className="text-xs text-muted-foreground">— API access blocked</span>
+                <span className="text-xs text-muted-foreground">— can log in; only the frozen screen shows, every other API is blocked</span>
               </div>
               <input
                 type="checkbox"
@@ -448,7 +427,7 @@ export default function OpsUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "frozen">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "frozen">("all");
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<UserRecord | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -507,8 +486,7 @@ export default function OpsUsersPage() {
           `${u.first_name} ${u.last_name}`.toLowerCase().includes(term),
       );
     }
-    if (statusFilter === "active") result = result.filter((u) => u.is_active && !u.is_frozen);
-    if (statusFilter === "inactive") result = result.filter((u) => !u.is_active);
+    if (statusFilter === "active") result = result.filter((u) => !u.is_frozen);
     if (statusFilter === "frozen") result = result.filter((u) => u.is_frozen);
     return result;
   }, [users, search, statusFilter]);
@@ -579,7 +557,6 @@ export default function OpsUsersPage() {
             return {
               ...u,
               ...(typeof res.is_frozen === "boolean" ? { is_frozen: res.is_frozen } : {}),
-              ...(typeof res.is_active === "boolean" ? { is_active: res.is_active } : {}),
             };
           }),
         );
@@ -670,7 +647,6 @@ export default function OpsUsersPage() {
         >
           <option value="all">All statuses</option>
           <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
           <option value="frozen">Frozen</option>
         </select>
       </div>
@@ -702,22 +678,6 @@ export default function OpsUsersPage() {
             className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
           >
             <Snowflake className="h-3.5 w-3.5" /> Unfreeze
-          </button>
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={() => setPendingAction("activate")}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition-colors disabled:opacity-50"
-          >
-            <UserCheck className="h-3.5 w-3.5" /> Activate
-          </button>
-          <button
-            type="button"
-            disabled={bulkBusy}
-            onClick={() => setPendingAction("deactivate")}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
-          >
-            <UserX className="h-3.5 w-3.5" /> Deactivate
           </button>
           <button
             type="button"
@@ -839,18 +799,13 @@ export default function OpsUsersPage() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
-                          {u.is_active ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
-                              <UserCheck className="h-3.5 w-3.5" /> Active
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-muted-foreground">
-                              <UserX className="h-3.5 w-3.5" /> Inactive
-                            </span>
-                          )}
-                          {u.is_frozen && (
+                          {u.is_frozen ? (
                             <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-600">
                               <Snowflake className="h-3.5 w-3.5" /> Frozen
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
+                              <UserCheck className="h-3.5 w-3.5" /> Active
                             </span>
                           )}
                         </div>

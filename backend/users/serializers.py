@@ -374,7 +374,10 @@ class UserSerializer(serializers.ModelSerializer):
             "date_joined",
             "password",
         ]
-        read_only_fields = ["date_joined"]
+        # ``is_active`` is exposed read-only for status display only. The "deactivate"
+        # capability was removed — freezing (``is_frozen``) is the single account
+        # restriction — so accounts can no longer be toggled inactive via the API.
+        read_only_fields = ["date_joined", "is_active"]
 
     def _normalize_role(self, raw: str | None) -> str | None:
         if raw is None:
@@ -588,7 +591,7 @@ class SecurityAuditEventSerializer(serializers.ModelSerializer):
 class UserBulkActionSerializer(serializers.Serializer):
     """Validate a bulk management action over a list of user ids (admin console)."""
 
-    ACTIONS = ("freeze", "unfreeze", "activate", "deactivate", "delete")
+    ACTIONS = ("freeze", "unfreeze", "delete")
 
     action = serializers.ChoiceField(choices=ACTIONS)
     ids = serializers.ListField(

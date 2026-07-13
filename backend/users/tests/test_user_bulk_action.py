@@ -56,14 +56,11 @@ class UserBulkActionTests(TestCase):
         self.s1.refresh_from_db()
         self.assertFalse(self.s1.is_frozen)
 
-    def test_bulk_activate_and_deactivate(self):
-        res = self._post("deactivate", [self.s1.id])
-        self.assertEqual(res.status_code, 200)
-        self.s1.refresh_from_db()
-        self.assertFalse(self.s1.is_active)
-
-        res = self._post("activate", [self.s1.id])
-        self.assertEqual(res.status_code, 200)
+    def test_activate_and_deactivate_actions_removed(self):
+        # The "deactivate" capability was removed — freeze is the single restriction.
+        for action in ("activate", "deactivate"):
+            res = self._post(action, [self.s1.id])
+            self.assertEqual(res.status_code, 400, f"{action} should be rejected")
         self.s1.refresh_from_db()
         self.assertTrue(self.s1.is_active)
 
@@ -90,13 +87,13 @@ class UserBulkActionTests(TestCase):
         self.assertIn("not found or out of scope", by_id[999999]["error"])
 
     def test_cannot_act_on_self(self):
-        res = self._post("deactivate", [self.admin.id, self.s1.id])
+        res = self._post("freeze", [self.admin.id, self.s1.id])
         self.assertEqual(res.status_code, 200)
         by_id = {r["id"]: r for r in res.data["results"]}
         self.assertFalse(by_id[self.admin.id]["ok"])
         self.assertIn("your own account", by_id[self.admin.id]["error"])
         self.admin.refresh_from_db()
-        self.assertTrue(self.admin.is_active)
+        self.assertFalse(self.admin.is_frozen)
 
     # ── Validation ───────────────────────────────────────────────────────────
     def test_ids_cap_enforced(self):
