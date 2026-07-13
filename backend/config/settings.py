@@ -114,6 +114,7 @@ INSTALLED_APPS = [
     'midterms.apps.MidtermsConfig',
     'mocks.apps.MocksConfig',
     'question_reports.apps.QuestionReportsConfig',
+    'journals.apps.JournalsConfig',
 ]
 
 MIDDLEWARE = [

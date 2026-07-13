@@ -47,4 +47,5 @@ urlpatterns = [
     path('api/midterms/', include('midterms.urls')),
     path('api/mocks/', include('mocks.urls')),
     path('api/question-reports/', include('question_reports.urls')),
+    path('api/journals/', include('journals.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
