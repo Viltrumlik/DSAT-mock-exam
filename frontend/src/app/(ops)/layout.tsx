@@ -14,6 +14,7 @@ import {
   BookOpen,
   KeyRound,
   CalendarClock,
+  NotebookText,
 } from "lucide-react";
 
 /**
@@ -37,6 +38,12 @@ const OPS_NAV = [
     href: "/ops/classrooms",
     label: "Classrooms",
     icon: School,
+    exact: false,
+  },
+  {
+    href: "/ops/journals",
+    label: "Journals",
+    icon: NotebookText,
     exact: false,
   },
   // Operational assignment management + midterm authoring moved out of the admin panel
