@@ -131,7 +131,15 @@ export default function JournalDetailPage() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      setJournal(await journalsApi.importJournal(parsed));
+      const imported = await journalsApi.importJournal(parsed);
+      // The backend picks the destination from the file's subject/level. If that is a
+      // different journal than this route, navigate there so the URL and every later
+      // publish/archive/bulk call target the journal the user is actually looking at.
+      if (imported.id !== journalId) {
+        router.push(`/ops/journals/${imported.id}`);
+      } else {
+        setJournal(imported);
+      }
     } catch {
       setError("Import failed — check the file format.");
     } finally {

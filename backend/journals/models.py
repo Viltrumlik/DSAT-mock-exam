@@ -256,6 +256,9 @@ class JournalLesson(models.Model):
             or self.practice_test_pack_ids
             or self.attachment_file
             or self.allow_file_upload
+            # An external link alone is a valid deliverable — parity with the
+            # classroom assignment model, where external_url counts as content.
+            or (self.external_url or "").strip()
         )
 
     def validation_reasons(self) -> list[str]:

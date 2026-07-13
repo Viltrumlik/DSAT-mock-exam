@@ -220,7 +220,12 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   }, [pastpaperCards, options, selectedTestIds, selectedPackIds, selectedAssessmentIds]);
 
   const hasInstructions = instructions.trim().length > 0;
-  const hasContent = cartItems.length > 0 || allowFileUpload || files.length > 0 || (lesson?.attachment_urls.length ?? 0) > 0;
+  const hasContent =
+    cartItems.length > 0 ||
+    allowFileUpload ||
+    files.length > 0 ||
+    externalUrl.trim().length > 0 ||
+    (lesson?.attachment_urls.length ?? 0) > 0;
   const ready = hasInstructions && hasContent;
 
   const save = async () => {

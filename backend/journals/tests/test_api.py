@@ -141,6 +141,16 @@ class LessonEditTests(TestCase):
         )
         self.assertTrue(resp.json()["is_ready"])
 
+    def test_external_link_alone_is_ready(self):
+        # A link-only homework template is a valid deliverable (parity with classrooms).
+        resp = self.client.patch(
+            self._url(self.hw),
+            {"instructions": "Watch this", "external_url": "https://example.com/lesson"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json()["is_ready"])
+
     def test_missing_instructions_not_ready(self):
         resp = self.client.patch(
             self._url(self.hw), {"allow_file_upload": True}, format="json"
@@ -228,6 +238,22 @@ class BulkTests(TestCase):
             format="json",
         )
         self.assertEqual(resp.json()["skipped"], 1)
+
+    def test_bulk_rejected_on_archived_journal(self):
+        self.journal.status = Journal.STATUS_ARCHIVED
+        self.journal.save(update_fields=["status"])
+        before = {l.id: l.status for l in self.hw}
+        resp = self.client.post(
+            f"/api/journals/{self.journal.id}/lessons/bulk/",
+            {"action": "clear", "ids": [l.id for l in self.hw]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 409, resp.content)
+        # Lessons must be untouched.
+        for l in self.hw:
+            l.refresh_from_db()
+            self.assertEqual(l.status, before[l.id])
+            self.assertTrue(l.instructions)
 
 
 class PermissionTests(TestCase):

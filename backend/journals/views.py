@@ -611,6 +611,13 @@ class LessonBulkView(APIView):
 
     def post(self, request, journal_pk):
         journal = get_object_or_404(Journal, pk=journal_pk)
+        if journal.status == Journal.STATUS_ARCHIVED:
+            # Mirror the per-lesson PATCH lock: an archived journal is read-only, so
+            # bulk clear/draft/publish must not mutate its lessons.
+            return Response(
+                {"detail": "Journal is archived (read-only)."},
+                status=status.HTTP_409_CONFLICT,
+            )
         action = (request.data.get("action") or "").strip()
         ids = _parse_id_list(request.data.get("ids")) or []
         payload = request.data.get("payload") or {}
