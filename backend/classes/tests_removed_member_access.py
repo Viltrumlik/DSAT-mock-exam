@@ -98,6 +98,29 @@ class RemovedMemberAccessTests(TestCase):
         self.assertIn(self.cls.id, _ids(c.get("/api/classes/")))
         self.assertEqual(c.get(f"/api/classes/{self.cls.id}/").status_code, 200)
 
+    def test_removed_student_rejoin_via_code_reactivates(self):
+        """Re-entering the join code must bring a removed student back.
+
+        Regression: JoinClassView used get_or_create(defaults=...), whose defaults
+        only apply on create — so the stale REMOVED row was returned untouched and
+        the student stayed locked out despite the API reporting {"joined": True}.
+        This is the ONLY path back (the roster UI hides removed members), so it must
+        reactivate the membership.
+        """
+        code = self.cls.join_code
+        self.assertTrue(code)  # save() auto-generates a code
+        c = self._client(self.removed)
+        r = c.post("/api/classes/join/", {"join_code": code}, format="json")
+        self.assertEqual(r.status_code, 200)
+
+        m = ClassroomMembership.objects.get(classroom=self.cls, user=self.removed)
+        self.assertEqual(m.status, ClassroomMembership.STATUS_ACTIVE)
+        self.assertEqual(m.role, ClassroomMembership.ROLE_STUDENT)  # role preserved
+
+        # …and access is actually restored end-to-end.
+        self.assertIn(self.cls.id, _ids(c.get("/api/classes/")))
+        self.assertEqual(c.get(f"/api/classes/{self.cls.id}/").status_code, 200)
+
     # ── unrelated student: never had access ──────────────────────────────────
     def test_stranger_has_no_access(self):
         c = self._client(self.stranger)

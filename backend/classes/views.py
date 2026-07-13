@@ -806,9 +806,16 @@ class ClassroomViewSet(ModelViewSet):
     def _sync_teacher_membership(self, instance):
         teacher = instance.teacher
         if teacher:
-            ClassroomMembership.objects.get_or_create(
+            mem, created = ClassroomMembership.objects.get_or_create(
                 classroom=instance, user=teacher, defaults={"role": "ADMIN"}
             )
+            # A generic classroom PATCH must not leave the class's own teacher
+            # locked out: get_or_create's defaults skip an existing REMOVED row,
+            # so reactivate it here (status only — role is preserved), mirroring
+            # the JoinClassView reactivation.
+            if not created and mem.status != ClassroomMembership.STATUS_ACTIVE:
+                mem.status = ClassroomMembership.STATUS_ACTIVE
+                mem.save(update_fields=["status"])
 
     # PATCH calls partial_update → UpdateModelMixin.update(partial=True). Override update only
     # (do not delegate update → partial_update or recursion occurs).
@@ -1704,13 +1711,26 @@ class JoinClassView(APIView):
             return Response({"detail": "Invalid class code."}, status=status.HTTP_400_BAD_REQUEST)
 
         if classroom.max_students is not None:
-            current_students = classroom.memberships.filter(role="STUDENT").count()
+            current_students = (
+                classroom.memberships.filter(role="STUDENT")
+                .exclude(status=ClassroomMembership.STATUS_REMOVED)
+                .count()
+            )
             already_member = classroom.memberships.filter(user=request.user).exists()
             if not already_member and current_students >= classroom.max_students:
                 return Response({"detail": "This group is full."}, status=status.HTTP_400_BAD_REQUEST)
         mem, created = ClassroomMembership.objects.get_or_create(
             classroom=classroom, user=request.user, defaults={"role": "STUDENT"}
         )
+        # Re-joining with a valid code must reactivate a previously-removed member.
+        # Removal is a soft delete (status=REMOVED) and every access gate excludes
+        # REMOVED, so without this a rejoining student would get {"joined": True}
+        # yet stay locked out — get_or_create's ``defaults`` only apply on create,
+        # leaving the stale REMOVED row untouched. Role is intentionally preserved
+        # (never downgrade a returning staff member to STUDENT).
+        if not created and mem.status != ClassroomMembership.STATUS_ACTIVE:
+            mem.status = ClassroomMembership.STATUS_ACTIVE
+            mem.save(update_fields=["status"])
         dom = (
             acc_const.DOMAIN_MATH
             if classroom.subject == Classroom.SUBJECT_MATH
