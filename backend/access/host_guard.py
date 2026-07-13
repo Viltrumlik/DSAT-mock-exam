@@ -146,6 +146,9 @@ class SubdomainAPIGuardMiddleware:
             # Separated midterm + full-mock authoring (new builder backends).
             if path.startswith("/api/midterms/") or path.startswith("/api/mocks/"):
                 return self.get_response(request)
+            # Journal management (course homework plans) is an admin-console module.
+            if path.startswith("/api/journals/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.

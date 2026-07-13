@@ -31,6 +31,22 @@ class CanManageQuestions(BasePermission):
         return can_manage_questions(request.user)
 
 
+class CanManageJournals(BasePermission):
+    """
+    Author Journals (course homework plans) under ``/api/journals/``.
+
+    Global staff ONLY (admin / test_admin / super_admin / Django superuser). Teachers are
+    intentionally excluded: journals are prepared by admins, and teachers must never author
+    homework in this system.
+    """
+
+    def has_permission(self, request, view):
+        return is_global_scope_staff(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        return is_global_scope_staff(request.user)
+
+
 class HasLMSPermission(BasePermission):
     """Set ``permission_codename`` on the view or subclass."""
 
