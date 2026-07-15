@@ -309,6 +309,12 @@ class AssessmentQuestionAdminWriteSerializer(serializers.ModelSerializer):
 @extend_schema_serializer(component_name="AssessmentSet")
 class AssessmentSetSerializer(serializers.ModelSerializer):
     questions = AssessmentQuestionSerializer(many=True, read_only=True)
+    # Creator attribution — only serialized when the view explicitly opts in via
+    # context["expose_creator"] (super_admin on the set-list panel). This serializer
+    # is ALSO nested under HomeworkAssignmentSerializer on student-facing endpoints,
+    # so the fields must stay null unless the requesting view is a trusted admin one.
+    created_by_email = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AssessmentSet
@@ -323,8 +329,25 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
             "updated_at",
+            "created_by_email",
+            "created_by_name",
             "questions",
         ]
+
+    def _expose_creator(self) -> bool:
+        return bool(self.context.get("expose_creator"))
+
+    def get_created_by_email(self, obj) -> str | None:
+        if not self._expose_creator() or obj.created_by_id is None:
+            return None
+        return getattr(obj.created_by, "email", None)
+
+    def get_created_by_name(self, obj) -> str | None:
+        if not self._expose_creator() or obj.created_by_id is None:
+            return None
+        u = obj.created_by
+        full = (u.get_full_name() or "").strip() if hasattr(u, "get_full_name") else ""
+        return full or (getattr(u, "username", None) or getattr(u, "email", None))
 
 
 @extend_schema_serializer(component_name="AssessmentSetRunner")

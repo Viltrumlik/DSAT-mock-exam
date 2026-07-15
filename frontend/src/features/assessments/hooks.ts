@@ -18,10 +18,16 @@ import type {
   Subject,
 } from "./types";
 
-export function useAssessmentSetsList(params?: { subject?: Subject; category?: string }) {
+export function useAssessmentSetsList(params?: { subject?: Subject; category?: string; limit?: number }) {
+  // The builder list + assign picker search/filter CLIENT-SIDE over the returned
+  // rows, so they must receive every set — not just the backend's default first
+  // page (50). Without this, older sets silently vanish from search (e.g. a search
+  // for an existing older set returns "0 sets", which reads as if it were deleted).
+  // 200 is the endpoint's max page size and covers the full catalogue today.
+  const withLimit = { ...params, limit: params?.limit ?? 200 };
   return useQuery({
-    queryKey: assessmentsKeys.setsList(params),
-    queryFn: () => assessmentsAdminApi.listSets(params),
+    queryKey: assessmentsKeys.setsList(withLimit),
+    queryFn: () => assessmentsAdminApi.listSets(withLimit),
   });
 }
 
