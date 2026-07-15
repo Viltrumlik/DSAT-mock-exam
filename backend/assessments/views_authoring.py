@@ -15,6 +15,7 @@ from access.permissions import (
 )
 from access.services import (
     is_global_scope_staff,
+    normalized_role,
     user_domain_subject,
 )
 from access import constants as acc_const
@@ -35,6 +36,22 @@ from .serializers import (
 )
 from .services.authoring_service import create_question, reorder_questions
 from .domain.question_ordering import dense_compact_set_orders_locked
+from .domain.governance_events import emit_governance_event
+from .models import GovernanceEvent
+
+
+def _hidden_from_test_admin(actor, inst) -> bool:
+    """
+    A test_admin only manages the sets THEY authored. On detail endpoints
+    (get/patch/delete) another author's set must look like it doesn't exist,
+    so a test_admin can't open, edit or delete it by guessing its id. admin,
+    super_admin and superusers are unaffected.
+    """
+    return (
+        normalized_role(actor) == acc_const.ROLE_TEST_ADMIN
+        and not getattr(actor, "is_superuser", False)
+        and inst.created_by_id != getattr(actor, "id", None)
+    )
 
 
 class AdminAssessmentSetListCreateView(APIView):
@@ -49,7 +66,7 @@ class AdminAssessmentSetListCreateView(APIView):
     def get(self, request):
         subject = (request.query_params.get("subject") or "").strip().lower()
         category = (request.query_params.get("category") or "").strip()
-        qs = AssessmentSet.objects.all().prefetch_related("questions")
+        qs = AssessmentSet.objects.all().select_related("created_by").prefetch_related("questions")
 
         # Subject scoping:
         # - teachers: forced to their own domain subject (ignore query param)
@@ -63,17 +80,29 @@ class AdminAssessmentSetListCreateView(APIView):
             if subject in (acc_const.DOMAIN_MATH, acc_const.DOMAIN_ENGLISH):
                 qs = qs.filter(subject=subject)
 
+        # Creator scoping: a test_admin only manages the sets THEY authored — other
+        # authors' sets are hidden. admin/super_admin (and superusers) still see all.
+        actor_role = normalized_role(actor)
+        if actor_role == acc_const.ROLE_TEST_ADMIN and not getattr(actor, "is_superuser", False):
+            qs = qs.filter(created_by=actor)
+
         if category:
             qs = qs.filter(category__iexact=category)
         qs = qs.order_by("-created_at", "-id")
+
+        # Creator attribution is exposed to super_admin only (see AssessmentSetSerializer).
+        expose_creator = actor_role == acc_const.ROLE_SUPER_ADMIN or getattr(actor, "is_superuser", False)
+        ser_ctx = {"expose_creator": expose_creator}
 
         paginator = LimitOffsetPagination()
         paginator.default_limit = 50
         paginator.max_limit = 200
         page = paginator.paginate_queryset(qs, request)
         if page is not None:
-            return paginator.get_paginated_response(AssessmentSetSerializer(page, many=True).data)
-        return Response(AssessmentSetSerializer(qs, many=True).data)
+            return paginator.get_paginated_response(
+                AssessmentSetSerializer(page, many=True, context=ser_ctx).data
+            )
+        return Response(AssessmentSetSerializer(qs, many=True, context=ser_ctx).data)
 
     def post(self, request):
         s = AssessmentSetAdminWriteSerializer(data=request.data)
@@ -92,13 +121,15 @@ class AdminAssessmentSetDetailView(APIView):
         return [p() for p in (IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent)]
 
     def get(self, request, pk: int):
-        inst = get_object_or_404(AssessmentSet.objects.prefetch_related("questions"), pk=pk)
+        inst = get_object_or_404(AssessmentSet.objects.select_related("created_by").prefetch_related("questions"), pk=pk)
         # Teacher scoping defense-in-depth (detail endpoints).
         actor = request.user
         if not is_global_scope_staff(actor) and not getattr(actor, "is_superuser", False):
             ds = user_domain_subject(actor)
             if ds and inst.subject != ds:
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if _hidden_from_test_admin(actor, inst):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         # Use admin serializer so the builder UI receives correct_answer + grading_config
         # (the student-facing AssessmentSetSerializer intentionally omits correct_answer).
         return Response(AssessmentSetAdminSerializer(inst).data)
@@ -110,6 +141,8 @@ class AdminAssessmentSetDetailView(APIView):
             ds = user_domain_subject(actor)
             if ds and inst.subject != ds:
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if _hidden_from_test_admin(actor, inst):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         s = AssessmentSetAdminWriteSerializer(inst, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
         inst = s.save()
@@ -117,12 +150,14 @@ class AdminAssessmentSetDetailView(APIView):
         return Response(AssessmentSetSerializer(inst).data)
 
     def delete(self, request, pk: int):
-        inst = get_object_or_404(AssessmentSet, pk=pk)
+        inst = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=pk)
         actor = request.user
         if not is_global_scope_staff(actor) and not getattr(actor, "is_superuser", False):
             ds = user_domain_subject(actor)
             if ds and inst.subject != ds:
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        if _hidden_from_test_admin(actor, inst):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # A set that was ever published (has a version) or assigned to a class is an
         # academic record protected by on_delete=PROTECT — a bare delete() would 500.
@@ -134,6 +169,35 @@ class AdminAssessmentSetDetailView(APIView):
             or inst.homework_assignments.exists()
             or inst.homework_audit_events.exists()
         )
+
+        # Audit BEFORE the row is gone. A deleted set is a permanent loss with no
+        # other trail (created_by identifies the AUTHOR, not the deleter), so record
+        # who deleted it into the immutable GovernanceEvent store. entity_id is a bare
+        # BigInteger (not a FK), so the event survives the set's deletion. Emitted
+        # inside the delete transaction below, so it rolls back iff the delete does.
+        def _emit_delete_audit() -> None:
+            emit_governance_event(
+                event_type=GovernanceEvent.EVENT_SET_DELETE,
+                actor=actor,
+                entity_type="AssessmentSet",
+                entity_id=inst.pk,
+                payload={
+                    "set_id": inst.pk,
+                    "title": inst.title,
+                    "subject": inst.subject,
+                    "level": inst.level,
+                    "category": inst.category,
+                    "created_by_id": inst.created_by_id,
+                    "created_by_email": getattr(inst.created_by, "email", None),
+                    "force": bool(force and has_refs),
+                    "had_refs": bool(has_refs),
+                },
+                # Truncate to the column width (128): an over-length client header
+                # would otherwise raise a DataError that, inside the delete
+                # transaction, poisons it on Postgres and 500s the delete.
+                correlation_id=(request.META.get("HTTP_X_REQUEST_ID", "") or "")[:128],
+            )
+
         if has_refs and not force:
             return Response(
                 {
@@ -170,6 +234,7 @@ class AdminAssessmentSetDetailView(APIView):
                     AssessmentHomeworkAuditEvent.objects.filter(assessment_set=inst).delete()
                     AssessmentSetVersion.objects.filter(assessment_set=inst).update(previous_version=None)
                     AssessmentSetVersion.objects.filter(assessment_set=inst).delete()
+                    _emit_delete_audit()
                     inst.delete()
             except ProtectedError:
                 return Response(
@@ -179,7 +244,9 @@ class AdminAssessmentSetDetailView(APIView):
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         try:
-            inst.delete()
+            with transaction.atomic():
+                _emit_delete_audit()
+                inst.delete()
         except ProtectedError:
             # Belt-and-suspenders: a PROTECT relation added later would land here.
             return Response(
@@ -211,7 +278,9 @@ class AdminAssessmentQuestionCreateView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
 
     def post(self, request, set_pk: int):
-        aset = get_object_or_404(AssessmentSet, pk=set_pk)
+        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=set_pk)
+        if _hidden_from_test_admin(request.user, aset):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         # Pass request.data through UNTOUCHED. Spreading a multipart QueryDict into a
         # plain dict wraps every value in a single-element list and breaks JSON/file
         # field parsing — the cause of the create-with-image 400s. assessment_set and
@@ -234,13 +303,16 @@ class AdminAssessmentQuestionDetailView(APIView):
         Returns None when out of scope (caller returns 404 — never leak).
         """
         q = get_object_or_404(
-            AssessmentQuestion.objects.select_related("assessment_set"), pk=pk
+            AssessmentQuestion.objects.select_related("assessment_set", "assessment_set__created_by"), pk=pk
         )
         actor = request.user
         if not is_global_scope_staff(actor) and not getattr(actor, "is_superuser", False):
             ds = user_domain_subject(actor)
             if ds and q.assessment_set.subject != ds:
                 return None
+        # A test_admin may only touch questions in sets THEY authored.
+        if _hidden_from_test_admin(actor, q.assessment_set):
+            return None
         return q
 
     def patch(self, request, pk: int):
@@ -318,7 +390,9 @@ class AdminAssessmentSetReorderView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
 
     def post(self, request, set_pk: int):
-        aset = get_object_or_404(AssessmentSet, pk=set_pk)
+        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=set_pk)
+        if _hidden_from_test_admin(request.user, aset):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         raw = request.data.get("ordered_ids")
         if not isinstance(raw, list):
             return Response(
@@ -380,7 +454,9 @@ class AdminAssessmentQuestionFromBankView(APIView):
 
         from .domain.bank_integration import create_question_from_bank
 
-        aset = get_object_or_404(AssessmentSet, pk=set_pk)
+        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=set_pk)
+        if _hidden_from_test_admin(request.user, aset):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         bank = get_object_or_404(BankQuestion, pk=request.data.get("bank_question_id"))
         try:
             aq = create_question_from_bank(aset, bank)
@@ -470,6 +546,11 @@ class AdminPublishAssessmentSetView(APIView):
     def post(self, request, pk: int):
         from .domain.publish_service import publish_assessment_set, PublishValidationError
 
+        # A test_admin may only publish sets they authored.
+        _guard_set = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=pk)
+        if _hidden_from_test_admin(request.user, _guard_set):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
         # Determine whether a version already exists before publishing so we can
         # return the correct HTTP status (200 = idempotent / 201 = new version).
         existing_count = AssessmentSetVersion.objects.filter(assessment_set_id=pk).count()
@@ -538,7 +619,9 @@ class AdminValidatePublishView(APIView):
     def get(self, request, pk: int):
         from .domain.publish_validator import validate_for_publish
 
-        aset = get_object_or_404(AssessmentSet, pk=pk)
+        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=pk)
+        if _hidden_from_test_admin(request.user, aset):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         active_questions = list(
             AssessmentQuestion.objects.filter(
                 assessment_set=aset, is_active=True
@@ -564,7 +647,9 @@ class AdminAssessmentSetVersionListView(APIView):
         responses={200: AssessmentSetVersionSerializer(many=True)},
     )
     def get(self, request, pk: int):
-        aset = get_object_or_404(AssessmentSet, pk=pk)
+        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=pk)
+        if _hidden_from_test_admin(request.user, aset):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         versions = AssessmentSetVersion.objects.filter(assessment_set=aset).select_related(
             "published_by"
         ).order_by("-version_number")

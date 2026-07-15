@@ -431,6 +431,12 @@ export function ExamRunnerPage() {
     if (prevOrderRef.current > 0 && order > prevOrderRef.current) {
       const to = order;
       setTransitionTo(to);
+      // A new module always begins running. The server now clears pause at the
+      // module boundary, but the pause-sync effect above only reads is_paused
+      // ONCE per attempt id, so it won't observe that reset — clear the local
+      // flag here too, otherwise a pause left over from Module 1 would freeze
+      // Module 2's timer.
+      setPaused(false);
       const t = setTimeout(() => setTransitionTo(null), 1800);
       prevOrderRef.current = order;
       return () => clearTimeout(t);

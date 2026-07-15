@@ -54,9 +54,11 @@ import { AnnotationToolbar } from "@/features/testing-simulation/tools/highlight
 import { DesmosCalculator } from "@/features/testing-simulation/tools/calculator/DesmosCalculator";
 import {
   answersMapFromAttempt,
+  answersNeedingPersist,
   maxClientSeqFromAttempt,
   detectAnswerConflicts,
   fingerprintAnswersFromAttempt,
+  sameAnswer,
   type AnswerConflict,
 } from "@/features/assessments/attemptSync";
 import {
@@ -699,8 +701,12 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // pending map are fully drained to the server. Callers that gate a
   // destructive next step (submit → clear-draft) MUST check this so answers
   // stranded by a failed/partial flush are never treated as sent.
-  const flushSave = useCallback(async (): Promise<boolean> => {
-    if (conflicts.length) return false; // wait for conflict resolution
+  const flushSave = useCallback(async (opts?: { force?: boolean }): Promise<boolean> => {
+    // `force` is used right after conflicts are resolved: the conflicts state (and
+    // thus this closure) can still read the pre-resolution value, so a bare guard
+    // would no-op and strand the just-resolved answers. The caller passes force to
+    // proceed anyway.
+    if (!opts?.force && conflicts.length) return false; // wait for conflict resolution
 
     // Flush offline queue first
     if (online) {
@@ -710,6 +716,11 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       if (queuedIds.length) {
         setSaveState("saving");
         for (const qid of queuedIds) {
+          // A concurrent flush (a debounced autosave firing while the submit-time
+          // flush runs — both drain this shared ref) may have already sent+removed
+          // this qid. Reading a drained key yields undefined and would persist a
+          // spurious null (an "Omitted" grade). Skip it; the other flush handled it.
+          if (!(qid in offlineQueue.current)) continue;
           const v = offlineQueue.current[qid];
           const seq = ++seqCounter.current;
           let ok = false;
@@ -759,6 +770,10 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     if (pendingIds.length) {
       let savedAny = false;
       for (const qid of pendingIds) {
+        // Skip a key a concurrent flush already drained (see the offline-queue loop
+        // above): reading it would yield undefined and persist a spurious null,
+        // recording an "Omitted" for a question the student actually answered.
+        if (!(qid in pendingSaves.current)) continue;
         const value = pendingSaves.current[qid];
         const seq = ++seqCounter.current;
         let ok = false;
@@ -824,8 +839,14 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         setSaveState("offline");
         return;
       }
-      if (conflicts.length) return;
+      // ALWAYS retain the pick in the outbound buffer, even while a conflict banner
+      // is open. Previously this returned early on conflict, so a pick made during
+      // the banner never entered pendingSaves and was stranded in the draft only —
+      // it then submitted as "Omitted". We keep it here and merely DEFER the network
+      // flush (flushSave is gated on conflicts, so the server isn't auto-overwritten);
+      // conflict resolution or the submit-time self-heal flushes it.
       pendingSaves.current[qid] = value;
+      if (conflicts.length) return;
       setSaveState("saving");
       if (debouncedTimer.current) clearTimeout(debouncedTimer.current);
       debouncedTimer.current = setTimeout(() => void flushSave(), 650);
@@ -847,6 +868,15 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         const fr = await refetch();
         const next = { ...draftRef.current, [qid]: row.local };
         setDraftById(next);
+        draftRef.current = next;
+        // Resolution is authoritative: drop any buffered pick for this question AFTER
+        // the awaits, so a value re-picked WHILE the banner was open (or during the
+        // refetch above — enqueueSave stays active during a conflict) can't later flush
+        // and silently override the choice just resolved here. Done post-await so a
+        // re-pick that landed during refetch is caught; the submit-time draft
+        // reconciliation is the final backstop for any pick after this point.
+        delete pendingSaves.current[qid];
+        delete offlineQueue.current[qid];
         const still = detectAnswerConflicts(next, answersMapFromAttempt(fr.data?.attempt));
         setConflicts(still);
         if (fr.data?.attempt) applyServerFp(fr.data.attempt);
@@ -863,6 +893,11 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     (qid: number) => {
       const row = conflicts.find((c) => c.questionId === qid);
       if (!row || !attempt) return;
+      // Accept the server's value: drop any buffered pick for this question so a
+      // value re-picked while the banner was open can't later flush and override
+      // the server value the student just chose to keep. The server already holds it.
+      delete pendingSaves.current[qid];
+      delete offlineQueue.current[qid];
       const next = { ...draftRef.current, [qid]: row.remote };
       setDraftById(next);
       draftRef.current = next;
@@ -877,12 +912,22 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   const resolveKeepAllMine = useCallback(() => {
     if (!attempt) return;
     // Push all "mine" values to the server — accumulate every one (a map, so
-    // none are overwritten), then flush.
+    // none are overwritten), then flush. force:true bypasses flushSave's conflict
+    // guard: we just cleared the conflicts, but this closure's flushSave still sees
+    // the old conflicts.length, so without force it would no-op and strand them.
+    // Also align the draft with what we push so a value re-picked while the banner
+    // was open doesn't leave the UI showing one answer while the server records the
+    // resolved "mine" value.
+    const next = { ...draftRef.current };
     for (const c of conflicts) {
       pendingSaves.current[c.questionId] = c.local;
+      delete offlineQueue.current[c.questionId];
+      next[c.questionId] = c.local;
     }
+    setDraftById(next);
+    draftRef.current = next;
     setConflicts([]);
-    void flushSave();
+    void flushSave({ force: true });
   }, [conflicts, attempt, flushSave]);
 
   // ── Pause / resume + auto-pause on leave / inactivity + save-and-exit ───────
@@ -1050,6 +1095,28 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     setSubmitError(null);
     try {
       if (debouncedTimer.current) clearTimeout(debouncedTimer.current);
+      // The draft is what the student SEES, and at submit it is authoritative. First
+      // drop any buffered save whose value has diverged from the draft — e.g. a stale
+      // pick left in pendingSaves by a conflict-resolution timing race — so it can't
+      // flush over the visible answer. Then self-heal: re-queue every draft answer the
+      // server is still missing or that differs (a pick made while a conflict banner
+      // was open lives only in the draft, since the conflict gate defers its flush),
+      // so nothing the student answered can submit as "Omitted".
+      const dref = draftRef.current;
+      for (const k of Object.keys(pendingSaves.current)) {
+        const qid = Number(k);
+        if (!sameAnswer(pendingSaves.current[qid], dref[qid])) delete pendingSaves.current[qid];
+      }
+      for (const k of Object.keys(offlineQueue.current)) {
+        const qid = Number(k);
+        if (!sameAnswer(offlineQueue.current[qid], dref[qid])) delete offlineQueue.current[qid];
+      }
+      const serverMap = answersMapFromAttempt(attempt);
+      for (const qid of answersNeedingPersist(dref, serverMap)) {
+        if (!(qid in pendingSaves.current) && !(qid in offlineQueue.current)) {
+          pendingSaves.current[qid] = dref[qid];
+        }
+      }
       // Persist any unsent answers BEFORE submitting. If the flush can't fully
       // drain (network/session failure), the submit payload would omit those
       // answers and clearing the draft below would lose them — so abort, keep

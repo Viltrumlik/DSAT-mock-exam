@@ -718,6 +718,7 @@ class GovernanceEvent(models.Model):
     EVENT_PUBLISH_IDEMPOTENT = "publish_idempotent"      # Re-publish with identical content
     EVENT_PUBLISH_VALIDATION_FAILED = "publish_validation_failed"
     EVENT_SUPERSEDE = "supersede"                        # New version supersedes old
+    EVENT_SET_DELETE = "set_delete"                      # An AssessmentSet was deleted (hard delete)
 
     # Assignment lifecycle
     EVENT_ASSIGNMENT_PIN = "assignment_pin"              # Version pinned to HomeworkAssignment
@@ -744,6 +745,7 @@ class GovernanceEvent(models.Model):
         (EVENT_PUBLISH_IDEMPOTENT, "Publish (idempotent — identical content)"),
         (EVENT_PUBLISH_VALIDATION_FAILED, "Publish validation failed"),
         (EVENT_SUPERSEDE, "Superseded by new version"),
+        (EVENT_SET_DELETE, "Assessment set deleted"),
         (EVENT_ASSIGNMENT_PIN, "Assignment version pinned"),
         (EVENT_ATTEMPT_SNAPSHOT_PIN, "Attempt snapshot pinned"),
         (EVENT_SCORING_START, "Scoring started"),

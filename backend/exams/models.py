@@ -1048,6 +1048,8 @@ class TestAttempt(TimestampedModel):
                     "scoring_started_at": scoring_at,
                     "current_module_id": None,
                     "current_module_start_time": None,
+                    # Clear any lingering pause as the attempt leaves the timed phase.
+                    "pause_started_at": None,
                     "version_number": new_v,
                     "updated_at": ts,
                 },
@@ -1072,6 +1074,15 @@ class TestAttempt(TimestampedModel):
         new_v = v0 + 1
         m1_sub = self.module_1_submitted_at or ts
         m2_anchor = self.module_2_started_at or ts
+        # Clear any pause carried over the module boundary. `pause_started_at` is a
+        # single attempt-wide field (not per-module) that is only ever cleared by the
+        # resume endpoint — so a student who submitted Module 1 while still paused
+        # (manual pause, or an auto-pause-on-leave they never resumed) would otherwise
+        # start Module 2 frozen. Bank the in-flight pause window into Module 1's ledger
+        # so its accounting stays correct, then null it so Module 2 begins running.
+        m1_paused = int(self.module_1_paused_seconds or 0)
+        if self.pause_started_at:
+            m1_paused += max(0, int((ts - self.pause_started_at).total_seconds()))
         n = conditional_attempt_update(
             pk=int(self.pk),
             expect_state=self.STATE_MODULE_1_ACTIVE,
@@ -1084,6 +1095,8 @@ class TestAttempt(TimestampedModel):
                 "current_module_id": int(m2.pk),
                 "current_module_start_time": m2_anchor,
                 "module_2_started_at": m2_anchor,
+                "module_1_paused_seconds": m1_paused,
+                "pause_started_at": None,
                 "version_number": new_v,
                 "updated_at": ts,
             },

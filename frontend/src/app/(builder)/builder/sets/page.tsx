@@ -271,6 +271,15 @@ export default function BuilderSetsPage() {
                     {s.category && (
                       <p className="text-xs text-muted-foreground mb-0.5">{s.category}</p>
                     )}
+                    {role === "super_admin" && (s.created_by_name || s.created_by_email) && (
+                      <p className="text-[11px] text-muted-foreground/80 mb-0.5">
+                        Created by{" "}
+                        <span className="font-semibold text-foreground/70">
+                          {s.created_by_name || s.created_by_email}
+                        </span>
+                        {s.created_by_name && s.created_by_email ? ` · ${s.created_by_email}` : ""}
+                      </p>
+                    )}
                     <SetLineage
                       setId={s.id}
                       isPublished={s.is_active}

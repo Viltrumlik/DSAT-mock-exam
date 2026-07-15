@@ -15,6 +15,9 @@ export type AssessmentSet = {
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
+  /** Creator attribution — only populated by the set-list API for super_admin; null otherwise. */
+  created_by_email?: string | null;
+  created_by_name?: string | null;
   questions?: AssessmentQuestion[];
   // Optional backend fields (some serializers include them)
   status?: "draft" | "published" | string;

@@ -49,6 +49,45 @@ export function detectAnswerConflicts(
   return out;
 }
 
+/** Deterministic equality for saved answer values (scalars / arrays / null). */
+export function sameAnswer(a: unknown, b: unknown): boolean {
+  return stableStringify(a) === stableStringify(b);
+}
+
+/** An answer the student never actually made — must not be force-persisted. */
+function isBlankAnswer(v: unknown): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  return false;
+}
+
+/**
+ * Question ids whose LOCAL (draft) answer the student can see in the runner but
+ * that is NOT yet safely on the server — either the server has no answer for it,
+ * or the server's stored answer differs from the draft.
+ *
+ * Used at submit time as a last-ditch self-heal: a pick made while a conflict
+ * banner was open only lives in the draft (the conflict gate defers the network
+ * flush), so without re-queueing it here it would submit as "Omitted". Blank
+ * (never-answered) drafts are excluded so we never persist an empty answer.
+ */
+export function answersNeedingPersist(
+  draftById: Record<number, unknown>,
+  serverAnswersByQid: Record<number, unknown>,
+): number[] {
+  const out: number[] = [];
+  for (const [k, local] of Object.entries(draftById)) {
+    const qid = Number(k);
+    if (!Number.isFinite(qid)) continue;
+    if (isBlankAnswer(local)) continue;
+    if (!(qid in serverAnswersByQid) || stableStringify(local) !== stableStringify(serverAnswersByQid[qid])) {
+      out.push(qid);
+    }
+  }
+  return out;
+}
+
 export function answersMapFromAttempt(attempt: { answers?: unknown[] } | null | undefined): Record<number, unknown> {
   const map: Record<number, unknown> = {};
   const answers = Array.isArray(attempt?.answers) ? attempt!.answers! : [];
