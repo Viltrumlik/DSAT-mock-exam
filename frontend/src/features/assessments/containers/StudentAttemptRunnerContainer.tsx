@@ -54,6 +54,7 @@ import { AnnotationToolbar } from "@/features/testing-simulation/tools/highlight
 import { DesmosCalculator } from "@/features/testing-simulation/tools/calculator/DesmosCalculator";
 import {
   answersMapFromAttempt,
+  maxClientSeqFromAttempt,
   detectAnswerConflicts,
   fingerprintAnswersFromAttempt,
   type AnswerConflict,
@@ -666,6 +667,27 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
   // window never drops the earlier selections: every answered question persists.
   const pendingSaves = useRef<Record<number, unknown>>({});
 
+  // Monotonic per-request sequence number. Sent as `client_seq` with every save so
+  // the server can reject an OUT-OF-ORDER write: on a flaky mobile connection an
+  // earlier answer's save can be delayed/retried and land AFTER the student's newer
+  // pick, silently overwriting it — the choice highlighted on screen is right, but a
+  // stale one is recorded. A later request carries a higher seq; the server keeps the
+  // highest and 409s anything below it.
+  //
+  // Seeded from the SERVER's stored max (see the effect below), NOT the wall clock —
+  // so it's always above the server's current state even after a save-and-exit/resume
+  // or a resume on a second device (whose clock may trail). That makes a 409 always a
+  // genuine stale straggler (safe to drop), never the student's real latest answer.
+  const seqCounter = useRef(0);
+
+  // Seed (and only ever RAISE) the counter from the server's persisted max whenever
+  // the attempt (re)loads, so this session's saves are always ordered above whatever
+  // a previous session/device already wrote. Monotonic and clock-independent.
+  useEffect(() => {
+    const serverMax = maxClientSeqFromAttempt(attempt);
+    if (serverMax + 1 > seqCounter.current) seqCounter.current = serverMax + 1;
+  }, [attempt]);
+
   const showSaved = () => {
     setSaveState("saved");
     setSaveError(null);
@@ -689,10 +711,11 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         setSaveState("saving");
         for (const qid of queuedIds) {
           const v = offlineQueue.current[qid];
+          const seq = ++seqCounter.current;
           let ok = false;
           for (let a = 0; a < 4; a++) {
             try {
-              await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: v });
+              await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: v, client_seq: seq });
               const fr = await refetch();
               if (fr.data?.attempt) applyServerFp(fr.data.attempt);
               setConflicts([]);
@@ -705,12 +728,22 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
                 setSaveError("Your session has expired. Your answers are saved locally — please sign in again.");
                 return false;
               }
+              // Stale write: a newer answer (higher client_seq) already reached the
+              // server, so this queued value is obsolete — drop it, don't error. Catch
+              // the counter up to the server watermark in case a 2nd device advanced it.
+              if (ax.status === 409) {
+                const s = Number((e as { response?: { data?: { server_client_seq?: number } } })?.response?.data?.server_client_seq ?? 0);
+                if (s > seqCounter.current) seqCounter.current = s;
+                ok = true;
+                break;
+              }
               if (![0, 429, 503].includes(ax.status ?? 0) || a === 3) break;
               await backoffDelayMs(a);
             }
           }
           if (ok) {
-            delete offlineQueue.current[qid];
+            // Only clear if not superseded by a newer offline change during the await.
+            if (offlineQueue.current[qid] === v) delete offlineQueue.current[qid];
           } else {
             setSaveState("error");
             setSaveError("Some answers couldn't sync. They're saved locally and will retry.");
@@ -727,10 +760,11 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       let savedAny = false;
       for (const qid of pendingIds) {
         const value = pendingSaves.current[qid];
+        const seq = ++seqCounter.current;
         let ok = false;
         for (let a = 0; a < 4; a++) {
           try {
-            await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: value });
+            await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: value, client_seq: seq });
             ok = true;
             break;
           } catch (e) {
@@ -739,6 +773,15 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               setSaveState("error");
               setSaveError("Your session has expired. Your answers are saved locally — please sign in again.");
               return false;
+            }
+            // Stale write: a newer answer (higher client_seq) already reached the
+            // server, so this value is obsolete — drop it as done, don't error. Catch
+            // the counter up to the server watermark in case a 2nd device advanced it.
+            if (ax.status === 409) {
+              const s = Number((e as { response?: { data?: { server_client_seq?: number } } })?.response?.data?.server_client_seq ?? 0);
+              if (s > seqCounter.current) seqCounter.current = s;
+              ok = true;
+              break;
             }
             if (![0, 429, 503].includes(ax.status ?? 0) || a === 3) {
               setSaveState("error");
@@ -749,7 +792,9 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
           }
         }
         if (!ok) return false; // keep the rest queued; a later flush/submit retries them
-        delete pendingSaves.current[qid];
+        // Only clear if the student hasn't re-picked this question during the await —
+        // otherwise the newer value would be silently dropped (it stays queued instead).
+        if (pendingSaves.current[qid] === value) delete pendingSaves.current[qid];
         savedAny = true;
       }
 
@@ -796,7 +841,9 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       if (!row) return;
       try {
         setSaveState("saving");
-        await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: row.local });
+        // Send a fresh (highest) seq so "keep mine" wins over any in-flight straggler
+        // and raises the server watermark, consistent with every other save path.
+        await save.mutateAsync({ attempt_id: attemptId, question_id: qid, answer: row.local, client_seq: ++seqCounter.current });
         const fr = await refetch();
         const next = { ...draftRef.current, [qid]: row.local };
         setDraftById(next);
@@ -859,7 +906,9 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
         qid in pendingSaves.current ? pendingSaves.current[qid]
         : qid in offlineQueue.current ? offlineQueue.current[qid]
         : draftRef.current[qid];
-      assessmentsStudentApi.saveAnswerKeepalive(attemptId, qid, value, currentIdxRef.current);
+      // Fresh (highest) seq: the keepalive fires on leave, so it carries the latest
+      // known answer and must win over any earlier in-flight save for this question.
+      assessmentsStudentApi.saveAnswerKeepalive(attemptId, qid, value, currentIdxRef.current, ++seqCounter.current);
     }
   };
 

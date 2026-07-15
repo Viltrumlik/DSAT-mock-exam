@@ -113,7 +113,7 @@ export const assessmentsStudentApi = {
    * never be lost (end up "omitted"). Regular autosave persists it too — this is
    * the last-ditch guarantee for the sub-debounce window.
    */
-  saveAnswerKeepalive: (attemptId: number, questionId: number, answer: unknown, currentIndex?: number): void => {
+  saveAnswerKeepalive: (attemptId: number, questionId: number, answer: unknown, currentIndex?: number, clientSeq?: number): void => {
     try {
       const token = getCachedCsrfToken();
       void fetch("/api/assessments/attempts/answer/", {
@@ -129,6 +129,8 @@ export const assessmentsStudentApi = {
           question_id: questionId,
           answer,
           ...(currentIndex != null ? { current_index: currentIndex } : {}),
+          // Order marker so the server rejects this if a newer save already landed.
+          ...(clientSeq != null ? { client_seq: clientSeq } : {}),
         }),
       });
     } catch {

@@ -22,8 +22,9 @@ class AssessmentAnswerClientSeqTests(APITestCase):
         self.student = User.objects.create_user(email="st_seq@example.com", password="x", role=acc_const.ROLE_STUDENT)
 
         self.classroom = Classroom.objects.create(
-            title="Math class",
+            name="Math class",
             subject=Classroom.SUBJECT_MATH,
+            lesson_days=Classroom.DAYS_ODD,
             created_by=self.teacher,
             teacher=self.teacher,
         )

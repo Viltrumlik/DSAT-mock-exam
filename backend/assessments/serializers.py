@@ -441,6 +441,7 @@ class AttemptAnswerSerializer(serializers.ModelSerializer):
             "id",
             "question_id",
             "answer",
+            "client_seq",
             "time_spent_seconds",
             "is_correct",
             "points_awarded",

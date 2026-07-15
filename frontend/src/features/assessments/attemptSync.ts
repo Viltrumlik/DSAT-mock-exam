@@ -58,3 +58,22 @@ export function answersMapFromAttempt(attempt: { answers?: unknown[] } | null | 
   }
   return map;
 }
+
+/**
+ * Highest `client_seq` the server has persisted for this attempt (0 if none).
+ *
+ * The runner seeds its monotonic save counter from this so a save is always
+ * ordered ABOVE the server's current state — even after a save-and-exit/resume
+ * (fresh mount) or a resume on a second device. Seeding from the server (not the
+ * client wall clock) is what makes out-of-order rejection safe: a 409 then always
+ * means a genuine stale straggler, never the student's real latest pick.
+ */
+export function maxClientSeqFromAttempt(attempt: { answers?: unknown[] } | null | undefined): number {
+  const answers = Array.isArray(attempt?.answers) ? attempt!.answers! : [];
+  let max = 0;
+  for (const a of answers) {
+    const seq = Number((a as any)?.client_seq);
+    if (Number.isFinite(seq) && seq > max) max = seq;
+  }
+  return max;
+}
