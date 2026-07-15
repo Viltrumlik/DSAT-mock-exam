@@ -149,15 +149,19 @@ export function NumericInput({
   value: number | string | null;
   onChange: (next: number | string | null) => void;
 }) {
-  // Hold the raw keystroke string locally so the student can type intermediate,
-  // not-yet-complete states ("-", ".", "1.", "25/") without the controlled value
-  // reformatting them away. We commit a finite number OR a complete fraction upward
-  // (the backend grades via Decimal(num)/Decimal(den), so "25/7" is canonical);
-  // transient tokens leave the committed value untouched until they parse.
+  // The <input> is UNCONTROLLED (defaultValue + ref) — deliberately. A CONTROLLED
+  // input (`value={raw}`) dropped every character after the first on real devices:
+  // each keystroke re-renders the whole runner (StudentAttemptRunnerContainer), and
+  // on a slow phone React re-applies the controlled value mid-typing and clobbers the
+  // characters typed after the render was scheduled. Prod data showed "25"→"2",
+  // "488"→"4" etc. — always the first char kept, intermittently. An uncontrolled
+  // input is never re-applied on re-render, so typed characters can't be clobbered.
   //
-  // Fractions (SAT grid-in, e.g. 25/7 == -1/3) are committed as the raw string —
-  // Number("25/7") is NaN, so the earlier Number()-only path silently dropped every
-  // fraction even though the grader accepts them.
+  // `raw` still mirrors the keystrokes, but only drives the live answer preview.
+  // Commit rules are unchanged: a finite number OR a complete fraction is sent up
+  // (the backend grades via Decimal(num)/Decimal(den), so "25/7" is canonical);
+  // transient tokens ("-", ".", "1.", "25/") leave the committed value untouched.
+  const inputRef = useRef<HTMLInputElement>(null);
   const [raw, setRaw] = useState<string>(value == null ? "" : String(value));
   // Track the last value we committed so we can tell an external change
   // (draft restore / conflict resolution) apart from our own echo.
@@ -165,9 +169,13 @@ export function NumericInput({
 
   useEffect(() => {
     if (value !== lastCommitted.current) {
-      // Value changed from outside this input (e.g. restored draft) — adopt it.
-      setRaw(value == null ? "" : String(value));
+      // Value changed from outside this input (e.g. restored draft / conflict
+      // resolution) — adopt it into both the preview and the uncontrolled DOM input.
       lastCommitted.current = value;
+      const next = value == null ? "" : String(value);
+      setRaw(next);
+      const el = inputRef.current;
+      if (el && el.value !== next) el.value = next;
     }
   }, [value]);
 
@@ -203,10 +211,11 @@ export function NumericInput({
   return (
     <div>
       <input
+        ref={inputRef}
         className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 min-h-[52px] text-base shadow-sm focus:border-primary focus:outline-none"
         type="text"
         inputMode="text"
-        value={raw}
+        defaultValue={value == null ? "" : String(value)}
         onChange={(e) => handle(e.target.value)}
         placeholder="Number or fraction (e.g. 3.5 or 25/7)…"
       />
