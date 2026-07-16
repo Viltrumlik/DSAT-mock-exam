@@ -94,6 +94,13 @@ export const ME_REQUEST_TIMEOUT_MS = 10_000;
  * Required so a wedged `/auth/refresh/` cannot leave `/users/me` hanging forever behind the 401 interceptor.
  */
 export const HTTP_CLIENT_TIMEOUT_MS = 35_000;
+/**
+ * Generous timeout for multipart (FormData) uploads. A large attachment — e.g. a
+ * ~17MB PDF on a homework assignment — can take minutes over a slow/mobile uplink,
+ * far exceeding the 35s default, which aborts mid-transfer ("timeout of 35000ms
+ * exceeded"). nginx allows 60M bodies, so the transfer just needs time to finish.
+ */
+export const UPLOAD_REQUEST_TIMEOUT_MS = 300_000;
 
 const API_URL = '/api';
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -304,6 +311,14 @@ export function getCachedCsrfToken(): string | null {
 }
 
 api.interceptors.request.use(async (config) => {
+    // Multipart uploads get a much longer budget than the 35s default: a large
+    // attachment (e.g. a ~17MB homework PDF) can take minutes on a slow uplink,
+    // and the default aborts it mid-transfer. Bump unless the caller asked for
+    // even longer. Covers every upload path (assignments, submissions, materials,
+    // question images) since they all share this client.
+    if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+        config.timeout = Math.max(Number(config.timeout) || 0, UPLOAD_REQUEST_TIMEOUT_MS);
+    }
     // Auth is cookie-based (HttpOnly access token). Do not attach Authorization header.
     // CSRF hardening: send X-CSRFToken for unsafe methods using the cached MASKED token
     // (sourced from /auth/csrf/ JSON body, NOT from document.cookie — see above).
