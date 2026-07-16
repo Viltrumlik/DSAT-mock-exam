@@ -26,6 +26,8 @@ class AdminMidtermSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "subject",
+            "level",
+            "calculator_enabled",
             "scoring_scale",
             "duration_minutes",
             "question_limit",
@@ -45,7 +47,20 @@ class AdminMidtermSerializer(serializers.ModelSerializer):
             "question_count",
             "publish_ready",
             "publish_block_reason",
+            # Derived from subject+level — never authored directly.
+            "calculator_enabled",
         ]
+
+    def validate(self, attrs):
+        """Level must be valid for the subject (Foundation is Math-only). Blank stays
+        allowed = untagged/legacy. Falls back to the instance so PATCH of one field works."""
+        subject = attrs.get("subject") or getattr(self.instance, "subject", None)
+        level = attrs.get("level", getattr(self.instance, "level", "") if self.instance else "")
+        if level and level not in Midterm.allowed_levels_for_subject(subject):
+            raise serializers.ValidationError(
+                {"level": f"'{level}' is not a valid level for {subject} midterms."}
+            )
+        return attrs
 
     def get_question_count(self, obj) -> int:
         return obj.display_question_count()

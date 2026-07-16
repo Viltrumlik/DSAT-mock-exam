@@ -57,14 +57,43 @@ class Midterm(TimestampedModel):
         (SCALE_800, "800-point (SAT scaled)"),
     ]
 
+    # Difficulty tier. Lowercase codes shared VERBATIM with assessments.AssessmentSet.level,
+    # classes.Classroom.level and exams.MockExam.midterm_level (the builder authors it there
+    # and sync mirrors it here). Subject-dependent: Reading & Writing has no Foundation.
+    LEVEL_FOUNDATION = "foundation"
+    LEVEL_JUNIOR = "junior"
+    LEVEL_MIDDLE = "middle"
+    LEVEL_SENIOR = "senior"
+    LEVEL_CHOICES = [
+        (LEVEL_FOUNDATION, "Foundation"),
+        (LEVEL_JUNIOR, "Junior"),
+        (LEVEL_MIDDLE, "Middle"),
+        (LEVEL_SENIOR, "Senior"),
+    ]
+    ALLOWED_LEVELS_BY_SUBJECT = {
+        READING_WRITING: (LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
+        MATH: (LEVEL_FOUNDATION, LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
+    }
+    # Levels that unlock the Desmos calculator (Math only) — mirrors the assessment rule
+    # (StudentAttemptRunnerContainer: math + middle/senior). See `calculator_enabled`.
+    CALCULATOR_LEVELS = (LEVEL_MIDDLE, LEVEL_SENIOR)
+
     # Structural invariants — a midterm never offers these. Kept as class attributes
-    # (not fields/toggles) so they cannot be authored on; serializers may echo them.
-    CALCULATOR_ENABLED = False
+    # (not fields/toggles) so they cannot be authored on. The calculator is NOT one of
+    # them: it is level-dependent — see the `calculator_enabled` property.
     REFERENCE_SHEET_ENABLED = False
     PAUSE_ENABLED = False
 
     title = models.CharField(max_length=255, db_index=True)
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, default=READING_WRITING, db_index=True)
+    level = models.CharField(
+        max_length=16,
+        choices=LEVEL_CHOICES,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Blank = untagged (no calculator). Foundation applies to Math only.",
+    )
     scoring_scale = models.CharField(max_length=16, choices=SCALE_CHOICES, default=SCALE_100)
     duration_minutes = models.PositiveIntegerField(default=60, help_text="Single-module strict timer.")
     question_limit = models.PositiveSmallIntegerField(default=30, help_text="Authoring cap on question count.")
@@ -121,6 +150,23 @@ class Midterm(TimestampedModel):
     def has_questions(self) -> bool:
         """True when the midterm has at least one question to serve (version-aware)."""
         return self.display_question_count() > 0
+
+    @classmethod
+    def allowed_levels_for_subject(cls, subject: str) -> tuple[str, ...]:
+        """Levels valid for a subject (Foundation is Math-only). Mirrors
+        assessments.AssessmentSet.allowed_levels_for_subject."""
+        return cls.ALLOWED_LEVELS_BY_SUBJECT.get(subject, ())
+
+    @property
+    def calculator_enabled(self) -> bool:
+        """Whether the runner may offer Desmos — the single source of truth.
+
+        Math midterms at middle/senior level only; every other midterm (R&W, or an
+        untagged/junior/foundation Math midterm) has no calculator. Computed here — not
+        re-derived client-side — because `subject` is UPPERCASE here while the assessment
+        rule compares lowercase, and one authority avoids the two drifting.
+        """
+        return self.subject == self.MATH and self.level in self.CALCULATOR_LEVELS
 
     @property
     def score_ceiling(self) -> int:
