@@ -445,12 +445,17 @@ class CookieTokenRefreshView(TokenRefreshView):
             security_metric_incr("refresh_fail", 1)
             return Response({"detail": "Refresh token revoked."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Enforce server-side session allowlist + rotation transactionally.
+        # Server-side session allowlist. A plain existence probe — do NOT lock here: the
+        # request runs in autocommit (ATOMIC_REQUESTS is off), and select_for_update()
+        # outside a transaction raises TransactionManagementError on Postgres while being
+        # a silent no-op on SQLite. That combination 401'd EVERY refresh on prod for ~2.5
+        # months while every test passed. The authoritative locked read is below, inside
+        # `with transaction.atomic()`.
         try:
             jti = _jti_of_refresh(refresh)
             if not jti:
                 raise ValueError("missing jti")
-            s = RefreshSession.objects.filter(refresh_jti=jti, revoked_at__isnull=True).select_for_update().first()
+            s = RefreshSession.objects.filter(refresh_jti=jti, revoked_at__isnull=True).first()
             if not s:
                 _audit_refresh_failure(
                     user_id=_user_id_of_refresh(refresh), request=request, kind="replay_no_session"
@@ -458,6 +463,10 @@ class CookieTokenRefreshView(TokenRefreshView):
                 security_metric_incr("refresh_fail", 1)
                 return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
         except Exception:
+            # Never let a BUG masquerade as "your session is invalid" without a trace —
+            # that silence is exactly what hid the outage above. Still 401 (a refresh we
+            # cannot validate must not succeed), but log it loudly so it can't hide again.
+            logger.exception("refresh: session validation crashed (jti probe)")
             security_metric_incr("refresh_fail", 1)
             return Response({"detail": "Session validation failed."}, status=status.HTTP_401_UNAUTHORIZED)
 

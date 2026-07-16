@@ -3,7 +3,10 @@
 LOCKED scoring rules (per product decision):
   - Count QUESTIONS, not points (each question equal weight; ``Question.score`` ignored).
   - SCALE_100 = round(correct / total * 100)              (0 when total == 0)
-  - SCALE_800 = 200 + round(correct / total * 600)        (200 when total == 0; perfect = 800)
+  - SCALE_800 = the linear map 200 + (correct/total * 600), SNAPPED to the nearest 10
+    (200 when total == 0; perfect = 800). A real SAT section score only ever exists in
+    10-point steps — 200, 210, … 800 — so a raw 645 is not a score that can be reported.
+    Snapping keeps both endpoints exact (0 correct -> 200, all correct -> 800).
   - Python builtin round() (banker's rounding) so migrated SCALE_100 scores recompute identically.
 
 The single grading atom is ``exams.Question.check_answer`` (reused verbatim, never reimplemented).
@@ -39,7 +42,9 @@ def compute_score(correct_count: int, total_count: int, scoring_scale: str) -> i
         return 200 if scoring_scale == SCALE_800 else 0
     fraction = correct_count / total_count
     if scoring_scale == SCALE_800:
-        return 200 + round(fraction * 600)
+        # Snap to the SAT's 10-point grid: a section score is always a multiple of 10.
+        # Round the WHOLE scaled value (not just the 600-part) so 200/800 stay exact.
+        return int(round((200 + fraction * 600) / 10.0) * 10)
     return round(fraction * 100)
 
 
