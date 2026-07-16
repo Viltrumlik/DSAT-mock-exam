@@ -95,6 +95,21 @@ SAT_FULL_MOCK_REQUIRED_SUBJECTS = frozenset({"READING_WRITING", "MATH"})
 
 SAT_SECTION_BASE_SCORE = 200
 SAT_SECTION_MAX_SCORE = 800
+# A real SAT section score only exists in 10-point steps: 200, 210 … 800.
+SAT_SCORE_STEP = 10
+
+
+def snap_to_sat_score_grid(section_score: int | float) -> int:
+    """Round a finished SECTION score onto the SAT's 10-point grid.
+
+    Apply this ONCE, to the assembled section total (base + module contributions),
+    AFTER the 800 cap — never to an individual module contribution:
+    ``compute_sat_module_score`` returns a share of a cap (e.g. Math M1 380 / M2 220),
+    and rounding those separately would both double-round and stop the caps summing to
+    exactly 800 on a perfect run. Because the base (200) and the cap (800) are already
+    multiples of 10, snapping leaves both endpoints exact.
+    """
+    return int(round(float(section_score) / SAT_SCORE_STEP) * SAT_SCORE_STEP)
 
 # subject → {module_order → max contribution above base}
 SAT_MODULE_SCORE_CAP: dict[str, dict[int, int]] = {

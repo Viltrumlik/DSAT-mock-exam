@@ -11,6 +11,7 @@ from exams.sat_rules import (
     SAT_SECTION_BASE_SCORE,
     SAT_SECTION_MAX_SCORE,
     compute_sat_module_score,
+    snap_to_sat_score_grid,
 )
 
 
@@ -27,14 +28,19 @@ def _grade_module(module, answers) -> tuple[int, int]:
 
 
 def score_section(modules, module_answers, subject) -> int:
-    """Score one 2-module section onto the SAT 200–800 scale."""
+    """Score one 2-module section onto the SAT 200–800 scale.
+
+    Snapped to the SAT's 10-point grid ONCE, on the assembled total and after the cap —
+    a section score is always a multiple of 10, and rounding the module contributions
+    separately would stop the caps summing to exactly 800 on a perfect run.
+    """
     section = SAT_SECTION_BASE_SCORE
     for module in modules:
         earned, total = _grade_module(module, (module_answers or {}).get(str(module.id), {}))
         section += compute_sat_module_score(
             earned_points=earned, total_possible_points=total, subject=subject, module_order=module.module_order
         )
-    return min(section, SAT_SECTION_MAX_SCORE)
+    return snap_to_sat_score_grid(min(section, SAT_SECTION_MAX_SCORE))
 
 
 def score_mock_attempt(attempt) -> dict:

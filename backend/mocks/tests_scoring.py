@@ -65,10 +65,12 @@ class MockScoringTests(TestCase):
         ma = {str(e1.id): {qids[0]: "a", qids[1]: "a", qids[2]: "b", qids[3]: "b"}}
         att = MockAttempt.objects.create(mock=mock, student=self.student, module_answers=ma)
         res = att.grade()
-        # English m1 cap 330, half correct -> round(0.5*330)=165; m2 empty -> 0. section=200+165=365.
-        self.assertEqual(res["english_score"], 365)
+        # English m1 cap 330, half correct -> round(0.5*330)=165; m2 empty -> 0 => 200+165=365 raw.
+        # A section score only exists in 10-point steps, so it snaps to the grid: 365 sits exactly
+        # between 360 and 370 and round() is banker's (36.5 -> 36), giving 360.
+        self.assertEqual(res["english_score"], 360)
         self.assertEqual(res["math_score"], 200)
-        self.assertEqual(res["total_score"], 565)
+        self.assertEqual(res["total_score"], 560)
 
     def test_uniq_active_blocks_second(self):
         from django.db import IntegrityError
