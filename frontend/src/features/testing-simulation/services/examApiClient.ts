@@ -89,6 +89,34 @@ export function createExamApi(base: string) {
       return parseAttempt(r.data, "POST submit_module");
     },
 
+    /**
+     * Fire-and-forget answer save that survives a tab close (`keepalive`), so the
+     * student's LATEST answers reach the server even on an abrupt leave (tab
+     * switch/close, navigate) — resumable on any device, not just this browser's
+     * local draft. Sends the expected version so a stale write (the module already
+     * advanced) is rejected server-side rather than corrupting the new module.
+     * Mirrors the assessment runner's answer keepalive.
+     */
+    saveAttemptKeepalive(
+      attemptId: number,
+      answers: Record<string, string>,
+      flagged: number[],
+      expectedVersionNumber?: number,
+    ): void {
+      try {
+        const token = getCachedCsrfToken();
+        void fetch(`/api${base}/${attemptId}/save_attempt/`, {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
+          body: JSON.stringify(withVersion({ answers, flagged }, expectedVersionNumber)),
+        });
+      } catch {
+        /* best-effort: work is also locally drafted and re-saved on resume */
+      }
+    },
+
     /** Persist in-progress answers without advancing state (autosave). */
     async saveAttempt(
       attemptId: number,

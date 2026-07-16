@@ -28,9 +28,13 @@ interface UseAutosaveArgs {
   online?: boolean;
   /** Attempt-engine client. Defaults to the pastpaper/mock client; midterm passes its own. */
   api?: ExamApi;
+  /** Debounce before the server save fires. Pastpapers pass a short value for a
+   * near-immediate per-answer save + "Saved" feedback; mocks/midterms keep the
+   * default so long proctored exams aren't saved on every keystroke. */
+  debounceMs?: number;
 }
 
-const DEBOUNCE_MS = 1500;
+const DEFAULT_DEBOUNCE_MS = 1500;
 const MAX_RETRIES = 3;
 
 /**
@@ -48,6 +52,7 @@ export function useAutosave({
   enabled,
   online = true,
   api = examApi,
+  debounceMs = DEFAULT_DEBOUNCE_MS,
 }: UseAutosaveArgs): UseAutosaveResult {
   const inFlightRef = useRef(false);
   const applyRef = useRef(applyAttempt);
@@ -115,14 +120,14 @@ export function useAutosave({
       }
     };
 
-    timer = setTimeout(flush, DEBOUNCE_MS);
+    timer = setTimeout(flush, debounceMs);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [answers, flagged, enabled, online, liveModuleId, answersModuleId, version, attemptId]);
+  }, [answers, flagged, enabled, online, liveModuleId, answersModuleId, version, attemptId, debounceMs]);
 
   return { status, lastSavedAt };
 }
