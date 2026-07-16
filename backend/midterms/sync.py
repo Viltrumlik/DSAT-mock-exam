@@ -76,8 +76,11 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     # Refresh the definition from the legacy source of truth on every sync.
     midterm.title = mock.title
     midterm.subject = getattr(mock, "midterm_subject", None) or midterm.subject
-    # `or midterm.level` so a blank legacy value never clobbers a level already mirrored.
-    midterm.level = getattr(mock, "midterm_level", None) or midterm.level
+    # Mirror VERBATIM — legacy is the source of truth, exactly like title/subject/scale
+    # above. Do NOT fall back to the mirror's own value on blank: `midterm_level` is
+    # blank=True (never None), so a fallback would fire precisely when an admin CLEARS
+    # the tier to "Any level", leaving the calculator stuck ON with no way to turn it off.
+    midterm.level = getattr(mock, "midterm_level", "") or ""
     midterm.scoring_scale = getattr(mock, "midterm_scoring_scale", None) or midterm.scoring_scale
     midterm.duration_minutes = duration
     midterm.question_limit = int(getattr(mock, "midterm_module_question_limit", 30) or 30)

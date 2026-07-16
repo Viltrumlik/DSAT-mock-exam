@@ -54,7 +54,14 @@ class AdminMidtermSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         """Level must be valid for the subject (Foundation is Math-only). Blank stays
         allowed = untagged/legacy. Falls back to the instance so PATCH of one field works."""
-        subject = attrs.get("subject") or getattr(self.instance, "subject", None)
+        # Fall back to the instance (PATCH of level alone), then to the model default —
+        # DRF doesn't inject model defaults into validated_data, and a None subject would
+        # make allowed_levels_for_subject() return () and reject every level.
+        subject = (
+            attrs.get("subject")
+            or getattr(self.instance, "subject", None)
+            or Midterm.READING_WRITING
+        )
         level = attrs.get("level", getattr(self.instance, "level", "") if self.instance else "")
         if level and level not in Midterm.allowed_levels_for_subject(subject):
             raise serializers.ValidationError(

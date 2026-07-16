@@ -60,7 +60,10 @@ class SyncCarriesLegacyLevelTests(TestCase):
         self.assertEqual(midterm.level, "middle")
         self.assertTrue(midterm.calculator_enabled)
 
-    def test_blank_legacy_level_does_not_clobber_an_existing_mirror_level(self):
+    def test_clearing_the_legacy_level_turns_the_calculator_back_off(self):
+        """The gate must not be one-way. Selecting "Any level" in the builder clears
+        midterm_level to "" — that MUST propagate, or an admin could never undo a
+        calculator they turned on by mistake (legacy is the source of truth)."""
         from exams.models import MockExam
         from midterms.sync import upsert_midterm_from_legacy
 
@@ -68,11 +71,27 @@ class SyncCarriesLegacyLevelTests(TestCase):
             title="M", kind=MockExam.KIND_MIDTERM, midterm_subject="MATH",
             midterm_level="middle", midterm_module_count=1, midterm_module1_minutes=60,
         )
-        upsert_midterm_from_legacy(mock)
-        mock.midterm_level = ""
+        midterm = upsert_midterm_from_legacy(mock)
+        self.assertTrue(midterm.calculator_enabled)
+
+        mock.midterm_level = ""  # builder: Level -> "Any level"
         mock.save(update_fields=["midterm_level"])
         midterm = upsert_midterm_from_legacy(mock)
-        self.assertEqual(midterm.level, "middle")
+        self.assertEqual(midterm.level, "")
+        self.assertFalse(midterm.calculator_enabled)
+
+    def test_downgrading_the_legacy_level_turns_the_calculator_off(self):
+        from exams.models import MockExam
+        from midterms.sync import upsert_midterm_from_legacy
+
+        mock = MockExam.objects.create(
+            title="M2", kind=MockExam.KIND_MIDTERM, midterm_subject="MATH",
+            midterm_level="middle", midterm_module_count=1, midterm_module1_minutes=60,
+        )
+        self.assertTrue(upsert_midterm_from_legacy(mock).calculator_enabled)
+        mock.midterm_level = "junior"
+        mock.save(update_fields=["midterm_level"])
+        self.assertFalse(upsert_midterm_from_legacy(mock).calculator_enabled)
 
 
 class RunnerPayloadTests(TestCase):
