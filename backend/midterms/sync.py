@@ -62,6 +62,9 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
         defaults={
             "title": mock.title,
             "subject": getattr(mock, "midterm_subject", None) or Midterm.READING_WRITING,
+            # The builder authors the tier on the legacy exam; mirror it verbatim so a
+            # Math middle/senior midterm gets its calculator (see Midterm.calculator_enabled).
+            "level": getattr(mock, "midterm_level", "") or "",
             "scoring_scale": getattr(mock, "midterm_scoring_scale", None) or Midterm.SCALE_100,
             "duration_minutes": duration,
             "question_limit": int(getattr(mock, "midterm_module_question_limit", 30) or 30),
@@ -73,6 +76,8 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     # Refresh the definition from the legacy source of truth on every sync.
     midterm.title = mock.title
     midterm.subject = getattr(mock, "midterm_subject", None) or midterm.subject
+    # `or midterm.level` so a blank legacy value never clobbers a level already mirrored.
+    midterm.level = getattr(mock, "midterm_level", None) or midterm.level
     midterm.scoring_scale = getattr(mock, "midterm_scoring_scale", None) or midterm.scoring_scale
     midterm.duration_minutes = duration
     midterm.question_limit = int(getattr(mock, "midterm_module_question_limit", 30) or 30)

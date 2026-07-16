@@ -9,8 +9,10 @@
  *   - Per-module question limit is builder-configurable (default 30).
  *   - Module time is freely set in the builder.
  *   - Scoring uses the chosen 100-point or 800-point scale.
- *   - The Desmos calculator is hidden.
  *   - The reference sheet is hidden.
+ *   - The Desmos calculator is LEVEL-GATED, not hidden: a Math midterm at middle/senior
+ *     offers it. The server decides (Midterm.calculator_enabled) and the runner reads it
+ *     via `calculatorAllowed` in testing-simulation/state/selectors.ts.
  */
 
 import type { ModuleProgress } from "./satRules";
@@ -19,9 +21,8 @@ import type { ModuleProgress } from "./satRules";
 
 export const MIDTERM_DEFAULT_MODULE_QUESTION_LIMIT = 30;
 
-// ── Exam-runner tooling (midterms never offer these) ─────────────────────────
-
-export const MIDTERM_CALCULATOR_ENABLED = false;
+// ── Exam-runner tooling ──────────────────────────────────────────────────────
+// The calculator is NOT a constant — it is level-gated per midterm; see the header.
 export const MIDTERM_REFERENCE_SHEET_ENABLED = false;
 
 /** Resolve the effective per-module question limit (default when unset). */

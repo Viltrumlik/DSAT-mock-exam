@@ -70,9 +70,13 @@ class MidtermAttemptSerializer(serializers.Serializer):
             "practice_test_details": {
                 "id": midterm.id,
                 "subject": midterm.subject,
+                "level": midterm.level,
                 "title": midterm.title,
                 "mock_exam_id": None,
                 "mock_kind": "MIDTERM",
+                # Authoritative tool gate: Math middle/senior midterms offer Desmos. Computed
+                # server-side so the runner never re-derives the rule (subject casing differs).
+                "calculator_enabled": bool(midterm.calculator_enabled),
                 "modules": modules_meta,
             },
             "current_module": current_module_id,

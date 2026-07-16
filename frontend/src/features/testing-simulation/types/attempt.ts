@@ -69,6 +69,10 @@ const practiceTestDetailsSchema = z
     title: z.string(),
     mock_exam_id: z.number().nullable().optional(),
     mock_kind: z.string().nullable().optional(),
+    /** Midterm difficulty tier (foundation/junior/middle/senior). Only /midterms/attempts sends these. */
+    level: z.string().nullable().optional(),
+    /** Server-decided Desmos gate for midterms (Math + middle/senior). Absent on other exam types. */
+    calculator_enabled: z.boolean().nullable().optional(),
     modules: z.array(
       z.object({
         id: z.number(),

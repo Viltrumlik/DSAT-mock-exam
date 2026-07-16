@@ -8,8 +8,10 @@ Digital SAT structure (see sat_rules.py). They have their own rules:
     22 (Math) / 27 (R&W) counts.
   - Module time is freely set in the builder (no fixed per-subject limits).
   - Scoring uses MockExam.midterm_scoring_scale (100-point or 800-point).
-  - The Desmos calculator is hidden.
   - The reference sheet is hidden.
+  - The Desmos calculator is LEVEL-GATED, not hidden: a Math midterm at middle/senior
+    level offers it. The rule lives on the new app's model (midterms.Midterm.
+    calculator_enabled, driven by MockExam.midterm_level which sync mirrors), NOT here.
 
 Keep in sync with the frontend mirror: frontend/src/lib/midtermRules.ts
 """
@@ -27,9 +29,10 @@ if TYPE_CHECKING:
 
 MIDTERM_DEFAULT_MODULE_QUESTION_LIMIT = 30
 
-# ── Exam-runner tooling (midterms never offer these) ────────────────────────
+# ── Exam-runner tooling ─────────────────────────────────────────────────────
+# The calculator is NOT a constant — it is level-gated per midterm (see the module
+# docstring and midterms.Midterm.calculator_enabled).
 
-MIDTERM_CALCULATOR_ENABLED = False
 MIDTERM_REFERENCE_SHEET_ENABLED = False
 
 

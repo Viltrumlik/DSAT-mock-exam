@@ -36,3 +36,18 @@ export function pauseAllowed(attempt: Attempt | null, mockFlow: boolean): boolea
   const kind = attempt?.practice_test_details?.mock_kind;
   return !mockFlow && kind !== "MIDTERM" && kind !== "MOCK";
 }
+
+/**
+ * Whether the runner may offer the Desmos calculator.
+ *
+ * Math-only everywhere. Pastpapers/mocks follow the SAT (Math module = calculator).
+ * Midterms used to be blanket-denied; they are now level-gated — a Math midterm at
+ * middle/senior offers it, matching the assessment rule. The decision is made SERVER-side
+ * (`calculator_enabled` on the midterm's practice_test_details) rather than re-derived
+ * here, so the rule lives in one place and the subject-casing difference can't bite.
+ */
+export function calculatorAllowed(attempt: Attempt | null): boolean {
+  if (!isMath(attempt)) return false;
+  if (attempt?.practice_test_details?.mock_kind !== "MIDTERM") return true;
+  return Boolean(attempt?.practice_test_details?.calculator_enabled);
+}

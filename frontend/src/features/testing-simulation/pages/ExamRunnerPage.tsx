@@ -14,7 +14,7 @@ import { useMathRendering } from "../hooks/useMathRendering";
 import { examApi, midtermExamApi, mockExamApi } from "../services/examApiClient";
 import { mockApi } from "@/lib/mockApi";
 import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attemptMerge";
-import { isMath, moduleLabel, pauseAllowed, questions as selectQuestions, subjectKind } from "../state/selectors";
+import { calculatorAllowed, isMath, moduleLabel, pauseAllowed, questions as selectQuestions, subjectKind } from "../state/selectors";
 import { FIVE_MINUTE_WARNING_SECONDS } from "../utils/time";
 import { clamp } from "../utils/time";
 import { parseOptions } from "../utils/options";
@@ -386,7 +386,8 @@ export function ExamRunnerPage() {
   });
 
   const mathQuestions = isMath(attempt);
-  // Midterms never offer a calculator or reference sheet (see exams/midterm_rules.py).
+  // Midterms never offer the reference sheet. The CALCULATOR is no longer blanket-denied:
+  // it is level-gated server-side (Math + middle/senior) — see calculatorAllowed().
   const isMidtermExam = attempt?.practice_test_details?.mock_kind === "MIDTERM";
   useMathRendering(!loading && Boolean(attempt?.current_module_details), `${moduleId}:${currentIndex}`);
 
@@ -780,7 +781,7 @@ export function ExamRunnerPage() {
         showDirections={showDirections}
         onToggleDirections={() => setShowDirections((v) => !v)}
         mathTools={mathQuestions && !isMidtermExam}
-        showCalculator={mathQuestions && !isMidtermExam}
+        showCalculator={calculatorAllowed(attempt)}
         tools={tools}
         pauseAllowed={pauseAllowed(attempt, mockFlow)}
         paused={paused}
