@@ -364,10 +364,15 @@ export function ExamRunnerPage() {
     onExpire,
   });
 
+  // Pastpapers save in place (assessment-style): a short debounce for a
+  // near-immediate per-answer save + a visible "Saved" indicator, and answers are
+  // flushed to the server on leave (below). Mocks/midterms keep the longer default
+  // and show no indicator (proctored — no save-and-resume affordance).
+  const isPastpaper = pauseAllowed(attempt, mockFlow);
+
   // Autosave only while genuinely interactive (not submitting / transitioning /
-  // paused, and never from a blocked duplicate tab). Runs for its side effect;
-  // the header no longer surfaces a save indicator (work is also locally drafted).
-  useAutosave({
+  // paused, and never from a blocked duplicate tab).
+  const { status: saveStatus } = useAutosave({
     attempt,
     attemptId,
     answers,
@@ -377,6 +382,7 @@ export function ExamRunnerPage() {
     enabled: !submitting && transitionTo === null && !(paused && pauseAllowed(attempt, mockFlow)) && !multiTab.blocked,
     online,
     api: engineApi,
+    debounceMs: isPastpaper ? 500 : undefined,
   });
 
   const mathQuestions = isMath(attempt);
@@ -554,7 +560,25 @@ export function ExamRunnerPage() {
   autoPauseRef.current = () => {
     if (!attempt || !attemptId || !pauseAllowed(attempt, mockFlow)) return;
     const order = attempt.current_module_details?.module_order ?? 0;
-    if (order <= 0 || isCompleted(attempt) || paused || submitting || exiting) return;
+    if (order <= 0 || isCompleted(attempt) || submitting || exiting) return;
+    // Flush the LATEST answers to the server first (keepalive survives a tab
+    // close), so an abrupt leave never loses them — resumable on any device, not
+    // just this browser's local draft. Fires even if already paused (the student
+    // may have answered more before leaving). Idempotent; the version guards a
+    // stale write after a module advance. GUARDS: (a) a blocked/passive duplicate
+    // tab must NOT flush — its `answers` are a stale snapshot and save_attempt
+    // REPLACES, so it could clobber the primary tab's newer work (autosave is
+    // disabled for it for the same reason); (b) skip an empty map — `answers`
+    // hydrates from the server asynchronously on load, so flushing during that
+    // window would blank saved work.
+    // (c) don't flush mid module-transition: `answers` can still hold the previous
+    // module's map for a frame while `attempt` is the new module, so a flush would
+    // write them under the new module's key (harmless — foreign ids grade omitted —
+    // but skipping it keeps the save robust-by-construction).
+    if (!multiTab.blocked && transitionTo === null && Object.keys(answers).length > 0) {
+      engineApi.saveAttemptKeepalive(attemptId, answers, flagged, attempt.version_number);
+    }
+    if (paused) return; // already frozen — only the answer flush was needed
     setPaused(true); // freeze the local countdown immediately
     engineApi.pauseKeepalive(attemptId); // persist; keepalive survives a tab close
   };
@@ -763,6 +787,7 @@ export function ExamRunnerPage() {
         onTogglePause={handlePauseToggle}
         onSaveAndExit={handleSaveAndExit}
         onReportProblem={currentQuestion ? () => setReportOpen(true) : undefined}
+        saveStatus={isPastpaper ? saveStatus : undefined}
       />
       <SatColorRule />
 
