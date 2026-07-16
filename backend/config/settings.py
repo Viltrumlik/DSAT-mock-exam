@@ -464,7 +464,13 @@ AUTHENTICATION_BACKENDS = [
 SIMPLE_JWT = {
     # Short-lived access; browser uses refresh cookie to renew.
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=3),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    # Session lifetime (1 week). Rotation re-issues this on every refresh, so an active
+    # user never ages out; it only ends a session that went unused for a full week.
+    # NOTE: keep in step with users.auth_cookies.REFRESH_MAX_AGE — the browser drops the
+    # cookie at ITS max_age, so a shorter cookie would end the session early regardless
+    # of this value — and with _revocation_ttl_seconds() in users/views.py, which must
+    # stay >= this (a revoked token must not outlive its revocation marker).
+    'REFRESH_TOKEN_LIFETIME': timedelta(weeks=1),
     'AUTH_HEADER_TYPES': ('Bearer',),
     # An account with is_active=False (only reachable via Django admin now that the
     # app-level "deactivate" feature is removed) must never authenticate a request.

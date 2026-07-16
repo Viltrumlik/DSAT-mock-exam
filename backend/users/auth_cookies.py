@@ -8,6 +8,13 @@ from django.conf import settings
 ACCESS_COOKIE = "lms_access"
 REFRESH_COOKIE = "lms_refresh"
 
+# Session lifetime (1 week) — the browser drops the refresh cookie at ITS max_age, so
+# this must not be shorter than SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"] or the session dies
+# early: a student mid-exam then cannot renew their access token and every request 401s.
+REFRESH_MAX_AGE = timedelta(weeks=1)
+# "Don't remember me" is deliberately short-lived — a shared/lab machine.
+REFRESH_MAX_AGE_SESSION_ONLY = timedelta(days=1)
+
 
 def cookie_domain_for_request(request) -> str | None:
     """
@@ -69,7 +76,7 @@ def set_auth_cookies(
     )
     # Refresh cookie drives session lifetime.
     if refresh_max_age is None:
-        refresh_max_age = timedelta(days=7) if remember_me else timedelta(days=1)
+        refresh_max_age = REFRESH_MAX_AGE if remember_me else REFRESH_MAX_AGE_SESSION_ONLY
     response.set_cookie(
         REFRESH_COOKIE,
         refresh,
