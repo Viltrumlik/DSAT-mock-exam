@@ -1453,7 +1453,10 @@ class TestAttempt(TimestampedModel):
                         _exc,
                     )
 
-            score_val = min(200 + m1_earned + m2_earned, 800)
+            # Snap the assembled section onto the SAT's 10-point grid (200, 210 … 800) —
+            # once, after the cap, never per module. Mirrors mocks.scoring.score_section.
+            from .sat_rules import snap_to_sat_score_grid
+            score_val = snap_to_sat_score_grid(min(200 + m1_earned + m2_earned, 800))
 
         n = conditional_attempt_update(
             pk=int(self.pk),
