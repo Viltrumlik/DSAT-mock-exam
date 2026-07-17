@@ -93,9 +93,13 @@ export function createExamApi(base: string) {
      * Fire-and-forget answer save that survives a tab close (`keepalive`), so the
      * student's LATEST answers reach the server even on an abrupt leave (tab
      * switch/close, navigate) — resumable on any device, not just this browser's
-     * local draft. Sends the expected version so a stale write (the module already
-     * advanced) is rejected server-side rather than corrupting the new module.
-     * Mirrors the assessment runner's answer keepalive.
+     * local draft. Mirrors the assessment runner's answer keepalive.
+     *
+     * `expectedVersionNumber` is optional and callers should normally OMIT it: a
+     * fire-and-forget request can neither observe a 409 nor retry one, so pinning
+     * a version turns any concurrent autosave — which bumps version_number about
+     * once a second — into a silently discarded flush. Callers guard staleness
+     * structurally instead (don't flush mid module-transition or from a passive tab).
      */
     saveAttemptKeepalive(
       attemptId: number,
