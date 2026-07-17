@@ -1,9 +1,8 @@
 "use client";
-import { Calculator, Check, ChevronDown, CloudOff, Flag, Highlighter, Loader2, StickyNote } from "lucide-react";
+import { Calculator, ChevronDown, Flag, Highlighter, StickyNote } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
-import type { SaveStatus } from "../hooks/useAutosave";
 
 interface ExamHeaderProps {
   moduleTitle: string;
@@ -23,29 +22,6 @@ interface ExamHeaderProps {
   onTogglePause: () => void;
   onSaveAndExit: () => void;
   onReportProblem?: () => void;
-  /** Autosave status. Omitted for mocks/midterms → the indicator is hidden. */
-  saveStatus?: SaveStatus;
-}
-
-/** Small "your answers are saved" indicator (pastpapers). Reassures the student
- * their work persists so they can leave and resume in place. */
-function SaveIndicator({ status }: { status: SaveStatus }) {
-  const map: Record<SaveStatus, { icon: React.ReactNode; text: string; className: string } | null> = {
-    idle: null,
-    saving: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, text: "Saving…", className: "text-slate-500" },
-    retrying: { icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />, text: "Saving…", className: "text-slate-500" },
-    saved: { icon: <Check className="h-3.5 w-3.5" />, text: "Saved", className: "text-emerald-600" },
-    offline: { icon: <CloudOff className="h-3.5 w-3.5" />, text: "Saved on this device", className: "text-amber-600" },
-    error: { icon: <CloudOff className="h-3.5 w-3.5" />, text: "Retrying…", className: "text-amber-600" },
-  };
-  const s = map[status];
-  if (!s) return null;
-  return (
-    <span className={`mt-0.5 inline-flex items-center gap-1 text-xs font-semibold ${s.className}`} aria-live="polite">
-      {s.icon}
-      {s.text}
-    </span>
-  );
 }
 
 function ToolButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -79,14 +55,12 @@ export function ExamHeader({
   onTogglePause,
   onSaveAndExit,
   onReportProblem,
-  saveStatus,
 }: ExamHeaderProps) {
   return (
     <header className="grid shrink-0 grid-cols-3 items-center bg-white px-6 py-3">
       <div className="flex flex-col items-start">
         <div className="flex items-center gap-3">
           <h1 className="text-base font-bold tracking-tight text-slate-900">{moduleTitle}</h1>
-          {saveStatus != null && <SaveIndicator status={saveStatus} />}
         </div>
         <button
           type="button"

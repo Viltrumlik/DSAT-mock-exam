@@ -1,17 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { Attempt } from "../types";
 import { type ExamApi, examApi } from "../services/examApiClient";
-import { clearDraft, writeDraft } from "../services/draftStore";
+import { writeDraft } from "../services/draftStore";
 import { saveKey } from "../utils/idempotency";
 import { isActive } from "../state/attemptMerge";
-
-export type SaveStatus = "idle" | "saving" | "retrying" | "saved" | "offline" | "error";
-
-export interface UseAutosaveResult {
-  status: SaveStatus;
-  lastSavedAt: number | null;
-}
 
 interface UseAutosaveArgs {
   attempt: Attempt | null;
@@ -36,11 +29,18 @@ interface UseAutosaveArgs {
 
 const DEFAULT_DEBOUNCE_MS = 1500;
 const MAX_RETRIES = 3;
+/** How soon to re-arm when the debounce elapses while an earlier save is open. */
+const IN_FLIGHT_RETRY_MS = 250;
 
 /**
  * Autosaves in-progress work. Writes a local draft synchronously on every
  * change (instant crash safety) and debounces a `save_attempt` to the server.
  * The module-id guard prevents saving stale answers across a module transition.
+ *
+ * Deliberately holds no React state: this runs inside the exam runner, so any
+ * setState here re-renders the whole heavy tree on every save. Nothing reads a
+ * save status now that the "Saved" indicator is gone, and needless re-renders of
+ * this tree are what made controlled inputs drop characters mid-typing.
  */
 export function useAutosave({
   attempt,
@@ -53,15 +53,12 @@ export function useAutosave({
   online = true,
   api = examApi,
   debounceMs = DEFAULT_DEBOUNCE_MS,
-}: UseAutosaveArgs): UseAutosaveResult {
+}: UseAutosaveArgs): void {
   const inFlightRef = useRef(false);
   const applyRef = useRef(applyAttempt);
   useEffect(() => {
     applyRef.current = applyAttempt;
   });
-
-  const [status, setStatus] = useState<SaveStatus>("idle");
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
 
   const liveModuleId = attempt?.current_module_details?.id ?? null;
   const version = attempt?.version_number;
@@ -77,10 +74,7 @@ export function useAutosave({
 
     // Offline: don't hammer the network; the draft holds the work and the save
     // is retried automatically when connectivity returns (`online` re-runs this).
-    if (!online) {
-      setStatus("offline");
-      return;
-    }
+    if (!online) return;
 
     let cancelled = false;
     let retries = 0;
@@ -90,31 +84,39 @@ export function useAutosave({
     // (true auto-retry — so a failed save isn't silently abandoned until the next
     // keystroke) up to MAX_RETRIES, then settles on a terminal "error".
     const flush = async () => {
-      if (cancelled || inFlightRef.current) return;
+      if (cancelled) return;
+      // An earlier save is still open. Re-arm rather than return: returning would
+      // abandon this change, and nothing else would carry it — the next effect run
+      // only happens on another edit or a version bump, neither of which is
+      // guaranteed once the student stops typing or the autosave is disabled.
+      if (inFlightRef.current) {
+        timer = setTimeout(flush, IN_FLIGHT_RETRY_MS);
+        return;
+      }
       inFlightRef.current = true;
-      setStatus(retries === 0 ? "saving" : "retrying");
       try {
         const snap = await api.saveAttempt(attemptId, answers, flagged, {
           idempotencyKey: saveKey(attemptId, liveModuleId, version ?? 0),
           expectedVersionNumber: version,
         });
         applyRef.current(snap);
-        // Server now holds the answers — local draft no longer needed.
-        clearDraft(attemptId, liveModuleId);
-        if (!cancelled) {
-          setStatus("saved");
-          setLastSavedAt(Date.now());
-        }
+        // The draft is deliberately NOT cleared here. It is the last line of
+        // defence, and this callback cannot know it is still current: the student
+        // may have answered again while this request was open, in which case the
+        // draft holds work THIS payload never carried. Clearing it then destroys
+        // the only copy — mergeServerAndDraft can no longer restore it and the
+        // answer grades Omitted. It costs nothing to keep (a stale draft can only
+        // fill gaps the server is missing, never override newer server answers),
+        // and useModuleSubmit already clears it once the module is submitted.
       } catch {
-        // Keep the local draft regardless; reflect the real state to the student.
+        // Keep the local draft regardless — it is what recovers this work.
         if (cancelled) return;
         if (retries < MAX_RETRIES) {
           retries += 1;
-          setStatus("retrying");
           timer = setTimeout(flush, 2 ** retries * 1000);
-        } else {
-          setStatus("error");
         }
+        // Out of retries: the draft still holds the work, and the next edit or
+        // version bump re-arms the effect.
       } finally {
         inFlightRef.current = false;
       }
@@ -128,6 +130,4 @@ export function useAutosave({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answers, flagged, enabled, online, liveModuleId, answersModuleId, version, attemptId, debounceMs]);
-
-  return { status, lastSavedAt };
 }

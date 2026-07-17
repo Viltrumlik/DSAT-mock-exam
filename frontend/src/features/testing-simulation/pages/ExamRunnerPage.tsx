@@ -12,6 +12,7 @@ import { useAutosave } from "../hooks/useAutosave";
 import { useMathRendering } from "../hooks/useMathRendering";
 
 import { examApi, midtermExamApi, mockExamApi } from "../services/examApiClient";
+import type { Attempt } from "../types";
 import { mockApi } from "@/lib/mockApi";
 import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attemptMerge";
 import { calculatorAllowed, isMath, moduleLabel, pauseAllowed, questions as selectQuestions, subjectKind } from "../state/selectors";
@@ -123,6 +124,15 @@ export function ExamRunnerPage() {
       { key: "choices", el: document.getElementById("ts-choices") },
     ],
   });
+
+  // The live attempt + answers, readable at call time rather than from a render
+  // closure. The autosave bumps version_number roughly once a second, so a
+  // closure captured at render is routinely stale by the time an awaited handler
+  // reaches its save — and save_attempt treats a version mismatch as a HARD 409
+  // that discards the answers (unlike submit_module, which conflicts softly).
+  const attemptRef = useRef<Attempt | null>(null);
+  const answersRef = useRef<Record<string, string>>({});
+  const flaggedRef = useRef<number[]>([]);
 
   // ── Local UI state ─────────────────────────────────────────────────────────
   const [paused, setPaused] = useState(false);
@@ -372,18 +382,27 @@ export function ExamRunnerPage() {
 
   // Autosave only while genuinely interactive (not submitting / transitioning /
   // paused, and never from a blocked duplicate tab).
-  const { status: saveStatus } = useAutosave({
+  useAutosave({
     attempt,
     attemptId,
     answers,
     flagged,
     answersModuleId: moduleId,
     applyAttempt,
-    enabled: !submitting && transitionTo === null && !(paused && pauseAllowed(attempt, mockFlow)) && !multiTab.blocked,
+    // NOT gated on `paused`. Leaving the tab auto-pauses, and gating on that used
+    // to switch the autosave off while an answer was still pending — stranding it
+    // on exactly the leave path this feature exists to protect. A paused student
+    // can't answer, so the effect doesn't re-run and this costs no extra traffic.
+    enabled: !submitting && transitionTo === null && !multiTab.blocked,
     online,
     api: engineApi,
     debounceMs: isPastpaper ? 500 : undefined,
   });
+
+  // Keep the call-time mirrors current on every render.
+  attemptRef.current = attempt;
+  answersRef.current = answers;
+  flaggedRef.current = flagged;
 
   const mathQuestions = isMath(attempt);
   // Midterms never offer the reference sheet. The CALCULATOR is no longer blanket-denied:
@@ -528,20 +547,39 @@ export function ExamRunnerPage() {
   const handleSaveAndExit = useCallback(async () => {
     setExiting(true);
     try {
-      if (attempt && pauseAllowed(attempt, mockFlow)) {
+      if (attemptRef.current && pauseAllowed(attemptRef.current, mockFlow)) {
         try {
           applyAttempt(await engineApi.pause(attemptId));
         } catch {
           /* best-effort pause */
         }
       }
-      applyAttempt(await engineApi.saveAttempt(attemptId, answers, flagged, { expectedVersionNumber: attempt?.version_number }));
+      // Read version + answers from the refs, AFTER the pause await — a version
+      // captured before it is stale the moment an autosave lands mid-await, and
+      // save_attempt answers a stale version with a 409 that writes nothing.
+      // Retry once against the server's own current version (it returns it on
+      // conflict) so a lost race costs a round trip, not the student's work.
+      const save = (version?: number) =>
+        engineApi.saveAttempt(attemptId, answersRef.current, flaggedRef.current, {
+          expectedVersionNumber: version,
+        });
+      try {
+        applyAttempt(await save(attemptRef.current?.version_number));
+      } catch (e) {
+        // _version_conflict_response returns the canonical attempt alongside the
+        // 409 precisely so a client can resync — use its version and save again.
+        const fresh = (e as { response?: { status?: number; data?: { attempt?: { version_number?: number } } } })
+          ?.response;
+        if (fresh?.status !== 409 || typeof fresh?.data?.attempt?.version_number !== "number") throw e;
+        applyAttempt(await save(fresh.data.attempt.version_number));
+      }
     } catch {
-      /* progress is also continuously autosaved; proceed to exit regardless */
+      // The save genuinely failed. The local draft still holds the work (the
+      // autosave never clears it), so resuming on this device recovers it.
     } finally {
       router.push("/");
     }
-  }, [attempt, mockFlow, attemptId, answers, flagged, applyAttempt, router, engineApi]);
+  }, [mockFlow, attemptId, applyAttempt, router, engineApi]);
 
   // Keep the off-fullscreen kick action current without restarting the countdown
   // when handleSaveAndExit's identity changes (e.g. on autosave).
@@ -576,8 +614,14 @@ export function ExamRunnerPage() {
     // module's map for a frame while `attempt` is the new module, so a flush would
     // write them under the new module's key (harmless — foreign ids grade omitted —
     // but skipping it keeps the save robust-by-construction).
+    // (d) send NO expected version. This is fire-and-forget — it cannot see a
+    // 409, let alone retry one — and the autosave bumps version_number about
+    // once a second, so pinning a version here mostly rejected the flush that
+    // was meant to be the safety net. The guards above already cover what the
+    // version was protecting against (a module advance), and the local draft
+    // covers the rest.
     if (!multiTab.blocked && transitionTo === null && Object.keys(answers).length > 0) {
-      engineApi.saveAttemptKeepalive(attemptId, answers, flagged, attempt.version_number);
+      engineApi.saveAttemptKeepalive(attemptId, answers, flagged);
     }
     if (paused) return; // already frozen — only the answer flush was needed
     setPaused(true); // freeze the local countdown immediately
@@ -788,7 +832,7 @@ export function ExamRunnerPage() {
         onTogglePause={handlePauseToggle}
         onSaveAndExit={handleSaveAndExit}
         onReportProblem={currentQuestion ? () => setReportOpen(true) : undefined}
-        saveStatus={isPastpaper ? saveStatus : undefined}
+
       />
       <SatColorRule />
 
