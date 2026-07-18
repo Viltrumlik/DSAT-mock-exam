@@ -12,11 +12,8 @@ Templates reference **live** content (assessment sets, past papers) — nothing 
 
 from __future__ import annotations
 
-from datetime import time
-
 from django.conf import settings
 from django.db import models
-from django.utils import timezone
 
 from . import structure
 
@@ -187,23 +184,28 @@ class JournalLesson(models.Model):
     category = models.CharField(max_length=20, default=CATEGORY_HOMEWORK)
     max_score = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
 
-    # --- Relative deadline (resolved to an absolute due date at release time) ---
-    due_after_days = models.PositiveSmallIntegerField(
-        null=True,
-        blank=True,
-        help_text="Days after the lesson date the homework is due. Null = no deadline.",
-    )
-    deadline_time = models.TimeField(
-        null=True, blank=True, default=time(23, 59), help_text="Time of day the homework is due."
-    )
+    # NOTE: there is deliberately NO deadline field. Homework is due at the START of the
+    # classroom's next lesson (computed at release time); if no next lesson can be
+    # determined the homework simply has no deadline.
 
-    # Reserved for future exam-linking of midterm lessons — unused for now.
+    # Midterm sessions: which midterm this session runs, and how many days before the
+    # session the classroom should get access (config consumed by the future
+    # classroom-release step — see services.release_lesson_into_classroom).
+    #
+    # Points at midterms.Midterm (NOT the legacy exams.MockExam): Midterm.level is a
+    # strict superset — midterms/sync.py mirrors every legacy MockExam.midterm_level into
+    # it, AND natively-authored midterms (legacy_mock_exam_id=NULL) only exist here. The
+    # level picker would miss every native midterm if it filtered on MockExam.
     midterm_exam = models.ForeignKey(
-        "exams.MockExam",
+        "midterms.Midterm",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="journal_lessons",
+    )
+    midterm_access_days_before = models.PositiveSmallIntegerField(
+        default=2,
+        help_text="Grant the classroom access to the midterm this many days before the session.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -261,22 +263,241 @@ class JournalLesson(models.Model):
             or (self.external_url or "").strip()
         )
 
-    def validation_reasons(self) -> list[str]:
-        """Why this lesson can't be published. Empty list = ready. Midterms are always ready."""
+    def homework_validation_reasons(self) -> list[str]:
+        """Why this session's HOMEWORK isn't publishable. Empty list = ready."""
         if self.is_midterm:
             return []
         reasons: list[str] = []
         if not (self.instructions or "").strip():
-            reasons.append("Instructions are empty")
+            reasons.append("Homework instructions are empty")
         if not self.has_content:
             reasons.append(
-                "No content attached (add an assessment, past paper, file, or enable file upload)"
+                "Homework has no content (add an assessment, past paper, file, link, or enable file upload)"
             )
+        return reasons
+
+    def classwork_validation_reasons(self) -> list[str]:
+        """Why this session's CLASSWORK isn't publishable. Empty list = ready."""
+        if self.is_midterm:
+            return []
+        cw = getattr(self, "classwork", None)
+        if cw is None:
+            return ["Classwork not set up"]
+        return cw.validation_reasons()
+
+    def validation_reasons(self) -> list[str]:
+        """Why this session can't be published. Empty list = ready.
+
+        A MIDTERM session only needs its midterm exam chosen; a HOMEWORK session needs
+        both its homework brief and its in-class plan (classwork) filled in.
+        """
+        if self.is_midterm:
+            return [] if self.midterm_exam_id else ["No midterm exam selected"]
+        return self.homework_validation_reasons() + self.classwork_validation_reasons()
+
+    @property
+    def homework_ready(self) -> bool:
+        return not self.homework_validation_reasons()
+
+    @property
+    def classwork_ready(self) -> bool:
+        return not self.classwork_validation_reasons()
+
+    @property
+    def is_ready(self) -> bool:
+        return not self.validation_reasons()
+
+
+class JournalClasswork(models.Model):
+    """The in-class plan for one session — the five timetable blocks.
+
+    Mirrors the lesson timetable:
+        Homework review · New topic · Break · Exercises · Revision
+        20 min          · 20-30 min · 10min · 20 min    · 30 min   (all editable)
+
+    Block content:
+      * Homework review — NOT authored here; it is derived (the PREVIOUS session's
+        homework), so the teacher can re-open and analyse what was set last lesson.
+      * New topic       — authored exactly like a homework brief (title/instructions/
+        resources/files/link).
+      * Break           — nothing to author; shown in the timetable only.
+      * Exercises       — in-class assessments / past papers students get access to
+        during the lesson.
+      * Revision        — re-opens the Exercises content for mistake review; optional notes.
+    """
+
+    BLOCK_NEW_TOPIC = "NEW_TOPIC"
+    BLOCK_EXERCISES = "EXERCISES"
+    BLOCK_CHOICES = [
+        (BLOCK_NEW_TOPIC, "New topic"),
+        (BLOCK_EXERCISES, "Exercises"),
+    ]
+
+    DEFAULT_HOMEWORK_REVIEW_MINUTES = 20
+    DEFAULT_NEW_TOPIC_MINUTES = 30
+    DEFAULT_BREAK_MINUTES = 10
+    DEFAULT_EXERCISES_MINUTES = 20
+    DEFAULT_REVISION_MINUTES = 30
+
+    lesson = models.OneToOneField(
+        JournalLesson, on_delete=models.CASCADE, related_name="classwork"
+    )
+
+    # Durations (minutes) — timetable defaults, all editable per session.
+    homework_review_minutes = models.PositiveSmallIntegerField(
+        default=DEFAULT_HOMEWORK_REVIEW_MINUTES
+    )
+    new_topic_minutes = models.PositiveSmallIntegerField(default=DEFAULT_NEW_TOPIC_MINUTES)
+    break_minutes = models.PositiveSmallIntegerField(default=DEFAULT_BREAK_MINUTES)
+    exercises_minutes = models.PositiveSmallIntegerField(default=DEFAULT_EXERCISES_MINUTES)
+    revision_minutes = models.PositiveSmallIntegerField(default=DEFAULT_REVISION_MINUTES)
+
+    # --- New topic (authored like a homework brief) ---
+    new_topic_title = models.CharField(max_length=200, blank=True, default="")
+    new_topic_instructions = models.TextField(blank=True, default="")
+    new_topic_external_url = models.URLField(blank=True, default="")
+    new_topic_attachment_file = models.FileField(
+        upload_to="journal_files/", null=True, blank=True
+    )
+    new_topic_practice_test_ids = models.JSONField(null=True, blank=True)
+    new_topic_practice_test_pack_ids = models.JSONField(null=True, blank=True)
+
+    # --- Exercises (in-class practice) ---
+    exercise_practice_test_ids = models.JSONField(null=True, blank=True)
+    exercise_practice_test_pack_ids = models.JSONField(null=True, blank=True)
+
+    # --- Revision ---
+    revision_notes = models.TextField(blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "journals_classwork"
+
+    def __str__(self) -> str:
+        return f"classwork(lesson={self.lesson_id})"
+
+    # ---- timetable -------------------------------------------------------
+    @property
+    def total_minutes(self) -> int:
+        return (
+            self.homework_review_minutes
+            + self.new_topic_minutes
+            + self.break_minutes
+            + self.exercises_minutes
+            + self.revision_minutes
+        )
+
+    def timetable(self) -> list[dict]:
+        """Ordered blocks for the reminder table shown above the classwork."""
+        return [
+            {"key": "HOMEWORK_REVIEW", "label": "Homework", "minutes": self.homework_review_minutes},
+            {"key": "NEW_TOPIC", "label": "New topic", "minutes": self.new_topic_minutes},
+            {"key": "BREAK", "label": "Break", "minutes": self.break_minutes},
+            {"key": "EXERCISES", "label": "Exercises", "minutes": self.exercises_minutes},
+            {"key": "REVISION", "label": "Revision", "minutes": self.revision_minutes},
+        ]
+
+    # ---- content helpers -------------------------------------------------
+    def _assessments_for(self, block: str):
+        return [a for a in self.assessments.all() if a.block == block]
+
+    @property
+    def has_new_topic_content(self) -> bool:
+        return bool(
+            self._assessments_for(self.BLOCK_NEW_TOPIC)
+            or self.new_topic_practice_test_ids
+            or self.new_topic_practice_test_pack_ids
+            or self.new_topic_attachment_file
+            or (self.new_topic_external_url or "").strip()
+        )
+
+    @property
+    def has_exercises(self) -> bool:
+        return bool(
+            self._assessments_for(self.BLOCK_EXERCISES)
+            or self.exercise_practice_test_ids
+            or self.exercise_practice_test_pack_ids
+        )
+
+    def validation_reasons(self) -> list[str]:
+        """A session's in-class plan needs at least a new-topic brief."""
+        reasons: list[str] = []
+        if not (self.new_topic_title or "").strip():
+            reasons.append("New topic title is empty")
+        if not (self.new_topic_instructions or "").strip():
+            reasons.append("New topic instructions are empty")
         return reasons
 
     @property
     def is_ready(self) -> bool:
         return not self.validation_reasons()
+
+
+class JournalClassworkAssessment(models.Model):
+    """Assessment set attached to a classwork block (new topic or exercises).
+
+    Live reference, no version pin — same rationale as JournalLessonAssessment.
+    """
+
+    classwork = models.ForeignKey(
+        JournalClasswork, on_delete=models.CASCADE, related_name="assessments"
+    )
+    assessment_set = models.ForeignKey(
+        "assessments.AssessmentSet",
+        on_delete=models.PROTECT,
+        related_name="journal_classwork_links",
+    )
+    block = models.CharField(
+        max_length=16,
+        choices=JournalClasswork.BLOCK_CHOICES,
+        default=JournalClasswork.BLOCK_NEW_TOPIC,
+        db_index=True,
+    )
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_classwork_assessment_links",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "journals_classwork_assessment"
+        ordering = ["id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["classwork", "assessment_set", "block"],
+                name="uniq_classwork_assessment_block",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"classwork={self.classwork_id} set={self.assessment_set_id} block={self.block}"
+
+
+class JournalClassworkAttachment(models.Model):
+    """Extra file on a classwork block (new topic)."""
+
+    classwork = models.ForeignKey(
+        JournalClasswork, on_delete=models.CASCADE, related_name="extra_attachments"
+    )
+    file = models.FileField(upload_to="journal_files/")
+    block = models.CharField(
+        max_length=16,
+        choices=JournalClasswork.BLOCK_CHOICES,
+        default=JournalClasswork.BLOCK_NEW_TOPIC,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "journals_classwork_attachment"
+        ordering = ["id"]
+
+    def __str__(self) -> str:
+        return f"classwork={self.classwork_id} file={self.file.name}"
 
 
 class JournalLessonAssessment(models.Model):
