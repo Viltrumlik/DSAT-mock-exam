@@ -24,11 +24,16 @@ from users.permissions import IsAuthenticatedAndNotFrozen
 from . import services, structure
 from .models import (
     Journal,
+    JournalClasswork,
+    JournalClassworkAssessment,
+    JournalClassworkAttachment,
     JournalLesson,
     JournalLessonAssessment,
     JournalLessonAttachment,
 )
 from .serializers import (
+    JournalClassworkSerializer,
+    JournalClassworkWriteSerializer,
     JournalDetailSerializer,
     JournalLessonDetailSerializer,
     JournalLessonSummarySerializer,
@@ -70,10 +75,16 @@ def _parse_id_list(raw):
 
 
 def _annotated_lessons():
-    return JournalLesson.objects.annotate(
-        _assess_count=Count("assessments", distinct=True),
-        _attach_count=Count("extra_attachments", distinct=True),
-    ).order_by("lesson_number")
+    # select_related classwork/midterm_exam: the summary serializer reads both for every
+    # row (classwork_ready, midterm badge) — without this the timeline is N+1.
+    return (
+        JournalLesson.objects.select_related("classwork", "midterm_exam")
+        .annotate(
+            _assess_count=Count("assessments", distinct=True),
+            _attach_count=Count("extra_attachments", distinct=True),
+        )
+        .order_by("lesson_number")
+    )
 
 
 def _journals_qs():
@@ -225,30 +236,59 @@ class JournalExportView(APIView):
 
     def get(self, request, pk):
         journal = get_object_or_404(
-            Journal.objects.prefetch_related("lessons__assessments"), pk=pk
+            Journal.objects.prefetch_related(
+                "lessons__assessments", "lessons__classwork__assessments"
+            ),
+            pk=pk,
         )
         lessons = []
         for l in journal.lessons.all():
-            lessons.append(
-                {
-                    "lesson_number": l.lesson_number,
-                    "lesson_type": l.lesson_type,
-                    "title": l.title,
-                    "instructions": l.instructions,
-                    "external_url": l.external_url,
-                    "allow_file_upload": l.allow_file_upload,
-                    "practice_scope": l.practice_scope,
-                    "practice_test_ids": l.practice_test_ids or [],
-                    "practice_test_pack_ids": l.practice_test_pack_ids or [],
-                    "due_after_days": l.due_after_days,
-                    "deadline_time": l.deadline_time.isoformat() if l.deadline_time else None,
-                    "category": l.category,
-                    "max_score": str(l.max_score) if l.max_score is not None else None,
-                    "assessment_set_ids": list(
-                        l.assessments.values_list("assessment_set_id", flat=True)
-                    ),
+            row = {
+                "lesson_number": l.lesson_number,
+                "lesson_type": l.lesson_type,
+                "title": l.title,
+                "instructions": l.instructions,
+                "external_url": l.external_url,
+                "allow_file_upload": l.allow_file_upload,
+                "practice_scope": l.practice_scope,
+                "practice_test_ids": l.practice_test_ids or [],
+                "practice_test_pack_ids": l.practice_test_pack_ids or [],
+                "category": l.category,
+                "max_score": str(l.max_score) if l.max_score is not None else None,
+                "assessment_set_ids": list(
+                    l.assessments.values_list("assessment_set_id", flat=True)
+                ),
+                "midterm_exam_id": l.midterm_exam_id,
+                "midterm_access_days_before": l.midterm_access_days_before,
+            }
+            cw = getattr(l, "classwork", None)
+            if cw is not None:
+                row["classwork"] = {
+                    "homework_review_minutes": cw.homework_review_minutes,
+                    "new_topic_minutes": cw.new_topic_minutes,
+                    "break_minutes": cw.break_minutes,
+                    "exercises_minutes": cw.exercises_minutes,
+                    "revision_minutes": cw.revision_minutes,
+                    "new_topic_title": cw.new_topic_title,
+                    "new_topic_instructions": cw.new_topic_instructions,
+                    "new_topic_external_url": cw.new_topic_external_url,
+                    "new_topic_practice_test_ids": cw.new_topic_practice_test_ids or [],
+                    "new_topic_practice_test_pack_ids": cw.new_topic_practice_test_pack_ids or [],
+                    "exercise_practice_test_ids": cw.exercise_practice_test_ids or [],
+                    "exercise_practice_test_pack_ids": cw.exercise_practice_test_pack_ids or [],
+                    "revision_notes": cw.revision_notes,
+                    "new_topic_assessment_set_ids": [
+                        a.assessment_set_id
+                        for a in cw.assessments.all()
+                        if a.block == JournalClasswork.BLOCK_NEW_TOPIC
+                    ],
+                    "exercise_assessment_set_ids": [
+                        a.assessment_set_id
+                        for a in cw.assessments.all()
+                        if a.block == JournalClasswork.BLOCK_EXERCISES
+                    ],
                 }
-            )
+            lessons.append(row)
         return Response(
             {
                 "format": "mastersat.journal",
@@ -280,13 +320,44 @@ class JournalImportView(APIView):
         journal, _created = services.create_journal(
             subject=subject, level=level, actor=request.user, title=payload.get("title") or ""
         )
+        if journal.lessons.exists():
+            return Response(
+                {
+                    "detail": (
+                        f"{journal.display_title} already has sessions — clear it before "
+                        f"importing into it."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         allowed = _allowed_assessment_ids(journal)
-        by_number = {l.lesson_number: l for l in journal.lessons.all()}
         applied = 0
-        for row in payload.get("lessons", []):
-            lesson = by_number.get(row.get("lesson_number"))
-            if lesson is None or lesson.is_midterm or row.get("lesson_type") == JournalLesson.TYPE_MIDTERM:
+        for row in sorted(
+            payload.get("lessons", []), key=lambda r: r.get("lesson_number") or 0
+        ):
+            is_midterm = row.get("lesson_type") == JournalLesson.TYPE_MIDTERM
+            midterm_exam = None
+            if is_midterm and row.get("midterm_exam_id"):
+                from midterms.models import Midterm
+
+                midterm_exam = Midterm.objects.filter(pk=row["midterm_exam_id"]).first()
+            lesson = services.add_session(
+                journal,
+                actor=request.user,
+                lesson_type=(
+                    JournalLesson.TYPE_MIDTERM if is_midterm else JournalLesson.TYPE_HOMEWORK
+                ),
+                midterm_exam=midterm_exam,
+            )
+            if is_midterm:
+                lesson.midterm_access_days_before = int(
+                    row.get("midterm_access_days_before") or 2
+                )
+                lesson.save(update_fields=["midterm_access_days_before"])
+                applied += 1
                 continue
+
             lesson.title = row.get("title") or ""
             lesson.instructions = row.get("instructions") or ""
             lesson.external_url = row.get("external_url") or ""
@@ -294,11 +365,9 @@ class JournalImportView(APIView):
             lesson.practice_scope = row.get("practice_scope") or JournalLesson.PRACTICE_SCOPE_BOTH
             lesson.practice_test_ids = row.get("practice_test_ids") or None
             lesson.practice_test_pack_ids = row.get("practice_test_pack_ids") or None
-            lesson.due_after_days = row.get("due_after_days")
             lesson.category = row.get("category") or JournalLesson.CATEGORY_HOMEWORK
             lesson.status = JournalLesson.STATUS_DRAFT
             lesson.save()
-            lesson.assessments.all().delete()
             for sid in row.get("assessment_set_ids", []):
                 if sid in allowed:
                     try:
@@ -307,13 +376,134 @@ class JournalImportView(APIView):
                         )
                     except IntegrityError:
                         pass
+
+            cw_row = row.get("classwork") or {}
+            if cw_row:
+                cw = services.ensure_classwork(lesson)
+                for f in (
+                    "homework_review_minutes",
+                    "new_topic_minutes",
+                    "break_minutes",
+                    "exercises_minutes",
+                    "revision_minutes",
+                ):
+                    if cw_row.get(f) is not None:
+                        setattr(cw, f, int(cw_row[f]))
+                cw.new_topic_title = cw_row.get("new_topic_title") or ""
+                cw.new_topic_instructions = cw_row.get("new_topic_instructions") or ""
+                cw.new_topic_external_url = cw_row.get("new_topic_external_url") or ""
+                cw.new_topic_practice_test_ids = cw_row.get("new_topic_practice_test_ids") or None
+                cw.new_topic_practice_test_pack_ids = (
+                    cw_row.get("new_topic_practice_test_pack_ids") or None
+                )
+                cw.exercise_practice_test_ids = cw_row.get("exercise_practice_test_ids") or None
+                cw.exercise_practice_test_pack_ids = (
+                    cw_row.get("exercise_practice_test_pack_ids") or None
+                )
+                cw.revision_notes = cw_row.get("revision_notes") or ""
+                cw.save()
+                for key, block in (
+                    ("new_topic_assessment_set_ids", JournalClasswork.BLOCK_NEW_TOPIC),
+                    ("exercise_assessment_set_ids", JournalClasswork.BLOCK_EXERCISES),
+                ):
+                    for sid in cw_row.get(key, []):
+                        if sid in allowed:
+                            try:
+                                JournalClassworkAssessment.objects.create(
+                                    classwork=cw,
+                                    assessment_set_id=sid,
+                                    block=block,
+                                    added_by=request.user,
+                                )
+                            except IntegrityError:
+                                pass
             applied += 1
-        services.log_event(journal, request.user, "imported", {"lessons_applied": applied})
+        services.log_event(journal, request.user, "imported", {"sessions_applied": applied})
         journal = _get_journal(journal.pk)
         return Response(
             JournalDetailSerializer(journal, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class JournalSessionCreateView(APIView):
+    """POST /api/journals/{id}/sessions/ — append a new session ("New session").
+
+    Body: {"type": "HOMEWORK"|"MIDTERM", "midterm_exam_id": <id, midterm only>}
+    Nothing is pre-provisioned; the admin decides how many sessions and midterms exist.
+    """
+
+    permission_classes = JOURNAL_PERMS
+
+    def post(self, request, pk):
+        journal = get_object_or_404(Journal, pk=pk)
+        if journal.status == Journal.STATUS_ARCHIVED:
+            return Response(
+                {"detail": "Journal is archived (read-only)."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        lesson_type = (request.data.get("type") or JournalLesson.TYPE_HOMEWORK).upper()
+        midterm_exam = None
+        if lesson_type == JournalLesson.TYPE_MIDTERM:
+            exam_id = request.data.get("midterm_exam_id")
+            if exam_id:
+                from midterms.models import Midterm
+
+                midterm_exam = Midterm.objects.filter(pk=exam_id).first()
+                if midterm_exam is None:
+                    return Response(
+                        {"detail": "Midterm not found."}, status=status.HTTP_400_BAD_REQUEST
+                    )
+        try:
+            lesson = services.add_session(
+                journal, actor=request.user, lesson_type=lesson_type, midterm_exam=midterm_exam
+            )
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(_lesson_detail_response(lesson, request), status=status.HTTP_201_CREATED)
+
+
+class JournalMidtermOptionsView(APIView):
+    """GET /api/journals/midterm-options/?subject=&level= — midterms available for a level.
+
+    Filters ``midterms.Midterm`` (NOT the legacy exams.MockExam, whose midterm_level misses
+    every natively-authored midterm) by the journal's platform subject and exact level.
+    """
+
+    permission_classes = JOURNAL_PERMS
+
+    def get(self, request):
+        subject = (request.query_params.get("subject") or "").upper()
+        level = (request.query_params.get("level") or "").lower()
+        if not structure.is_valid_course(subject, level):
+            return Response({"detail": "Invalid subject/level."}, status=400)
+
+        from midterms.models import Midterm
+
+        platform_subject = Journal._PLATFORM_SUBJECT.get(subject)
+        qs = Midterm.objects.filter(is_published=True)
+        if platform_subject:
+            qs = qs.filter(subject=platform_subject)
+        qs = qs.filter(level=level)
+
+        midterms = []
+        for m in qs.order_by("-created_at"):
+            try:
+                question_count = m.display_question_count()
+            except Exception:  # noqa: BLE001 — display helper is best-effort
+                question_count = None
+            midterms.append(
+                {
+                    "id": m.id,
+                    "title": m.title or "",
+                    "subject": m.subject,
+                    "level": m.level or "",
+                    "scoring_scale": getattr(m, "scoring_scale", "") or "",
+                    "duration_minutes": getattr(m, "duration_minutes", None),
+                    "question_count": question_count,
+                }
+            )
+        return Response({"subject": subject, "level": level, "midterms": midterms})
 
 
 class JournalContentOptionsView(APIView):
@@ -473,8 +663,6 @@ class LessonDetailView(APIView):
         "practice_test_ids",
         "practice_test_pack_ids",
         "allow_file_upload",
-        "due_after_days",
-        "deadline_time",
         "max_score",
         "title",
     }
@@ -503,8 +691,45 @@ class LessonDetailView(APIView):
             touches = self._CONTENT_KEYS & set(request.data.keys())
             if touches or request.FILES.getlist("attachment_file"):
                 return Response(
-                    {"detail": "Midterm lessons have no homework fields."},
+                    {"detail": "Midterm sessions have no homework fields."},
                     status=status.HTTP_400_BAD_REQUEST,
+                )
+            # Only the midterm config is writable on a midterm session.
+            changed: list[str] = []
+            if "midterm_exam_id" in request.data:
+                exam_id = request.data.get("midterm_exam_id")
+                if exam_id in (None, "", "null"):
+                    lesson.midterm_exam = None
+                else:
+                    from midterms.models import Midterm
+
+                    exam = Midterm.objects.filter(pk=exam_id).first()
+                    if exam is None:
+                        return Response(
+                            {"detail": "Midterm not found."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    lesson.midterm_exam = exam
+                changed.append("midterm_exam")
+            if "midterm_access_days_before" in request.data:
+                try:
+                    lesson.midterm_access_days_before = max(
+                        0, int(request.data["midterm_access_days_before"])
+                    )
+                except (TypeError, ValueError):
+                    return Response(
+                        {"detail": "midterm_access_days_before must be a whole number."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                changed.append("midterm_access_days_before")
+            if changed:
+                lesson.save(update_fields=changed + ["updated_at"])
+                services.log_event(
+                    journal,
+                    request.user,
+                    "midterm_updated",
+                    {"lesson_number": lesson.lesson_number},
+                    lesson=lesson,
                 )
             return Response(_lesson_detail_response(lesson, request))
 
@@ -562,6 +787,124 @@ class LessonDetailView(APIView):
             lesson=lesson,
         )
         return Response(_lesson_detail_response(lesson, request))
+
+    def delete(self, request, journal_pk, pk):
+        """Remove a session; remaining sessions are renumbered to stay contiguous."""
+        lesson = get_object_or_404(JournalLesson, pk=pk, journal_id=journal_pk)
+        journal = lesson.journal
+        if journal.status == Journal.STATUS_ARCHIVED:
+            return Response(
+                {"detail": "Journal is archived (read-only)."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        services.delete_session(journal, lesson, request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ClassworkDetailView(APIView):
+    """GET/PATCH the in-class plan for a session (the five timetable blocks)."""
+
+    permission_classes = JOURNAL_PERMS
+    parser_classes = _WRITE_PARSERS
+
+    _BLOCK_KEYS = {
+        "new_topic_assessment_set_ids": JournalClasswork.BLOCK_NEW_TOPIC,
+        "exercise_assessment_set_ids": JournalClasswork.BLOCK_EXERCISES,
+    }
+    _ID_LIST_FIELDS = (
+        "new_topic_practice_test_ids",
+        "new_topic_practice_test_pack_ids",
+        "exercise_practice_test_ids",
+        "exercise_practice_test_pack_ids",
+    )
+
+    def _get_lesson(self, journal_pk, pk):
+        return get_object_or_404(JournalLesson, pk=pk, journal_id=journal_pk)
+
+    def get(self, request, journal_pk, pk):
+        lesson = self._get_lesson(journal_pk, pk)
+        if lesson.is_midterm:
+            return Response(
+                {"detail": "Midterm sessions have no classwork."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        cw = services.ensure_classwork(lesson)
+        return Response(JournalClassworkSerializer(cw, context={"request": request}).data)
+
+    def patch(self, request, journal_pk, pk):
+        lesson = self._get_lesson(journal_pk, pk)
+        journal = lesson.journal
+        if journal.status == Journal.STATUS_ARCHIVED:
+            return Response(
+                {"detail": "Journal is archived (read-only)."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if lesson.is_midterm:
+            return Response(
+                {"detail": "Midterm sessions have no classwork."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        cw = services.ensure_classwork(lesson)
+
+        ser = JournalClassworkWriteSerializer(cw, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+
+        for field in self._ID_LIST_FIELDS:
+            if field in request.data:
+                setattr(cw, field, _parse_id_list(request.data.get(field)) or None)
+
+        files = request.FILES.getlist("new_topic_attachment_file")
+        replace = request.query_params.get("replace_attachments") in _TRUTHY
+        if replace:
+            for extra in cw.extra_attachments.all():
+                extra.file.delete(save=False)
+                extra.delete()
+            if cw.new_topic_attachment_file:
+                cw.new_topic_attachment_file.delete(save=False)
+            cw.new_topic_attachment_file = None
+        for f in files:
+            if not cw.new_topic_attachment_file:
+                cw.new_topic_attachment_file = f
+            else:
+                JournalClassworkAttachment.objects.create(
+                    classwork=cw, file=f, block=JournalClasswork.BLOCK_NEW_TOPIC
+                )
+        cw.save()
+
+        allowed = _allowed_assessment_ids(journal)
+        for key, block in self._BLOCK_KEYS.items():
+            if key not in request.data:
+                continue
+            target = set(_parse_id_list(request.data.get(key)) or []) & allowed
+            current = set(
+                cw.assessments.filter(block=block).values_list("assessment_set_id", flat=True)
+            )
+            for sid in target - current:
+                try:
+                    JournalClassworkAssessment.objects.create(
+                        classwork=cw,
+                        assessment_set_id=sid,
+                        block=block,
+                        added_by=request.user,
+                    )
+                except IntegrityError:
+                    pass
+            removed = current - target
+            if removed:
+                cw.assessments.filter(block=block, assessment_set_id__in=removed).delete()
+
+        journal.updated_by = request.user
+        journal.save(update_fields=["updated_by", "updated_at"])
+        services.log_event(
+            journal,
+            request.user,
+            "classwork_updated",
+            {"lesson_number": lesson.lesson_number},
+            lesson=lesson,
+        )
+        cw.refresh_from_db()
+        return Response(JournalClassworkSerializer(cw, context={"request": request}).data)
 
 
 class LessonPublishView(APIView):
