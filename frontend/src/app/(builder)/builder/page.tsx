@@ -8,7 +8,6 @@ import {
   ArrowRight,
   BookMarked,
   CheckCircle2,
-  ClipboardCheck,
   FileText,
   GraduationCap,
   LayoutGrid,
@@ -45,7 +44,6 @@ const QUICK_LINKS: QuickLink[] = [
   { href: "/builder/categories", icon: Tag,            title: "Categories",    cta: "Edit",    section: "Learning" },
   // Simulation system
   { href: "/builder/pastpapers", icon: FileText,        title: "Past papers",   cta: "Manage", section: "Simulation" },
-  { href: "/builder/mock-exams", icon: ClipboardCheck,  title: "Mock exams",    cta: "Manage", section: "Simulation" },
   // Ops
   { href: "/builder/archived",   icon: Archive,        title: "Archived",      cta: "Review" },
 ];

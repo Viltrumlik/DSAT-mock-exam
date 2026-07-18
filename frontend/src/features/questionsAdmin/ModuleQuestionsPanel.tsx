@@ -20,11 +20,13 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  examsModuleQuestionsApi,
   useCreateModuleQuestion,
   useDeleteModuleQuestion,
   useModuleQuestionsQuery,
   useReorderModuleQuestionsBulk,
   useUpdateModuleQuestion,
+  type ModuleQuestionsApi,
 } from "@/features/questionsAdmin/hooks";
 import type { AdminModuleQuestion } from "@/features/questionsAdmin/types";
 import { normalizeApiError } from "@/lib/apiError";
@@ -125,6 +127,7 @@ function QuestionEditor({
   question,
   testId,
   moduleId,
+  api,
   sectionSubject,
   examKind,
   scoringScale,
@@ -134,6 +137,7 @@ function QuestionEditor({
   question: AdminModuleQuestion;
   testId: number;
   moduleId: number;
+  api: ModuleQuestionsApi;
   /** PracticeTest.subject — drives SAT type restrictions */
   sectionSubject?: string;
   /** MockExam.kind — "MIDTERM" switches to pedagogical question formats */
@@ -143,8 +147,8 @@ function QuestionEditor({
   onSaved: (updated: AdminModuleQuestion) => void;
   onDeleted: () => void;
 }) {
-  const update = useUpdateModuleQuestion(testId, moduleId);
-  const del = useDeleteModuleQuestion(testId, moduleId);
+  const update = useUpdateModuleQuestion(testId, moduleId, api);
+  const del = useDeleteModuleQuestion(testId, moduleId, api);
   const isMidterm = examKind === "MIDTERM";
   // SCALE_800 midterms feed the SAT 200–800 curve, which weights questions by
   // their `score`. Surface the weight selector for those; SCALE_100 stays equal-weight.
@@ -964,8 +968,11 @@ export default function ModuleQuestionsPanel(props: {
   scoringScale?: "SCALE_100" | "SCALE_800";
   /** MockExam.midterm_module_question_limit — per-module cap for midterms (default 30). */
   midtermModuleQuestionLimit?: number | null;
+  /** Backend adapter. Default = exams practice-test API; full mocks pass a mocks adapter. */
+  api?: ModuleQuestionsApi;
 }) {
   const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit } = props;
+  const api = props.api ?? examsModuleQuestionsApi;
 
   const {
     data: questions = [],
@@ -974,10 +981,10 @@ export default function ModuleQuestionsPanel(props: {
     error,
     refetch,
     isFetching,
-  } = useModuleQuestionsQuery(testId, moduleId);
+  } = useModuleQuestionsQuery(testId, moduleId, api);
 
-  const create = useCreateModuleQuestion(testId, moduleId);
-  const reorderBulk = useReorderModuleQuestionsBulk(testId, moduleId);
+  const create = useCreateModuleQuestion(testId, moduleId, api);
+  const reorderBulk = useReorderModuleQuestionsBulk(testId, moduleId, api);
 
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
 
@@ -1405,6 +1412,7 @@ export default function ModuleQuestionsPanel(props: {
                 question={selectedQ}
                 testId={testId}
                 moduleId={moduleId}
+                api={api}
                 sectionSubject={sectionSubject}
                 examKind={examKind}
                 scoringScale={scoringScale}

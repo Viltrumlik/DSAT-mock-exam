@@ -1,12 +1,11 @@
 "use client";
 
 /**
- * /builder/mock-exams/[examId]/[testId]/[moduleId]
+ * /builder/midterms/[examId]/[testId]/[moduleId]
  *
- * Question editor for a single module inside a mock exam section.
- * Wraps ModuleQuestionsPanel with mock exam context (breadcrumb, back link).
- *
- * Domain: Simulation system (Mock Exams)
+ * Question editor for a single module inside a midterm (exams.MockExam kind=MIDTERM).
+ * Wraps the shared ModuleQuestionsPanel with midterm context (breadcrumb, back link,
+ * pedagogical question formats + scoring scale).
  */
 
 import { Suspense, useEffect, useState } from "react";
@@ -25,7 +24,7 @@ type AdminMockExam = {
   tests: AdminTestSection[];
 };
 
-function MockExamModuleEditor({
+function MidtermModuleEditor({
   examId,
   testId,
   moduleId,
@@ -36,7 +35,6 @@ function MockExamModuleEditor({
 }) {
   const [exam, setExam] = useState<AdminMockExam | null>(null);
 
-  // Load exam context for breadcrumb enrichment (non-blocking)
   useEffect(() => {
     let cancelled = false;
     examsAdminApi.getMockExams().then((result) => {
@@ -52,13 +50,6 @@ function MockExamModuleEditor({
   const section = exam?.tests.find((t) => t.id === testId) ?? null;
   const moduleData = section?.modules?.find((m) => m.id === moduleId) ?? null;
 
-  const subjectLabel =
-    section?.subject === "MATH"
-      ? "Mathematics"
-      : section?.subject === "READING_WRITING"
-      ? "Reading & Writing"
-      : null;
-
   const moduleLabel =
     moduleData?.module_order != null ? `Module ${moduleData.module_order}` : `Module #${moduleId}`;
 
@@ -70,9 +61,9 @@ function MockExamModuleEditor({
         packTitle={exam?.title ?? undefined}
         sectionSubject={section?.subject ?? undefined}
         moduleOrder={moduleLabel}
-        backHref={exam?.kind === "MIDTERM" ? `/builder/midterms` : `/builder/mock-exams`}
-        backLabel={exam?.kind === "MIDTERM" ? "Midterms" : "Mock exams"}
-        examKind={exam?.kind ?? undefined}
+        backHref="/builder/midterms"
+        backLabel="Midterms"
+        examKind={exam?.kind ?? "MIDTERM"}
         scoringScale={exam?.midterm_scoring_scale ?? undefined}
         midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
       />
@@ -80,14 +71,12 @@ function MockExamModuleEditor({
   );
 }
 
-export default function BuilderMockExamModulePage() {
+export default function BuilderMidtermModulePage() {
   const params = useParams();
 
   const examId = Number(Array.isArray(params.examId) ? params.examId[0] : params.examId);
   const testId = Number(Array.isArray(params.testId) ? params.testId[0] : params.testId);
-  const moduleId = Number(
-    Array.isArray(params.moduleId) ? params.moduleId[0] : params.moduleId,
-  );
+  const moduleId = Number(Array.isArray(params.moduleId) ? params.moduleId[0] : params.moduleId);
 
   if (
     !Number.isFinite(examId) || examId <= 0 ||
@@ -100,9 +89,7 @@ export default function BuilderMockExamModulePage() {
           <p className="font-semibold text-foreground">Invalid route parameters.</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Expected{" "}
-            <code className="rounded bg-muted px-1">
-              /builder/mock-exams/[examId]/[testId]/[moduleId]
-            </code>
+            <code className="rounded bg-muted px-1">/builder/midterms/[examId]/[testId]/[moduleId]</code>
           </p>
         </div>
       </div>
@@ -117,7 +104,7 @@ export default function BuilderMockExamModulePage() {
         </div>
       }
     >
-      <MockExamModuleEditor examId={examId} testId={testId} moduleId={moduleId} />
+      <MidtermModuleEditor examId={examId} testId={testId} moduleId={moduleId} />
     </Suspense>
   );
 }

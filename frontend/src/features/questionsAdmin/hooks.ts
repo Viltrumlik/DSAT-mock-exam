@@ -5,6 +5,36 @@ import { examsAdminApi } from "@/lib/api";
 import { questionsModuleKeys } from "./queryKeys";
 import type { AdminModuleQuestion } from "./types";
 
+/**
+ * Adapter that lets ModuleQuestionsPanel drive DIFFERENT backends with the same UI.
+ * The two ids are (container, module): for exams that's (practiceTestId, moduleId);
+ * for full mocks that's (mockId, moduleId). `source` namespaces the react-query cache
+ * so ids never collide across backends. Default is the exams practice-test backend.
+ */
+export type ModuleQuestionsApi = {
+  source: string;
+  getQuestions: (a: number, b: number) => Promise<unknown>;
+  createQuestion: (a: number, b: number, data: object | FormData, isFormData: boolean) => Promise<unknown>;
+  updateQuestion: (
+    a: number,
+    b: number,
+    questionId: number,
+    data: (Partial<AdminModuleQuestion> & Record<string, unknown>) | FormData,
+    isFormData: boolean,
+  ) => Promise<unknown>;
+  deleteQuestion: (a: number, b: number, questionId: number) => Promise<unknown>;
+  reorderQuestionsBulk: (a: number, b: number, orderedIds: number[]) => Promise<unknown>;
+};
+
+export const examsModuleQuestionsApi: ModuleQuestionsApi = {
+  source: "exams",
+  getQuestions: (t, m) => examsAdminApi.getQuestions(t, m),
+  createQuestion: (t, m, data, isFormData) => examsAdminApi.createQuestion(t, m, data, isFormData),
+  updateQuestion: (t, m, qid, data, isFormData) => examsAdminApi.updateQuestion(t, m, qid, data, isFormData),
+  deleteQuestion: (t, m, qid) => examsAdminApi.deleteQuestion(t, m, qid),
+  reorderQuestionsBulk: (t, m, ids) => examsAdminApi.reorderQuestionsBulk(t, m, ids),
+};
+
 function unwrapQuestionsList(data: unknown): AdminModuleQuestion[] {
   if (Array.isArray(data)) return data as AdminModuleQuestion[];
   if (data && typeof data === "object" && Array.isArray((data as { results?: unknown }).results)) {
@@ -14,79 +44,83 @@ function unwrapQuestionsList(data: unknown): AdminModuleQuestion[] {
 }
 
 /** Uses backend ordering only (see AdminQuestionViewSet.get_queryset ``order_by``). */
-export function useModuleQuestionsQuery(testId: number, moduleId: number) {
+export function useModuleQuestionsQuery(
+  testId: number,
+  moduleId: number,
+  api: ModuleQuestionsApi = examsModuleQuestionsApi,
+) {
   return useQuery({
-    queryKey: questionsModuleKeys.list(testId, moduleId),
-    queryFn: async () => unwrapQuestionsList(await examsAdminApi.getQuestions(testId, moduleId)),
+    queryKey: questionsModuleKeys.list(api.source, testId, moduleId),
+    queryFn: async () => unwrapQuestionsList(await api.getQuestions(testId, moduleId)),
     enabled: Number.isFinite(testId) && testId > 0 && Number.isFinite(moduleId) && moduleId > 0,
     staleTime: 0,
-  });
-}
-
-export function useReorderModuleQuestion(testId: number, moduleId: number) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (args: { questionId: number; action: "up" | "down" }) => {
-      await examsAdminApi.reorderQuestion(testId, moduleId, args.questionId, args.action);
-    },
-    onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(testId, moduleId) });
-    },
   });
 }
 
 /**
  * Atomically reorder all questions in a module via a single POST.
  * Pass the complete ordered array of question IDs — partial reorders are rejected by the server.
- *
- * This replaces the sequential `useReorderModuleQuestion` loop that was used
- * as a temporary DnD implementation. The optimistic local state update in
- * ModuleQuestionsPanel remains unchanged; only the API call changes.
  */
-export function useReorderModuleQuestionsBulk(testId: number, moduleId: number) {
+export function useReorderModuleQuestionsBulk(
+  testId: number,
+  moduleId: number,
+  api: ModuleQuestionsApi = examsModuleQuestionsApi,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (orderedIds: number[]) => {
-      await examsAdminApi.reorderQuestionsBulk(testId, moduleId, orderedIds);
+      await api.reorderQuestionsBulk(testId, moduleId, orderedIds);
     },
     onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(testId, moduleId) });
+      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(api.source, testId, moduleId) });
     },
   });
 }
 
 /** Backend merges defaults for omitted fields (subject from module's practice test). Send `{}`. */
-export function useCreateModuleQuestion(testId: number, moduleId: number) {
+export function useCreateModuleQuestion(
+  testId: number,
+  moduleId: number,
+  api: ModuleQuestionsApi = examsModuleQuestionsApi,
+) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => examsAdminApi.createQuestion(testId, moduleId, {}, false),
+    mutationFn: async () => api.createQuestion(testId, moduleId, {}, false),
     onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(testId, moduleId) });
+      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(api.source, testId, moduleId) });
     },
   });
 }
 
-export function useUpdateModuleQuestion(testId: number, moduleId: number) {
+export function useUpdateModuleQuestion(
+  testId: number,
+  moduleId: number,
+  api: ModuleQuestionsApi = examsModuleQuestionsApi,
+) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { questionId: number; data: Partial<AdminModuleQuestion> & Record<string, unknown> | FormData }) => {
+    mutationFn: async (args: { questionId: number; data: (Partial<AdminModuleQuestion> & Record<string, unknown>) | FormData }) => {
       const isFormData = args.data instanceof FormData;
-      return examsAdminApi.updateQuestion(testId, moduleId, args.questionId, args.data, isFormData) as Promise<AdminModuleQuestion>;
+      return api.updateQuestion(testId, moduleId, args.questionId, args.data, isFormData) as Promise<AdminModuleQuestion>;
     },
     onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(testId, moduleId) });
+      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(api.source, testId, moduleId) });
     },
   });
 }
 
-export function useDeleteModuleQuestion(testId: number, moduleId: number) {
+export function useDeleteModuleQuestion(
+  testId: number,
+  moduleId: number,
+  api: ModuleQuestionsApi = examsModuleQuestionsApi,
+) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (questionId: number) => {
-      await examsAdminApi.deleteQuestion(testId, moduleId, questionId);
+      await api.deleteQuestion(testId, moduleId, questionId);
     },
     onSettled: async () => {
-      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(testId, moduleId) });
+      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(api.source, testId, moduleId) });
     },
   });
 }
