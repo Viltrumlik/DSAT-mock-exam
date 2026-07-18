@@ -220,8 +220,10 @@ export default function ProfilePage() {
     setMessage(null);
     try {
       const payload: Record<string, unknown> = {
+        // ``email`` is intentionally absent: it is read-only on /users/me/ and changes
+        // only through the verification-code flow. Sending it here would be a silent no-op.
         username: draft.username.trim(), first_name: draft.first_name.trim(), last_name: draft.last_name.trim(),
-        email: draft.email.trim(), phone_number: draft.phone_number.trim() || null,
+        phone_number: draft.phone_number.trim() || null,
         sat_exam_date: draft.sat_exam_date || null,
         target_score: draft.target_score.trim() ? parseInt(draft.target_score, 10) : null,
       };
@@ -487,7 +489,7 @@ export default function ProfilePage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Username" htmlFor="p-username"><Input id="p-username" value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} required minLength={3} /></Field>
-              <Field label="Email" htmlFor="p-email"><Input id="p-email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} required /></Field>
+              <Field label="Email" htmlFor="p-email" hint="Ask an administrator to change your email."><Input id="p-email" type="email" value={draft.email} readOnly disabled /></Field>
               <div className="md:col-span-2">
                 <Field label="Phone (optional)" htmlFor="p-phone"><Input id="p-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+998901234567" value={draft.phone_number} onChange={(e) => setDraft({ ...draft, phone_number: e.target.value })} /></Field>
               </div>
