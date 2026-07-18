@@ -109,7 +109,11 @@ class UserMeSerializer(serializers.ModelSerializer):
             "username": {"required": False},
             "first_name": {"required": False},
             "last_name": {"required": False},
-            "email": {"required": False},
+            # Self-service email changes are disabled: this endpoint proved no ownership
+            # of the new address, so a user could silently move their account to any
+            # unclaimed mailbox. Email now changes only through the verification-code
+            # flow; staff can still edit it via UserSerializer (admin endpoints).
+            "email": {"read_only": True},
             "is_frozen": {"read_only": True},
             "subject": {"read_only": True},
             "last_password_change": {"read_only": True},
@@ -377,7 +381,11 @@ class UserSerializer(serializers.ModelSerializer):
         # ``is_active`` is exposed read-only for status display only. The "deactivate"
         # capability was removed — freezing (``is_frozen``) is the single account
         # restriction — so accounts can no longer be toggled inactive via the API.
-        read_only_fields = ["date_joined", "is_active"]
+        # ``is_frozen`` is read-only here too: freezing is applied by the audited bulk
+        # action (see UserBulkActionView), never by a serializer write. This serializer
+        # backs the *public, unauthenticated* registration endpoint, so a writable
+        # ``is_frozen`` let anyone POST account state straight through.
+        read_only_fields = ["date_joined", "is_active", "is_frozen"]
 
     def _normalize_role(self, raw: str | None) -> str | None:
         if raw is None:

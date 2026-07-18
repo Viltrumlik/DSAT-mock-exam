@@ -241,6 +241,17 @@ class LoginRateThrottle(AnonRateThrottle):
     scope = "login"
 
 
+class RegistrationRateThrottle(AnonRateThrottle):
+    """Per-IP cap on public self-registration.
+
+    ``UserRegistrationView`` is deliberately unauthenticated, which also makes it an
+    unmetered account-creation endpoint. Keyed by client IP like ``LoginRateThrottle``;
+    the rate comes from the ``register`` scope (env-tunable, ``None`` disables it).
+    """
+
+    scope = "register"
+
+
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
     throttle_classes = [LoginRateThrottle]
@@ -881,6 +892,7 @@ class UserRegistrationView(generics.CreateAPIView):
     # Truly public: stale/invalid JWT cookies must not 401 this — the /register page polls it.
     authentication_classes = []
     permission_classes = []
+    throttle_classes = [RegistrationRateThrottle]
 
 
 class UserMeView(generics.RetrieveUpdateAPIView):
@@ -1150,7 +1162,11 @@ class TelegramAuthView(APIView):
         if username and len(username) < 3:
             return Response({"detail": "Username must be at least 3 characters."}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User.objects.filter(email__iexact=email).first()
+        # Resolve by telegram_id first: a user who changed their email away from the
+        # synthetic address is invisible to the email lookup, so we would create a second
+        # row and then hit the unique telegram_id constraint on save below.
+        # Mirrors _upsert_user_from_telegram_claims.
+        user = User.objects.filter(telegram_id=tg_id).first() or User.objects.filter(email__iexact=email).first()
         if not user:
             if not username:
                 if tg_username and len(tg_username) >= 3:
