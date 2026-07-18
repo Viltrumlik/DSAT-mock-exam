@@ -4,11 +4,14 @@
 import api from "@/lib/api";
 
 import type {
+  Classwork,
   ContentOptions,
   JournalDetail,
   JournalListItem,
   LessonDetail,
   LessonSummary,
+  LessonType,
+  MidtermOption,
 } from "./types";
 
 type ListEnvelope<T> = { results: T[]; count: number };
@@ -59,6 +62,43 @@ export const journalsApi = {
   },
   contentOptions: async (subject: string, level: string, lesson?: number): Promise<ContentOptions> => {
     const r = await api.get(`/journals/content-options/`, { params: { subject, level, lesson } });
+    return r.data;
+  },
+  /** Midterms available for a level (published, subject + exact level match). */
+  midtermOptions: async (subject: string, level: string): Promise<{ midterms: MidtermOption[] }> => {
+    const r = await api.get(`/journals/midterm-options/`, { params: { subject, level } });
+    return r.data;
+  },
+  /** "New session" — append a session. Nothing is pre-provisioned. */
+  addSession: async (
+    journalId: number,
+    type: LessonType = "HOMEWORK",
+    midtermExamId?: number,
+  ): Promise<LessonDetail> => {
+    const r = await api.post(`/journals/${journalId}/sessions/`, {
+      type,
+      midterm_exam_id: midtermExamId,
+    });
+    return r.data;
+  },
+  deleteSession: async (journalId: number, lessonId: number): Promise<void> => {
+    await api.delete(`/journals/${journalId}/lessons/${lessonId}/`);
+  },
+  classwork: async (journalId: number, lessonId: number): Promise<Classwork> => {
+    const r = await api.get(`/journals/${journalId}/lessons/${lessonId}/classwork/`);
+    return r.data;
+  },
+  saveClasswork: async (
+    journalId: number,
+    lessonId: number,
+    data: Record<string, unknown> | FormData,
+    options?: { replaceAttachments?: boolean },
+  ): Promise<Classwork> => {
+    const r = await api.patch(
+      `/journals/${journalId}/lessons/${lessonId}/classwork/`,
+      data,
+      options?.replaceAttachments ? { params: { replace_attachments: "1" } } : {},
+    );
     return r.data;
   },
   lessons: async (
