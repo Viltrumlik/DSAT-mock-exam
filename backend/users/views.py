@@ -14,6 +14,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 from django.db.models import Prefetch, Q
 from .models import ExamDateOption, User
 from classes.models import Classroom, ClassroomMembership
@@ -28,6 +29,7 @@ from access.services import (
     user_domain_subject,
 )
 
+from .activity import blocking_protected_relations, with_activity_counts
 from .serializers import (
     ExamDateOptionPublicSerializer,
     ExamDateOptionSerializer,
@@ -743,7 +745,10 @@ class UserListView(generics.ListAPIView):
             return Response(body, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def get_queryset(self):
-        return manageable_users_queryset(self.request.user)
+        # Annotated so the ops console can show how much work each account holds without
+        # five queries per row — it is the only signal that separates two same-name rows
+        # before verifications accumulate, and it is the delete blast radius.
+        return with_activity_counts(manageable_users_queryset(self.request.user))
 
 class UserCreateView(generics.CreateAPIView):
     serializer_class = UserSerializer
@@ -871,6 +876,25 @@ class UserBulkActionView(APIView):
                         )
                         results.append({"id": uid, "ok": True, "deleted": True})
                 affected += 1
+            except ProtectedError:
+                # A user who authored a classroom, assignment, journal or question bank
+                # entry cannot be hard-deleted. Reporting the generic message below sent
+                # staff hunting with no idea what was holding the row.
+                blocking = blocking_protected_relations(target)
+                logger.info(
+                    "user_bulk_action delete blocked uid=%s actor_id=%s blocking=%s",
+                    uid, actor_id, blocking,
+                )
+                results.append({
+                    "id": uid,
+                    "ok": False,
+                    "error": (
+                        "cannot delete: this account owns "
+                        + (", ".join(blocking) if blocking else "protected records")
+                        + ". Freeze it instead."
+                    ),
+                })
+                skipped += 1
             except Exception:  # defensive: one bad row must not fail the batch
                 logger.exception("user_bulk_action item failed uid=%s action=%s", uid, action)
                 results.append({"id": uid, "ok": False, "error": "operation failed"})

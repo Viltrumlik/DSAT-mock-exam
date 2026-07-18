@@ -197,6 +197,87 @@ class DuplicateFullNameTests(TestCase):
         )
 
 
+class VerificationStateExposureTests(TestCase):
+    """The ops console needs verification state + how much work each account holds.
+
+    ``attempt_count`` is the number that actually decides which of two same-name rows
+    to keep — on day one every account is unverified, because signup provenance was
+    never recorded and nothing can be backfilled honestly. It is also the delete blast
+    radius: all five relations are CASCADE.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        from exams.models import PracticeTest, TestAttempt
+
+        cls.super_admin = User.objects.create_user(
+            email="expose-super@test.com", password="secret12345", role="super_admin",
+        )
+        cls.busy = User.objects.create_user(
+            email="busy@test.com", username="busyone", password="secret12345",
+            role="student", first_name="Busy", last_name="Student",
+        )
+        cls.idle = User.objects.create_user(
+            email="idle@test.com", username="idleone", password="secret12345",
+            role="student", first_name="Idle", last_name="Student",
+        )
+        # TestAttempt is unique per (student, practice_test), so one test each.
+        for _ in range(3):
+            pt = PracticeTest.objects.create(subject="MATH")
+            TestAttempt.objects.create(practice_test=pt, student=cls.busy)
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.super_admin)
+        cache.clear()
+
+    def _rows(self):
+        r = self.client.get(reverse("user-list"))
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        return {u["email"]: u for u in (body["results"] if isinstance(body, dict) else body)}
+
+    def test_list_exposes_attempt_count(self):
+        rows = self._rows()
+        self.assertEqual(rows["busy@test.com"]["attempt_count"], 3)
+        self.assertEqual(rows["idle@test.com"]["attempt_count"], 0)
+
+    def test_list_exposes_verification_state(self):
+        rows = self._rows()
+        self.assertIs(rows["busy@test.com"]["email_verified"], False)
+        self.assertIn("last_login", rows["busy@test.com"])
+        self.assertIn("email_verified_at", rows["busy@test.com"])
+
+    def test_annotation_and_direct_count_agree(self):
+        # The serializer falls back to direct counting on single-object views; the two
+        # paths must not drift.
+        from users.activity import activity_count, with_activity_counts
+
+        annotated = with_activity_counts(User.objects.filter(pk=self.busy.pk)).first()
+        self.assertEqual(annotated.attempt_count, activity_count(self.busy))
+        self.assertEqual(activity_count(self.idle), 0)
+
+    def test_has_activity_short_circuit(self):
+        from users.activity import has_activity
+
+        self.assertTrue(has_activity(self.busy))
+        self.assertFalse(has_activity(self.idle))
+
+    @_register_rate("1000/hour")
+    def test_registration_cannot_self_verify(self):
+        self.client.force_authenticate(None)
+        r = self.client.post(
+            reverse("user-register"),
+            {
+                "email": "sneaky@test.com", "username": "sneaky", "first_name": "Sne",
+                "last_name": "Aky", "password": "secret12345", "email_verified": True,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertFalse(User.objects.get(email="sneaky@test.com").email_verified)
+
+
 class AdminFreezeViaUpdateTests(TestCase):
     """Staff must still be able to freeze a single account from /ops/users.
 
