@@ -543,6 +543,8 @@ class AssignHomeworkSerializer(serializers.Serializer):
     set_id = serializers.IntegerField()
     title = serializers.CharField(required=False, allow_blank=True)
     instructions = serializers.CharField(required=False, allow_blank=True)
+    # Accepted for backwards compatibility with older clients but IGNORED: the deadline
+    # is derived server-side as the start of the classroom's next lesson.
     due_at = serializers.DateTimeField(required=False, allow_null=True)
 
 

@@ -40,7 +40,6 @@ export default function AssignAssessmentContainer() {
   const [existingAssessmentAssignmentId, setExistingAssessmentAssignmentId] = useState<number | null>(null);
   const [titleOverride, setTitleOverride] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [dueAt, setDueAt] = useState<string>("");
 
   const { data: setsData, isLoading: setsLoading, error: setsError, refetch: refetchSets } =
     useAssessmentSetsList(classroomSubject ? { subject: classroomSubject } : staffSubject ? { subject: staffSubject } : undefined);
@@ -104,7 +103,7 @@ export default function AssignAssessmentContainer() {
         set_id: setId,
         title: titleOverride.trim() || undefined,
         instructions: instructions.trim() || undefined,
-        due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        // due_at is derived server-side (start of the class's next lesson).
       };
       const idempotencyKey =
         assignIdempotencyRef.current ??
@@ -275,10 +274,11 @@ export default function AssignAssessmentContainer() {
                 <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Instructions (optional)</p>
                 <textarea className={`${INPUT} min-h-[90px]`} value={instructions} onChange={(e) => setInstructions(e.target.value)} />
               </div>
-              <div>
-                <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Due at (optional)</p>
-                <input className={INPUT} type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
-              </div>
+              {/* No deadline picker: homework is due when the class's next lesson starts. */}
+              <p className="text-xs text-muted-foreground">
+                Due automatically when this class&apos;s next lesson begins (no deadline if
+                the class has no set schedule).
+              </p>
 
               {classroomSubject && selectedSet?.subject && classroomSubject !== selectedSet.subject ? (
                 <p className="text-sm text-muted-foreground">
