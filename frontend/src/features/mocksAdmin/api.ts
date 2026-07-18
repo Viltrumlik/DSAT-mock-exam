@@ -141,3 +141,19 @@ export const mocksAdminApi = {
 };
 
 export type MocksAdminApi = typeof mocksAdminApi;
+
+// Adapter so the shared ModuleQuestionsPanel (used by pastpapers/midterms) can edit
+// a full mock's module questions with the IDENTICAL editor UI. (mockId, moduleId)
+// map onto the panel's (testId, moduleId) slots.
+import type { ModuleQuestionsApi } from "@/features/questionsAdmin/hooks";
+
+export const mocksModuleQuestionsApi: ModuleQuestionsApi = {
+  source: "mock",
+  getQuestions: (mockId, moduleId) => mocksAdminApi.listModuleQuestions(mockId, moduleId),
+  createQuestion: (mockId, moduleId, data) =>
+    mocksAdminApi.createModuleQuestion(mockId, moduleId, data as Record<string, unknown> | FormData),
+  updateQuestion: (mockId, moduleId, qid, data, isFormData) =>
+    mocksAdminApi.updateModuleQuestion(mockId, moduleId, qid, data, isFormData),
+  deleteQuestion: (mockId, moduleId, qid) => mocksAdminApi.deleteModuleQuestion(mockId, moduleId, qid),
+  reorderQuestionsBulk: (mockId, moduleId, ids) => mocksAdminApi.reorderModuleQuestions(mockId, moduleId, ids),
+};

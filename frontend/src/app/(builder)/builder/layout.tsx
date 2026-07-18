@@ -13,7 +13,6 @@ import {
   Archive,
   FileText,
   BookMarked,
-  ClipboardCheck,
   FlaskConical,
   GraduationCap,
   Database,
@@ -59,7 +58,6 @@ const LEARNING_NAV: NavItem[] = [
 const SIMULATION_NAV: NavItem[] = [
   { href: "/builder/pastpapers",      label: "Past papers",    icon: FileText,        exact: false },
   { href: "/builder/practice-tests",  label: "Practice tests", icon: FlaskConical,    exact: false },
-  { href: "/builder/mock-exams",      label: "Mock exams",     icon: ClipboardCheck,  exact: false },
   { href: "/builder/full-mocks",      label: "Full mocks",     icon: Timer,           exact: false },
 ];
 
@@ -86,12 +84,14 @@ export default function BuilderLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
 
   // Editor pages get a full-screen layout — no sidebar competing for space.
-  // Covers: assessment set editor, pastpaper module editor, practice test module editor, mock exam module editor.
+  // Covers: assessment set editor, pastpaper / practice-test / midterm module editors,
+  // and the full-mock module editor (/builder/full-mocks/<mockId>/<moduleId>).
   const isEditorRoute =
     /^\/builder\/sets\/\d+/.test(pathname) ||
     /^\/builder\/pastpapers\/\d+\/\d+\/\d+/.test(pathname) ||
     /^\/builder\/practice-tests\/\d+\/\d+\/\d+/.test(pathname) ||
-    /^\/builder\/mock-exams\/\d+\/\d+\/\d+/.test(pathname);
+    /^\/builder\/midterms\/\d+\/\d+\/\d+/.test(pathname) ||
+    /^\/builder\/full-mocks\/\d+\/\d+/.test(pathname);
 
   if (isEditorRoute) {
     return (

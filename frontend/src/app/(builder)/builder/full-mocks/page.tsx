@@ -3,7 +3,7 @@
 /**
  * /builder/full-mocks — Full Mock builder hub (NEW `mocks` backend app).
  *
- * Distinct from /builder/mock-exams (legacy Simulation `MockExam`s). A full mock
+ * The full-mock system (mocks app). A full mock
  * auto-provisions two sections (Reading & Writing, then Math), each with two
  * modules. Author questions per module in the editor.
  */

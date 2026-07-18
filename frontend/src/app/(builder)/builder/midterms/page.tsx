@@ -619,7 +619,7 @@ function MidtermRow({
                   modules.map((mod) => (
                     <Link
                       key={mod.id}
-                      href={`/builder/mock-exams/${exam.id}/${test.id}/${mod.id}`}
+                      href={`/builder/midterms/${exam.id}/${test.id}/${mod.id}`}
                       className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5"
                     >
                       <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
@@ -910,8 +910,8 @@ export default function BuilderMidtermsPage() {
           <strong className="text-foreground">Note:</strong> Midterms are classroom pedagogy tools —
           not SAT simulations. Use them for semester exams, unit tests, and curriculum assessments.
           For SAT-style timed mocks, go to{" "}
-          <Link href="/builder/mock-exams" className="font-semibold text-primary hover:underline">
-            Builder → Mock Exams
+          <Link href="/builder/full-mocks" className="font-semibold text-primary hover:underline">
+            Builder → Full mocks
           </Link>
           .
         </p>
