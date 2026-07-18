@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
+from django.db.models.functions import Lower
 
 
 class ExamDateOption(models.Model):
@@ -121,11 +123,23 @@ class User(AbstractUser):
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
-    
+
     objects = UserManager()
-    
+
     class Meta:
         db_table = "users"
+        constraints = [
+            # ``username`` is declared unique, but Postgres indexes it case-sensitively
+            # while every lookup in the codebase uses ``__iexact`` — so "Asilbek" and
+            # "asilbek" could both exist and then match the same query. Enforce the
+            # rule the code actually assumes. NULL/blank usernames are exempt so the
+            # rows that have none stay valid.
+            models.UniqueConstraint(
+                Lower("username"),
+                condition=~Q(username=None) & ~Q(username=""),
+                name="users_username_ci_unique",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.email} ({self.role})"
