@@ -255,3 +255,70 @@ class SecurityAuditEvent(models.Model):
             models.Index(fields=["user", "-created_at"]),
         ]
 
+
+
+class EmailClaim(models.Model):
+    """A pending proof that someone controls an email address.
+
+    The code is mailed to ``target_email``; entering it correctly proves the requester
+    reads that mailbox. Deliberately a table rather than a cache entry: the attempt
+    counter must fail *closed*, and the cache is LocMemCache whenever ``REDIS_URL`` is
+    unset (per-process, so a code written by one worker is invisible to the next) while
+    ``users.security_metrics`` swallows cache errors and returns 0 — either would reset
+    the guess counter and hand an attacker unlimited tries at a 6-digit secret.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_EXPIRED = "expired"
+    STATUS_BURNED = "burned"
+    STATUS_REFUSED = "refused"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_CONFIRMED, "Confirmed"),
+        (STATUS_EXPIRED, "Expired"),
+        (STATUS_BURNED, "Burned"),
+        (STATUS_REFUSED, "Refused"),
+    ]
+
+    #: How long a mailed code stays usable.
+    TTL_MINUTES = 15
+    #: Wrong guesses before the claim is burned and a new code must be requested.
+    MAX_ATTEMPTS = 5
+
+    user = models.ForeignKey(
+        "users.User", on_delete=models.CASCADE, related_name="email_claims", db_index=True
+    )
+    target_email = models.EmailField(db_index=True, help_text="Normalized (lowercased).")
+    # Hashed with the password hasher: a readable code in the DB would let anyone with
+    # query access complete someone else's claim. Compare with check_password.
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True
+    )
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "users_email_claims"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "status", "-created_at"]),
+            models.Index(fields=["target_email", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.target_email} ({self.status})"
+
+    @property
+    def is_open(self) -> bool:
+        """Still usable: pending, unexpired, and with guesses left."""
+        from django.utils import timezone
+
+        return (
+            self.status == self.STATUS_PENDING
+            and self.attempts < self.MAX_ATTEMPTS
+            and self.expires_at > timezone.now()
+        )
