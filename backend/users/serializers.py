@@ -15,6 +15,12 @@ from access.services import (
 )
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
+from users.name_utils import (
+    DUPLICATE_FULL_NAME_CODE,
+    DUPLICATE_FULL_NAME_MESSAGE,
+    full_name_taken,
+    normalize_name,
+)
 
 from classes.models import ClassroomMembership
 
@@ -358,6 +364,39 @@ class UserSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("This phone number is already in use.")
         return normalized
+
+    def _actor_is_authenticated(self) -> bool:
+        request = self.context.get("request")
+        actor = getattr(request, "user", None) if request else None
+        return bool(actor and actor.is_authenticated)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Store names whitespace-normalized so the duplicate check below cannot be
+        # sidestepped with padding, and so two spellings do not read as two people.
+        for field in ("first_name", "last_name"):
+            if field in attrs:
+                attrs[field] = normalize_name(attrs[field])
+
+        # Duplicate full names are rejected on the PUBLIC registration endpoint only.
+        # Production had 36 name-collision groups covering 89 of 387 accounts, most of
+        # them one person who registered twice with a slightly different address. Staff
+        # keep the escape hatch: an admin creating the account through UserCreateView is
+        # authenticated, so this branch never fires for them — which is how a genuinely
+        # different person with the same name still gets in.
+        if self.instance is None and not self._actor_is_authenticated():
+            first = attrs.get("first_name") or ""
+            last = attrs.get("last_name") or ""
+            if first and last and full_name_taken(first, last):
+                raise serializers.ValidationError(
+                    {
+                        # ``full_name`` carries the human message; ``code`` lets the SPA
+                        # render the "ask an administrator" branch instead of a raw string.
+                        "full_name": [DUPLICATE_FULL_NAME_MESSAGE],
+                        "code": [DUPLICATE_FULL_NAME_CODE],
+                    }
+                )
+        return attrs
 
     class Meta:
         model = User

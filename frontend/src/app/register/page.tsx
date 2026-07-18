@@ -31,6 +31,10 @@ export default function RegisterPage() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+    // Registration was refused because someone with this first+last name already exists.
+    // Rendered with a sign-in link and the "ask an administrator" route, since a genuinely
+    // different person with the same name can only be added by staff.
+    const [duplicateName, setDuplicateName] = useState(false);
     const [loading, setLoading] = useState(false);
     const [showPw, setShowPw] = useState(false);
     const [googleReady, setGoogleReady] = useState(false);
@@ -65,6 +69,7 @@ export default function RegisterPage() {
         e.preventDefault();
         setLoading(true);
         setError("");
+        setDuplicateName(false);
         if (firstName.trim().length < 3 || lastName.trim().length < 3 || username.trim().length < 3) {
             setError("First name, last name, and username must be at least 3 characters.");
             setLoading(false);
@@ -86,7 +91,10 @@ export default function RegisterPage() {
                 msg = "Too many attempts. Please wait a minute before trying again.";
             } else if (ax.response.data) {
                 const d = ax.response.data;
-                if (typeof d.detail === "string") msg = d.detail;
+                if (Array.isArray(d.code) && d.code[0] === "duplicate_full_name") {
+                    setDuplicateName(true);
+                    msg = Array.isArray(d.full_name) ? (d.full_name[0] as string) : msg;
+                } else if (typeof d.detail === "string") msg = d.detail;
                 else if (Array.isArray(d.email)) msg = d.email[0] as string;
                 else if (Array.isArray(d.username)) msg = d.username[0] as string;
                 else if (Array.isArray(d.first_name)) msg = d.first_name[0] as string;
@@ -203,7 +211,18 @@ export default function RegisterPage() {
                     </div>
 
                     <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-                        {error ? <Alert tone="danger">{error}</Alert> : null}
+                        {error ? (
+                            <Alert tone="danger">
+                                {error}
+                                {duplicateName ? (
+                                    <span className="mt-1 block">
+                                        <Link href="/login" className="font-semibold underline underline-offset-2">
+                                            Sign in instead
+                                        </Link>
+                                    </span>
+                                ) : null}
+                            </Alert>
+                        ) : null}
 
                         <div className="grid grid-cols-2 gap-3">
                             <Field label="First name" htmlFor="firstName">

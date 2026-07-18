@@ -96,13 +96,15 @@ class RegistrationHardeningTests(TestCase):
     @_register_rate("2/hour")
     def test_registration_is_throttled_per_ip(self):
         def _post(n):
+            # Distinct names per attempt: identical ones would be rejected by the
+            # duplicate-full-name rule before the throttle ever gets a say.
             return self.client.post(
                 reverse("user-register"),
                 {
                     "email": f"flood{n}@test.com",
                     "username": f"flood{n}",
-                    "first_name": "Flo",
-                    "last_name": "Oder",
+                    "first_name": f"Flood{n}",
+                    "last_name": f"Person{n}",
                     "password": "secret12345",
                 },
                 format="json",
@@ -112,6 +114,87 @@ class RegistrationHardeningTests(TestCase):
         self.assertEqual(_post(2).status_code, 201)
         self.assertEqual(_post(3).status_code, 429, "3rd registration from one IP must be throttled")
         self.assertFalse(User.objects.filter(email="flood3@test.com").exists())
+
+
+class DuplicateFullNameTests(TestCase):
+    """Public registration rejects a first+last name that already exists.
+
+    Prod had 36 name-collision groups covering 89 of 387 accounts — mostly one person
+    who signed up twice with a slightly different address. Staff keep the escape hatch:
+    an admin creating the account is authenticated, so the check does not fire for them,
+    which is how a genuinely different person with the same name still gets an account.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.existing = User.objects.create_user(
+            email="alisher.first@test.com", username="alisher1", password="secret12345",
+            role="student", first_name="Alisher", last_name="Muhammadaliyev",
+        )
+        cls.super_admin = User.objects.create_user(
+            email="dup-super@test.com", password="secret12345", role="super_admin",
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        cache.clear()
+
+    def _register(self, first, last, email="second@test.com", username="alisher2"):
+        return self.client.post(
+            reverse("user-register"),
+            {
+                "email": email, "username": username, "first_name": first,
+                "last_name": last, "password": "secret12345",
+            },
+            format="json",
+        )
+
+    @_register_rate("1000/hour")
+    def test_duplicate_full_name_is_rejected(self):
+        r = self._register("Alisher", "Muhammadaliyev")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json().get("code"), ["duplicate_full_name"])
+        self.assertFalse(User.objects.filter(email="second@test.com").exists())
+
+    @_register_rate("1000/hour")
+    def test_rejection_ignores_case_and_padding(self):
+        r = self._register("  aLIsher ", "muhammadaliyev  ")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json().get("code"), ["duplicate_full_name"])
+
+    @_register_rate("1000/hour")
+    def test_different_name_is_accepted(self):
+        r = self._register("Alisher", "Karimov", username="alisherk")
+        self.assertEqual(r.status_code, 201, r.content)
+
+    @_register_rate("1000/hour")
+    def test_same_first_name_only_is_accepted(self):
+        # Only the *pair* collides; a shared first name must not block anyone.
+        r = self._register("Alisher", "Tojiyev", username="alishert")
+        self.assertEqual(r.status_code, 201, r.content)
+
+    @_register_rate("1000/hour")
+    def test_names_are_stored_whitespace_normalized(self):
+        self._register("Bek   zod", "Tursunov", email="bek@test.com", username="bekzod")
+        u = User.objects.get(email="bek@test.com")
+        self.assertEqual(u.first_name, "Bek zod")
+
+    def test_admin_may_still_create_a_duplicate_name(self):
+        # The escape hatch: a genuinely different person with the same name.
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(
+            reverse("user-create"),
+            {
+                "email": "alisher.second@test.com", "username": "alisher2",
+                "first_name": "Alisher", "last_name": "Muhammadaliyev",
+                "password": "secret12345", "role": "student",
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(
+            User.objects.filter(first_name="Alisher", last_name="Muhammadaliyev").count(), 2
+        )
 
 
 class MeEmailImmutableTests(TestCase):
