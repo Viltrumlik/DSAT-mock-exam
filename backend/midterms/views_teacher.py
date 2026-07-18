@@ -52,6 +52,9 @@ def _midterm_brief(m: Midterm) -> dict:
         "id": m.id,
         "title": m.title,
         "subject": m.subject,
+        # Difficulty tier — lowercase code shared verbatim with classes.Classroom.level,
+        # so the teacher panel can scope the picker to the classroom's level.
+        "level": m.level or "",
         "scoring_scale": m.scoring_scale,
         "score_ceiling": m.score_ceiling,
         "duration_minutes": m.duration_minutes,
