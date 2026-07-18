@@ -2,6 +2,15 @@ import type { components } from "@/lib/openapi-types";
 
 export type Subject = "math" | "english";
 
+/** Authored-content review lifecycle. Only `approved` is safe to assign. */
+export type ReviewStatus = "draft" | "needs_review" | "approved";
+
+export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
+  draft: "Incomplete",
+  needs_review: "Needs review",
+  approved: "Approved",
+};
+
 export type AssessmentSet = {
   id: number;
   subject: Subject;
@@ -19,6 +28,8 @@ export type AssessmentSet = {
   created_by_email?: string | null;
   created_by_name?: string | null;
   questions?: AssessmentQuestion[];
+  /** Review lifecycle (draft/needs_review/approved). Read-only; change via the status endpoint. */
+  review_status?: ReviewStatus;
   // Optional backend fields (some serializers include them)
   status?: "draft" | "published" | string;
 };

@@ -2,28 +2,57 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { useAssessmentSetsList, useDeleteAssessmentSet } from "@/features/assessments/hooks";
+import { useAssessmentSetsList, useDeleteAssessmentSet, useSetReviewStatus } from "@/features/assessments/hooks";
 import { getRole, getSubject } from "@/lib/permissions";
 import { Plus, Search, RefreshCw, SendHorizonal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, SetLineage } from "@/components/governance";
 import { ConfirmDialog } from "@/features/classroom/ui";
 import { levelLabel, LEVEL_LABELS, type LevelKey } from "@/lib/levels";
+import { REVIEW_STATUS_LABELS, type ReviewStatus } from "@/features/assessments/types";
+import { useToast } from "@/components/ToastProvider";
 
 const SUBJECT_COLORS: Record<string, string> = {
   math: "bg-purple-100 text-purple-800",
   english: "bg-teal-100 text-teal-800",
 };
 
+const REVIEW_STATUS_STYLES: Record<ReviewStatus, string> = {
+  draft: "bg-slate-100 text-slate-700",
+  needs_review: "bg-amber-100 text-amber-800",
+  approved: "bg-emerald-100 text-emerald-800",
+};
+
+const REVIEW_STATUS_ORDER: ReviewStatus[] = ["draft", "needs_review", "approved"];
+
 export default function BuilderSetsPage() {
   // Backend already enforces teacher subject scoping.
   // For global staff (admin/test_admin/super_admin), default to "all subjects".
   const role = getRole();
   const scopedSubject = role === "teacher" ? getSubject() : null;
+  const canApprove = role === "admin" || role === "super_admin";
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [reviewFilter, setReviewFilter] = useState<"all" | ReviewStatus>("all");
   const [levelFilter, setLevelFilter] = useState<"all" | LevelKey>("all");
   const [subjectFilter, setSubjectFilter] = useState<"all" | "english" | "math">("all");
+  const setStatus = useSetReviewStatus();
+  const toast = useToast();
+
+  const changeStatus = (id: number, status: ReviewStatus) => {
+    setStatus.mutate(
+      { id, status },
+      {
+        onSuccess: () =>
+          toast.push({ message: `Status set to “${REVIEW_STATUS_LABELS[status]}”.`, tone: "success" }),
+        onError: (e: unknown) =>
+          toast.push({
+            message: (e as { message?: string })?.message || "Could not change status.",
+            tone: "error",
+          }),
+      },
+    );
+  };
   const [pendingDelete, setPendingDelete] = useState<{ id: number; title: string } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // Set becomes true after a 409 (the set is published/assigned) — reveals the
@@ -72,10 +101,12 @@ export default function BuilderSetsPage() {
     }
     if (statusFilter === "active") result = result.filter((s) => s.is_active);
     if (statusFilter === "inactive") result = result.filter((s) => !s.is_active);
+    if (reviewFilter !== "all")
+      result = result.filter((s) => (s.review_status ?? "draft") === reviewFilter);
     if (levelFilter !== "all") result = result.filter((s) => s.level === levelFilter);
     if (subjectFilter !== "all") result = result.filter((s) => s.subject === subjectFilter);
     return result;
-  }, [sets, search, statusFilter, levelFilter, subjectFilter]);
+  }, [sets, search, statusFilter, reviewFilter, levelFilter, subjectFilter]);
 
   const activeCount = sets.filter((s) => s.is_active).length;
   const draftCount = sets.filter((s) => !s.is_active).length;
@@ -162,13 +193,27 @@ export default function BuilderSetsPage() {
           />
         </div>
         <select
+          value={reviewFilter}
+          onChange={(e) => setReviewFilter(e.target.value as typeof reviewFilter)}
+          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
+          title="Review status"
+        >
+          <option value="all">All review statuses</option>
+          {REVIEW_STATUS_ORDER.map((rs) => (
+            <option key={rs} value={rs}>
+              {REVIEW_STATUS_LABELS[rs]}
+            </option>
+          ))}
+        </select>
+        <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
           className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
+          title="Visibility"
         >
-          <option value="all">All statuses</option>
+          <option value="all">All visibility</option>
           <option value="active">Active only</option>
-          <option value="inactive">Draft / inactive</option>
+          <option value="inactive">Archived only</option>
         </select>
         {/* Filter 1: level */}
         <select
@@ -234,6 +279,7 @@ export default function BuilderSetsPage() {
             {filtered.map((s) => {
               const questionCount = (s.questions ?? []).length;
               const activeQs = (s.questions ?? []).filter((q: { is_active?: boolean }) => q.is_active).length;
+              const reviewStatus = (s.review_status ?? "draft") as ReviewStatus;
               const isDraft = !s.is_active;
               const isPublishReady =
                 isDraft &&
@@ -261,6 +307,15 @@ export default function BuilderSetsPage() {
                           {s.subject}
                         </span>
                       )}
+                      <span
+                        className={cn(
+                          "inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
+                          REVIEW_STATUS_STYLES[reviewStatus],
+                        )}
+                        title="Review status"
+                      >
+                        {REVIEW_STATUS_LABELS[reviewStatus]}
+                      </span>
                       <StateTag state={s.is_active ? "PUBLISHED" : "DRAFT"} size="xs" />
                       {s.level && (
                         <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-700">
@@ -289,6 +344,20 @@ export default function BuilderSetsPage() {
                     />
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    <select
+                      value={reviewStatus}
+                      disabled={setStatus.isPending}
+                      onChange={(e) => changeStatus(s.id, e.target.value as ReviewStatus)}
+                      onClick={(e) => e.stopPropagation()}
+                      title={canApprove ? "Change review status" : "Only an admin can approve"}
+                      className="rounded-lg border border-border bg-card px-2 py-1 text-xs font-bold text-foreground disabled:opacity-50"
+                    >
+                      {REVIEW_STATUS_ORDER.map((rs) => (
+                        <option key={rs} value={rs} disabled={rs === "approved" && !canApprove}>
+                          {REVIEW_STATUS_LABELS[rs]}
+                        </option>
+                      ))}
+                    </select>
                     {isPublishReady && (
                       <Link
                         href={`/builder/sets/${s.id}/publish`}

@@ -63,6 +63,7 @@ class HomeworkAssignRaceTests(TransactionTestCase):
             title="Algebra set",
             created_by=self.teacher,
             is_active=True,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         AssessmentQuestion.objects.create(
             assessment_set=self.aset,

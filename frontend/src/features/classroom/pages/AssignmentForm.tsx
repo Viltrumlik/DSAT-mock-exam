@@ -45,6 +45,9 @@ type AssessmentSetOption = {
   description: string;
   question_count: number;
   already_assigned?: boolean;
+  /** Review lifecycle from the backend picker; only approved sets are safe to assign. */
+  review_status?: "draft" | "needs_review" | "approved";
+  is_approved?: boolean;
 };
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
@@ -395,8 +398,28 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     return Number.isNaN(t.getTime()) ? null : t.toISOString();
   };
 
-  const handleSubmit = async (publishStatus: "DRAFT" | "PUBLISHED" = "PUBLISHED") => {
+  const handleSubmit = async (
+    publishStatus: "DRAFT" | "PUBLISHED" = "PUBLISHED",
+    allowUnapproved = false,
+  ) => {
     setFormError(null);
+    // Guard: warn before assigning an assessment that isn't approved yet so a
+    // teacher doesn't hand out an incomplete/unchecked set by mistake. The backend
+    // enforces the same gate — allow_unapproved is only sent after the teacher agrees.
+    const selectedSets = assignmentOptions.assessment_sets.filter((a) => selectedAssessmentIds.has(a.id));
+    const unapproved = selectedSets.filter(
+      (a) => a.is_approved === false || (a.review_status != null && a.review_status !== "approved"),
+    );
+    if (unapproved.length > 0 && !allowUnapproved) {
+      const names = unapproved.map((a) => `“${a.title}”`).join(", ");
+      const ok =
+        typeof window === "undefined" ||
+        window.confirm(
+          `${unapproved.length === 1 ? "This assessment is" : "These assessments are"} not approved yet: ${names}.\n\nAssign anyway?`,
+        );
+      if (!ok) return;
+      allowUnapproved = true;
+    }
     setCreatingAsg(true);
     try {
       const dueIso = buildDueIso();
@@ -417,6 +440,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           assessment_set_ids: [...selectedAssessmentIds],
           practice_scope: practiceScope,
           allow_file_upload: allowFileUpload,
+          allow_unapproved: allowUnapproved,
         };
 
         await classesApi.updateAssignment(classId, editId, body);
@@ -446,6 +470,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       }
       if (selectedAssessmentIds.size > 0) {
         fd.append("assessment_set_ids", JSON.stringify([...selectedAssessmentIds]));
+        if (allowUnapproved) fd.append("allow_unapproved", "true");
       }
       fd.append("allow_file_upload", String(allowFileUpload));
       for (const f of asgFiles) fd.append("attachment_file", f);
@@ -628,6 +653,14 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         }`}>{aset.subject}</span>
         {aset.source && <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">{sourceLabel(aset.source)}</span>}
         {aset.category && <span className="rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">{aset.category}</span>}
+        {aset.is_approved === false && (
+          <span
+            className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+            title="Not approved for assignment yet"
+          >
+            ⚠ {aset.review_status === "needs_review" ? "Needs review" : "Incomplete"}
+          </span>
+        )}
       </span>
       <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{aset.title}</span>
       <span className="text-[12px] font-semibold text-muted-foreground">{aset.question_count} questions</span>

@@ -31,13 +31,17 @@ class AssignmentEditAssessmentTests(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT
         )
+        # Approved so the assign guard lets them attach — these tests cover
+        # attach/detach mechanics, not the approval gate.
         self.set_a = AssessmentSet.objects.create(
             subject="math", title="Set A", source=AssessmentSet.SOURCE_MATHBOOK,
             level="junior", created_by=self.owner,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         self.set_b = AssessmentSet.objects.create(
             subject="math", title="Set B", source=AssessmentSet.SOURCE_MATHBOOK,
             level="junior", created_by=self.owner,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         self.assignment = Assignment.objects.create(
             classroom=self.classroom, created_by=self.owner, title="HW",

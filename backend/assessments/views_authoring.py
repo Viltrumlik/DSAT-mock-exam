@@ -54,6 +54,34 @@ def _hidden_from_test_admin(actor, inst) -> bool:
     )
 
 
+def _demote_approved_set(set_id: int, actor, *, reason: str, correlation_id: str = "") -> bool:
+    """
+    An APPROVED set that is edited (metadata or questions changed) is no longer
+    "checked" — drop it back to needs_review so it must be re-approved before it is
+    treated as safe to assign. No-op for draft/needs_review sets. Cheap-guarded so the
+    common (non-approved) edit does not take a row lock. Emits a GovernanceEvent.
+    """
+    if not AssessmentSet.objects.filter(
+        pk=set_id, review_status=AssessmentSet.STATUS_APPROVED
+    ).exists():
+        return False
+    with transaction.atomic():
+        locked = AssessmentSet.objects.select_for_update().get(pk=set_id)
+        if locked.review_status != AssessmentSet.STATUS_APPROVED:
+            return False
+        locked.review_status = AssessmentSet.STATUS_NEEDS_REVIEW
+        locked.save(update_fields=["review_status", "updated_at"])
+        emit_governance_event(
+            event_type=GovernanceEvent.EVENT_SEND_BACK,
+            actor=actor,
+            entity_type="AssessmentSet",
+            entity_id=set_id,
+            payload={"from": "approved", "to": "needs_review", "reason": reason},
+            correlation_id=(correlation_id or "")[:128],
+        )
+    return True
+
+
 class AdminAssessmentSetListCreateView(APIView):
     # Default; method-specific permissions are enforced in get_permissions().
     permission_classes = [IsAuthenticatedAndNotFrozen]
@@ -145,7 +173,15 @@ class AdminAssessmentSetDetailView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         s = AssessmentSetAdminWriteSerializer(inst, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
+        # A metadata edit (title/category/source/level/description/subject) un-approves
+        # the set; a pure is_active toggle (archive/unarchive) does NOT.
+        meta_changed = bool(set(s.validated_data.keys()) - {"is_active"})
         inst = s.save()
+        if meta_changed:
+            _demote_approved_set(
+                inst.pk, actor, reason="metadata_edited",
+                correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+            )
         inst = AssessmentSet.objects.filter(pk=inst.pk).prefetch_related("questions").first()
         return Response(AssessmentSetSerializer(inst).data)
 
@@ -290,6 +326,10 @@ class AdminAssessmentQuestionCreateView(APIView):
         s.is_valid(raise_exception=True)
         q = create_question(aset, s)
         _sync_question_to_bank(q)
+        _demote_approved_set(
+            aset.pk, request.user, reason="question_added",
+            correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+        )
         return Response(AssessmentQuestionAdminWriteSerializer(q).data, status=status.HTTP_201_CREATED)
 
 
@@ -321,8 +361,13 @@ class AdminAssessmentQuestionDetailView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         s = AssessmentQuestionAdminWriteSerializer(q, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
+        set_id = q.assessment_set_id
         q = s.save()
         _sync_question_to_bank(q)
+        _demote_approved_set(
+            set_id, request.user, reason="question_edited",
+            correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+        )
         return Response(AssessmentQuestionAdminWriteSerializer(q).data)
 
     def delete(self, request, pk: int):
@@ -372,6 +417,10 @@ class AdminAssessmentQuestionDetailView(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+        _demote_approved_set(
+            set_id, request.user, reason="question_deleted",
+            correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -401,6 +450,10 @@ class AdminAssessmentSetReorderView(APIView):
             )
         ordered_ids = [int(x) for x in raw if isinstance(x, (int, str)) and str(x).isdigit()]
         final_ids = reorder_questions(aset.pk, ordered_ids)
+        _demote_approved_set(
+            aset.pk, request.user, reason="questions_reordered",
+            correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+        )
         return Response({"ordered_ids": final_ids})
 
 
@@ -629,6 +682,123 @@ class AdminValidatePublishView(APIView):
         )
         report = validate_for_publish(aset, active_questions)
         return Response(report.to_dict())
+
+
+class AdminAssessmentSetStatusView(APIView):
+    """
+    POST /assessments/admin/sets/{pk}/status/   body: {"status": "<target>"}
+
+    Move a set through the review lifecycle draft → needs_review → approved.
+
+      - submit for review (→ needs_review):  any author of the set.
+      - send back        (→ draft):          any author or an approver.
+      - re-open          (approved → needs_review): any author or an approver.
+      - approve          (→ approved):       APPROVER ONLY (admin/super_admin). The
+                          approval ALSO publishes an immutable version so an approved
+                          set always has a snapshot to pin homeworks to; if the set
+                          fails publish validation the status does NOT change and the
+                          blocking findings are returned.
+
+    Every transition emits a GovernanceEvent (INV-GE03).
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+
+    # (current, target) pairs that are legal. same→same is treated as an idempotent no-op.
+    _ALLOWED = {
+        (AssessmentSet.STATUS_DRAFT, AssessmentSet.STATUS_NEEDS_REVIEW),
+        (AssessmentSet.STATUS_NEEDS_REVIEW, AssessmentSet.STATUS_DRAFT),
+        (AssessmentSet.STATUS_NEEDS_REVIEW, AssessmentSet.STATUS_APPROVED),
+        (AssessmentSet.STATUS_DRAFT, AssessmentSet.STATUS_APPROVED),
+        (AssessmentSet.STATUS_APPROVED, AssessmentSet.STATUS_NEEDS_REVIEW),
+        (AssessmentSet.STATUS_APPROVED, AssessmentSet.STATUS_DRAFT),
+    }
+    _EVENT = {
+        AssessmentSet.STATUS_NEEDS_REVIEW: GovernanceEvent.EVENT_SUBMIT_FOR_REVIEW,
+        AssessmentSet.STATUS_APPROVED: GovernanceEvent.EVENT_APPROVE,
+        AssessmentSet.STATUS_DRAFT: GovernanceEvent.EVENT_SEND_BACK,
+    }
+
+    @extend_schema(
+        tags=["assessments"],
+        summary="Transition an assessment set's review status",
+        responses={200: AssessmentSetAdminSerializer, 400: ApiAssessmentDetailSerializer, 403: ApiAssessmentDetailSerializer},
+    )
+    def post(self, request, pk: int):
+        from .domain.publish_service import publish_assessment_set, PublishValidationError
+
+        target = (request.data.get("status") or "").strip()
+        valid_targets = {c[0] for c in AssessmentSet.REVIEW_STATUS_CHOICES}
+        if target not in valid_targets:
+            return Response(
+                {"detail": f"Invalid status. Expected one of {sorted(valid_targets)}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=pk)
+        if _hidden_from_test_admin(request.user, aset):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        current = aset.review_status
+        if current == target:
+            return Response(AssessmentSetAdminSerializer(aset).data, status=status.HTTP_200_OK)
+
+        if (current, target) not in self._ALLOWED:
+            return Response(
+                {"detail": f"Cannot move a set from '{current}' to '{target}'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Approval is gated on the approver capability AND publishes a version.
+        if target == AssessmentSet.STATUS_APPROVED:
+            from access.services import can_approve_assessment
+
+            if not can_approve_assessment(request.user):
+                return Response(
+                    {"detail": "Only an admin or super admin can approve a set."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            try:
+                version = publish_assessment_set(set_id=pk, actor=request.user)
+            except PublishValidationError as exc:
+                return Response(
+                    {
+                        "detail": f"Cannot approve — the set is not publishable: {exc}",
+                        "code": exc.code,
+                        "findings": [f.to_dict() for f in exc.findings[:10]],
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            with transaction.atomic():
+                locked = AssessmentSet.objects.select_for_update().get(pk=pk)
+                locked.review_status = AssessmentSet.STATUS_APPROVED
+                locked.save(update_fields=["review_status", "updated_at"])
+                emit_governance_event(
+                    event_type=GovernanceEvent.EVENT_APPROVE,
+                    actor=request.user,
+                    entity_type="AssessmentSet",
+                    entity_id=pk,
+                    payload={"from": current, "version_id": version.pk, "version_number": version.version_number},
+                    correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+                )
+                aset = locked
+            return Response(AssessmentSetAdminSerializer(aset).data, status=status.HTTP_200_OK)
+
+        # Non-approval transitions: submit for review / send back.
+        with transaction.atomic():
+            locked = AssessmentSet.objects.select_for_update().get(pk=pk)
+            locked.review_status = target
+            locked.save(update_fields=["review_status", "updated_at"])
+            emit_governance_event(
+                event_type=self._EVENT[target],
+                actor=request.user,
+                entity_type="AssessmentSet",
+                entity_id=pk,
+                payload={"from": current, "to": target},
+                correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+            )
+            aset = locked
+        return Response(AssessmentSetAdminSerializer(aset).data, status=status.HTTP_200_OK)
 
 
 class AdminAssessmentSetVersionListView(APIView):

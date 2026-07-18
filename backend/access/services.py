@@ -226,6 +226,25 @@ def is_global_scope_staff(user) -> bool:
     )
 
 
+def can_approve_assessment(user) -> bool:
+    """
+    True for actors allowed to APPROVE an assessment set (move it to `approved`).
+
+    Deliberately STRICTER than ``is_global_scope_staff``: a ``test_admin`` is a
+    global-scope library author but may only build and submit for review — approving
+    their own (or anyone's) content would defeat the review gate. Only Django
+    superusers and the ``admin`` / ``super_admin`` roles approve.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if getattr(user, "is_superuser", False):
+        return True
+    return normalized_role(user) in (
+        constants.ROLE_SUPER_ADMIN,
+        constants.ROLE_ADMIN,
+    )
+
+
 def user_domain_subject(user) -> Optional[str]:
     """
     Domain subject (``math`` / ``english``) **only for teachers**.

@@ -952,6 +952,10 @@ class ClassroomViewSet(ModelViewSet):
                 "description": aset.description or "",
                 "question_count": aset.questions.filter(is_active=True).count(),
                 "already_assigned": aset.id in assigned_set_ids,
+                # Review lifecycle so the teacher can see (and be warned about)
+                # assessments that are not yet approved for use.
+                "review_status": aset.review_status,
+                "is_approved": aset.review_status == AssessmentSet.STATUS_APPROVED,
             })
 
         # Practice test packs (custom user-created)
@@ -1884,10 +1888,71 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         a.save(update_fields=["status", "archived_at", "published_at", "updated_at"])
         return Response({"id": a.id, "status": a.status})
 
+    @staticmethod
+    def _assessment_set_ids_from_request(request) -> list[int]:
+        """Parse assessment_set_ids (JSON array or list) + legacy assessment_set_id,
+        deduped in order. Shared by the approval guard and the assign loop."""
+        raw_ids = request.data.get("assessment_set_ids")
+        wanted: list[int] = []
+        if raw_ids:
+            if isinstance(raw_ids, str):
+                try:
+                    raw_ids = json.loads(raw_ids)
+                except Exception:
+                    raw_ids = []
+            if isinstance(raw_ids, (list, tuple)):
+                for x in raw_ids:
+                    try:
+                        wanted.append(int(x))
+                    except (TypeError, ValueError):
+                        continue
+        legacy = request.data.get("assessment_set_id")
+        if legacy:
+            try:
+                wanted.append(int(legacy))
+            except (TypeError, ValueError):
+                pass
+        seen: set[int] = set()
+        return [s for s in wanted if not (s in seen or seen.add(s))]
+
+    def _unapproved_assessment_guard(self, request, ordered_ids):
+        """Return a 400 Response if any selected set is not approved and the teacher
+        has not explicitly confirmed via allow_unapproved; else None. Keeps a teacher
+        from accidentally assigning an incomplete/unchecked assessment."""
+        if not ordered_ids:
+            return None
+        allow = str(request.data.get("allow_unapproved", "")).strip().lower() in ("1", "true", "yes", "on")
+        if allow:
+            return None
+        from assessments.models import AssessmentSet
+        not_approved = list(
+            AssessmentSet.objects.filter(pk__in=ordered_ids)
+            .exclude(review_status=AssessmentSet.STATUS_APPROVED)
+            .values_list("id", "title", "review_status")
+        )
+        if not not_approved:
+            return None
+        return Response(
+            {
+                "detail": "Some selected assessments are not approved yet. Confirm to assign them anyway.",
+                "code": "assessment_not_approved",
+                "unapproved": [
+                    {"id": i, "title": t, "review_status": rs} for (i, t, rs) in not_approved
+                ],
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     def create(self, request, *args, **kwargs):
         classroom = self.get_classroom()
         if not has_cap(request.user, classroom, "can_manage_assignments"):
             return Response({"detail": "Only the teaching team can create assignments."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Approval guard BEFORE any object is created, so a rejected assign leaves no
+        # orphaned assignment behind.
+        guard = self._unapproved_assessment_guard(request, self._assessment_set_ids_from_request(request))
+        if guard is not None:
+            return guard
 
         # Gather uploaded files BEFORE running the serializer. The serializer has
         # `attachment_file` as a writable FileField — if we let it run, DRF will
@@ -2015,6 +2080,12 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
+        # Approval guard: an edit that would attach an unapproved assessment is
+        # rejected unless the teacher confirms (matches create()).
+        if "assessment_set_ids" in request.data or "assessment_set_id" in request.data:
+            guard = self._unapproved_assessment_guard(request, self._assessment_set_ids_from_request(request))
+            if guard is not None:
+                return guard
         # Same multi-upload issue as create — strip attachment_file from
         # request.data so the serializer doesn't consume one of the files.
         files = list(request.FILES.getlist("attachment_file"))

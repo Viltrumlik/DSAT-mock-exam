@@ -19,6 +19,7 @@ import {
   Database,
   ListChecks,
   Upload,
+  Timer,
 } from "lucide-react";
 
 /**
@@ -59,6 +60,7 @@ const SIMULATION_NAV: NavItem[] = [
   { href: "/builder/pastpapers",      label: "Past papers",    icon: FileText,        exact: false },
   { href: "/builder/practice-tests",  label: "Practice tests", icon: FlaskConical,    exact: false },
   { href: "/builder/mock-exams",      label: "Mock exams",     icon: ClipboardCheck,  exact: false },
+  { href: "/builder/full-mocks",      label: "Full mocks",     icon: Timer,           exact: false },
 ];
 
 // Operations (publishing, archive)

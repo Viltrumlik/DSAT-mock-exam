@@ -163,5 +163,17 @@ export const assessmentsAdminApi = {
     });
     return r.data;
   },
+
+  /**
+   * Transition a set's review status (draft → needs_review → approved).
+   * Authors may submit/send-back; only admin/super_admin may approve (the
+   * backend also publishes an immutable version on approval). Returns the
+   * updated set, or throws with the validator's blocking findings if an
+   * incomplete set cannot be approved.
+   */
+  setReviewStatus: async (id: number, status: "draft" | "needs_review" | "approved"): Promise<AssessmentSet> => {
+    const r = await api.post(`/assessments/admin/sets/${id}/status/`, { status });
+    return r.data as AssessmentSet;
+  },
 };
 
