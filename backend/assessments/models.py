@@ -58,6 +58,23 @@ class AssessmentSet(models.Model):
         SUBJECT_MATH: (LEVEL_FOUNDATION, LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
     }
 
+    # Authored-content review lifecycle — ORTHOGONAL to is_active (visibility/archive).
+    #   draft        = "incomplete", still being built (tugallanmagan)
+    #   needs_review = "unchecked", submitted for a reviewer to check (tekshirilmagan)
+    #   approved     = reviewed & approved (aproved) — only this state is safe to assign.
+    # Only admin/super_admin move a set to `approved` (see access.services.can_approve_assessment);
+    # the transition also publishes an immutable version. Mutated only through the dedicated
+    # status endpoint (AdminAssessmentSetStatusView) so every change is audited; editing an
+    # approved set resets it to needs_review.
+    STATUS_DRAFT = "draft"
+    STATUS_NEEDS_REVIEW = "needs_review"
+    STATUS_APPROVED = "approved"
+    REVIEW_STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_NEEDS_REVIEW, "Needs review"),
+        (STATUS_APPROVED, "Approved"),
+    ]
+
     subject = models.CharField(max_length=16, choices=SUBJECT_CHOICES, db_index=True)
     # Blank = legacy/None; new sets require a source valid for their subject (enforced
     # in the admin write serializer). Editable later from set metadata.
@@ -73,6 +90,12 @@ class AssessmentSet(models.Model):
     title = models.CharField(max_length=200, db_index=True)
     description = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True, db_index=True)
+    review_status = models.CharField(
+        max_length=24,
+        choices=REVIEW_STATUS_CHOICES,
+        default=STATUS_DRAFT,
+        db_index=True,
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -720,6 +743,11 @@ class GovernanceEvent(models.Model):
     EVENT_SUPERSEDE = "supersede"                        # New version supersedes old
     EVENT_SET_DELETE = "set_delete"                      # An AssessmentSet was deleted (hard delete)
 
+    # Review lifecycle (draft → needs_review → approved)
+    EVENT_SUBMIT_FOR_REVIEW = "submit_for_review"        # draft → needs_review
+    EVENT_APPROVE = "approve"                            # → approved (also publishes)
+    EVENT_SEND_BACK = "send_back"                        # → draft / needs_review (re-open)
+
     # Assignment lifecycle
     EVENT_ASSIGNMENT_PIN = "assignment_pin"              # Version pinned to HomeworkAssignment
 
@@ -746,6 +774,9 @@ class GovernanceEvent(models.Model):
         (EVENT_PUBLISH_VALIDATION_FAILED, "Publish validation failed"),
         (EVENT_SUPERSEDE, "Superseded by new version"),
         (EVENT_SET_DELETE, "Assessment set deleted"),
+        (EVENT_SUBMIT_FOR_REVIEW, "Submitted for review"),
+        (EVENT_APPROVE, "Approved"),
+        (EVENT_SEND_BACK, "Sent back for changes"),
         (EVENT_ASSIGNMENT_PIN, "Assignment version pinned"),
         (EVENT_ATTEMPT_SNAPSHOT_PIN, "Attempt snapshot pinned"),
         (EVENT_SCORING_START, "Scoring started"),

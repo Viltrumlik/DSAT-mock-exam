@@ -6,6 +6,7 @@ from rest_framework.permissions import BasePermission
 
 from . import constants
 from .services import (
+    can_approve_assessment,
     can_edit_tests,
     actor_subject_probe_for_domain_perm,
     authorize,
@@ -143,6 +144,19 @@ class CanAuthorAssessmentContent(BasePermission):
         if normalized_role(u) == constants.ROLE_TEACHER and can_edit_tests(u, subj):
             return True
         return False
+
+
+class CanApproveAssessmentContent(BasePermission):
+    """
+    Approve an assessment set (transition it to ``approved``).
+
+    Stricter than :class:`CanAuthorAssessmentContent`: authoring is open to teachers
+    and self-scoped test_admins, but only Django superusers and admin / super_admin
+    may approve. See :func:`access.services.can_approve_assessment`.
+    """
+
+    def has_permission(self, request, view):
+        return can_approve_assessment(request.user)
 
 
 class CanAssignTests(BasePermission):

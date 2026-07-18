@@ -100,6 +100,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
             title="Algebra set",
             created_by=self.teacher_math,
             is_active=True,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         AssessmentQuestion.objects.create(
             assessment_set=self.set_math,
@@ -117,6 +118,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
             title="Grammar set",
             created_by=self.teacher_eng,
             is_active=True,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         AssessmentQuestion.objects.create(
             assessment_set=self.set_eng,

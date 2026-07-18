@@ -327,12 +327,14 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
             "title",
             "description",
             "is_active",
+            "review_status",
             "created_at",
             "updated_at",
             "created_by_email",
             "created_by_name",
             "questions",
         ]
+        read_only_fields = ["review_status"]
 
     def _expose_creator(self) -> bool:
         return bool(self.context.get("expose_creator"))
@@ -398,10 +400,12 @@ class AssessmentSetAdminSerializer(serializers.ModelSerializer):
             "title",
             "description",
             "is_active",
+            "review_status",
             "created_at",
             "updated_at",
             "questions",
         ]
+        read_only_fields = ["review_status"]
 
 
 class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):

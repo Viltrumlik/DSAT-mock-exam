@@ -36,6 +36,7 @@ from .views_authoring import (
     AdminQuestionBankTaxonomyView,
     AdminPublishAssessmentSetView,
     AdminValidatePublishView,
+    AdminAssessmentSetStatusView,
     AdminAssessmentSetVersionListView,
     _sync_question_to_bank,
     _bank_sync_logger,
@@ -80,6 +81,7 @@ __all__ = [
     "AdminQuestionBankTaxonomyView",
     "AdminPublishAssessmentSetView",
     "AdminValidatePublishView",
+    "AdminAssessmentSetStatusView",
     "AdminAssessmentSetVersionListView",
     # Assign
     "AssignAssessmentHomeworkView",

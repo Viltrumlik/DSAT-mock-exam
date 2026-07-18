@@ -116,6 +116,23 @@ class AssignAssessmentHomeworkView(APIView):
                 metric_incr_role("slo_homework_assign_fail_total", actor=getattr(request, "user", None))
                 return Response({"detail": "You cannot assign tests outside your subject."}, status=status.HTTP_403_FORBIDDEN)
 
+        # Approval guard (business rule — runs AFTER the authorization gates above):
+        # don't let a not-yet-approved set be assigned unless the teacher explicitly
+        # confirms (allow_unapproved). Mirrors the multi-content path in
+        # classes.AssignmentViewSet so both assign entry points are covered.
+        allow_unapproved = str(request.data.get("allow_unapproved", "")).strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        if aset.review_status != AssessmentSet.STATUS_APPROVED and not allow_unapproved:
+            return Response(
+                {
+                    "detail": "This assessment is not approved yet. Confirm to assign it anyway.",
+                    "code": "assessment_not_approved",
+                    "unapproved": [{"id": aset.id, "title": aset.title, "review_status": aset.review_status}],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         title = (data.get("title") or "").strip() or aset.title
         instructions = (data.get("instructions") or "").strip()
         due_at = data.get("due_at")
