@@ -16,13 +16,16 @@ Each test here pins a defect that was live on ``main``:
 """
 from __future__ import annotations
 
+import importlib
 from unittest.mock import patch
 
+from django.apps import apps as django_apps
 from django.conf import settings
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from django.core.cache import cache
+from django.db import connection
 from django.db.models import Q
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
@@ -196,3 +199,183 @@ class TelegramLoginLookupTests(TestCase):
         created = User.objects.get(Q(telegram_id=self.TG_ID))
         self.assertEqual(created.first_name, "Brand")
         self.assertEqual(created.last_name, "New")
+
+
+class TelegramNamePlaceholderTests(TestCase):
+    """Telegram signups must not fabricate names.
+
+    The old code wrote a literal "Telegram"/"User" and copied first_name into
+    last_name for one-word display names. Production carries 12 accounts literally
+    named "Telegram" and 38 Telegram-origin rows where first_name == last_name. Those
+    read as *complete* to any emptiness check, so the user was never asked to fix them.
+    """
+
+    TG_ID = 555000111
+
+    def setUp(self):
+        self.client = APIClient()
+        cache.clear()
+
+    def _login(self, claims):
+        with patch("users.views._verified_telegram_oidc_payload", return_value=(claims, None)):
+            return self.client.post(
+                reverse("telegram-auth"), {"id_token": "stub"}, format="json",
+                HTTP_ORIGIN="http://localhost:3000", HTTP_REFERER="http://localhost:3000/login",
+            )
+
+    def test_missing_name_leaves_both_fields_blank(self):
+        r = self._login({"sub": str(self.TG_ID)})
+        self.assertEqual(r.status_code, 200, r.content)
+        u = User.objects.get(telegram_id=self.TG_ID)
+        self.assertEqual(u.first_name, "")
+        self.assertEqual(u.last_name, "")
+        self.assertNotEqual(u.first_name, "Telegram")
+
+    def test_one_word_name_does_not_become_the_last_name(self):
+        r = self._login({"sub": str(self.TG_ID), "name": "Asadbek"})
+        self.assertEqual(r.status_code, 200, r.content)
+        u = User.objects.get(telegram_id=self.TG_ID)
+        self.assertEqual(u.first_name, "Asadbek")
+        self.assertEqual(u.last_name, "", "one-word names must not be duplicated into last_name")
+
+
+class TelegramUsernameCollisionTests(TestCase):
+    """The Telegram handle was taken verbatim with no uniqueness check -> IntegrityError."""
+
+    TG_ID = 777000222
+
+    def setUp(self):
+        self.client = APIClient()
+        cache.clear()
+
+    def _login(self, claims):
+        with patch("users.views._verified_telegram_oidc_payload", return_value=(claims, None)):
+            return self.client.post(
+                reverse("telegram-auth"), {"id_token": "stub"}, format="json",
+                HTTP_ORIGIN="http://localhost:3000", HTTP_REFERER="http://localhost:3000/login",
+            )
+
+    def test_handle_colliding_case_insensitively_gets_a_suffix(self):
+        User.objects.create_user(
+            email="first.asilbek@test.com", username="asilbek", password="secret12345",
+            role="student",
+        )
+        # Telegram hands us "Asilbek" — same name, different case. Before the fix this
+        # was written straight through and blew up on the unique index.
+        r = self._login({"sub": str(self.TG_ID), "preferred_username": "Asilbek", "name": "Asil Bek"})
+
+        self.assertEqual(r.status_code, 200, r.content)
+        created = User.objects.get(telegram_id=self.TG_ID)
+        self.assertEqual(created.username, "Asilbek2")
+        self.assertEqual(User.objects.count(), 2)
+
+    def test_falls_back_to_tg_id_when_no_handle(self):
+        r = self._login({"sub": str(self.TG_ID), "name": "No Handle"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(User.objects.get(telegram_id=self.TG_ID).username, f"tg{self.TG_ID}")
+
+
+class UsernameCollisionMigrationTests(TransactionTestCase):
+    """The 0021 data step must resolve real collisions before AddConstraint runs.
+
+    Production has six pairs differing only in case. If the data step is wrong the
+    migration does not merely misbehave — ``AddConstraint`` fails to apply and the
+    deploy rolls back, so this is verified against the actual pre-migration state:
+    the constraint is dropped, colliding rows are created, then the migration function
+    is run exactly as the migration would run it.
+    """
+
+    CONSTRAINT = "users_username_ci_unique"
+
+    def _constraint(self):
+        return next(c for c in User._meta.constraints if c.name == self.CONSTRAINT)
+
+    def setUp(self):
+        with connection.schema_editor(atomic=False) as se:
+            se.remove_constraint(User, self._constraint())
+
+    def tearDown(self):
+        User.objects.all().delete()
+        with connection.schema_editor(atomic=False) as se:
+            se.add_constraint(User, self._constraint())
+
+    def _run_migration_step(self):
+        mod = importlib.import_module("users.migrations.0021_username_case_insensitive_unique")
+        mod.resolve_username_collisions(django_apps, connection.schema_editor())
+
+    def test_older_account_keeps_the_username_newer_gets_a_suffix(self):
+        older = User.objects.create_user(email="a@test.com", username="asilbek", password="p12345678")
+        newer = User.objects.create_user(email="b@test.com", username="Asilbek", password="p12345678")
+        self.assertLess(older.pk, newer.pk)
+
+        self._run_migration_step()
+
+        older.refresh_from_db()
+        newer.refresh_from_db()
+        self.assertEqual(older.username, "asilbek", "the older account must keep its username")
+        self.assertEqual(newer.username, "Asilbek2")
+
+    def test_suffix_skips_a_name_that_is_already_taken(self):
+        User.objects.create_user(email="a@test.com", username="orifjon", password="p12345678")
+        User.objects.create_user(email="squat@test.com", username="orifjon2", password="p12345678")
+        newer = User.objects.create_user(email="b@test.com", username="Orifjon", password="p12345678")
+
+        self._run_migration_step()
+
+        newer.refresh_from_db()
+        self.assertEqual(newer.username, "Orifjon3")
+
+    def test_constraint_applies_after_the_data_step(self):
+        User.objects.create_user(email="a@test.com", username="qobiljon", password="p12345678")
+        User.objects.create_user(email="b@test.com", username="Qobiljon", password="p12345678")
+
+        self._run_migration_step()
+
+        # This is the operation that would fail the deploy if the data step missed a row.
+        with connection.schema_editor(atomic=False) as se:
+            se.add_constraint(User, self._constraint())
+            se.remove_constraint(User, self._constraint())
+
+    def test_rows_without_a_username_are_left_alone(self):
+        blank = User.objects.create_user(email="c@test.com", password="p12345678")
+        other = User.objects.create_user(email="d@test.com", password="p12345678")
+
+        self._run_migration_step()
+
+        blank.refresh_from_db()
+        other.refresh_from_db()
+        self.assertIn(blank.username, (None, ""))
+        self.assertIn(other.username, (None, ""))
+
+
+class AuthBackendTests(TestCase):
+    """``EmailOrUsernameModelBackend`` must never password-check an arbitrary row."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="person@test.com", username="person", password="secret12345", role="student",
+        )
+
+    def test_blank_credential_does_not_match_null_username_rows(self):
+        # ``username`` is nullable, so ``__iexact=None`` compiles to IS NULL and used to
+        # select every row without a username.
+        User.objects.create_user(email="nousername@test.com", password="secret12345", role="student")
+        self.assertIsNone(authenticate(username=None, password="secret12345"))
+        self.assertIsNone(authenticate(username="", password="secret12345"))
+
+    def test_email_wins_over_another_users_username(self):
+        # Someone whose *username* is another person's email address must not shadow the
+        # real owner of that address.
+        impostor = User.objects.create_user(
+            email="impostor@test.com", username="person@test.com", password="otherpass12345",
+            role="student",
+        )
+        got = authenticate(username="person@test.com", password="secret12345")
+        self.assertEqual(got, self.user)
+        self.assertNotEqual(got, impostor)
+
+    def test_username_login_still_works(self):
+        self.assertEqual(authenticate(username="person", password="secret12345"), self.user)
+
+    def test_wrong_password_returns_none(self):
+        self.assertIsNone(authenticate(username="person@test.com", password="nope"))
