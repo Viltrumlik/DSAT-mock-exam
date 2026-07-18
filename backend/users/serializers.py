@@ -15,6 +15,7 @@ from access.services import (
 )
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
+from users.activity import activity_count
 from users.name_utils import (
     DUPLICATE_FULL_NAME_CODE,
     DUPLICATE_FULL_NAME_MESSAGE,
@@ -321,6 +322,20 @@ class UserSerializer(serializers.ModelSerializer):
     subject = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     class_teacher_eligible = serializers.SerializerMethodField()
     bulk_assign_profile = serializers.SerializerMethodField()
+    attempt_count = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.IntegerField(allow_null=False))
+    def get_attempt_count(self, obj) -> int:
+        """Graded/submitted rows this account holds — the delete blast radius.
+
+        Reads the annotation from ``UserListView`` when present; falls back to direct
+        counting for single-object views, where one extra query is cheaper than
+        annotating. Never do the fallback over a list — that is five queries per row.
+        """
+        annotated = getattr(obj, "attempt_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return activity_count(obj)
 
     def validate_username(self, value):
         if value == '':
@@ -415,6 +430,12 @@ class UserSerializer(serializers.ModelSerializer):
             "is_active",
             "is_frozen",
             "date_joined",
+            "last_login",
+            "email_verified",
+            "email_verified_at",
+            "email_released_at",
+            "previous_email",
+            "attempt_count",
             "password",
         ]
         # ``is_active`` is exposed read-only for status display only. The "deactivate"
@@ -427,7 +448,20 @@ class UserSerializer(serializers.ModelSerializer):
         # (200 + optimistic UI + "Account frozen." toast, account still live). The real
         # hole was the *public* registration endpoint sharing this serializer, so the
         # field is stripped on the anonymous path in ``create`` instead.
-        read_only_fields = ["date_joined", "is_active"]
+        #
+        # The verification fields ARE read-only, and that is load-bearing rather than
+        # stylistic: this serializer backs the public unauthenticated registration
+        # endpoint, so a writable ``email_verified`` would let anyone POST themselves a
+        # verified address. It is only ever set by the confirm-code flow.
+        read_only_fields = [
+            "date_joined",
+            "is_active",
+            "last_login",
+            "email_verified",
+            "email_verified_at",
+            "email_released_at",
+            "previous_email",
+        ]
 
     def _normalize_role(self, raw: str | None) -> str | None:
         if raw is None:

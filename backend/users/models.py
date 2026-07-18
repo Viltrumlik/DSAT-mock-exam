@@ -120,6 +120,21 @@ class User(AbstractUser):
         blank=True,
         db_index=True,
     )
+    email_verified = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "True only once the user proved control of this address by entering a mailed "
+            "code. Never backfilled: signup provenance is not recorded, so for existing "
+            "rows there is no way to tell whether the address was ever real."
+        ),
+    )
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    # Set when an address is taken off this account (see users.email_utils). Keeps the
+    # old value searchable, because after a release the account's only remaining handle
+    # is a placeholder and staff would otherwise have no way to identify the row.
+    previous_email = models.EmailField(null=True, blank=True, db_index=True)
+    email_released_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
@@ -138,6 +153,16 @@ class User(AbstractUser):
                 Lower("username"),
                 condition=~Q(username=None) & ~Q(username=""),
                 name="users_username_ci_unique",
+            ),
+            # Same reasoning for ``email``: it is the USERNAME_FIELD and every lookup
+            # uses ``__iexact`` (login, Telegram/Google resolution, the uniqueness
+            # probes in the serializers), but the unique index is case-sensitive. Without
+            # this, "Foo@x.com" and "foo@x.com" coexist and an __iexact lookup that is
+            # expected to identify one account can match two. Verified against prod
+            # before adding: 0 case-colliding groups, so this applies cleanly.
+            models.UniqueConstraint(
+                Lower("email"),
+                name="users_email_ci_unique",
             ),
         ]
 
