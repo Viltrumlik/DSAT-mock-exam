@@ -11,6 +11,8 @@ import {
   Snowflake,
   ShieldAlert,
   Loader2,
+  MailCheck,
+  MailQuestion,
   Trash2,
   X,
 } from "lucide-react";
@@ -29,9 +31,21 @@ type UserRecord = {
   is_frozen: boolean;
   subject?: string | null;
   date_joined?: string;
+  last_login?: string | null;
+  email_verified?: boolean;
+  email_verified_at?: string | null;
+  email_released_at?: string | null;
+  previous_email?: string | null;
+  /** Graded/submitted rows this account holds. Also the delete blast radius. */
+  attempt_count?: number;
 };
 
 type RoleFilter = "all" | "student" | "teacher" | "test_admin" | "admin" | "super_admin";
+
+/** Normalized full name, used to group duplicate registrations. */
+function fullNameKey(u: UserRecord): string {
+  return `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim().replace(/\s+/g, " ").toLowerCase();
+}
 
 // ─── Bulk actions ────────────────────────────────────────────────────────────
 
@@ -337,12 +351,15 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
 function ConfirmBulkModal({
   action,
   count,
+  attemptTotal,
   busy,
   onCancel,
   onConfirm,
 }: {
   action: BulkAction;
   count: number;
+  /** Graded/submitted rows across the selection. Every relation is CASCADE. */
+  attemptTotal: number;
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -378,6 +395,16 @@ function ConfirmBulkModal({
             ? `This permanently deletes ${noun}. This cannot be undone.`
             : `This will ${ACTION_LABEL[action].toLowerCase()} ${noun}. You can reverse it later.`}
         </p>
+
+        {/* Deleting a user cascades to every attempt, submission and result they own.
+            Without this line the dialog looks identical whether you picked the empty
+            duplicate or the one holding a year of work. */}
+        {isDelete && attemptTotal > 0 && (
+          <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+            {attemptTotal.toLocaleString()} exam {attemptTotal === 1 ? "result" : "results"} will be
+            permanently deleted with {count === 1 ? "this account" : "these accounts"}.
+          </p>
+        )}
 
         {isDelete && (
           <div className="space-y-1.5">
@@ -428,6 +455,11 @@ export default function OpsUsersPage() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "frozen">("all");
+  const [verifiedFilter, setVerifiedFilter] = useState<"all" | "verified" | "unverified">("all");
+  // Duplicate registrations are the reason this screen grew a verified column: prod has
+  // 36 same-name groups covering 89 of 387 accounts, mostly one person who signed up
+  // twice with a near-identical address.
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<UserRecord | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -488,8 +520,32 @@ export default function OpsUsersPage() {
     }
     if (statusFilter === "active") result = result.filter((u) => !u.is_frozen);
     if (statusFilter === "frozen") result = result.filter((u) => u.is_frozen);
+    if (verifiedFilter === "verified") result = result.filter((u) => u.email_verified);
+    if (verifiedFilter === "unverified") result = result.filter((u) => !u.email_verified);
+    if (duplicatesOnly) {
+      // Group across the WHOLE list, not the filtered subset — otherwise narrowing by
+      // role or status hides one half of a pair and the remaining row stops looking
+      // like a duplicate.
+      const counts = new Map<string, number>();
+      for (const u of users) {
+        const k = fullNameKey(u);
+        if (k) counts.set(k, (counts.get(k) ?? 0) + 1);
+      }
+      result = result
+        .filter((u) => (counts.get(fullNameKey(u)) ?? 0) > 1)
+        // Group members adjacent, and within a group put the row most likely worth
+        // keeping first: verified, then most work, then oldest.
+        .sort((a, b) => {
+          const k = fullNameKey(a).localeCompare(fullNameKey(b));
+          if (k !== 0) return k;
+          if (!!a.email_verified !== !!b.email_verified) return a.email_verified ? -1 : 1;
+          const diff = (b.attempt_count ?? 0) - (a.attempt_count ?? 0);
+          if (diff !== 0) return diff;
+          return a.id - b.id;
+        });
+    }
     return result;
-  }, [users, search, statusFilter]);
+  }, [users, search, statusFilter, verifiedFilter, duplicatesOnly]);
 
   const paginated = useMemo(
     () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
@@ -649,6 +705,28 @@ export default function OpsUsersPage() {
           <option value="active">Active</option>
           <option value="frozen">Frozen</option>
         </select>
+        <select
+          value={verifiedFilter}
+          onChange={(e) => { setVerifiedFilter(e.target.value as typeof verifiedFilter); setPage(1); }}
+          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
+        >
+          <option value="all">Any email</option>
+          <option value="verified">Email verified</option>
+          <option value="unverified">Email unverified</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => { setDuplicatesOnly((v) => !v); setPage(1); }}
+          aria-pressed={duplicatesOnly}
+          className={cn(
+            "rounded-xl border px-3 py-2 text-sm font-semibold transition-colors",
+            duplicatesOnly
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border bg-card text-foreground hover:bg-surface-2/50",
+          )}
+        >
+          Duplicate names
+        </button>
       </div>
 
       {/* Bulk action toolbar */}
@@ -780,6 +858,14 @@ export default function OpsUsersPage() {
                         {fullName && u.username && (
                           <p className="text-xs text-muted-foreground font-mono">{u.username}</p>
                         )}
+                        {/* The two signals that actually separate duplicate registrations.
+                            Verification cannot: nothing was ever recorded, so every
+                            pre-existing account reads unverified. */}
+                        <p className="text-xs text-muted-foreground">
+                          {(u.attempt_count ?? 0) === 1 ? "1 exam" : `${u.attempt_count ?? 0} exams`}
+                          {" · "}
+                          {u.last_login ? `seen ${formatDate(u.last_login)}` : "never signed in"}
+                        </p>
                         <div className="mt-1 sm:hidden">
                           <span className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", roleColor)}>
                             {roleLabel}
@@ -806,6 +892,15 @@ export default function OpsUsersPage() {
                           ) : (
                             <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
                               <UserCheck className="h-3.5 w-3.5" /> Active
+                            </span>
+                          )}
+                          {u.email_verified ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700">
+                              <MailCheck className="h-3.5 w-3.5" /> Email verified
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground">
+                              <MailQuestion className="h-3.5 w-3.5" /> Email unverified
                             </span>
                           )}
                         </div>
@@ -888,6 +983,10 @@ export default function OpsUsersPage() {
         <ConfirmBulkModal
           action={pendingAction}
           count={selected.size}
+          attemptTotal={users.reduce(
+            (sum, u) => (selected.has(u.id) ? sum + (u.attempt_count ?? 0) : sum),
+            0,
+          )}
           busy={bulkBusy}
           onCancel={() => (bulkBusy ? undefined : setPendingAction(null))}
           onConfirm={() => void runBulk(pendingAction)}
