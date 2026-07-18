@@ -69,41 +69,10 @@ type Props = {
   onSaved: (assignmentId?: number) => void | Promise<void>;
 };
 
-const pad = (n: number) => String(n).padStart(2, "0");
-
-// ─── Deadline dropdown helpers ────────────────────────────────────────────────
-
-/** Next 7 days as { value: "YYYY-MM-DD", label: "Fri, Jul 4" }. */
-function next7Days(): { value: string; label: string }[] {
-  const now = new Date();
-  const out: { value: string; label: string }[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() + i);
-    const value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const weekday = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-    out.push({ value, label: i === 0 ? `Today · ${weekday}` : weekday });
-  }
-  return out;
-}
-
-function time12(h: number, m: number): string {
-  const ampm = h < 12 ? "AM" : "PM";
-  const hr = h % 12 === 0 ? 12 : h % 12;
-  return `${hr}:${pad(m)} ${ampm}`;
-}
-
-/** 30-minute increments plus an explicit end-of-day option. */
-function timeOptions(): { value: string; label: string }[] {
-  const out: { value: string; label: string }[] = [];
-  for (let h = 0; h < 24; h++) {
-    for (const m of [0, 30]) out.push({ value: `${pad(h)}:${pad(m)}`, label: time12(h, m) });
-  }
-  out.push({ value: "23:59", label: "11:59 PM (end of day)" });
-  return out;
-}
-
-const DEFAULT_DUE_TIME = "23:59";
+// Deadlines are no longer picked by hand. Homework runs from the lesson it is set until
+// the START of the class's next lesson; the server derives that date
+// (classes.lesson_schedule.homework_due_at) and leaves it open when the class has no
+// parseable schedule.
 
 function cardReactKey(c: CardPastpaperPack | CardSingle): string {
   if (c.kind === "single") return `single-${c.test.id}`;
@@ -149,8 +118,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
   const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
   // Deadline is composed from two dropdowns (no calendar): a date (next 7 days) + a time.
-  const [dueDate, setDueDate] = useState(""); // "" = no deadline
-  const [dueTime, setDueTime] = useState(DEFAULT_DUE_TIME);
   const [asgFiles, setAsgFiles] = useState<File[]>([]);
   const [replaceAttachments, setReplaceAttachments] = useState(false);
   const [editAsgFiles, setEditAsgFiles] = useState<File[]>([]);
@@ -237,33 +204,12 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const availableAssessmentSets = useMemo(() => filteredAssessmentSets.filter((a) => !a.already_assigned), [filteredAssessmentSets]);
   const givenAssessmentSets = useMemo(() => filteredAssessmentSets.filter((a) => a.already_assigned), [filteredAssessmentSets]);
 
-  const dateOptions = useMemo(() => {
-    const opts = next7Days();
-    // Editing an assignment whose due date is outside the next-7-day window: keep it
-    // selectable so the existing deadline isn't silently dropped.
-    if (dueDate && !opts.some((o) => o.value === dueDate)) {
-      const d = new Date(`${dueDate}T00:00`);
-      const label = Number.isNaN(d.getTime())
-        ? dueDate
-        : d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-      opts.unshift({ value: dueDate, label: `${label} (set)` });
-    }
-    return opts;
-  }, [dueDate]);
-  const timeOpts = useMemo(() => {
-    const opts = timeOptions();
-    if (dueTime && !opts.some((o) => o.value === dueTime)) opts.push({ value: dueTime, label: time12(...dueTime.split(":").map(Number) as [number, number]) });
-    return opts;
-  }, [dueTime]);
-
   const resetForm = () => {
     setNewAsg({ title: "", instructions: "", external_url: "" });
     setAllowFileUpload(false);
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
     setSelectedPackIds(new Set());
-    setDueDate("");
-    setDueTime(DEFAULT_DUE_TIME);
     setAsgFiles([]);
     setReplaceAttachments(false);
     setEditAsgFiles([]);
@@ -325,15 +271,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       instructions: instrValue,
       external_url: String(editingAssignment.external_url ?? ""),
     });
-    const due = editingAssignment.due_at;
-    if (due && typeof due === "string") {
-      const d = new Date(due);
-      if (!Number.isNaN(d.getTime())) {
-        setDueDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
-        setDueTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
-      } else { setDueDate(""); setDueTime(DEFAULT_DUE_TIME); }
-    } else { setDueDate(""); setDueTime(DEFAULT_DUE_TIME); }
-
     // ── Assessments ── prefer the multi `assessment_homeworks` array; fall back to
     // the legacy single `assessment_homework`.
     const nextAssessmentIds = new Set<number>();
@@ -392,12 +329,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     setFormError(null);
   }, [editingAssignment]);
 
-  const buildDueIso = (): string | null => {
-    if (!dueDate) return null;
-    const t = new Date(`${dueDate}T${dueTime || DEFAULT_DUE_TIME}`);
-    return Number.isNaN(t.getTime()) ? null : t.toISOString();
-  };
-
   const handleSubmit = async (
     publishStatus: "DRAFT" | "PUBLISHED" = "PUBLISHED",
     allowUnapproved = false,
@@ -422,7 +353,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     }
     setCreatingAsg(true);
     try {
-      const dueIso = buildDueIso();
       const editId = editingAssignment != null ? Number(editingAssignment.id) : NaN;
       if (Number.isFinite(editId)) {
         const testIds = [...selectedTestIds];
@@ -431,7 +361,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           title: newAsg.title.trim(),
           instructions: newAsg.instructions,
           external_url: newAsg.external_url.trim() || "",
-          due_at: dueIso,
           practice_test: null,
           practice_test_ids: testIds.length > 0 ? testIds : null,
           practice_test_pack_ids: packIds.length > 0 ? packIds : null,
@@ -456,7 +385,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       const fd = new FormData();
       fd.append("title", newAsg.title.trim());
       fd.append("instructions", newAsg.instructions);
-      if (dueIso) fd.append("due_at", dueIso);
       if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
 
       // A resource counts only if the teacher actually selected it.
@@ -730,17 +658,17 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 <textarea id="asg-inst" value={newAsg.instructions} onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))} placeholder="Write clear, detailed directions for students" rows={10} className={crTextareaClass} />
               </ClassroomField>
 
-              <ClassroomField label="Due date & time" hint="Pick a day within the next week, or leave with no deadline.">
-                <div className="flex gap-2">
-                  <select aria-label="Due date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={`${crInputClass} min-w-0 flex-1`}>
-                    <option value="">No deadline</option>
-                    {dateOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                  <select aria-label="Due time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} disabled={!dueDate} className={`${crInputClass} min-w-0 flex-1 disabled:opacity-50`}>
-                    {timeOpts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+              {/* Deadlines are automatic — no picker. Homework runs until the next lesson. */}
+              <div className="flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-3">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+                <div>
+                  <div className="text-[13.5px] font-bold text-foreground">Due at the next lesson</div>
+                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                    This homework stays open from today until your class&apos;s next lesson
+                    begins. If the class has no set schedule it stays open with no deadline.
+                  </p>
                 </div>
-              </ClassroomField>
+              </div>
             </div>
 
             {/* Selected content (live cart) */}

@@ -605,10 +605,10 @@ class ClassroomViewSet(ModelViewSet):
         if (to - frm).days > 70:
             to = frm + _dt.timedelta(days=70)
 
-        # ODD = Mon/Wed/Fri, EVEN = Tue/Thu/Sat (Python weekday: Mon=0 … Sun=6).
-        # Mirrors frontend src/lib/classroomSchedule.ts.
-        ODD_WD = {0, 2, 4}
-        EVEN_WD = {1, 3, 5}
+        # Weekday mapping lives in classes.lesson_schedule so the calendar and the
+        # homework-deadline derivation can never drift apart.
+        from .lesson_schedule import lesson_weekdays
+
         SUBJECT_LABEL = {"MATH": "Math", "ENGLISH": "English"}
 
         events: list[dict] = []
@@ -623,11 +623,8 @@ class ClassroomViewSet(ModelViewSet):
             .distinct()
         )
         for c in classes:
-            if c.lesson_days == Classroom.DAYS_ODD:
-                wd = ODD_WD
-            elif c.lesson_days == Classroom.DAYS_EVEN:
-                wd = EVEN_WD
-            else:
+            wd = lesson_weekdays(c)
+            if not wd:
                 continue
             start = c.start_date or frm
             subj = SUBJECT_LABEL.get(str(c.subject).upper(), str(c.subject or ""))
@@ -1856,14 +1853,23 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
     def publish(self, request, classroom_pk=None, pk=None):
+        from .lesson_schedule import homework_due_at
+
         a, err = self._manage_or_404(request, pk)
         if err:
             return err
+        first_publish = a.published_at is None
         a.status = Assignment.STATUS_PUBLISHED
         a.archived_at = None
-        if a.published_at is None:
+        if first_publish:
             a.published_at = timezone.now()
-        a.save(update_fields=["status", "archived_at", "published_at", "updated_at"])
+        fields = ["status", "archived_at", "published_at", "updated_at"]
+        # A draft becomes "given" when it is published, so its deadline is the next
+        # lesson after THAT moment — not after it was drafted.
+        if first_publish:
+            a.due_at = homework_due_at(a.classroom)
+            fields.append("due_at")
+        a.save(update_fields=fields)
         return Response({"id": a.id, "status": a.status})
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
@@ -1989,9 +1995,17 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                 pass
         data_copy = data.copy() if hasattr(data, "copy") else dict(data)
 
+        from .lesson_schedule import homework_due_at
+
         serializer = self.get_serializer(data=data_copy)
         serializer.is_valid(raise_exception=True)
-        assignment = serializer.save(classroom=classroom, created_by=request.user)
+        assignment = serializer.save(
+            classroom=classroom,
+            created_by=request.user,
+            # No manual deadline: homework runs from the lesson it is set until the START
+            # of this classroom's next lesson. None (unschedulable classroom) = no deadline.
+            due_at=homework_due_at(classroom),
+        )
 
         # Save all attachment files manually (primary + extras) so we control
         # the order and avoid the serializer touching any temp file.
