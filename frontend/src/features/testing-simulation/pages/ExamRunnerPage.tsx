@@ -587,7 +587,7 @@ export function ExamRunnerPage() {
     fsKickRef.current = handleSaveAndExit;
   }, [handleSaveAndExit]);
 
-  // ── Auto-pause on leave (pastpapers only) ────────────────────────────────────
+  // ── Answer-flush + auto-pause on leave ───────────────────────────────────────
   // Pastpapers are pausable and their module timer is wall-clock. If the student
   // leaves WITHOUT clicking "Save & Exit" — switches tab, closes the window, or
   // navigates away — the clock keeps burning, so on return the module has
@@ -597,7 +597,11 @@ export function ExamRunnerPage() {
   // Mocks/midterms never auto-pause (pauseAllowed === false).
   const autoPauseRef = useRef<() => void>(() => {});
   autoPauseRef.current = () => {
-    if (!attempt || !attemptId || !pauseAllowed(attempt, mockFlow)) return;
+    // NOTE: the answer FLUSH below runs for every flow (incl. mocks). Only the
+    // pause step is pastpaper-only — see the pauseAllowed gate lower down. A mock
+    // cannot pause, but it still must not lose the last answers on an abrupt leave
+    // (they'd otherwise reach only the local draft, lost on cross-device resume).
+    if (!attempt || !attemptId) return;
     const order = attempt.current_module_details?.module_order ?? 0;
     if (order <= 0 || isCompleted(attempt) || submitting || exiting) return;
     // Flush the LATEST answers to the server first (keepalive survives a tab
@@ -623,6 +627,9 @@ export function ExamRunnerPage() {
     if (!multiTab.blocked && transitionTo === null && Object.keys(answers).length > 0) {
       engineApi.saveAttemptKeepalive(attemptId, answers, flagged);
     }
+    // Pause is pastpaper-only; mocks/midterms never auto-pause (their clock burns
+    // on leave by design). The answer flush above already ran for them.
+    if (!pauseAllowed(attempt, mockFlow)) return;
     if (paused) return; // already frozen — only the answer flush was needed
     setPaused(true); // freeze the local countdown immediately
     engineApi.pauseKeepalive(attemptId); // persist; keepalive survives a tab close
