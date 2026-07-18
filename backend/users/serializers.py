@@ -420,11 +420,14 @@ class UserSerializer(serializers.ModelSerializer):
         # ``is_active`` is exposed read-only for status display only. The "deactivate"
         # capability was removed — freezing (``is_frozen``) is the single account
         # restriction — so accounts can no longer be toggled inactive via the API.
-        # ``is_frozen`` is read-only here too: freezing is applied by the audited bulk
-        # action (see UserBulkActionView), never by a serializer write. This serializer
-        # backs the *public, unauthenticated* registration endpoint, so a writable
-        # ``is_frozen`` let anyone POST account state straight through.
-        read_only_fields = ["date_joined", "is_active", "is_frozen"]
+        #
+        # ``is_frozen`` is deliberately NOT listed here. It must stay writable for staff:
+        # the /ops/users row buttons and edit modal freeze a single account by PATCHing
+        # it to UserUpdateView, and marking it read-only turns both into silent no-ops
+        # (200 + optimistic UI + "Account frozen." toast, account still live). The real
+        # hole was the *public* registration endpoint sharing this serializer, so the
+        # field is stripped on the anonymous path in ``create`` instead.
+        read_only_fields = ["date_joined", "is_active"]
 
     def _normalize_role(self, raw: str | None) -> str | None:
         if raw is None:
@@ -552,6 +555,10 @@ class UserSerializer(serializers.ModelSerializer):
 
         validated_data.pop("is_admin", None)
         validated_data.pop("system_role", None)
+        if not self._actor_is_authenticated():
+            # Public self-registration must not set account state. Staff creating a user
+            # through UserCreateView are authenticated and keep the field.
+            validated_data.pop("is_frozen", None)
         role = self._resolve_system_role_for_write(instance=None)
         validated_data["role"] = role
 

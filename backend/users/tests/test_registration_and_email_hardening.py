@@ -197,6 +197,49 @@ class DuplicateFullNameTests(TestCase):
         )
 
 
+class AdminFreezeViaUpdateTests(TestCase):
+    """Staff must still be able to freeze a single account from /ops/users.
+
+    That page PATCHes ``{is_frozen}`` to ``/users/<id>/update/`` from the row buttons
+    (frontend/src/app/(ops)/ops/users/page.tsx setFrozenSingle) and from the edit modal.
+    Blanket-blocking the field to stop anonymous registrants from setting it turned both
+    into silent no-ops: the API answered 200, the UI optimistically flipped the row and
+    toasted "Account frozen.", and the account stayed live.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.super_admin = User.objects.create_user(
+            email="freeze-super@test.com", password="secret12345", role="super_admin",
+        )
+        cls.target = User.objects.create_user(
+            email="freeze-target@test.com", username="frztarget", password="secret12345",
+            role="student", first_name="Freeze", last_name="Target",
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.super_admin)
+
+    def test_admin_can_freeze_a_single_account(self):
+        r = self.client.patch(
+            reverse("user-update", args=[self.target.pk]), {"is_frozen": True}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_frozen, "PATCH is_frozen must actually freeze the account")
+
+    def test_admin_can_unfreeze_a_single_account(self):
+        self.target.is_frozen = True
+        self.target.save(update_fields=["is_frozen"])
+        r = self.client.patch(
+            reverse("user-update", args=[self.target.pk]), {"is_frozen": False}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_frozen)
+
+
 class MeEmailImmutableTests(TestCase):
     def setUp(self):
         self.client = APIClient()
