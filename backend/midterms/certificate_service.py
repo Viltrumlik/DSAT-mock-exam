@@ -17,6 +17,7 @@ from django.utils import timezone
 
 from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
+from users.email_utils import display_email
 
 from .models import Midterm, MidtermAttempt
 
@@ -25,7 +26,15 @@ def _display_name(user) -> str:
     if user is None:
         return ""
     full = (user.get_full_name() or "").strip() if hasattr(user, "get_full_name") else ""
-    return full or getattr(user, "username", None) or getattr(user, "email", "") or f"User {user.pk}"
+    # The email fallback prints whatever is in the column onto a printed certificate.
+    # For a Telegram signup that column holds tg12345@telegram.mastersat.local, and for
+    # a released account a placeholder — neither is a name.
+    return (
+        full
+        or getattr(user, "username", None)
+        or display_email(getattr(user, "email", ""))
+        or f"User {user.pk}"
+    )
 
 
 def _standalone_instructor(student_id: int, midterm_id: int):

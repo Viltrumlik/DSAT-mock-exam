@@ -5,9 +5,11 @@ from django.conf.urls.static import static
 
 from users.views import (
     ClientAuthTelemetryIngestView,
+    ConfirmEmailCodeView,
     CookieLogoutView,
     CookieTokenObtainPairView,
     CookieTokenRefreshView,
+    RequestEmailCodeView,
     RevokeAllSessionsView,
     RevokeSessionView,
     SessionListView,
@@ -26,6 +28,10 @@ urlpatterns = [
     path('api/auth/logout/', CookieLogoutView.as_view(), name='token_logout'),
     path('api/auth/csrf/', CsrfTokenView.as_view(), name='csrf-token'),
     path('api/auth/client-telemetry/', ClientAuthTelemetryIngestView.as_view(), name='auth-client-telemetry'),
+    # Email verification lives under /api/auth/ so host_guard lets it through on every
+    # console; /api/users/ is blocked on questions.* and all-but-/me/ on teacher.*.
+    path('api/auth/email/request-code/', RequestEmailCodeView.as_view(), name='auth-email-request-code'),
+    path('api/auth/email/confirm-code/', ConfirmEmailCodeView.as_view(), name='auth-email-confirm-code'),
     path('api/auth/sessions/', SessionListView.as_view(), name='auth-sessions'),
     path('api/auth/sessions/revoke_all/', RevokeAllSessionsView.as_view(), name='auth-revoke-all'),
     path('api/auth/sessions/<int:session_id>/revoke/', RevokeSessionView.as_view(), name='auth-revoke-session'),

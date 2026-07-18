@@ -72,6 +72,14 @@ TELEGRAM_SYNTHETIC_EMAIL_DOMAIN = os.getenv(
     'telegram.mastersat.local',
 )
 
+# Email address claim: when someone proves control of an address that another account
+# holds UNVERIFIED, may we move it and leave that account with a released placeholder?
+# Default OFF. Turn it on only once real verifications have accumulated — with nothing
+# verified, every address in the database matches the "unverified incumbent" predicate.
+# Even when enabled, users.email_verification refuses the release for staff accounts,
+# accounts holding exam history, and accounts that would be left with no way to log in.
+EMAIL_TRANSFER_ENABLED = _env_bool('EMAIL_TRANSFER_ENABLED', default_when_unset=False)
+
 # Question error-report bot (separate, dedicated bot; NOT the login/OIDC bot).
 # Students report a bad question -> stored + pushed to this bot, which forwards to a
 # staff group and to everyone who pressed /start (see question_reports app).
@@ -581,6 +589,11 @@ REST_FRAMEWORK = {
         'login': os.getenv('LOGIN_THROTTLE', '10/min'),
         # Public self-registration (per-IP). Applied via users.views.RegistrationRateThrottle.
         'register': os.getenv('REGISTER_THROTTLE', '10/hour'),
+        # Email verification (see users.throttles). Keyed on the target mailbox, on the
+        # requesting account, and on confirm attempts respectively.
+        'email_verify_target': os.getenv('EMAIL_VERIFY_TARGET_THROTTLE', '5/hour'),
+        'email_verify_user': os.getenv('EMAIL_VERIFY_USER_THROTTLE', '10/hour'),
+        'email_verify_confirm': os.getenv('EMAIL_VERIFY_CONFIRM_THROTTLE', '20/hour'),
         'homework_submit': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_THROTTLE', '120/hour'),
         'homework_submit_global': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_GLOBAL_THROTTLE', '5000/hour'),
         'homework_submit_class': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_PER_CLASS_THROTTLE', '800/hour'),

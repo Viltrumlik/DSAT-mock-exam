@@ -1,0 +1,273 @@
+"""Proof-of-control for an email address: issue a code, then confirm it.
+
+Two operations, both driven by ``users.views``:
+
+``issue_code``    mints a 6-digit code, stores only its hash, and hands the plaintext
+                  back exactly once for delivery.
+``confirm_code``  checks a submitted code and, on success, writes the address onto the
+                  requesting account as verified.
+
+The *transfer* half — taking an address off an account that holds it unverified — is
+implemented here but gated behind ``EMAIL_TRANSFER_ENABLED`` (default off) plus three
+guards. See ``_release_blocked_reason``.
+"""
+from __future__ import annotations
+
+import logging
+import secrets
+
+from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import check_password, make_password
+from django.db import transaction
+from django.utils import timezone
+
+from access import constants as acc_const
+from users.activity import has_activity
+from users.email_utils import (
+    is_deliverable_email,
+    is_synthetic_email,
+    normalize_email,
+    released_placeholder_email,
+)
+from users.models import EmailClaim
+from users.security_audit import log_security_event
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
+
+# Outcome codes returned to the caller. Stable strings — the SPA branches on them.
+OK = "ok"
+ERR_NO_CLAIM = "no_claim"
+ERR_EXPIRED = "expired"
+ERR_BURNED = "burned"
+ERR_BAD_CODE = "bad_code"
+ERR_TAKEN_VERIFIED = "taken_verified"
+ERR_TAKEN_UNVERIFIED = "taken_unverified"
+ERR_NOT_DELIVERABLE = "not_deliverable"
+
+
+def transfer_enabled() -> bool:
+    return bool(getattr(settings, "EMAIL_TRANSFER_ENABLED", False))
+
+
+def _generate_code() -> str:
+    """Six digits from a CSPRNG. ``randbelow`` avoids the modulo bias of ``%``."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def address_holder(target_email: str, *, exclude_pk=None):
+    """The account currently holding this address, if any."""
+    qs = User.objects.filter(email__iexact=normalize_email(target_email))
+    if exclude_pk is not None:
+        qs = qs.exclude(pk=exclude_pk)
+    return qs.first()
+
+
+def _release_blocked_reason(incumbent) -> str | None:
+    """Why this account must NOT lose its address, or ``None`` if release is allowed.
+
+    Each guard turns a silent, permanent and undetectable account loss into a support
+    ticket. They exist because the victim cannot be warned: the only address we have
+    for them is the one being taken.
+    """
+    if incumbent.email_verified:
+        # They proved control. A later claimant cannot outrank that.
+        return "incumbent_verified"
+    if str(getattr(incumbent, "role", "") or "").strip().lower() != acc_const.ROLE_STUDENT:
+        # Staff addresses are never transferable. Registration already leaks which
+        # addresses exist, so a guessable info@/admin@ plus this rule would otherwise
+        # be a route into an account that grants Django-admin access.
+        return "incumbent_is_staff"
+    if has_activity(incumbent):
+        # The trigger for this whole feature is one person who registered twice and
+        # wants the OLD account back. Handing the address to the empty new row while
+        # stripping the login key off the one holding a year of work inverts that.
+        return "incumbent_has_work"
+    if incumbent.telegram_id is None and incumbent.last_password_change is None:
+        # Google-origin accounts resolve by address only and were given a random
+        # password they have never seen. Release and they can log in by no means at
+        # all — and typing their own address authenticates them toward the claimant's
+        # row, so the error reads as a typo and they never learn what happened.
+        return "incumbent_would_be_locked_out"
+    return None
+
+
+def issue_code(user, target_email: str) -> tuple[str, str | None, EmailClaim | None]:
+    """Mint a claim. Returns ``(status, plaintext_code, claim)``.
+
+    The plaintext exists only in this return value — the row stores a hash — so the
+    caller must hand it to the delivery layer immediately and never log it.
+    """
+    target = normalize_email(target_email)
+    if not is_deliverable_email(target):
+        return ERR_NOT_DELIVERABLE, None, None
+
+    holder = address_holder(target, exclude_pk=user.pk)
+    if holder is not None and holder.email_verified:
+        # Someone already proved control. Say so plainly: the requester is
+        # authenticated and rate-limited, and public registration already discloses
+        # address existence, so withholding it here buys nothing and strands the user.
+        return ERR_TAKEN_VERIFIED, None, None
+
+    code = _generate_code()
+    claim = EmailClaim.objects.create(
+        user=user,
+        target_email=target,
+        code_hash=make_password(code),
+        expires_at=timezone.now() + timezone.timedelta(minutes=EmailClaim.TTL_MINUTES),
+    )
+    log_security_event(
+        user_id=user.pk,
+        event_type="email_verify_requested",
+        severity="info",
+        detail={"target": target, "claim_id": claim.pk},
+    )
+    return OK, code, claim
+
+
+def confirm_code(user, target_email: str, code: str) -> tuple[str, dict]:
+    """Check a submitted code and, on success, move the address onto ``user``.
+
+    Returns ``(status, detail)``. Everything is re-validated *inside* the row lock:
+    the claim may have expired, been burned, or the address may have been taken by
+    someone else between request and confirm.
+    """
+    target = normalize_email(target_email)
+    submitted = str(code or "").strip()
+
+    with transaction.atomic():
+        # Bare select_for_update: no select_related. ``User.system_role`` is a nullable
+        # FK, and a LEFT OUTER JOIN under FOR UPDATE is rejected by Postgres while
+        # passing silently on SQLite. Must also stay inside atomic() — ATOMIC_REQUESTS
+        # is off, and outside a transaction the lock is a no-op on SQLite and an error
+        # on Postgres. Both traps have burned this codebase before.
+        claim = (
+            EmailClaim.objects.select_for_update()
+            .filter(user=user, target_email=target, status=EmailClaim.STATUS_PENDING)
+            .order_by("-created_at")
+            .first()
+        )
+        if claim is None:
+            return ERR_NO_CLAIM, {}
+
+        if claim.expires_at <= timezone.now():
+            claim.status = EmailClaim.STATUS_EXPIRED
+            claim.save(update_fields=["status"])
+            return ERR_EXPIRED, {}
+
+        if not check_password(submitted, claim.code_hash):
+            claim.attempts += 1
+            if claim.attempts >= EmailClaim.MAX_ATTEMPTS:
+                claim.status = EmailClaim.STATUS_BURNED
+            claim.save(update_fields=["attempts", "status"])
+            log_security_event(
+                user_id=user.pk,
+                event_type="email_verify_failed",
+                severity="warning",
+                detail={"target": target, "attempts": claim.attempts},
+            )
+            # Same answer whether the claim is now burned: revealing "you have N tries
+            # left" is a free oracle for an attacker probing how far they can push.
+            return ERR_BAD_CODE, {"attempts_remaining": max(0, EmailClaim.MAX_ATTEMPTS - claim.attempts)}
+
+        # Correct code. Lock the rows we are about to write, lowest pk first so two
+        # concurrent swaps cannot deadlock on each other.
+        claimant = User.objects.select_for_update(of=("self",)).get(pk=user.pk)
+        incumbent = (
+            User.objects.select_for_update(of=("self",))
+            .filter(email__iexact=target)
+            .exclude(pk=claimant.pk)
+            .first()
+        )
+
+        if incumbent is not None:
+            reason = _release_blocked_reason(incumbent)
+            if reason is None and not transfer_enabled():
+                reason = "transfer_disabled"
+            if reason is not None:
+                claim.status = EmailClaim.STATUS_REFUSED
+                claim.consumed_at = timezone.now()
+                claim.save(update_fields=["status", "consumed_at"])
+                log_security_event(
+                    user_id=claimant.pk,
+                    event_type="email_claim_refused",
+                    severity="warning",
+                    detail={"target": target, "incumbent_id": incumbent.pk, "reason": reason},
+                )
+                return ERR_TAKEN_UNVERIFIED, {"reason": reason}
+
+            # Donor is written FIRST: Postgres checks the unique index per statement,
+            # so writing the claimant first would collide before the donor is cleared.
+            User.objects.filter(pk=incumbent.pk).update(
+                previous_email=incumbent.email,
+                email=released_placeholder_email(incumbent.pk),
+                email_verified=False,
+                email_verified_at=None,
+                email_released_at=timezone.now(),
+            )
+            log_security_event(
+                user_id=incumbent.pk,
+                event_type="email_released",
+                severity="warning",
+                detail={"target": target, "to_user_id": claimant.pk},
+            )
+
+        previous = claimant.email
+        User.objects.filter(pk=claimant.pk).update(
+            email=target,
+            email_verified=True,
+            email_verified_at=timezone.now(),
+            # Keep the old value only when it was a real address worth searching for.
+            previous_email=None if is_synthetic_email(previous) else previous,
+        )
+        claim.status = EmailClaim.STATUS_CONFIRMED
+        claim.consumed_at = timezone.now()
+        claim.save(update_fields=["status", "consumed_at"])
+        # Any other pending claim on this address is now moot.
+        EmailClaim.objects.filter(
+            target_email=target, status=EmailClaim.STATUS_PENDING
+        ).exclude(pk=claim.pk).update(status=EmailClaim.STATUS_EXPIRED)
+
+        log_security_event(
+            user_id=claimant.pk,
+            event_type="email_verify_confirmed",
+            severity="info",
+            detail={"target": target, "released_from": incumbent.pk if incumbent else None},
+        )
+        return OK, {"email": target}
+
+
+def deliver_code(claim: EmailClaim, code: str) -> bool:
+    """Hand the code to the mail layer. Returns True when it was actually sent.
+
+    No mail backend is configured yet (Mailgun DNS pending), so this logs the code in
+    DEBUG and drops it otherwise, rather than pretending to send. Callers must not
+    depend on the return value to decide their HTTP status: telling the client whether
+    delivery succeeded is a delivery oracle.
+    """
+    if not is_deliverable_email(claim.target_email):
+        return False
+    if getattr(settings, "EMAIL_BACKEND", None):
+        # Real delivery lands here once the Mailgun domain is verified.
+        from django.core.mail import send_mail
+
+        send_mail(
+            subject="Your MasterSAT verification code",
+            message=f"Your verification code is {code}. It expires in {EmailClaim.TTL_MINUTES} minutes.",
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            recipient_list=[claim.target_email],
+            fail_silently=True,
+        )
+        return True
+    if settings.DEBUG:
+        logger.warning(
+            "email_verify_code_not_sent (no EMAIL_BACKEND) target=%s code=%s",
+            claim.target_email, code,
+        )
+    else:
+        logger.warning(
+            "email_verify_code_not_sent (no EMAIL_BACKEND) target=%s claim=%s",
+            claim.target_email, claim.pk,
+        )
+    return False

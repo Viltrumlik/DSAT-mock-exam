@@ -30,6 +30,25 @@ from access.services import (
 )
 
 from .activity import blocking_protected_relations, with_activity_counts
+from .email_utils import normalize_email, synthetic_telegram_email
+from .email_verification import (
+    ERR_NOT_DELIVERABLE,
+    ERR_BAD_CODE,
+    ERR_EXPIRED,
+    ERR_NO_CLAIM,
+    ERR_TAKEN_UNVERIFIED,
+    ERR_TAKEN_VERIFIED,
+    OK,
+    confirm_code,
+    deliver_code,
+    issue_code,
+)
+from .models import EmailClaim
+from .throttles import (
+    EmailConfirmThrottle,
+    EmailVerifyPerTargetThrottle,
+    EmailVerifyPerUserThrottle,
+)
 from .serializers import (
     ExamDateOptionPublicSerializer,
     ExamDateOptionSerializer,
@@ -1128,8 +1147,7 @@ class TelegramLinkView(APIView):
         except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-        domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
-        synthetic = f"tg{tg_id}@{domain}".lower()
+        synthetic = synthetic_telegram_email(tg_id)
         if User.objects.filter(Q(telegram_id=tg_id) | Q(email__iexact=synthetic)).exclude(pk=request.user.pk).exists():
             return Response(
                 {"detail": "This Telegram account is already linked to another user."},
@@ -1167,8 +1185,7 @@ class TelegramAuthView(APIView):
         except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-        domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
-        email = f"tg{tg_id}@{domain}".lower()
+        email = synthetic_telegram_email(tg_id)
 
         # OIDC claims: "name" is the display name, "preferred_username" is the @handle.
         raw_fn, raw_ln = _telegram_names_from_claims(claims)
@@ -1318,8 +1335,7 @@ def _upsert_user_from_telegram_claims(claims, request):
     except TelegramOIDCError:
         return None, Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-    domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
-    email = f"tg{tg_id}@{domain}".lower()
+    email = synthetic_telegram_email(tg_id)
 
     raw_fn, raw_ln = _telegram_names_from_claims(claims)
     tg_username = (str(claims.get("preferred_username") or "")).strip()
@@ -1546,3 +1562,83 @@ class TelegramOAuthCallbackView(APIView):
             pass
         resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
         return resp
+
+
+class RequestEmailCodeView(APIView):
+    """POST ``/api/auth/email/request-code/`` — mail a 6-digit code to an address.
+
+    Authenticated: you are claiming an address *for your own account*. Mounted under
+    ``/api/auth/`` because ``access.host_guard`` lets that prefix through on every
+    console unconditionally, while ``/api/users/`` is 403'd on the questions console
+    and all but ``/me/`` on the teacher one.
+    """
+
+    throttle_classes = [EmailVerifyPerTargetThrottle, EmailVerifyPerUserThrottle]
+
+    def post(self, request):
+        target = normalize_email((request.data or {}).get("email"))
+        if not target:
+            return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        outcome, code, claim = issue_code(request.user, target)
+        if outcome == ERR_NOT_DELIVERABLE:
+            return Response(
+                {"detail": "Enter a real email address.", "code": ERR_NOT_DELIVERABLE},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if outcome == ERR_TAKEN_VERIFIED:
+            return Response(
+                {
+                    "detail": "This email is already confirmed on another account. "
+                              "Sign in with it, or ask an administrator for help.",
+                    "code": ERR_TAKEN_VERIFIED,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        delivered = deliver_code(claim, code)
+        # 202 regardless of delivery: reporting per-address success would turn this into
+        # a mailbox-existence oracle, and the client's next step is the same either way.
+        return Response(
+            {"detail": "If that address can receive mail, a code is on its way.",
+             "expires_in_minutes": EmailClaim.TTL_MINUTES,
+             "delivered": bool(delivered) if settings.DEBUG else None},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class ConfirmEmailCodeView(APIView):
+    """POST ``/api/auth/email/confirm-code/`` — prove control and take the address."""
+
+    throttle_classes = [EmailConfirmThrottle]
+
+    def post(self, request):
+        data = request.data or {}
+        target = normalize_email(data.get("email"))
+        code = str(data.get("code") or "").strip()
+        if not target or not code:
+            return Response(
+                {"detail": "Email and code are required."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        outcome, detail = confirm_code(request.user, target, code)
+        if outcome == OK:
+            return Response(
+                {"detail": "Email confirmed.", "email": detail.get("email"), "email_verified": True},
+                status=status.HTTP_200_OK,
+            )
+
+        bodies = {
+            ERR_NO_CLAIM: ("No pending request for that address. Request a new code.", status.HTTP_400_BAD_REQUEST),
+            ERR_EXPIRED: ("That code has expired. Request a new one.", status.HTTP_400_BAD_REQUEST),
+            ERR_BAD_CODE: ("That code is not correct.", status.HTTP_400_BAD_REQUEST),
+            ERR_TAKEN_UNVERIFIED: (
+                "This email belongs to another account. An administrator has to move it.",
+                status.HTTP_409_CONFLICT,
+            ),
+        }
+        message, http_status = bodies.get(outcome, ("Could not confirm that code.", status.HTTP_400_BAD_REQUEST))
+        body = {"detail": message, "code": outcome}
+        if "attempts_remaining" in detail:
+            body["attempts_remaining"] = detail["attempts_remaining"]
+        return Response(body, status=http_status)
