@@ -58,6 +58,22 @@ export function useUpsertAssessmentSet() {
   });
 }
 
+export function useSetReviewStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (x: { id: number; status: "draft" | "needs_review" | "approved" }) => {
+      return await assessmentsAdminApi.setReviewStatus(x.id, x.status);
+    },
+    onSuccess: async (_data, vars) => {
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.sets() });
+      await qc.invalidateQueries({ queryKey: assessmentsKeys.setDetail(vars.id) });
+    },
+    onError: (e) => {
+      throw normalizeApiError(e);
+    },
+  });
+}
+
 export function useUpsertAssessmentQuestion(setId: number) {
   const qc = useQueryClient();
   return useMutation({

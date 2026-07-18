@@ -7,9 +7,11 @@ import {
   useAssessmentSetDetail,
   useAssessmentSetsList,
   useDeleteAssessmentQuestion,
+  useSetReviewStatus,
   useUpsertAssessmentQuestion,
   useUpsertAssessmentSet,
 } from "@/features/assessments/hooks";
+import { getRole } from "@/lib/permissions";
 import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assessmentsAdmin/api";
 import { QuestionBankPickerModal } from "./QuestionBankPickerModal";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
@@ -20,7 +22,16 @@ import type {
   AssessmentQuestion,
   AssessmentQuestionType,
   AssessmentSet,
+  ReviewStatus,
 } from "@/features/assessments/types";
+import { REVIEW_STATUS_LABELS } from "@/features/assessments/types";
+
+const REVIEW_STATUS_STYLES: Record<ReviewStatus, string> = {
+  draft: "bg-slate-100 text-slate-700",
+  needs_review: "bg-amber-100 text-amber-800",
+  approved: "bg-emerald-100 text-emerald-800",
+};
+const REVIEW_STATUS_ORDER: ReviewStatus[] = ["draft", "needs_review", "approved"];
 import { normalizeApiError, formatApiErrorForToast } from "@/lib/apiError";
 import ErrorPanel from "@/components/ErrorPanel";
 import { useToast } from "@/components/ToastProvider";
@@ -93,6 +104,22 @@ export default function BuilderSetEditorContainer() {
   const upsertSet = useUpsertAssessmentSet();
   const upsertQuestion = useUpsertAssessmentQuestion(setId);
   const delQuestion = useDeleteAssessmentQuestion(setId);
+  const setReviewStatus = useSetReviewStatus();
+  const canApprove = getRole() === "admin" || getRole() === "super_admin";
+  const changeReviewStatus = (status: ReviewStatus) => {
+    setReviewStatus.mutate(
+      { id: setId, status },
+      {
+        onSuccess: () =>
+          toast.push({ message: `Status set to “${REVIEW_STATUS_LABELS[status]}”.`, tone: "success" }),
+        onError: (e: unknown) =>
+          toast.push({
+            message: (e as { message?: string })?.message || "Could not change status.",
+            tone: "error",
+          }),
+      },
+    );
+  };
 
   const hydrate = useBuilderStore((s) => s.hydrateFromServer);
   const selectedQuestionId = useBuilderStore((s) => s.selectedQuestionId);
@@ -713,6 +740,32 @@ export default function BuilderSetEditorContainer() {
               #{view.id}
             </span>
             <p className="font-extrabold text-foreground truncate">{view.title || "Untitled set"}</p>
+            {(() => {
+              const rs = (((detail.data as any)?.review_status ?? "draft") as ReviewStatus);
+              return (
+                <>
+                  <span
+                    className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${REVIEW_STATUS_STYLES[rs]}`}
+                    title="Review status"
+                  >
+                    {REVIEW_STATUS_LABELS[rs]}
+                  </span>
+                  <select
+                    value={rs}
+                    disabled={setReviewStatus.isPending}
+                    onChange={(e) => changeReviewStatus(e.target.value as ReviewStatus)}
+                    title={canApprove ? "Change review status" : "Only an admin can approve"}
+                    className="rounded-lg border border-border bg-card px-2 py-0.5 text-[11px] font-bold text-foreground disabled:opacity-50"
+                  >
+                    {REVIEW_STATUS_ORDER.map((opt) => (
+                      <option key={opt} value={opt} disabled={opt === "approved" && !canApprove}>
+                        {REVIEW_STATUS_LABELS[opt]}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              );
+            })()}
             <StateTag state={isPublished ? "PUBLISHED" : "DRAFT"} size="xs" />
             {dirty && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-700">
