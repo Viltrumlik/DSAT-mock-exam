@@ -137,6 +137,43 @@ class EmailVerificationFlowTests(TestCase):
         self.assertEqual(r.status_code, 400, r.content)
         self.assertEqual(r.json()["code"], "no_claim")
 
+    # ── Delivery gating ──────────────────────────────────────────────────────
+    def test_nothing_is_sent_while_sending_is_disabled(self):
+        # Django always defines EMAIL_BACKEND / DEFAULT_FROM_EMAIL, so a guard that
+        # tests those is always true and would try to reach an SMTP server that does
+        # not exist. Delivery must key off the explicit flag only.
+        from django.core import mail
+
+        with override_settings(EMAIL_SENDING_ENABLED=False):
+            self._request()
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertTrue(EmailClaim.objects.filter(user=self.user).exists(),
+                        "the claim is still created; only delivery is inert")
+
+    @override_settings(EMAIL_SENDING_ENABLED=True)
+    def test_code_is_mailed_once_sending_is_enabled(self):
+        from django.core import mail
+
+        self._request()
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, ["real.person@gmail.com"])
+        self.assertIn(FIXED_CODE, sent.body)
+
+    @override_settings(EMAIL_SENDING_ENABLED=True)
+    def test_nothing_is_mailed_to_a_placeholder_address(self):
+        from django.core import mail
+        from users.email_verification import deliver_code
+
+        claim = EmailClaim.objects.create(
+            user=self.user,
+            target_email=synthetic_telegram_email(999),
+            code_hash="x",
+            expires_at=timezone.now() + timezone.timedelta(minutes=5),
+        )
+        self.assertFalse(deliver_code(claim, FIXED_CODE))
+        self.assertEqual(len(mail.outbox), 0)
+
     # ── Placeholder addresses ────────────────────────────────────────────────
     def test_synthetic_address_cannot_be_requested(self):
         r = self._request(email=synthetic_telegram_email(12345))

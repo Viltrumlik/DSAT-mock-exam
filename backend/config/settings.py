@@ -72,6 +72,13 @@ TELEGRAM_SYNTHETIC_EMAIL_DOMAIN = os.getenv(
     'telegram.mastersat.local',
 )
 
+# Django ALWAYS supplies EMAIL_BACKEND (smtp), EMAIL_HOST ("localhost"), EMAIL_PORT (25)
+# and DEFAULT_FROM_EMAIL ("webmaster@localhost") defaults, so their presence proves
+# nothing about whether mail can actually be delivered — checking for them is how you
+# end up opening an SMTP connection to a host with no MTA on every request. Sending is
+# opt-in and stays off until the Mailgun domain is verified.
+EMAIL_SENDING_ENABLED = _env_bool('EMAIL_SENDING_ENABLED', default_when_unset=False)
+
 # Email address claim: when someone proves control of an address that another account
 # holds UNVERIFIED, may we move it and leave that account with a released placeholder?
 # Default OFF. Turn it on only once real verifications have accumulated — with nothing

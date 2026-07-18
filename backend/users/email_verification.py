@@ -248,26 +248,34 @@ def deliver_code(claim: EmailClaim, code: str) -> bool:
     """
     if not is_deliverable_email(claim.target_email):
         return False
-    if getattr(settings, "EMAIL_BACKEND", None):
-        # Real delivery lands here once the Mailgun domain is verified.
-        from django.core.mail import send_mail
 
-        send_mail(
-            subject="Your MasterSAT verification code",
-            message=f"Your verification code is {code}. It expires in {EmailClaim.TTL_MINUTES} minutes.",
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            recipient_list=[claim.target_email],
-            fail_silently=True,
-        )
-        return True
-    if settings.DEBUG:
-        logger.warning(
-            "email_verify_code_not_sent (no EMAIL_BACKEND) target=%s code=%s",
-            claim.target_email, code,
-        )
-    else:
-        logger.warning(
-            "email_verify_code_not_sent (no EMAIL_BACKEND) target=%s claim=%s",
-            claim.target_email, claim.pk,
-        )
-    return False
+    # Gate on the explicit flag, never on EMAIL_BACKEND: Django defines that (and
+    # DEFAULT_FROM_EMAIL, EMAIL_HOST=localhost, EMAIL_PORT=25) whether or not anything
+    # is configured, so testing it is always true and would open an SMTP connection to
+    # a host with no MTA on every request.
+    if not getattr(settings, "EMAIL_SENDING_ENABLED", False):
+        # DEBUG logs the code so the flow is exercisable locally with no mail server.
+        # Production logs only the claim id — a verification code in the log file is a
+        # credential anyone with log access could use.
+        if settings.DEBUG:
+            logger.warning(
+                "email_verify_code_not_sent (EMAIL_SENDING_ENABLED off) target=%s code=%s",
+                claim.target_email, code,
+            )
+        else:
+            logger.warning(
+                "email_verify_code_not_sent (EMAIL_SENDING_ENABLED off) target=%s claim=%s",
+                claim.target_email, claim.pk,
+            )
+        return False
+
+    from django.core.mail import send_mail
+
+    send_mail(
+        subject="Your MasterSAT verification code",
+        message=f"Your verification code is {code}. It expires in {EmailClaim.TTL_MINUTES} minutes.",
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+        recipient_list=[claim.target_email],
+        fail_silently=True,
+    )
+    return True
