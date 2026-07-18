@@ -99,7 +99,15 @@ class MockAttemptViewSet(viewsets.GenericViewSet):
         def compute():
             with transaction.atomic():
                 locked = self.get_queryset().select_for_update().get(pk=pk)
-                locked.submit_module(answers=answers, flagged=flagged)
+                timing = locked.get_timing()
+                if timing and timing.is_expired:
+                    # Deadline passed: advance WITHOUT accepting the late payload —
+                    # already-autosaved answers still count. Closes the timer-bypass
+                    # where a client suppresses autosave to keep a module open and
+                    # then submits answers entered after the server deadline.
+                    locked.submit_module(answers=None, flagged=None)
+                else:
+                    locked.submit_module(answers=answers, flagged=flagged)
             return self._after_submit_snapshot(request, pk)
 
         return consume_idempotency_key(attempt=attempt, endpoint="submit_module", key=idempotency_key_from_request(request), compute=compute)
