@@ -598,6 +598,19 @@ export const authApi = {
         await persistMeCookie(rememberMe);
         return parseAuthSessionPayload(response.data, "POST /users/google/");
     },
+    /** Ask for a 6-digit code to be mailed to `email`. Always 202 unless the address
+     *  is already confirmed elsewhere (409) or is not a real address (400). */
+    requestEmailCode: async (email: string) => {
+        await authApi.csrf();
+        const response = await api.post('/auth/email/request-code/', { email });
+        return response.data as { detail: string; expires_in_minutes: number };
+    },
+    /** Prove control of `email`. On success it becomes the account's verified address. */
+    confirmEmailCode: async (email: string, code: string) => {
+        await authApi.csrf();
+        const response = await api.post('/auth/email/confirm-code/', { email, code });
+        return response.data as { detail: string; email: string; email_verified: boolean };
+    },
     telegramAuth: async (idToken: string, rememberMe = true) => {
         clearAuthCookiesEverywhere();
         await authApi.csrf();

@@ -6,8 +6,10 @@ import { examsStudentApi } from "@/features/examsStudent/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import {
-  BookOpen, CalendarClock, Copy, FileText, MessageCircle, Phone, Pencil, School, Shield, Target, Trophy, Users,
+  BookOpen, CalendarClock, Copy, FileText, MailCheck, MailWarning, MessageCircle, Phone, Pencil, School, Shield, Target, Trophy, Users,
 } from "lucide-react";
+import { displayEmail } from "@/lib/email";
+import { EmailVerificationModal } from "@/components/EmailVerificationModal";
 import {
   Card, CardContent, Badge, Button, Avatar, Stat, ProgressRing, Progress, Field, Input, Select, Modal, Alert, Skeleton, EmptyState, Checkbox, Spinner,
 } from "@/components/ui";
@@ -18,6 +20,7 @@ type MeForm = {
   first_name: string;
   last_name: string;
   email: string;
+  email_verified: boolean;
   phone_number: string;
   telegram_linked: boolean;
   sat_exam_date: string;
@@ -44,7 +47,8 @@ type ExamDateOptionRow = { id: number; exam_date: string; label: string };
 function mapMeToForm(me: any): MeForm {
   return {
     username: me.username || "", first_name: me.first_name || "", last_name: me.last_name || "",
-    email: me.email || "", phone_number: me.phone_number || "", telegram_linked: !!me.telegram_linked,
+    email: me.email || "", email_verified: !!me.email_verified,
+    phone_number: me.phone_number || "", telegram_linked: !!me.telegram_linked,
     sat_exam_date: me.sat_exam_date || "", target_score: me.target_score != null ? String(me.target_score) : "",
     profile_image_url: me.profile_image_url || null, last_mock_result: me.last_mock_result || null,
   };
@@ -60,6 +64,7 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
   const [classes, setClasses] = useState<Classroom[]>([]);
   const [classesLoading, setClassesLoading] = useState(true);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
@@ -293,6 +298,9 @@ export default function ProfilePage() {
   }
 
   const fullName = `${me.first_name} ${me.last_name}`.trim();
+  // Empty for Telegram signups and released accounts: their stored address is a
+  // placeholder, and showing it would read as a real contact address.
+  const realEmail = displayEmail(me.email);
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-12">
@@ -313,7 +321,23 @@ export default function ProfilePage() {
                 <div className="mt-3 flex flex-wrap items-center gap-3">
                   {me.phone_number?.trim() ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><Phone className="h-3.5 w-3.5 text-primary" /> {me.phone_number}</span> : null}
                   {me.telegram_linked ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-success-foreground"><MessageCircle className="h-3.5 w-3.5" /> Telegram linked</span> : null}
-                  {me.email ? <span className="inline-flex max-w-[220px] items-center gap-1.5 truncate text-xs font-semibold text-muted-foreground">{me.email}</span> : null}
+                  {realEmail ? (
+                    <span className="inline-flex max-w-[220px] items-center gap-1.5 truncate text-xs font-semibold text-muted-foreground">{realEmail}</span>
+                  ) : null}
+                  {me.email_verified ? (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-success-foreground">
+                      <MailCheck className="h-3.5 w-3.5" /> Email confirmed
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setVerifyOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-warning-soft px-2 py-1 text-xs font-bold text-warning-foreground underline underline-offset-2"
+                    >
+                      <MailWarning className="h-3.5 w-3.5" />
+                      {realEmail ? "Confirm your email" : "Add your email"}
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -489,7 +513,13 @@ export default function ProfilePage() {
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Field label="Username" htmlFor="p-username"><Input id="p-username" value={draft.username} onChange={(e) => setDraft({ ...draft, username: e.target.value })} required minLength={3} /></Field>
-              <Field label="Email" htmlFor="p-email" hint="Ask an administrator to change your email."><Input id="p-email" type="email" value={draft.email} readOnly disabled /></Field>
+              <Field
+                label="Email"
+                htmlFor="p-email"
+                hint={draft.email_verified ? "Confirmed." : "Close this and use “Confirm your email” to change it."}
+              >
+                <Input id="p-email" type="email" value={displayEmail(draft.email)} placeholder="Not set" readOnly disabled />
+              </Field>
               <div className="md:col-span-2">
                 <Field label="Phone (optional)" htmlFor="p-phone"><Input id="p-phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+998901234567" value={draft.phone_number} onChange={(e) => setDraft({ ...draft, phone_number: e.target.value })} /></Field>
               </div>
@@ -524,6 +554,18 @@ export default function ProfilePage() {
           </form>
         ) : null}
       </Modal>
+
+      <EmailVerificationModal
+        open={verifyOpen}
+        currentEmail={realEmail}
+        onClose={() => setVerifyOpen(false)}
+        onVerified={(confirmed) => {
+          setVerifyOpen(false);
+          setMe((prev) => (prev ? { ...prev, email: confirmed, email_verified: true } : prev));
+          setMessage("Email confirmed.");
+          window.setTimeout(() => setMessage(null), 4000);
+        }}
+      />
     </div>
   );
 }
