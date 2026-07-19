@@ -110,6 +110,9 @@ class UserMeSerializer(serializers.ModelSerializer):
             "last_password_change",
             "security_step_up_active",
             "has_recent_security_alerts",
+            "email_verified",
+            "email_verified_at",
+            "email_released_at",
         ]
         extra_kwargs = {
             "profile_image": {"required": False, "allow_null": True},
@@ -124,6 +127,10 @@ class UserMeSerializer(serializers.ModelSerializer):
             "is_frozen": {"read_only": True},
             "subject": {"read_only": True},
             "last_password_change": {"read_only": True},
+            # Only the confirm-code flow may set these.
+            "email_verified": {"read_only": True},
+            "email_verified_at": {"read_only": True},
+            "email_released_at": {"read_only": True},
         }
 
     def validate_username(self, value):

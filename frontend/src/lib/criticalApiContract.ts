@@ -71,6 +71,11 @@ export const userMeResponseSchema = z
     last_password_change: z.union([z.string(), z.null()]),
     security_step_up_active: z.boolean(),
     has_recent_security_alerts: z.boolean(),
+    // Optional so an older backend (or a deploy where the two halves are briefly out of
+    // step) does not fail contract parsing and take the whole shell down.
+    email_verified: z.boolean().optional(),
+    email_verified_at: z.union([z.string(), z.null()]).optional(),
+    email_released_at: z.union([z.string(), z.null()]).optional(),
   })
   .passthrough();
 
