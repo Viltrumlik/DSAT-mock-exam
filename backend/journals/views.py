@@ -1070,8 +1070,9 @@ class LessonBulkView(APIView):
             lesson.practice_scope = src.practice_scope
             lesson.practice_test_ids = src.practice_test_ids
             lesson.practice_test_pack_ids = src.practice_test_pack_ids
-            lesson.due_after_days = src.due_after_days
-            lesson.deadline_time = src.deadline_time
+            # due_after_days / deadline_time were dropped in 0002 — homework is due at
+            # the start of the classroom's next lesson, derived at release time. Reading
+            # them here raised AttributeError and failed every copied row.
             lesson.category = src.category
             lesson.max_score = src.max_score
             lesson.status = JournalLesson.STATUS_DRAFT

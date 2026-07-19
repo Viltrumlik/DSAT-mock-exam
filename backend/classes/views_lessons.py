@@ -58,7 +58,11 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
     """Serialize one plan entry. ``detail`` adds the homework brief + classwork blocks."""
     session: JournalLesson = entry["session"]
     row = entry["delivery"]
-    granted = {(g.resource_type, g.resource_id) for g in entry["grants"]}
+    # Keyed by BLOCK too: grants are unique per (block, type, id), so the same item
+    # sitting in both New topic and Exercises is granted and withdrawn separately.
+    # Without the block, opening it in one block marked the other as given and hid its
+    # button.
+    granted = {(g.block, g.resource_type, g.resource_id) for g in entry["grants"]}
 
     data = {
         "lesson_id": session.id,
@@ -118,7 +122,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
             for link in block_assessments:
                 item = _assessment_payload(link)
                 item["block"] = block
-                item["given"] = ("assessment_set", link.assessment_set_id) in granted
+                item["given"] = (block, "assessment_set", link.assessment_set_id) in granted
                 items.append(item)
             for pid in practice_ids or []:
                 items.append(
@@ -126,7 +130,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                         "resource_type": "practice_test",
                         "resource_id": pid,
                         "block": block,
-                        "given": ("practice_test", pid) in granted,
+                        "given": (block, "practice_test", pid) in granted,
                     }
                 )
             for pid in pack_ids or []:
@@ -135,7 +139,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                         "resource_type": "practice_test_pack",
                         "resource_id": pid,
                         "block": block,
-                        "given": ("practice_test_pack", pid) in granted,
+                        "given": (block, "practice_test_pack", pid) in granted,
                     }
                 )
             return items
