@@ -644,8 +644,16 @@ class ClassroomLesson(models.Model):
     classroom = models.ForeignKey(
         "classes.Classroom", on_delete=models.CASCADE, related_name="journal_lessons"
     )
+    # SET_NULL, not PROTECT: an admin must stay able to delete a session from the journal
+    # even after some class has already delivered it (PROTECT made that a 500). The
+    # delivery row outlives the template as history — it still points at the Assignment
+    # the students actually received — and simply stops appearing in the derived plan.
     journal_lesson = models.ForeignKey(
-        JournalLesson, on_delete=models.PROTECT, related_name="classroom_deliveries"
+        JournalLesson,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="classroom_deliveries",
     )
     # Snapshot of the template's position when this row was created. The live ordering
     # still comes from journal_lesson.lesson_number; this only preserves the number the

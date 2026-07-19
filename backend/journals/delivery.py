@@ -183,15 +183,20 @@ def _delivery_for(classroom, session: JournalLesson, *, planned_start=None) -> C
 
 
 @transaction.atomic
-def release_homework(classroom, session: JournalLesson, *, actor) -> tuple[ClassroomLesson, bool]:
+def release_homework(
+    classroom, session: JournalLesson, *, actor
+) -> tuple[ClassroomLesson, bool, list[str]]:
     """Materialize a session's homework brief as a live ``classes.Assignment``.
 
     Idempotent: re-releasing a session whose assignment still exists is a no-op, so a
-    double-press in front of a class cannot produce two homeworks. Returns
-    ``(delivery, created)``.
+    double-press in front of a class cannot produce two homeworks.
+
+    Returns ``(delivery, created, warnings)``. ``warnings`` names any content that could
+    NOT be attached — never silently dropped, because the teacher would otherwise be told
+    the homework went out while students see an empty one.
     """
     from assessments.domain.homework_versioning import attach_assessment_set
-    from classes.lesson_schedule import homework_due_at
+    from classes.lesson_schedule import next_lesson_start_after
     from classes.models import Assignment, grant_practice_test_library_access_for_assignment
 
     if session.is_midterm:
@@ -205,7 +210,7 @@ def release_homework(classroom, session: JournalLesson, *, actor) -> tuple[Class
 
     delivery = _delivery_for(classroom, session)
     if delivery.assignment_id and delivery.homework_released_at:
-        return delivery, False
+        return delivery, False, []
 
     assignment = Assignment.objects.create(
         classroom=classroom,
@@ -221,9 +226,11 @@ def release_homework(classroom, session: JournalLesson, *, actor) -> tuple[Class
         category=session.category,
         max_score=session.max_score,
         status=Assignment.STATUS_PUBLISHED,
-        # No manual deadline anywhere in this system: homework runs until the START of
-        # this classroom's next lesson. None (unschedulable classroom) = never closes.
-        due_at=homework_due_at(classroom),
+        # No manual deadline anywhere in this system: homework set in lesson N is due at
+        # the START of lesson N+1. Measured from THIS lesson's own date, not from "now" —
+        # releasing lesson 5 a week late must not shorten its deadline to the next lesson
+        # after today. None (unschedulable classroom) = never closes.
+        due_at=next_lesson_start_after(classroom, after=delivery.scheduled_for),
     )
 
     # Pastpapers attached to the brief: the assignment's own library grant opens them.
@@ -235,13 +242,25 @@ def release_homework(classroom, session: JournalLesson, *, actor) -> tuple[Class
             assignment.pk,
         )
 
+    # uniq_assessment_hw_classroom_set allows a set to reach a classroom only ONCE, ever.
+    # A set this class already has (from an earlier session, or opened as classwork) can
+    # therefore not be bound to this new Assignment — it stays on the old one. Silently
+    # ignoring that produced a homework with no content while still reporting success, so
+    # the caller is told which sets did not make it.
+    skipped: list[str] = []
     for link in session.assessments.all():
-        attach_assessment_set(
+        homework, created = attach_assessment_set(
             classroom=classroom,
             assignment=assignment,
             set_id=link.assessment_set_id,
             actor=actor,
         )
+        if homework is None:
+            skipped.append(f"set #{link.assessment_set_id} no longer exists")
+        elif not created:
+            skipped.append(
+                f"{homework.assessment_set.title} was already given to this class"
+            )
 
     delivery.assignment = assignment
     delivery.homework_released_at = timezone.now()
@@ -257,7 +276,7 @@ def release_homework(classroom, session: JournalLesson, *, actor) -> tuple[Class
             "updated_at",
         ]
     )
-    return delivery, True
+    return delivery, True, skipped
 
 
 # ── in-class grants ────────────────────────────────────────────────────────────
@@ -290,6 +309,37 @@ def _classwork_assignment(delivery: ClassroomLesson, session: JournalLesson, *, 
     return assignment
 
 
+def plan_items(session: JournalLesson) -> set[tuple[str, str, int]]:
+    """Every ``(block, resource_type, resource_id)`` this session actually declares.
+
+    The grant endpoint is "open THIS item of the plan", so it must be checked against the
+    plan. Without it any assessment set or pastpaper id could be handed to the class,
+    which would sidestep both the level/subject scoping journal authoring enforces and
+    the approval gate on the ordinary assign path.
+
+    Keyed by block as well as resource, because the same item may legitimately sit in both
+    the new-topic and exercises blocks and they are granted (and withdrawn) separately.
+    """
+    from access.resources import RT_ASSESSMENT_SET, RT_PRACTICE_TEST, RT_PRACTICE_TEST_PACK
+
+    out: set[tuple[str, str, int]] = set()
+    cw = getattr(session, "classwork", None)
+    if cw is None:
+        return out
+    for link in cw.assessments.all():
+        out.add((link.block, RT_ASSESSMENT_SET, link.assessment_set_id))
+    blocks = (
+        (ClassroomLessonGrant.BLOCK_NEW_TOPIC, cw.new_topic_practice_test_ids, cw.new_topic_practice_test_pack_ids),
+        (ClassroomLessonGrant.BLOCK_EXERCISES, cw.exercise_practice_test_ids, cw.exercise_practice_test_pack_ids),
+    )
+    for block, test_ids, pack_ids in blocks:
+        for pid in test_ids or []:
+            out.add((block, RT_PRACTICE_TEST, int(pid)))
+        for pid in pack_ids or []:
+            out.add((block, RT_PRACTICE_TEST_PACK, int(pid)))
+    return out
+
+
 def _student_members(classroom):
     from classes.models import ClassroomMembership
 
@@ -314,6 +364,11 @@ def grant_resource(
 
     if resource_type not in (RT_ASSESSMENT_SET, RT_PRACTICE_TEST, RT_PRACTICE_TEST_PACK):
         raise DeliveryError("bad_resource_type", f"Cannot grant '{resource_type}' from a lesson.")
+    # The item must be one the session actually declares — see plan_items().
+    if (block, resource_type, int(resource_id)) not in plan_items(session):
+        raise DeliveryError(
+            "not_in_plan", "That item is not part of this lesson's plan."
+        )
 
     delivery = _delivery_for(classroom, session)
     existing = ClassroomLessonGrant.objects.filter(

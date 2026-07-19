@@ -76,6 +76,25 @@ class DeliveryTestBase(TestCase):
         self.journal.status = Journal.STATUS_PUBLISHED
         self.journal.save(update_fields=["status"])
 
+    def _attach_assessment(self, session, aset, block="EXERCISES"):
+        """Put an assessment into the session's classwork plan (grants are plan-scoped)."""
+        cw = services.ensure_classwork(session)
+        cw.assessments.create(assessment_set=aset, block=block, added_by=self.admin)
+        return aset
+
+    def _attach_pastpaper(self, session, pt, block="EXERCISES"):
+        cw = services.ensure_classwork(session)
+        field = (
+            "exercise_practice_test_ids"
+            if block == "EXERCISES"
+            else "new_topic_practice_test_ids"
+        )
+        ids = list(getattr(cw, field) or [])
+        ids.append(pt.id)
+        setattr(cw, field, ids)
+        cw.save(update_fields=[field])
+        return pt
+
 
 class LessonPlanTests(DeliveryTestBase):
     def test_unpublished_journal_is_not_delivered(self):
@@ -134,7 +153,7 @@ class ReleaseHomeworkTests(DeliveryTestBase):
     def test_release_creates_a_published_assignment_due_next_lesson(self):
         session = self._session()
         self._publish()
-        row, created = delivery.release_homework(self.classroom, session, actor=self.teacher)
+        row, created, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
         self.assertTrue(created)
         a = Assignment.objects.get(pk=row.assignment_id)
         self.assertEqual(a.classroom_id, self.classroom.id)
@@ -148,8 +167,8 @@ class ReleaseHomeworkTests(DeliveryTestBase):
     def test_release_is_idempotent(self):
         session = self._session()
         self._publish()
-        row1, created1 = delivery.release_homework(self.classroom, session, actor=self.teacher)
-        row2, created2 = delivery.release_homework(self.classroom, session, actor=self.teacher)
+        row1, created1, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
+        row2, created2, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
         self.assertTrue(created1)
         self.assertFalse(created2)
         self.assertEqual(row1.id, row2.id)
@@ -162,9 +181,83 @@ class ReleaseHomeworkTests(DeliveryTestBase):
         )
         session.assessments.create(assessment_set=aset, added_by=self.admin)
         self._publish()
-        row, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
+        row, _, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
         hw = HomeworkAssignment.objects.get(classroom=self.classroom, assessment_set=aset)
         self.assertEqual(hw.assignment_id, row.assignment_id)
+
+    def test_a_set_already_given_is_reported_not_silently_dropped(self):
+        """uniq_assessment_hw_classroom_set allows a set into a classroom only ONCE.
+
+        A revision set reused on a later session therefore cannot bind to the new
+        Assignment. Reporting success anyway shipped students an EMPTY homework, so the
+        release has to say what did not attach.
+        """
+        aset = AssessmentSet.objects.create(
+            title="Revision Set A", subject="math", level="middle", created_by=self.admin
+        )
+        s1 = self._session()
+        s1.assessments.create(assessment_set=aset, added_by=self.admin)
+        s2 = self._session()
+        s2.assessments.create(assessment_set=aset, added_by=self.admin)
+        self._publish()
+
+        _, _, w1 = delivery.release_homework(self.classroom, s1, actor=self.teacher)
+        self.assertEqual(w1, [])
+        row2, created2, w2 = delivery.release_homework(self.classroom, s2, actor=self.teacher)
+        self.assertTrue(created2)
+        self.assertEqual(len(w2), 1)
+        self.assertIn("Revision Set A", w2[0])
+        # And the second homework really does carry no assessment — which is exactly why
+        # the teacher has to be told.
+        self.assertEqual(
+            HomeworkAssignment.objects.filter(assignment_id=row2.assignment_id).count(), 0
+        )
+
+    def test_release_endpoint_surfaces_the_warning(self):
+        aset = AssessmentSet.objects.create(
+            title="Revision Set A", subject="math", level="middle", created_by=self.admin
+        )
+        s1 = self._session()
+        s1.assessments.create(assessment_set=aset, added_by=self.admin)
+        s2 = self._session()
+        s2.assessments.create(assessment_set=aset, added_by=self.admin)
+        self._publish()
+        self.client.post(f"/api/classes/{self.classroom.id}/lessons/{s1.id}/release/")
+        resp = self.client.post(f"/api/classes/{self.classroom.id}/lessons/{s2.id}/release/")
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(len(body["warnings"]), 1)
+        self.assertIn("not everything attached", body["detail"])
+
+    def test_due_at_comes_from_the_lesson_not_from_today(self):
+        """Homework set in lesson N is due at lesson N+1 — measured from lesson N's date.
+
+        Computing it from "now" meant releasing a lesson late silently shortened its
+        deadline to the next lesson after today.
+        """
+        sessions = [self._session() for _ in range(3)]
+        self._publish()
+        # Lesson 3 sits on Fri 2026-08-07, so its homework is due Mon 2026-08-10 —
+        # regardless of when the teacher actually presses the button.
+        _, _, _ = delivery.release_homework(self.classroom, sessions[2], actor=self.teacher)
+        row = ClassroomLesson.objects.get(classroom=self.classroom, journal_lesson=sessions[2])
+        a = Assignment.objects.get(pk=row.assignment_id)
+        self.assertEqual(timezone.localtime(a.due_at).date(), date(2026, 8, 10))
+
+    def test_admin_can_still_delete_a_session_a_class_has_delivered(self):
+        # PROTECT here made the admin delete endpoint 500 once any classroom had used the
+        # session; the delivery row must outlive the template as history instead.
+        session = self._session()
+        self._publish()
+        delivery.release_homework(self.classroom, session, actor=self.teacher)
+        row_id = ClassroomLesson.objects.get(
+            classroom=self.classroom, journal_lesson=session
+        ).id
+        services.delete_session(self.journal, session, self.admin)
+        row = ClassroomLesson.objects.get(pk=row_id)
+        self.assertIsNone(row.journal_lesson_id)
+        # The Assignment students received is still linked.
+        self.assertIsNotNone(row.assignment_id)
 
     def test_incomplete_session_is_refused(self):
         session = services.add_session(self.journal, actor=self.admin)  # no instructions
@@ -189,6 +282,7 @@ class InClassGrantTests(DeliveryTestBase):
         aset = AssessmentSet.objects.create(
             title="Quiz", subject="math", level="middle", created_by=self.admin
         )
+        self._attach_assessment(session, aset)
         self._publish()
         grant, created = delivery.grant_resource(
             self.classroom, session,
@@ -218,6 +312,8 @@ class InClassGrantTests(DeliveryTestBase):
             )
             for i in range(3)
         ]
+        for aset in sets:
+            self._attach_assessment(session, aset)
         self._publish()
         for aset in sets:
             delivery.grant_resource(
@@ -239,6 +335,7 @@ class InClassGrantTests(DeliveryTestBase):
         aset = AssessmentSet.objects.create(
             title="Quiz", subject="math", level="middle", created_by=self.admin
         )
+        self._attach_assessment(session, aset)
         self._publish()
         kw = dict(
             block="EXERCISES", resource_type="assessment_set", resource_id=aset.id,
@@ -252,6 +349,7 @@ class InClassGrantTests(DeliveryTestBase):
     def test_granting_a_pastpaper_reaches_the_student(self):
         session = self._session()
         pt = PracticeTest.objects.create(title="Nov 2025 Math", subject="MATH")
+        self._attach_pastpaper(session, pt)
         self._publish()
         delivery.grant_resource(
             self.classroom, session,
@@ -261,6 +359,112 @@ class InClassGrantTests(DeliveryTestBase):
         # Pastpapers are gated by the legacy assigned_users M2M — publishing alone
         # never exposes one.
         self.assertTrue(pt.assigned_users.filter(pk=self.student.pk).exists())
+
+    def test_revoke_withdraws_the_record_but_not_the_access(self):
+        session = self._session()
+        pt = PracticeTest.objects.create(title="Nov 2025 Math", subject="MATH")
+        self._attach_pastpaper(session, pt)
+        self._publish()
+        grant, _ = delivery.grant_resource(
+            self.classroom, session,
+            block="EXERCISES", resource_type="practice_test", resource_id=pt.id,
+            actor=self.teacher,
+        )
+        delivery.revoke_grant(grant, actor=self.teacher)
+        grant.refresh_from_db()
+        self.assertIsNotNone(grant.revoked_at)
+        # Deliberate: a student may be mid-attempt, so withdrawing the panel entry must
+        # NOT yank the work out from under them.
+        self.assertTrue(pt.assigned_users.filter(pk=self.student.pk).exists())
+
+    def test_revoked_item_can_be_given_again(self):
+        # The unique constraint is partial (revoked_at IS NULL), so a revoke frees the
+        # slot instead of permanently blocking the item.
+        session = self._session()
+        pt = PracticeTest.objects.create(title="Nov 2025 Math", subject="MATH")
+        self._attach_pastpaper(session, pt)
+        self._publish()
+        kw = dict(
+            block="EXERCISES", resource_type="practice_test", resource_id=pt.id,
+            actor=self.teacher,
+        )
+        g1, created1 = delivery.grant_resource(self.classroom, session, **kw)
+        delivery.revoke_grant(g1, actor=self.teacher)
+        g2, created2 = delivery.grant_resource(self.classroom, session, **kw)
+        self.assertTrue(created1)
+        self.assertTrue(created2)
+        self.assertNotEqual(g1.id, g2.id)
+
+    def test_revoked_item_is_no_longer_marked_given(self):
+        session = self._session()
+        pt = PracticeTest.objects.create(title="Nov 2025 Math", subject="MATH")
+        self._attach_pastpaper(session, pt)
+        self._publish()
+        grant, _ = delivery.grant_resource(
+            self.classroom, session,
+            block="EXERCISES", resource_type="practice_test", resource_id=pt.id,
+            actor=self.teacher,
+        )
+        delivery.revoke_grant(grant, actor=self.teacher)
+        plan = delivery.lesson_plan(self.classroom, actor=self.teacher)
+        entry = next(e for e in plan["lessons"] if e["session"].id == session.id)
+        self.assertEqual(entry["grants"], [])
+
+    def test_granting_something_not_in_the_plan_is_refused(self):
+        """The endpoint is "open THIS item of the plan" — so it must check the plan.
+
+        Without this a teacher could hand the class any assessment set or pastpaper by id,
+        sidestepping the level/subject scoping journal authoring applies and the approval
+        gate the ordinary assign path enforces.
+        """
+        session = self._session()
+        outsider = AssessmentSet.objects.create(
+            title="Not in this lesson", subject="math", level="middle", created_by=self.admin
+        )
+        self._publish()
+        with self.assertRaises(delivery.DeliveryError) as ctx:
+            delivery.grant_resource(
+                self.classroom, session,
+                block="EXERCISES", resource_type="assessment_set", resource_id=outsider.id,
+                actor=self.teacher,
+            )
+        self.assertEqual(ctx.exception.code, "not_in_plan")
+
+    def test_granting_under_the_wrong_block_is_refused(self):
+        # The same item can sit in two blocks and is granted/withdrawn per block, so the
+        # block is part of the identity, not decoration.
+        session = self._session()
+        aset = AssessmentSet.objects.create(
+            title="Exercise quiz", subject="math", level="middle", created_by=self.admin
+        )
+        self._attach_assessment(session, aset, block="EXERCISES")
+        self._publish()
+        with self.assertRaises(delivery.DeliveryError) as ctx:
+            delivery.grant_resource(
+                self.classroom, session,
+                block="NEW_TOPIC", resource_type="assessment_set", resource_id=aset.id,
+                actor=self.teacher,
+            )
+        self.assertEqual(ctx.exception.code, "not_in_plan")
+
+    def test_api_refuses_an_out_of_plan_grant(self):
+        session = self._session()
+        outsider = AssessmentSet.objects.create(
+            title="Not in this lesson", subject="math", level="middle", created_by=self.admin
+        )
+        self._publish()
+        resp = self.client.post(
+            f"/api/classes/{self.classroom.id}/lessons/{session.id}/grant/",
+            {"block": "EXERCISES", "resource_type": "assessment_set", "resource_id": outsider.id},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["code"], "not_in_plan")
+        self.assertFalse(
+            HomeworkAssignment.objects.filter(
+                classroom=self.classroom, assessment_set=outsider
+            ).exists()
+        )
 
     def test_unsupported_resource_type_is_refused(self):
         session = self._session()
@@ -272,6 +476,70 @@ class InClassGrantTests(DeliveryTestBase):
                 actor=self.teacher,
             )
         self.assertEqual(ctx.exception.code, "bad_resource_type")
+
+
+class MidtermSessionTests(DeliveryTestBase):
+    def _midterm_session(self):
+        from exams.models import Module
+        from midterms.models import Midterm
+
+        module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=30)
+        exam = Midterm.objects.create(
+            title="Middle Math Midterm",
+            subject="MATH",
+            level="middle",
+            scoring_scale=Midterm.SCALE_100,
+            duration_minutes=30,
+            question_module=module,
+            is_published=True,
+        )
+        session = services.add_session(self.journal, actor=self.admin, lesson_type="MIDTERM")
+        session.midterm_exam = exam
+        session.midterm_access_days_before = 2
+        session.save()
+        return session, exam
+
+    def test_granting_a_midterm_creates_the_schedule(self):
+        session, exam = self._midterm_session()
+        self._publish()
+        row, created = delivery.grant_midterm(self.classroom, session, actor=self.teacher)
+        self.assertTrue(created)
+        self.assertIsNotNone(row.midterm_schedule_id)
+        self.assertEqual(row.midterm_schedule.midterm_id, exam.id)
+        self.assertEqual(row.midterm_schedule.classroom_id, self.classroom.id)
+
+    def test_access_alone_does_not_let_students_start(self):
+        # can_start_midterm refuses with `midterm_no_code` until the teacher generates
+        # the code — the panel surfaces this as a required second step.
+        session, _ = self._midterm_session()
+        self._publish()
+        row, _ = delivery.grant_midterm(self.classroom, session, actor=self.teacher)
+        self.assertEqual(row.midterm_schedule.access_code, "")
+
+    def test_window_opens_the_configured_days_before_the_session(self):
+        session, _ = self._midterm_session()
+        self._publish()
+        row, _ = delivery.grant_midterm(self.classroom, session, actor=self.teacher)
+        self.assertIsNotNone(row.scheduled_for)
+        delta = row.scheduled_for - row.midterm_schedule.starts_at
+        self.assertEqual(delta.days, 2)
+
+    def test_granting_a_midterm_is_idempotent(self):
+        session, _ = self._midterm_session()
+        self._publish()
+        _, created1 = delivery.grant_midterm(self.classroom, session, actor=self.teacher)
+        _, created2 = delivery.grant_midterm(self.classroom, session, actor=self.teacher)
+        self.assertTrue(created1)
+        self.assertFalse(created2)
+
+    def test_grant_endpoint_reports_that_a_start_code_is_still_needed(self):
+        session, _ = self._midterm_session()
+        self._publish()
+        resp = self.client.post(
+            f"/api/classes/{self.classroom.id}/lessons/{session.id}/grant/", {}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json()["needs_start_code"])
 
 
 class LessonApiTests(DeliveryTestBase):

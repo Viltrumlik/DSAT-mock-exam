@@ -275,15 +275,22 @@ class ClassroomLessonReleaseView(_LessonScopedView):
         except Http404Lesson:
             return Response({"detail": "This class has no lesson plan."}, status=http.HTTP_404_NOT_FOUND)
         try:
-            row, created = delivery.release_homework(
+            row, created, warnings = delivery.release_homework(
                 self.get_classroom(), session, actor=request.user
             )
         except delivery.DeliveryError as e:
             return Response({"detail": e.message, "code": e.code}, status=http.HTTP_400_BAD_REQUEST)
+
+        detail = "Homework given to the class." if created else "Already given."
+        if warnings:
+            # Say so plainly: a set already given to this class stays on the earlier
+            # homework, so this one goes out without it.
+            detail = f"Homework given, but not everything attached: {'; '.join(warnings)}."
         return Response(
             {
-                "detail": "Homework given to the class." if created else "Already given.",
+                "detail": detail,
                 "created": created,
+                "warnings": warnings,
                 "assignment_id": row.assignment_id,
                 "released_at": row.homework_released_at,
             },
