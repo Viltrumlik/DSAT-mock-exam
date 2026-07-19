@@ -23,6 +23,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from access import constants as acc_const
+from core.mail import brand_context
 from users.email_utils import is_deliverable_email, normalize_email
 from users.models import EmailClaim
 from users.security_audit import log_security_event
@@ -252,7 +253,7 @@ def _notify_address_released(*, username: str | None, address: str | None) -> No
         from django.core.mail import EmailMultiAlternatives
         from django.template.loader import render_to_string
 
-        context = {"username": username or "", "address": address}
+        context = brand_context(username=username or "", address=address)
         text_body = (
             "Your email address was moved\n\n"
             f"{address} has been confirmed on another MasterSAT account, so it is no\n"
@@ -277,10 +278,10 @@ def _notify_address_released(*, username: str | None, address: str | None) -> No
 def deliver_code(claim: EmailClaim, code: str) -> bool:
     """Hand the code to the mail layer. Returns True when it was actually sent.
 
-    No mail backend is configured yet (Mailgun DNS pending), so this logs the code in
-    DEBUG and drops it otherwise, rather than pretending to send. Callers must not
-    depend on the return value to decide their HTTP status: telling the client whether
-    delivery succeeded is a delivery oracle.
+    Delivery goes out over Mailgun SMTP, but only when ``EMAIL_SENDING_ENABLED`` is on;
+    otherwise this logs the code in DEBUG and drops it, rather than pretending to send.
+    Callers must not depend on the return value to decide their HTTP status: telling the
+    client whether delivery succeeded is a delivery oracle.
     """
     if not is_deliverable_email(claim.target_email):
         return False
@@ -308,7 +309,7 @@ def deliver_code(claim: EmailClaim, code: str) -> bool:
     from django.core.mail import EmailMultiAlternatives
     from django.template.loader import render_to_string
 
-    context = {"code": code, "ttl_minutes": EmailClaim.TTL_MINUTES}
+    context = brand_context(code=code, ttl_minutes=EmailClaim.TTL_MINUTES)
     # Plain text is the body, HTML the alternative — some clients show only the former,
     # and a code the recipient cannot read is a support ticket.
     text_body = (
