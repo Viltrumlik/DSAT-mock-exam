@@ -100,12 +100,14 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'MasterSAT <support@masters
 EMAIL_SENDING_ENABLED = _env_bool('EMAIL_SENDING_ENABLED', default_when_unset=False)
 
 # Email address claim: when someone proves control of an address that another account
-# holds UNVERIFIED, may we move it and leave that account with a released placeholder?
-# Default OFF. Turn it on only once real verifications have accumulated — with nothing
-# verified, every address in the database matches the "unverified incumbent" predicate.
-# Even when enabled, users.email_verification refuses the release for staff accounts,
-# accounts holding exam history, and accounts that would be left with no way to log in.
-EMAIL_TRANSFER_ENABLED = _env_bool('EMAIL_TRANSFER_ENABLED', default_when_unset=False)
+# holds UNVERIFIED, the address moves to them and the other account is left with NULL.
+# An unverified address is an unproven claim, so it belongs to whoever can show they
+# read the mailbox. The losing account keeps every result and signs in with its username
+# instead, and is told so by mail at the address being taken.
+# users.email_verification still refuses the release for a VERIFIED address, for staff
+# accounts, and for an account with no username — that last one would otherwise be left
+# with no way in at all, since this codebase has no password-reset flow.
+EMAIL_TRANSFER_ENABLED = _env_bool('EMAIL_TRANSFER_ENABLED', default_when_unset=True)
 
 # Question error-report bot (separate, dedicated bot; NOT the login/OIDC bot).
 # Students report a bad question -> stored + pushed to this bot, which forwards to a

@@ -7142,8 +7142,11 @@ export interface components {
         };
         PatchedUser: {
             readonly id?: number;
-            /** Format: email */
-            email?: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            email?: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -7177,8 +7180,11 @@ export interface components {
         };
         PatchedUserMe: {
             readonly id?: number;
-            /** Format: email */
-            readonly email?: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            readonly email?: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -7595,8 +7601,11 @@ export interface components {
         };
         User: {
             readonly id: number;
-            /** Format: email */
-            email: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            email?: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -7630,8 +7639,11 @@ export interface components {
         };
         UserMe: {
             readonly id: number;
-            /** Format: email */
-            readonly email: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            readonly email: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -15371,7 +15383,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["User"];
                 "application/x-www-form-urlencoded": components["schemas"]["User"];
@@ -15599,7 +15611,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["User"];
                 "application/x-www-form-urlencoded": components["schemas"]["User"];
@@ -15730,7 +15742,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["User"];
                 "application/x-www-form-urlencoded": components["schemas"]["User"];

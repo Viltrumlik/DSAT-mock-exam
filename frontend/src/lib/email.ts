@@ -1,23 +1,17 @@
 /**
- * Placeholder addresses the backend stores on `User.email`.
+ * `User.email` is nullable.
  *
- * `email` is the login key and cannot be empty, so accounts without a real address
- * carry a stand-in: Telegram signups get `tg{id}@telegram.mastersat.local`, and an
- * account whose address was claimed by someone who proved control of it gets a
- * `released-…@released.mastersat.invalid`. Neither should ever be shown to the person
- * as if it were their contact address.
+ * `null` means the person has not supplied an address — a Telegram signup arrives
+ * without one — or lost it to someone who proved control of the mailbox. Those accounts
+ * sign in with their username instead.
  *
- * Mirrors `backend/users/email_utils.py`. Keep the two lists in step.
+ * Earlier revisions invented placeholder addresses (`tg{id}@telegram.mastersat.local`,
+ * `released-…@…invalid`) purely because the column could not be empty, which forced
+ * every display site to learn how to decode them. Mirrors
+ * `backend/users/email_utils.py`.
  */
-const PLACEHOLDER_DOMAINS = ["@telegram.mastersat.local", "@released.mastersat.invalid"];
 
-export function isPlaceholderEmail(address: string | null | undefined): boolean {
-  const addr = (address ?? "").trim().toLowerCase();
-  if (!addr) return true;
-  return PLACEHOLDER_DOMAINS.some((d) => addr.endsWith(d));
-}
-
-/** The address to show a human, or `""` when there is nothing worth showing. */
+/** The address to show a human, or `""` when there is none. */
 export function displayEmail(address: string | null | undefined): string {
-  return isPlaceholderEmail(address) ? "" : (address ?? "").trim();
+  return (address ?? "").trim();
 }

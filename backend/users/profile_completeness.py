@@ -15,7 +15,7 @@ renders whatever ``missing_fields`` says — so the two cannot drift.
 """
 from __future__ import annotations
 
-from users.email_utils import is_synthetic_email
+from users.email_utils import has_email
 
 #: Order matters: it is the order the completion form asks for them.
 REQUIRED_PROFILE_FIELDS = ("first_name", "last_name", "username", "email")
@@ -29,9 +29,13 @@ def _too_short(value) -> bool:
 
 
 def email_is_usable(user) -> bool:
-    """A real, confirmed address — not a Telegram or released placeholder."""
-    email = getattr(user, "email", "") or ""
-    if not email.strip() or is_synthetic_email(email):
+    """An address is present and confirmed.
+
+    NULL is the normal state for a Telegram signup and for an account whose address was
+    claimed by someone who proved control of it — both need prompting, so both are
+    "missing" here.
+    """
+    if not has_email(getattr(user, "email", None)):
         return False
     return bool(getattr(user, "email_verified", False))
 

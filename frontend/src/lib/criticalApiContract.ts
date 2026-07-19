@@ -51,7 +51,11 @@ const userMeLastMockSchema = z.object({
 export const userMeResponseSchema = z
   .object({
     id: z.number(),
-    email: z.string().optional(),
+    // Nullable, not merely optional: an account that has not supplied an address, or
+    // whose address moved to someone who proved control of it, sends `null`. With
+    // `.optional()` alone that value fails validation and rejects the WHOLE /users/me
+    // response, taking the app shell down rather than blanking one field.
+    email: z.union([z.string(), z.null()]).optional(),
     username: z.union([z.string(), z.null()]).optional(),
     first_name: z.string().optional(),
     last_name: z.string().optional(),

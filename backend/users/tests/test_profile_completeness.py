@@ -16,7 +16,6 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from users.email_utils import RELEASED_EMAIL_DOMAIN, synthetic_telegram_email
 from users.profile_completeness import is_profile_complete, missing_profile_fields
 
 User = get_user_model()
@@ -58,12 +57,10 @@ class PredicateTests(TestCase):
         u.save(update_fields=["email_verified"])
         self.assertEqual(missing_profile_fields(u), ["email"])
 
-    def test_synthetic_telegram_address_counts_as_missing(self):
-        u = _complete_user(email=synthetic_telegram_email(4242))
-        self.assertIn("email", missing_profile_fields(u))
-
-    def test_released_placeholder_counts_as_missing(self):
-        u = _complete_user(email=f"released-7-abcd1234@{RELEASED_EMAIL_DOMAIN}")
+    def test_no_address_at_all_counts_as_missing(self):
+        # The normal state for a Telegram signup, and for an account whose address was
+        # claimed by someone who proved control of it.
+        u = _complete_user(email=None)
         self.assertIn("email", missing_profile_fields(u))
 
     def test_ordering_is_stable(self):

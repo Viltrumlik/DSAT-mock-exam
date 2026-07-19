@@ -164,6 +164,11 @@ class UserMeSerializer(serializers.ModelSerializer):
         return value
 
     def validate_email(self, value):
+        # A blank value means "no address", which is now a legitimate state. Probing for
+        # it would compile to ``email IS NULL`` and match every address-less account,
+        # reporting "already exists" to everyone.
+        if not value:
+            return None
         user_qs = User.objects.filter(email__iexact=value)
         if self.instance and self.instance.pk:
             user_qs = user_qs.exclude(pk=self.instance.pk)
@@ -377,11 +382,15 @@ class UserSerializer(serializers.ModelSerializer):
         return value
 
     def validate_email(self, value):
-        # Manual unique check to avoid issues with instance exclusion in some environments
+        # Manual unique check to avoid issues with instance exclusion in some environments.
+        # Blank is a legitimate state (no address supplied, or it was released); probing
+        # for it compiles to ``email IS NULL`` and matches every address-less account.
+        if not value:
+            return None
         user_qs = User.objects.filter(email__iexact=value)
         if self.instance and self.instance.pk:
             user_qs = user_qs.exclude(pk=self.instance.pk)
-        
+
         if user_qs.exists():
             raise serializers.ValidationError("user with this email already exists.")
         return value
