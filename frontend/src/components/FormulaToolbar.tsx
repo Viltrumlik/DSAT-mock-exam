@@ -277,5 +277,3 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
     </div>
   );
 }
-
-export default FormulaToolbar;
