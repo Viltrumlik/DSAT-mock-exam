@@ -176,5 +176,3 @@ export function EmailVerificationModal({
     </Modal>
   );
 }
-
-export default EmailVerificationModal;
