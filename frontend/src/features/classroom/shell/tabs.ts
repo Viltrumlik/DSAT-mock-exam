@@ -1,5 +1,6 @@
 import {
   LayoutDashboard,
+  CalendarDays,
   ClipboardList,
   Users,
   GraduationCap,
@@ -12,6 +13,7 @@ import type { Capabilities } from "../capabilities";
 
 export type ClassroomTabId =
   | "overview"
+  | "lessons"
   | "assignments"
   | "materials"
   | "midterms"
@@ -35,6 +37,9 @@ export interface ClassroomTabDef {
 export const CLASSROOM_TABS: ClassroomTabDef[] = [
   // Overview now hosts the class rankings (Rankings/Stream/Attendance/Analytics tabs removed).
   { id: "overview", label: "Overview", icon: LayoutDashboard, show: () => true },
+  // The journal plan delivered into this class. Staff-only: students see the resulting
+  // homework in Assignments, never the plan itself.
+  { id: "lessons", label: "Lessons", icon: CalendarDays, show: (c) => c.isStaff },
   { id: "assignments", label: "Assignments", icon: ClipboardList, show: () => true },
   { id: "midterms", label: "Midterms", icon: Timer, show: (c) => c.canManageAssignments },
   { id: "materials", label: "Materials", icon: FolderOpen, show: (c) => c.isMember },

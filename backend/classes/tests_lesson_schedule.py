@@ -14,6 +14,7 @@ from django.utils import timezone
 from access import constants as acc_const
 from classes.lesson_schedule import (
     homework_due_at,
+    lesson_starts,
     next_lesson_start_after,
     parse_lesson_time,
 )
@@ -98,6 +99,61 @@ class NextLessonTests(TestCase):
     def test_unparseable_lesson_time_means_no_deadline(self):
         c = self._classroom(lesson_time="whenever")
         self.assertIsNone(next_lesson_start_after(c, self._aware(2026, 7, 13, 8, 0)))
+
+
+class LessonStartsTests(NextLessonTests):
+    """`lesson_starts` lays a Journal's session list onto real classroom dates."""
+
+    def test_counts_meetings_from_start_date(self):
+        # 2026-08-03 is a Monday. ODD = Mon/Wed/Fri.
+        c = self._classroom(start_date=date(2026, 8, 3))
+        got = lesson_starts(c, 4)
+        self.assertEqual(
+            got,
+            [
+                self._aware(2026, 8, 3, 18, 0),   # Mon
+                self._aware(2026, 8, 5, 18, 0),   # Wed
+                self._aware(2026, 8, 7, 18, 0),   # Fri
+                self._aware(2026, 8, 10, 18, 0),  # next Mon
+            ],
+        )
+
+    def test_start_date_that_is_not_a_lesson_day_rolls_forward(self):
+        # 2026-08-02 is a Sunday — belongs to neither group, so lesson 1 is Monday.
+        c = self._classroom(start_date=date(2026, 8, 2))
+        self.assertEqual(lesson_starts(c, 1)[0], self._aware(2026, 8, 3, 18, 0))
+
+    def test_even_group_uses_its_own_weekdays(self):
+        c = self._classroom(
+            lesson_days=Classroom.DAYS_EVEN, lesson_time="16:00", start_date=date(2026, 8, 3)
+        )
+        got = lesson_starts(c, 3)
+        self.assertEqual(
+            got,
+            [
+                self._aware(2026, 8, 4, 16, 0),  # Tue
+                self._aware(2026, 8, 6, 16, 0),  # Thu
+                self._aware(2026, 8, 8, 16, 0),  # Sat
+            ],
+        )
+
+    def test_unusable_schedule_yields_all_none_of_the_right_length(self):
+        # Callers zip this against sessions, so the length must hold even when unusable.
+        c = self._classroom(lesson_time="whenever")
+        self.assertEqual(lesson_starts(c, 3), [None, None, None])
+
+    def test_zero_and_negative_counts(self):
+        c = self._classroom(start_date=date(2026, 8, 3))
+        self.assertEqual(lesson_starts(c, 0), [])
+        self.assertEqual(lesson_starts(c, -2), [])
+
+    def test_long_term_stays_bounded_and_complete(self):
+        # A 2-year journal must not hit the internal scan cap and pad with None.
+        c = self._classroom(start_date=date(2026, 8, 3))
+        got = lesson_starts(c, 200)
+        self.assertEqual(len(got), 200)
+        self.assertTrue(all(g is not None for g in got))
+        self.assertEqual(got, sorted(got))
 
     def test_blank_lesson_time_means_no_deadline(self):
         c = self._classroom(lesson_time="")

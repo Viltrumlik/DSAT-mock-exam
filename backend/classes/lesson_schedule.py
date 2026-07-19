@@ -105,6 +105,44 @@ def next_lesson_start_after(classroom: Classroom, after=None) -> datetime | None
     return None
 
 
+def lesson_starts(classroom: Classroom, count: int, *, anchor=None) -> list[datetime | None]:
+    """The first ``count`` lesson starts for ``classroom``, in order.
+
+    Index i is the (i+1)-th time this class meets, counting from ``anchor`` — or from
+    ``start_date``, or today when neither is set. Used to lay a Journal's session list
+    onto real dates: session N happens at the N-th meeting.
+
+    Pass ``anchor`` for anything that must stay put: with no anchor and no ``start_date``
+    the count restarts from "today" on every call, sliding the whole plan forward daily.
+
+    Returns a list of ``count`` ``None``s when the schedule is unusable, so callers can
+    always zip it against sessions without length-checking. There is no holiday or
+    cancellation model in this codebase, so this is a pure index → date mapping: inserting
+    a session shifts every later one, which is the intended, predictable behaviour.
+    """
+    if count <= 0:
+        return []
+    weekdays = lesson_weekdays(classroom)
+    lesson_time = parse_lesson_time(classroom.lesson_time)
+    if not weekdays or lesson_time is None:
+        return [None] * count
+
+    tz = timezone.get_current_timezone()
+    day = anchor or classroom.start_date or timezone.localtime().date()
+    out: list[datetime | None] = []
+    # Bounded: every valid group meets >= 3x/week, so `count` lessons always land inside
+    # count*3 + 7 days. The cap stops a dirty lesson_days value from spinning forever.
+    for _ in range(count * 3 + 7):
+        if len(out) >= count:
+            break
+        if day.weekday() in weekdays:
+            out.append(timezone.make_aware(datetime.combine(day, lesson_time), tz))
+        day += timedelta(days=1)
+    while len(out) < count:
+        out.append(None)
+    return out
+
+
 def homework_due_at(classroom: Classroom, released_at=None) -> datetime | None:
     """Deadline for homework released at ``released_at``.
 

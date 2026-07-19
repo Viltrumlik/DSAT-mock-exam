@@ -585,3 +585,189 @@ class JournalAuditEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.journal_id}:{self.event_type}@{self.created_at:%Y-%m-%d}"
+
+
+class ClassroomJournal(models.Model):
+    """Binds one Classroom to the Journal template for its (subject, level).
+
+    The journal is *derivable* from the classroom's subject+level, but the binding is
+    stored for two reasons. First, ``starts_on`` is a stable anchor: session dates are
+    counted from it, and without one ``lesson_starts`` would fall back to "today" for a
+    classroom with no ``start_date`` and slide the whole plan forward every day. Second,
+    an explicit binding survives a classroom's level being corrected mid-term, which would
+    otherwise silently swap the class onto a different journal.
+    """
+
+    classroom = models.OneToOneField(
+        "classes.Classroom", on_delete=models.CASCADE, related_name="journal_binding"
+    )
+    journal = models.ForeignKey(
+        Journal, on_delete=models.PROTECT, related_name="classroom_bindings"
+    )
+    # Anchor for date mapping; seeded from classroom.start_date when the binding is made.
+    # Null means "no computable dates" — the plan still lists, with no dates attached.
+    starts_on = models.DateField(null=True, blank=True)
+    bound_at = models.DateTimeField(auto_now_add=True)
+    bound_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_bindings",
+    )
+
+    class Meta:
+        db_table = "journals_classroom_journal"
+
+    def __str__(self) -> str:
+        return f"class {self.classroom_id} → journal {self.journal_id}"
+
+
+class ClassroomLesson(models.Model):
+    """One journal session **as actually delivered** in one classroom.
+
+    A Journal is a template shared by every classroom of its (subject, level); this row is
+    the per-classroom record of what happened to session N: when its homework was handed
+    out, and which ``classes.Assignment`` that produced.
+
+    Content is **never copied** here — it is read through ``journal_lesson``, so an admin
+    fixing the template still reaches live classrooms. Content is duplicated exactly once,
+    at release time, and only into the structures students already read
+    (``classes.Assignment``, ``HomeworkAssignment``, ``MidtermSchedule``).
+
+    Rows are created **lazily** — only when a teacher acts on a session. The teacher's
+    lesson LIST is derived on read by pairing the journal's sessions with real dates from
+    ``classes.lesson_schedule.lesson_starts``, so admin edits to the journal (adding,
+    removing or reordering sessions) flow through automatically instead of needing a sync.
+    """
+
+    classroom = models.ForeignKey(
+        "classes.Classroom", on_delete=models.CASCADE, related_name="journal_lessons"
+    )
+    journal_lesson = models.ForeignKey(
+        JournalLesson, on_delete=models.PROTECT, related_name="classroom_deliveries"
+    )
+    # Snapshot of the template's position when this row was created. The live ordering
+    # still comes from journal_lesson.lesson_number; this only preserves the number the
+    # teacher actually saw, so history stays readable after the journal is renumbered.
+    lesson_number = models.PositiveSmallIntegerField()
+    # The concrete date this session was delivered on. Computed from the classroom
+    # schedule at release time and then frozen, so a later schedule change cannot
+    # retroactively move a lesson that already happened.
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+
+    # Homework hand-out: the classes.Assignment built from the session's brief.
+    assignment = models.ForeignKey(
+        "classes.Assignment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_deliveries",
+    )
+    # In-class work granted during the lesson. Separate from `assignment` (the homework)
+    # because HomeworkAssignment.assignment is NOT nullable — an assessment opened in
+    # class still needs an Assignment to hang off, so it gets this one, categorised
+    # CLASSWORK and with no deadline. One per lesson, reused by every item granted.
+    classwork_assignment = models.ForeignKey(
+        "classes.Assignment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_classwork_deliveries",
+    )
+    homework_released_at = models.DateTimeField(null=True, blank=True)
+    released_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_lesson_releases",
+    )
+    # MIDTERM sessions only: the per-classroom access window created at grant time. The
+    # 6-digit start code lives on this row too — assigning a midterm is NOT enough to let
+    # students in, the teacher must also generate that code (see midterms.access).
+    midterm_schedule = models.ForeignKey(
+        "classes.MidtermSchedule",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_deliveries",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "journals_classroom_lesson"
+        ordering = ["classroom_id", "lesson_number", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["classroom", "journal_lesson"],
+                name="journals_classroom_lesson_unique",
+            )
+        ]
+        indexes = [models.Index(fields=["classroom", "lesson_number"])]
+
+    def __str__(self) -> str:
+        return f"class {self.classroom_id} · session {self.lesson_number}"
+
+    @property
+    def homework_released(self) -> bool:
+        return self.homework_released_at is not None
+
+
+class ClassroomLessonGrant(models.Model):
+    """One "give the class access to this" action a teacher took during a lesson.
+
+    The teacher presses a button next to a specific item in the lesson plan; the access
+    itself is written by ``access.engine.classroom_service.ClassroomAccessService`` into
+    whichever legacy gate that resource type really uses (``PracticeTest.assigned_users``,
+    ``ResourceAccessGrant``, …). This row is the *record* of the press, so the panel can
+    show "Given" and so pressing twice is a no-op rather than a duplicate grant.
+    """
+
+    BLOCK_HOMEWORK = "HOMEWORK"
+    BLOCK_NEW_TOPIC = "NEW_TOPIC"
+    BLOCK_EXERCISES = "EXERCISES"
+    BLOCK_MIDTERM = "MIDTERM"
+    BLOCK_CHOICES = [
+        (BLOCK_HOMEWORK, "Homework"),
+        (BLOCK_NEW_TOPIC, "New topic"),
+        (BLOCK_EXERCISES, "Exercises"),
+        (BLOCK_MIDTERM, "Midterm"),
+    ]
+
+    classroom_lesson = models.ForeignKey(
+        ClassroomLesson, on_delete=models.CASCADE, related_name="grants"
+    )
+    block = models.CharField(max_length=16, choices=BLOCK_CHOICES, db_index=True)
+    # access.resources RT_* key (assessment_set / practice_test / practice_test_pack /
+    # midterm_v2). Stored as a bare string so journals does not import the registry.
+    resource_type = models.CharField(max_length=32, db_index=True)
+    resource_id = models.PositiveIntegerField()
+
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="journal_lesson_grants",
+    )
+    granted_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "journals_classroom_lesson_grant"
+        ordering = ["-granted_at", "-id"]
+        constraints = [
+            # Partial: only ACTIVE grants are unique, so the button is idempotent at the
+            # DB level while a revoke-then-regrant still records both events.
+            models.UniqueConstraint(
+                fields=["classroom_lesson", "block", "resource_type", "resource_id"],
+                condition=models.Q(revoked_at__isnull=True),
+                name="journals_classroom_lesson_grant_unique_active",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.resource_type}#{self.resource_id} → lesson {self.classroom_lesson_id}"
