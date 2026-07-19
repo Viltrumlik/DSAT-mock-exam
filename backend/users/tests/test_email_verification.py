@@ -161,6 +161,30 @@ class EmailVerificationFlowTests(TestCase):
         self.assertIn(FIXED_CODE, sent.body)
 
     @override_settings(EMAIL_SENDING_ENABLED=True)
+    def test_message_carries_both_a_text_and_an_html_part(self):
+        # HTML rendering is deliberately non-fatal, so a broken template would otherwise
+        # degrade to text-only in silence. Some clients show only the text part, which is
+        # why the code has to be in both.
+        from django.core import mail
+
+        self._request()
+        sent = mail.outbox[0]
+        self.assertIn(FIXED_CODE, sent.body)
+        self.assertIn("do not reply", sent.body.lower())
+        self.assertEqual(len(sent.alternatives), 1)
+        html, mimetype = sent.alternatives[0][0], sent.alternatives[0][1]
+        self.assertEqual(mimetype, "text/html")
+        self.assertIn(FIXED_CODE, html)
+        self.assertNotIn("{{", html, "template placeholders must be substituted")
+
+    @override_settings(EMAIL_SENDING_ENABLED=True, DEFAULT_FROM_EMAIL="MasterSAT <support@mastersat.uz>")
+    def test_sender_is_the_support_address(self):
+        from django.core import mail
+
+        self._request()
+        self.assertEqual(mail.outbox[0].from_email, "MasterSAT <support@mastersat.uz>")
+
+    @override_settings(EMAIL_SENDING_ENABLED=True)
     def test_nothing_is_mailed_to_a_placeholder_address(self):
         from django.core import mail
         from users.email_verification import deliver_code

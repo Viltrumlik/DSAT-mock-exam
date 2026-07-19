@@ -85,7 +85,12 @@ EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', default_when_unset=True)
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'MasterSAT <noreply@mg.mastersat.uz>')
+# From an address on the ROOT domain, not the mg. sending subdomain: DMARC alignment is
+# relaxed (root _dmarc has no adkim=s), and Mailgun's DKIM signature carries
+# d=mg.mastersat.uz, which shares the organizational domain — so this aligns and passes.
+# Nothing receives mail at this address: mastersat.uz has no working MX, and students
+# are not meant to reply. Every template says so explicitly.
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'MasterSAT <support@mastersat.uz>')
 
 # Django ALWAYS supplies EMAIL_BACKEND (smtp), EMAIL_HOST ("localhost"), EMAIL_PORT (25)
 # and DEFAULT_FROM_EMAIL ("webmaster@localhost") defaults, so their presence proves
