@@ -7344,7 +7344,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/User'
-        required: true
       responses:
         '200':
           content:
@@ -7551,7 +7550,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/User'
-        required: true
       responses:
         '201':
           content:
@@ -7654,7 +7652,6 @@ paths:
           multipart/form-data:
             schema:
               $ref: '#/components/schemas/User'
-        required: true
       responses:
         '201':
           content:
@@ -11433,6 +11430,11 @@ components:
         email:
           type: string
           format: email
+          nullable: true
+          description: NULL means the user has not supplied an address yet (a Telegram
+            signup) or lost it to someone who proved control of it. Those accounts
+            sign in with their username, which is why releasing one is refused when
+            it has none.
           maxLength: 254
         username:
           type: string
@@ -11519,6 +11521,11 @@ components:
           type: string
           format: email
           readOnly: true
+          nullable: true
+          description: NULL means the user has not supplied an address yet (a Telegram
+            signup) or lost it to someone who proved control of it. Those accounts
+            sign in with their username, which is why releasing one is refused when
+            it has none.
         username:
           type: string
           nullable: true
@@ -12515,6 +12522,11 @@ components:
         email:
           type: string
           format: email
+          nullable: true
+          description: NULL means the user has not supplied an address yet (a Telegram
+            signup) or lost it to someone who proved control of it. Those accounts
+            sign in with their username, which is why releasing one is refused when
+            it has none.
           maxLength: 254
         username:
           type: string
@@ -12596,7 +12608,6 @@ components:
       - bulk_assign_profile
       - class_teacher_eligible
       - date_joined
-      - email
       - email_released_at
       - email_verified
       - email_verified_at
@@ -12614,6 +12625,11 @@ components:
           type: string
           format: email
           readOnly: true
+          nullable: true
+          description: NULL means the user has not supplied an address yet (a Telegram
+            signup) or lost it to someone who proved control of it. Those accounts
+            sign in with their username, which is why releasing one is refused when
+            it has none.
         username:
           type: string
           nullable: true

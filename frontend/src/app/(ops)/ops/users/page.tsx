@@ -22,7 +22,9 @@ import { useToast } from "@/components/ToastProvider";
 type UserRecord = {
   id: number;
   username: string;
-  email: string;
+  /** Null when the account has no address: a Telegram signup that has not supplied one,
+   *  or one whose address was claimed by someone who proved control of it. */
+  email: string | null;
   first_name: string;
   last_name: string;
   phone_number?: string | null;
@@ -176,9 +178,9 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="font-black text-foreground text-base">
-              {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.email}
+              {[user.first_name, user.last_name].filter(Boolean).join(" ") || user.email || user.username || `User ${user.id}`}
             </p>
-            <p className="text-xs text-muted-foreground mt-0.5">{user.email}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{user.email || "no email"}</p>
           </div>
           <button
             type="button"
@@ -852,9 +854,13 @@ export default function OpsUsersPage() {
                       </td>
                       <td className="px-5 py-3">
                         <p className="font-bold text-foreground">
-                          {fullName || u.username || u.email}
+                          {fullName || u.username || u.email || `User ${u.id}`}
                         </p>
-                        <p className="text-xs text-muted-foreground">{u.email}</p>
+                        {/* Null when the account has no address — a Telegram signup that
+                            has not supplied one, or one whose address was claimed. */}
+                        <p className="text-xs text-muted-foreground">
+                          {u.email || (u.previous_email ? `was ${u.previous_email}` : "no email")}
+                        </p>
                         {fullName && u.username && (
                           <p className="text-xs text-muted-foreground font-mono">{u.username}</p>
                         )}

@@ -29,6 +29,7 @@ from django.test import TestCase, TransactionTestCase
 from django.urls import reverse
 from rest_framework.test import APIClient
 
+from users.profile_completeness import missing_profile_fields
 from users.views import RegistrationRateThrottle
 
 User = get_user_model()
@@ -257,12 +258,6 @@ class VerificationStateExposureTests(TestCase):
         self.assertEqual(annotated.attempt_count, activity_count(self.busy))
         self.assertEqual(activity_count(self.idle), 0)
 
-    def test_has_activity_short_circuit(self):
-        from users.activity import has_activity
-
-        self.assertTrue(has_activity(self.busy))
-        self.assertFalse(has_activity(self.idle))
-
     @_register_rate("1000/hour")
     def test_registration_cannot_self_verify(self):
         self.client.force_authenticate(None)
@@ -383,21 +378,16 @@ class TelegramLoginLookupTests(TestCase):
         self.assertEqual(User.objects.count(), 1)
         self.assertEqual(User.objects.get(pk=existing.pk).email, "real.person@gmail.com")
 
-    def test_still_resolves_legacy_user_by_synthetic_email(self):
-        # Rows created before telegram_id was backfilled have no telegram_id yet; the
-        # email fallback must keep finding them rather than minting a duplicate.
-        domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
-        legacy = User.objects.create_user(
-            email=f"tg{self.TG_ID}@{domain}", username="legacytg", password="secret12345",
-            role="student",
-        )
-
-        r = self._post_telegram({"sub": str(self.TG_ID), "name": "Legacy User"})
+    def test_a_new_telegram_account_starts_with_no_address(self):
+        # Telegram supplies no email, and there is no longer a synthetic one to invent.
+        # NULL is the honest representation, and it is what makes the completion prompt
+        # fire for this account.
+        r = self._post_telegram({"sub": str(self.TG_ID), "name": "Brand New"})
 
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(User.objects.count(), 1)
-        legacy.refresh_from_db()
-        self.assertEqual(legacy.telegram_id, self.TG_ID)
+        created = User.objects.get(telegram_id=self.TG_ID)
+        self.assertIsNone(created.email)
+        self.assertIn("email", missing_profile_fields(created))
 
     def test_creates_user_on_first_telegram_login(self):
         r = self._post_telegram({"sub": str(self.TG_ID), "name": "Brand New"})

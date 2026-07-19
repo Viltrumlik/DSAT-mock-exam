@@ -31,7 +31,7 @@ from access.services import (
 )
 
 from .activity import blocking_protected_relations, with_activity_counts
-from .email_utils import normalize_email, synthetic_telegram_email
+from .email_utils import normalize_email
 from .profile_completeness import missing_profile_fields
 from .email_verification import (
     ERR_NOT_DELIVERABLE,
@@ -1149,8 +1149,7 @@ class TelegramLinkView(APIView):
         except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-        synthetic = synthetic_telegram_email(tg_id)
-        if User.objects.filter(Q(telegram_id=tg_id) | Q(email__iexact=synthetic)).exclude(pk=request.user.pk).exists():
+        if User.objects.filter(telegram_id=tg_id).exclude(pk=request.user.pk).exists():
             return Response(
                 {"detail": "This Telegram account is already linked to another user."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1187,8 +1186,6 @@ class TelegramAuthView(APIView):
         except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-        email = synthetic_telegram_email(tg_id)
-
         # OIDC claims: "name" is the display name, "preferred_username" is the @handle.
         raw_fn, raw_ln = _telegram_names_from_claims(claims)
         tg_username = (str(claims.get("preferred_username") or "")).strip()
@@ -1196,17 +1193,16 @@ class TelegramAuthView(APIView):
         if username and len(username) < 3:
             return Response({"detail": "Username must be at least 3 characters."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Resolve by telegram_id first: a user who changed their email away from the
-        # synthetic address is invisible to the email lookup, so we would create a second
-        # row and then hit the unique telegram_id constraint on save below.
-        # Mirrors _upsert_user_from_telegram_claims.
-        user = User.objects.filter(telegram_id=tg_id).first() or User.objects.filter(email__iexact=email).first()
+        # telegram_id is the only identity Telegram gives us — it supplies no address, so
+        # a new account starts with email=None and is asked for one by the completion
+        # form. Mirrors _upsert_user_from_telegram_claims.
+        user = User.objects.filter(telegram_id=tg_id).first()
         if not user:
             if username and User.objects.filter(username__iexact=username).exists():
                 return Response({"detail": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
             try:
                 user = _create_telegram_user(
-                    email=email,
+                    email=None,
                     base_username=username or tg_username or f"tg{tg_id}",
                     first_name=raw_fn,
                     last_name=raw_ln,
@@ -1337,15 +1333,15 @@ def _upsert_user_from_telegram_claims(claims, request):
     except TelegramOIDCError:
         return None, Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-    email = synthetic_telegram_email(tg_id)
-
     raw_fn, raw_ln = _telegram_names_from_claims(claims)
     tg_username = (str(claims.get("preferred_username") or "")).strip()
-    user = User.objects.filter(telegram_id=tg_id).first() or User.objects.filter(email__iexact=email).first()
+    # telegram_id is the only identity Telegram gives us; it supplies no address, so a
+    # new account starts with email=None and the completion form asks for one.
+    user = User.objects.filter(telegram_id=tg_id).first()
     if not user:
         try:
             user = _create_telegram_user(
-                email=email,
+                email=None,
                 base_username=tg_username if len(tg_username) >= 3 else f"tg{tg_id}",
                 first_name=raw_fn,
                 last_name=raw_ln,

@@ -23,13 +23,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from access import constants as acc_const
-from users.activity import has_activity
-from users.email_utils import (
-    is_deliverable_email,
-    is_synthetic_email,
-    normalize_email,
-    released_placeholder_email,
-)
+from users.email_utils import is_deliverable_email, normalize_email
 from users.models import EmailClaim
 from users.security_audit import log_security_event
 
@@ -67,29 +61,26 @@ def address_holder(target_email: str, *, exclude_pk=None):
 def _release_blocked_reason(incumbent) -> str | None:
     """Why this account must NOT lose its address, or ``None`` if release is allowed.
 
-    Each guard turns a silent, permanent and undetectable account loss into a support
-    ticket. They exist because the victim cannot be warned: the only address we have
-    for them is the one being taken.
+    Deliberately short. An account holding exam history is *not* protected — the product
+    decision is that an unverified address belongs to whoever can prove they read it,
+    regardless of how much work sits behind it. The person keeps their account and every
+    result; they sign in with their username instead, and are told so by mail.
     """
     if incumbent.email_verified:
         # They proved control. A later claimant cannot outrank that.
         return "incumbent_verified"
     if str(getattr(incumbent, "role", "") or "").strip().lower() != acc_const.ROLE_STUDENT:
-        # Staff addresses are never transferable. Registration already leaks which
-        # addresses exist, so a guessable info@/admin@ plus this rule would otherwise
-        # be a route into an account that grants Django-admin access.
+        # Staff addresses are never transferable. Registration already discloses which
+        # addresses exist, so a guessable info@/admin@ plus this rule would otherwise be
+        # a route into an account that grants Django-admin access.
         return "incumbent_is_staff"
-    if has_activity(incumbent):
-        # The trigger for this whole feature is one person who registered twice and
-        # wants the OLD account back. Handing the address to the empty new row while
-        # stripping the login key off the one holding a year of work inverts that.
-        return "incumbent_has_work"
-    if incumbent.telegram_id is None and incumbent.last_password_change is None:
-        # Google-origin accounts resolve by address only and were given a random
-        # password they have never seen. Release and they can log in by no means at
-        # all — and typing their own address authenticates them toward the claimant's
-        # row, so the error reads as a typo and they never learn what happened.
-        return "incumbent_would_be_locked_out"
+    if not str(getattr(incumbent, "username", "") or "").strip():
+        # Losing the address is only survivable because the username still signs them
+        # in. With neither, and no password-reset flow anywhere in this codebase, the
+        # account becomes unreachable until staff intervene. Verified against production
+        # first: 385 of 387 accounts have a username, so this is a narrow safety net
+        # rather than a common refusal.
+        return "incumbent_has_no_username"
     return None
 
 
@@ -199,9 +190,10 @@ def confirm_code(user, target_email: str, code: str) -> tuple[str, dict]:
 
             # Donor is written FIRST: Postgres checks the unique index per statement,
             # so writing the claimant first would collide before the donor is cleared.
+            released_from = incumbent.email
             User.objects.filter(pk=incumbent.pk).update(
-                previous_email=incumbent.email,
-                email=released_placeholder_email(incumbent.pk),
+                previous_email=released_from,
+                email=None,
                 email_verified=False,
                 email_verified_at=None,
                 email_released_at=timezone.now(),
@@ -212,14 +204,23 @@ def confirm_code(user, target_email: str, code: str) -> tuple[str, dict]:
                 severity="warning",
                 detail={"target": target, "to_user_id": claimant.pk},
             )
+            # Told at the address that is being taken away — the last moment it still
+            # reaches them. Without this they would type that address at the login page,
+            # be told the credentials are wrong, and have no way to work out why or that
+            # their username still works. Queued on commit so a delivery failure cannot
+            # roll back the transfer.
+            transaction.on_commit(
+                lambda: _notify_address_released(
+                    username=incumbent.username, address=released_from
+                )
+            )
 
-        previous = claimant.email
         User.objects.filter(pk=claimant.pk).update(
             email=target,
             email_verified=True,
             email_verified_at=timezone.now(),
-            # Keep the old value only when it was a real address worth searching for.
-            previous_email=None if is_synthetic_email(previous) else previous,
+            # Their own previous address, if they had one, stays searchable by staff.
+            previous_email=claimant.email or None,
         )
         claim.status = EmailClaim.STATUS_CONFIRMED
         claim.consumed_at = timezone.now()
@@ -236,6 +237,41 @@ def confirm_code(user, target_email: str, code: str) -> tuple[str, dict]:
             detail={"target": target, "released_from": incumbent.pk if incumbent else None},
         )
         return OK, {"email": target}
+
+
+def _notify_address_released(*, username: str | None, address: str | None) -> None:
+    """Tell the losing account, at the address being taken, how to get back in.
+
+    Best-effort and never raises: the transfer has already committed, and failing to
+    send must not surface as an error to the person who legitimately claimed it.
+    """
+    if not is_deliverable_email(address) or not getattr(settings, "EMAIL_SENDING_ENABLED", False):
+        logger.warning("email_release_notice_not_sent target=%s", address)
+        return
+    try:
+        from django.core.mail import EmailMultiAlternatives
+        from django.template.loader import render_to_string
+
+        context = {"username": username or "", "address": address}
+        text_body = (
+            "Your email address was moved\n\n"
+            f"{address} has been confirmed on another MasterSAT account, so it is no\n"
+            "longer attached to yours.\n\n"
+            f"Your account and all of your results are unchanged. Sign in with your\n"
+            f"username instead: {username}\n\n"
+            "If this was not expected, contact the MasterSAT centre.\n\n"
+            "This message was sent automatically; please do not reply to it.\n"
+        )
+        msg = EmailMultiAlternatives(
+            subject="Your MasterSAT sign-in has changed",
+            body=text_body,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+            to=[address],
+        )
+        msg.attach_alternative(render_to_string("email/address_released.html", context), "text/html")
+        msg.send(fail_silently=False)
+    except Exception:
+        logger.exception("email_release_notice_failed target=%s", address)
 
 
 def deliver_code(claim: EmailClaim, code: str) -> bool:

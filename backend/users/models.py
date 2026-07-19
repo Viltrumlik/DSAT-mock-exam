@@ -24,9 +24,14 @@ class ExamDateOption(models.Model):
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError("The Email field must be set")
-        email = self.normalize_email(email)
+        # ``None`` is allowed and means "has not supplied one yet" — a Telegram signup
+        # arrives without an address, and an account can lose its address to whoever
+        # proves control of it. ``""`` is NOT allowed: NULLs do not collide under
+        # ``UNIQUE(lower(email))`` but empty strings do, so the second blank row would
+        # fail the index. ``normalize_email`` maps None to "", so coerce it back.
+        if email is not None and not str(email).strip():
+            raise ValueError("The Email field must not be blank")
+        email = self.normalize_email(email) or None
         role = extra_fields.pop("role", None)
         scope = extra_fields.pop("scope", None)
         subject = extra_fields.pop("subject", None)
@@ -64,7 +69,17 @@ class UserManager(BaseUserManager):
 
 class User(AbstractUser):
     username = models.CharField(max_length=150, unique=True, null=True, blank=True, db_index=True)
-    email = models.EmailField(unique=True, db_index=True)
+    email = models.EmailField(
+        unique=True,
+        db_index=True,
+        null=True,
+        blank=True,
+        help_text=(
+            "NULL means the user has not supplied an address yet (a Telegram signup) or "
+            "lost it to someone who proved control of it. Those accounts sign in with "
+            "their username, which is why releasing one is refused when it has none."
+        ),
+    )
     system_role = models.ForeignKey(
         "access.Role",
         on_delete=models.PROTECT,
@@ -164,6 +179,13 @@ class User(AbstractUser):
                 Lower("email"),
                 name="users_email_ci_unique",
             ),
+            # "" is the dangerous value, not NULL: Postgres treats NULLs as distinct
+            # under a unique index but "" as an ordinary value, so two blank-string rows
+            # collide. Reject it at the database so no code path can reintroduce one.
+            models.CheckConstraint(
+                condition=~Q(email=""),
+                name="users_email_not_blank",
+            ),
         ]
 
     def __str__(self):
@@ -171,6 +193,14 @@ class User(AbstractUser):
 
     def clean(self):
         super().clean()
+        # ``AbstractBaseUser.clean`` runs ``normalize_email``, which is ``email or ""``
+        # — so every full_clean(), and therefore every Django admin save, silently
+        # rewrites a NULL address to "". That matters because "" is a real value under
+        # ``UNIQUE(lower(email))`` while NULL is not: the first such save succeeds and
+        # the second raises IntegrityError. Put the NULL back.
+        if not self.email:
+            self.email = None
+
         from access import constants as auth_const
 
         role = str(getattr(self, "role", "") or "").strip().lower()

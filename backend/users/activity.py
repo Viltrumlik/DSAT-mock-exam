@@ -67,15 +67,6 @@ def activity_count(user) -> int:
     return sum(model.objects.filter(**{field: user}).count() for model, field in _models())
 
 
-def has_activity(user) -> bool:
-    """Short-circuiting variant: does this account hold any work at all?
-
-    Used by the email-release gate, where the question is only ever "any or none" and
-    counting a heavy account would be wasted work.
-    """
-    return any(model.objects.filter(**{field: user}).exists() for model, field in _models())
-
-
 def blocking_protected_relations(user) -> list[str]:
     """Human-readable relations that would make a hard delete fail with ProtectedError.
 
@@ -97,6 +88,5 @@ __all__ = [
     "ACTIVITY_RELATIONS",
     "activity_count",
     "blocking_protected_relations",
-    "has_activity",
     "with_activity_counts",
 ]

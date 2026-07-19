@@ -1,0 +1,29 @@
+{% extends "email/base.html" %}
+
+{% block subject %}Your MasterSAT sign-in has changed{% endblock %}
+
+{% block content %}
+  <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#1f2937;">
+    Your email address was moved
+  </p>
+
+  <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#4b5563;">
+    <strong>{{ address }}</strong> has been confirmed on another MasterSAT account, so
+    it is no longer attached to yours.
+  </p>
+
+  <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#4b5563;">
+    Your account and all of your results are unchanged. Sign in with your username
+    instead:
+  </p>
+
+  <div style="margin:0 0 20px;padding:14px;background:#f4f5f7;border-radius:12px;text-align:center;
+              font-size:20px;font-weight:800;color:#1f2937;
+              font-family:'SFMono-Regular',Menlo,Consolas,monospace;">
+    {{ username }}
+  </div>
+
+  <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">
+    If this was not expected, contact the MasterSAT centre.
+  </p>
+{% endblock %}

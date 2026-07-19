@@ -19,7 +19,6 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from users.email_utils import RELEASED_EMAIL_DOMAIN, synthetic_telegram_email
 from users.models import EmailClaim
 
 User = get_user_model()
@@ -191,22 +190,22 @@ class EmailVerificationFlowTests(TestCase):
 
         claim = EmailClaim.objects.create(
             user=self.user,
-            target_email=synthetic_telegram_email(999),
+            target_email="not-an-address",
             code_hash="x",
             expires_at=timezone.now() + timezone.timedelta(minutes=5),
         )
         self.assertFalse(deliver_code(claim, FIXED_CODE))
         self.assertEqual(len(mail.outbox), 0)
 
-    # ── Placeholder addresses ────────────────────────────────────────────────
-    def test_synthetic_address_cannot_be_requested(self):
-        r = self._request(email=synthetic_telegram_email(12345))
+    # ── Unusable targets ─────────────────────────────────────────────────────
+    def test_blank_address_cannot_be_requested(self):
+        r = self._request(email="   ")
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_address_without_an_at_sign_cannot_be_requested(self):
+        r = self._request(email="not-an-address")
         self.assertEqual(r.status_code, 400, r.content)
         self.assertEqual(r.json()["code"], "not_deliverable")
-
-    def test_released_placeholder_cannot_be_requested(self):
-        r = self._request(email=f"released-9-abcd1234@{RELEASED_EMAIL_DOMAIN}")
-        self.assertEqual(r.status_code, 400, r.content)
 
 
 class EmailClaimContestedTests(TestCase):
@@ -253,10 +252,9 @@ class EmailClaimContestedTests(TestCase):
         self.assertEqual(r.json()["code"], "taken_verified")
         self.assertFalse(EmailClaim.objects.exists(), "no code should be mailed to a proven owner")
 
-    def test_transfer_is_refused_while_the_flag_is_off(self):
+    @override_settings(EMAIL_TRANSFER_ENABLED=False)
+    def test_transfer_can_be_switched_off(self):
         incumbent = self._incumbent()
-        incumbent.last_password_change = timezone.now()
-        incumbent.save(update_fields=["last_password_change"])
         self._request()
         r = self._confirm()
         self.assertEqual(r.status_code, 409, r.content)
@@ -264,11 +262,8 @@ class EmailClaimContestedTests(TestCase):
         incumbent.refresh_from_db()
         self.assertEqual(incumbent.email, "contested@gmail.com", "incumbent must keep its address")
 
-    @override_settings(EMAIL_TRANSFER_ENABLED=True)
-    def test_transfer_moves_the_address_from_an_empty_student(self):
+    def test_transfer_moves_the_address_and_nulls_the_donor(self):
         incumbent = self._incumbent()
-        incumbent.last_password_change = timezone.now()  # has a password: not locked out
-        incumbent.save(update_fields=["last_password_change"])
 
         self._request()
         r = self._confirm()
@@ -278,10 +273,55 @@ class EmailClaimContestedTests(TestCase):
         incumbent.refresh_from_db()
         self.assertEqual(self.claimant.email, "contested@gmail.com")
         self.assertTrue(self.claimant.email_verified)
-        self.assertTrue(incumbent.email.endswith(f"@{RELEASED_EMAIL_DOMAIN}"))
+        self.assertIsNone(incumbent.email, "the donor is left with no address at all")
         self.assertEqual(incumbent.previous_email, "contested@gmail.com")
         self.assertIsNotNone(incumbent.email_released_at)
         self.assertFalse(incumbent.email_verified)
+        # The username is what they sign in with now, so it must survive untouched.
+        self.assertEqual(incumbent.username, "incumbent")
+
+    def test_transfer_happens_even_when_the_donor_holds_exam_history(self):
+        # Settled product rule: an unverified address is an unproven claim, so it goes
+        # to whoever can show they read the mailbox — regardless of how much work sits
+        # behind it. The account and its results are untouched; only the address moves.
+        from exams.models import PracticeTest, TestAttempt
+
+        incumbent = self._incumbent()
+        for _ in range(3):
+            TestAttempt.objects.create(
+                practice_test=PracticeTest.objects.create(subject="MATH"), student=incumbent
+            )
+
+        self._request()
+        r = self._confirm()
+        self.assertEqual(r.status_code, 200, r.content)
+
+        incumbent.refresh_from_db()
+        self.assertIsNone(incumbent.email)
+        self.assertEqual(
+            TestAttempt.objects.filter(student=incumbent).count(), 3, "results are untouched"
+        )
+
+    @override_settings(EMAIL_SENDING_ENABLED=True)
+    def test_the_donor_is_told_at_the_address_being_taken(self):
+        # Their last reachable moment. Without it they type that address at the login
+        # page, are told the credentials are wrong, and have no way to work out why.
+        from django.core import mail
+
+        self._incumbent()
+        self._request()
+        mail.outbox.clear()
+        # The notice is queued with transaction.on_commit so a delivery failure cannot
+        # roll back the transfer — and under TestCase that commit never happens, so
+        # nothing would send without this.
+        with self.captureOnCommitCallbacks(execute=True):
+            r = self._confirm()
+        self.assertEqual(r.status_code, 200, r.content)
+
+        notice = [m for m in mail.outbox if m.to == ["contested@gmail.com"]]
+        self.assertEqual(len(notice), 1, "exactly one notice to the old address")
+        self.assertIn("incumbent", notice[0].body, "the username they must now use")
+        self.assertIn("do not reply", notice[0].body.lower())
 
     def _assert_refused_and_unchanged(self, incumbent):
         """The claimant gets a generic refusal and the incumbent keeps its address.
@@ -303,33 +343,25 @@ class EmailClaimContestedTests(TestCase):
             EmailClaim.objects.get(user=self.claimant).status, EmailClaim.STATUS_REFUSED
         )
 
-    @override_settings(EMAIL_TRANSFER_ENABLED=True)
-    def test_transfer_refused_when_the_incumbent_has_exam_history(self):
-        from exams.models import PracticeTest, TestAttempt
-
-        incumbent = self._incumbent()
-        incumbent.last_password_change = timezone.now()
-        incumbent.save(update_fields=["last_password_change"])
-        TestAttempt.objects.create(
-            practice_test=PracticeTest.objects.create(subject="MATH"), student=incumbent
-        )
-        self._assert_refused_and_unchanged(incumbent)
-
-    @override_settings(EMAIL_TRANSFER_ENABLED=True)
     def test_transfer_refused_for_staff_accounts(self):
-        incumbent = self._incumbent(role="admin")
-        incumbent.last_password_change = timezone.now()
-        incumbent.save(update_fields=["last_password_change"])
-        self._assert_refused_and_unchanged(incumbent)
+        # Registration discloses which addresses exist, so a guessable info@/admin@ plus
+        # this rule would otherwise be a route into an account with console access.
+        for role in ("teacher", "admin", "test_admin", "super_admin"):
+            with self.subTest(role=role):
+                EmailClaim.objects.all().delete()
+                User.objects.filter(email="contested@gmail.com").delete()
+                incumbent = self._incumbent(
+                    role=role, username=f"staff{role}",
+                    **({"subject": "math"} if role == "teacher" else {}),
+                )
+                self._assert_refused_and_unchanged(incumbent)
 
-    @override_settings(EMAIL_TRANSFER_ENABLED=True)
-    def test_transfer_refused_when_it_would_lock_the_incumbent_out(self):
-        # No telegram_id and no password they ever set: a Google-origin account.
-        # Releasing the address leaves them unable to authenticate at all, and the login
-        # error reads as a typo, so they could never find out what happened.
-        incumbent = self._incumbent()
-        self.assertIsNone(incumbent.telegram_id)
-        self.assertIsNone(incumbent.last_password_change)
+    def test_transfer_refused_when_the_donor_has_no_username(self):
+        # Losing the address is only survivable because the username still signs them
+        # in. With neither, and no password-reset flow anywhere, the account is
+        # unreachable until staff intervene.
+        incumbent = self._incumbent(username=None)
+        self.assertIsNone(incumbent.username)
         self._assert_refused_and_unchanged(incumbent)
 
 
@@ -348,22 +380,13 @@ class ReleaseGuardTests(TestCase):
 
         return _release_blocked_reason(user)
 
-    def test_empty_student_with_a_password_may_be_released(self):
-        u = self._student()
-        u.last_password_change = timezone.now()
-        u.save(update_fields=["last_password_change"])
-        self.assertIsNone(self._reason(u))
-
-    def test_telegram_user_may_be_released(self):
-        # Telegram login resolves by telegram_id, so they keep a way in.
-        u = self._student(telegram_id=99887766)
-        self.assertIsNone(self._reason(u))
+    def test_student_with_a_username_may_be_released(self):
+        self.assertIsNone(self._reason(self._student()))
 
     def test_verified_incumbent_is_never_released(self):
         u = self._student()
         u.email_verified = True
-        u.last_password_change = timezone.now()
-        u.save(update_fields=["email_verified", "last_password_change"])
+        u.save(update_fields=["email_verified"])
         self.assertEqual(self._reason(u), "incumbent_verified")
 
     def test_staff_is_never_released(self):
@@ -377,16 +400,20 @@ class ReleaseGuardTests(TestCase):
                 u.save(update_fields=["last_password_change"])
                 self.assertEqual(self._reason(u), "incumbent_is_staff")
 
-    def test_account_with_work_is_not_released(self):
+    def test_account_with_work_IS_released(self):
+        # Settled product rule: exam history does not protect an unverified address.
+        # Pinned as a test so a future reader does not "restore" the guard by accident.
         from exams.models import PracticeTest, TestAttempt
 
         u = self._student()
-        u.last_password_change = timezone.now()
-        u.save(update_fields=["last_password_change"])
         TestAttempt.objects.create(
             practice_test=PracticeTest.objects.create(subject="MATH"), student=u
         )
-        self.assertEqual(self._reason(u), "incumbent_has_work")
+        self.assertIsNone(self._reason(u))
 
-    def test_account_with_no_other_credential_is_not_released(self):
-        self.assertEqual(self._reason(self._student()), "incumbent_would_be_locked_out")
+    def test_account_without_a_username_is_not_released(self):
+        # The username is the only thing left to sign in with, and there is no
+        # password-reset flow anywhere in this codebase.
+        self.assertEqual(
+            self._reason(self._student(username=None)), "incumbent_has_no_username"
+        )
