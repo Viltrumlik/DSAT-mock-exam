@@ -35,10 +35,17 @@ function useLessonInvalidator(classId: number, lessonId: number) {
   };
 }
 
+/** True when the server refused because the content has not passed review. */
+export function isNotApproved(e: unknown): boolean {
+  const data = (e as { response?: { data?: { code?: string } } })?.response?.data;
+  return data?.code === "assessment_not_approved";
+}
+
 export function useReleaseHomework(classId: number, lessonId: number) {
   const invalidate = useLessonInvalidator(classId, lessonId);
   return useMutation({
-    mutationFn: () => lessonsApi.release(classId, lessonId),
+    mutationFn: (allowUnapproved: boolean = false) =>
+      lessonsApi.release(classId, lessonId, allowUnapproved),
     onSuccess: (data: { created?: boolean; detail?: string }) => {
       invalidate();
       pushGlobalToast({
@@ -46,15 +53,25 @@ export function useReleaseHomework(classId: number, lessonId: number) {
         message: data?.detail || "Homework given to the class.",
       });
     },
-    onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
+    onError: (e) => {
+      if (isNotApproved(e)) return;
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+    },
   });
 }
 
 export function useGrantItem(classId: number, lessonId: number) {
   const invalidate = useLessonInvalidator(classId, lessonId);
   return useMutation({
-    mutationFn: (body: { block: LessonBlock; resource_type: LessonResourceType; resource_id: number }) =>
-      lessonsApi.grant(classId, lessonId, body),
+    mutationFn: (vars: {
+      block: LessonBlock;
+      resource_type: LessonResourceType;
+      resource_id: number;
+      allowUnapproved?: boolean;
+    }) => {
+      const { allowUnapproved, ...body } = vars;
+      return lessonsApi.grant(classId, lessonId, body, allowUnapproved);
+    },
     onSuccess: (data: { created?: boolean; detail?: string }) => {
       invalidate();
       pushGlobalToast({
@@ -62,7 +79,12 @@ export function useGrantItem(classId: number, lessonId: number) {
         message: data?.detail || "Class can now access this.",
       });
     },
-    onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
+    onError: (e) => {
+      // `assessment_not_approved` is a question, not a failure: the panel catches it and
+      // asks the teacher to confirm, so don't shout it as an error toast.
+      if (isNotApproved(e)) return;
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+    },
   });
 }
 

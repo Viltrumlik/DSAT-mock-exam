@@ -95,14 +95,17 @@ export const lessonsApi = {
   detail: async (classId: number, lessonId: number): Promise<LessonDetail> =>
     (await api.get(`${base(classId)}${lessonId}/`)).data,
 
-  release: async (classId: number, lessonId: number) =>
-    (await api.post(`${base(classId)}${lessonId}/release/`, {})).data,
+  release: async (classId: number, lessonId: number, allowUnapproved = false) =>
+    (await api.post(`${base(classId)}${lessonId}/release/`,
+      allowUnapproved ? { allow_unapproved: true } : {})).data,
 
   grant: async (
     classId: number,
     lessonId: number,
     body: { block: LessonBlock; resource_type: LessonResourceType; resource_id: number },
-  ) => (await api.post(`${base(classId)}${lessonId}/grant/`, body)).data,
+    allowUnapproved = false,
+  ) => (await api.post(`${base(classId)}${lessonId}/grant/`,
+    allowUnapproved ? { ...body, allow_unapproved: true } : body)).data,
 
   /** A midterm session grants the whole exam — no per-item body. */
   grantMidterm: async (classId: number, lessonId: number) =>
