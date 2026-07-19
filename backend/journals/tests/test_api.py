@@ -108,6 +108,22 @@ class SessionTests(TestCase):
         self.assertIsNone(mid.json()["classwork"])
         self.assertEqual(self.journal.lessons.filter(lesson_type="MIDTERM").count(), 1)
 
+    def test_total_lessons_stays_accurate_on_a_prefetched_journal(self):
+        """Regression: journal.lessons.count() answers from a stale prefetch cache, so
+        total_lessons must be recomputed with an explicit queryset."""
+        self._add()
+        self._add()
+        # Simulate the API path, which prefetches lessons before mutating.
+        from django.db.models import Prefetch
+
+        prefetched = Journal.objects.prefetch_related(
+            Prefetch("lessons", queryset=JournalLesson.objects.all())
+        ).get(pk=self.journal.id)
+        list(prefetched.lessons.all())  # populate the cache
+        services.add_session(prefetched, actor=self.admin)
+        prefetched.refresh_from_db()
+        self.assertEqual(prefetched.total_lessons, 3)
+
     def test_delete_session_renumbers(self):
         ids = [self._add().json()["id"] for _ in range(3)]
         resp = self.client.delete(f"/api/journals/{self.journal.id}/lessons/{ids[0]}/")

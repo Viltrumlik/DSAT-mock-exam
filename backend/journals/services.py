@@ -35,7 +35,10 @@ def log_event(journal, actor, event_type, detail=None, lesson=None) -> JournalAu
 
 
 def _sync_counts(journal: Journal, actor=None) -> None:
-    journal.total_lessons = journal.lessons.count()
+    # Explicit queryset, NOT journal.lessons.count(): on a prefetched journal the related
+    # manager answers .count() from the (now stale) prefetch cache, which would persist a
+    # wrong total after adding/removing sessions.
+    journal.total_lessons = JournalLesson.objects.filter(journal_id=journal.pk).count()
     fields = ["total_lessons", "updated_at"]
     if actor is not None and getattr(actor, "is_authenticated", False):
         journal.updated_by = actor
