@@ -133,9 +133,14 @@ class AssignAssessmentHomeworkView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        from classes.lesson_schedule import homework_due_at
+
         title = (data.get("title") or "").strip() or aset.title
         instructions = (data.get("instructions") or "").strip()
-        due_at = data.get("due_at")
+        # No manual deadline: homework runs from the lesson it is set until the START of
+        # the classroom's next lesson. None (unschedulable classroom) = no deadline.
+        # Any client-supplied ``due_at`` is deliberately ignored.
+        due_at = homework_due_at(classroom)
 
         # Create core homework row in existing system — UNIQUE(classroom, assessment_set) + locks.
         # Nested ``atomic()`` establishes a SAVEPOINT so an IntegrityError on duplicate insert

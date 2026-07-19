@@ -12,6 +12,12 @@ from assessments.models import AssessmentSet, AssessmentQuestion
 
 User = get_user_model()
 
+
+def _rows(resp):
+    """Rows from a list endpoint, paginated (LimitOffsetPagination) or not."""
+    body = resp.json()
+    return body["results"] if isinstance(body, dict) and "results" in body else body
+
 _ALLOWED_SUBDOMAIN_HOSTS = (
     "localhost",
     "127.0.0.1",
@@ -138,7 +144,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
             HTTP_HOST="questions.mastersat.uz",
         )
         self.assertEqual(resp.status_code, 200)
-        ids = {row["id"] for row in resp.json()}
+        ids = {row["id"] for row in _rows(resp)}
         self.assertIn(self.set_math.id, ids)
         self.assertNotIn(self.set_eng.id, ids)
 
@@ -146,7 +152,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
         self.client.force_authenticate(user=self.admin)
         resp = self.client.get("/api/assessments/admin/sets/", HTTP_HOST="admin.mastersat.uz")
         self.assertEqual(resp.status_code, 200)
-        ids = {row["id"] for row in resp.json()}
+        ids = {row["id"] for row in _rows(resp)}
         self.assertIn(self.set_math.id, ids)
         self.assertIn(self.set_eng.id, ids)
 
@@ -240,7 +246,7 @@ class AssessmentsSecurityMatrixTests(TestCase):
             HTTP_HOST="questions.mastersat.uz",
         )
         self.assertEqual(r.status_code, 403)
-        self.assertIn("admin subdomain", (r.json().get("detail") or "").lower())
+        self.assertIn("console", (r.json().get("detail") or "").lower())
 
     def test_assignment_post_forbidden_on_main_api_host(self):
         self.client.force_authenticate(user=self.teacher_math)
@@ -265,7 +271,10 @@ class AssessmentsSecurityMatrixTests(TestCase):
         )
         self.assertEqual(r.status_code, 403)
 
-    def test_teacher_cannot_author_assessment_catalog_writes(self):
+    def test_teacher_may_author_in_their_own_subject(self):
+        """Teachers author assessments for their own classrooms — granted deliberately in
+        7ddf838 ("author rights for teachers"). This test previously asserted 403 and was
+        never updated when the policy changed."""
         self.client.force_authenticate(user=self.teacher_math)
         resp = self.client.post(
             "/api/assessments/admin/sets/",
@@ -273,5 +282,18 @@ class AssessmentsSecurityMatrixTests(TestCase):
             format="json",
             HTTP_HOST="questions.mastersat.uz",
         )
-        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.status_code, 201, resp.content)
+
+    def test_teacher_cannot_author_outside_their_own_subject(self):
+        """The guarantee that survives the policy change: a math teacher must not be able
+        to author ENGLISH content. CanAuthorAssessmentContent probes the actor's own
+        domain subject, so the cross-subject case is the one still worth pinning."""
+        self.client.force_authenticate(user=self.teacher_math)
+        resp = self.client.post(
+            "/api/assessments/admin/sets/",
+            data={"subject": "english", "source": "SQB", "category": "x", "title": "X-subject", "description": "", "is_active": True},
+            format="json",
+            HTTP_HOST="questions.mastersat.uz",
+        )
+        self.assertEqual(resp.status_code, 403, resp.content)
 

@@ -1,5 +1,5 @@
-"""Journal + lesson REST API: provisioning, content-options level scoping, lesson save,
-publish gating, bulk, and permissions."""
+"""Journal + session REST API: explicit session creation (no pre-provisioning),
+level-scoped content, midterm picker, classwork, publish gating, bulk, permissions."""
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from access import constants as acc_const
 from assessments.models import AssessmentSet
 from journals import services
-from journals.models import Journal, JournalLesson
+from journals.models import Journal, JournalClasswork, JournalLesson
 
 User = get_user_model()
 
@@ -18,35 +18,44 @@ def _admin(email="j_admin@test.com"):
     return User.objects.create_user(email=email, password="x", role=acc_const.ROLE_SUPER_ADMIN)
 
 
-class JournalProvisioningTests(TestCase):
+def _fill(lesson, *, instructions="Do it"):
+    """Make a homework session fully ready (homework brief + classwork plan)."""
+    lesson.instructions = instructions
+    lesson.allow_file_upload = True
+    lesson.save()
+    cw = services.ensure_classwork(lesson)
+    cw.new_topic_title = "Topic"
+    cw.new_topic_instructions = "Teach it"
+    cw.save()
+    return lesson
+
+
+class JournalCreationTests(TestCase):
     def setUp(self):
         self.admin = _admin()
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
 
-    def test_create_provisions_lessons(self):
+    def test_journal_starts_empty(self):
         resp = self.client.post(
             "/api/journals/", {"subject": "MATH", "level": "foundation"}, format="json"
         )
         self.assertEqual(resp.status_code, 201, resp.content)
         body = resp.json()
-        self.assertEqual(body["total_lessons"], 12)
-        self.assertEqual(len(body["lessons"]), 12)
-        self.assertEqual(body["lessons"][-1]["lesson_type"], "MIDTERM")
-        self.assertEqual(body["progress"]["homework_total"], 11)
-        self.assertEqual(body["progress"]["midterm_total"], 1)
+        self.assertEqual(body["total_lessons"], 0)
+        self.assertEqual(body["lessons"], [])
+        # The recommended shape is advisory only.
+        self.assertEqual(body["recommended"]["lessons"], 12)
 
     def test_create_is_idempotent(self):
-        journal, created = services.create_journal(
-            subject="MATH", level="junior", actor=self.admin
-        )
+        j, created = services.create_journal(subject="MATH", level="junior", actor=self.admin)
         self.assertTrue(created)
         again, created2 = services.create_journal(
             subject="MATH", level="junior", actor=self.admin
         )
         self.assertFalse(created2)
-        self.assertEqual(journal.id, again.id)
-        self.assertEqual(JournalLesson.objects.filter(journal=journal).count(), 36)
+        self.assertEqual(j.id, again.id)
+        self.assertEqual(j.lessons.count(), 0)
 
     def test_create_english_foundation_rejected(self):
         resp = self.client.post(
@@ -54,133 +63,226 @@ class JournalProvisioningTests(TestCase):
         )
         self.assertEqual(resp.status_code, 400, resp.content)
 
-    def test_list_journals(self):
-        services.create_journal(subject="MATH", level="foundation", actor=self.admin)
-        services.create_journal(subject="ENGLISH", level="junior", actor=self.admin)
-        resp = self.client.get("/api/journals/")
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()["count"], 2)
 
-
-class ContentOptionsTests(TestCase):
+class SessionTests(TestCase):
     def setUp(self):
-        self.admin = _admin("j_copt@test.com")
-        self.client = APIClient()
-        self.client.force_authenticate(self.admin)
-        self.found = AssessmentSet.objects.create(
-            subject="math", title="Math Found", source=AssessmentSet.SOURCE_SQB,
-            level="foundation", created_by=self.admin,
-        )
-        self.junior = AssessmentSet.objects.create(
-            subject="math", title="Math Junior", source=AssessmentSet.SOURCE_SQB,
-            level="junior", created_by=self.admin,
-        )
-        self.english = AssessmentSet.objects.create(
-            subject="english", title="Eng Middle", source=AssessmentSet.SOURCE_SQB,
-            level="middle", created_by=self.admin,
-        )
-
-    def test_level_scoped_assessment_sets(self):
-        resp = self.client.get("/api/journals/content-options/?subject=MATH&level=foundation")
-        self.assertEqual(resp.status_code, 200, resp.content)
-        titles = {a["title"] for a in resp.json()["assessment_sets"]}
-        self.assertEqual(titles, {"Math Found"})
-
-    def test_invalid_course_rejected(self):
-        resp = self.client.get("/api/journals/content-options/?subject=ENGLISH&level=foundation")
-        self.assertEqual(resp.status_code, 400)
-
-
-class LessonEditTests(TestCase):
-    def setUp(self):
-        self.admin = _admin("j_ledit@test.com")
+        self.admin = _admin("j_sess@test.com")
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
         self.journal, _ = services.create_journal(
             subject="MATH", level="foundation", actor=self.admin
         )
+
+    def _add(self, **body):
+        return self.client.post(
+            f"/api/journals/{self.journal.id}/sessions/", body or {}, format="json"
+        )
+
+    def test_new_session_appends_and_creates_classwork(self):
+        resp = self._add()
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(body["lesson_number"], 1)
+        self.assertEqual(body["lesson_type"], "HOMEWORK")
+        self.assertIsNotNone(body["classwork"])
+        # Timetable defaults mirror the lesson plan.
+        tt = {b["key"]: b["minutes"] for b in body["classwork"]["timetable"]}
+        self.assertEqual(tt["HOMEWORK_REVIEW"], 20)
+        self.assertEqual(tt["NEW_TOPIC"], 30)
+        self.assertEqual(tt["BREAK"], 10)
+        self.assertEqual(tt["EXERCISES"], 20)
+        self.assertEqual(tt["REVISION"], 30)
+
+    def test_sessions_number_sequentially(self):
+        for expected in (1, 2, 3):
+            self.assertEqual(self._add().json()["lesson_number"], expected)
+        self.journal.refresh_from_db()
+        self.assertEqual(self.journal.total_lessons, 3)
+
+    def test_admin_controls_midterm_placement(self):
+        self._add()
+        self._add()
+        mid = self._add(type="MIDTERM")
+        self.assertEqual(mid.status_code, 201, mid.content)
+        self.assertEqual(mid.json()["lesson_type"], "MIDTERM")
+        self.assertIsNone(mid.json()["classwork"])
+        self.assertEqual(self.journal.lessons.filter(lesson_type="MIDTERM").count(), 1)
+
+    def test_total_lessons_stays_accurate_on_a_prefetched_journal(self):
+        """Regression: journal.lessons.count() answers from a stale prefetch cache, so
+        total_lessons must be recomputed with an explicit queryset."""
+        self._add()
+        self._add()
+        # Simulate the API path, which prefetches lessons before mutating.
+        from django.db.models import Prefetch
+
+        prefetched = Journal.objects.prefetch_related(
+            Prefetch("lessons", queryset=JournalLesson.objects.all())
+        ).get(pk=self.journal.id)
+        list(prefetched.lessons.all())  # populate the cache
+        services.add_session(prefetched, actor=self.admin)
+        prefetched.refresh_from_db()
+        self.assertEqual(prefetched.total_lessons, 3)
+
+    def test_delete_session_renumbers(self):
+        ids = [self._add().json()["id"] for _ in range(3)]
+        resp = self.client.delete(f"/api/journals/{self.journal.id}/lessons/{ids[0]}/")
+        self.assertEqual(resp.status_code, 204, resp.content)
+        remaining = list(self.journal.lessons.order_by("lesson_number"))
+        self.assertEqual([l.lesson_number for l in remaining], [1, 2])
+        self.journal.refresh_from_db()
+        self.assertEqual(self.journal.total_lessons, 2)
+
+
+class MidtermOptionTests(TestCase):
+    def setUp(self):
+        self.admin = _admin("j_mid@test.com")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.journal, _ = services.create_journal(
+            subject="MATH", level="foundation", actor=self.admin
+        )
+
+    def test_options_filtered_by_level_and_subject(self):
+        from midterms.models import Midterm
+
+        # Only the MATH + foundation one should be offered.
+        wanted = Midterm.objects.create(
+            title="Math Foundation MT", subject="MATH", level="foundation",
+            is_published=True, created_by=self.admin,
+        )
+        Midterm.objects.create(
+            title="Math Junior MT", subject="MATH", level="junior",
+            is_published=True, created_by=self.admin,
+        )
+        Midterm.objects.create(
+            title="Eng Foundation MT", subject="READING_WRITING", level="foundation",
+            is_published=True, created_by=self.admin,
+        )
+        Midterm.objects.create(
+            title="Unpublished", subject="MATH", level="foundation",
+            is_published=False, created_by=self.admin,
+        )
+        resp = self.client.get("/api/journals/midterm-options/?subject=MATH&level=foundation")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        titles = {m["title"] for m in resp.json()["midterms"]}
+        self.assertEqual(titles, {"Math Foundation MT"})
+        self.assertEqual(resp.json()["midterms"][0]["id"], wanted.id)
+
+    def test_midterm_session_needs_exam_to_be_ready(self):
+        from midterms.models import Midterm
+
+        exam = Midterm.objects.create(
+            title="MT", subject="MATH", level="foundation",
+            is_published=True, created_by=self.admin,
+        )
+        lesson = services.add_session(
+            self.journal, actor=self.admin, lesson_type=JournalLesson.TYPE_MIDTERM
+        )
+        self.assertFalse(lesson.is_ready)
+        self.assertIn("No midterm exam selected", lesson.validation_reasons())
+
+        resp = self.client.patch(
+            f"/api/journals/{self.journal.id}/lessons/{lesson.id}/",
+            {"midterm_exam_id": exam.id, "midterm_access_days_before": 2},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(resp.json()["is_ready"])
+        self.assertEqual(resp.json()["midterm"]["access_days_before"], 2)
+
+    def test_midterm_rejects_homework_fields(self):
+        lesson = services.add_session(
+            self.journal, actor=self.admin, lesson_type=JournalLesson.TYPE_MIDTERM
+        )
+        resp = self.client.patch(
+            f"/api/journals/{self.journal.id}/lessons/{lesson.id}/",
+            {"instructions": "nope"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+
+
+class ClassworkTests(TestCase):
+    def setUp(self):
+        self.admin = _admin("j_cw@test.com")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.journal, _ = services.create_journal(
+            subject="MATH", level="foundation", actor=self.admin
+        )
+        self.s1 = services.add_session(self.journal, actor=self.admin)
+        self.s2 = services.add_session(self.journal, actor=self.admin)
         self.set = AssessmentSet.objects.create(
             subject="math", title="F set", source=AssessmentSet.SOURCE_SQB,
             level="foundation", created_by=self.admin,
         )
-        self.wrong_level = AssessmentSet.objects.create(
+
+    def _url(self, lesson):
+        return f"/api/journals/{self.journal.id}/lessons/{lesson.id}/classwork/"
+
+    def test_edit_durations_and_new_topic(self):
+        resp = self.client.patch(
+            self._url(self.s1),
+            {
+                "new_topic_title": "Linear equations",
+                "new_topic_instructions": "Explain slope",
+                "new_topic_minutes": 25,
+                "break_minutes": 15,
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        body = resp.json()
+        self.assertEqual(body["new_topic_title"], "Linear equations")
+        tt = {b["key"]: b["minutes"] for b in body["timetable"]}
+        self.assertEqual(tt["NEW_TOPIC"], 25)
+        self.assertEqual(tt["BREAK"], 15)
+        self.assertTrue(body["is_ready"])
+
+    def test_exercises_and_new_topic_assessments_are_separate_blocks(self):
+        resp = self.client.patch(
+            self._url(self.s1),
+            {
+                "new_topic_assessment_set_ids": [self.set.id],
+                "exercise_assessment_set_ids": [self.set.id],
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        body = resp.json()
+        self.assertEqual(len(body["new_topic_assessments"]), 1)
+        self.assertEqual(len(body["exercise_assessments"]), 1)
+        # Revision re-opens the exercises content.
+        self.assertEqual(len(body["revision_targets"]["assessments"]), 1)
+
+    def test_homework_review_shows_previous_session_homework(self):
+        self.s1.title = "HW one"
+        self.s1.instructions = "Read ch.1"
+        self.s1.save()
+        resp = self.client.get(self._url(self.s2))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        review = resp.json()["homework_review"]
+        self.assertIsNotNone(review)
+        self.assertEqual(review["lesson_number"], 1)
+        self.assertEqual(review["title"], "HW one")
+
+    def test_first_session_has_no_homework_review(self):
+        resp = self.client.get(self._url(self.s1))
+        self.assertIsNone(resp.json()["homework_review"])
+
+    def test_wrong_level_assessment_filtered_out(self):
+        other = AssessmentSet.objects.create(
             subject="math", title="J set", source=AssessmentSet.SOURCE_SQB,
             level="junior", created_by=self.admin,
         )
-        self.hw = self.journal.lessons.filter(lesson_type="HOMEWORK").first()
-        self.midterm = self.journal.lessons.filter(lesson_type="MIDTERM").first()
-
-    def _url(self, lesson):
-        return f"/api/journals/{self.journal.id}/lessons/{lesson.id}/"
-
-    def test_attach_assessment_makes_ready(self):
         resp = self.client.patch(
-            self._url(self.hw),
-            {"instructions": "Do it", "assessment_set_ids": [self.set.id]},
-            format="json",
+            self._url(self.s1), {"exercise_assessment_set_ids": [other.id]}, format="json"
         )
-        self.assertEqual(resp.status_code, 200, resp.content)
-        body = resp.json()
-        self.assertTrue(body["is_ready"])
-        self.assertEqual(len(body["assessments"]), 1)
-
-    def test_wrong_level_assessment_filtered_out(self):
-        resp = self.client.patch(
-            self._url(self.hw),
-            {"instructions": "x", "assessment_set_ids": [self.wrong_level.id]},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertEqual(len(resp.json()["assessments"]), 0)
-
-    def test_allow_file_upload_alone_is_ready(self):
-        resp = self.client.patch(
-            self._url(self.hw),
-            {"instructions": "Upload your work", "allow_file_upload": True},
-            format="json",
-        )
-        self.assertTrue(resp.json()["is_ready"])
-
-    def test_external_link_alone_is_ready(self):
-        # A link-only homework template is a valid deliverable (parity with classrooms).
-        resp = self.client.patch(
-            self._url(self.hw),
-            {"instructions": "Watch this", "external_url": "https://example.com/lesson"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertTrue(resp.json()["is_ready"])
-
-    def test_missing_instructions_not_ready(self):
-        resp = self.client.patch(
-            self._url(self.hw), {"allow_file_upload": True}, format="json"
-        )
-        body = resp.json()
-        self.assertFalse(body["is_ready"])
-        self.assertIn("Instructions are empty", body["validation"])
-
-    def test_midterm_rejects_homework_fields(self):
-        resp = self.client.patch(
-            self._url(self.midterm), {"instructions": "nope"}, format="json"
-        )
-        self.assertEqual(resp.status_code, 400, resp.content)
-
-    def test_lesson_publish_requires_ready(self):
-        # Not ready yet → 409
-        resp = self.client.post(self._url(self.hw) + "publish/")
-        self.assertEqual(resp.status_code, 409, resp.content)
-        # Make ready, then publish.
-        self.client.patch(
-            self._url(self.hw),
-            {"instructions": "Do it", "allow_file_upload": True},
-            format="json",
-        )
-        resp2 = self.client.post(self._url(self.hw) + "publish/")
-        self.assertEqual(resp2.status_code, 200, resp2.content)
-        self.assertEqual(resp2.json()["status"], "PUBLISHED")
+        self.assertEqual(len(resp.json()["exercise_assessments"]), 0)
 
 
-class JournalPublishTests(TestCase):
+class PublishTests(TestCase):
     def setUp(self):
         self.admin = _admin("j_pub@test.com")
         self.client = APIClient()
@@ -189,19 +291,29 @@ class JournalPublishTests(TestCase):
             subject="MATH", level="foundation", actor=self.admin
         )
 
-    def test_publish_blocked_when_incomplete(self):
+    def test_empty_journal_cannot_publish(self):
         resp = self.client.post(f"/api/journals/{self.journal.id}/publish/")
         self.assertEqual(resp.status_code, 409, resp.content)
-        self.assertTrue(resp.json()["blocking_lessons"])
 
-    def test_publish_succeeds_when_all_homework_ready(self):
-        for l in self.journal.lessons.filter(lesson_type="HOMEWORK"):
-            l.instructions = "ok"
-            l.allow_file_upload = True
-            l.save()
+    def test_publish_needs_homework_and_classwork(self):
+        lesson = services.add_session(self.journal, actor=self.admin)
         resp = self.client.post(f"/api/journals/{self.journal.id}/publish/")
-        self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertEqual(resp.json()["status"], "PUBLISHED")
+        self.assertEqual(resp.status_code, 409)
+        reasons = resp.json()["blocking_lessons"][0]["reasons"]
+        self.assertTrue(any("Homework instructions" in r for r in reasons))
+        self.assertTrue(any("New topic title" in r for r in reasons))
+
+        _fill(lesson)
+        ok = self.client.post(f"/api/journals/{self.journal.id}/publish/")
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json()["status"], "PUBLISHED")
+
+    def test_external_link_alone_satisfies_homework_content(self):
+        lesson = services.add_session(self.journal, actor=self.admin)
+        lesson.instructions = "Watch"
+        lesson.external_url = "https://example.com/x"
+        lesson.save()
+        self.assertTrue(lesson.homework_ready)
 
 
 class BulkTests(TestCase):
@@ -212,48 +324,31 @@ class BulkTests(TestCase):
         self.journal, _ = services.create_journal(
             subject="MATH", level="foundation", actor=self.admin
         )
-        self.hw = list(self.journal.lessons.filter(lesson_type="HOMEWORK")[:3])
-        for l in self.hw:
-            l.instructions = "ok"
-            l.allow_file_upload = True
-            l.save()
+        self.sessions = [
+            _fill(services.add_session(self.journal, actor=self.admin)) for _ in range(3)
+        ]
 
     def test_bulk_publish(self):
         resp = self.client.post(
             f"/api/journals/{self.journal.id}/lessons/bulk/",
-            {"action": "publish", "ids": [l.id for l in self.hw]},
+            {"action": "publish", "ids": [s.id for s in self.sessions]},
             format="json",
         )
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(resp.json()["affected"], 3)
-        for l in self.hw:
-            l.refresh_from_db()
-            self.assertEqual(l.status, "PUBLISHED")
-
-    def test_bulk_skips_midterm(self):
-        midterm = self.journal.lessons.get(lesson_type="MIDTERM")
-        resp = self.client.post(
-            f"/api/journals/{self.journal.id}/lessons/bulk/",
-            {"action": "publish", "ids": [midterm.id]},
-            format="json",
-        )
-        self.assertEqual(resp.json()["skipped"], 1)
 
     def test_bulk_rejected_on_archived_journal(self):
         self.journal.status = Journal.STATUS_ARCHIVED
         self.journal.save(update_fields=["status"])
-        before = {l.id: l.status for l in self.hw}
         resp = self.client.post(
             f"/api/journals/{self.journal.id}/lessons/bulk/",
-            {"action": "clear", "ids": [l.id for l in self.hw]},
+            {"action": "clear", "ids": [s.id for s in self.sessions]},
             format="json",
         )
         self.assertEqual(resp.status_code, 409, resp.content)
-        # Lessons must be untouched.
-        for l in self.hw:
-            l.refresh_from_db()
-            self.assertEqual(l.status, before[l.id])
-            self.assertTrue(l.instructions)
+        for s in self.sessions:
+            s.refresh_from_db()
+            self.assertTrue(s.instructions)
 
 
 class PermissionTests(TestCase):
@@ -262,9 +357,6 @@ class PermissionTests(TestCase):
         self.teacher = User.objects.create_user(
             email="j_perm_teacher@test.com", password="x",
             role=acc_const.ROLE_TEACHER, subject="math",
-        )
-        self.student = User.objects.create_user(
-            email="j_perm_student@test.com", password="x", role=acc_const.ROLE_STUDENT
         )
         services.create_journal(subject="MATH", level="foundation", actor=self.admin)
 
@@ -279,11 +371,7 @@ class PermissionTests(TestCase):
     def test_teacher_forbidden(self):
         self.assertEqual(self._client(self.teacher).get("/api/journals/").status_code, 403)
 
-    def test_student_forbidden(self):
-        self.assertEqual(self._client(self.student).get("/api/journals/").status_code, 403)
-
-    def test_teacher_cannot_create(self):
-        resp = self._client(self.teacher).post(
-            "/api/journals/", {"subject": "MATH", "level": "junior"}, format="json"
-        )
+    def test_teacher_cannot_add_session(self):
+        j = Journal.objects.first()
+        resp = self._client(self.teacher).post(f"/api/journals/{j.id}/sessions/", {}, format="json")
         self.assertEqual(resp.status_code, 403)

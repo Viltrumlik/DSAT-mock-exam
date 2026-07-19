@@ -338,6 +338,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "item_count",
             "subject",
             "assigned_at",
+            # Homework has no manual deadline. ``due_at`` is DERIVED server-side as the
+            # start of the classroom's next lesson (classes.lesson_schedule.homework_due_at)
+            # and is null when no next lesson can be computed. Client input is ignored.
+            "due_at",
         ]
 
     @extend_schema_field(serializers.BooleanField(read_only=True))

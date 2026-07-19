@@ -1,4 +1,7 @@
-"""Provision the 7 canonical journals (idempotent).
+"""Create the 7 canonical (empty) journals (idempotent).
+
+Journals are created with NO sessions — an admin adds them with "New session" and decides
+how many lessons and midterms the course has.
 
     python manage.py seed_journals            # create any missing journals
     python manage.py seed_journals --actor 1  # attribute created_by to user id 1
@@ -11,7 +14,7 @@ from journals import services, structure
 
 
 class Command(BaseCommand):
-    help = "Create the 7 canonical journals (Math: F/J/M/S, English: J/M/S) and their lesson slots."
+    help = "Create the 7 canonical, EMPTY journals (Math: F/J/M/S, English: J/M/S)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -44,7 +47,7 @@ class Command(BaseCommand):
                 created += 1
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f"created {journal.display_title} ({journal.total_lessons} lessons)"
+                        f"created {journal.display_title} (empty — add sessions in the admin)"
                     )
                 )
             else:

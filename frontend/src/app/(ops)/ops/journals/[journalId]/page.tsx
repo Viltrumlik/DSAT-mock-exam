@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { journalsApi } from "@/features/journals/api";
 import type { JournalDetail, LessonSummary } from "@/features/journals/types";
+import type { MidtermOption } from "@/features/journals/types";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -15,10 +16,13 @@ import {
   Edit3,
   GraduationCap,
   Loader2,
+  Plus,
   RotateCcw,
   Search,
   Send,
+  Trash2,
   Upload,
+  X,
 } from "lucide-react";
 
 type FilterKey = "all" | "published" | "draft" | "missing" | "midterm" | "has_files" | "has_assessment" | "has_pastpaper";
@@ -47,6 +51,11 @@ export default function JournalDetailPage() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Midterm picker — sessions are added explicitly, and a midterm needs an exam chosen
+  // from the midterms available for THIS journal's level.
+  const [midtermPickerOpen, setMidtermPickerOpen] = useState(false);
+  const [midtermOptions, setMidtermOptions] = useState<MidtermOption[]>([]);
+  const [midtermLoading, setMidtermLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -90,6 +99,62 @@ export default function JournalDetailPage() {
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(detail || `Could not ${name}.`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** "New session" — append an empty homework session (homework brief + classwork plan). */
+  const addHomeworkSession = async () => {
+    setBusy("add-session");
+    setError(null);
+    try {
+      await journalsApi.addSession(journalId, "HOMEWORK");
+      await load();
+    } catch {
+      setError("Could not add a session.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openMidtermPicker = async () => {
+    if (!journal) return;
+    setMidtermPickerOpen(true);
+    setMidtermLoading(true);
+    try {
+      const d = await journalsApi.midtermOptions(journal.subject, journal.level);
+      setMidtermOptions(d.midterms ?? []);
+    } catch {
+      setMidtermOptions([]);
+    } finally {
+      setMidtermLoading(false);
+    }
+  };
+
+  const addMidtermSession = async (examId: number) => {
+    setBusy("add-midterm");
+    setError(null);
+    try {
+      await journalsApi.addSession(journalId, "MIDTERM", examId);
+      setMidtermPickerOpen(false);
+      await load();
+    } catch {
+      setError("Could not add the midterm session.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteSession = async (lessonId: number, lessonNumber: number) => {
+    if (!window.confirm(`Delete session ${lessonNumber}? Later sessions are renumbered.`)) return;
+    setBusy(`del-${lessonId}`);
+    setError(null);
+    try {
+      await journalsApi.deleteSession(journalId, lessonId);
+      await load();
+    } catch {
+      setError("Could not delete that session.");
     } finally {
       setBusy(null);
     }
@@ -245,12 +310,96 @@ export default function JournalDetailPage() {
       </div>
 
       {/* Progress panel */}
-      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-5 grid gap-3 rounded-2xl border border-border bg-card p-5 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Completion" value={`${p.completion_pct}%`} tone={p.completion_pct >= 100 ? "good" : "warn"} />
         <Stat label="Homework ready" value={`${p.homework_ready}/${p.homework_total}`} tone={p.homework_missing === 0 ? "good" : "warn"} />
-        <Stat label="Missing" value={String(p.homework_missing)} tone={p.homework_missing === 0 ? "good" : "bad"} />
+        <Stat label="Classwork ready" value={`${p.classwork_ready}/${p.homework_total}`} tone={p.classwork_missing === 0 ? "good" : "warn"} />
+        <Stat label="Midterms set" value={`${p.midterm_configured}/${p.midterm_total}`} tone={p.midterm_total > 0 && p.midterm_configured === p.midterm_total ? "good" : "neutral"} />
         <Stat label="Published / Draft" value={`${p.published_count} / ${p.draft_count}`} tone="neutral" />
       </div>
+
+      {/* Add session — nothing is pre-provisioned; the admin decides the course shape. */}
+      {!archived && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-border bg-card px-4 py-3">
+          <div className="mr-auto">
+            <div className="text-sm font-bold text-foreground">
+              {p.sessions_total} session{p.sessions_total === 1 ? "" : "s"}
+            </div>
+            {journal.recommended && (
+              <p className="text-xs text-muted-foreground">
+                Recommended for {journal.level_label}: {journal.recommended.lessons} lessons
+                {" · "}midterm every {journal.recommended.midterm_every}
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={addHomeworkSession}
+            disabled={busy === "add-session"}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {busy === "add-session" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            New session
+          </button>
+          <button
+            type="button"
+            onClick={openMidtermPicker}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface-2 px-3.5 py-2 text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary"
+          >
+            <GraduationCap className="h-4 w-4" />
+            New midterm
+          </button>
+        </div>
+      )}
+
+      {/* Midterm picker — only midterms matching this journal's subject + level. */}
+      {midtermPickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border bg-panel p-5 shadow-xl">
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="flex-1 text-base font-extrabold text-foreground">
+                Add a midterm session
+              </h2>
+              <button type="button" onClick={() => setMidtermPickerOpen(false)} aria-label="Close" className="rounded-md p-1 text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Showing published midterms for {journal.subject_label} · {journal.level_label}.
+              The class gets access 2 days before this session.
+            </p>
+            {midtermLoading ? (
+              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading midterms…
+              </div>
+            ) : midtermOptions.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+                No published midterms are tagged for this level yet.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {midtermOptions.map((m) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      onClick={() => addMidtermSession(m.id)}
+                      disabled={busy === "add-midterm"}
+                      className="w-full rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary disabled:opacity-50"
+                    >
+                      <div className="text-sm font-bold text-foreground">{m.title}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {m.level || "untagged"}
+                        {m.question_count != null ? ` · ${m.question_count} questions` : ""}
+                        {m.duration_minutes ? ` · ${m.duration_minutes} min` : ""}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filter + search bar */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -304,12 +453,16 @@ export default function JournalDetailPage() {
             checked={selected.has(l.id)}
             onToggle={() => toggle(l.id)}
             onEdit={() => router.push(`/ops/journals/${journalId}/lessons/${l.id}`)}
+            onDelete={() => deleteSession(l.id, l.lesson_number)}
+            deleting={busy === `del-${l.id}`}
             disabled={archived}
           />
         ))}
         {filtered.length === 0 && (
           <li className="rounded-2xl border border-dashed border-border bg-card px-6 py-10 text-center text-sm text-muted-foreground">
-            No lessons match.
+            {(journal.lessons?.length ?? 0) === 0
+              ? "No sessions yet — add the first one with “New session”."
+              : "No sessions match."}
           </li>
         )}
       </ol>
@@ -318,12 +471,14 @@ export default function JournalDetailPage() {
 }
 
 function LessonRow({
-  lesson, checked, onToggle, onEdit, disabled,
+  lesson, checked, onToggle, onEdit, onDelete, deleting, disabled,
 }: {
   lesson: LessonSummary;
   checked: boolean;
   onToggle: () => void;
   onEdit: () => void;
+  onDelete: () => void;
+  deleting: boolean;
   disabled: boolean;
 }) {
   const isMidterm = lesson.lesson_type === "MIDTERM";
@@ -359,7 +514,9 @@ function LessonRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-extrabold text-foreground">
-            {isMidterm ? "Midterm" : lesson.title || `Lesson ${lesson.lesson_number}`}
+            {isMidterm
+              ? lesson.midterm?.title || "Midterm — no exam selected"
+              : lesson.title || lesson.new_topic_title || `Session ${lesson.lesson_number}`}
           </span>
           {isMidterm ? (
             <Badge className="bg-[#6d4ec7]/15 text-[#6d4ec7]">Midterm</Badge>
@@ -371,10 +528,19 @@ function LessonRow({
             <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Missing</Badge>
           )}
         </div>
-        {!isMidterm && (
+        {isMidterm ? (
+          <div className="mt-0.5 text-[12px] font-medium text-muted-foreground">
+            Class gets access {lesson.midterm?.access_days_before ?? 2} days before · no homework
+          </div>
+        ) : (
           <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[12px] font-medium text-muted-foreground">
             <span>{lesson.content_count} item{lesson.content_count !== 1 ? "s" : ""}</span>
-            {lesson.due_after_days != null && <span>· due +{lesson.due_after_days}d</span>}
+            <span className={cn("font-bold", lesson.homework_ready ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+              · Homework {lesson.homework_ready ? "✓" : "—"}
+            </span>
+            <span className={cn("font-bold", lesson.classwork_ready ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+              · Classwork {lesson.classwork_ready ? "✓" : "—"}
+            </span>
             {!lesson.is_ready && lesson.validation.length > 0 && (
               <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
                 <AlertTriangle className="h-3 w-3" /> {lesson.validation[0]}
@@ -384,18 +550,27 @@ function LessonRow({
         )}
       </div>
 
-      {isMidterm ? (
-        <span className="text-xs font-semibold text-muted-foreground">No homework</span>
-      ) : (
+      <div className="flex shrink-0 items-center gap-1.5">
+        {!isMidterm && (
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={disabled}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+          >
+            <Edit3 className="h-4 w-4" /> Edit
+          </button>
+        )}
         <button
           type="button"
-          onClick={onEdit}
-          disabled={disabled}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-sm font-bold text-foreground transition-colors hover:border-primary hover:text-primary disabled:opacity-50"
+          onClick={onDelete}
+          disabled={disabled || deleting}
+          aria-label={`Delete session ${lesson.lesson_number}`}
+          className="rounded-xl border border-border bg-background p-2 text-muted-foreground transition-colors hover:border-rose-400 hover:text-rose-500 disabled:opacity-50"
         >
-          <Edit3 className="h-4 w-4" /> Edit
+          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
         </button>
-      )}
+      </div>
     </li>
   );
 }

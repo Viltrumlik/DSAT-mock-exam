@@ -60,6 +60,57 @@ def ensure_current_version(*, set_id: int, actor):
         return _latest()
 
 
+def attach_assessment_set(*, classroom, assignment, set_id: int, actor):
+    """Give ``classroom`` access to assessment set ``set_id``, pinned to current content.
+
+    This is the whole "grant a class an assessment" operation: there is no per-student
+    access row for assessments — a ``HomeworkAssignment`` row plus STUDENT membership IS
+    the gate (see ``assessments.views_attempt.StartAttemptView``).
+
+    Returns ``(homework, created)``. ``created is False`` means the set was already
+    available to this class: ``uniq_assessment_hw_classroom_set`` allows a set to be
+    assigned to a classroom only ONCE, ever, so callers must report "already available"
+    rather than treating it as a failure. Returns ``(None, False)`` if the set is gone.
+    """
+    from django.db import IntegrityError, transaction
+    from assessments.models import AssessmentSet, HomeworkAssignment
+
+    try:
+        aset = AssessmentSet.objects.get(pk=set_id)
+    except AssessmentSet.DoesNotExist:
+        logger.warning("attach_assessment_set: set %s not found; skipping", set_id)
+        return None, False
+
+    pinned_version = ensure_current_version(set_id=aset.pk, actor=actor)
+    created = False
+    try:
+        with transaction.atomic():
+            homework = HomeworkAssignment.objects.create(
+                classroom=classroom,
+                assessment_set=aset,
+                assignment=assignment,
+                assigned_by=actor,
+                set_version=pinned_version,
+            )
+        created = True
+    except IntegrityError:
+        # Expected case: uniq_assessment_hw_classroom_set — this set is already available
+        # to this class. Re-raise anything else rather than reporting it as "already
+        # assigned", which would silently swallow a real constraint failure.
+        homework = HomeworkAssignment.objects.filter(
+            classroom=classroom, assessment_set=aset
+        ).first()
+        if homework is None:
+            raise
+
+    # Propagate the current content to this set's other not-yet-started homeworks.
+    try:
+        resync_stale_homeworks(assessment_set=aset, version=pinned_version)
+    except Exception:
+        logger.exception("resync_stale_homeworks failed for set %s", set_id)
+    return homework, created
+
+
 def resync_stale_homeworks(*, assessment_set, version, exclude_homework_ids=()) -> int:
     """Re-pin homeworks of ``assessment_set`` that have no active attempts to
     ``version`` (so edits reach not-yet-started homeworks). Returns the count

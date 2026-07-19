@@ -31,27 +31,15 @@ import {
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import {
-  ArrowLeft, BookOpen, Check, ClipboardList, GraduationCap, Inbox, Layers,
+  ArrowLeft, BookOpen, Check, ClipboardList, Clock, GraduationCap, Inbox, Layers,
   Link2, Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
 } from "lucide-react";
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
 type TabKey = "pastpapers" | "assessments" | "submission";
 
-const DEFAULT_DEADLINE = "23:59";
-const pad = (n: number) => String(n).padStart(2, "0");
-
-function time12(h: number, m: number): string {
-  const ampm = h < 12 ? "AM" : "PM";
-  const hr = h % 12 === 0 ? 12 : h % 12;
-  return `${hr}:${pad(m)} ${ampm}`;
-}
-function timeOptions(): { value: string; label: string }[] {
-  const out: { value: string; label: string }[] = [];
-  for (let h = 0; h < 24; h++) for (const m of [0, 30]) out.push({ value: `${pad(h)}:${pad(m)}`, label: time12(h, m) });
-  out.push({ value: "23:59", label: "11:59 PM (end of day)" });
-  return out;
-}
+// No deadline helpers here: homework is due at the start of the class's next lesson,
+// derived server-side when the session is released to a classroom.
 
 function cardReactKey(c: CardPastpaperPack | CardSingle): string {
   return c.kind === "single" ? `single-${c.test.id}` : `pack-${c.packKey}`;
@@ -84,8 +72,6 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   const [instructions, setInstructions] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
   const [allowFileUpload, setAllowFileUpload] = useState(false);
-  const [dueAfterDays, setDueAfterDays] = useState("");
-  const [deadlineTime, setDeadlineTime] = useState(DEFAULT_DEADLINE);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
@@ -117,8 +103,6 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         setInstructions(l.instructions || "");
         setExternalUrl(l.external_url || "");
         setAllowFileUpload(l.allow_file_upload);
-        setDueAfterDays(l.due_after_days != null ? String(l.due_after_days) : "");
-        setDeadlineTime(l.deadline_time ? l.deadline_time.slice(0, 5) : DEFAULT_DEADLINE);
         if (l.practice_scope === "MATH" || l.practice_scope === "ENGLISH" || l.practice_scope === "BOTH") setPracticeScope(l.practice_scope);
         setSelectedAssessmentIds(new Set(l.assessments.map((a) => a.assessment_set_id)));
         setSelectedTestIds(new Set(l.practice_test_ids || []));
@@ -238,8 +222,6 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         external_url: externalUrl.trim(),
         allow_file_upload: allowFileUpload,
         practice_scope: practiceScope,
-        due_after_days: dueAfterDays === "" ? null : Number(dueAfterDays),
-        deadline_time: deadlineTime || null,
         assessment_set_ids: [...selectedAssessmentIds],
         practice_test_ids: [...selectedTestIds],
         practice_test_pack_ids: [...selectedPackIds],
@@ -359,18 +341,16 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                 <textarea id="jl-inst" value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="Write clear, detailed directions for students" rows={9} className={crTextareaClass} />
               </ClassroomField>
 
-              <ClassroomField label="Deadline" hint="Relative to the lesson date once a classroom follows this journal.">
-                <div className="flex gap-2">
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <span className="whitespace-nowrap text-sm font-semibold text-muted-foreground">Due after</span>
-                    <input type="number" min={0} max={60} value={dueAfterDays} onChange={(e) => setDueAfterDays(e.target.value)} placeholder="—" className={`${crInputClass} w-16 text-center`} />
-                    <span className="whitespace-nowrap text-sm font-semibold text-muted-foreground">days</span>
-                  </div>
-                  <select aria-label="Deadline time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} disabled={dueAfterDays === ""} className={`${crInputClass} min-w-0 flex-1 disabled:opacity-50`}>
-                    {timeOptions().map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
+              <div className="flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-3">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+                <div>
+                  <div className="text-[13.5px] font-bold text-foreground">Due at the next lesson</div>
+                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">
+                    When a class receives this homework it stays open until that class&apos;s
+                    next lesson begins — no deadline to set here.
+                  </p>
                 </div>
-              </ClassroomField>
+              </div>
             </div>
 
             {/* cart */}

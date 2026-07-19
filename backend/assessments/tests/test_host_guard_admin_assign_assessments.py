@@ -55,7 +55,7 @@ class AdminAssignAssessmentsHostGuardSurfaceTests(TestCase):
             HTTP_HOST="questions.mastersat.uz",
         )
         self.assertEqual(r.status_code, 403)
-        self.assertIn("admin subdomain", (r.json().get("detail") or "").lower())
+        self.assertIn("console", (r.json().get("detail") or "").lower())
 
     def test_main_host_blocks_assessment_homework_assign_post(self):
         """Apex/main API host cannot assign assessments (admin console only)."""
@@ -67,5 +67,5 @@ class AdminAssignAssessmentsHostGuardSurfaceTests(TestCase):
             HTTP_HOST="testserver",
         )
         self.assertEqual(r.status_code, 403)
-        self.assertIn("admin subdomain", (r.json().get("detail") or "").lower())
+        self.assertIn("console", (r.json().get("detail") or "").lower())
 

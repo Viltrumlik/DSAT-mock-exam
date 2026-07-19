@@ -136,6 +136,10 @@ def _build_academic_inputs(student_ids: list[int], classroom, now):
     assignment_by_id = {a.id: a for a in academic_assignments}
     # "Assigned" (completion denominator) = PUBLISHED work currently expected (no due date,
     # or past due). ARCHIVED work leaves the denominator so retiring work isn't punitive.
+    # NOTE: ``due_at`` is now DERIVED (classes.lesson_schedule.homework_due_at = the start
+    # of the classroom's next lesson), so homework sits OUT of the denominator until that
+    # lesson begins. It is null only for a classroom with no parseable schedule, which
+    # keeps the long-standing "no due date ⇒ expected now" behaviour for those rows.
     assigned_ids = {
         a.id
         for a in academic_assignments
