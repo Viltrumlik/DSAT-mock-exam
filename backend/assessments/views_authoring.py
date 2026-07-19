@@ -82,6 +82,26 @@ def _demote_approved_set(set_id: int, actor, *, reason: str, correlation_id: str
     return True
 
 
+def _deny_cross_subject(request, wanted_subject):
+    """403 when a non-global-staff actor writes content outside their own domain subject.
+
+    Global staff (admin / test_admin / super_admin / superuser) author across subjects;
+    a teacher is confined to theirs. ``wanted_subject`` is the subject being written —
+    ``None``/blank means the payload does not change it, which is always allowed.
+    """
+    actor = request.user
+    if is_global_scope_staff(actor) or getattr(actor, "is_superuser", False):
+        return None
+    ds = user_domain_subject(actor)
+    wanted = str(wanted_subject or "").strip().lower()
+    if ds and wanted and wanted != ds:
+        return Response(
+            {"detail": f"You can only author {ds} content."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 class AdminAssessmentSetListCreateView(APIView):
     # Default; method-specific permissions are enforced in get_permissions().
     permission_classes = [IsAuthenticatedAndNotFrozen]
@@ -133,6 +153,13 @@ class AdminAssessmentSetListCreateView(APIView):
         return Response(AssessmentSetSerializer(qs, many=True, context=ser_ctx).data)
 
     def post(self, request):
+        # Teacher scoping on CREATE. The detail endpoints have carried this guard all
+        # along (get/patch 404 on a subject mismatch) but create never did, so a math
+        # teacher could author an ENGLISH set: CanAuthorAssessmentContent only probes the
+        # ACTOR's own subject and never looks at the subject in the payload.
+        denied = _deny_cross_subject(request, (request.data or {}).get("subject"))
+        if denied:
+            return denied
         s = AssessmentSetAdminWriteSerializer(data=request.data)
         s.is_valid(raise_exception=True)
         inst = s.save(created_by=request.user)
@@ -171,6 +198,11 @@ class AdminAssessmentSetDetailView(APIView):
                 return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         if _hidden_from_test_admin(actor, inst):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        # The check above guards the set's CURRENT subject; this one stops a teacher
+        # moving their own set into another domain.
+        denied = _deny_cross_subject(request, (request.data or {}).get("subject"))
+        if denied:
+            return denied
         s = AssessmentSetAdminWriteSerializer(inst, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
         # A metadata edit (title/category/source/level/description/subject) un-approves
