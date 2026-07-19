@@ -269,13 +269,36 @@ def deliver_code(claim: EmailClaim, code: str) -> bool:
             )
         return False
 
-    from django.core.mail import send_mail
+    from django.core.mail import EmailMultiAlternatives
+    from django.template.loader import render_to_string
 
-    send_mail(
-        subject="Your MasterSAT verification code",
-        message=f"Your verification code is {code}. It expires in {EmailClaim.TTL_MINUTES} minutes.",
-        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-        recipient_list=[claim.target_email],
-        fail_silently=True,
+    context = {"code": code, "ttl_minutes": EmailClaim.TTL_MINUTES}
+    # Plain text is the body, HTML the alternative — some clients show only the former,
+    # and a code the recipient cannot read is a support ticket.
+    text_body = (
+        "Confirm your email address\n\n"
+        f"Your MasterSAT verification code is {code}.\n"
+        f"It expires in {EmailClaim.TTL_MINUTES} minutes.\n\n"
+        "If you did not ask to confirm this address, ignore this message — nothing\n"
+        "changes until the code is entered.\n\n"
+        "This message was sent automatically; please do not reply to it.\n"
     )
+    msg = EmailMultiAlternatives(
+        subject="Your MasterSAT verification code",
+        body=text_body,
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+        to=[claim.target_email],
+    )
+    try:
+        msg.attach_alternative(render_to_string("email/verification_code.html", context), "text/html")
+    except Exception:
+        # A template problem must not cost the user their code — send the text part.
+        logger.exception("email_verify_html_render_failed claim=%s", claim.pk)
+    try:
+        msg.send(fail_silently=False)
+    except Exception:
+        # Reported to the caller, which still answers 202: whether delivery succeeded
+        # for one address is not something the client may learn.
+        logger.exception("email_verify_send_failed claim=%s", claim.pk)
+        return False
     return True
