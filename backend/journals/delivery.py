@@ -78,7 +78,16 @@ def get_binding(classroom, *, actor=None, create: bool = False) -> ClassroomJour
     rather than having to press a setup button first.
     """
     binding = ClassroomJournal.objects.filter(classroom=classroom).select_related("journal").first()
-    if binding is not None or not create:
+    if binding is not None:
+        # Re-check the status on EVERY read, not just when binding. Publication is the
+        # switch that makes a plan deliverable, so unpublishing or archiving one has to
+        # stop delivery immediately — otherwise a class bound while the journal was live
+        # keeps handing out draft content afterwards. The row is left in place: it holds
+        # the date anchor, and re-publishing restores the plan unchanged.
+        if binding.journal.status != Journal.STATUS_PUBLISHED:
+            return None
+        return binding
+    if not create:
         return binding
     journal = journal_for_classroom(classroom)
     if journal is None:
@@ -446,6 +455,20 @@ def _assert_resource_exists(resource_type: str, resource_id: int) -> None:
         )
 
 
+def _pack_scope(practice_scope: str | None) -> str | None:
+    """Translate ``Assignment.practice_scope`` into the vocabulary pack expansion uses.
+
+    Two different vocabularies meet here: ``practice_scope`` is BOTH/ENGLISH/MATH, while
+    ``access.resources.expand_subject_targets`` keys on ``{"math", "reading"}`` and treats
+    anything else as "all sections". MATH survived that mismatch by accident (it
+    lowercases to a key that exists); ENGLISH did not, so opening an English pack in class
+    handed the students its Math sections too.
+    """
+    return {"ENGLISH": "reading", "MATH": "math"}.get(
+        str(practice_scope or "").strip().upper()
+    )
+
+
 def _student_members(classroom):
     from classes.models import ClassroomMembership
 
@@ -523,7 +546,9 @@ def grant_resource(
         # on the pack's individual SECTIONS. Granting the pack id alone wrote a row nothing
         # reads, so the button reported success and the class got nothing. Expand first —
         # for a plain practice_test this returns the test unchanged.
-        targets = expand_subject_targets(resource_type, resource_id, session.practice_scope)
+        targets = expand_subject_targets(
+            resource_type, resource_id, _pack_scope(session.practice_scope)
+        )
         if not targets:
             raise DeliveryError(
                 "empty_pack", "That pack has no sections for this class's subject."

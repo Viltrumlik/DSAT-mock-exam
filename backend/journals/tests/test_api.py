@@ -375,3 +375,38 @@ class PermissionTests(TestCase):
         j = Journal.objects.first()
         resp = self._client(self.teacher).post(f"/api/journals/{j.id}/sessions/", {}, format="json")
         self.assertEqual(resp.status_code, 403)
+
+
+class BulkCopyFromTests(TestCase):
+    """copy_from read due_after_days / deadline_time, which migration 0002 removed —
+    every copied row raised AttributeError and was reported as a failure."""
+
+    def setUp(self):
+        self.admin = _admin("bulkcopy@test.com")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        self.journal, _ = services.create_journal(
+            subject="MATH", level="junior", actor=self.admin
+        )
+        self.src = _fill(services.add_session(self.journal, actor=self.admin),
+                         instructions="Original brief")
+        self.src.title = "Ch.7"
+        self.src.save()
+        self.dst = services.add_session(self.journal, actor=self.admin)
+
+    def test_copy_from_actually_copies(self):
+        resp = self.client.post(
+            f"/api/journals/{self.journal.id}/lessons/bulk/",
+            {
+                "action": "copy_from",
+                "ids": [self.dst.id],
+                "payload": {"source_lesson_id": self.src.id},
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        body = resp.json()
+        self.assertTrue(all(r.get("ok") for r in body.get("results", [])), body)
+        self.dst.refresh_from_db()
+        self.assertEqual(self.dst.title, "Ch.7")
+        self.assertEqual(self.dst.instructions, "Original brief")

@@ -17,7 +17,7 @@ from assessments.models import AssessmentSet, HomeworkAssignment
 from classes.models import Assignment, Classroom, ClassroomMembership
 from exams.models import PracticeTest
 from journals import delivery, services
-from journals.models import ClassroomJournal, ClassroomLesson, Journal
+from journals.models import ClassroomJournal, ClassroomLesson, Journal, JournalLesson
 
 User = get_user_model()
 
@@ -762,6 +762,85 @@ class ReviewFindingsTests(DeliveryTestBase):
         self.assertEqual(detail["midterm"]["start_code"], "123456")
 
 
+class CodexReviewFollowupTests(DeliveryTestBase):
+    """Regressions for the review findings on PR #61 (all shipped to prod first)."""
+
+    def test_unpublishing_a_journal_stops_delivery_immediately(self):
+        """Publication is the switch that makes a plan deliverable.
+
+        get_binding only checked the status when CREATING the binding, so a class bound
+        while the journal was live kept handing out content after it was unpublished.
+        """
+        self._session()
+        self._publish()
+        # Teacher opens the plan → binding is created while the journal is live.
+        self.assertTrue(delivery.lesson_plan(self.classroom, actor=self.teacher)["bound"])
+
+        self.journal.status = Journal.STATUS_DRAFT
+        self.journal.save(update_fields=["status"])
+
+        plan = delivery.lesson_plan(self.classroom, actor=self.teacher)
+        self.assertFalse(plan["bound"])
+        self.assertEqual(plan["reason"], "no_published_journal")
+
+    def test_archiving_a_journal_also_stops_delivery(self):
+        self._session()
+        self._publish()
+        delivery.lesson_plan(self.classroom, actor=self.teacher)
+        self.journal.status = Journal.STATUS_ARCHIVED
+        self.journal.save(update_fields=["status"])
+        self.assertFalse(delivery.lesson_plan(self.classroom, actor=self.teacher)["bound"])
+
+    def test_republishing_restores_the_plan_with_its_anchor(self):
+        # The binding row survives, so dates do not shift when a journal comes back.
+        self._session()
+        self._publish()
+        delivery.lesson_plan(self.classroom, actor=self.teacher)
+        anchor = ClassroomJournal.objects.get(classroom=self.classroom).starts_on
+        self.journal.status = Journal.STATUS_DRAFT
+        self.journal.save(update_fields=["status"])
+        self._publish()
+        plan = delivery.lesson_plan(self.classroom, actor=self.teacher)
+        self.assertTrue(plan["bound"])
+        self.assertEqual(ClassroomJournal.objects.get(classroom=self.classroom).starts_on, anchor)
+
+    def test_english_pack_does_not_hand_out_math_sections(self):
+        """practice_scope is BOTH/ENGLISH/MATH; expand_subject_targets keys on
+        {math, reading}. MATH matched by luck, ENGLISH matched nothing and fell through
+        to every section, so an English pack granted its Math half too."""
+        self.assertEqual(delivery._pack_scope("ENGLISH"), "reading")
+        self.assertEqual(delivery._pack_scope("MATH"), "math")
+        self.assertIsNone(delivery._pack_scope("BOTH"))
+        self.assertIsNone(delivery._pack_scope(""))
+
+    def test_granted_state_is_tracked_per_block(self):
+        """The same item may sit in New topic AND Exercises; they are granted separately.
+        The display key dropped the block, so opening one marked the other given."""
+        session = self._session()
+        aset = AssessmentSet.objects.create(
+            title="Shared quiz", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
+        )
+        self._attach_assessment(session, aset, block="NEW_TOPIC")
+        self._attach_assessment(session, aset, block="EXERCISES")
+        self._publish()
+        delivery.grant_resource(
+            self.classroom, session,
+            block="EXERCISES", resource_type="assessment_set", resource_id=aset.id,
+            actor=self.teacher,
+        )
+        detail = self.client.get(
+            f"/api/classes/{self.classroom.id}/lessons/{session.id}/"
+        ).json()["classwork"]
+        given_in = {
+            b: [i["given"] for i in detail[b]["items"] if i["resource_id"] == aset.id]
+            for b in ("new_topic", "exercises")
+        }
+        self.assertEqual(given_in["exercises"], [True])
+        # The New topic copy must still be offerable.
+        self.assertEqual(given_in["new_topic"], [False])
+
+
 class LessonApiTests(DeliveryTestBase):
     def test_teacher_sees_the_plan(self):
         self._session()
@@ -866,3 +945,78 @@ class LessonApiTests(DeliveryTestBase):
         )
         row = ClassroomLesson.objects.get(classroom=self.classroom, journal_lesson=session)
         self.assertEqual(row.scheduled_for, delivered_at)
+
+
+class MidtermIdRepairMigrationTests(TestCase):
+    """journals.0007 repairs FKs that 0002 left pointing at the wrong row.
+
+    0002 retargeted midterm_exam from exams.MockExam to midterms.Midterm with a bare
+    AlterField, which keeps the stored integer. Mirrors are keyed by legacy_mock_exam_id,
+    not by matching primary keys, so a session that already had a midterm came out
+    pointing at an unrelated Midterm.
+    """
+
+    def _repair(self):
+        import importlib
+
+        from django.apps import apps as global_apps
+
+        mod = importlib.import_module("journals.migrations.0007_repair_midterm_exam_ids")
+        mod.repair(global_apps, None)
+
+    def setUp(self):
+        from exams.models import Module
+
+        self.admin = User.objects.create_user(
+            email="mig@test.com", password="x", role=acc_const.ROLE_SUPER_ADMIN
+        )
+        self.journal, _ = services.create_journal(
+            subject="MATH", level="senior", actor=self.admin
+        )
+        self.module = Module.objects.create(
+            practice_test=None, module_order=1, time_limit_minutes=30
+        )
+
+    def _midterm(self, title, legacy_id=None):
+        from exams.models import Module
+        from midterms.models import Midterm
+
+        # question_module is unique per Midterm, so each one needs its own.
+        module = Module.objects.create(
+            practice_test=None, module_order=1, time_limit_minutes=30
+        )
+        return Midterm.objects.create(
+            title=title, subject="MATH", scoring_scale=Midterm.SCALE_100,
+            duration_minutes=30, question_module=module, is_published=True,
+            legacy_mock_exam_id=legacy_id,
+        )
+
+    def test_a_legacy_id_is_remapped_to_its_mirror(self):
+        wrong = self._midterm("Some other midterm")          # happens to occupy the id
+        right = self._midterm("The real one", legacy_id=wrong.id)
+        session = services.add_session(self.journal, actor=self.admin, lesson_type="MIDTERM")
+        # Simulates what 0002 left behind: the stored int is a legacy MockExam id.
+        JournalLesson.objects.filter(pk=session.pk).update(midterm_exam_id=wrong.id)
+
+        self._repair()
+
+        session.refresh_from_db()
+        self.assertEqual(session.midterm_exam_id, right.id)
+
+    def test_an_unexplained_id_is_cleared_rather_than_left_dangling(self):
+        session = services.add_session(self.journal, actor=self.admin, lesson_type="MIDTERM")
+        JournalLesson.objects.filter(pk=session.pk).update(midterm_exam_id=999999)
+        self._repair()
+        session.refresh_from_db()
+        self.assertIsNone(session.midterm_exam_id)
+
+    def test_an_already_correct_id_is_left_alone(self):
+        ok = self._midterm("Already right")
+        session = services.add_session(self.journal, actor=self.admin, lesson_type="MIDTERM")
+        JournalLesson.objects.filter(pk=session.pk).update(midterm_exam_id=ok.id)
+        self._repair()
+        session.refresh_from_db()
+        self.assertEqual(session.midterm_exam_id, ok.id)
+
+    def test_empty_table_is_a_no_op(self):
+        self._repair()  # must not raise
