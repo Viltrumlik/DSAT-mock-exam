@@ -75,6 +75,8 @@ interface Catalog {
   id: number;
   title: string;
   subject: string;
+  /** Difficulty tier ("foundation"/"junior"/"middle"/"senior"); "" = untagged. */
+  level: string;
   duration_minutes: number;
   question_count: number;
 }
@@ -87,6 +89,7 @@ interface Catalog {
 export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   const id = Number(classroom.id);
   const classSubject = String((classroom as Record<string, unknown>).subject ?? "");
+  const classLevel = String((classroom as Record<string, unknown>).level ?? "");
   const qc = useQueryClient();
   const { data: catalog, isLoading } = useQuery({ queryKey: ["midterm", "catalog"], queryFn: midtermApi.catalog });
   const [assignedId, setAssignedId] = useState<number | null>(null);
@@ -100,9 +103,15 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   const days = useMemo(() => nextNDays(7), []);
   const slots = useMemo(() => timeSlots(8, 18, 15), []);
 
+  // Scope the picker to THIS classroom: subject (Math class → Math midterms) and
+  // difficulty level (a Middle class only sees Middle midterms). Levels use the same
+  // lowercase codes across Classroom/Midterm. An untagged classroom (blank level)
+  // keeps seeing every level — same rule the assessment picker uses.
   const wanted = MIDTERM_SUBJECT[classSubject];
   const all = ((catalog ?? []) as Catalog[]);
-  const midterms = wanted ? all.filter((m) => m.subject === wanted) : all;
+  const midterms = all.filter(
+    (m) => (!wanted || m.subject === wanted) && (!classLevel || m.level === classLevel),
+  );
 
   const assign = useMutation({
     mutationFn: (m: Catalog) =>
@@ -149,7 +158,9 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
           <LoadingState label="Loading midterms…" />
         ) : midterms.length === 0 ? (
           <p className="mt-4 text-sm text-muted-foreground">
-            No published midterms available for this subject. Midterms are authored in the Builder.
+            No published midterms match this class
+            {classLevel ? ` (${classSubject.toLowerCase()} · ${classLevel} level)` : ` (${classSubject.toLowerCase()})`}.
+            Midterms are authored in the Builder, where each one is tagged with a subject and level.
           </p>
         ) : (
           <ul className="mt-4 divide-y divide-border">
@@ -158,7 +169,9 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
                 <Timer className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-foreground">{m.title || `Midterm #${m.id}`}</p>
-                  <p className="text-xs text-muted-foreground">{m.duration_minutes}m · {m.question_count} questions</p>
+                  <p className="text-xs text-muted-foreground">
+                    {m.level ? `${m.level} · ` : ""}{m.duration_minutes}m · {m.question_count} questions
+                  </p>
                 </div>
                 {assignedId === m.id ? (
                   <span className="inline-flex items-center gap-1 text-sm font-medium text-emerald-600">

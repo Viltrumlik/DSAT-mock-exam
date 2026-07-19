@@ -22,7 +22,7 @@ import {
 import { midtermApi } from "@/lib/midtermApi";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
-import { Button, Card, CardHeader, EmptyState, ErrorState, LoadingState, Pill, Tabs } from "../ui";
+import { Button, Card, CardHeader, ConfirmDialog, EmptyState, ErrorState, LoadingState, Pill, Tabs } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import { classroomKeys } from "../queryKeys";
 import {
@@ -33,6 +33,7 @@ import {
   useReleaseHomework,
   useRescheduleLessons,
   useRevokeGrant,
+  isNotApproved,
 } from "../lessonsHooks";
 import type { LessonItem, LessonRow } from "../lessonsApi";
 import type { ClassroomWithRole } from "../types";
@@ -70,6 +71,22 @@ function ItemRow({
 }) {
   const grant = useGrantItem(classId, lessonId);
   const revoke = useRevokeGrant(classId, lessonId);
+  const [confirmUnapproved, setConfirmUnapproved] = useState(false);
+  const body = {
+    block: item.block,
+    resource_type: item.resource_type,
+    resource_id: item.resource_id,
+  };
+  const open = (allowUnapproved = false) =>
+    grant.mutate(
+      { ...body, allowUnapproved },
+      {
+        // The server refuses content that has not passed review. That is a question for
+        // the teacher, not a dead end — ask, then repeat the press with their consent.
+        onError: (e) => isNotApproved(e) && setConfirmUnapproved(true),
+        onSuccess: () => setConfirmUnapproved(false),
+      },
+    );
   return (
     <li className="flex items-center gap-3 py-2.5">
       <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -97,17 +114,21 @@ function ItemRow({
           size="sm"
           variant="secondary"
           disabled={disabled || grant.isPending}
-          onClick={() =>
-            grant.mutate({
-              block: item.block,
-              resource_type: item.resource_type,
-              resource_id: item.resource_id,
-            })
-          }
+          onClick={() => open()}
         >
           {grant.isPending ? "Opening…" : "Access to class"}
         </Button>
       )}
+      <ConfirmDialog
+        open={confirmUnapproved}
+        title="This hasn't been approved yet"
+        description={`“${itemLabel(item)}” is still in review. Give it to the class anyway?`}
+        confirmLabel="Give it anyway"
+        tone="primary"
+        loading={grant.isPending}
+        onConfirm={() => open(true)}
+        onCancel={() => setConfirmUnapproved(false)}
+      />
     </li>
   );
 }
@@ -236,6 +257,12 @@ function HomeworkPanel({
   canManage: boolean;
 }) {
   const release = useReleaseHomework(classId, detail.lesson_id);
+  const [confirmUnapproved, setConfirmUnapproved] = useState(false);
+  const give = (allowUnapproved = false) =>
+    release.mutate(allowUnapproved, {
+      onError: (e) => isNotApproved(e) && setConfirmUnapproved(true),
+      onSuccess: () => setConfirmUnapproved(false),
+    });
   const hw = detail.homework;
   // The Assignment can be deleted from the Assignments tab while the delivery row keeps
   // homework_released_at set (the FK is SET_NULL). Without this the panel read "Given"
@@ -262,7 +289,7 @@ function HomeworkPanel({
             ) : (
               <Button
                 disabled={!canManage || release.isPending || hw.validation.length > 0}
-                onClick={() => release.mutate()}
+                onClick={() => give()}
               >
                 {release.isPending
                   ? "Giving…"
@@ -278,6 +305,15 @@ function HomeworkPanel({
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">No instructions written.</p>
         )}
+        <ConfirmDialog
+          open={confirmUnapproved}
+          title="Some content hasn't been approved yet"
+          description="An assessment in this homework is still in review. Give it to the class anyway?"
+          confirmLabel="Give it anyway"
+          loading={release.isPending}
+          onConfirm={() => give(true)}
+          onCancel={() => setConfirmUnapproved(false)}
+        />
         {hw.validation.length > 0 && (
           <p className="mt-3 text-sm text-warning">
             An admin still has to finish this homework: {hw.validation.join("; ")}

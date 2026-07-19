@@ -50,6 +50,8 @@ export interface MidtermCatalogItem {
   id: number;
   title: string;
   subject: string;
+  /** Difficulty tier ("foundation"/"junior"/"middle"/"senior"); "" = untagged. */
+  level: string;
   scoring_scale: string;
   score_ceiling: number;
   duration_minutes: number;
