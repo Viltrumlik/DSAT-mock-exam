@@ -177,7 +177,8 @@ class ReleaseHomeworkTests(DeliveryTestBase):
     def test_release_attaches_assessments_pinned_to_a_version(self):
         session = self._session()
         aset = AssessmentSet.objects.create(
-            title="Algebra basics", subject="math", level="middle", created_by=self.admin
+            title="Algebra basics", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         session.assessments.create(assessment_set=aset, added_by=self.admin)
         self._publish()
@@ -193,7 +194,8 @@ class ReleaseHomeworkTests(DeliveryTestBase):
         release has to say what did not attach.
         """
         aset = AssessmentSet.objects.create(
-            title="Revision Set A", subject="math", level="middle", created_by=self.admin
+            title="Revision Set A", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         s1 = self._session()
         s1.assessments.create(assessment_set=aset, added_by=self.admin)
@@ -215,7 +217,8 @@ class ReleaseHomeworkTests(DeliveryTestBase):
 
     def test_release_endpoint_surfaces_the_warning(self):
         aset = AssessmentSet.objects.create(
-            title="Revision Set A", subject="math", level="middle", created_by=self.admin
+            title="Revision Set A", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         s1 = self._session()
         s1.assessments.create(assessment_set=aset, added_by=self.admin)
@@ -280,7 +283,8 @@ class InClassGrantTests(DeliveryTestBase):
     def test_granting_an_assessment_opens_it_to_the_class(self):
         session = self._session()
         aset = AssessmentSet.objects.create(
-            title="Quiz", subject="math", level="middle", created_by=self.admin
+            title="Quiz", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         self._attach_assessment(session, aset)
         self._publish()
@@ -308,7 +312,8 @@ class InClassGrantTests(DeliveryTestBase):
         session = self._session()
         sets = [
             AssessmentSet.objects.create(
-                title=f"Quiz {i}", subject="math", level="middle", created_by=self.admin
+                title=f"Quiz {i}", subject="math", level="middle", created_by=self.admin,
+                review_status=AssessmentSet.STATUS_APPROVED,
             )
             for i in range(3)
         ]
@@ -333,7 +338,8 @@ class InClassGrantTests(DeliveryTestBase):
     def test_granting_twice_is_idempotent(self):
         session = self._session()
         aset = AssessmentSet.objects.create(
-            title="Quiz", subject="math", level="middle", created_by=self.admin
+            title="Quiz", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         self._attach_assessment(session, aset)
         self._publish()
@@ -419,7 +425,8 @@ class InClassGrantTests(DeliveryTestBase):
         """
         session = self._session()
         outsider = AssessmentSet.objects.create(
-            title="Not in this lesson", subject="math", level="middle", created_by=self.admin
+            title="Not in this lesson", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         self._publish()
         with self.assertRaises(delivery.DeliveryError) as ctx:
@@ -435,7 +442,8 @@ class InClassGrantTests(DeliveryTestBase):
         # block is part of the identity, not decoration.
         session = self._session()
         aset = AssessmentSet.objects.create(
-            title="Exercise quiz", subject="math", level="middle", created_by=self.admin
+            title="Exercise quiz", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         self._attach_assessment(session, aset, block="EXERCISES")
         self._publish()
@@ -450,7 +458,8 @@ class InClassGrantTests(DeliveryTestBase):
     def test_api_refuses_an_out_of_plan_grant(self):
         session = self._session()
         outsider = AssessmentSet.objects.create(
-            title="Not in this lesson", subject="math", level="middle", created_by=self.admin
+            title="Not in this lesson", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         self._publish()
         resp = self.client.post(
@@ -542,6 +551,217 @@ class MidtermSessionTests(DeliveryTestBase):
         self.assertTrue(resp.json()["needs_start_code"])
 
 
+class ReviewFindingsTests(DeliveryTestBase):
+    """Regressions for the defects the adversarial review confirmed."""
+
+    def _approved_set(self, title="Approved set"):
+        return AssessmentSet.objects.create(
+            title=title, subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
+        )
+
+    # ── content that used to reach nobody ─────────────────────────────────────
+    def test_release_copies_the_file_instead_of_aliasing_the_template(self):
+        from django.core.files.base import ContentFile
+
+        session = self._session()
+        session.attachment_file.save("brief.txt", ContentFile(b"worksheet"), save=True)
+        self._publish()
+        row, _, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
+        a = Assignment.objects.get(pk=row.assignment_id)
+        session.refresh_from_db()
+        # Distinct storage paths: assigning the FileField across would have shared one
+        # file, so deleting either row's file would strip it from the other.
+        self.assertTrue(a.attachment_file)
+        self.assertNotEqual(a.attachment_file.name, session.attachment_file.name)
+        a.attachment_file.open("rb")
+        self.assertEqual(a.attachment_file.read(), b"worksheet")
+        a.attachment_file.close()
+
+    def test_release_brings_across_every_extra_attachment(self):
+        from django.core.files.base import ContentFile
+
+        session = self._session()
+        session.attachment_file.save("main.txt", ContentFile(b"main"), save=True)
+        for i in range(2):
+            session.extra_attachments.create(file=ContentFile(b"x", name=f"extra{i}.txt"))
+        self._publish()
+        row, _, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
+        a = Assignment.objects.get(pk=row.assignment_id)
+        self.assertEqual(a.extra_attachments.count(), 2)
+
+    def test_granting_a_pack_reaches_students_through_its_sections(self):
+        from exams.models import PracticeTestPack
+
+        session = self._session()
+        pack = PracticeTestPack.objects.create(title="March 2026", created_by=self.admin)
+        section = PracticeTest.objects.create(
+            title="March 2026 Math", subject="MATH", practice_test_pack=pack
+        )
+        cw = services.ensure_classwork(session)
+        cw.exercise_practice_test_pack_ids = [pack.id]
+        cw.save(update_fields=["exercise_practice_test_pack_ids"])
+        self._publish()
+        delivery.grant_resource(
+            self.classroom, session,
+            block="EXERCISES", resource_type="practice_test_pack", resource_id=pack.id,
+            actor=self.teacher,
+        )
+        # The student gate is assigned_users on the SECTION, never on the pack — granting
+        # the pack id alone wrote a row nothing reads.
+        self.assertTrue(section.assigned_users.filter(pk=self.student.pk).exists())
+
+    def test_midterm_grant_skips_removed_students(self):
+        from access.models import ResourceAccessGrant
+        from exams.models import Module
+        from midterms.models import Midterm
+
+        gone = User.objects.create_user(
+            email="gone@test.com", password="x", role=acc_const.ROLE_STUDENT
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=gone,
+            role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_REMOVED,
+        )
+        module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=30)
+        exam = Midterm.objects.create(
+            title="MT", subject="MATH", level="middle", scoring_scale=Midterm.SCALE_100,
+            duration_minutes=30, question_module=module, is_published=True,
+        )
+        session = services.add_session(self.journal, actor=self.admin, lesson_type="MIDTERM")
+        session.midterm_exam = exam
+        session.save()
+        self._publish()
+        delivery.grant_midterm(self.classroom, session, actor=self.teacher)
+        granted = set(
+            ResourceAccessGrant.objects.filter(
+                resource_type="midterm_v2", resource_id=exam.id,
+            ).values_list("user_id", flat=True)
+        )
+        self.assertIn(self.student.id, granted)
+        self.assertNotIn(gone.id, granted)
+
+    # ── crashes ───────────────────────────────────────────────────────────────
+    def test_a_deleted_resource_is_a_clean_error_not_a_500(self):
+        session = self._session()
+        pt = PracticeTest.objects.create(title="Doomed", subject="MATH")
+        self._attach_pastpaper(session, pt)
+        self._publish()
+        pt_id = pt.id
+        pt.delete()
+        resp = self.client.post(
+            f"/api/classes/{self.classroom.id}/lessons/{session.id}/grant/",
+            {"block": "EXERCISES", "resource_type": "practice_test", "resource_id": pt_id},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["code"], "not_found")
+
+    def test_reschedule_without_a_date_is_rejected_not_silently_nulled(self):
+        self._session()
+        self._publish()
+        binding = delivery.get_binding(self.classroom, actor=self.teacher, create=True)
+        before = binding.starts_on
+        resp = self.client.patch(
+            f"/api/classes/{self.classroom.id}/lessons/reschedule/", {}, format="json"
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        binding.refresh_from_db()
+        self.assertEqual(binding.starts_on, before)
+
+    # ── approval gate ─────────────────────────────────────────────────────────
+    def test_an_unapproved_set_is_refused_on_release(self):
+        session = self._session()
+        draft = AssessmentSet.objects.create(
+            title="Draft set", subject="math", level="middle", created_by=self.admin
+        )
+        session.assessments.create(assessment_set=draft, added_by=self.admin)
+        self._publish()
+        with self.assertRaises(delivery.DeliveryError) as ctx:
+            delivery.release_homework(self.classroom, session, actor=self.teacher)
+        self.assertEqual(ctx.exception.code, "assessment_not_approved")
+
+    def test_an_unapproved_set_goes_out_when_the_teacher_confirms(self):
+        session = self._session()
+        draft = AssessmentSet.objects.create(
+            title="Draft set", subject="math", level="middle", created_by=self.admin
+        )
+        session.assessments.create(assessment_set=draft, added_by=self.admin)
+        self._publish()
+        row, created, _ = delivery.release_homework(
+            self.classroom, session, actor=self.teacher, allow_unapproved=True
+        )
+        self.assertTrue(created)
+        self.assertTrue(
+            HomeworkAssignment.objects.filter(
+                classroom=self.classroom, assessment_set=draft
+            ).exists()
+        )
+
+    def test_an_approved_set_needs_no_confirmation(self):
+        session = self._session()
+        session.assessments.create(assessment_set=self._approved_set(), added_by=self.admin)
+        self._publish()
+        _, created, warnings = delivery.release_homework(
+            self.classroom, session, actor=self.teacher
+        )
+        self.assertTrue(created)
+        self.assertEqual(warnings, [])
+
+    def test_unapproved_in_class_grant_is_refused(self):
+        session = self._session()
+        draft = AssessmentSet.objects.create(
+            title="Draft quiz", subject="math", level="middle", created_by=self.admin
+        )
+        self._attach_assessment(session, draft)
+        self._publish()
+        resp = self.client.post(
+            f"/api/classes/{self.classroom.id}/lessons/{session.id}/grant/",
+            {"block": "EXERCISES", "resource_type": "assessment_set", "resource_id": draft.id},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["code"], "assessment_not_approved")
+
+    # ── stuck UI state ────────────────────────────────────────────────────────
+    def test_homework_can_be_given_again_after_its_assignment_is_deleted(self):
+        session = self._session()
+        self._publish()
+        row, _, _ = delivery.release_homework(self.classroom, session, actor=self.teacher)
+        Assignment.objects.filter(pk=row.assignment_id).delete()
+        row.refresh_from_db()
+        self.assertIsNone(row.assignment_id)          # SET_NULL keeps the delivery row
+        self.assertIsNotNone(row.homework_released_at)  # ...still marked released
+        # The panel detects that pair and offers "Give again"; the service must allow it.
+        row2, created2, _ = delivery.release_homework(
+            self.classroom, session, actor=self.teacher
+        )
+        self.assertTrue(created2)
+        self.assertIsNotNone(row2.assignment_id)
+
+    def test_start_code_is_readable_from_the_lesson_after_navigating_away(self):
+        from exams.models import Module
+        from midterms.models import Midterm
+
+        module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=30)
+        exam = Midterm.objects.create(
+            title="MT", subject="MATH", level="middle", scoring_scale=Midterm.SCALE_100,
+            duration_minutes=30, question_module=module, is_published=True,
+        )
+        session = services.add_session(self.journal, actor=self.admin, lesson_type="MIDTERM")
+        session.midterm_exam = exam
+        session.save()
+        self._publish()
+        row, _ = delivery.grant_midterm(self.classroom, session, actor=self.teacher)
+        row.midterm_schedule.access_code = "123456"
+        row.midterm_schedule.save(update_fields=["access_code"])
+        # A fresh GET must carry the code, not just the POST that created it.
+        detail = self.client.get(
+            f"/api/classes/{self.classroom.id}/lessons/{session.id}/"
+        ).json()
+        self.assertEqual(detail["midterm"]["start_code"], "123456")
+
+
 class LessonApiTests(DeliveryTestBase):
     def test_teacher_sees_the_plan(self):
         self._session()
@@ -583,7 +803,8 @@ class LessonApiTests(DeliveryTestBase):
     def test_grant_endpoint_marks_the_item_given(self):
         session = self._session()
         aset = AssessmentSet.objects.create(
-            title="Quiz", subject="math", level="middle", created_by=self.admin
+            title="Quiz", subject="math", level="middle", created_by=self.admin,
+            review_status=AssessmentSet.STATUS_APPROVED,
         )
         session.classwork.assessments.create(
             assessment_set=aset, block="EXERCISES", added_by=self.admin
