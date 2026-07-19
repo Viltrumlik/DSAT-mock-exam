@@ -1,5 +1,6 @@
 import logging
 import secrets
+from urllib.parse import urlencode
 
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -31,6 +32,7 @@ from access.services import (
 
 from .activity import blocking_protected_relations, with_activity_counts
 from .email_utils import normalize_email, synthetic_telegram_email
+from .profile_completeness import missing_profile_fields
 from .email_verification import (
     ERR_NOT_DELIVERABLE,
     ERR_BAD_CODE,
@@ -1542,7 +1544,18 @@ class TelegramOAuthCallbackView(APIView):
         access = str(refresh.access_token)
         refresh_str = str(refresh)
 
-        resp = HttpResponseRedirect(next_path)
+        # A Telegram signup usually arrives with almost nothing: often no surname, some-
+        # times not even a first name, and never an email — Telegram does not supply one.
+        # Send those to the completion form instead of a dashboard, so the first thing a
+        # new user does is give us a way to reach them. The AuthGuard banner would catch
+        # them anyway; this just makes it the landing page rather than a strip on top of
+        # a screen they have never seen. ``next_path`` is already constrained to a
+        # site-relative path above, so round-tripping it here cannot open a redirect.
+        landing = next_path
+        if missing_profile_fields(user):
+            landing = f"/complete-profile?{urlencode({'next': next_path})}"
+
+        resp = HttpResponseRedirect(landing)
         try:
             set_auth_cookies(
                 response=resp,

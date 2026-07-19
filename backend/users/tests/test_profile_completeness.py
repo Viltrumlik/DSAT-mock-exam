@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import importlib
+from unittest.mock import patch
 
 from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.db import connection
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -114,6 +115,66 @@ class MeEndpointExposureTests(TestCase):
         )
         self.assertEqual(r.status_code, 200, r.content)
         self.assertFalse(r.json()["profile_complete"])
+
+
+@override_settings(
+    # The callback refuses with `server_misconfigured` before it ever exchanges the code
+    # unless all three are present, so they have to be set for this suite to exercise
+    # anything past that guard.
+    TELEGRAM_OIDC_CLIENT_ID="1234567",
+    TELEGRAM_OIDC_CLIENT_SECRET="test-secret",
+    TELEGRAM_OIDC_REDIRECT_URI="https://mastersat.uz/api/users/telegram/callback/",
+)
+class TelegramLandingTests(TestCase):
+    """A Telegram signup lands on the completion form, not on a dashboard.
+
+    Telegram gives a display name at best and never an email, so a fresh account has no
+    contact channel at all. The OAuth callback routes those to /complete-profile.
+    """
+
+    TG_ID = 5150150150
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def _callback(self, claims, next_path="/"):
+        from django.core import signing
+
+        from users.views import _TELEGRAM_OAUTH_STATE_COOKIE
+
+        state = "teststate123"
+        self.client.cookies[_TELEGRAM_OAUTH_STATE_COOKIE] = signing.dumps(
+            {"s": state, "n": "nonce", "next": next_path, "link_user_id": None},
+            salt="telegram-oauth",
+        )
+        with patch("users.views.exchange_code_for_tokens", return_value={"id_token": "stub"}), \
+             patch("users.views.verify_telegram_id_token", return_value=claims):
+            return self.client.get(
+                reverse("telegram-oauth-callback"), {"code": "abc", "state": state}
+            )
+
+    def test_new_telegram_user_is_sent_to_the_completion_form(self):
+        r = self._callback({"sub": str(self.TG_ID), "name": "Asadbek"})
+        self.assertEqual(r.status_code, 302, r.content)
+        self.assertTrue(
+            r["Location"].startswith("/complete-profile?"),
+            f"expected the completion form, got {r['Location']}",
+        )
+        self.assertIn("next=%2F", r["Location"])
+        # The account still exists and is signed in — the prompt is not a rejection.
+        self.assertTrue(User.objects.filter(telegram_id=self.TG_ID).exists())
+
+    def test_the_original_destination_is_preserved(self):
+        r = self._callback({"sub": str(self.TG_ID), "name": "Asadbek"}, next_path="/midterm")
+        self.assertIn("next=%2Fmidterm", r["Location"])
+
+    def test_a_complete_telegram_user_goes_straight_through(self):
+        existing = _complete_user(email="tg.complete@gmail.com", username="tgcomplete")
+        existing.telegram_id = self.TG_ID
+        existing.save(update_fields=["telegram_id"])
+
+        r = self._callback({"sub": str(self.TG_ID), "name": "Aziz Karimov"}, next_path="/midterm")
+        self.assertEqual(r["Location"], "/midterm", "no prompt when nothing is missing")
 
 
 class FabricatedNameCleanupTests(TestCase):

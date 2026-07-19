@@ -27,7 +27,15 @@ function isLocalhost(host: string | null): boolean {
 // ---------------------------------------------------------------------------
 
 /** Auth and account-state paths that must work on every subdomain. */
-const ALWAYS_ALLOW_EXACT: Set<string> = new Set(["/login", "/register", "/frozen"]);
+// `/complete-profile` is here because the Telegram callback lands every console's users
+// on it, and the per-console allowlists below would otherwise bounce staff away from the
+// one page that lets them supply a contact address.
+const ALWAYS_ALLOW_EXACT: Set<string> = new Set([
+  "/login",
+  "/register",
+  "/frozen",
+  "/complete-profile",
+]);
 
 function isAlwaysAllowed(pathname: string): boolean {
   if (ALWAYS_ALLOW_EXACT.has(pathname)) return true;
