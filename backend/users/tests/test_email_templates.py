@@ -15,7 +15,6 @@ from core.mail import brand_context
 
 TEMPLATES = {
     "email/verification_code.html": {"code": "079431", "ttl_minutes": 15},
-    "email/address_released.html": {"username": "asilbek", "address": "asilbek@gmail.com"},
 }
 
 
@@ -73,11 +72,13 @@ class EmailShellTests(SimpleTestCase):
         html = self._render("email/verification_code.html", {"code": "000123", "ttl_minutes": 15})
         self.assertIn("000123", html)
 
-    def test_recipient_values_are_escaped(self):
-        """username and address are attacker-supplied at registration."""
-        html = self._render(
-            "email/address_released.html",
-            {"username": '<script>alert(1)</script>', "address": "x@y.z"},
-        )
+    def test_autoescape_is_on_in_the_shell(self):
+        """Nothing user-supplied reaches a template today — code and ttl are both
+        server-generated. This guards the shell for the messages that come next, which
+        will interpolate names and titles."""
+        with override_settings(EMAIL_SITE_URL="https://x.uz/<script>alert(1)</script>"):
+            html = self._render(
+                "email/verification_code.html", TEMPLATES["email/verification_code.html"]
+            )
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)

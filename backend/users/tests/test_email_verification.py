@@ -303,25 +303,42 @@ class EmailClaimContestedTests(TestCase):
         )
 
     @override_settings(EMAIL_SENDING_ENABLED=True)
-    def test_the_donor_is_told_at_the_address_being_taken(self):
-        # Their last reachable moment. Without it they type that address at the login
-        # page, are told the credentials are wrong, and have no way to work out why.
+    def test_the_donor_is_not_notified(self):
+        # Product decision, 2026-07-19: the account losing the address gets no mail, not
+        # even at the address being taken. Asserted rather than left implicit because the
+        # obvious "be helpful" instinct is to add the notice back, and because the only
+        # thing standing between the donor and a locked-out account is their username
+        # plus the profile-completion gate.
         from django.core import mail
 
         self._incumbent()
         self._request()
         mail.outbox.clear()
-        # The notice is queued with transaction.on_commit so a delivery failure cannot
-        # roll back the transfer — and under TestCase that commit never happens, so
-        # nothing would send without this.
+        # captureOnCommitCallbacks would run any on_commit hook the transfer queued —
+        # under TestCase nothing commits, so without it this assertion proves nothing.
         with self.captureOnCommitCallbacks(execute=True):
             r = self._confirm()
         self.assertEqual(r.status_code, 200, r.content)
 
-        notice = [m for m in mail.outbox if m.to == ["contested@gmail.com"]]
-        self.assertEqual(len(notice), 1, "exactly one notice to the old address")
-        self.assertIn("incumbent", notice[0].body, "the username they must now use")
-        self.assertIn("do not reply", notice[0].body.lower())
+        self.assertEqual(
+            [m for m in mail.outbox if m.to == ["contested@gmail.com"]],
+            [],
+            "nothing may be sent to the address being taken away",
+        )
+
+    def test_the_donor_keeps_a_trail_for_support(self):
+        # With no notice sent, /ops/users is the only place the question "what happened
+        # to my account?" can be answered, so these two columns carry that whole burden.
+        incumbent = self._incumbent()
+        self._request()
+        r = self._confirm()
+        self.assertEqual(r.status_code, 200, r.content)
+
+        incumbent.refresh_from_db()
+        self.assertIsNone(incumbent.email)
+        self.assertEqual(incumbent.previous_email, "contested@gmail.com")
+        self.assertIsNotNone(incumbent.email_released_at)
+        self.assertTrue(incumbent.username, "the only remaining way in")
 
     def _assert_refused_and_unchanged(self, incumbent):
         """The claimant gets a generic refusal and the incumbent keeps its address.

@@ -8,8 +8,9 @@ Two operations, both driven by ``users.views``:
                   requesting account as verified.
 
 The *transfer* half — taking an address off an account that holds it unverified — is
-implemented here but gated behind ``EMAIL_TRANSFER_ENABLED`` (default off) plus three
-guards. See ``_release_blocked_reason``.
+implemented here, gated behind ``EMAIL_TRANSFER_ENABLED`` plus three guards. See
+``_release_blocked_reason``. The account that loses its address is deliberately not
+notified; the reasoning, and what carries the person instead, is at the release site.
 """
 from __future__ import annotations
 
@@ -205,16 +206,18 @@ def confirm_code(user, target_email: str, code: str) -> tuple[str, dict]:
                 severity="warning",
                 detail={"target": target, "to_user_id": claimant.pk},
             )
-            # Told at the address that is being taken away — the last moment it still
-            # reaches them. Without this they would type that address at the login page,
-            # be told the credentials are wrong, and have no way to work out why or that
-            # their username still works. Queued on commit so a delivery failure cannot
-            # roll back the transfer.
-            transaction.on_commit(
-                lambda: _notify_address_released(
-                    username=incumbent.username, address=released_from
-                )
-            )
+            # No notice goes to the donor: product decision, 2026-07-19. They are not
+            # told at the address being taken, which is the last moment it would still
+            # reach them, so the only signal they get is that signing in with that
+            # address stops working.
+            #
+            # What keeps this from being a dead end is the username, which still signs
+            # them in, and the profile-completion gate, which then sees email=None and
+            # asks them for a new one. What it does NOT cover is someone who only ever
+            # knew their address as their login: there is no password-reset flow
+            # anywhere in this codebase, so that person needs staff. `previous_email`
+            # and `email_released_at` are written above precisely so /ops/users can
+            # answer "what happened to my account?" when they ask.
 
         User.objects.filter(pk=claimant.pk).update(
             email=target,
@@ -238,41 +241,6 @@ def confirm_code(user, target_email: str, code: str) -> tuple[str, dict]:
             detail={"target": target, "released_from": incumbent.pk if incumbent else None},
         )
         return OK, {"email": target}
-
-
-def _notify_address_released(*, username: str | None, address: str | None) -> None:
-    """Tell the losing account, at the address being taken, how to get back in.
-
-    Best-effort and never raises: the transfer has already committed, and failing to
-    send must not surface as an error to the person who legitimately claimed it.
-    """
-    if not is_deliverable_email(address) or not getattr(settings, "EMAIL_SENDING_ENABLED", False):
-        logger.warning("email_release_notice_not_sent target=%s", address)
-        return
-    try:
-        from django.core.mail import EmailMultiAlternatives
-        from django.template.loader import render_to_string
-
-        context = brand_context(username=username or "", address=address)
-        text_body = (
-            "Your email address was moved\n\n"
-            f"{address} has been confirmed on another MasterSAT account, so it is no\n"
-            "longer attached to yours.\n\n"
-            f"Your account and all of your results are unchanged. Sign in with your\n"
-            f"username instead: {username}\n\n"
-            "If this was not expected, contact the MasterSAT centre.\n\n"
-            "This message was sent automatically; please do not reply to it.\n"
-        )
-        msg = EmailMultiAlternatives(
-            subject="Your MasterSAT sign-in has changed",
-            body=text_body,
-            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-            to=[address],
-        )
-        msg.attach_alternative(render_to_string("email/address_released.html", context), "text/html")
-        msg.send(fail_silently=False)
-    except Exception:
-        logger.exception("email_release_notice_failed target=%s", address)
 
 
 def deliver_code(claim: EmailClaim, code: str) -> bool:
