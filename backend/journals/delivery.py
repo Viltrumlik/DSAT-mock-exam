@@ -29,6 +29,7 @@ midterm              a ``ResourceAccessGrant`` **plus** a ``MidtermSchedule``;
 from __future__ import annotations
 
 import logging
+import os.path
 
 from django.db import transaction
 from django.utils import timezone
@@ -179,12 +180,51 @@ def _delivery_for(classroom, session: JournalLesson, *, planned_start=None) -> C
     return row
 
 
+def _copy_files(session: JournalLesson, assignment) -> None:
+    """Copy the session's files onto the Assignment, primary + extras.
+
+    Deliberately a copy, not a FileField assignment: assigning one FileField to another
+    stores the SAME storage path on both rows, so the journal template and every classroom
+    that ever received it would share one file — and deleting any of them takes the file
+    away from the rest. ``ContentFile`` forces a fresh write under the Assignment's own
+    ``upload_to``.
+    """
+    from django.core.files.base import ContentFile
+    from classes.models import AssignmentExtraAttachment
+
+    def _dup(src_field):
+        try:
+            src_field.open("rb")
+            try:
+                return ContentFile(src_field.read(), name=os.path.basename(src_field.name))
+            finally:
+                src_field.close()
+        except Exception:
+            # A missing file on disk must not sink the whole release — the rest of the
+            # homework is still worth delivering.
+            logger.exception("journal file copy failed for %s", getattr(src_field, "name", "?"))
+            return None
+
+    if session.attachment_file:
+        copied = _dup(session.attachment_file)
+        if copied is not None:
+            assignment.attachment_file = copied
+            assignment.save(update_fields=["attachment_file", "updated_at"])
+
+    for extra in session.extra_attachments.all():
+        if not extra.file:
+            continue
+        copied = _dup(extra.file)
+        if copied is not None:
+            AssignmentExtraAttachment.objects.create(assignment=assignment, file=copied)
+
+
 # ── releasing homework ─────────────────────────────────────────────────────────
 
 
 @transaction.atomic
 def release_homework(
-    classroom, session: JournalLesson, *, actor
+    classroom, session: JournalLesson, *, actor, allow_unapproved: bool = False
 ) -> tuple[ClassroomLesson, bool, list[str]]:
     """Materialize a session's homework brief as a live ``classes.Assignment``.
 
@@ -208,7 +248,15 @@ def release_homework(
             + "; ".join(session.homework_validation_reasons()),
         )
 
+    _assert_sets_approved(
+        [l.assessment_set_id for l in session.assessments.all()],
+        allow_unapproved=allow_unapproved,
+    )
+
     delivery = _delivery_for(classroom, session)
+    # Lock before the released? check: an unlocked read-then-write let a double-press
+    # create two Assignments for one lesson, and there is no DB constraint behind it.
+    delivery = ClassroomLesson.objects.select_for_update().get(pk=delivery.pk)
     if delivery.assignment_id and delivery.homework_released_at:
         return delivery, False, []
 
@@ -218,7 +266,6 @@ def release_homework(
         title=session.title or f"Lesson {session.lesson_number}",
         instructions=session.instructions,
         external_url=session.external_url,
-        attachment_file=session.attachment_file or None,
         allow_file_upload=session.allow_file_upload,
         practice_scope=session.practice_scope,
         practice_test_ids=session.practice_test_ids or None,
@@ -232,6 +279,12 @@ def release_homework(
         # after today. None (unschedulable classroom) = never closes.
         due_at=next_lesson_start_after(classroom, after=delivery.scheduled_for),
     )
+
+    # Files: COPY, never assign the template's FileField across. Assigning stores the same
+    # storage path on both rows, so the Assignment and the journal template would share one
+    # file and deleting either could pull it from under the other. The session's extra
+    # attachments have to come across too — only the first used to.
+    _copy_files(session, assignment)
 
     # Pastpapers attached to the brief: the assignment's own library grant opens them.
     try:
@@ -340,6 +393,59 @@ def plan_items(session: JournalLesson) -> set[tuple[str, str, int]]:
     return out
 
 
+def _assert_sets_approved(set_ids, *, allow_unapproved: bool) -> None:
+    """Refuse content that has not passed review, unless the teacher confirms.
+
+    Journal delivery reaches students by exactly the same route as the ordinary assign
+    path, so it gets the same gate: ``assessments.views_assign`` and
+    ``AssignmentViewSet.create`` both reject a set whose ``review_status`` is not APPROVED
+    unless ``allow_unapproved`` is passed. Without this, an admin attaching a draft set to
+    a journal put unreviewed questions in front of a class.
+    """
+    from assessments.models import AssessmentSet
+
+    if allow_unapproved:
+        return
+    ids = [i for i in set_ids if i]
+    if not ids:
+        return
+    bad = list(
+        AssessmentSet.objects.filter(pk__in=ids)
+        .exclude(review_status=AssessmentSet.STATUS_APPROVED)
+        .values_list("title", flat=True)
+    )
+    if bad:
+        raise DeliveryError(
+            "assessment_not_approved",
+            "Not approved yet: " + "; ".join(bad),
+        )
+
+
+def _assert_resource_exists(resource_type: str, resource_id: int) -> None:
+    """Raise a DeliveryError if the granted resource is gone.
+
+    A journal plan stores bare ids, so content deleted after authoring leaves a dangling
+    entry. Without this the grant path raised ValidationError/IntegrityError out of the
+    access engine — a 500 that also confirmed whether an id existed.
+    """
+    from access.resources import RT_ASSESSMENT_SET, RT_PRACTICE_TEST, RT_PRACTICE_TEST_PACK
+    from assessments.models import AssessmentSet
+    from exams.models import PracticeTest, PracticeTestPack
+
+    model = {
+        RT_ASSESSMENT_SET: AssessmentSet,
+        RT_PRACTICE_TEST: PracticeTest,
+        RT_PRACTICE_TEST_PACK: PracticeTestPack,
+    }.get(resource_type)
+    if model is None:
+        return
+    if not model.objects.filter(pk=resource_id).exists():
+        raise DeliveryError(
+            "not_found",
+            "That item is no longer available — an admin may have deleted it from the plan.",
+        )
+
+
 def _student_members(classroom):
     from classes.models import ClassroomMembership
 
@@ -353,7 +459,8 @@ def _student_members(classroom):
 
 @transaction.atomic
 def grant_resource(
-    classroom, session: JournalLesson, *, block: str, resource_type: str, resource_id: int, actor
+    classroom, session: JournalLesson, *, block: str, resource_type: str, resource_id: int,
+    actor, allow_unapproved: bool = False,
 ) -> tuple[ClassroomLessonGrant, bool]:
     """Open one item of a lesson plan to the class, right now.
 
@@ -371,6 +478,17 @@ def grant_resource(
         )
 
     delivery = _delivery_for(classroom, session)
+    # The resource can have been deleted after the journal was authored (the plan stores
+    # bare ids). Check before granting so a stale plan entry is a clean 400 rather than
+    # an IntegrityError or a grant of something that no longer exists.
+    _assert_resource_exists(resource_type, resource_id)
+    if resource_type == RT_ASSESSMENT_SET:
+        _assert_sets_approved([resource_id], allow_unapproved=allow_unapproved)
+
+    # Lock the delivery row: two teachers (or a double-press) racing an unlocked
+    # read-then-write both saw "not granted" and both inserted, turning the partial unique
+    # constraint into a 500 instead of a no-op.
+    delivery = ClassroomLesson.objects.select_for_update().get(pk=delivery.pk)
     existing = ClassroomLessonGrant.objects.filter(
         classroom_lesson=delivery,
         block=block,
@@ -395,21 +513,32 @@ def grant_resource(
     else:
         from access.engine.assignment_service import AssignmentService
         from access.models import ResourceAccessGrant
+        from access.resources import expand_subject_targets
 
         students = _student_members(classroom)
         if not students:
             raise DeliveryError("no_students", "This class has no enrolled students yet.")
+
+        # A PACK is not itself readable by a student: the gate is PracticeTest.assigned_users
+        # on the pack's individual SECTIONS. Granting the pack id alone wrote a row nothing
+        # reads, so the button reported success and the class got nothing. Expand first —
+        # for a plain practice_test this returns the test unchanged.
+        targets = expand_subject_targets(resource_type, resource_id, session.practice_scope)
+        if not targets:
+            raise DeliveryError(
+                "empty_pack", "That pack has no sections for this class's subject."
+            )
         # verify=True re-reads the live gate after writing and rolls back if any student
         # still can't see it — a button pressed in front of a class must fail loudly
         # rather than silently grant nothing.
-        AssignmentService.bulk_assign_resource(
+        AssignmentService.bulk_assign_targets(
             students,
-            resource_type,
-            resource_id,
+            targets,
             actor=actor,
             source=ResourceAccessGrant.SOURCE_CLASSROOM,
             classroom=classroom,
             note="journal lesson grant",
+            verify=True,
         )
 
     grant = ClassroomLessonGrant.objects.create(
@@ -431,7 +560,10 @@ def grant_midterm(classroom, session: JournalLesson, *, actor) -> tuple[Classroo
     (the existing ``midterms-v2/<id>/start-code/`` endpoint). The panel therefore shows
     this as two steps.
     """
-    from access.engine.classroom_service import ClassroomAccessService
+    from datetime import timedelta
+
+    from access.engine.assignment_service import AssignmentService
+    from access.models import ResourceAccessGrant
     from access.resources import RT_MIDTERM_V2
     from classes.models_schedule import MidtermSchedule
 
@@ -442,11 +574,19 @@ def grant_midterm(classroom, session: JournalLesson, *, actor) -> tuple[Classroo
     if delivery.midterm_schedule_id:
         return delivery, False
 
-    ClassroomAccessService.assign_resource_to_classroom(
-        classroom,
+    # Grant per-student rather than via assign_resource_to_classroom: that helper's own
+    # student list does not exclude REMOVED memberships, so a removed student would be
+    # handed the exam. _student_members() is the roster that respects removal.
+    students = _student_members(classroom)
+    if not students:
+        raise DeliveryError("no_students", "This class has no enrolled students yet.")
+    AssignmentService.bulk_assign_resource(
+        students,
         RT_MIDTERM_V2,
         session.midterm_exam_id,
         actor=actor,
+        source=ResourceAccessGrant.SOURCE_CLASSROOM,
+        classroom=classroom,
         note="journal midterm session",
     )
 
@@ -455,14 +595,20 @@ def grant_midterm(classroom, session: JournalLesson, *, actor) -> tuple[Classroo
     # which would strip access from a student mid-attempt.
     starts_at = None
     if delivery.scheduled_for:
-        starts_at = delivery.scheduled_for - timezone.timedelta(
+        starts_at = delivery.scheduled_for - timedelta(
             days=session.midterm_access_days_before or 0
         )
-    schedule, _ = MidtermSchedule.objects.get_or_create(
+    schedule, created_schedule = MidtermSchedule.objects.get_or_create(
         classroom=classroom,
         midterm_id=session.midterm_exam_id,
         defaults={"starts_at": starts_at, "created_by": actor},
     )
+    # get_or_create ignores `defaults` on an existing row, so a schedule created elsewhere
+    # (e.g. assigned from the Midterms tab) silently discarded the authored window. Only
+    # fill a start that is genuinely unset — never overwrite a window a teacher chose.
+    if not created_schedule and schedule.starts_at is None and starts_at is not None:
+        schedule.starts_at = starts_at
+        schedule.save(update_fields=["starts_at", "updated_at"])
     delivery.midterm_schedule = schedule
     delivery.save(update_fields=["midterm_schedule", "updated_at"])
     return delivery, True

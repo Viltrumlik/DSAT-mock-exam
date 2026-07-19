@@ -237,18 +237,24 @@ function HomeworkPanel({
 }) {
   const release = useReleaseHomework(classId, detail.lesson_id);
   const hw = detail.homework;
+  // The Assignment can be deleted from the Assignments tab while the delivery row keeps
+  // homework_released_at set (the FK is SET_NULL). Without this the panel read "Given"
+  // forever and offered no way to put the homework back.
+  const assignmentGone = detail.homework_released && detail.assignment_id == null;
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader
           title="Homework"
           description={
-            detail.homework_released
-              ? "Given to the class — due at the start of the next lesson."
-              : "Not given yet."
+            assignmentGone
+              ? "This homework was given, but its assignment has since been deleted."
+              : detail.homework_released
+                ? "Given to the class — due at the start of the next lesson."
+                : "Not given yet."
           }
           actions={
-            detail.homework_released ? (
+            detail.homework_released && !assignmentGone ? (
               <Pill tone="success">
                 <Check className="mr-1 h-3 w-3" aria-hidden />
                 Given
@@ -258,7 +264,11 @@ function HomeworkPanel({
                 disabled={!canManage || release.isPending || hw.validation.length > 0}
                 onClick={() => release.mutate()}
               >
-                {release.isPending ? "Giving…" : "Give to class"}
+                {release.isPending
+                  ? "Giving…"
+                  : assignmentGone
+                    ? "Give again"
+                    : "Give to class"}
               </Button>
             )
           }
@@ -316,8 +326,11 @@ function MidtermPanel({
   const grant = useGrantMidterm(classId, row.lesson_id);
   const qc = useQueryClient();
   const [starting, setStarting] = useState(false);
-  const [code, setCode] = useState<string | null>(null);
+  const [justIssued, setJustIssued] = useState<string | null>(null);
   const m = row.midterm;
+  // Prefer the server's copy: local state alone meant a teacher who navigated away could
+  // no longer read the code out to the class.
+  const code = m?.start_code || justIssued;
 
   // Reuses the existing midterms-v2 start-code endpoint rather than duplicating it.
   const onStart = async () => {
@@ -325,7 +338,7 @@ function MidtermPanel({
     setStarting(true);
     try {
       const res = await midtermApi.generateStartCode(classId, m.exam_id);
-      setCode(res.access_code);
+      setJustIssued(res.access_code);
       qc.invalidateQueries({ queryKey: classroomKeys.lesson(classId, row.lesson_id) });
       qc.invalidateQueries({ queryKey: classroomKeys.lessons(classId) });
       pushGlobalToast({ tone: "success", message: "Midterm started — read the code to the class." });

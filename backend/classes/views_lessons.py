@@ -13,6 +13,9 @@ a session's homework, and open individual items to the class during the lesson.
 
 from __future__ import annotations
 
+import logging
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http
 from rest_framework.response import Response
@@ -22,6 +25,13 @@ from journals.models import ClassroomLessonGrant, JournalLesson
 
 from .capabilities import classroom_capabilities
 from .views_rankings import _ClassroomScopedView
+
+logger = logging.getLogger(__name__)
+
+
+def _flag(request, name: str) -> bool:
+    """Read a boolean confirm flag from the body (multipart sends it as a string)."""
+    return str(request.data.get(name, "")).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _grant_payload(grant: ClassroomLessonGrant) -> dict:
@@ -78,6 +88,10 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                 # Access alone does not let students in — the teacher must also generate
                 # the start code, which is what this flag drives in the UI.
                 "has_start_code": bool(schedule and schedule.access_code),
+                # Return the code itself: it lived only in component state, so a teacher
+                # who navigated away could not read it out to the class any more. Staff-
+                # only endpoint, and the same panel endpoint already returns it.
+                "start_code": (schedule.access_code or "") if schedule else "",
                 "starts_at": schedule.starts_at if schedule else None,
             }
             if exam
@@ -276,10 +290,19 @@ class ClassroomLessonReleaseView(_LessonScopedView):
             return Response({"detail": "This class has no lesson plan."}, status=http.HTTP_404_NOT_FOUND)
         try:
             row, created, warnings = delivery.release_homework(
-                self.get_classroom(), session, actor=request.user
+                self.get_classroom(), session, actor=request.user,
+                allow_unapproved=_flag(request, "allow_unapproved"),
             )
         except delivery.DeliveryError as e:
             return Response({"detail": e.message, "code": e.code}, status=http.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            # The access engine validates deep in the stack; letting that escape was a 500
+            # whose message also confirmed whether an id existed.
+            logger.warning("lesson action rejected: %s", e)
+            return Response(
+                {"detail": "That item could not be given to the class.", "code": "rejected"},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
 
         detail = "Homework given to the class." if created else "Already given."
         if warnings:
@@ -347,9 +370,18 @@ class ClassroomLessonGrantView(_LessonScopedView):
                 resource_type=resource_type,
                 resource_id=resource_id,
                 actor=request.user,
+                allow_unapproved=_flag(request, "allow_unapproved"),
             )
         except delivery.DeliveryError as e:
             return Response({"detail": e.message, "code": e.code}, status=http.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            # The access engine validates deep in the stack; letting that escape was a 500
+            # whose message also confirmed whether an id existed.
+            logger.warning("lesson action rejected: %s", e)
+            return Response(
+                {"detail": "That item could not be given to the class.", "code": "rejected"},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
         return Response(
             {
                 "detail": "Class can now access this." if created else "Already available.",
@@ -392,13 +424,17 @@ class ClassroomLessonRescheduleView(_LessonScopedView):
         if binding is None:
             return Response({"detail": "This class has no lesson plan."}, status=http.HTTP_404_NOT_FOUND)
 
-        raw = request.data.get("starts_on")
-        starts_on = None
-        if raw:
-            from django.utils.dateparse import parse_date
+        from django.utils.dateparse import parse_date
 
-            starts_on = parse_date(str(raw))
-            if starts_on is None:
-                return Response({"detail": "Invalid date."}, status=http.HTTP_400_BAD_REQUEST)
+        raw = request.data.get("starts_on")
+        # Required: an omitted field used to fall through as None and NULL the anchor,
+        # silently destroying the whole term's dates.
+        if not raw:
+            return Response(
+                {"detail": "starts_on is required."}, status=http.HTTP_400_BAD_REQUEST
+            )
+        starts_on = parse_date(str(raw))
+        if starts_on is None:
+            return Response({"detail": "Invalid date."}, status=http.HTTP_400_BAD_REQUEST)
         delivery.reschedule(binding, starts_on)
         return Response({"detail": "Plan rescheduled.", "starts_on": binding.starts_on})

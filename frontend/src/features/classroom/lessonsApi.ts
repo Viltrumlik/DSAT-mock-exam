@@ -35,6 +35,8 @@ export interface LessonMidterm {
   granted: boolean;
   /** Access alone does not let students in — the teacher must also start it. */
   has_start_code: boolean;
+  /** The 6-digit code itself, so it survives navigating away mid-lesson. */
+  start_code: string;
   starts_at: string | null;
 }
 
