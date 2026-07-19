@@ -9,6 +9,7 @@ import { capabilitiesFor } from "./capabilities";
 import { useClassroom } from "./hooks";
 import { People } from "./pages/People";
 import { Assignments } from "./pages/Assignments";
+import { Lessons } from "./pages/Lessons";
 import { Settings } from "./pages/Settings";
 import { Rankings } from "./pages/Rankings";
 import { Gradebook } from "./pages/Gradebook";
@@ -17,7 +18,7 @@ import { Midterms } from "./pages/Midterms";
 import { Results } from "./pages/Results";
 
 function isTabId(v: string | null): v is ClassroomTabId {
-  return v != null && ["overview", "assignments", "materials", "midterms", "results", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
+  return v != null && ["overview", "lessons", "assignments", "materials", "midterms", "results", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
 }
 
 export function ClassroomWorkspace({
@@ -69,6 +70,7 @@ export function ClassroomWorkspace({
     <ClassroomShell classroom={classroom} active={current} onTabChange={onTabChange} backHref={backHref} backLabel={backLabel}>
       {/* Overview now hosts the class rankings. */}
       {current === "overview" && <Rankings classroom={classroom} />}
+      {current === "lessons" && caps.isStaff && <Lessons classroom={classroom} />}
       {current === "assignments" && <Assignments classroom={classroom} />}
       {current === "midterms" && caps.canManageAssignments && <Midterms classroom={classroom} />}
       {current === "materials" && caps.isMember && <Materials classroom={classroom} />}

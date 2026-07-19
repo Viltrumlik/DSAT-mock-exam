@@ -295,23 +295,13 @@ def duplicate_journal(
     return target, report
 
 
-def release_lesson_into_classroom(lesson: JournalLesson, classroom, lesson_date):
-    """FUTURE (NOT IMPLEMENTED): materialize a journal session into a live classroom.
+def release_lesson_into_classroom(lesson: JournalLesson, classroom, *, actor):
+    """Materialize a journal session's homework into a live classroom.
 
-    When classroom auto-journal is built, this is the single seam it will call. It would:
-      * build a ``classes.Assignment`` from the session's homework brief,
-      * set ``due_at`` to the START of the classroom's NEXT lesson after ``lesson_date``
-        (``classes.schedule.next_lesson_start_after``) — or leave it null if there is no
-        next lesson,
-      * copy ``practice_test_ids`` / ``practice_test_pack_ids`` / ``practice_scope`` / files,
-      * for each ``JournalLessonAssessment`` call
-        ``assessments.domain.homework_versioning.ensure_current_version(...)`` and create an
-        ``assessments.HomeworkAssignment`` pinned to that version,
-      * materialize the ``JournalClasswork`` plan for the teacher's Classwork tab, and
-      * for a MIDTERM session, grant the classroom access to ``lesson.midterm_exam``
-        ``lesson.midterm_access_days_before`` days ahead, scheduled at ``lesson_date``'s
-        lesson time.
-
-    Deliberately unwired for now — the Journal module only authors templates.
+    Thin alias kept because this name was the documented seam. The implementation — and
+    the in-lesson "give the class access to this" actions that go with it — lives in
+    :mod:`journals.delivery`.
     """
-    raise NotImplementedError("Classroom auto-release from a Journal is not implemented yet.")
+    from .delivery import release_homework
+
+    return release_homework(classroom, lesson, actor=actor)

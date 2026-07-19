@@ -13,4 +13,6 @@ export const classroomKeys = {
   midtermPanel: (classId: number, midtermId: number) => [...classroomKeys.all, "midterm-panel", classId, midtermId] as const,
   myMidterms: () => [...classroomKeys.all, "my-midterms"] as const,
   results: (id: number, filters: Record<string, unknown>) => [...classroomKeys.all, "results", id, filters] as const,
+  lessons: (id: number) => [...classroomKeys.all, "lessons", id] as const,
+  lesson: (id: number, lessonId: number) => [...classroomKeys.all, "lesson", id, lessonId] as const,
 };

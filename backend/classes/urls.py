@@ -26,6 +26,14 @@ from .views_analytics import AnalyticsClassView, AnalyticsMeView, AnalyticsStude
 from .views_gradebook import GradebookOverviewView, GradebookAssignmentView
 from .views_materials import ClassroomMaterialsView, ClassroomMaterialDetailView
 from .views_assign import AssignMidtermView, AssignTeacherView, TransferOwnershipView, ClassroomGovernanceDeleteView
+from .views_lessons import (
+    ClassroomLessonDetailView,
+    ClassroomLessonGrantView,
+    ClassroomLessonReleaseView,
+    ClassroomLessonRescheduleView,
+    ClassroomLessonRevokeView,
+    ClassroomLessonsView,
+)
 from .views_results import ClassroomMidtermResultsView, ClassroomUnifiedResultsView
 from .views_certificates import (
     IssueMidtermCertificatesView,
@@ -105,6 +113,15 @@ urlpatterns = [
     path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/start-code/", MidtermV2StartCodeView.as_view(), name="class-midterm-v2-start-code"),
     path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/versions/", AssignVersionsView.as_view(), name="class-midterm-v2-versions"),
     path("<int:classroom_pk>/midterms-v2/<int:midterm_id>/certificates/issue/", IssueMidtermV2CertificatesView.as_view(), name="class-midterm-v2-issue"),
+    # Journal lesson plan delivered into this classroom (teacher panel). Lives here rather
+    # than under /api/journals/ because that namespace is host-guarded to the admin
+    # subdomain and its permission class excludes teachers.
+    path("<int:classroom_pk>/lessons/", ClassroomLessonsView.as_view(), name="class-lessons"),
+    path("<int:classroom_pk>/lessons/reschedule/", ClassroomLessonRescheduleView.as_view(), name="class-lessons-reschedule"),
+    path("<int:classroom_pk>/lessons/<int:lesson_id>/", ClassroomLessonDetailView.as_view(), name="class-lesson-detail"),
+    path("<int:classroom_pk>/lessons/<int:lesson_id>/release/", ClassroomLessonReleaseView.as_view(), name="class-lesson-release"),
+    path("<int:classroom_pk>/lessons/<int:lesson_id>/grant/", ClassroomLessonGrantView.as_view(), name="class-lesson-grant"),
+    path("<int:classroom_pk>/lessons/<int:lesson_id>/grants/<int:grant_id>/revoke/", ClassroomLessonRevokeView.as_view(), name="class-lesson-revoke"),
     # Teacher gradebook
     path("<int:classroom_pk>/midterm-results/", ClassroomMidtermResultsView.as_view(), name="class-midterm-results"),
     path("<int:classroom_pk>/results/", ClassroomUnifiedResultsView.as_view(), name="class-unified-results"),
