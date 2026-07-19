@@ -26,15 +26,14 @@ SAMPLES = [
         "verification_code.html",
         {"code": "079431", "ttl_minutes": 15},
     ),
-    (
-        "address_released.html",
-        {"username": "asilbek.rakhmonov", "address": "asilbek.rakhmonov@gmail.com"},
-    ),
 ]
 
 
 class Command(BaseCommand):
     help = "Render the email templates with sample data for visual review."
+
+    # Deliberately one entry. The platform sends exactly one message today; when the
+    # next one lands, add it here so it is reviewable without a real send.
 
     def add_arguments(self, parser):
         parser.add_argument(
