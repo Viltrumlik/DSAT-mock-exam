@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   BookOpen,
@@ -18,13 +19,20 @@ import {
   GraduationCap,
   Timer,
 } from "lucide-react";
+import { midtermApi } from "@/lib/midtermApi";
+import { normalizeApiError } from "@/lib/apiError";
+import { pushGlobalToast } from "@/lib/toastBus";
 import { Button, Card, CardHeader, EmptyState, ErrorState, LoadingState, Pill, Tabs } from "../ui";
+import { capabilitiesFor } from "../capabilities";
+import { classroomKeys } from "../queryKeys";
 import {
   useGrantItem,
   useGrantMidterm,
   useLessonDetail,
   useLessonPlan,
   useReleaseHomework,
+  useRescheduleLessons,
+  useRevokeGrant,
 } from "../lessonsHooks";
 import type { LessonItem, LessonRow } from "../lessonsApi";
 import type { ClassroomWithRole } from "../types";
@@ -51,22 +59,39 @@ function ItemRow({
   classId,
   lessonId,
   disabled,
+  grantId,
 }: {
   item: LessonItem;
   classId: number;
   lessonId: number;
   disabled: boolean;
+  /** Present once the item has been opened — lets the teacher undo a mis-press. */
+  grantId?: number;
 }) {
   const grant = useGrantItem(classId, lessonId);
+  const revoke = useRevokeGrant(classId, lessonId);
   return (
     <li className="flex items-center gap-3 py-2.5">
       <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       <span className="min-w-0 flex-1 truncate text-sm text-foreground">{itemLabel(item)}</span>
       {item.given ? (
-        <Pill tone="success">
-          <Check className="mr-1 h-3 w-3" aria-hidden />
-          Given
-        </Pill>
+        <span className="flex items-center gap-2">
+          <Pill tone="success">
+            <Check className="mr-1 h-3 w-3" aria-hidden />
+            Given
+          </Pill>
+          {grantId != null && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled || revoke.isPending}
+              onClick={() => revoke.mutate(grantId)}
+              title="Remove this from the class's list. Students already working on it keep their progress."
+            >
+              {revoke.isPending ? "Undoing…" : "Undo"}
+            </Button>
+          )}
+        </span>
       ) : (
         <Button
           size="sm"
@@ -97,6 +122,10 @@ function ClassworkPanel({
   canManage: boolean;
 }) {
   const cw = detail.classwork;
+  // (resource_type, resource_id) -> grant id, so a given item can offer Undo.
+  const grantIdFor = new Map(
+    (detail.grants || []).map((g) => [`${g.resource_type}:${g.resource_id}`, g.id]),
+  );
   if (!cw) {
     return <EmptyState title="No classwork" description="This session has no in-class plan." />;
   }
@@ -150,6 +179,7 @@ function ClassworkPanel({
                 classId={classId}
                 lessonId={detail.lesson_id}
                 disabled={!canManage}
+                grantId={grantIdFor.get(`${it.resource_type}:${it.resource_id}`)}
               />
             ))}
           </ul>
@@ -173,6 +203,7 @@ function ClassworkPanel({
                 classId={classId}
                 lessonId={detail.lesson_id}
                 disabled={!canManage}
+                grantId={grantIdFor.get(`${it.resource_type}:${it.resource_id}`)}
               />
             ))}
           </ul>
@@ -283,7 +314,28 @@ function MidtermPanel({
   canManage: boolean;
 }) {
   const grant = useGrantMidterm(classId, row.lesson_id);
+  const qc = useQueryClient();
+  const [starting, setStarting] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
   const m = row.midterm;
+
+  // Reuses the existing midterms-v2 start-code endpoint rather than duplicating it.
+  const onStart = async () => {
+    if (!m) return;
+    setStarting(true);
+    try {
+      const res = await midtermApi.generateStartCode(classId, m.exam_id);
+      setCode(res.access_code);
+      qc.invalidateQueries({ queryKey: classroomKeys.lesson(classId, row.lesson_id) });
+      qc.invalidateQueries({ queryKey: classroomKeys.lessons(classId) });
+      pushGlobalToast({ tone: "success", message: "Midterm started — read the code to the class." });
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+    } finally {
+      setStarting(false);
+    }
+  };
+
   if (!m) return <EmptyState title="No midterm" description="This session has no exam attached." />;
   return (
     <Card>
@@ -304,9 +356,22 @@ function MidtermPanel({
         }
       />
       {m.granted && !m.has_start_code && (
-        // Access is not enough — the exam refuses to start until a code exists.
-        <p className="mt-3 text-sm text-warning">
-          Students still can&apos;t begin: generate the start code in the Midterms tab.
+        // Access is not enough — can_start_midterm refuses with `midterm_no_code` until
+        // a code exists. Generating it here keeps the teacher in the room rather than
+        // sending them off to the Midterms tab mid-lesson.
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-warning">
+            Students can&apos;t begin yet — they need the start code.
+          </p>
+          <Button disabled={!canManage || starting} onClick={onStart}>
+            {starting ? "Starting…" : "Start midterm"}
+          </Button>
+        </div>
+      )}
+      {code && (
+        <p className="mt-3 text-sm text-foreground">
+          Read this code out to the class:{" "}
+          <span className="font-mono text-lg font-bold tracking-widest">{code}</span>
         </p>
       )}
     </Card>
@@ -379,10 +444,12 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
   const classId = classroom.id;
   const { data, isLoading, isError, refetch } = useLessonPlan(classId);
   const [openId, setOpenId] = useState<number | null>(null);
+  const reschedule = useRescheduleLessons(classId);
 
-  const canManage = ["OWNER", "TEACHER", "ADMIN", "TA", "CO_TEACHER"].includes(
-    String(classroom.my_role || ""),
-  );
+  // Derive from capabilities, never by comparing role strings inline — capabilities.ts
+  // is the single source of truth and already normalises legacy ADMIN/CO_TEACHER roles.
+  const caps = capabilitiesFor(classroom.my_role);
+  const canManage = caps.canManageAssignments;
 
   if (isLoading) return <LoadingState label="Loading lesson plan…" />;
   if (isError || !data)
@@ -420,6 +487,28 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
         <CardHeader
           title={data.journal?.title || "Lesson plan"}
           description={`${data.lessons.length} session${data.lessons.length === 1 ? "" : "s"} · homework is due at the start of the next lesson`}
+          actions={
+            // Rescheduling is manager-only server-side (can_manage_class); showing it to
+            // a TA would offer a control that always 403s.
+            caps.canManageClass ? (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                Starts
+                <input
+                  type="date"
+                  defaultValue={data.starts_on ?? ""}
+                  disabled={reschedule.isPending}
+                  // onBlur, not onChange: a date input emits a change per keystroke while
+                  // the year is typed, which would fire a whole-term reschedule per digit.
+                  onBlur={(e) => {
+                    const v = e.target.value;
+                    if (v && v !== (data.starts_on ?? "")) reschedule.mutate(v);
+                  }}
+                  className="rounded-lg border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none"
+                  title="Move the whole plan. Lessons already given keep the date they happened on."
+                />
+              </label>
+            ) : undefined
+          }
         />
       </Card>
 
