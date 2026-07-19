@@ -16,6 +16,7 @@ from access.services import (
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
 from users.activity import activity_count
+from users.profile_completeness import is_profile_complete, missing_profile_fields
 from users.name_utils import (
     DUPLICATE_FULL_NAME_CODE,
     DUPLICATE_FULL_NAME_MESSAGE,
@@ -83,6 +84,18 @@ class UserMeSerializer(serializers.ModelSerializer):
     telegram_linked = serializers.SerializerMethodField()
     security_step_up_active = serializers.SerializerMethodField()
     has_recent_security_alerts = serializers.SerializerMethodField()
+    # The completion prompt renders whatever these say. The frontend never recomputes
+    # the rule, so the two definitions cannot drift apart.
+    profile_complete = serializers.SerializerMethodField(read_only=True)
+    missing_fields = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_profile_complete(self, obj) -> bool:
+        return is_profile_complete(obj)
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_missing_fields(self, obj) -> list[str]:
+        return missing_profile_fields(obj)
 
     class Meta:
         model = User
@@ -113,6 +126,8 @@ class UserMeSerializer(serializers.ModelSerializer):
             "email_verified",
             "email_verified_at",
             "email_released_at",
+            "profile_complete",
+            "missing_fields",
         ]
         extra_kwargs = {
             "profile_image": {"required": False, "allow_null": True},
