@@ -17,6 +17,7 @@ import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status as http
 from rest_framework.response import Response
 
@@ -228,6 +229,34 @@ class _LessonScopedView(_ClassroomScopedView):
         return get_object_or_404(JournalLesson, pk=lesson_id, journal_id=binding.journal_id)
 
 
+def _focus_lesson(entries):
+    """Which single lesson the teacher should land on, and why.
+
+    The panel opens straight onto one lesson rather than a list, so the choice has to be
+    made somewhere — here, on the server, because it depends on the local date and the
+    server owns the timezone. Today's lesson wins; otherwise the nearest upcoming one, so
+    the tab is still useful between lessons; otherwise the most recent past one.
+    """
+    dated = [
+        (e, timezone.localtime(e["scheduled_for"]).date())
+        for e in entries
+        if e["scheduled_for"]
+    ]
+    if not dated:
+        # An unschedulable classroom (no lesson_days / unparseable lesson_time) still has
+        # a plan, just no dates — fall back to the first session.
+        return (entries[0]["session"].id if entries else None), "undated"
+
+    today = timezone.localdate()
+    for e, d in dated:
+        if d == today:
+            return e["session"].id, "today"
+    upcoming = [(e, d) for e, d in dated if d > today]
+    if upcoming:
+        return min(upcoming, key=lambda x: x[1])[0]["session"].id, "next"
+    return max(dated, key=lambda x: x[1])[0]["session"].id, "last"
+
+
 class ClassroomLessonsView(_LessonScopedView):
     """GET the classroom's whole lesson plan."""
 
@@ -248,10 +277,15 @@ class ClassroomLessonsView(_LessonScopedView):
             )
         journal = plan["journal"]
         binding = plan["binding"]
+        focus_id, focus_kind = _focus_lesson(plan["lessons"])
         return Response(
             {
                 "bound": True,
                 "reason": "",
+                # The lesson to open directly, and whether it is today's, the next one or
+                # the last one — the panel shows no picker.
+                "focus_lesson_id": focus_id,
+                "focus": focus_kind,
                 "journal": {
                     "id": journal.id,
                     "title": journal.display_title,

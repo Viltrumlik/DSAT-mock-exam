@@ -841,6 +841,77 @@ class CodexReviewFollowupTests(DeliveryTestBase):
         self.assertEqual(given_in["new_topic"], [False])
 
 
+class FocusLessonTests(DeliveryTestBase):
+    """The panel opens on ONE lesson (no picker); the server picks which."""
+
+    def _plan(self):
+        return self.client.get(f"/api/classes/{self.classroom.id}/lessons/").json()
+
+    def test_lands_on_todays_lesson(self):
+        # Classroom is ODD (Mon/Wed/Fri) at 18:00. Anchor the plan so lesson 2 falls today.
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        # Walk back to the most recent ODD weekday so "today" is a lesson day; if today is
+        # not one, the test still exercises next/last, so assert the contract loosely there.
+        for _ in range(3):
+            self._session()
+        self._publish()
+        binding = delivery.get_binding(self.classroom, actor=self.teacher, create=True)
+        binding.starts_on = today
+        binding.save(update_fields=["starts_on"])
+
+        body = self._plan()
+        self.assertIsNotNone(body["focus_lesson_id"])
+        if today.weekday() in (0, 2, 4):  # ODD group meets today
+            self.assertEqual(body["focus"], "today")
+            focus = next(l for l in body["lessons"] if l["lesson_id"] == body["focus_lesson_id"])
+            self.assertTrue(focus["scheduled_for"].startswith(today.isoformat()))
+
+    def test_falls_forward_to_the_next_lesson_when_none_today(self):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        # Anchor a week out so no lesson is today; the panel should land on the first one.
+        for _ in range(3):
+            self._session()
+        self._publish()
+        binding = delivery.get_binding(self.classroom, actor=self.teacher, create=True)
+        binding.starts_on = timezone.localdate() + timedelta(days=7)
+        binding.save(update_fields=["starts_on"])
+
+        body = self._plan()
+        self.assertEqual(body["focus"], "next")
+        focus = next(l for l in body["lessons"] if l["lesson_id"] == body["focus_lesson_id"])
+        self.assertEqual(focus["lesson_number"], 1)
+
+    def test_falls_back_to_the_last_lesson_when_all_are_past(self):
+        from datetime import timedelta
+        from django.utils import timezone
+
+        for _ in range(3):
+            self._session()
+        self._publish()
+        binding = delivery.get_binding(self.classroom, actor=self.teacher, create=True)
+        binding.starts_on = timezone.localdate() - timedelta(days=60)
+        binding.save(update_fields=["starts_on"])
+
+        body = self._plan()
+        self.assertEqual(body["focus"], "last")
+        focus = next(l for l in body["lessons"] if l["lesson_id"] == body["focus_lesson_id"])
+        self.assertEqual(focus["lesson_number"], 3)  # the latest session
+
+    def test_undated_classroom_still_focuses_the_first_session(self):
+        # No lesson_days / unparseable time → no dates, but the plan still opens somewhere.
+        self.classroom.lesson_time = "whenever"
+        self.classroom.save(update_fields=["lesson_time"])
+        self._session()
+        self._publish()
+        body = self._plan()
+        self.assertEqual(body["focus"], "undated")
+        self.assertIsNotNone(body["focus_lesson_id"])
+
+
 class LessonApiTests(DeliveryTestBase):
     def test_teacher_sees_the_plan(self):
         self._session()

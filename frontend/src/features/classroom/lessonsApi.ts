@@ -78,8 +78,13 @@ export interface LessonDetail extends LessonRow {
   };
 }
 
+export type LessonFocus = "today" | "next" | "last" | "undated";
+
 export interface LessonPlan {
   bound: boolean;
+  /** The one lesson the panel opens on — resolved server-side, no picker. */
+  focus_lesson_id?: number | null;
+  focus?: LessonFocus;
   /** Why there is no plan, so the UI can tell the teacher what to ask an admin for. */
   reason: "" | "no_level" | "no_published_journal";
   journal: { id: number; title: string; subject: string; level: string } | null;
