@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
 import { FrozenOverlay } from "@/components/FrozenOverlay";
+import { ProfileCompletionGate } from "@/components/ProfileCompletionGate";
 
 const BOOT_TIMEOUT_MS = 12_000;
 const BOOT_SLOW_MS = 5_000;
@@ -222,5 +223,25 @@ export default function AuthGuard({
         );
     }
 
-    return <>{children}</>;
+    // `useMe` intentionally types the payload as an unknown-shaped record, so narrow
+    // here rather than trusting it. Also keeps the gate inert against a backend that
+    // predates these fields: absent means "no opinion", not "incomplete".
+    const profileIncomplete = me?.profile_complete === false;
+    const missingFields = Array.isArray(me?.missing_fields)
+        ? (me.missing_fields as unknown[]).filter((f): f is string => typeof f === "string")
+        : [];
+    const meEmail = typeof me?.email === "string" ? me.email : "";
+
+    // Mounted here rather than per-console: AuthGuard is the one component all four
+    // shells share, so a single insertion covers student, teacher, admin and questions.
+    // Deliberately NOT wrapped in `inert` like the frozen branch above — this warns,
+    // it does not block.
+    return (
+        <>
+            {profileIncomplete && missingFields.length > 0 ? (
+                <ProfileCompletionGate missingFields={missingFields} currentEmail={meEmail} />
+            ) : null}
+            {children}
+        </>
+    );
 }

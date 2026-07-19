@@ -76,6 +76,10 @@ export const userMeResponseSchema = z
     email_verified: z.boolean().optional(),
     email_verified_at: z.union([z.string(), z.null()]).optional(),
     email_released_at: z.union([z.string(), z.null()]).optional(),
+    // Computed server-side. The UI renders what these say and never recomputes the
+    // rule, so the two definitions cannot drift.
+    profile_complete: z.boolean().optional(),
+    missing_fields: z.array(z.string()).optional(),
   })
   .passthrough();
 
