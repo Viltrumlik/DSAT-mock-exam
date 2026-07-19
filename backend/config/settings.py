@@ -92,6 +92,11 @@ EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
 # are not meant to reply. Every template says so explicitly.
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'MasterSAT <support@mastersat.uz>')
 
+# Absolute origin every link and image in an email is built against. A mail client has
+# no page origin to resolve "/static/..." against, so this cannot be left relative or
+# the logo breaks in every inbox. See core/mail.py.
+EMAIL_SITE_URL = os.getenv('EMAIL_SITE_URL', 'https://mastersat.uz')
+
 # Django ALWAYS supplies EMAIL_BACKEND (smtp), EMAIL_HOST ("localhost"), EMAIL_PORT (25)
 # and DEFAULT_FROM_EMAIL ("webmaster@localhost") defaults, so their presence proves
 # nothing about whether mail can actually be delivered — checking for them is how you
@@ -481,6 +486,13 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# backend/static/ was never on the finder path: with no STATICFILES_DIRS, staticfiles
+# only searches each installed app's own static/ dir, and no app has one. So the files
+# already sitting there (the certificate logos) were reachable by absolute filesystem
+# path — which is all Playwright needs — but 404ed over /static/. Email cannot work that
+# way: an inbox can only fetch the logo over HTTPS.
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

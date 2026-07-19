@@ -2,28 +2,51 @@
 
 {% block subject %}Your MasterSAT sign-in has changed{% endblock %}
 
+{% block preheader %}{{ address }} now belongs to another account. Sign in with your username, {{ username }} — your results are unchanged.{% endblock %}
+
 {% block content %}
-  <p style="margin:0 0 16px;font-size:16px;font-weight:700;color:#1f2937;">
+  <h1 class="ms-h1 ms-ink" style="margin:0 0 12px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
     Your email address was moved
+  </h1>
+
+  <p class="ms-mute" style="margin:0 0 16px;font-size:15px;font-weight:500;line-height:1.65;color:#64748b;">
+    <strong class="ms-ink" style="font-weight:700;color:#0f1729;">{{ address }}</strong>
+    has been confirmed on another MasterSAT account, so it is no longer attached to yours.
   </p>
 
-  <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#4b5563;">
-    <strong>{{ address }}</strong> has been confirmed on another MasterSAT account, so
-    it is no longer attached to yours.
-  </p>
-
-  <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#4b5563;">
-    Your account and all of your results are unchanged. Sign in with your username
+  <p class="ms-mute" style="margin:0 0 24px;font-size:15px;font-weight:500;line-height:1.65;color:#64748b;">
+    Your account and every one of your results are unchanged. Sign in with your username
     instead:
   </p>
 
-  <div style="margin:0 0 20px;padding:14px;background:#f4f5f7;border-radius:12px;text-align:center;
-              font-size:20px;font-weight:800;color:#1f2937;
-              font-family:'SFMono-Regular',Menlo,Consolas,monospace;">
-    {{ username }}
-  </div>
+  {% comment %}
+    Same score-tile pattern as the verification code, minus the tracking — a username
+    is read and typed as a word, not transcribed digit by digit.
+  {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td class="ms-inset" align="center" style="background:#e7effb;border:1px solid #2a68c0;border-radius:17px;padding:22px 20px;">
+        <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;opacity:0.85;">
+          YOUR USERNAME
+        </div>
+        <div class="ms-codeink" style="margin-top:10px;font-size:26px;font-weight:800;line-height:1.2;letter-spacing:-0.01em;color:#2a68c0;word-break:break-all;">
+          {{ username }}
+        </div>
+      </td>
+    </tr>
+  </table>
 
-  <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">
-    If this was not expected, contact the MasterSAT centre.
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:24px;">
+    <tr>
+      <td align="center" style="border-radius:13px;background:#2a68c0;">
+        <a href="{{ login_url }}" style="display:inline-block;padding:14px 26px;font-size:15px;font-weight:700;color:#ffffff;text-decoration:none;border-radius:13px;">
+          Sign in
+        </a>
+      </td>
+    </tr>
+  </table>
+
+  <p class="ms-faint" style="margin:20px 0 0;font-size:13px;line-height:1.65;color:#94a3b8;">
+    Your password has not changed. If this was not expected, contact the MasterSAT centre.
   </p>
 {% endblock %}

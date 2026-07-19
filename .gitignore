@@ -41,3 +41,4 @@ backend/uat.sqlite3
 .claude/
 graphify-out/
 test-results/
+email_previews/
