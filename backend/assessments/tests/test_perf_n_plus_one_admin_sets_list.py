@@ -45,7 +45,12 @@ class AdminAssessmentSetsListNPlusOneTests(TestCase):
         with CaptureQueriesContext(connection) as ctx:
             r = self.client.get("/api/assessments/admin/sets/")
             self.assertEqual(r.status_code, 200)
-            self.assertIsInstance(r.json(), list)
+            body = r.json()
+            # LimitOffsetPagination wraps the rows; the N+1 guarantee below is what this
+            # test actually protects.
+            rows = body["results"] if isinstance(body, dict) and "results" in body else body
+            self.assertIsInstance(rows, list)
+            self.assertTrue(rows)
 
         self.assertLessEqual(len(ctx), 35, f"Too many queries for admin sets list: {len(ctx)}")
 

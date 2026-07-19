@@ -104,7 +104,7 @@ class SubmitGradingOnceTests(TestCase):
     )
     def test_submit_enqueue_path_calls_grade_attempt_once(self):
         real_grade = grading_service.grade_attempt
-        with patch.object(assessments_async_tasks, "grade_attempt", wraps=real_grade) as gm:
+        with patch.object(assessments_views_attempt, "grade_attempt", wraps=real_grade) as gm:
             with patch.object(grade_attempt_task, "delay", wraps=grade_attempt_task.delay) as dmock:
                 with self.captureOnCommitCallbacks(execute=True):
                     r = self.client.post(
@@ -112,11 +112,14 @@ class SubmitGradingOnceTests(TestCase):
                         {"attempt_id": self.attempt_id},
                         format="json",
                     )
-                self.assertEqual(r.status_code, 202)
-                self.assertEqual(r.data.get("grading"), "pending")
-                self.assertIsNone(r.data.get("result"))
+                # Sync-first since 1633699: submit grades inline and returns the result
+                # so students do not wait on a worker. The async enqueue survives only as
+                # the fallback when sync grading raises, so `delay` is NOT called here.
+                self.assertEqual(r.status_code, 200)
+                self.assertIsNotNone(r.data.get("result"))
+                # The invariant this test exists for: graded exactly once, never twice.
                 self.assertEqual(gm.call_count, 1)
-                self.assertEqual(dmock.call_count, 1)
+                self.assertEqual(dmock.call_count, 0)
 
             r2 = self.client.post(
                 "/api/assessments/attempts/submit/",
