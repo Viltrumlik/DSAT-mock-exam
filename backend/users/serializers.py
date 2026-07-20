@@ -15,6 +15,14 @@ from access.services import (
 )
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
+from users.activity import activity_count
+from users.profile_completeness import is_profile_complete, missing_profile_fields
+from users.name_utils import (
+    DUPLICATE_FULL_NAME_CODE,
+    DUPLICATE_FULL_NAME_MESSAGE,
+    full_name_taken,
+    normalize_name,
+)
 
 from classes.models import ClassroomMembership
 
@@ -76,6 +84,18 @@ class UserMeSerializer(serializers.ModelSerializer):
     telegram_linked = serializers.SerializerMethodField()
     security_step_up_active = serializers.SerializerMethodField()
     has_recent_security_alerts = serializers.SerializerMethodField()
+    # The completion prompt renders whatever these say. The frontend never recomputes
+    # the rule, so the two definitions cannot drift apart.
+    profile_complete = serializers.SerializerMethodField(read_only=True)
+    missing_fields = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_profile_complete(self, obj) -> bool:
+        return is_profile_complete(obj)
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_missing_fields(self, obj) -> list[str]:
+        return missing_profile_fields(obj)
 
     class Meta:
         model = User
@@ -103,16 +123,29 @@ class UserMeSerializer(serializers.ModelSerializer):
             "last_password_change",
             "security_step_up_active",
             "has_recent_security_alerts",
+            "email_verified",
+            "email_verified_at",
+            "email_released_at",
+            "profile_complete",
+            "missing_fields",
         ]
         extra_kwargs = {
             "profile_image": {"required": False, "allow_null": True},
             "username": {"required": False},
             "first_name": {"required": False},
             "last_name": {"required": False},
-            "email": {"required": False},
+            # Self-service email changes are disabled: this endpoint proved no ownership
+            # of the new address, so a user could silently move their account to any
+            # unclaimed mailbox. Email now changes only through the verification-code
+            # flow; staff can still edit it via UserSerializer (admin endpoints).
+            "email": {"read_only": True},
             "is_frozen": {"read_only": True},
             "subject": {"read_only": True},
             "last_password_change": {"read_only": True},
+            # Only the confirm-code flow may set these.
+            "email_verified": {"read_only": True},
+            "email_verified_at": {"read_only": True},
+            "email_released_at": {"read_only": True},
         }
 
     def validate_username(self, value):
@@ -131,6 +164,11 @@ class UserMeSerializer(serializers.ModelSerializer):
         return value
 
     def validate_email(self, value):
+        # A blank value means "no address", which is now a legitimate state. Probing for
+        # it would compile to ``email IS NULL`` and match every address-less account,
+        # reporting "already exists" to everyone.
+        if not value:
+            return None
         user_qs = User.objects.filter(email__iexact=value)
         if self.instance and self.instance.pk:
             user_qs = user_qs.exclude(pk=self.instance.pk)
@@ -311,6 +349,20 @@ class UserSerializer(serializers.ModelSerializer):
     subject = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     class_teacher_eligible = serializers.SerializerMethodField()
     bulk_assign_profile = serializers.SerializerMethodField()
+    attempt_count = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.IntegerField(allow_null=False))
+    def get_attempt_count(self, obj) -> int:
+        """Graded/submitted rows this account holds — the delete blast radius.
+
+        Reads the annotation from ``UserListView`` when present; falls back to direct
+        counting for single-object views, where one extra query is cheaper than
+        annotating. Never do the fallback over a list — that is five queries per row.
+        """
+        annotated = getattr(obj, "attempt_count", None)
+        if annotated is not None:
+            return int(annotated)
+        return activity_count(obj)
 
     def validate_username(self, value):
         if value == '':
@@ -330,11 +382,15 @@ class UserSerializer(serializers.ModelSerializer):
         return value
 
     def validate_email(self, value):
-        # Manual unique check to avoid issues with instance exclusion in some environments
+        # Manual unique check to avoid issues with instance exclusion in some environments.
+        # Blank is a legitimate state (no address supplied, or it was released); probing
+        # for it compiles to ``email IS NULL`` and matches every address-less account.
+        if not value:
+            return None
         user_qs = User.objects.filter(email__iexact=value)
         if self.instance and self.instance.pk:
             user_qs = user_qs.exclude(pk=self.instance.pk)
-        
+
         if user_qs.exists():
             raise serializers.ValidationError("user with this email already exists.")
         return value
@@ -355,6 +411,39 @@ class UserSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("This phone number is already in use.")
         return normalized
 
+    def _actor_is_authenticated(self) -> bool:
+        request = self.context.get("request")
+        actor = getattr(request, "user", None) if request else None
+        return bool(actor and actor.is_authenticated)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # Store names whitespace-normalized so the duplicate check below cannot be
+        # sidestepped with padding, and so two spellings do not read as two people.
+        for field in ("first_name", "last_name"):
+            if field in attrs:
+                attrs[field] = normalize_name(attrs[field])
+
+        # Duplicate full names are rejected on the PUBLIC registration endpoint only.
+        # Production had 36 name-collision groups covering 89 of 387 accounts, most of
+        # them one person who registered twice with a slightly different address. Staff
+        # keep the escape hatch: an admin creating the account through UserCreateView is
+        # authenticated, so this branch never fires for them — which is how a genuinely
+        # different person with the same name still gets in.
+        if self.instance is None and not self._actor_is_authenticated():
+            first = attrs.get("first_name") or ""
+            last = attrs.get("last_name") or ""
+            if first and last and full_name_taken(first, last):
+                raise serializers.ValidationError(
+                    {
+                        # ``full_name`` carries the human message; ``code`` lets the SPA
+                        # render the "ask an administrator" branch instead of a raw string.
+                        "full_name": [DUPLICATE_FULL_NAME_MESSAGE],
+                        "code": [DUPLICATE_FULL_NAME_CODE],
+                    }
+                )
+        return attrs
+
     class Meta:
         model = User
         fields = [
@@ -372,12 +461,38 @@ class UserSerializer(serializers.ModelSerializer):
             "is_active",
             "is_frozen",
             "date_joined",
+            "last_login",
+            "email_verified",
+            "email_verified_at",
+            "email_released_at",
+            "previous_email",
+            "attempt_count",
             "password",
         ]
         # ``is_active`` is exposed read-only for status display only. The "deactivate"
         # capability was removed — freezing (``is_frozen``) is the single account
         # restriction — so accounts can no longer be toggled inactive via the API.
-        read_only_fields = ["date_joined", "is_active"]
+        #
+        # ``is_frozen`` is deliberately NOT listed here. It must stay writable for staff:
+        # the /ops/users row buttons and edit modal freeze a single account by PATCHing
+        # it to UserUpdateView, and marking it read-only turns both into silent no-ops
+        # (200 + optimistic UI + "Account frozen." toast, account still live). The real
+        # hole was the *public* registration endpoint sharing this serializer, so the
+        # field is stripped on the anonymous path in ``create`` instead.
+        #
+        # The verification fields ARE read-only, and that is load-bearing rather than
+        # stylistic: this serializer backs the public unauthenticated registration
+        # endpoint, so a writable ``email_verified`` would let anyone POST themselves a
+        # verified address. It is only ever set by the confirm-code flow.
+        read_only_fields = [
+            "date_joined",
+            "is_active",
+            "last_login",
+            "email_verified",
+            "email_verified_at",
+            "email_released_at",
+            "previous_email",
+        ]
 
     def _normalize_role(self, raw: str | None) -> str | None:
         if raw is None:
@@ -505,6 +620,10 @@ class UserSerializer(serializers.ModelSerializer):
 
         validated_data.pop("is_admin", None)
         validated_data.pop("system_role", None)
+        if not self._actor_is_authenticated():
+            # Public self-registration must not set account state. Staff creating a user
+            # through UserCreateView are authenticated and keep the field.
+            validated_data.pop("is_frozen", None)
         role = self._resolve_system_role_for_write(instance=None)
         validated_data["role"] = role
 

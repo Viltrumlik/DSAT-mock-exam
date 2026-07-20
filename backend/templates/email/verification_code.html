@@ -1,0 +1,45 @@
+{% extends "email/base.html" %}
+
+{% block subject %}Your MasterSAT verification code{% endblock %}
+
+{% block preheader %}{{ code }} is your MasterSAT verification code. It expires in {{ ttl_minutes }} minutes.{% endblock %}
+
+{% block content %}
+  <h1 class="ms-h1 ms-ink" style="margin:0 0 12px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
+    Confirm your email address
+  </h1>
+
+  <p class="ms-mute" style="margin:0 0 24px;font-size:15px;font-weight:500;line-height:1.65;color:#64748b;">
+    Enter this code on MasterSAT to confirm that this address reaches you.
+  </p>
+
+  {% comment %}
+    The score-tile pattern from the design system: brand-tinted panel, brand border,
+    all-caps micro-label over a large 800-weight number.
+
+    text-indent is half the letter-spacing on purpose. Tracking adds a gap after the
+    LAST digit too, which centring then counts as part of the text, pushing the visible
+    digits left by half a gap. This nudges them back.
+  {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      <td class="ms-inset" align="center" style="background:#e7effb;border:1px solid #2a68c0;border-radius:17px;padding:22px 20px;">
+        <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;opacity:0.85;">
+          VERIFICATION CODE
+        </div>
+        <div class="ms-code ms-codeink" style="margin-top:10px;font-size:38px;font-weight:800;line-height:1;letter-spacing:10px;text-indent:5px;color:#2a68c0;">
+          {{ code }}
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <p class="ms-mute" style="margin:24px 0 0;font-size:14px;font-weight:500;line-height:1.65;color:#64748b;">
+    The code expires in <strong style="font-weight:700;">{{ ttl_minutes }} minutes</strong>.
+  </p>
+
+  <p class="ms-faint" style="margin:12px 0 0;font-size:13px;line-height:1.65;color:#94a3b8;">
+    If you did not ask to confirm this address, you can ignore this message — nothing
+    changes until the code is entered.
+  </p>
+{% endblock %}

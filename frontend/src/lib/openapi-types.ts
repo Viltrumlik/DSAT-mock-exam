@@ -27,6 +27,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/access/grants/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/access/grants/ — search/filter grants for the admin console. */
+        get: operations["access_grants_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/grants/{grant_id}/events/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/access/grants/<id>/events/ — immutable audit trail for one grant. */
+        get: operations["access_grants_events_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/grants/{grant_id}/extend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/access/grants/<id>/extend/ — body: {expires_at: iso|null} */
+        post: operations["access_grants_extend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/grants/{grant_id}/revoke/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/access/grants/<id>/revoke/ */
+        post: operations["access_grants_revoke_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/grants/classroom/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/access/grants/classroom/ — transactional resource grant to a whole class. */
+        post: operations["access_grants_classroom_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/grants/resource/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/access/grants/resource/ — grant a RESOURCE to one or many users. */
+        post: operations["access_grants_resource_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/grants/subject/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/access/grants/subject/ — grant a SUBJECT to one or many users. */
+        post: operations["access_grants_subject_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/resource-types/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/access/resource-types/ — registry keys for the picker dropdown. */
+        get: operations["access_resource_types_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/access/resources/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/access/resources/?type=<rt>&q=<text>&limit=30 — resource picker. */
+        get: operations["access_resources_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assessments/admin/attempts/{attempt_id}/": {
         parameters: {
             query?: never;
@@ -75,6 +228,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assessments/admin/attempts/failed/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List failed/stuck scoring attempts
+         * @description GET /assessments/admin/attempts/failed/
+         *
+         *     List AssessmentAttempt rows that are in a failed/stuck state, newest first.
+         *
+         *     An attempt is considered "stuck" if:
+         *       - grading_status is "failed" (all automatic retries exhausted), OR
+         *       - status is "submitted" AND submitted_at is more than 30 minutes ago
+         *         (grading job appears to have been lost)
+         *
+         *     Returns enough context for the operator to triage and retry without
+         *     needing to open Django admin.
+         *
+         *     Query params:
+         *         limit  — default 50, max 200
+         *         offset — default 0
+         */
+        get: operations["assessments_admin_attempts_failed_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assessments/admin/builder/telemetry/": {
         parameters: {
             query?: never;
@@ -89,6 +276,42 @@ export interface paths {
          *     Best-effort counters only (Prometheus-exposed via assessments homework metrics endpoint).
          */
         post: operations["assessments_admin_builder_telemetry_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/admin/governance-events/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Query governance audit log
+         * @description GET /assessments/admin/governance-events/
+         *
+         *     Queryable audit log for operators. Supports filtering by entity_type,
+         *     event_type, actor_email, set_id (payload filter), and date range.
+         *     Returns newest-first with cursor-style limit/offset pagination.
+         *
+         *     Operators use this instead of Django admin for routine audit review.
+         *     Never exposes payload fields that contain correct_answer data.
+         *
+         *     Query params:
+         *         event_type     — filter by event type (e.g. "publish", "fallback_path_used")
+         *         entity_type    — filter by entity type (e.g. "AssessmentSetVersion")
+         *         actor_email    — filter by actor
+         *         since          — ISO datetime, show events after this timestamp
+         *         until          — ISO datetime, show events before this timestamp
+         *         limit          — default 50, max 200
+         *         offset         — default 0
+         */
+        get: operations["assessments_admin_governance_events_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -156,6 +379,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assessments/admin/question-bank/select/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description M4 — list APPROVED Question Bank questions for the builder's
+         *     'Select From Question Bank' picker. Only status=APPROVED is ever returned;
+         *     TRIAGE/IMPORTED/REJECTED/ARCHIVED questions are never selectable.
+         */
+        get: operations["assessments_admin_question_bank_select_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/admin/question-bank/taxonomy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description M4 — domains & skills actually used by APPROVED bank questions, for the builder
+         *     picker's filter dropdowns.
+         *
+         *     Lives here (not in questionbank's own API) because the questionbank taxonomy
+         *     endpoint is gated by CanManageQuestions (global staff only) and would 403 for
+         *     teachers — who CAN author assessments and therefore use the picker.
+         */
+        get: operations["assessments_admin_question_bank_taxonomy_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assessments/admin/questions/{id}/": {
         parameters: {
             query?: never;
@@ -204,6 +472,133 @@ export interface paths {
         patch: operations["assessments_admin_sets_partial_update"];
         trace?: never;
     };
+    "/api/assessments/admin/sets/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish assessment set (create immutable snapshot)
+         * @description POST /assessments/admin/sets/{pk}/publish/
+         *
+         *     Transition an AssessmentSet from DRAFT → PUBLISHED state by building an
+         *     immutable AssessmentSetVersion snapshot.
+         *
+         *     GOVERNANCE:
+         *       - Enforces all publish preconditions (INV-001 through INV-003 from PublishService).
+         *       - Idempotent: re-publishing identical content returns existing version (HTTP 200).
+         *       - Creating a new version returns HTTP 201.
+         *       - Concurrency-safe via select_for_update() inside publish_assessment_set().
+         *
+         *     FRONTEND INTEGRATION:
+         *       Currently the publish page calls PATCH is_active=true (legacy toggle).
+         *       Sprint 5: swap publishSet() in builder/sets/[id]/publish/page.tsx to call this endpoint.
+         */
+        post: operations["assessments_admin_sets_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/admin/sets/{id}/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition an assessment set's review status
+         * @description POST /assessments/admin/sets/{pk}/status/   body: {"status": "<target>"}
+         *
+         *     Move a set through the review lifecycle draft → needs_review → approved.
+         *
+         *       - submit for review (→ needs_review):  any author of the set.
+         *       - send back        (→ draft):          any author or an approver.
+         *       - re-open          (approved → needs_review): any author or an approver.
+         *       - approve          (→ approved):       APPROVER ONLY (admin/super_admin). The
+         *                           approval ALSO publishes an immutable version so an approved
+         *                           set always has a snapshot to pin homeworks to; if the set
+         *                           fails publish validation the status does NOT change and the
+         *                           blocking findings are returned.
+         *
+         *     Every transition emits a GovernanceEvent (INV-GE03).
+         */
+        post: operations["assessments_admin_sets_status_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/admin/sets/{id}/validate-publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Dry-run publish validation (no state change)
+         * @description GET /assessments/admin/sets/{pk}/validate-publish/
+         *
+         *     Dry-run publish validation — returns the full validation report without
+         *     creating a version or changing any state.
+         *
+         *     Used by the builder pre-publish checklist page to surface blocking and
+         *     warning findings before the user commits to publishing.
+         *
+         *     Response shape:
+         *         {
+         *             "is_publishable": bool,
+         *             "blocking_count": int,
+         *             "warning_count": int,
+         *             "findings": [
+         *                 {"severity": "blocking"|"warning", "code": str, "message": str,
+         *                  "question_id": int|null, "context": dict},
+         *                 ...
+         *             ]
+         *         }
+         */
+        get: operations["assessments_admin_sets_validate_publish_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/admin/sets/{id}/versions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List published versions for a set
+         * @description GET /assessments/admin/sets/{pk}/versions/
+         *
+         *     List all published versions for an AssessmentSet, newest first.
+         *     Used by the builder version history panel.
+         */
+        get: operations["assessments_admin_sets_versions_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assessments/admin/sets/{set_pk}/questions/": {
         parameters: {
             query?: never;
@@ -220,6 +615,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assessments/admin/sets/{set_pk}/questions/from-bank/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description M4 — create an AssessmentQuestion sourced from an APPROVED bank question. */
+        post: operations["assessments_admin_sets_questions_from_bank_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/admin/sets/{set_pk}/questions/reorder/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST /assessments/admin/sets/{set_pk}/questions/reorder/  {"ordered_ids": [...]}
+         *
+         *     Atomically persist a full question ordering for a set. The whole set is
+         *     reindexed to a dense, unique ``0..n-1`` under a set row-lock via a two-phase
+         *     temp band — safe under the ``UNIQUE(assessment_set, order)`` constraint.
+         *     Replaces the builder's old N-PATCH drag loop (which left duplicate/gapped
+         *     orders if a request failed midway). Ids not listed are appended in canonical
+         *     order; unknown ids are ignored.
+         */
+        post: operations["assessments_admin_sets_questions_reorder_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assessments/attempts/{attempt_id}/bundle/": {
         parameters: {
             query?: never;
@@ -230,9 +668,107 @@ export interface paths {
         /**
          * Attempt bundle (attempt + set + questions)
          * @description Student-facing attempt bootstrap: return attempt + sanitized question list
-         *     (no correct answers), ordered by the per-attempt shuffle.
+         *     (no correct answers), in the canonical builder order — identical for every
+         *     student on the assignment.
          */
         get: operations["assessments_attempts_bundle_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/attempts/{attempt_id}/feedback/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get teacher feedback for attempt
+         * @description Instructional feedback from a teacher on a student's assessment attempt.
+         *
+         *     GET  — returns existing feedback (or null body) for the attempt.
+         *            Accessible by the attempt's student (post-submission) or the
+         *            classroom teacher/admin.
+         *
+         *     POST — upserts (creates or replaces) the feedback body.
+         *            Only the classroom teacher or a staff admin may write.
+         *
+         *     The record is intentionally one-per-attempt (not a thread) so teachers
+         *     can refine their note without creating noise.  Students see the latest
+         *     version in the pedagogical review page.
+         */
+        get: operations["assessments_attempts_feedback_retrieve"];
+        put?: never;
+        /**
+         * Upsert teacher feedback for attempt
+         * @description Instructional feedback from a teacher on a student's assessment attempt.
+         *
+         *     GET  — returns existing feedback (or null body) for the attempt.
+         *            Accessible by the attempt's student (post-submission) or the
+         *            classroom teacher/admin.
+         *
+         *     POST — upserts (creates or replaces) the feedback body.
+         *            Only the classroom teacher or a staff admin may write.
+         *
+         *     The record is intentionally one-per-attempt (not a thread) so teachers
+         *     can refine their note without creating noise.  Students see the latest
+         *     version in the pedagogical review page.
+         */
+        post: operations["assessments_attempts_feedback_create"];
+        /**
+         * Delete teacher feedback for attempt
+         * @description Instructional feedback from a teacher on a student's assessment attempt.
+         *
+         *     GET  — returns existing feedback (or null body) for the attempt.
+         *            Accessible by the attempt's student (post-submission) or the
+         *            classroom teacher/admin.
+         *
+         *     POST — upserts (creates or replaces) the feedback body.
+         *            Only the classroom teacher or a staff admin may write.
+         *
+         *     The record is intentionally one-per-attempt (not a thread) so teachers
+         *     can refine their note without creating noise.  Students see the latest
+         *     version in the pedagogical review page.
+         */
+        delete: operations["assessments_attempts_feedback_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/attempts/{attempt_id}/review/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pedagogical review bundle (post-submission, with answers)
+         * @description Post-submission pedagogical review for a student's assessment attempt.
+         *
+         *     Only accessible after the attempt has been submitted or graded — the
+         *     instructional moment where students learn from their work.
+         *
+         *     Returns questions WITH correct_answer, explanation, and the student's
+         *     own answer + correctness, framed for learning (not SAT benchmarking).
+         *
+         *     Response shape:
+         *         meta      — classroom_name, assignment_title, set_title, set_category,
+         *                     due_at, question_count
+         *         result    — score_points, max_points, percent, correct_count, total_questions
+         *                     (null when grading is still pending)
+         *         questions — ordered list of:
+         *                     { id, order, prompt, question_prompt, question_type,
+         *                       choices, points, correct_answer, explanation,
+         *                       student_answer, is_correct, points_awarded }
+         */
+        get: operations["assessments_attempts_review_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -268,6 +804,54 @@ export interface paths {
         put?: never;
         /** Save answer for one question */
         post: operations["assessments_attempts_answer_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/attempts/pause/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause attempt (save and exit / auto-pause)
+         * @description Freeze an in-progress attempt (save-and-exit / auto-pause on tab-leave).
+         *
+         *     Stamps ``paused_at`` so the elapsed time-on-task counter freezes; the attempt
+         *     stays IN_PROGRESS and fully resumable. Idempotent — pausing an already-paused
+         *     attempt keeps the original pause start. Optionally records the last-viewed
+         *     question index so resume lands in place. Answers are autosaved separately;
+         *     this endpoint only manages pause state + cursor.
+         */
+        post: operations["assessments_attempts_pause_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/attempts/resume/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a paused attempt
+         * @description Un-freeze a paused attempt. Banks the pause window into ``paused_seconds``
+         *     and clears ``paused_at`` so the elapsed counter continues from where it froze
+         *     (no jump). Idempotent for a running attempt.
+         */
+        post: operations["assessments_attempts_resume_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -319,6 +903,13 @@ export interface paths {
          * My latest attempt and result for assignment
          * @description Convenience endpoint for the homework page: given a class assignment id, return the
          *     student's latest attempt/result for that assessment homework.
+         *
+         *     Response shape:
+         *         attempt  — AssessmentAttempt data (or null if not yet started)
+         *         result   — AssessmentResult data (or null if not yet graded)
+         *         meta     — Human-readable context: assignment title, set name, due date, question count.
+         *                    Always present. Frontend should use `meta` rather than `attempt.homework_id`
+         *                    to display labels so students see real titles not internal IDs.
          */
         get: operations["assessments_homework_my_result_retrieve"];
         put?: never;
@@ -343,6 +934,62 @@ export interface paths {
          *     Creates a linked `classes.Assignment` so it appears in the normal homework feed.
          */
         post: operations["assessments_homework_assign_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/homework/by-homework/{homework_id}/my-result/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * My latest attempt and result for a homework
+         * @description Student's latest attempt/result for ONE assessment homework (unambiguous for
+         *     bundles that hold several assessments).
+         */
+        get: operations["assessments_homework_by_homework_my_result_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assessments/teacher/submission-queue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Teacher submission queue
+         * @description Paginated list of submitted/graded attempts for all classrooms where the
+         *     requesting user is the teacher owner or a class admin.
+         *
+         *     Intended for the ops submission queue: teacher sees who has submitted,
+         *     can jump to the pedagogical review, add feedback, or note missing work.
+         *
+         *     Query params:
+         *         classroom_id  — filter to a single classroom (optional)
+         *         status        — "submitted" | "graded" | "all" (default: all terminal states)
+         *         limit         — page size (default 50, max 200)
+         *         offset        — pagination offset
+         *
+         *     Response item shape:
+         *         attempt_id, student_name, student_email, submitted_at, status,
+         *         grading_status, result_percent, assignment_title, classroom_name,
+         *         has_feedback
+         */
+        get: operations["assessments_teacher_submission_queue_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -382,6 +1029,47 @@ export interface paths {
         get: operations["auth_csrf_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/email/confirm-code/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST ``/api/auth/email/confirm-code/`` — prove control and take the address. */
+        post: operations["auth_email_confirm_code_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/email/request-code/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST ``/api/auth/email/request-code/`` — mail a 6-digit code to an address.
+         *
+         *     Authenticated: you are claiming an address *for your own account*. Mounted under
+         *     ``/api/auth/`` because ``access.host_guard`` lets that prefix through on every
+         *     console unconditionally, while ``/api/users/`` is 403'd on the questions console
+         *     and all but ``/me/`` on the teacher one.
+         */
+        post: operations["auth_email_request_code_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -514,6 +1202,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/classes/{classroom_pk}/analytics/class/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_analytics_class_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/analytics/me/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_analytics_me_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/analytics/students/{student_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_analytics_students_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/assign-midterm/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Assign an existing interactive midterm to every enrolled student. */
+        post: operations["classes_assign_midterm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/assign-teacher/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin sets the classroom's teacher (and ensures an active TEACHER membership). */
+        post: operations["classes_assign_teacher_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/classes/{classroom_pk}/assignments/": {
         parameters: {
             query?: never;
@@ -552,6 +1322,23 @@ export interface paths {
         patch: operations["classes_assignments_partial_update"];
         trace?: never;
     };
+    "/api/classes/{classroom_pk}/assignments/{id}/archive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Fail closed with 403 when classroom exists but the user is not a member (no silent empty lists). */
+        post: operations["classes_assignments_archive_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/classes/{classroom_pk}/assignments/{id}/my-submission/": {
         parameters: {
             query?: never;
@@ -563,6 +1350,23 @@ export interface paths {
         get: operations["classes_assignments_my_submission_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/assignments/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Fail closed with 403 when classroom exists but the user is not a member (no silent empty lists). */
+        post: operations["classes_assignments_publish_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -603,6 +1407,154 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/classes/{classroom_pk}/assignments/{id}/unarchive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Fail closed with 403 when classroom exists but the user is not a member (no silent empty lists). */
+        post: operations["classes_assignments_unarchive_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/me/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_attendance_me_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/sessions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET list (staff) / POST create (staff). */
+        get: operations["classes_attendance_sessions_retrieve"];
+        put?: never;
+        /** @description GET list (staff) / POST create (staff). */
+        post: operations["classes_attendance_sessions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/sessions/{session_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_attendance_sessions_retrieve_2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/sessions/{session_id}/finalize/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["classes_attendance_sessions_finalize_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/sessions/{session_id}/mark/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Bulk upsert of records (also serves single quick-corrections). */
+        post: operations["classes_attendance_sessions_mark_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/sessions/{session_id}/mark-all-present/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["classes_attendance_sessions_mark_all_present_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/students/{student_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_attendance_students_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/attendance/summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_attendance_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/classes/{classroom_pk}/comments/": {
         parameters: {
             query?: never;
@@ -627,6 +1579,424 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/governance-delete/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * @description Admin governance: delete ANY classroom (admin / super_admin only).
+         *
+         *     The operational ``ClassroomViewSet.destroy`` is owner-only and membership-scoped, so
+         *     admins (non-members) get 403 there. This is the explicit governance delete path.
+         */
+        delete: operations["classes_governance_delete_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/gradebook/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Per-assignment status distribution so a teacher sees class health in seconds. */
+        get: operations["classes_gradebook_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/gradebook/assignments/{assignment_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Full roster × status for one assignment, with filters answered client-side. */
+        get: operations["classes_gradebook_assignments_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/lessons/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET the classroom's whole lesson plan. */
+        get: operations["classes_lessons_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/lessons/{lesson_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET one lesson: the homework brief and the classwork plan with per-item state. */
+        get: operations["classes_lessons_retrieve_2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/lessons/{lesson_id}/grant/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST — open one item of the lesson plan to the class right now. */
+        post: operations["classes_lessons_grant_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/lessons/{lesson_id}/grants/{grant_id}/revoke/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST — withdraw the record of an in-class grant. */
+        post: operations["classes_lessons_grants_revoke_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/lessons/{lesson_id}/release/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST — hand out this session's homework to the class. */
+        post: operations["classes_lessons_release_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/lessons/reschedule/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description PATCH — move the whole plan to a new anchor date. */
+        patch: operations["classes_lessons_reschedule_partial_update"];
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/materials/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List (members) and upload (staff) materials for one classroom. */
+        get: operations["classes_materials_retrieve"];
+        put?: never;
+        /** @description List (members) and upload (staff) materials for one classroom. */
+        post: operations["classes_materials_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/materials/{material_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Soft-archive a material (staff only). */
+        delete: operations["classes_materials_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/members/{user_id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["classes_members_partial_update"];
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterm-results/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Per-midterm classroom performance, strictly scoped to classroom membership. */
+        get: operations["classes_midterm_results_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms-v2/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /classes/<pk>/midterms-v2/ — midterms already assigned to this classroom. */
+        get: operations["classes_midterms_v2_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms-v2/{midterm_id}/certificates/download-all/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /classes/<pk>/midterms-v2/<midterm_id>/certificates/download-all/ — ZIP of classroom certs. */
+        get: operations["classes_midterms_v2_certificates_download_all_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms-v2/{midterm_id}/certificates/issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Publish: compute class ranking, issue certificates, release results. */
+        post: operations["classes_midterms_v2_certificates_issue_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms-v2/{midterm_id}/panel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Roster + schedule + stats for one classroom midterm; PATCH edits the schedule window. */
+        get: operations["classes_midterms_v2_panel_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Roster + schedule + stats for one classroom midterm; PATCH edits the schedule window. */
+        patch: operations["classes_midterms_v2_panel_partial_update"];
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms-v2/{midterm_id}/start-code/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST /classes/<pk>/midterms-v2/<midterm_id>/start-code/ — generate/rotate the
+         *     6-digit access code students must enter to begin ("Start midterm").
+         */
+        post: operations["classes_midterms_v2_start_code_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms-v2/{midterm_id}/versions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Random version assignment for a versioned midterm.
+         *
+         *     GET  → versions + current per-student assignments.
+         *     POST {action:"preview"}  → a fresh random EVEN distribution of the cohort across the
+         *          versions (NOT saved), so the teacher can re-random before committing.
+         *     POST {action:"commit", assignments:{student_id: version_id}} → persist the mapping.
+         *     Students never see any of this; the version is applied silently on their next start.
+         */
+        get: operations["classes_midterms_v2_versions_retrieve"];
+        put?: never;
+        /**
+         * @description Random version assignment for a versioned midterm.
+         *
+         *     GET  → versions + current per-student assignments.
+         *     POST {action:"preview"}  → a fresh random EVEN distribution of the cohort across the
+         *          versions (NOT saved), so the teacher can re-random before committing.
+         *     POST {action:"commit", assignments:{student_id: version_id}} → persist the mapping.
+         *     Students never see any of this; the version is applied silently on their next start.
+         */
+        post: operations["classes_midterms_v2_versions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms-v2/assign/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Assign a published midterm to every enrolled student (whole-class flavor). */
+        post: operations["classes_midterms_v2_assign_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms/{mock_exam_id}/certificates/download-all/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher downloads every issued certificate for a midterm as one ZIP. */
+        get: operations["classes_midterms_certificates_download_all_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms/{mock_exam_id}/certificates/issue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Teacher computes rankings, issues certificates, and releases results. */
+        post: operations["classes_midterms_certificates_issue_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/midterms/{mock_exam_id}/panel/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Teacher per-midterm control panel: roster + stats + schedule + certificate state. */
+        get: operations["classes_midterms_panel_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Teacher per-midterm control panel: roster + stats + schedule + certificate state. */
+        patch: operations["classes_midterms_panel_partial_update"];
         trace?: never;
     };
     "/api/classes/{classroom_pk}/posts/": {
@@ -664,6 +2034,110 @@ export interface paths {
         head?: never;
         /** @description Fail closed with 403 when classroom exists but the user is not a member (no silent empty lists). */
         patch: operations["classes_posts_partial_update"];
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/rankings/{kind}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["classes_rankings_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/rankings/{kind}/history/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Historical ranking series for a student across snapshot periods (priority 9).
+         *
+         *     Students may read only their own series; staff/admin may read any member's.
+         */
+        get: operations["classes_rankings_history_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/rankings/config/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Teacher/owner sets leaderboard visibility (FULL/ANONYMOUS/HIDDEN + hide scores). */
+        patch: operations["classes_rankings_config_partial_update"];
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/rankings/recompute/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["classes_rankings_recompute_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/results/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Unified results across assessments, midterms, past papers. Real data only. */
+        get: operations["classes_results_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{classroom_pk}/transfer-ownership/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Admin transfers classroom ownership: demote current owner(s), promote the new owner. */
+        post: operations["classes_transfer_ownership_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/classes/{id}/": {
@@ -727,6 +2201,34 @@ export interface paths {
         };
         /** @description Stale homework blob cleanup backlog and retry stats (platform-wide; class admins only). */
         get: operations["classes_homework_storage_metrics_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/{id}/interventions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Teacher/admin intervention signals for a classroom.
+         *
+         *     Returns actionable signals the teacher can act on immediately:
+         *       - overdue_students:   students with ≥1 overdue assignment not submitted
+         *       - inactive_students:  students with no submission activity in 7 days
+         *       - low_score_students: students whose average assessment score is below 60%
+         *       - completion_summary: per-assignment completion rates
+         *       - class_stats:        overall health metrics
+         *
+         *     Access: teachers and admins of the classroom only.
+         */
+        get: operations["classes_interventions_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -832,6 +2334,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/classes/certificates/midterm/{code}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description JSON for the certificate view page (owner student | class staff | admin). */
+        get: operations["classes_certificates_midterm_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/certificates/midterm/{code}/download/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Download a single certificate PDF by its code.
+         *
+         *     Allowed for the owning student, any staff member of the certificate's classroom, or a
+         *     global admin (``classroom_capabilities`` treats global admins as staff).
+         */
+        get: operations["classes_certificates_midterm_download_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/classes/directory/": {
         parameters: {
             query?: never;
@@ -839,7 +2380,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Directory-wide classroom list (super_admin/superuser only). */
+        /** @description Directory-wide classroom list (governance: admin / super_admin / superuser). */
         get: operations["classes_directory_retrieve"];
         put?: never;
         post?: never;
@@ -859,6 +2400,123 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["classes_join_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/my-assignments/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Returns ALL assignments across ALL classrooms the current user is enrolled in,
+         *     with ``workflow_status`` and ``assessment_homework`` hydrated.
+         *
+         *     This replaces the previous N+1 per-classroom fetch pattern on the student
+         *     assessment workspace and dashboard. One request → full assignment surface.
+         *
+         *     Response: { count, items: [ { ...assignment, classroom_id, classroom_name,
+         *                                   workflow_status, assessment_homework } ] }
+         */
+        get: operations["classes_my_assignments_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/my-midterms/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Student's assigned midterms with schedule + release state (drives the midterm page). */
+        get: operations["classes_my_midterms_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/my-schedule/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Student lessons calendar for ?from=YYYY-MM-DD&to=YYYY-MM-DD (range capped at 70 days):
+         *       - recurring class meetings from each enrolled active classroom's lesson_days
+         *         (ODD → Mon/Wed/Fri, EVEN → Tue/Thu/Sat) + lesson_time + subject, from start_date,
+         *       - assigned mock/midterm tests on their practice_date,
+         *       - published assignment due dates.
+         *     Returns a flat ``events`` list the frontend buckets by day.
+         */
+        get: operations["classes_my_schedule_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/ops/attention/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /classes/ops/attention/
+         *     Returns actionable signals for the ops dashboard:
+         *       - overdue_assignments: top-5 assignments past due_at, with classroom name + days overdue
+         *       - overdue_count: total count of overdue assignments visible to this actor
+         *       - scoring_failures: count of AssessmentAttempts in GRADING_FAILED state
+         */
+        get: operations["classes_ops_attention_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/classes/ops/stats/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /classes/ops/stats/
+         *     Aggregate statistics for the ops dashboard — replaces N individual
+         *     listAssignments() calls with a single annotated query.
+         *
+         *     Returns:
+         *       total_classrooms    int   all classrooms visible to the actor
+         *       managed_classrooms  int   classrooms where actor has ADMIN role
+         *       total_assignments   int   across all managed classrooms
+         *       active_assignments  int   assignments without completed_at set
+         */
+        get: operations["classes_ops_stats_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1045,6 +2703,23 @@ export interface paths {
         patch: operations["exams_admin_mock_exams_partial_update"];
         trace?: never;
     };
+    "/api/exams/admin/mock-exams/{id}/add-midterm-version/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Add a VERSION (parallel PracticeTest) to a midterm — up to 4 total. */
+        post: operations["exams_admin_mock_exams_add_midterm_version_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/exams/admin/mock-exams/{id}/add_test/": {
         parameters: {
             query?: never;
@@ -1094,6 +2769,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exams/admin/mock-exams/{id}/remove-midterm-version/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description Remove a midterm version (PracticeTest) — the last version can't be removed. */
+        delete: operations["exams_admin_mock_exams_remove_midterm_version_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/exams/admin/mock-exams/{id}/remove_test/": {
         parameters: {
             query?: never;
@@ -1106,6 +2798,27 @@ export interface paths {
         post?: never;
         /** @description Remove a PracticeTest from this MockExam. */
         delete: operations["exams_admin_mock_exams_remove_test_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exams/admin/mock-exams/{id}/results/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Teacher/admin midterm results: every student attempt for this midterm with
+         *     their score and which questions they got wrong. This is the detail the
+         *     student themselves is NOT allowed to see (they only get their score).
+         */
+        get: operations["exams_admin_mock_exams_results_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1127,39 +2840,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/exams/admin/pastpaper-packs/": {
+    "/api/exams/admin/practice-test-packs/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["exams_admin_pastpaper_packs_list"];
+        /** @description CRUD for custom practice test packs (distinct from official pastpapers). */
+        get: operations["exams_admin_practice_test_packs_list"];
         put?: never;
-        post: operations["exams_admin_pastpaper_packs_create"];
+        /** @description CRUD for custom practice test packs (distinct from official pastpapers). */
+        post: operations["exams_admin_practice_test_packs_create"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/exams/admin/pastpaper-packs/{id}/": {
+    "/api/exams/admin/practice-test-packs/{id}/": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["exams_admin_pastpaper_packs_retrieve"];
-        put: operations["exams_admin_pastpaper_packs_update"];
+        /** @description CRUD for custom practice test packs (distinct from official pastpapers). */
+        get: operations["exams_admin_practice_test_packs_retrieve"];
+        /** @description CRUD for custom practice test packs (distinct from official pastpapers). */
+        put: operations["exams_admin_practice_test_packs_update"];
         post?: never;
-        delete: operations["exams_admin_pastpaper_packs_destroy"];
+        /** @description CRUD for custom practice test packs (distinct from official pastpapers). */
+        delete: operations["exams_admin_practice_test_packs_destroy"];
         options?: never;
         head?: never;
-        patch: operations["exams_admin_pastpaper_packs_partial_update"];
+        /** @description CRUD for custom practice test packs (distinct from official pastpapers). */
+        patch: operations["exams_admin_practice_test_packs_partial_update"];
         trace?: never;
     };
-    "/api/exams/admin/pastpaper-packs/{id}/add_section/": {
+    "/api/exams/admin/practice-test-packs/{id}/add_section/": {
         parameters: {
             query?: never;
             header?: never;
@@ -1168,7 +2887,42 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["exams_admin_pastpaper_packs_add_section_create"];
+        /** @description CRUD for custom practice test packs (distinct from official pastpapers). */
+        post: operations["exams_admin_practice_test_packs_add_section_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exams/admin/practice-test-packs/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Mark a practice test pack as published (visible to students). */
+        post: operations["exams_admin_practice_test_packs_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exams/admin/practice-test-packs/{id}/unpublish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Retract a practice test pack from student view. */
+        post: operations["exams_admin_practice_test_packs_unpublish_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1205,6 +2959,40 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["exams_admin_tests_partial_update"];
+        trace?: never;
+    };
+    "/api/exams/admin/tests/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Publish a single standalone section (visible to students without an assignment). */
+        post: operations["exams_admin_tests_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exams/admin/tests/{id}/unpublish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Retract a single standalone section from student view. */
+        post: operations["exams_admin_tests_unpublish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/exams/admin/tests/{test_pk}/modules/": {
@@ -1265,6 +3053,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["exams_admin_tests_modules_questions_reorder_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exams/admin/tests/{test_pk}/modules/{module_pk}/questions/bulk-reorder/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Atomically reorder all questions in a module in a single round-trip.
+         *
+         *     Request body: { "ordered_ids": [id1, id2, id3, ...] }
+         *
+         *     Validation:
+         *     - ``ordered_ids`` must be a non-empty list.
+         *     - Every ID must belong to this module (no cross-module moves).
+         *     - The list must be complete — partial reorders are rejected to prevent
+         *       silent ordering corruption.
+         *     - Duplicate IDs are rejected.
+         *
+         *     Concurrency: holds a SELECT FOR UPDATE lock on the Module row for the
+         *     full duration, using the same two-phase dense-reindex path as the
+         *     per-question reorder action.
+         */
+        post: operations["exams_admin_tests_modules_questions_bulk_reorder_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1370,6 +3190,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exams/attempts/{id}/pause/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Mark the attempt as paused so the deadline timer stops counting. */
+        post: operations["exams_attempts_pause_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/exams/attempts/{id}/results/": {
         parameters: {
             query?: never;
@@ -1401,6 +3238,23 @@ export interface paths {
          *     Legacy ``*_SUBMITTED`` repairs are CLI-only (`repair_exam_integrity`).
          */
         post: operations["exams_attempts_resume_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exams/attempts/{id}/resume_pause/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Clear the paused state, banking the elapsed pause window. */
+        post: operations["exams_attempts_resume_pause_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1510,6 +3364,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exams/bulk_assign/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Pastpaper / skill practice only: standalone PracticeTest rows (no mock_exam).
+         *     Timed mocks and their sections are only exposed via mock-exams + /mock/:id.
+         *
+         *     List/retrieve are **AllowAny** so the Next.js practice catalog can load without cookies;
+         *     starting an attempt still requires auth on ``TestAttemptViewSet``.
+         */
+        post: operations["exams_bulk_assign_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/exams/metrics/": {
         parameters: {
             query?: never;
@@ -1584,6 +3461,986 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/exams/practice-test-packs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Student-facing practice test pack list: published packs with questions. */
+        get: operations["exams_practice_test_packs_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/exams/practice-test-packs/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Single practice test pack detail. */
+        get: operations["exams_practice_test_packs_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["journals_retrieve"];
+        put?: never;
+        post: operations["journals_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{journal_pk}/lessons/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["journals_lessons_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{journal_pk}/lessons/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["journals_lessons_retrieve_2"];
+        put?: never;
+        post?: never;
+        /** @description Remove a session; remaining sessions are renumbered to stay contiguous. */
+        delete: operations["journals_lessons_destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["journals_lessons_partial_update"];
+        trace?: never;
+    };
+    "/api/journals/{journal_pk}/lessons/{id}/classwork/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET/PATCH the in-class plan for a session (the five timetable blocks). */
+        get: operations["journals_lessons_classwork_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description GET/PATCH the in-class plan for a session (the five timetable blocks). */
+        patch: operations["journals_lessons_classwork_partial_update"];
+        trace?: never;
+    };
+    "/api/journals/{journal_pk}/lessons/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_lessons_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{journal_pk}/lessons/{id}/reset/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_lessons_reset_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{journal_pk}/lessons/bulk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_lessons_bulk_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["journals_retrieve_2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["journals_partial_update"];
+        trace?: never;
+    };
+    "/api/journals/{id}/archive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_archive_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{id}/duplicate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_duplicate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{id}/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["journals_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{id}/sessions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST /api/journals/{id}/sessions/ — append a new session ("New session").
+         *
+         *     Body: {"type": "HOMEWORK"|"MIDTERM", "midterm_exam_id": <id, midterm only>}
+         *     Nothing is pre-provisioned; the admin decides how many sessions and midterms exist.
+         */
+        post: operations["journals_sessions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/{id}/unarchive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_unarchive_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/content-options/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Level-scoped pickable content for the lesson editor — mirrors
+         *     ``classes.views.assignment_options`` but scoped by (subject, level), not a classroom.
+         */
+        get: operations["journals_content_options_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/import/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["journals_import_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journals/midterm-options/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /api/journals/midterm-options/?subject=&level= — midterms available for a level.
+         *
+         *     Filters ``midterms.Midterm`` (NOT the legacy exams.MockExam, whose midterm_level misses
+         *     every natively-authored midterm) by the journal's platform subject and exact level.
+         */
+        get: operations["journals_midterm_options_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/admin/midterms/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        get: operations["midterms_admin_midterms_list"];
+        put?: never;
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        post: operations["midterms_admin_midterms_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/admin/midterms/{midterm_pk}/questions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Question editor for a midterm's single module (reuses exams AdminQuestionSerializer). */
+        get: operations["midterms_admin_midterms_questions_list"];
+        put?: never;
+        /** @description Question editor for a midterm's single module (reuses exams AdminQuestionSerializer). */
+        post: operations["midterms_admin_midterms_questions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/admin/midterms/{midterm_pk}/questions/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Question editor for a midterm's single module (reuses exams AdminQuestionSerializer). */
+        get: operations["midterms_admin_midterms_questions_retrieve"];
+        /** @description Question editor for a midterm's single module (reuses exams AdminQuestionSerializer). */
+        put: operations["midterms_admin_midterms_questions_update"];
+        post?: never;
+        /** @description Question editor for a midterm's single module (reuses exams AdminQuestionSerializer). */
+        delete: operations["midterms_admin_midterms_questions_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Question editor for a midterm's single module (reuses exams AdminQuestionSerializer). */
+        patch: operations["midterms_admin_midterms_questions_partial_update"];
+        trace?: never;
+    };
+    "/api/midterms/admin/midterms/{midterm_pk}/questions/bulk-reorder/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Question editor for a midterm's single module (reuses exams AdminQuestionSerializer). */
+        post: operations["midterms_admin_midterms_questions_bulk_reorder_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/admin/midterms/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        get: operations["midterms_admin_midterms_retrieve"];
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        put: operations["midterms_admin_midterms_update"];
+        post?: never;
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        delete: operations["midterms_admin_midterms_destroy"];
+        options?: never;
+        head?: never;
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        patch: operations["midterms_admin_midterms_partial_update"];
+        trace?: never;
+    };
+    "/api/midterms/admin/midterms/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        post: operations["midterms_admin_midterms_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/admin/midterms/{id}/unpublish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description CRUD + publish for midterm definitions (staff only). */
+        post: operations["midterms_admin_midterms_unpublish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["midterms_attempts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["midterms_attempts_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/results/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["midterms_attempts_results_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/review/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["midterms_attempts_review_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/save_attempt/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["midterms_attempts_save_attempt_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/start/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["midterms_attempts_start_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["midterms_attempts_status_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/submit_module/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["midterms_attempts_submit_module_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/attempts/{id}/verify_code/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Check the classroom access code before a midterm may start.
+         *
+         *     Returns ``{ok, requires_code}``. When the schedule has no code (or none is
+         *     scheduled — standalone), this is a no-op success. On a correct code the
+         *     attempt is flagged verified so ``start`` will proceed; a wrong code is 403.
+         */
+        post: operations["midterms_attempts_verify_code_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/mine/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["midterms_mine_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/teacher/midterms/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /midterms/teacher/midterms/ — published midterms a teacher can assign standalone. */
+        get: operations["midterms_teacher_midterms_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/teacher/midterms/{id}/grant/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /midterms/teacher/midterms/<pk>/grant/ {user_ids:[...], expires_at?} — grant standalone access. */
+        post: operations["midterms_teacher_midterms_grant_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/teacher/midterms/{id}/results/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /midterms/teacher/midterms/<pk>/results/ — grantees + attempt status + frozen score.
+         *
+         *     This is the 'Results' surface that sits beside the access control in the standalone area.
+         *     Teachers always see the actual score (the student-side release gate does not apply here).
+         */
+        get: operations["midterms_teacher_midterms_results_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/teacher/midterms/{id}/revoke/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /midterms/teacher/midterms/<pk>/revoke/ {user_ids:[...]} — revoke standalone access. */
+        post: operations["midterms_teacher_midterms_revoke_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/midterms/teacher/students/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description GET /midterms/teacher/students/ — EVERY student, for the standalone grant picker.
+         *
+         *     The standalone flavor is grantor-instructor with NO classroom, so a teacher may grant a
+         *     midterm to any student in the system — this is intentionally system-wide (all active
+         *     ``role=student`` users), unlike the classroom-scoped ``/api/users/`` list. Optional
+         *     ``?search=`` narrows by name/username/email server-side.
+         */
+        get: operations["midterms_teacher_students_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/admin/mocks/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["mocks_admin_mocks_list"];
+        put?: never;
+        post: operations["mocks_admin_mocks_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/admin/mocks/{mock_pk}/modules/{module_pk}/questions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Question editor for one module of a mock (module must belong to the mock). */
+        get: operations["mocks_admin_mocks_modules_questions_list"];
+        put?: never;
+        /** @description Question editor for one module of a mock (module must belong to the mock). */
+        post: operations["mocks_admin_mocks_modules_questions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/admin/mocks/{mock_pk}/modules/{module_pk}/questions/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Question editor for one module of a mock (module must belong to the mock). */
+        get: operations["mocks_admin_mocks_modules_questions_retrieve"];
+        /** @description Question editor for one module of a mock (module must belong to the mock). */
+        put: operations["mocks_admin_mocks_modules_questions_update"];
+        post?: never;
+        /** @description Question editor for one module of a mock (module must belong to the mock). */
+        delete: operations["mocks_admin_mocks_modules_questions_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Question editor for one module of a mock (module must belong to the mock). */
+        patch: operations["mocks_admin_mocks_modules_questions_partial_update"];
+        trace?: never;
+    };
+    "/api/mocks/admin/mocks/{mock_pk}/modules/{module_pk}/questions/bulk-reorder/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Question editor for one module of a mock (module must belong to the mock). */
+        post: operations["mocks_admin_mocks_modules_questions_bulk_reorder_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/admin/mocks/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["mocks_admin_mocks_retrieve"];
+        put: operations["mocks_admin_mocks_update"];
+        post?: never;
+        delete: operations["mocks_admin_mocks_destroy"];
+        options?: never;
+        head?: never;
+        patch: operations["mocks_admin_mocks_partial_update"];
+        trace?: never;
+    };
+    "/api/mocks/admin/mocks/{id}/publish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mocks_admin_mocks_publish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/admin/mocks/{id}/unpublish/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mocks_admin_mocks_unpublish_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mocks_attempts_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["mocks_attempts_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/{id}/end_break/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Proceed from the break to Math (student clicks Start Math, or the timer elapsed). */
+        post: operations["mocks_attempts_end_break_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/{id}/results/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["mocks_attempts_results_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/{id}/save_attempt/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mocks_attempts_save_attempt_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/{id}/start/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mocks_attempts_start_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/{id}/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["mocks_attempts_status_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/attempts/{id}/submit_module/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mocks_attempts_submit_module_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mocks/mine/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["mocks_mine_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ops/alertmanager/webhook/": {
         parameters: {
             query?: never;
@@ -1602,6 +4459,460 @@ export interface paths {
          *     - ALERT_TELEGRAM_CHAT_ID
          */
         post: operations["ops_alertmanager_webhook_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/question-reports/reports/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST a student's error report about a specific question. Persists + notifies Telegram. */
+        post: operations["question_reports_reports_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/question-reports/telegram/webhook/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Inbound Telegram bot webhook. Handles /start (subscribe) and /stop (unsubscribe)
+         *     so people who message the bot receive future reports by DM. Unauthenticated —
+         *     verified by Telegram's secret-token header (mirrors AlertmanagerWebhookView).
+         */
+        post: operations["question_reports_telegram_webhook_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/domains/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/domains/ — unpaginated taxonomy for filter dropdowns. */
+        get: operations["questionbank_domains_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/import-batches/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/import-batches/. */
+        get: operations["questionbank_import_batches_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/import-batches/{batch_id}/candidates/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/import-batches/<batch_id>/candidates/. */
+        get: operations["questionbank_import_batches_candidates_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/import-batches/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/import-batches/<id>/. */
+        get: operations["questionbank_import_batches_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/import-batches/{id}/promote/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/import-batches/<id>/promote/ — VALID/WARNING → TRIAGE bank rows. */
+        post: operations["questionbank_import_batches_promote_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/import-batches/upload/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description POST /api/questionbank/import-batches/upload/ — upload a PDF → parsed candidates.
+         *
+         *     Text + best-effort page-level image extraction (PyMuPDF). Nothing is promoted
+         *     here; candidates land in the batch for human review.
+         */
+        post: operations["questionbank_import_batches_upload_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/import-candidates/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/import-candidates/<id>/. */
+        get: operations["questionbank_import_candidates_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/passages/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/passages/. */
+        get: operations["questionbank_passages_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/passages/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/passages/<id>/. */
+        get: operations["questionbank_passages_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/practice/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/practice/ — browse APPROVED questions with filters. */
+        get: operations["questionbank_practice_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/practice/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/practice/<id>/ — one APPROVED question (no answer). */
+        get: operations["questionbank_practice_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/practice/{id}/answer/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/practice/<id>/answer/ — grade, record, reveal. */
+        post: operations["questionbank_practice_answer_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/practice/taxonomy/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/practice/taxonomy/ — domains/skills with APPROVED content. */
+        get: operations["questionbank_practice_taxonomy_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/questions/ — filter/search; POST — author a new question. */
+        get: operations["questionbank_questions_list"];
+        put?: never;
+        /** @description GET /api/questionbank/questions/ — filter/search; POST — author a new question. */
+        post: operations["questionbank_questions_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/questions/<id>/ ; PATCH — edit (any status; cuts a version). */
+        get: operations["questionbank_questions_retrieve"];
+        /** @description GET /api/questionbank/questions/<id>/ ; PATCH — edit (any status; cuts a version). */
+        put: operations["questionbank_questions_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description GET /api/questionbank/questions/<id>/ ; PATCH — edit (any status; cuts a version). */
+        patch: operations["questionbank_questions_partial_update"];
+        trace?: never;
+    };
+    "/api/questionbank/questions/{id}/accept-suggestion/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/questions/<id>/accept-suggestion/ — human applies the advisory hint. */
+        post: operations["questionbank_questions_accept_suggestion_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/{id}/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/questions/<id>/approve/ — gate to APPROVED. */
+        post: operations["questionbank_questions_approve_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/{id}/archive/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/questions/<id>/archive/ — soft-delete (reversible). */
+        post: operations["questionbank_questions_archive_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/{id}/classify/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/questions/<id>/classify/ — assign real taxonomy. */
+        post: operations["questionbank_questions_classify_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/{id}/reject/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/questions/<id>/reject/. */
+        post: operations["questionbank_questions_reject_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/{id}/restore/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/questions/<id>/restore/ — un-archive. */
+        post: operations["questionbank_questions_restore_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/questions/bulk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description POST /api/questionbank/questions/bulk/ — apply one action to many ids; per-id results. */
+        post: operations["questionbank_questions_bulk_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/skills/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/skills/ — unpaginated; filter by domain or subject. */
+        get: operations["questionbank_skills_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/questionbank/versions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description GET /api/questionbank/versions/ — append-only version lineage. */
+        get: operations["questionbank_versions_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1765,6 +5076,31 @@ export interface paths {
         patch: operations["users_update_partial_update"];
         trace?: never;
     };
+    "/api/users/admin/bulk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Apply a management action to many users at once (admin console).
+         *
+         *     Body: ``{"action": "freeze|unfreeze|delete", "ids": [..]}``.
+         *     Scope-safe: an actor may only affect users that ``manageable_users_queryset``
+         *     would return for them, so a subject-scoped teacher cannot touch out-of-scope
+         *     accounts. Returns a per-id ``results`` list so the UI can report partial
+         *     outcomes; out-of-scope and missing ids are reported identically (no leak).
+         */
+        post: operations["users_admin_bulk_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/users/admin/exam-dates/": {
         parameters: {
             query?: never;
@@ -1795,6 +5131,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["users_admin_exam_dates_partial_update"];
+        trace?: never;
+    };
+    "/api/users/admin/list/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["users_admin_list_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/users/create/": {
@@ -1862,23 +5214,6 @@ export interface paths {
         patch: operations["users_me_partial_update"];
         trace?: never;
     };
-    "/api/users/me/security/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Recent security events and adaptive account flags for the signed-in user. */
-        get: operations["users_me_security_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/users/register/": {
         parameters: {
             query?: never;
@@ -1904,8 +5239,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Telegram Login (oauth embed): verify HMAC, optional verified ``phone_number`` from Telegram, issue JWT. */
+        /** @description Telegram OIDC login: verify ``id_token`` (oauth.telegram.org JWT), upsert user, issue JWT cookies. */
         post: operations["users_telegram_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/telegram/callback/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Server-mediated OIDC callback: exchange code → id_token, upsert user, set JWT cookies, redirect. */
+        get: operations["users_telegram_callback_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1919,7 +5271,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Public: whether Telegram login is configured and which bot username the widget needs. */
+        /**
+         * @description Public: tells the frontend whether Telegram OIDC login is configured and
+         *     exposes the ``client_id`` (== Telegram bot id) and ``start_url`` for the OAuth flow.
+         *
+         *     Truly public — must not 401 on stale cookies (the /login page polls this and an old
+         *     JWT cookie would otherwise put the page into a refresh loop).
+         */
         get: operations["users_telegram_config_retrieve"];
         put?: never;
         post?: never;
@@ -1938,8 +5296,34 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Link Telegram to the currently logged-in account (profile «Connect Telegram»). */
+        /**
+         * @description Link Telegram to the currently logged-in account (profile «Connect Telegram»).
+         *     Accepts ``{id_token}`` from the new OIDC SDK.
+         */
         post: operations["users_telegram_link_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/telegram/start/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Server-mediated OIDC start: redirect the browser to oauth.telegram.org with our client_id.
+         *
+         *     If the request is already authenticated, the current user's id is embedded into the
+         *     short-lived state cookie. The callback will then *link* Telegram to that account
+         *     instead of creating a brand-new synthetic ``tg<id>@…`` user.
+         */
+        get: operations["users_telegram_start_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2133,6 +5517,89 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccessGrantEvent: {
+            readonly id: number;
+            readonly grant: number;
+            readonly action: components["schemas"]["ActionEnum"];
+            readonly actor: number | null;
+            readonly actor_email: string;
+            readonly note: string;
+            readonly snapshot: unknown;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /**
+         * @description * `GRANTED` - Granted
+         *     * `REVOKED` - Revoked
+         *     * `EXPIRED` - Expired
+         *     * `EXTENDED` - Extended
+         *     * `RESTORED` - Restored
+         *     * `BACKFILLED` - Backfilled
+         * @enum {string}
+         */
+        ActionEnum: "GRANTED" | "REVOKED" | "EXPIRED" | "EXTENDED" | "RESTORED" | "BACKFILLED";
+        AdminMidterm: {
+            readonly id: number;
+            title: string;
+            subject?: components["schemas"]["Subject7acEnum"];
+            /**
+             * @description Blank = untagged (no calculator). Foundation applies to Math only.
+             *
+             *     * `foundation` - Foundation
+             *     * `junior` - Junior
+             *     * `middle` - Middle
+             *     * `senior` - Senior
+             */
+            level?: components["schemas"]["LevelEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Whether the runner may offer Desmos — the single source of truth.
+             *
+             *     Math midterms at middle/senior level only; every other midterm (R&W, or an
+             *     untagged/junior/foundation Math midterm) has no calculator. Computed here — not
+             *     re-derived client-side — because `subject` is UPPERCASE here while the assessment
+             *     rule compares lowercase, and one authority avoids the two drifting.
+             */
+            readonly calculator_enabled: boolean;
+            scoring_scale?: components["schemas"]["ScoringScaleEnum"];
+            /**
+             * Format: int64
+             * @description Single-module strict timer.
+             */
+            duration_minutes?: number;
+            /**
+             * Format: int64
+             * @description Authoring cap on question count.
+             */
+            question_limit?: number;
+            readonly is_published: boolean;
+            /** Format: date-time */
+            readonly published_at: string | null;
+            readonly created_by: number | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly question_count: number;
+            readonly publish_ready: boolean;
+            readonly publish_block_reason: string;
+        };
+        AdminMock: {
+            readonly id: number;
+            title: string;
+            /**
+             * Format: int64
+             * @description Break between English and Math.
+             */
+            break_minutes?: number;
+            readonly is_published: boolean;
+            /** Format: date-time */
+            readonly published_at: string | null;
+            readonly created_by: number | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            readonly sections: string;
+            readonly question_count: string;
+            readonly publish_ready: string;
+            readonly publish_block_reason: string;
+        };
         AdminMockExam: {
             readonly id: number;
             /** @description Timed diagnostic mock (staff-authored). Not built from pastpaper practice items. */
@@ -2146,6 +5613,13 @@ export interface components {
             readonly published_at: string | null;
             kind?: components["schemas"]["Kind5b0Enum"];
             midterm_subject?: components["schemas"]["MidtermSubjectEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Controls the final score scale.
+             *
+             *     * `SCALE_100` - 100-point (percentage)
+             *     * `SCALE_800` - 800-point (SAT scaled)
+             */
+            midterm_scoring_scale?: components["schemas"]["MidtermScoringScaleEnum"];
             /** Format: int64 */
             midterm_module_count?: number;
             /** Format: int64 */
@@ -2157,32 +5631,46 @@ export interface components {
              * @description 0 = no fixed target. Otherwise planner cap for total questions across modules.
              */
             midterm_target_question_count?: number;
-            /** @description Only used when kind=MIDTERM. Max questions allowed per module. */
+            /**
+             * Format: int64
+             * @description Only used when kind=MIDTERM. Max questions allowed per module.
+             */
             midterm_module_question_limit?: number;
+            /**
+             * @description Only used when kind=MIDTERM. Foundation applies to Math only.
+             *
+             *     * `foundation` - Foundation
+             *     * `junior` - Junior
+             *     * `middle` - Middle
+             *     * `senior` - Senior
+             */
+            midterm_level?: components["schemas"]["MidtermLevelEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Monthly round the midterm belongs to.
+             *
+             *     * `FIRST_MONTH` - First month
+             *     * `SECOND_MONTH` - Second month
+             *     * `THIRD_MONTH` - Third month
+             */
+            midterm_period?: components["schemas"]["MidtermPeriodEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Pre-midterm / midterm / retake.
+             *
+             *     * `PRE_MIDTERM` - Pre-midterm
+             *     * `MIDTERM` - Midterm
+             *     * `RETAKE` - Retake midterm
+             */
+            midterm_type?: components["schemas"]["MidtermTypeEnum"];
             readonly tests: components["schemas"]["AdminPracticeTest"][];
             readonly publish_ready: string;
             readonly publish_block_reason: string;
+            readonly sat_violations: string[];
         };
         AdminModule: {
             readonly id: number;
             module_order: components["schemas"]["ModuleOrderEnum"];
             /** Format: int64 */
             time_limit_minutes: number;
-        };
-        AdminPastpaperPack: {
-            readonly id: number;
-            /** @description Pack title shown on student practice cards. */
-            title?: string;
-            /** Format: date */
-            practice_date?: string | null;
-            /** @description e.g. A, B — shared by sections in this pack. */
-            label?: string;
-            form_type?: components["schemas"]["FormTypeEnum"];
-            readonly sections: components["schemas"]["AdminPracticeTest"][];
-            /** Format: date-time */
-            readonly created_at: string;
-            /** Format: date-time */
-            readonly updated_at: string;
         };
         AdminPracticeTest: {
             readonly id: number;
@@ -2197,17 +5685,47 @@ export interface components {
             /** @description e.g., A, B, C, D */
             label?: string;
             form_type?: components["schemas"]["FormTypeEnum"];
+            /** @description Optional grouping label (formerly the pastpaper pack title). Lets standalone sections be distinguished/grouped in admin, builder and student lists. */
+            collection_name?: string;
+            /** @description Only published sections are shown to students who don't have an explicit assignment. Section-level replacement for the old pack publish gate. */
+            is_published?: boolean;
+            /** Format: date-time */
+            readonly published_at: string | null;
             /** @description NULL = pastpaper / practice library. If set, this row is a mock-only section (staff-built under that mock, never linked from pastpapers). */
             readonly mock_exam: number | null;
-            pastpaper_pack?: number | null;
             readonly modules: components["schemas"]["AdminModule"][];
             assigned_users?: number[];
+        };
+        AdminPracticeTestPack: {
+            readonly id: number;
+            /** @description Practice test pack title shown in admin and student lists. */
+            title?: string;
+            /** @description Optional description for the practice test pack. */
+            description?: string;
+            /** @description Only published packs are visible to students. */
+            is_published?: boolean;
+            /** Format: date-time */
+            readonly published_at: string | null;
+            readonly created_by: number | null;
+            readonly sections: components["schemas"]["AdminPracticeTest"][];
+            readonly section_count: number;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Returned by POST /admin/sets/{pk}/publish/. */
+        AdminPublishResponse: {
+            readonly version: components["schemas"]["AssessmentSetVersion"];
+            /** @description True = new version was created; False = identical content, existing version returned. */
+            readonly created: boolean;
         };
         AdminQuestion: {
             readonly id: number;
             readonly module_id: number;
             readonly practice_test_id: number;
             question_type: components["schemas"]["QuestionTypeE1eEnum"];
+            /** @default  */
             question_text: string;
             /** @description Secondary text displayed above answer choices. */
             question_prompt?: string;
@@ -2262,16 +5780,28 @@ export interface components {
             total_time_seconds?: number;
             /** Format: int64 */
             active_time_seconds?: number;
+            question_times?: unknown;
             grading_status?: components["schemas"]["GradingStatusEnum"];
             /** Format: int64 */
             grading_attempts?: number;
             question_order?: unknown;
             readonly answers: components["schemas"]["AssessmentAttemptAnswer"][];
+            readonly is_paused: boolean;
+            /** Format: date-time */
+            paused_at?: string | null;
+            /** Format: int64 */
+            paused_seconds?: number;
+            /** Format: int64 */
+            current_question_index?: number;
+            readonly elapsed_seconds: number;
+            readonly server_now: string;
         };
         AssessmentAttemptAnswer: {
             readonly id: number;
             readonly question_id: number;
             answer?: unknown;
+            /** Format: int64 */
+            client_seq?: number;
             /** Format: int64 */
             time_spent_seconds?: number;
             is_correct?: boolean | null;
@@ -2282,8 +5812,8 @@ export interface components {
         };
         AssessmentAttemptBundleResponse: {
             attempt: components["schemas"]["AssessmentAttempt"];
-            set: components["schemas"]["AssessmentSet"];
-            questions: components["schemas"]["AssessmentQuestion"][];
+            set: components["schemas"]["AssessmentSetRunner"];
+            questions: components["schemas"]["AssessmentQuestionRunner"][];
         };
         /**
          * @description * `in_progress` - In progress
@@ -2297,25 +5827,65 @@ export interface components {
             attempt: components["schemas"]["AssessmentAttempt"] | null;
             result: components["schemas"]["AssessmentResult"] | null;
         };
-        AssessmentQuestion: {
+        /**
+         * @description Admin-only read serializer: identical to AssessmentQuestionSerializer but
+         *     also exposes correct_answer and grading_config so the builder UI can
+         *     correctly display the saved correct answer when re-opening a question.
+         *     NOT used on student-facing endpoints.
+         */
+        AssessmentQuestionAdminRead: {
             readonly id: number;
             /** Format: int64 */
             order?: number;
             prompt: string;
-            question_type: components["schemas"]["AssessmentQuestionQuestionTypeEnum"];
+            question_prompt?: string;
+            question_type: components["schemas"]["QuestionType09dEnum"];
+            choices?: unknown;
+            correct_answer?: unknown;
+            grading_config?: unknown;
+            /** Format: int64 */
+            points?: number;
+            is_active?: boolean;
+            explanation?: string;
+            /** Format: uri */
+            question_image?: string | null;
+            /** Format: uri */
+            option_a_image?: string | null;
+            /** Format: uri */
+            option_b_image?: string | null;
+            /** Format: uri */
+            option_c_image?: string | null;
+            /** Format: uri */
+            option_d_image?: string | null;
+        };
+        /**
+         * @description Student-runner-safe question serializer: like AssessmentQuestionSerializer but
+         *     OMITS ``explanation`` (the worked solution, shown only AFTER grading), on top of
+         *     correct_answer/grading_config (never listed). Used for the in-progress attempt
+         *     bundle so a student can't read the solution before answering.
+         */
+        AssessmentQuestionRunner: {
+            readonly id: number;
+            /** Format: int64 */
+            order?: number;
+            prompt: string;
+            question_prompt?: string;
+            question_type: components["schemas"]["QuestionType09dEnum"];
             choices?: unknown;
             /** Format: int64 */
             points?: number;
             is_active?: boolean;
+            /** Format: uri */
+            question_image?: string | null;
+            /** Format: uri */
+            option_a_image?: string | null;
+            /** Format: uri */
+            option_b_image?: string | null;
+            /** Format: uri */
+            option_c_image?: string | null;
+            /** Format: uri */
+            option_d_image?: string | null;
         };
-        /**
-         * @description * `multiple_choice` - Multiple choice
-         *     * `short_text` - Short text
-         *     * `numeric` - Numeric
-         *     * `boolean` - True/False
-         * @enum {string}
-         */
-        AssessmentQuestionQuestionTypeEnum: "multiple_choice" | "short_text" | "numeric" | "boolean";
         AssessmentResult: {
             readonly id: number;
             readonly attempt_id: number;
@@ -2332,9 +5902,37 @@ export interface components {
             /** Format: date-time */
             graded_at?: string;
         };
-        AssessmentSet: {
+        /**
+         * @description Admin read serializer for a set: includes correct_answer + grading_config
+         *     on each question so the builder UI can display saved answers correctly.
+         *     Only used by admin endpoints — never exposed to students.
+         */
+        AssessmentSetAdmin: {
             readonly id: number;
             subject: components["schemas"]["Subject0bfEnum"];
+            source?: components["schemas"]["Source263Enum"] | components["schemas"]["BlankEnum"];
+            level?: components["schemas"]["LevelEnum"] | components["schemas"]["BlankEnum"];
+            category?: string;
+            title: string;
+            description?: string;
+            is_active?: boolean;
+            readonly review_status: components["schemas"]["ReviewStatusEnum"];
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+            readonly questions: components["schemas"]["AssessmentQuestionAdminRead"][];
+        };
+        /**
+         * @description Student-runner-safe set serializer: nests the explanation-free question
+         *     serializer so the in-progress attempt bundle's ``set.questions`` never leaks
+         *     worked solutions. Used in place of AssessmentSetSerializer on both bundle paths.
+         */
+        AssessmentSetRunner: {
+            readonly id: number;
+            subject: components["schemas"]["Subject0bfEnum"];
+            source?: components["schemas"]["Source263Enum"] | components["schemas"]["BlankEnum"];
+            level?: components["schemas"]["LevelEnum"] | components["schemas"]["BlankEnum"];
             category?: string;
             title: string;
             description?: string;
@@ -2343,7 +5941,27 @@ export interface components {
             readonly created_at: string;
             /** Format: date-time */
             readonly updated_at: string;
-            readonly questions: components["schemas"]["AssessmentQuestion"][];
+            readonly questions: components["schemas"]["AssessmentQuestionRunner"][];
+        };
+        /**
+         * @description Read-only serializer for AssessmentSetVersion.
+         *
+         *     snapshot_json is intentionally excluded from the default fields — it is
+         *     large and should only be returned when explicitly requested (e.g. a
+         *     dedicated snapshot-download endpoint). Use snapshot_json_field below
+         *     if you need to include it.
+         */
+        AssessmentSetVersion: {
+            readonly id: number;
+            readonly set_id: number;
+            readonly set_title: string;
+            readonly version_number: number;
+            readonly snapshot_checksum: string;
+            readonly question_count: number;
+            readonly published_by: number | null;
+            readonly published_by_email: string | null;
+            /** Format: date-time */
+            readonly published_at: string;
         };
         AssessmentSnapshotConflictResponse: {
             detail: string;
@@ -2368,23 +5986,62 @@ export interface components {
             title: string;
             instructions?: string;
             /** Format: date-time */
-            due_at?: string | null;
+            readonly due_at: string | null;
             mock_exam?: number | null;
             practice_test?: number | null;
-            pastpaper_pack?: number | null;
+            practice_test_pack?: number | null;
             practice_test_ids?: unknown;
+            practice_test_pack_ids?: unknown;
             /** @default BOTH */
             practice_scope: components["schemas"]["PracticeScopeEnum"];
             readonly practice_bundle_tests: components["schemas"]["AssignmentPracticeBundleTest"][];
             readonly locks_file_upload: boolean;
             readonly assessment_homework: components["schemas"]["AssignmentAssessmentHomework"] | null;
+            readonly assessment_homeworks: components["schemas"]["AssignmentAssessmentHomework"][];
+            readonly content_type: string;
+            readonly contents: {
+                [key: string]: unknown;
+            }[];
+            readonly item_count: number;
+            readonly subject: string | null;
+            /** Format: date-time */
+            readonly assigned_at: string | null;
+            readonly assessment_progress: {
+                [key: string]: unknown;
+            } | null;
             module?: number | null;
             external_url?: string;
+            allow_file_upload?: boolean;
             /** Format: uri */
             attachment_file?: string | null;
             /** Format: uri */
             readonly attachment_file_url: string | null;
-            readonly attachment_urls: string[];
+            /** @description Attachment objects: { url, file_name, content_type, size }. */
+            readonly attachment_urls: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * @description Routes the result to SAT or Academic ranking. See BUSINESS-ARCHITECTURE §3.4.
+             *
+             *     * `HOMEWORK` - Homework
+             *     * `CLASSWORK` - Classwork
+             *     * `QUIZ` - Quiz
+             *     * `PARTICIPATION` - Participation
+             *     * `PRACTICE_TEST` - Practice test
+             *     * `MOCK_EXAM` - Mock exam
+             *     * `PAST_PAPER` - Past paper
+             */
+            category?: components["schemas"]["CategoryEnum"];
+            /**
+             * Format: decimal
+             * @description Points this work is graded out of; required to normalize teacher grades for Academic ranking.
+             */
+            max_score?: string | null;
+            status?: components["schemas"]["AssignmentStatusEnum"];
+            /** Format: date-time */
+            readonly published_at: string | null;
+            /** Format: date-time */
+            readonly archived_at: string | null;
             /** Format: date-time */
             readonly created_at: string;
             readonly created_by: components["schemas"]["AssignmentCreatedBy"];
@@ -2414,6 +6071,13 @@ export interface components {
             title: string;
             subject: string;
         };
+        /**
+         * @description * `DRAFT` - Draft
+         *     * `PUBLISHED` - Published
+         *     * `ARCHIVED` - Archived
+         * @enum {string}
+         */
+        AssignmentStatusEnum: "DRAFT" | "PUBLISHED" | "ARCHIVED";
         /** @description Mirror of ``TestAttempt.get_module_results`` inner question rows (review payload). */
         AttemptModuleQuestionResult: {
             id: number;
@@ -2447,12 +6111,175 @@ export interface components {
             label?: string | null;
             form_type?: string | null;
             practice_date?: string | null;
-            pastpaper_pack?: components["schemas"]["PastpaperPackBrief"] | null;
+            collection_name?: string | null;
             is_active?: boolean;
             mock_exam_id?: number | null;
             mock_kind?: string | null;
             modules: components["schemas"]["ModuleList"][];
         };
+        BankDomain: {
+            readonly id: number;
+            subject: components["schemas"]["Subject49dEnum"];
+            name: string;
+            /** @description Stable machine code, e.g. 'algebra'. */
+            code: string;
+            /** Format: int64 */
+            display_order?: number;
+        };
+        BankPassage: {
+            readonly id: number;
+            subject?: components["schemas"]["Subject49dEnum"];
+            passage_text: string;
+            content_hash?: string;
+            source_type?: components["schemas"]["SourceTypeEnum"];
+            source_reference?: string;
+            import_batch?: number | null;
+            metadata?: unknown;
+            readonly question_count: number;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Full question for the detail screen (Preview / Details tabs). */
+        BankQuestionDetail: {
+            readonly id: number;
+            /** @description Permanent identifier, e.g. QB-ENG-000001. Assigned once, never changes. */
+            readonly qb_id: string;
+            external_id?: string;
+            subject: components["schemas"]["Subject49dEnum"];
+            status?: components["schemas"]["StatusC64Enum"];
+            question_type: components["schemas"]["QuestionType34dEnum"];
+            difficulty?: components["schemas"]["DifficultyEnum"] | components["schemas"]["BlankEnum"];
+            readonly domain: components["schemas"]["BankDomain"];
+            readonly skill: components["schemas"]["BankSkill"];
+            readonly passage: components["schemas"]["BankPassage"];
+            question_text: string;
+            /** @description Secondary text above the choices. */
+            question_prompt?: string;
+            readonly question_image: string;
+            option_a?: string;
+            option_b?: string;
+            option_c?: string;
+            option_d?: string;
+            readonly option_a_image: string;
+            readonly option_b_image: string;
+            readonly option_c_image: string;
+            readonly option_d_image: string;
+            correct_answer?: unknown;
+            student_answer?: unknown;
+            explanation?: string;
+            /** Format: int64 */
+            points?: number;
+            content_hash?: string;
+            source_type?: components["schemas"]["SourceTypeEnum"];
+            source_reference?: string;
+            import_batch?: number | null;
+            readonly current_version_number: number;
+            readonly version_count: number;
+            readonly assessment_usage_count: number;
+            readonly suggestion: string;
+            metadata?: unknown;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /** @description Compact row for the browsing/triage tables. */
+        BankQuestionList: {
+            readonly id: number;
+            /** @description Permanent identifier, e.g. QB-ENG-000001. Assigned once, never changes. */
+            readonly qb_id: string;
+            external_id?: string;
+            subject: components["schemas"]["Subject49dEnum"];
+            status?: components["schemas"]["StatusC64Enum"];
+            question_type: components["schemas"]["QuestionType34dEnum"];
+            difficulty?: components["schemas"]["DifficultyEnum"] | components["schemas"]["BlankEnum"];
+            domain?: number | null;
+            readonly domain_name: string;
+            skill?: number | null;
+            readonly skill_name: string;
+            question_text: string;
+            passage?: number | null;
+            readonly has_image: boolean;
+            source_type?: components["schemas"]["SourceTypeEnum"];
+            content_hash?: string;
+            import_batch?: number | null;
+            readonly suggestion: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        BankQuestionVersion: {
+            readonly id: number;
+            bank_question: number;
+            /** Format: int64 */
+            version_number: number;
+            snapshot_checksum: string;
+            previous_version?: number | null;
+            created_by?: number | null;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        /**
+         * @description Create/edit a bank question (multipart for images). Delegates to services so
+         *     content_hash + versioning always move together. Status is NOT set here —
+         *     transitions go through the triage endpoints; create lands in TRIAGE.
+         */
+        BankQuestionWrite: {
+            subject?: components["schemas"]["Subject49dEnum"];
+            question_type?: components["schemas"]["QuestionType34dEnum"];
+            difficulty?: components["schemas"]["DifficultyEnum"] | components["schemas"]["BlankEnum"];
+            external_id?: string;
+            domain?: number | null;
+            skill?: number | null;
+            question_text?: string;
+            /** @description Secondary text above the choices. */
+            question_prompt?: string;
+            /** Format: uri */
+            question_image?: string | null;
+            option_a?: string;
+            option_b?: string;
+            option_c?: string;
+            option_d?: string;
+            /** Format: uri */
+            option_a_image?: string | null;
+            /** Format: uri */
+            option_b_image?: string | null;
+            /** Format: uri */
+            option_c_image?: string | null;
+            /** Format: uri */
+            option_d_image?: string | null;
+            correct_answer?: unknown;
+            student_answer?: unknown;
+            explanation?: string;
+            /** Format: int64 */
+            points?: number;
+            /** @default false */
+            clear_question_image: boolean;
+            /** @default false */
+            clear_option_a_image: boolean;
+            /** @default false */
+            clear_option_b_image: boolean;
+            /** @default false */
+            clear_option_c_image: boolean;
+            /** @default false */
+            clear_option_d_image: boolean;
+        };
+        BankSkill: {
+            readonly id: number;
+            domain: number;
+            readonly domain_name: string;
+            readonly subject: string;
+            name: string;
+            /** @description Stable machine code, e.g. 'linear-functions'. */
+            code: string;
+            /** Format: int64 */
+            display_order?: number;
+        };
+        /** @enum {unknown} */
+        BlankEnum: "";
         BulkAssignmentDispatch: {
             readonly id: number;
             readonly kind: components["schemas"]["Kind69fEnum"];
@@ -2482,6 +6309,17 @@ export interface components {
             readonly actor_snapshot: unknown;
             readonly skipped_users: string;
         };
+        /**
+         * @description * `HOMEWORK` - Homework
+         *     * `CLASSWORK` - Classwork
+         *     * `QUIZ` - Quiz
+         *     * `PARTICIPATION` - Participation
+         *     * `PRACTICE_TEST` - Practice test
+         *     * `MOCK_EXAM` - Mock exam
+         *     * `PAST_PAPER` - Past paper
+         * @enum {string}
+         */
+        CategoryEnum: "HOMEWORK" | "CLASSWORK" | "QUIZ" | "PARTICIPATION" | "PRACTICE_TEST" | "MOCK_EXAM" | "PAST_PAPER";
         ClassPost: {
             readonly id: number;
             content: string;
@@ -2493,6 +6331,7 @@ export interface components {
             readonly id: number;
             name: string;
             subject: components["schemas"]["Subject49dEnum"];
+            level?: components["schemas"]["LevelEnum"] | components["schemas"]["BlankEnum"];
             lesson_days: components["schemas"]["LessonDaysEnum"];
             /** @description Example: 18:00 */
             lesson_time?: string;
@@ -2522,6 +6361,7 @@ export interface components {
             readonly id: number;
             name: string;
             subject: components["schemas"]["Subject49dEnum"];
+            level?: components["schemas"]["LevelEnum"] | components["schemas"]["BlankEnum"];
             lesson_days: components["schemas"]["LessonDaysEnum"];
             /** @description Example: 18:00 */
             lesson_time?: string;
@@ -2564,6 +6404,13 @@ export interface components {
          * @enum {string}
          */
         CurrentStateEnum: "NOT_STARTED" | "MODULE_1_ACTIVE" | "MODULE_1_SUBMITTED" | "MODULE_2_ACTIVE" | "MODULE_2_SUBMITTED" | "SCORING" | "COMPLETED" | "ABANDONED";
+        /**
+         * @description * `EASY` - Easy
+         *     * `MEDIUM` - Medium
+         *     * `HARD` - Hard
+         * @enum {string}
+         */
+        DifficultyEnum: "EASY" | "MEDIUM" | "HARD";
         /**
          * @description * `pending` - pending
          *     * `active` - active
@@ -2620,6 +6467,70 @@ export interface components {
          * @enum {string}
          */
         GradingStatusEnum: "pending" | "processing" | "completed" | "failed";
+        ImportBatch: {
+            readonly id: number;
+            source_type?: components["schemas"]["SourceTypeEnum"];
+            filename?: string;
+            /** @description Free-form origin pointer (URL, original document id, etc.). */
+            source_reference?: string;
+            status?: components["schemas"]["ImportBatchStatusEnum"];
+            readonly status_display: string;
+            /** Format: int64 */
+            total_candidates?: number;
+            /** Format: int64 */
+            promoted_count?: number;
+            readonly candidate_counts: {
+                [key: string]: unknown;
+            };
+            notes?: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `PENDING` - Pending
+         *     * `PARSING` - Parsing
+         *     * `READY` - Ready for review
+         *     * `PROMOTED` - Promoted to bank
+         *     * `FAILED` - Failed
+         * @enum {string}
+         */
+        ImportBatchStatusEnum: "PENDING" | "PARSING" | "READY" | "PROMOTED" | "FAILED";
+        ImportCandidate: {
+            readonly id: number;
+            batch: number;
+            /** Format: int64 */
+            order?: number;
+            subject?: components["schemas"]["Subject49dEnum"] | components["schemas"]["BlankEnum"];
+            external_id?: string;
+            raw_domain?: string;
+            raw_skill?: string;
+            raw_difficulty?: string;
+            passage_text?: string;
+            question_text?: string;
+            option_a?: string;
+            option_b?: string;
+            option_c?: string;
+            option_d?: string;
+            correct_answer?: unknown;
+            student_answer?: unknown;
+            question_image?: string;
+            explanation?: string;
+            content_hash?: string;
+            /** Format: int64 */
+            page_start?: number | null;
+            /** Format: int64 */
+            page_end?: number | null;
+            validation_status?: components["schemas"]["ValidationStatusEnum"];
+            validation_messages?: unknown;
+            duplicate_of?: number | null;
+            readonly duplicate_of_qb_id: string;
+            promoted_question?: number | null;
+            readonly promoted_question_qb_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
         /**
          * @description * `MOCK_SAT` - Full SAT mock (Reading & Writing + Math)
          *     * `MIDTERM` - Midterm (custom time, 1–2 modules, one subject)
@@ -2640,11 +6551,47 @@ export interface components {
          */
         LessonDaysEnum: "ODD" | "EVEN";
         /**
+         * @description * `foundation` - Foundation
+         *     * `junior` - Junior
+         *     * `middle` - Middle
+         *     * `senior` - Senior
+         * @enum {string}
+         */
+        LevelEnum: "foundation" | "junior" | "middle" | "senior";
+        /**
+         * @description * `foundation` - Foundation
+         *     * `junior` - Junior
+         *     * `middle` - Middle
+         *     * `senior` - Senior
+         * @enum {string}
+         */
+        MidtermLevelEnum: "foundation" | "junior" | "middle" | "senior";
+        /**
+         * @description * `FIRST_MONTH` - First month
+         *     * `SECOND_MONTH` - Second month
+         *     * `THIRD_MONTH` - Third month
+         * @enum {string}
+         */
+        MidtermPeriodEnum: "FIRST_MONTH" | "SECOND_MONTH" | "THIRD_MONTH";
+        /**
+         * @description * `SCALE_100` - 100-point (percentage)
+         *     * `SCALE_800` - 800-point (SAT scaled)
+         * @enum {string}
+         */
+        MidtermScoringScaleEnum: "SCALE_100" | "SCALE_800";
+        /**
          * @description * `READING_WRITING` - Reading & Writing
          *     * `MATH` - Math
          * @enum {string}
          */
         MidtermSubjectEnum: "READING_WRITING" | "MATH";
+        /**
+         * @description * `PRE_MIDTERM` - Pre-midterm
+         *     * `MIDTERM` - Midterm
+         *     * `RETAKE` - Retake midterm
+         * @enum {string}
+         */
+        MidtermTypeEnum: "PRE_MIDTERM" | "MIDTERM" | "RETAKE";
         MockExam: {
             readonly id: number;
             /** @description Timed diagnostic mock (staff-authored). Not built from pastpaper practice items. */
@@ -2658,12 +6605,44 @@ export interface components {
             published_at?: string | null;
             kind?: components["schemas"]["Kind5b0Enum"];
             midterm_subject?: components["schemas"]["MidtermSubjectEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Controls the final score scale.
+             *
+             *     * `SCALE_100` - 100-point (percentage)
+             *     * `SCALE_800` - 800-point (SAT scaled)
+             */
+            midterm_scoring_scale?: components["schemas"]["MidtermScoringScaleEnum"];
             /** Format: int64 */
             midterm_module_count?: number;
             /** Format: int64 */
             midterm_module1_minutes?: number;
             /** Format: int64 */
             midterm_module2_minutes?: number;
+            /**
+             * @description Only used when kind=MIDTERM. Foundation applies to Math only.
+             *
+             *     * `foundation` - Foundation
+             *     * `junior` - Junior
+             *     * `middle` - Middle
+             *     * `senior` - Senior
+             */
+            midterm_level?: components["schemas"]["MidtermLevelEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Monthly round the midterm belongs to.
+             *
+             *     * `FIRST_MONTH` - First month
+             *     * `SECOND_MONTH` - Second month
+             *     * `THIRD_MONTH` - Third month
+             */
+            midterm_period?: components["schemas"]["MidtermPeriodEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Pre-midterm / midterm / retake.
+             *
+             *     * `PRE_MIDTERM` - Pre-midterm
+             *     * `MIDTERM` - Midterm
+             *     * `RETAKE` - Retake midterm
+             */
+            midterm_type?: components["schemas"]["MidtermTypeEnum"];
             readonly tests: components["schemas"]["PracticeTest"][];
         };
         ModuleList: {
@@ -2684,15 +6663,172 @@ export interface components {
         };
         /** @enum {unknown} */
         NullEnum: null;
-        PastpaperPackBrief: {
-            readonly id: number;
-            /** @description Pack title shown on student practice cards. */
+        PaginatedBankPassageList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["BankPassage"][];
+        };
+        PaginatedBankQuestionListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["BankQuestionList"][];
+        };
+        PaginatedBankQuestionVersionList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["BankQuestionVersion"][];
+        };
+        PaginatedImportBatchList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["ImportBatch"][];
+        };
+        PaginatedImportCandidateList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["ImportCandidate"][];
+        };
+        PaginatedPracticeQuestionListList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=400&limit=100
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?offset=200&limit=100
+             */
+            previous?: string | null;
+            results: components["schemas"]["PracticeQuestionList"][];
+        };
+        PaginatedResourceAccessGrantList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["ResourceAccessGrant"][];
+        };
+        PatchedAdminMidterm: {
+            readonly id?: number;
             title?: string;
-            /** Format: date */
-            practice_date?: string | null;
-            /** @description e.g. A, B — shared by sections in this pack. */
-            label?: string;
-            form_type?: components["schemas"]["FormTypeEnum"];
+            subject?: components["schemas"]["Subject7acEnum"];
+            /**
+             * @description Blank = untagged (no calculator). Foundation applies to Math only.
+             *
+             *     * `foundation` - Foundation
+             *     * `junior` - Junior
+             *     * `middle` - Middle
+             *     * `senior` - Senior
+             */
+            level?: components["schemas"]["LevelEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Whether the runner may offer Desmos — the single source of truth.
+             *
+             *     Math midterms at middle/senior level only; every other midterm (R&W, or an
+             *     untagged/junior/foundation Math midterm) has no calculator. Computed here — not
+             *     re-derived client-side — because `subject` is UPPERCASE here while the assessment
+             *     rule compares lowercase, and one authority avoids the two drifting.
+             */
+            readonly calculator_enabled?: boolean;
+            scoring_scale?: components["schemas"]["ScoringScaleEnum"];
+            /**
+             * Format: int64
+             * @description Single-module strict timer.
+             */
+            duration_minutes?: number;
+            /**
+             * Format: int64
+             * @description Authoring cap on question count.
+             */
+            question_limit?: number;
+            readonly is_published?: boolean;
+            /** Format: date-time */
+            readonly published_at?: string | null;
+            readonly created_by?: number | null;
+            /** Format: date-time */
+            readonly created_at?: string;
+            readonly question_count?: number;
+            readonly publish_ready?: boolean;
+            readonly publish_block_reason?: string;
+        };
+        PatchedAdminMock: {
+            readonly id?: number;
+            title?: string;
+            /**
+             * Format: int64
+             * @description Break between English and Math.
+             */
+            break_minutes?: number;
+            readonly is_published?: boolean;
+            /** Format: date-time */
+            readonly published_at?: string | null;
+            readonly created_by?: number | null;
+            /** Format: date-time */
+            readonly created_at?: string;
+            readonly sections?: string;
+            readonly question_count?: string;
+            readonly publish_ready?: string;
+            readonly publish_block_reason?: string;
         };
         PatchedAdminMockExam: {
             readonly id?: number;
@@ -2707,6 +6843,13 @@ export interface components {
             readonly published_at?: string | null;
             kind?: components["schemas"]["Kind5b0Enum"];
             midterm_subject?: components["schemas"]["MidtermSubjectEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Controls the final score scale.
+             *
+             *     * `SCALE_100` - 100-point (percentage)
+             *     * `SCALE_800` - 800-point (SAT scaled)
+             */
+            midterm_scoring_scale?: components["schemas"]["MidtermScoringScaleEnum"];
             /** Format: int64 */
             midterm_module_count?: number;
             /** Format: int64 */
@@ -2718,32 +6861,46 @@ export interface components {
              * @description 0 = no fixed target. Otherwise planner cap for total questions across modules.
              */
             midterm_target_question_count?: number;
-            /** @description Only used when kind=MIDTERM. Max questions allowed per module. */
+            /**
+             * Format: int64
+             * @description Only used when kind=MIDTERM. Max questions allowed per module.
+             */
             midterm_module_question_limit?: number;
+            /**
+             * @description Only used when kind=MIDTERM. Foundation applies to Math only.
+             *
+             *     * `foundation` - Foundation
+             *     * `junior` - Junior
+             *     * `middle` - Middle
+             *     * `senior` - Senior
+             */
+            midterm_level?: components["schemas"]["MidtermLevelEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Monthly round the midterm belongs to.
+             *
+             *     * `FIRST_MONTH` - First month
+             *     * `SECOND_MONTH` - Second month
+             *     * `THIRD_MONTH` - Third month
+             */
+            midterm_period?: components["schemas"]["MidtermPeriodEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Only used when kind=MIDTERM. Pre-midterm / midterm / retake.
+             *
+             *     * `PRE_MIDTERM` - Pre-midterm
+             *     * `MIDTERM` - Midterm
+             *     * `RETAKE` - Retake midterm
+             */
+            midterm_type?: components["schemas"]["MidtermTypeEnum"];
             readonly tests?: components["schemas"]["AdminPracticeTest"][];
             readonly publish_ready?: string;
             readonly publish_block_reason?: string;
+            readonly sat_violations?: string[];
         };
         PatchedAdminModule: {
             readonly id?: number;
             module_order?: components["schemas"]["ModuleOrderEnum"];
             /** Format: int64 */
             time_limit_minutes?: number;
-        };
-        PatchedAdminPastpaperPack: {
-            readonly id?: number;
-            /** @description Pack title shown on student practice cards. */
-            title?: string;
-            /** Format: date */
-            practice_date?: string | null;
-            /** @description e.g. A, B — shared by sections in this pack. */
-            label?: string;
-            form_type?: components["schemas"]["FormTypeEnum"];
-            readonly sections?: components["schemas"]["AdminPracticeTest"][];
-            /** Format: date-time */
-            readonly created_at?: string;
-            /** Format: date-time */
-            readonly updated_at?: string;
         };
         PatchedAdminPracticeTest: {
             readonly id?: number;
@@ -2758,18 +6915,42 @@ export interface components {
             /** @description e.g., A, B, C, D */
             label?: string;
             form_type?: components["schemas"]["FormTypeEnum"];
+            /** @description Optional grouping label (formerly the pastpaper pack title). Lets standalone sections be distinguished/grouped in admin, builder and student lists. */
+            collection_name?: string;
+            /** @description Only published sections are shown to students who don't have an explicit assignment. Section-level replacement for the old pack publish gate. */
+            is_published?: boolean;
+            /** Format: date-time */
+            readonly published_at?: string | null;
             /** @description NULL = pastpaper / practice library. If set, this row is a mock-only section (staff-built under that mock, never linked from pastpapers). */
             readonly mock_exam?: number | null;
-            pastpaper_pack?: number | null;
             readonly modules?: components["schemas"]["AdminModule"][];
             assigned_users?: number[];
+        };
+        PatchedAdminPracticeTestPack: {
+            readonly id?: number;
+            /** @description Practice test pack title shown in admin and student lists. */
+            title?: string;
+            /** @description Optional description for the practice test pack. */
+            description?: string;
+            /** @description Only published packs are visible to students. */
+            is_published?: boolean;
+            /** Format: date-time */
+            readonly published_at?: string | null;
+            readonly created_by?: number | null;
+            readonly sections?: components["schemas"]["AdminPracticeTest"][];
+            readonly section_count?: number;
+            /** Format: date-time */
+            readonly created_at?: string;
+            /** Format: date-time */
+            readonly updated_at?: string;
         };
         PatchedAdminQuestion: {
             readonly id?: number;
             readonly module_id?: number;
             readonly practice_test_id?: number;
             question_type?: components["schemas"]["QuestionTypeE1eEnum"];
-            question_text?: string;
+            /** @default  */
+            question_text: string;
             /** @description Secondary text displayed above answer choices. */
             question_prompt?: string;
             /** Format: uri */
@@ -2807,27 +6988,111 @@ export interface components {
             title?: string;
             instructions?: string;
             /** Format: date-time */
-            due_at?: string | null;
+            readonly due_at?: string | null;
             mock_exam?: number | null;
             practice_test?: number | null;
-            pastpaper_pack?: number | null;
+            practice_test_pack?: number | null;
             practice_test_ids?: unknown;
+            practice_test_pack_ids?: unknown;
             /** @default BOTH */
             practice_scope: components["schemas"]["PracticeScopeEnum"];
             readonly practice_bundle_tests?: components["schemas"]["AssignmentPracticeBundleTest"][];
             readonly locks_file_upload?: boolean;
             readonly assessment_homework?: components["schemas"]["AssignmentAssessmentHomework"] | null;
+            readonly assessment_homeworks?: components["schemas"]["AssignmentAssessmentHomework"][];
+            readonly content_type?: string;
+            readonly contents?: {
+                [key: string]: unknown;
+            }[];
+            readonly item_count?: number;
+            readonly subject?: string | null;
+            /** Format: date-time */
+            readonly assigned_at?: string | null;
+            readonly assessment_progress?: {
+                [key: string]: unknown;
+            } | null;
             module?: number | null;
             external_url?: string;
+            allow_file_upload?: boolean;
             /** Format: uri */
             attachment_file?: string | null;
             /** Format: uri */
             readonly attachment_file_url?: string | null;
-            readonly attachment_urls?: string[];
+            /** @description Attachment objects: { url, file_name, content_type, size }. */
+            readonly attachment_urls?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * @description Routes the result to SAT or Academic ranking. See BUSINESS-ARCHITECTURE §3.4.
+             *
+             *     * `HOMEWORK` - Homework
+             *     * `CLASSWORK` - Classwork
+             *     * `QUIZ` - Quiz
+             *     * `PARTICIPATION` - Participation
+             *     * `PRACTICE_TEST` - Practice test
+             *     * `MOCK_EXAM` - Mock exam
+             *     * `PAST_PAPER` - Past paper
+             */
+            category?: components["schemas"]["CategoryEnum"];
+            /**
+             * Format: decimal
+             * @description Points this work is graded out of; required to normalize teacher grades for Academic ranking.
+             */
+            max_score?: string | null;
+            status?: components["schemas"]["AssignmentStatusEnum"];
+            /** Format: date-time */
+            readonly published_at?: string | null;
+            /** Format: date-time */
+            readonly archived_at?: string | null;
             /** Format: date-time */
             readonly created_at?: string;
             readonly created_by?: components["schemas"]["AssignmentCreatedBy"];
             readonly submissions_count?: number;
+        };
+        /**
+         * @description Create/edit a bank question (multipart for images). Delegates to services so
+         *     content_hash + versioning always move together. Status is NOT set here —
+         *     transitions go through the triage endpoints; create lands in TRIAGE.
+         */
+        PatchedBankQuestionWrite: {
+            subject?: components["schemas"]["Subject49dEnum"];
+            question_type?: components["schemas"]["QuestionType34dEnum"];
+            difficulty?: components["schemas"]["DifficultyEnum"] | components["schemas"]["BlankEnum"];
+            external_id?: string;
+            domain?: number | null;
+            skill?: number | null;
+            question_text?: string;
+            /** @description Secondary text above the choices. */
+            question_prompt?: string;
+            /** Format: uri */
+            question_image?: string | null;
+            option_a?: string;
+            option_b?: string;
+            option_c?: string;
+            option_d?: string;
+            /** Format: uri */
+            option_a_image?: string | null;
+            /** Format: uri */
+            option_b_image?: string | null;
+            /** Format: uri */
+            option_c_image?: string | null;
+            /** Format: uri */
+            option_d_image?: string | null;
+            correct_answer?: unknown;
+            student_answer?: unknown;
+            explanation?: string;
+            /** Format: int64 */
+            points?: number;
+            /** @default false */
+            clear_question_image: boolean;
+            /** @default false */
+            clear_option_a_image: boolean;
+            /** @default false */
+            clear_option_b_image: boolean;
+            /** @default false */
+            clear_option_c_image: boolean;
+            /** @default false */
+            clear_option_d_image: boolean;
         };
         PatchedClassPost: {
             readonly id?: number;
@@ -2840,6 +7105,7 @@ export interface components {
             readonly id?: number;
             name?: string;
             subject?: components["schemas"]["Subject49dEnum"];
+            level?: components["schemas"]["LevelEnum"] | components["schemas"]["BlankEnum"];
             lesson_days?: components["schemas"]["LessonDaysEnum"];
             /** @description Example: 18:00 */
             lesson_time?: string;
@@ -2876,8 +7142,11 @@ export interface components {
         };
         PatchedUser: {
             readonly id?: number;
-            /** Format: email */
-            email?: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            email?: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -2892,16 +7161,30 @@ export interface components {
              * Active
              * @description Designates whether this user should be treated as active. Unselect this instead of deleting accounts.
              */
-            is_active?: boolean;
+            readonly is_active?: boolean;
             is_frozen?: boolean;
             /** Format: date-time */
             readonly date_joined?: string;
+            /** Format: date-time */
+            readonly last_login?: string | null;
+            /** @description True only once the user proved control of this address by entering a mailed code. Never backfilled: signup provenance is not recorded, so for existing rows there is no way to tell whether the address was ever real. */
+            readonly email_verified?: boolean;
+            /** Format: date-time */
+            readonly email_verified_at?: string | null;
+            /** Format: date-time */
+            readonly email_released_at?: string | null;
+            /** Format: email */
+            readonly previous_email?: string | null;
+            readonly attempt_count?: number;
             password?: string;
         };
         PatchedUserMe: {
             readonly id?: number;
-            /** Format: email */
-            email?: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            readonly email?: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -2924,9 +7207,15 @@ export interface components {
              * @description Target total SAT score (400–1600)
              */
             target_score?: number | null;
-            /** @description Target English/Reading-Writing score (200–800) */
+            /**
+             * Format: int64
+             * @description Target English/Reading-Writing score (200–800)
+             */
             target_english?: number | null;
-            /** @description Target Math score (200–800) */
+            /**
+             * Format: int64
+             * @description Target Math score (200–800)
+             */
             target_math?: number | null;
             readonly last_mock_result?: components["schemas"]["UserMeLastMockResult"] | null;
             clear_profile_image?: boolean;
@@ -2946,6 +7235,50 @@ export interface components {
             readonly last_password_change?: string | null;
             readonly security_step_up_active?: boolean;
             readonly has_recent_security_alerts?: boolean;
+            /** @description True only once the user proved control of this address by entering a mailed code. Never backfilled: signup provenance is not recorded, so for existing rows there is no way to tell whether the address was ever real. */
+            readonly email_verified?: boolean;
+            /** Format: date-time */
+            readonly email_verified_at?: string | null;
+            /** Format: date-time */
+            readonly email_released_at?: string | null;
+            readonly profile_complete?: boolean;
+            readonly missing_fields?: string[];
+        };
+        /**
+         * @description Renderable question for self-study — deliberately WITHOUT correct_answer,
+         *     explanation, or student_answer (those arrive only after the student answers).
+         */
+        PracticeQuestionDetail: {
+            readonly id: number;
+            /** @description Permanent identifier, e.g. QB-ENG-000001. Assigned once, never changes. */
+            readonly qb_id: string;
+            subject: components["schemas"]["Subject49dEnum"];
+            question_type: components["schemas"]["QuestionType34dEnum"];
+            difficulty?: components["schemas"]["DifficultyEnum"] | components["schemas"]["BlankEnum"];
+            readonly domain_name: string;
+            readonly skill_name: string;
+            readonly passage_text: string;
+            question_text: string;
+            /** @description Secondary text above the choices. */
+            question_prompt?: string;
+            readonly question_image: string;
+            readonly choices: {
+                [key: string]: unknown;
+            }[];
+            /** Format: int64 */
+            points?: number;
+        };
+        PracticeQuestionList: {
+            readonly id: number;
+            /** @description Permanent identifier, e.g. QB-ENG-000001. Assigned once, never changes. */
+            readonly qb_id: string;
+            subject: components["schemas"]["Subject49dEnum"];
+            question_type: components["schemas"]["QuestionType34dEnum"];
+            difficulty?: components["schemas"]["DifficultyEnum"] | components["schemas"]["BlankEnum"];
+            readonly domain_name: string;
+            readonly skill_name: string;
+            question_text: string;
+            readonly has_image: boolean;
         };
         /**
          * @description * `BOTH` - Both (English & Math)
@@ -2968,11 +7301,27 @@ export interface components {
             /** @description e.g., A, B, C, D */
             label?: string;
             form_type?: components["schemas"]["FormTypeEnum"];
+            /** @description Optional grouping label (formerly the pastpaper pack title). Lets standalone sections be distinguished/grouped in admin, builder and student lists. */
+            collection_name?: string;
+            /** @description Only published sections are shown to students who don't have an explicit assignment. Section-level replacement for the old pack publish gate. */
+            is_published?: boolean;
             readonly modules: components["schemas"]["ModuleList"][];
             /** Format: date-time */
             readonly created_at: string;
-            readonly pastpaper_pack: components["schemas"]["PastpaperPackBrief"] | null;
             readonly mock_exam_id: number | null;
+        };
+        /** @description Student-facing practice test pack: pack metadata + shallow section list. */
+        PracticeTestPackStudent: {
+            readonly id: number;
+            /** @description Practice test pack title shown in admin and student lists. */
+            title?: string;
+            /** @description Optional description for the practice test pack. */
+            description?: string;
+            /** @description Only published packs are visible to students. */
+            is_published?: boolean;
+            readonly sections: string;
+            /** Format: date-time */
+            readonly created_at: string;
         };
         Question: {
             readonly id: number;
@@ -2993,12 +7342,78 @@ export interface components {
             option_d_image?: string | null;
         };
         /**
+         * @description * `multiple_choice` - Multiple choice
+         *     * `short_text` - Short text
+         *     * `numeric` - Numeric
+         *     * `boolean` - True/False
+         * @enum {string}
+         */
+        QuestionType09dEnum: "multiple_choice" | "short_text" | "numeric" | "boolean";
+        /**
+         * @description * `MULTIPLE_CHOICE` - Multiple choice
+         *     * `STUDENT_PRODUCED` - Student-produced response (grid-in)
+         *     * `SHORT_TEXT` - Short text
+         *     * `NUMERIC` - Numeric
+         *     * `BOOLEAN` - True/False
+         * @enum {string}
+         */
+        QuestionType34dEnum: "MULTIPLE_CHOICE" | "STUDENT_PRODUCED" | "SHORT_TEXT" | "NUMERIC" | "BOOLEAN";
+        /**
          * @description * `MATH` - Math
          *     * `READING` - Reading
          *     * `WRITING` - Writing
          * @enum {string}
          */
         QuestionTypeE1eEnum: "MATH" | "READING" | "WRITING";
+        ResourceAccessGrant: {
+            readonly id: number;
+            readonly user: number;
+            readonly user_email: string;
+            readonly user_name: string;
+            readonly scope: components["schemas"]["ScopeEnum"];
+            /** @description Domain subject (math/english) for SUBJECT grants; NULL for RESOURCE grants. */
+            readonly subject: string | null;
+            readonly resource_type: string | null;
+            readonly resource_id: number | null;
+            readonly resource_label: string;
+            readonly classroom: number | null;
+            readonly classroom_name: string;
+            readonly source: components["schemas"]["ResourceAccessGrantSourceEnum"];
+            /** @default ACTIVE */
+            readonly status: components["schemas"]["ResourceAccessGrantStatusEnum"];
+            readonly is_effective: string;
+            readonly granted_by: number | null;
+            readonly granted_by_email: string;
+            /** Format: date-time */
+            readonly expires_at: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            readonly updated_at: string;
+        };
+        /**
+         * @description * `MANUAL` - Manual
+         *     * `BULK` - Bulk
+         *     * `CLASSROOM` - Classroom
+         *     * `PURCHASE` - Purchase
+         *     * `SYSTEM` - System / backfill
+         * @enum {string}
+         */
+        ResourceAccessGrantSourceEnum: "MANUAL" | "BULK" | "CLASSROOM" | "PURCHASE" | "SYSTEM";
+        /**
+         * @description * `ACTIVE` - Active
+         *     * `REVOKED` - Revoked
+         *     * `EXPIRED` - Expired
+         * @enum {string}
+         */
+        ResourceAccessGrantStatusEnum: "ACTIVE" | "REVOKED" | "EXPIRED";
+        /**
+         * @description * `draft` - Draft
+         *     * `needs_review` - Needs review
+         *     * `approved` - Approved
+         * @enum {string}
+         */
+        ReviewStatusEnum: "draft" | "needs_review" | "approved";
         SaveAnswer: {
             attempt_id: number;
             question_id: number;
@@ -3006,6 +7421,7 @@ export interface components {
             client_seq?: number;
             /** Format: date-time */
             answered_at?: string;
+            current_index?: number;
         };
         SaveAnswerStaleWrite: {
             detail: string;
@@ -3016,9 +7432,52 @@ export interface components {
         SaveAnswerStored: {
             answer_id: number;
         };
+        /**
+         * @description * `SUBJECT` - Subject
+         *     * `RESOURCE` - Resource
+         * @enum {string}
+         */
+        ScopeEnum: "SUBJECT" | "RESOURCE";
+        /**
+         * @description * `SCALE_100` - 100-point (percentage)
+         *     * `SCALE_800` - 800-point (SAT scaled)
+         * @enum {string}
+         */
+        ScoringScaleEnum: "SCALE_100" | "SCALE_800";
+        /**
+         * @description * `SQB` - SQB
+         *     * `SATOPLAM` - SAToplam
+         *     * `MATHBOOK` - Mathbook
+         *     * `PREP_PROS` - Prep Pros
+         *     * `HARD_QUESTIONS` - Hard questions
+         *     * `EXTERNAL` - External source
+         * @enum {string}
+         */
+        Source263Enum: "SQB" | "SATOPLAM" | "MATHBOOK" | "PREP_PROS" | "HARD_QUESTIONS" | "EXTERNAL";
+        /**
+         * @description * `MANUAL` - Manually authored
+         *     * `PDF_IMPORT` - PDF import
+         *     * `MIGRATED_EXAM` - Migrated from exam engine
+         *     * `MIGRATED_ASSESSMENT` - Migrated from assessments
+         *     * `COLLEGE_BOARD` - College Board
+         *     * `OTHER` - Other
+         * @enum {string}
+         */
+        SourceTypeEnum: "MANUAL" | "PDF_IMPORT" | "MIGRATED_EXAM" | "MIGRATED_ASSESSMENT" | "COLLEGE_BOARD" | "OTHER";
         StartAttempt: {
-            assignment_id: number;
+            homework_id?: number;
+            assignment_id?: number;
+            focus_question_ids?: number[];
         };
+        /**
+         * @description * `IMPORTED` - Imported (raw)
+         *     * `TRIAGE` - In triage (awaiting classification)
+         *     * `APPROVED` - Approved
+         *     * `REJECTED` - Rejected
+         *     * `ARCHIVED` - Archived
+         * @enum {string}
+         */
+        StatusC64Enum: "IMPORTED" | "TRIAGE" | "APPROVED" | "REJECTED" | "ARCHIVED";
         /**
          * @description * `pending` - Pending
          *     * `processing` - Processing
@@ -3040,6 +7499,12 @@ export interface components {
          * @enum {string}
          */
         Subject49dEnum: "ENGLISH" | "MATH";
+        /**
+         * @description * `READING_WRITING` - Reading & Writing
+         *     * `MATH` - Math
+         * @enum {string}
+         */
+        Subject7acEnum: "READING_WRITING" | "MATH";
         Submission: {
             readonly id: number;
             status?: components["schemas"]["SubmissionStatusEnum"];
@@ -3128,6 +7593,7 @@ export interface components {
             readonly results_ready: boolean;
             readonly engine_phase: components["schemas"]["EnginePhaseEnum"];
             readonly scoring_notice: string | null;
+            readonly is_paused: boolean;
         };
         TokenRefresh: {
             readonly access: string;
@@ -3135,8 +7601,11 @@ export interface components {
         };
         User: {
             readonly id: number;
-            /** Format: email */
-            email: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            email?: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -3151,16 +7620,30 @@ export interface components {
              * Active
              * @description Designates whether this user should be treated as active. Unselect this instead of deleting accounts.
              */
-            is_active?: boolean;
+            readonly is_active: boolean;
             is_frozen?: boolean;
             /** Format: date-time */
             readonly date_joined: string;
+            /** Format: date-time */
+            readonly last_login: string | null;
+            /** @description True only once the user proved control of this address by entering a mailed code. Never backfilled: signup provenance is not recorded, so for existing rows there is no way to tell whether the address was ever real. */
+            readonly email_verified: boolean;
+            /** Format: date-time */
+            readonly email_verified_at: string | null;
+            /** Format: date-time */
+            readonly email_released_at: string | null;
+            /** Format: email */
+            readonly previous_email: string | null;
+            readonly attempt_count: number;
             password?: string;
         };
         UserMe: {
             readonly id: number;
-            /** Format: email */
-            email?: string;
+            /**
+             * Format: email
+             * @description NULL means the user has not supplied an address yet (a Telegram signup) or lost it to someone who proved control of it. Those accounts sign in with their username, which is why releasing one is refused when it has none.
+             */
+            readonly email: string | null;
             username?: string | null;
             first_name?: string;
             last_name?: string;
@@ -3183,9 +7666,15 @@ export interface components {
              * @description Target total SAT score (400–1600)
              */
             target_score?: number | null;
-            /** @description Target English/Reading-Writing score (200–800) */
+            /**
+             * Format: int64
+             * @description Target English/Reading-Writing score (200–800)
+             */
             target_english?: number | null;
-            /** @description Target Math score (200–800) */
+            /**
+             * Format: int64
+             * @description Target Math score (200–800)
+             */
             target_math?: number | null;
             readonly last_mock_result: components["schemas"]["UserMeLastMockResult"] | null;
             clear_profile_image?: boolean;
@@ -3205,6 +7694,14 @@ export interface components {
             readonly last_password_change: string | null;
             readonly security_step_up_active: boolean;
             readonly has_recent_security_alerts: boolean;
+            /** @description True only once the user proved control of this address by entering a mailed code. Never backfilled: signup provenance is not recorded, so for existing rows there is no way to tell whether the address was ever real. */
+            readonly email_verified: boolean;
+            /** Format: date-time */
+            readonly email_verified_at: string | null;
+            /** Format: date-time */
+            readonly email_released_at: string | null;
+            readonly profile_complete: boolean;
+            readonly missing_fields: string[];
         };
         /** @description Shape of ``UserMeSerializer.get_last_mock_result`` (latest completed practice/mock attempt). */
         UserMeLastMockResult: {
@@ -3213,6 +7710,14 @@ export interface components {
             practice_test_subject?: string | null;
             completed_at?: string | null;
         };
+        /**
+         * @description * `VALID` - Valid
+         *     * `WARNING` - Warning
+         *     * `ERROR` - Error
+         *     * `DUPLICATE` - Duplicate
+         * @enum {string}
+         */
+        ValidationStatusEnum: "VALID" | "WARNING" | "ERROR" | "DUPLICATE";
     };
     responses: never;
     parameters: never;
@@ -3223,6 +7728,181 @@ export interface components {
 export type $defs = Record<string, never>;
 export interface operations {
     access_grant_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    access_grants_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedResourceAccessGrantList"];
+                };
+            };
+        };
+    };
+    access_grants_events_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessGrantEvent"][];
+                };
+            };
+        };
+    };
+    access_grants_extend_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    access_grants_revoke_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    access_grants_classroom_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    access_grants_resource_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    access_grants_subject_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    access_resource_types_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    access_resources_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -3300,6 +7980,27 @@ export interface operations {
             };
         };
     };
+    assessments_admin_attempts_failed_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     assessments_admin_builder_telemetry_create: {
         parameters: {
             query?: never;
@@ -3315,6 +8016,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    assessments_admin_governance_events_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
         };
     };
@@ -3355,6 +8077,42 @@ export interface operations {
         };
     };
     assessments_admin_homework_metrics_prometheus_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assessments_admin_question_bank_select_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assessments_admin_question_bank_taxonomy_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -3508,7 +8266,178 @@ export interface operations {
             };
         };
     };
+    assessments_admin_sets_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPublishResponse"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPublishResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
+    assessments_admin_sets_status_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentSetAdmin"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
+    assessments_admin_sets_validate_publish_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
+    assessments_admin_sets_versions_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentSetVersion"][];
+                };
+            };
+        };
+    };
     assessments_admin_sets_questions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assessments_admin_sets_questions_from_bank_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                set_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assessments_admin_sets_questions_reorder_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -3546,6 +8475,102 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AssessmentAttemptBundleResponse"];
                 };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
+    assessments_attempts_feedback_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assessments_attempts_feedback_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assessments_attempts_feedback_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    assessments_attempts_review_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                attempt_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             403: {
                 headers: {
@@ -3640,6 +8665,60 @@ export interface operations {
             };
         };
     };
+    assessments_attempts_pause_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttempt"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
+    assessments_attempts_resume_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentAttempt"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
     assessments_attempts_start_create: {
         parameters: {
             query?: never;
@@ -3647,7 +8726,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["StartAttempt"];
                 "application/x-www-form-urlencoded": components["schemas"]["StartAttempt"];
@@ -3801,6 +8880,61 @@ export interface operations {
             };
         };
     };
+    assessments_homework_by_homework_my_result_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                homework_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssessmentMyResultResponse"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiAssessmentDetail"];
+                };
+            };
+        };
+    };
+    assessments_teacher_submission_queue_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     auth_client_telemetry_create: {
         parameters: {
             query?: never;
@@ -3820,6 +8954,42 @@ export interface operations {
         };
     };
     auth_csrf_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_email_confirm_code_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    auth_email_request_code_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -4005,6 +9175,107 @@ export interface operations {
             };
         };
     };
+    classes_analytics_class_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_analytics_me_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_analytics_students_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                student_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_assign_midterm_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_assign_teacher_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     classes_assignments_list: {
         parameters: {
             query?: never;
@@ -4152,6 +9423,34 @@ export interface operations {
             };
         };
     };
+    classes_assignments_archive_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Assignment"];
+                "application/x-www-form-urlencoded": components["schemas"]["Assignment"];
+                "application/json": components["schemas"]["Assignment"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Assignment"];
+                };
+            };
+        };
+    };
     classes_assignments_my_submission_retrieve: {
         parameters: {
             query?: never;
@@ -4163,6 +9462,34 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Assignment"];
+                };
+            };
+        };
+    };
+    classes_assignments_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Assignment"];
+                "application/x-www-form-urlencoded": components["schemas"]["Assignment"];
+                "application/json": components["schemas"]["Assignment"];
+            };
+        };
         responses: {
             200: {
                 headers: {
@@ -4224,6 +9551,219 @@ export interface operations {
             };
         };
     };
+    classes_assignments_unarchive_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Assignment"];
+                "application/x-www-form-urlencoded": components["schemas"]["Assignment"];
+                "application/json": components["schemas"]["Assignment"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Assignment"];
+                };
+            };
+        };
+    };
+    classes_attendance_me_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_sessions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_sessions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_sessions_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_sessions_finalize_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_sessions_mark_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_sessions_mark_all_present_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_students_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                student_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_attendance_summary_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     classes_comments_retrieve: {
         parameters: {
             query?: never;
@@ -4250,6 +9790,565 @@ export interface operations {
             header?: never;
             path: {
                 classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_governance_delete_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_gradebook_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_gradebook_assignments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assignment_id: number;
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_lessons_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_lessons_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                lesson_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_lessons_grant_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                lesson_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_lessons_grants_revoke_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                grant_id: number;
+                lesson_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_lessons_release_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                lesson_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_lessons_reschedule_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_materials_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_materials_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_materials_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                material_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_members_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                user_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterm_results_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_certificates_download_all_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                midterm_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_certificates_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                midterm_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_panel_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                midterm_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_panel_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                midterm_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_start_code_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                midterm_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_versions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                midterm_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_versions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                midterm_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_v2_assign_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_certificates_download_all_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                mock_exam_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_certificates_issue_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                mock_exam_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_panel_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                mock_exam_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_midterms_panel_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                mock_exam_id: number;
             };
             cookie?: never;
         };
@@ -4380,6 +10479,128 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ClassPost"];
                 };
+            };
+        };
+    };
+    classes_rankings_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_rankings_history_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_rankings_config_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_rankings_recompute_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_results_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_transfer_ownership_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                classroom_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -4526,6 +10747,28 @@ export interface operations {
             };
         };
     };
+    classes_interventions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this classroom. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Classroom"];
+                };
+            };
+        };
+    };
     classes_leaderboard_retrieve: {
         parameters: {
             query?: never;
@@ -4642,6 +10885,46 @@ export interface operations {
             };
         };
     };
+    classes_certificates_midterm_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_certificates_midterm_download_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     classes_directory_retrieve: {
         parameters: {
             query?: never;
@@ -4662,6 +10945,98 @@ export interface operations {
         };
     };
     classes_join_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_my_assignments_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Classroom"];
+                };
+            };
+        };
+    };
+    classes_my_midterms_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_my_schedule_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Classroom"];
+                };
+            };
+        };
+    };
+    classes_ops_attention_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    classes_ops_stats_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -4995,6 +11370,34 @@ export interface operations {
             };
         };
     };
+    exams_admin_mock_exams_add_midterm_version_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock exam. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMockExam"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMockExam"];
+                "multipart/form-data": components["schemas"]["AdminMockExam"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMockExam"];
+                };
+            };
+        };
+    };
     exams_admin_mock_exams_add_test_create: {
         parameters: {
             query?: never;
@@ -5079,6 +11482,27 @@ export interface operations {
             };
         };
     };
+    exams_admin_mock_exams_remove_midterm_version_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock exam. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     exams_admin_mock_exams_remove_test_destroy: {
         parameters: {
             query?: never;
@@ -5097,6 +11521,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    exams_admin_mock_exams_results_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock exam. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMockExam"];
+                };
             };
         };
     };
@@ -5128,7 +11574,7 @@ export interface operations {
             };
         };
     };
-    exams_admin_pastpaper_packs_list: {
+    exams_admin_practice_test_packs_list: {
         parameters: {
             query?: never;
             header?: never;
@@ -5142,12 +11588,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPastpaperPack"][];
+                    "application/json": components["schemas"]["AdminPracticeTestPack"][];
                 };
             };
         };
     };
-    exams_admin_pastpaper_packs_create: {
+    exams_admin_practice_test_packs_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -5156,9 +11602,9 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["AdminPastpaperPack"];
-                "application/x-www-form-urlencoded": components["schemas"]["AdminPastpaperPack"];
-                "multipart/form-data": components["schemas"]["AdminPastpaperPack"];
+                "application/json": components["schemas"]["AdminPracticeTestPack"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPracticeTestPack"];
+                "multipart/form-data": components["schemas"]["AdminPracticeTestPack"];
             };
         };
         responses: {
@@ -5167,17 +11613,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPastpaperPack"];
+                    "application/json": components["schemas"]["AdminPracticeTestPack"];
                 };
             };
         };
     };
-    exams_admin_pastpaper_packs_retrieve: {
+    exams_admin_practice_test_packs_retrieve: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this pastpaper pack. */
+                /** @description A unique integer value identifying this practice test pack. */
                 id: number;
             };
             cookie?: never;
@@ -5189,26 +11635,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPastpaperPack"];
+                    "application/json": components["schemas"]["AdminPracticeTestPack"];
                 };
             };
         };
     };
-    exams_admin_pastpaper_packs_update: {
+    exams_admin_practice_test_packs_update: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this pastpaper pack. */
+                /** @description A unique integer value identifying this practice test pack. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["AdminPastpaperPack"];
-                "application/x-www-form-urlencoded": components["schemas"]["AdminPastpaperPack"];
-                "multipart/form-data": components["schemas"]["AdminPastpaperPack"];
+                "application/json": components["schemas"]["AdminPracticeTestPack"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPracticeTestPack"];
+                "multipart/form-data": components["schemas"]["AdminPracticeTestPack"];
             };
         };
         responses: {
@@ -5217,17 +11663,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPastpaperPack"];
+                    "application/json": components["schemas"]["AdminPracticeTestPack"];
                 };
             };
         };
     };
-    exams_admin_pastpaper_packs_destroy: {
+    exams_admin_practice_test_packs_destroy: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this pastpaper pack. */
+                /** @description A unique integer value identifying this practice test pack. */
                 id: number;
             };
             cookie?: never;
@@ -5243,21 +11689,21 @@ export interface operations {
             };
         };
     };
-    exams_admin_pastpaper_packs_partial_update: {
+    exams_admin_practice_test_packs_partial_update: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this pastpaper pack. */
+                /** @description A unique integer value identifying this practice test pack. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["PatchedAdminPastpaperPack"];
-                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminPastpaperPack"];
-                "multipart/form-data": components["schemas"]["PatchedAdminPastpaperPack"];
+                "application/json": components["schemas"]["PatchedAdminPracticeTestPack"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminPracticeTestPack"];
+                "multipart/form-data": components["schemas"]["PatchedAdminPracticeTestPack"];
             };
         };
         responses: {
@@ -5266,26 +11712,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPastpaperPack"];
+                    "application/json": components["schemas"]["AdminPracticeTestPack"];
                 };
             };
         };
     };
-    exams_admin_pastpaper_packs_add_section_create: {
+    exams_admin_practice_test_packs_add_section_create: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description A unique integer value identifying this pastpaper pack. */
+                /** @description A unique integer value identifying this practice test pack. */
                 id: number;
             };
             cookie?: never;
         };
         requestBody?: {
             content: {
-                "application/json": components["schemas"]["AdminPastpaperPack"];
-                "application/x-www-form-urlencoded": components["schemas"]["AdminPastpaperPack"];
-                "multipart/form-data": components["schemas"]["AdminPastpaperPack"];
+                "application/json": components["schemas"]["AdminPracticeTestPack"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPracticeTestPack"];
+                "multipart/form-data": components["schemas"]["AdminPracticeTestPack"];
             };
         };
         responses: {
@@ -5294,7 +11740,63 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminPastpaperPack"];
+                    "application/json": components["schemas"]["AdminPracticeTestPack"];
+                };
+            };
+        };
+    };
+    exams_admin_practice_test_packs_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this practice test pack. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminPracticeTestPack"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPracticeTestPack"];
+                "multipart/form-data": components["schemas"]["AdminPracticeTestPack"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPracticeTestPack"];
+                };
+            };
+        };
+    };
+    exams_admin_practice_test_packs_unpublish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this practice test pack. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminPracticeTestPack"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPracticeTestPack"];
+                "multipart/form-data": components["schemas"]["AdminPracticeTestPack"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPracticeTestPack"];
                 };
             };
         };
@@ -5429,6 +11931,62 @@ export interface operations {
                 "application/json": components["schemas"]["PatchedAdminPracticeTest"];
                 "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminPracticeTest"];
                 "multipart/form-data": components["schemas"]["PatchedAdminPracticeTest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPracticeTest"];
+                };
+            };
+        };
+    };
+    exams_admin_tests_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this practice test. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPracticeTest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPracticeTest"];
+                "multipart/form-data": components["schemas"]["AdminPracticeTest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPracticeTest"];
+                };
+            };
+        };
+    };
+    exams_admin_tests_unpublish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this practice test. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPracticeTest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminPracticeTest"];
+                "multipart/form-data": components["schemas"]["AdminPracticeTest"];
             };
         };
         responses: {
@@ -5649,6 +12207,34 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+                module_pk: number;
+                test_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminQuestion"];
+                "application/json": components["schemas"]["AdminQuestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    exams_admin_tests_modules_questions_bulk_reorder_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
                 module_pk: number;
                 test_pk: number;
             };
@@ -5896,6 +12482,33 @@ export interface operations {
             };
         };
     };
+    exams_attempts_pause_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestAttempt"];
+                "application/x-www-form-urlencoded": components["schemas"]["TestAttempt"];
+                "multipart/form-data": components["schemas"]["TestAttempt"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAttempt"];
+                };
+            };
+        };
+    };
     exams_attempts_results_retrieve: {
         parameters: {
             query?: never;
@@ -5918,6 +12531,33 @@ export interface operations {
         };
     };
     exams_attempts_resume_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestAttempt"];
+                "application/x-www-form-urlencoded": components["schemas"]["TestAttempt"];
+                "multipart/form-data": components["schemas"]["TestAttempt"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAttempt"];
+                };
+            };
+        };
+    };
+    exams_attempts_resume_pause_create: {
         parameters: {
             query?: never;
             header?: never;
@@ -6094,6 +12734,31 @@ export interface operations {
             };
         };
     };
+    exams_bulk_assign_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PracticeTest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PracticeTest"];
+                "multipart/form-data": components["schemas"]["PracticeTest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeTest"];
+                };
+            };
+        };
+    };
     exams_metrics_retrieve: {
         parameters: {
             query?: never;
@@ -6170,6 +12835,1712 @@ export interface operations {
             };
         };
     };
+    exams_practice_test_packs_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeTestPackStudent"][];
+                };
+            };
+        };
+    };
+    exams_practice_test_packs_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeTestPackStudent"];
+                };
+            };
+        };
+    };
+    journals_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_classwork_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_classwork_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_reset_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_lessons_bulk_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                journal_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_archive_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_duplicate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_sessions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_unarchive_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_content_options_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_import_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    journals_midterm_options_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_admin_midterms_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMidterm"][];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMidterm"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMidterm"];
+                "multipart/form-data": components["schemas"]["AdminMidterm"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMidterm"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_questions_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                midterm_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"][];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_questions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                midterm_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminQuestion"];
+                "application/json": components["schemas"]["AdminQuestion"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_questions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                midterm_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_questions_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                midterm_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminQuestion"];
+                "application/json": components["schemas"]["AdminQuestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_questions_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                midterm_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_admin_midterms_questions_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                midterm_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["PatchedAdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminQuestion"];
+                "application/json": components["schemas"]["PatchedAdminQuestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_questions_bulk_reorder_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                midterm_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminQuestion"];
+                "application/json": components["schemas"]["AdminQuestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this midterm. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMidterm"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this midterm. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMidterm"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMidterm"];
+                "multipart/form-data": components["schemas"]["AdminMidterm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMidterm"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this midterm. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_admin_midterms_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this midterm. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAdminMidterm"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminMidterm"];
+                "multipart/form-data": components["schemas"]["PatchedAdminMidterm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMidterm"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this midterm. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMidterm"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMidterm"];
+                "multipart/form-data": components["schemas"]["AdminMidterm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMidterm"];
+                };
+            };
+        };
+    };
+    midterms_admin_midterms_unpublish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this midterm. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMidterm"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMidterm"];
+                "multipart/form-data": components["schemas"]["AdminMidterm"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMidterm"];
+                };
+            };
+        };
+    };
+    midterms_attempts_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_results_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_review_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_save_attempt_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_start_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_status_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_submit_module_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_attempts_verify_code_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_mine_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_teacher_midterms_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_teacher_midterms_grant_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_teacher_midterms_results_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_teacher_midterms_revoke_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    midterms_teacher_students_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_admin_mocks_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMock"][];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMock"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMock"];
+                "multipart/form-data": components["schemas"]["AdminMock"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMock"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_modules_questions_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mock_pk: number;
+                module_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"][];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_modules_questions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mock_pk: number;
+                module_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminQuestion"];
+                "application/json": components["schemas"]["AdminQuestion"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_modules_questions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                mock_pk: number;
+                module_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_modules_questions_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                mock_pk: number;
+                module_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminQuestion"];
+                "application/json": components["schemas"]["AdminQuestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_modules_questions_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                mock_pk: number;
+                module_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_admin_mocks_modules_questions_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this question. */
+                id: number;
+                mock_pk: number;
+                module_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["PatchedAdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminQuestion"];
+                "application/json": components["schemas"]["PatchedAdminQuestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_modules_questions_bulk_reorder_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                mock_pk: number;
+                module_pk: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AdminQuestion"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminQuestion"];
+                "application/json": components["schemas"]["AdminQuestion"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminQuestion"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMock"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMock"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMock"];
+                "multipart/form-data": components["schemas"]["AdminMock"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMock"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_admin_mocks_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedAdminMock"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedAdminMock"];
+                "multipart/form-data": components["schemas"]["PatchedAdminMock"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMock"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_publish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMock"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMock"];
+                "multipart/form-data": components["schemas"]["AdminMock"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMock"];
+                };
+            };
+        };
+    };
+    mocks_admin_mocks_unpublish_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A unique integer value identifying this mock. */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminMock"];
+                "application/x-www-form-urlencoded": components["schemas"]["AdminMock"];
+                "multipart/form-data": components["schemas"]["AdminMock"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminMock"];
+                };
+            };
+        };
+    };
+    mocks_attempts_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_attempts_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_attempts_end_break_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_attempts_results_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_attempts_save_attempt_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_attempts_start_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_attempts_status_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_attempts_submit_module_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mocks_mine_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ops_alertmanager_webhook_create: {
         parameters: {
             query?: never;
@@ -6188,9 +14559,642 @@ export interface operations {
             };
         };
     };
-    realtime_events_retrieve: {
+    question_reports_reports_create: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    question_reports_telegram_webhook_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_domains_list: {
+        parameters: {
+            query?: {
+                subject?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankDomain"][];
+                };
+            };
+        };
+    };
+    questionbank_import_batches_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedImportBatchList"];
+                };
+            };
+        };
+    };
+    questionbank_import_batches_candidates_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+                /** @description VALID|WARNING|ERROR|DUPLICATE */
+                validation_status?: string;
+            };
+            header?: never;
+            path: {
+                batch_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedImportCandidateList"];
+                };
+            };
+        };
+    };
+    questionbank_import_batches_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportBatch"];
+                };
+            };
+        };
+    };
+    questionbank_import_batches_promote_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_import_batches_upload_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_import_candidates_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportCandidate"];
+                };
+            };
+        };
+    };
+    questionbank_passages_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBankPassageList"];
+                };
+            };
+        };
+    };
+    questionbank_passages_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankPassage"];
+                };
+            };
+        };
+    };
+    questionbank_practice_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedPracticeQuestionListList"];
+                };
+            };
+        };
+    };
+    questionbank_practice_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeQuestionDetail"];
+                };
+            };
+        };
+    };
+    questionbank_practice_answer_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_practice_taxonomy_retrieve: {
+        parameters: {
+            query?: {
+                subject?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_questions_list: {
+        parameters: {
+            query?: {
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBankQuestionListList"];
+                };
+            };
+        };
+    };
+    questionbank_questions_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["BankQuestionWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["BankQuestionWrite"];
+                "application/json": components["schemas"]["BankQuestionWrite"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankQuestionWrite"];
+                };
+            };
+        };
+    };
+    questionbank_questions_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankQuestionDetail"];
+                };
+            };
+        };
+    };
+    questionbank_questions_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["BankQuestionWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["BankQuestionWrite"];
+                "application/json": components["schemas"]["BankQuestionWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankQuestionWrite"];
+                };
+            };
+        };
+    };
+    questionbank_questions_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["PatchedBankQuestionWrite"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedBankQuestionWrite"];
+                "application/json": components["schemas"]["PatchedBankQuestionWrite"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankQuestionWrite"];
+                };
+            };
+        };
+    };
+    questionbank_questions_accept_suggestion_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_questions_approve_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_questions_archive_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_questions_classify_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_questions_reject_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_questions_restore_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_questions_bulk_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    questionbank_skills_list: {
+        parameters: {
+            query?: {
+                domain?: number;
+                subject?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankSkill"][];
+                };
+            };
+        };
+    };
+    questionbank_versions_list: {
+        parameters: {
+            query?: {
+                /** @description Filter to one question's lineage. */
+                bank_question?: number;
+                /** @description Include immutable snapshot_json. */
+                include_snapshot?: boolean;
+                /** @description Number of results to return per page. */
+                limit?: number;
+                /** @description The initial index from which to return the results. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBankQuestionVersionList"];
+                };
+            };
+        };
+    };
+    realtime_events_retrieve: {
+        parameters: {
+            query?: {
+                format?: "json" | "txt";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6379,7 +15383,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["User"];
                 "application/x-www-form-urlencoded": components["schemas"]["User"];
@@ -6421,6 +15425,24 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["User"];
                 };
+            };
+        };
+    };
+    users_admin_bulk_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6563,6 +15585,25 @@ export interface operations {
             };
         };
     };
+    users_admin_list_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"][];
+                };
+            };
+        };
+    };
     users_create_create: {
         parameters: {
             query?: never;
@@ -6570,7 +15611,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["User"];
                 "application/x-www-form-urlencoded": components["schemas"]["User"];
@@ -6694,24 +15735,6 @@ export interface operations {
             };
         };
     };
-    users_me_security_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     users_register_create: {
         parameters: {
             query?: never;
@@ -6719,7 +15742,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
+        requestBody?: {
             content: {
                 "application/json": components["schemas"]["User"];
                 "application/x-www-form-urlencoded": components["schemas"]["User"];
@@ -6738,6 +15761,24 @@ export interface operations {
         };
     };
     users_telegram_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    users_telegram_callback_retrieve: {
         parameters: {
             query?: never;
             header?: never;
@@ -6774,6 +15815,24 @@ export interface operations {
         };
     };
     users_telegram_link_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    users_telegram_start_retrieve: {
         parameters: {
             query?: never;
             header?: never;

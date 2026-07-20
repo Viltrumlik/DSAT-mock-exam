@@ -25,8 +25,12 @@ _VALID_KINDS = {RankingSnapshot.KIND_SAT, RankingSnapshot.KIND_ACADEMIC}
 
 
 def _display_name(user) -> str:
-    name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
-    return name or getattr(user, "username", None) or getattr(user, "email", "Student")
+    # Every link must end in a literal. ``getattr`` returns its default only when the
+    # attribute is absent, and both username and email are nullable — so this used to
+    # return None, which then failed the string tie-break in the ranking sort (two
+    # not-started students is the ordinary case, not an edge one).
+    name = f"{getattr(user, 'first_name', '') or ''} {getattr(user, 'last_name', '') or ''}".strip()
+    return name or getattr(user, "username", None) or getattr(user, "email", None) or "Student"
 
 
 def resolve_ranking_visibility(classroom, *, staff: bool) -> tuple[str, bool, bool, bool]:

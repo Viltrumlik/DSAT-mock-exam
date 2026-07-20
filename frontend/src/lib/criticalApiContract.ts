@@ -51,7 +51,11 @@ const userMeLastMockSchema = z.object({
 export const userMeResponseSchema = z
   .object({
     id: z.number(),
-    email: z.string().optional(),
+    // Nullable, not merely optional: an account that has not supplied an address, or
+    // whose address moved to someone who proved control of it, sends `null`. With
+    // `.optional()` alone that value fails validation and rejects the WHOLE /users/me
+    // response, taking the app shell down rather than blanking one field.
+    email: z.union([z.string(), z.null()]).optional(),
     username: z.union([z.string(), z.null()]).optional(),
     first_name: z.string().optional(),
     last_name: z.string().optional(),
@@ -71,6 +75,15 @@ export const userMeResponseSchema = z
     last_password_change: z.union([z.string(), z.null()]),
     security_step_up_active: z.boolean(),
     has_recent_security_alerts: z.boolean(),
+    // Optional so an older backend (or a deploy where the two halves are briefly out of
+    // step) does not fail contract parsing and take the whole shell down.
+    email_verified: z.boolean().optional(),
+    email_verified_at: z.union([z.string(), z.null()]).optional(),
+    email_released_at: z.union([z.string(), z.null()]).optional(),
+    // Computed server-side. The UI renders what these say and never recomputes the
+    // rule, so the two definitions cannot drift.
+    profile_complete: z.boolean().optional(),
+    missing_fields: z.array(z.string()).optional(),
   })
   .passthrough();
 

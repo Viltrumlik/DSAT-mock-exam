@@ -72,6 +72,48 @@ TELEGRAM_SYNTHETIC_EMAIL_DOMAIN = os.getenv(
     'telegram.mastersat.local',
 )
 
+# ─── Email (Mailgun SMTP) ─────────────────────────────────────────────────────
+# Verified from the production host: of the SMTP ports only 587 is reachable (25 and
+# 465 are blocked outbound), so submission + STARTTLS is the transport. api.mailgun.net
+# on 443 is also open, which is the fallback if 587 is ever closed.
+# EMAIL_TIMEOUT is not optional: delivery happens inside the request, and without it a
+# hung SMTP connection holds a worker until the OS gives up.
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.mailgun.org')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', default_when_unset=True)
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '10'))
+# From an address on the ROOT domain, not the mg. sending subdomain: DMARC alignment is
+# relaxed (root _dmarc has no adkim=s), and Mailgun's DKIM signature carries
+# d=mg.mastersat.uz, which shares the organizational domain — so this aligns and passes.
+# Nothing receives mail at this address: mastersat.uz has no working MX, and students
+# are not meant to reply. Every template says so explicitly.
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'MasterSAT <support@mastersat.uz>')
+
+# Absolute origin every link and image in an email is built against. A mail client has
+# no page origin to resolve "/static/..." against, so this cannot be left relative or
+# the logo breaks in every inbox. See core/mail.py.
+EMAIL_SITE_URL = os.getenv('EMAIL_SITE_URL', 'https://mastersat.uz')
+
+# Django ALWAYS supplies EMAIL_BACKEND (smtp), EMAIL_HOST ("localhost"), EMAIL_PORT (25)
+# and DEFAULT_FROM_EMAIL ("webmaster@localhost") defaults, so their presence proves
+# nothing about whether mail can actually be delivered — checking for them is how you
+# end up opening an SMTP connection to a host with no MTA on every request. Sending is
+# opt-in and stays off until the Mailgun domain is verified.
+EMAIL_SENDING_ENABLED = _env_bool('EMAIL_SENDING_ENABLED', default_when_unset=False)
+
+# Email address claim: when someone proves control of an address that another account
+# holds UNVERIFIED, the address moves to them and the other account is left with NULL.
+# An unverified address is an unproven claim, so it belongs to whoever can show they
+# read the mailbox. The losing account keeps every result and signs in with its username
+# instead, and is told so by mail at the address being taken.
+# users.email_verification still refuses the release for a VERIFIED address, for staff
+# accounts, and for an account with no username — that last one would otherwise be left
+# with no way in at all, since this codebase has no password-reset flow.
+EMAIL_TRANSFER_ENABLED = _env_bool('EMAIL_TRANSFER_ENABLED', default_when_unset=True)
+
 # Question error-report bot (separate, dedicated bot; NOT the login/OIDC bot).
 # Students report a bad question -> stored + pushed to this bot, which forwards to a
 # staff group and to everyone who pressed /start (see question_reports app).
@@ -445,6 +487,13 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+# backend/static/ was never on the finder path: with no STATICFILES_DIRS, staticfiles
+# only searches each installed app's own static/ dir, and no app has one. So the files
+# already sitting there (the certificate logos) were reachable by absolute filesystem
+# path — which is all Playwright needs — but 404ed over /static/. Email cannot work that
+# way: an inbox can only fetch the logo over HTTPS.
+STATICFILES_DIRS = [BASE_DIR / 'static']
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
@@ -579,6 +628,13 @@ REST_FRAMEWORK = {
         # Login brute-force / credential-stuffing guard (per-IP). Scope applied only
         # to the login endpoint via users.views.LoginRateThrottle, not globally.
         'login': os.getenv('LOGIN_THROTTLE', '10/min'),
+        # Public self-registration (per-IP). Applied via users.views.RegistrationRateThrottle.
+        'register': os.getenv('REGISTER_THROTTLE', '10/hour'),
+        # Email verification (see users.throttles). Keyed on the target mailbox, on the
+        # requesting account, and on confirm attempts respectively.
+        'email_verify_target': os.getenv('EMAIL_VERIFY_TARGET_THROTTLE', '5/hour'),
+        'email_verify_user': os.getenv('EMAIL_VERIFY_USER_THROTTLE', '10/hour'),
+        'email_verify_confirm': os.getenv('EMAIL_VERIFY_CONFIRM_THROTTLE', '20/hour'),
         'homework_submit': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_THROTTLE', '120/hour'),
         'homework_submit_global': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_GLOBAL_THROTTLE', '5000/hour'),
         'homework_submit_class': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_PER_CLASS_THROTTLE', '800/hour'),

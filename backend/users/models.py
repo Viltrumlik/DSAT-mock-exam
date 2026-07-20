@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
+from django.db.models.functions import Lower
 
 
 class ExamDateOption(models.Model):
@@ -22,9 +24,14 @@ class ExamDateOption(models.Model):
 
 class UserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
-        if not email:
-            raise ValueError("The Email field must be set")
-        email = self.normalize_email(email)
+        # ``None`` is allowed and means "has not supplied one yet" — a Telegram signup
+        # arrives without an address, and an account can lose its address to whoever
+        # proves control of it. ``""`` is NOT allowed: NULLs do not collide under
+        # ``UNIQUE(lower(email))`` but empty strings do, so the second blank row would
+        # fail the index. ``normalize_email`` maps None to "", so coerce it back.
+        if email is not None and not str(email).strip():
+            raise ValueError("The Email field must not be blank")
+        email = self.normalize_email(email) or None
         role = extra_fields.pop("role", None)
         scope = extra_fields.pop("scope", None)
         subject = extra_fields.pop("subject", None)
@@ -62,7 +69,17 @@ class UserManager(BaseUserManager):
 
 class User(AbstractUser):
     username = models.CharField(max_length=150, unique=True, null=True, blank=True, db_index=True)
-    email = models.EmailField(unique=True, db_index=True)
+    email = models.EmailField(
+        unique=True,
+        db_index=True,
+        null=True,
+        blank=True,
+        help_text=(
+            "NULL means the user has not supplied an address yet (a Telegram signup) or "
+            "lost it to someone who proved control of it. Those accounts sign in with "
+            "their username, which is why releasing one is refused when it has none."
+        ),
+    )
     system_role = models.ForeignKey(
         "access.Role",
         on_delete=models.PROTECT,
@@ -118,20 +135,72 @@ class User(AbstractUser):
         blank=True,
         db_index=True,
     )
+    email_verified = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text=(
+            "True only once the user proved control of this address by entering a mailed "
+            "code. Never backfilled: signup provenance is not recorded, so for existing "
+            "rows there is no way to tell whether the address was ever real."
+        ),
+    )
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    # Set when an address is taken off this account (see users.email_utils). Keeps the
+    # old value searchable, because after a release the account's only remaining handle
+    # is a placeholder and staff would otherwise have no way to identify the row.
+    previous_email = models.EmailField(null=True, blank=True, db_index=True)
+    email_released_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = []
-    
+
     objects = UserManager()
-    
+
     class Meta:
         db_table = "users"
+        constraints = [
+            # ``username`` is declared unique, but Postgres indexes it case-sensitively
+            # while every lookup in the codebase uses ``__iexact`` — so "Asilbek" and
+            # "asilbek" could both exist and then match the same query. Enforce the
+            # rule the code actually assumes. NULL/blank usernames are exempt so the
+            # rows that have none stay valid.
+            models.UniqueConstraint(
+                Lower("username"),
+                condition=~Q(username=None) & ~Q(username=""),
+                name="users_username_ci_unique",
+            ),
+            # Same reasoning for ``email``: it is the USERNAME_FIELD and every lookup
+            # uses ``__iexact`` (login, Telegram/Google resolution, the uniqueness
+            # probes in the serializers), but the unique index is case-sensitive. Without
+            # this, "Foo@x.com" and "foo@x.com" coexist and an __iexact lookup that is
+            # expected to identify one account can match two. Verified against prod
+            # before adding: 0 case-colliding groups, so this applies cleanly.
+            models.UniqueConstraint(
+                Lower("email"),
+                name="users_email_ci_unique",
+            ),
+            # "" is the dangerous value, not NULL: Postgres treats NULLs as distinct
+            # under a unique index but "" as an ordinary value, so two blank-string rows
+            # collide. Reject it at the database so no code path can reintroduce one.
+            models.CheckConstraint(
+                condition=~Q(email=""),
+                name="users_email_not_blank",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.email} ({self.role})"
 
     def clean(self):
         super().clean()
+        # ``AbstractBaseUser.clean`` runs ``normalize_email``, which is ``email or ""``
+        # — so every full_clean(), and therefore every Django admin save, silently
+        # rewrites a NULL address to "". That matters because "" is a real value under
+        # ``UNIQUE(lower(email))`` while NULL is not: the first such save succeeds and
+        # the second raises IntegrityError. Put the NULL back.
+        if not self.email:
+            self.email = None
+
         from access import constants as auth_const
 
         role = str(getattr(self, "role", "") or "").strip().lower()
@@ -216,3 +285,70 @@ class SecurityAuditEvent(models.Model):
             models.Index(fields=["user", "-created_at"]),
         ]
 
+
+
+class EmailClaim(models.Model):
+    """A pending proof that someone controls an email address.
+
+    The code is mailed to ``target_email``; entering it correctly proves the requester
+    reads that mailbox. Deliberately a table rather than a cache entry: the attempt
+    counter must fail *closed*, and the cache is LocMemCache whenever ``REDIS_URL`` is
+    unset (per-process, so a code written by one worker is invisible to the next) while
+    ``users.security_metrics`` swallows cache errors and returns 0 — either would reset
+    the guess counter and hand an attacker unlimited tries at a 6-digit secret.
+    """
+
+    STATUS_PENDING = "pending"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_EXPIRED = "expired"
+    STATUS_BURNED = "burned"
+    STATUS_REFUSED = "refused"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_CONFIRMED, "Confirmed"),
+        (STATUS_EXPIRED, "Expired"),
+        (STATUS_BURNED, "Burned"),
+        (STATUS_REFUSED, "Refused"),
+    ]
+
+    #: How long a mailed code stays usable.
+    TTL_MINUTES = 15
+    #: Wrong guesses before the claim is burned and a new code must be requested.
+    MAX_ATTEMPTS = 5
+
+    user = models.ForeignKey(
+        "users.User", on_delete=models.CASCADE, related_name="email_claims", db_index=True
+    )
+    target_email = models.EmailField(db_index=True, help_text="Normalized (lowercased).")
+    # Hashed with the password hasher: a readable code in the DB would let anyone with
+    # query access complete someone else's claim. Compare with check_password.
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    expires_at = models.DateTimeField(db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True
+    )
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "users_email_claims"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["user", "status", "-created_at"]),
+            models.Index(fields=["target_email", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.target_email} ({self.status})"
+
+    @property
+    def is_open(self) -> bool:
+        """Still usable: pending, unexpired, and with guesses left."""
+        from django.utils import timezone
+
+        return (
+            self.status == self.STATUS_PENDING
+            and self.attempts < self.MAX_ATTEMPTS
+            and self.expires_at > timezone.now()
+        )

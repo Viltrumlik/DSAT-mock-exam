@@ -1,0 +1,128 @@
+{% comment %}
+Shell for every message the platform sends.
+
+Ported from the MasterSAT product design system (the Plus Jakarta Sans / #2a68c0
+mockups), with the compromises an inbox forces:
+
+* Every rule is INLINE. Gmail, Mail.ru and Yandex strip <style> blocks, so anything
+  that lives only in <head> must be decoration the message survives losing. The
+  <style> block below therefore carries just the webfont, the dark-mode overrides
+  and the narrow-screen tweaks — never layout the design depends on.
+* Width and centring are done with a fixed-width TABLE. Outlook renders through
+  Word, which ignores max-width on a <div>; without the table the message stretches
+  edge to edge on a desktop monitor.
+* border-radius is decoration. Outlook squares every corner off and that is fine.
+* Plus Jakarta Sans loads only in Apple Mail and iOS Mail. Everywhere else the
+  fallback stack does the work, which is why the stack is spelled out at every
+  level rather than inherited.
+{% endcomment %}<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {% comment %}
+      Stops iOS auto-linking the verification code as a phone number — six digits
+      is exactly the shape its detector looks for, and a tappable blue code that
+      dials nothing looks broken.
+    {% endcomment %}
+    <meta name="format-detection" content="telephone=no,date=no,address=no,email=no" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <title>{% block subject %}MasterSAT{% endblock %}</title>
+    <!--[if mso]>
+      <noscript><xml><o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings></xml></noscript>
+    <![endif]-->
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+
+      /* Clients that respect <style> get the real face; the rest keep the stack. */
+      body, table, td, div, p, a, span { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+
+      /* Apple's data detectors otherwise recolour dates and addresses mid-sentence. */
+      a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; font-size: inherit !important; font-weight: inherit !important; }
+
+      @media only screen and (max-width: 620px) {
+        .ms-wrap { width: 100% !important; }
+        .ms-pad { padding-left: 22px !important; padding-right: 22px !important; }
+        .ms-code { font-size: 32px !important; letter-spacing: 7px !important; text-indent: 7px !important; }
+        .ms-h1 { font-size: 21px !important; }
+      }
+
+      /* Gmail and Apple Mail invert light messages themselves and usually get it
+         wrong on tinted panels. Steering it explicitly keeps the brand blue blue. */
+      @media (prefers-color-scheme: dark) {
+        .ms-page { background: #0b1020 !important; }
+        .ms-card { background: #121831 !important; border-color: #232c49 !important; }
+        .ms-ink { color: #e8ecf6 !important; }
+        .ms-mute { color: #97a2bd !important; }
+        .ms-faint { color: #6b7693 !important; }
+        .ms-inset { background: #161d38 !important; border-color: #232c49 !important; }
+        .ms-codeink { color: #5f9aef !important; }
+      }
+    </style>
+  </head>
+
+  <body class="ms-page" style="margin:0;padding:0;width:100%;background:#f4f7fc;-webkit-font-smoothing:antialiased;font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+
+    {% comment %}
+      The inbox list preview. Without it the client scrapes the first words of the
+      body — which is the logo alt text — and every message previews as "MasterSAT
+      MasterSAT". The trailing entities pad the snippet so the raw HTML that follows
+      cannot leak into it.
+    {% endcomment %}
+    <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">
+      {% block preheader %}{% endblock %}
+      &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847; &#8199;&#65279;&#847;
+    </div>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="ms-page" style="background:#f4f7fc;">
+      <tr>
+        <td align="center" style="padding:32px 12px 40px;">
+
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" class="ms-wrap" style="width:600px;max-width:600px;">
+
+            {% comment %} Brand band. Gradient for clients that do them, flat #2a68c0 for Outlook. {% endcomment %}
+            <tr>
+              <td class="ms-pad" style="background:#2a68c0;background-image:linear-gradient(160deg,#2a68c0,#1f4d9a);border-radius:24px 24px 0 0;padding:26px 32px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr>
+                    <td style="padding-right:13px;vertical-align:middle;">
+                      <img src="{{ logo_url }}" width="40" height="44" alt="MasterSAT"
+                           style="display:block;width:40px;height:44px;border:0;outline:none;text-decoration:none;" />
+                    </td>
+                    <td style="vertical-align:middle;">
+                      <span style="font-size:21px;font-weight:800;letter-spacing:-0.02em;color:#ffffff;">MasterSAT</span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td class="ms-card ms-pad" style="background:#ffffff;border:1px solid #e7ebf3;border-top:0;border-radius:0 0 24px 24px;padding:32px;">
+                {% block content %}{% endblock %}
+              </td>
+            </tr>
+
+            <tr>
+              <td class="ms-pad" style="padding:22px 32px 0;">
+                <p class="ms-faint" style="margin:0 0 6px;font-size:12px;line-height:1.6;font-weight:600;color:#94a3b8;">
+                  {% block footer %}This message was sent automatically — please do not reply to it.{% endblock %}
+                </p>
+                <p class="ms-faint" style="margin:0;font-size:12px;line-height:1.6;color:#94a3b8;">
+                  &copy; MasterSAT &middot;
+                  <a href="{{ site_url }}" style="color:#94a3b8;text-decoration:underline;">mastersat.uz</a>
+                </p>
+              </td>
+            </tr>
+
+          </table>
+
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

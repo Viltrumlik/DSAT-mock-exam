@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM
+from users.email_utils import display_email
 
 from .models import ClassroomMembership
 from .models_certificates import MidtermCertificate
@@ -33,7 +34,14 @@ User = get_user_model()
 
 def _display_name(user) -> str:
     name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
-    return name or getattr(user, "username", None) or getattr(user, "email", None) or "Student"
+    # Never fall through to a synthetic address: Telegram signups carry
+    # tg12345@telegram.mastersat.local and it would be printed on the certificate.
+    return (
+        name
+        or getattr(user, "username", None)
+        or display_email(getattr(user, "email", None))
+        or "Student"
+    )
 
 
 def _active_student_ids(classroom) -> set[int]:

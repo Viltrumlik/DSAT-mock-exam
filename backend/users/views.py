@@ -1,4 +1,6 @@
 import logging
+import secrets
+from urllib.parse import urlencode
 
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -12,7 +14,8 @@ from rest_framework.throttling import AnonRateThrottle, ScopedRateThrottle
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 from django.db.models import Prefetch, Q
 from .models import ExamDateOption, User
 from classes.models import Classroom, ClassroomMembership
@@ -27,6 +30,27 @@ from access.services import (
     user_domain_subject,
 )
 
+from .activity import blocking_protected_relations, with_activity_counts
+from .email_utils import normalize_email
+from .profile_completeness import missing_profile_fields
+from .email_verification import (
+    ERR_NOT_DELIVERABLE,
+    ERR_BAD_CODE,
+    ERR_EXPIRED,
+    ERR_NO_CLAIM,
+    ERR_TAKEN_UNVERIFIED,
+    ERR_TAKEN_VERIFIED,
+    OK,
+    confirm_code,
+    deliver_code,
+    issue_code,
+)
+from .models import EmailClaim
+from .throttles import (
+    EmailConfirmThrottle,
+    EmailVerifyPerTargetThrottle,
+    EmailVerifyPerUserThrottle,
+)
 from .serializers import (
     ExamDateOptionPublicSerializer,
     ExamDateOptionSerializer,
@@ -239,6 +263,17 @@ class LoginRateThrottle(AnonRateThrottle):
     """
 
     scope = "login"
+
+
+class RegistrationRateThrottle(AnonRateThrottle):
+    """Per-IP cap on public self-registration.
+
+    ``UserRegistrationView`` is deliberately unauthenticated, which also makes it an
+    unmetered account-creation endpoint. Keyed by client IP like ``LoginRateThrottle``;
+    the rate comes from the ``register`` scope (env-tunable, ``None`` disables it).
+    """
+
+    scope = "register"
 
 
 class ThrottledTokenObtainPairView(TokenObtainPairView):
@@ -731,7 +766,10 @@ class UserListView(generics.ListAPIView):
             return Response(body, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def get_queryset(self):
-        return manageable_users_queryset(self.request.user)
+        # Annotated so the ops console can show how much work each account holds without
+        # five queries per row — it is the only signal that separates two same-name rows
+        # before verifications accumulate, and it is the delete blast radius.
+        return with_activity_counts(manageable_users_queryset(self.request.user))
 
 class UserCreateView(generics.CreateAPIView):
     serializer_class = UserSerializer
@@ -859,6 +897,25 @@ class UserBulkActionView(APIView):
                         )
                         results.append({"id": uid, "ok": True, "deleted": True})
                 affected += 1
+            except ProtectedError:
+                # A user who authored a classroom, assignment, journal or question bank
+                # entry cannot be hard-deleted. Reporting the generic message below sent
+                # staff hunting with no idea what was holding the row.
+                blocking = blocking_protected_relations(target)
+                logger.info(
+                    "user_bulk_action delete blocked uid=%s actor_id=%s blocking=%s",
+                    uid, actor_id, blocking,
+                )
+                results.append({
+                    "id": uid,
+                    "ok": False,
+                    "error": (
+                        "cannot delete: this account owns "
+                        + (", ".join(blocking) if blocking else "protected records")
+                        + ". Freeze it instead."
+                    ),
+                })
+                skipped += 1
             except Exception:  # defensive: one bad row must not fail the batch
                 logger.exception("user_bulk_action item failed uid=%s action=%s", uid, action)
                 results.append({"id": uid, "ok": False, "error": "operation failed"})
@@ -881,6 +938,7 @@ class UserRegistrationView(generics.CreateAPIView):
     # Truly public: stale/invalid JWT cookies must not 401 this — the /register page polls it.
     authentication_classes = []
     permission_classes = []
+    throttle_classes = [RegistrationRateThrottle]
 
 
 class UserMeView(generics.RetrieveUpdateAPIView):
@@ -1091,9 +1149,7 @@ class TelegramLinkView(APIView):
         except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-        domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
-        synthetic = f"tg{tg_id}@{domain}".lower()
-        if User.objects.filter(Q(telegram_id=tg_id) | Q(email__iexact=synthetic)).exclude(pk=request.user.pk).exists():
+        if User.objects.filter(telegram_id=tg_id).exclude(pk=request.user.pk).exists():
             return Response(
                 {"detail": "This Telegram account is already linked to another user."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1130,61 +1186,34 @@ class TelegramAuthView(APIView):
         except TelegramOIDCError:
             return Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-        domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
-        email = f"tg{tg_id}@{domain}".lower()
-
         # OIDC claims: "name" is the display name, "preferred_username" is the @handle.
-        raw_name = (str(claims.get("name") or "")).strip()
-        if " " in raw_name:
-            raw_fn, raw_ln = raw_name.split(" ", 1)
-            raw_fn, raw_ln = raw_fn.strip(), raw_ln.strip()
-        else:
-            raw_fn, raw_ln = raw_name, ""
-        first_name = raw_fn if len(raw_fn) >= 3 else "Telegram"
-        last_name = raw_ln if len(raw_ln) >= 3 else (first_name if len(first_name) >= 3 else "User")
-        if len(last_name) < 3:
-            last_name = "User"
-
+        raw_fn, raw_ln = _telegram_names_from_claims(claims)
         tg_username = (str(claims.get("preferred_username") or "")).strip()
         username = (request.data.get("username") or "").strip()
         if username and len(username) < 3:
             return Response({"detail": "Username must be at least 3 characters."}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User.objects.filter(email__iexact=email).first()
+        # telegram_id is the only identity Telegram gives us — it supplies no address, so
+        # a new account starts with email=None and is asked for one by the completion
+        # form. Mirrors _upsert_user_from_telegram_claims.
+        user = User.objects.filter(telegram_id=tg_id).first()
         if not user:
-            if not username:
-                if tg_username and len(tg_username) >= 3:
-                    candidate = tg_username[:30]
-                else:
-                    base = f"tg{tg_id}"[:25]
-                    candidate = base
-                    i = 1
-                    while User.objects.filter(username__iexact=candidate).exists():
-                        suffix = str(i)
-                        candidate = (base[: max(1, 30 - len(suffix))] + suffix)[:30]
-                        i += 1
-                username = candidate
-            elif User.objects.filter(username__iexact=username).exists():
+            if username and User.objects.filter(username__iexact=username).exists():
                 return Response({"detail": "Username already exists."}, status=status.HTTP_400_BAD_REQUEST)
-
-            user = User.objects.create_user(
-                email=email,
-                username=username,
-                first_name=first_name,
-                last_name=last_name,
-                role=acc_const.ROLE_STUDENT,
-                password=__import__("secrets").token_urlsafe(32),
-            )
+            try:
+                user = _create_telegram_user(
+                    email=None,
+                    base_username=username or tg_username or f"tg{tg_id}",
+                    first_name=raw_fn,
+                    last_name=raw_ln,
+                )
+            except IntegrityError:
+                return Response(
+                    {"detail": "Could not create the account. Please try again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
         else:
-            updated = False
-            if not user.first_name.strip() and raw_fn and len(raw_fn) >= 3:
-                user.first_name = raw_fn
-                updated = True
-            if not user.last_name.strip() and raw_ln and len(raw_ln) >= 3:
-                user.last_name = raw_ln
-                updated = True
-            if updated:
-                user.save(update_fields=["first_name", "last_name"])
+            _backfill_telegram_names(user, raw_fn, raw_ln)
 
         phone_err = _apply_telegram_phone_from_claims(user, claims)
         if phone_err is not None:
@@ -1228,6 +1257,72 @@ _TELEGRAM_OAUTH_STATE_COOKIE = "tg_oauth_state"
 _TELEGRAM_OAUTH_STATE_TTL_S = 300  # 5 minutes
 
 
+def _telegram_names_from_claims(claims) -> tuple[str, str]:
+    """Split the OIDC ``name`` display string into ``(first, last)``.
+
+    Returns ``""`` for anything Telegram did not give us. We deliberately do **not**
+    substitute placeholders here. The old code wrote a literal ``"Telegram"`` /
+    ``"User"`` (and copied ``first_name`` into ``last_name`` for one-word names), which
+    is indistinguishable from a real name to every downstream emptiness check — so the
+    row read as complete forever and the user was never asked to fix it. A blank field
+    is honest and prompts the completion flow.
+    """
+    raw_name = (str(claims.get("name") or "")).strip()
+    if " " in raw_name:
+        raw_fn, raw_ln = raw_name.split(" ", 1)
+        return raw_fn.strip(), raw_ln.strip()
+    return raw_name, ""
+
+
+def _unique_username(base: str, *, max_length: int = 30) -> str:
+    """A username derived from ``base`` that no row holds case-insensitively."""
+    base = (base or "").strip()[:max_length] or "user"
+    candidate = base
+    i = 1
+    while User.objects.filter(username__iexact=candidate).exists():
+        i += 1
+        suffix = str(i)
+        candidate = (base[: max(1, max_length - len(suffix))] + suffix)[:max_length]
+    return candidate
+
+
+def _create_telegram_user(*, email: str, base_username: str, first_name: str, last_name: str):
+    """Create a Telegram-origin account, retrying when the username is taken mid-flight.
+
+    ``_unique_username`` is check-then-insert, so two concurrent Telegram logins can
+    resolve to the same candidate and one of them loses on the unique index. Retrying
+    re-derives against the now-taken name instead of surfacing a 500.
+    """
+    last_error: IntegrityError | None = None
+    for _ in range(3):
+        try:
+            with transaction.atomic():
+                return User.objects.create_user(
+                    email=email,
+                    username=_unique_username(base_username),
+                    first_name=first_name,
+                    last_name=last_name,
+                    role=acc_const.ROLE_STUDENT,
+                    password=secrets.token_urlsafe(32),
+                )
+        except IntegrityError as exc:
+            last_error = exc
+    raise last_error
+
+
+def _backfill_telegram_names(user, raw_fn: str, raw_ln: str) -> None:
+    """Fill in names Telegram supplied, but only where ours are still blank."""
+    updated = []
+    if not (user.first_name or "").strip() and len(raw_fn) >= 3:
+        user.first_name = raw_fn
+        updated.append("first_name")
+    if not (user.last_name or "").strip() and len(raw_ln) >= 3:
+        user.last_name = raw_ln
+        updated.append("last_name")
+    if updated:
+        user.save(update_fields=updated)
+
+
 def _upsert_user_from_telegram_claims(claims, request):
     """Shared logic for TelegramAuthView.post and TelegramOAuthCallbackView.get.
 
@@ -1238,51 +1333,26 @@ def _upsert_user_from_telegram_claims(claims, request):
     except TelegramOIDCError:
         return None, Response({"detail": "Invalid Telegram user id."}, status=status.HTTP_400_BAD_REQUEST)
 
-    domain = getattr(settings, "TELEGRAM_SYNTHETIC_EMAIL_DOMAIN", "telegram.mastersat.local")
-    email = f"tg{tg_id}@{domain}".lower()
-
-    raw_name = (str(claims.get("name") or "")).strip()
-    if " " in raw_name:
-        raw_fn, raw_ln = raw_name.split(" ", 1)
-        raw_fn, raw_ln = raw_fn.strip(), raw_ln.strip()
-    else:
-        raw_fn, raw_ln = raw_name, ""
-    first_name = raw_fn if len(raw_fn) >= 3 else "Telegram"
-    last_name = raw_ln if len(raw_ln) >= 3 else (first_name if len(first_name) >= 3 else "User")
-    if len(last_name) < 3:
-        last_name = "User"
-
+    raw_fn, raw_ln = _telegram_names_from_claims(claims)
     tg_username = (str(claims.get("preferred_username") or "")).strip()
-    user = User.objects.filter(telegram_id=tg_id).first() or User.objects.filter(email__iexact=email).first()
+    # telegram_id is the only identity Telegram gives us; it supplies no address, so a
+    # new account starts with email=None and the completion form asks for one.
+    user = User.objects.filter(telegram_id=tg_id).first()
     if not user:
-        if tg_username and len(tg_username) >= 3:
-            base = tg_username[:30]
-        else:
-            base = f"tg{tg_id}"[:25]
-        candidate = base
-        i = 1
-        while User.objects.filter(username__iexact=candidate).exists():
-            suffix = str(i)
-            candidate = (base[: max(1, 30 - len(suffix))] + suffix)[:30]
-            i += 1
-        user = User.objects.create_user(
-            email=email,
-            username=candidate,
-            first_name=first_name,
-            last_name=last_name,
-            role=acc_const.ROLE_STUDENT,
-            password=__import__("secrets").token_urlsafe(32),
-        )
+        try:
+            user = _create_telegram_user(
+                email=None,
+                base_username=tg_username if len(tg_username) >= 3 else f"tg{tg_id}",
+                first_name=raw_fn,
+                last_name=raw_ln,
+            )
+        except IntegrityError:
+            return None, Response(
+                {"detail": "Could not create the account. Please try again."},
+                status=status.HTTP_409_CONFLICT,
+            )
     else:
-        updated = False
-        if not user.first_name.strip() and raw_fn and len(raw_fn) >= 3:
-            user.first_name = raw_fn
-            updated = True
-        if not user.last_name.strip() and raw_ln and len(raw_ln) >= 3:
-            user.last_name = raw_ln
-            updated = True
-        if updated:
-            user.save(update_fields=["first_name", "last_name"])
+        _backfill_telegram_names(user, raw_fn, raw_ln)
 
     phone_err = _apply_telegram_phone_from_claims(user, claims)
     if phone_err is not None:
@@ -1470,7 +1540,18 @@ class TelegramOAuthCallbackView(APIView):
         access = str(refresh.access_token)
         refresh_str = str(refresh)
 
-        resp = HttpResponseRedirect(next_path)
+        # A Telegram signup usually arrives with almost nothing: often no surname, some-
+        # times not even a first name, and never an email — Telegram does not supply one.
+        # Send those to the completion form instead of a dashboard, so the first thing a
+        # new user does is give us a way to reach them. The AuthGuard banner would catch
+        # them anyway; this just makes it the landing page rather than a strip on top of
+        # a screen they have never seen. ``next_path`` is already constrained to a
+        # site-relative path above, so round-tripping it here cannot open a redirect.
+        landing = next_path
+        if missing_profile_fields(user):
+            landing = f"/complete-profile?{urlencode({'next': next_path})}"
+
+        resp = HttpResponseRedirect(landing)
         try:
             set_auth_cookies(
                 response=resp,
@@ -1490,3 +1571,83 @@ class TelegramOAuthCallbackView(APIView):
             pass
         resp.delete_cookie(_TELEGRAM_OAUTH_STATE_COOKIE, path="/")
         return resp
+
+
+class RequestEmailCodeView(APIView):
+    """POST ``/api/auth/email/request-code/`` — mail a 6-digit code to an address.
+
+    Authenticated: you are claiming an address *for your own account*. Mounted under
+    ``/api/auth/`` because ``access.host_guard`` lets that prefix through on every
+    console unconditionally, while ``/api/users/`` is 403'd on the questions console
+    and all but ``/me/`` on the teacher one.
+    """
+
+    throttle_classes = [EmailVerifyPerTargetThrottle, EmailVerifyPerUserThrottle]
+
+    def post(self, request):
+        target = normalize_email((request.data or {}).get("email"))
+        if not target:
+            return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        outcome, code, claim = issue_code(request.user, target)
+        if outcome == ERR_NOT_DELIVERABLE:
+            return Response(
+                {"detail": "Enter a real email address.", "code": ERR_NOT_DELIVERABLE},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if outcome == ERR_TAKEN_VERIFIED:
+            return Response(
+                {
+                    "detail": "This email is already confirmed on another account. "
+                              "Sign in with it, or ask an administrator for help.",
+                    "code": ERR_TAKEN_VERIFIED,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        delivered = deliver_code(claim, code)
+        # 202 regardless of delivery: reporting per-address success would turn this into
+        # a mailbox-existence oracle, and the client's next step is the same either way.
+        return Response(
+            {"detail": "If that address can receive mail, a code is on its way.",
+             "expires_in_minutes": EmailClaim.TTL_MINUTES,
+             "delivered": bool(delivered) if settings.DEBUG else None},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+
+class ConfirmEmailCodeView(APIView):
+    """POST ``/api/auth/email/confirm-code/`` — prove control and take the address."""
+
+    throttle_classes = [EmailConfirmThrottle]
+
+    def post(self, request):
+        data = request.data or {}
+        target = normalize_email(data.get("email"))
+        code = str(data.get("code") or "").strip()
+        if not target or not code:
+            return Response(
+                {"detail": "Email and code are required."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        outcome, detail = confirm_code(request.user, target, code)
+        if outcome == OK:
+            return Response(
+                {"detail": "Email confirmed.", "email": detail.get("email"), "email_verified": True},
+                status=status.HTTP_200_OK,
+            )
+
+        bodies = {
+            ERR_NO_CLAIM: ("No pending request for that address. Request a new code.", status.HTTP_400_BAD_REQUEST),
+            ERR_EXPIRED: ("That code has expired. Request a new one.", status.HTTP_400_BAD_REQUEST),
+            ERR_BAD_CODE: ("That code is not correct.", status.HTTP_400_BAD_REQUEST),
+            ERR_TAKEN_UNVERIFIED: (
+                "This email belongs to another account. An administrator has to move it.",
+                status.HTTP_409_CONFLICT,
+            ),
+        }
+        message, http_status = bodies.get(outcome, ("Could not confirm that code.", status.HTTP_400_BAD_REQUEST))
+        body = {"detail": message, "code": outcome}
+        if "attempts_remaining" in detail:
+            body["attempts_remaining"] = detail["attempts_remaining"]
+        return Response(body, status=http_status)
