@@ -81,6 +81,11 @@ def cert_data(cert) -> dict:
         "instructor": cert.issued_by_name or "Instructor",
         "dateIssued": issued.strftime("%B %-d, %Y"),
         "certNo": cert.code,
+        # Tier-dependent wording, resolved once on the model so this PDF, the React card
+        # and the API payload can never disagree. The template's fixed sentence is
+        # replaced with `citation` wholesale (see _INJECT).
+        "citation": cert.tier_info["citation"],
+        "headline": cert.tier_info["headline"],
     }
 
 
@@ -105,8 +110,11 @@ _INJECT = r"""
     "out of 800": "out of " + d.ceiling,
     "Mathematics": d.subjectFull,
     "Aziz Karimov": d.name,
-    "for outstanding performance on the MasterSAT June 2026 ":
-      "for outstanding performance on the MasterSAT " + d.monthYear + " ",
+    // The template's fixed citation is replaced WHOLESALE by the score-tier sentence
+    // (a weak result must not be praised "for outstanding performance"). The trailing
+    // space is part of the template's text node, so it is preserved.
+    "for outstanding performance on the MasterSAT June 2026 ": d.citation + " ",
+    "CERTIFICATE OF ACHIEVEMENT": d.headline,
     "Math": d.subjectShort,
     "Class Rank #3": "Class Rank #" + d.rank,
     "of 24 students": "of " + d.cohort + " students",

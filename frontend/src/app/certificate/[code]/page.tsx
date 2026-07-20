@@ -12,6 +12,9 @@ interface CertData {
   subject: string; subject_label: string; score: number; score_ceiling: number;
   date: string; teacher_name: string;
   rank?: number | null; cohort_size?: number | null;
+  /** Score-tier wording, resolved server-side (MidtermCertificate.tier_info) so this card,
+   *  the Chromium PDF and the reportlab PDF cannot drift apart. */
+  tier?: string; tier_label?: string; headline?: string; citation?: string; note?: string;
 }
 
 const FONT = "var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif";
@@ -57,6 +60,10 @@ function injectData(c: CertData) {
     instructor: c.teacher_name,
     dateIssued: c.date,
     certNo: c.number,
+    // Falls back to the template's own sentence only if an older backend omits the field,
+    // so a version skew degrades to the previous wording rather than a blank citation.
+    citation: c.citation ?? `for outstanding performance on the MasterSAT ${monthYearOf(c.date)}`,
+    headline: c.headline ?? "CERTIFICATE OF ACHIEVEMENT",
   };
 }
 
@@ -91,8 +98,10 @@ function applyInjection(doc: Document, d: ReturnType<typeof injectData>): boolea
     "out of 800": "out of " + d.ceiling,
     "Mathematics": d.subjectFull,
     "Aziz Karimov": d.name,
-    "for outstanding performance on the MasterSAT June 2026 ":
-      "for outstanding performance on the MasterSAT " + d.monthYear + " ",
+    // Replaced WHOLESALE by the score-tier sentence — a weak result must not be praised
+    // "for outstanding performance". The trailing space belongs to the template's node.
+    "for outstanding performance on the MasterSAT June 2026 ": d.citation + " ",
+    "CERTIFICATE OF ACHIEVEMENT": d.headline,
     "Math": d.subjectShort,
     "Class Rank #3": "Class Rank #" + d.rank,
     "of 24 students": "of " + d.cohort + " students",

@@ -93,6 +93,49 @@ def has_completed_attempt(user, midterm) -> bool:
     ).exists()
 
 
+def retake_eligibility(user, midterm) -> tuple[bool, str]:
+    """Whether ``user`` may sit ``midterm`` given the retake rules.
+
+    Returns ``(ok, reason)``. Always ``(True, "ok")`` for anything that is not a retake, and
+    for a retake with no parent recorded (an authoring mistake must not lock everyone out —
+    it degrades to an ordinary midterm).
+
+    For a real retake the rule is: the student must have a recorded FAIL on the parent.
+    A pass, or no verdict at all (never sat it), both refuse.
+    """
+    from .models import Midterm, MidtermOutcome
+
+    if midterm.midterm_type != Midterm.TYPE_RETAKE or not midterm.retake_of_id:
+        return True, "ok"
+    outcome = MidtermOutcome.objects.filter(
+        midterm_id=midterm.retake_of_id, student=user
+    ).only("passed").first()
+    if outcome is None:
+        return False, "retake_no_result"
+    if outcome.passed:
+        return False, "retake_already_passed"
+    return True, "ok"
+
+
+def retake_eligible_students(midterm):
+    """The users a retake may be granted to: everyone who FAILED its parent midterm.
+
+    Returns an empty queryset for a non-retake or a parentless retake, so a caller can
+    always iterate the result without branching.
+    """
+    from django.contrib.auth import get_user_model
+
+    from .models import Midterm, MidtermOutcome
+
+    User = get_user_model()
+    if midterm.midterm_type != Midterm.TYPE_RETAKE or not midterm.retake_of_id:
+        return User.objects.none()
+    failer_ids = MidtermOutcome.objects.filter(
+        midterm_id=midterm.retake_of_id, passed=False
+    ).values_list("student_id", flat=True)
+    return User.objects.filter(pk__in=failer_ids)
+
+
 def can_start_midterm(user, midterm) -> tuple[bool, str]:
     """Whether ``user`` may create/start an attempt for ``midterm``.
 
@@ -112,6 +155,13 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
     grant = winning_grant(user, midterm)
     if grant is None:
         return False, "no_access"
+    # A retake is a SECOND CHANCE, not a second sitting: a student who already cleared the
+    # parent midterm's pass mark may never sit it, even if a teacher grants access by
+    # mistake. Enforced here rather than only at grant time so a stale grant cannot leak a
+    # retake to a student who has since passed.
+    ok, reason = retake_eligibility(user, midterm)
+    if not ok:
+        return False, reason
     # Classroom flavor respects the scheduled access window AND requires the teacher to
     # have started it (generated the 6-digit code). Standalone has no schedule/code.
     if grant.classroom_id:

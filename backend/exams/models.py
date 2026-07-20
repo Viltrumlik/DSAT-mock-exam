@@ -94,6 +94,19 @@ class Question(TimestampedModel):
         related_name='exam_questions',
     )
 
+    # SAT taxonomy for per-skill reporting (midterm error reports). Reuses the Question
+    # Bank's subject-scoped taxonomy rather than a parallel list, so "Math skills for a
+    # Math question" is enforced by the same table the bank uses. The domain is reachable
+    # as ``skill.domain`` and is never stored twice here.
+    #
+    # NULL = unclassified. Left nullable on purpose: ~2000 legacy questions predate this
+    # field and are classified incrementally, so nothing may hard-require it.
+    skill = models.ForeignKey(
+        'questionbank.BankSkill', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='exam_questions', db_index=True,
+        help_text="SAT skill this question tests. Drives the midterm error report.",
+    )
+
     class Meta:
         db_table = 'questions'
         ordering = ['order', 'created_at']
@@ -363,6 +376,26 @@ class MockExam(TimestampedModel):
         default=TYPE_MIDTERM,
         db_index=True,
         help_text="Only used when kind=MIDTERM. Pre-midterm / midterm / retake.",
+    )
+    midterm_pass_mark = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Only used when kind=MIDTERM. Score needed to PASS, on this midterm's own "
+            "scale (0-100 or 200-800). Blank = the 50%-of-questions default. Ignored for "
+            "pre-midterms, which are never pass/fail graded."
+        ),
+    )
+    midterm_retake_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="midterm_retakes",
+        help_text=(
+            "Only used when midterm_type=RETAKE. The midterm whose FAILING students may "
+            "sit this retake; passing students are never granted access."
+        ),
     )
     # Who may open this mock in the app (full SAT / midterm flow). Separate from PracticeTest rows below.
     assigned_users = models.ManyToManyField(
