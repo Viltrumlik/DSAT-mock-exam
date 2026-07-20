@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -34,7 +34,7 @@ function safeNext(raw: string | null): string {
  * Deliberately outside the console route groups: it has no AuthGuard above it, which is
  * what stops the completion banner from also rendering on top of the dedicated page.
  */
-export default function CompleteProfilePage() {
+function CompleteProfileInner() {
   const router = useRouter();
   const params = useSearchParams();
   const queryClient = useQueryClient();
@@ -162,5 +162,24 @@ export default function CompleteProfilePage() {
         }}
       />
     </div>
+  );
+}
+
+/**
+ * useSearchParams() forces this route to render on the client, so Next's static
+ * prerender demands a Suspense boundary above it or the production build fails. The
+ * fallback mirrors the inner BOOTING state so there is no flash between the two.
+ */
+export default function CompleteProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Loader2 className="h-8 w-8 animate-spin text-primary/60" aria-label="Loading" />
+        </div>
+      }
+    >
+      <CompleteProfileInner />
+    </Suspense>
   );
 }
