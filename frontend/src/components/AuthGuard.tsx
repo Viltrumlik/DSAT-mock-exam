@@ -224,24 +224,34 @@ export default function AuthGuard({
     }
 
     // `useMe` intentionally types the payload as an unknown-shaped record, so narrow
-    // here rather than trusting it. Also keeps the gate inert against a backend that
-    // predates these fields: absent means "no opinion", not "incomplete".
+    // here rather than trusting it. Absent fields mean "no opinion" (an older backend),
+    // not "incomplete", so the gate stays inert unless the server explicitly says so.
     const profileIncomplete = me?.profile_complete === false;
     const missingFields = Array.isArray(me?.missing_fields)
         ? (me.missing_fields as unknown[]).filter((f): f is string => typeof f === "string")
         : [];
-    const meEmail = typeof me?.email === "string" ? me.email : "";
+    const asStr = (v: unknown) => (typeof v === "string" ? v : "");
+    const gateCurrent = {
+        first_name: asStr(me?.first_name),
+        last_name: asStr(me?.last_name),
+        username: asStr(me?.username),
+        email: asStr(me?.email),
+    };
 
-    // Mounted here rather than per-console: AuthGuard is the one component all four
-    // shells share, so a single insertion covers student, teacher, admin and questions.
-    // Deliberately NOT wrapped in `inert` like the frozen branch above — this warns,
-    // it does not block.
-    return (
-        <>
-            {profileIncomplete && missingFields.length > 0 ? (
-                <ProfileCompletionGate missingFields={missingFields} currentEmail={meEmail} />
-            ) : null}
-            {children}
-        </>
-    );
+    // Mandatory and BLOCKING (mirrors the frozen branch above): the app is made `inert`
+    // so nothing behind the gate can be tabbed or clicked until the profile is complete
+    // and the email confirmed. Mounted here rather than per-console because AuthGuard is
+    // the single component all four shells share, so this one insertion covers student,
+    // teacher, admin and questions alike. The gate itself renders through a portal, so it
+    // stays interactive above the inert tree.
+    if (profileIncomplete && missingFields.length > 0) {
+        return (
+            <>
+                <div className="contents" inert>{children}</div>
+                <ProfileCompletionGate missingFields={missingFields} current={gateCurrent} />
+            </>
+        );
+    }
+
+    return <>{children}</>;
 }

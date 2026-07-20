@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -50,8 +50,22 @@ function CompleteProfileInner() {
     const raw = me?.missing_fields;
     return Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : [];
   }, [me]);
-  const missingText = useMemo(() => TEXT_FIELDS.filter((f) => missing.includes(f)), [missing]);
   const emailMissing = missing.includes("email");
+
+  // Seed the name fields with whatever Telegram guessed, ONCE, so the person can correct
+  // a wrong name rather than only fill blank ones — and so a later `me` refetch does not
+  // clobber what they are mid-typing. All three are always shown, not just the missing.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !me) return;
+    seeded.current = true;
+    const asStr = (v: unknown) => (typeof v === "string" ? v : "");
+    setDraft({
+      first_name: asStr(me.first_name),
+      last_name: asStr(me.last_name),
+      username: asStr(me.username),
+    });
+  }, [me]);
 
   useEffect(() => {
     if (bootState === "UNAUTHENTICATED") router.replace("/login");
@@ -66,7 +80,7 @@ function CompleteProfileInner() {
 
   const saveText = useCallback(async () => {
     const payload: Record<string, string> = {};
-    for (const f of missingText) {
+    for (const f of TEXT_FIELDS) {
       const v = (draft[f] ?? "").trim();
       if (v.length < 3) {
         setError(`${LABELS[f]} must be at least 3 characters.`);
@@ -92,7 +106,7 @@ function CompleteProfileInner() {
     } finally {
       setBusy(false);
     }
-  }, [draft, missingText, queryClient]);
+  }, [draft, queryClient]);
 
   if (bootState === "BOOTING" || !me) {
     return (
@@ -109,37 +123,37 @@ function CompleteProfileInner() {
           <div>
             <h1 className="ds-h1 text-2xl">Finish setting up your account</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Telegram doesn&apos;t share these with us, so we need them from you.
+              Check these are right — Telegram only guesses your name — and confirm an
+              email address.
             </p>
           </div>
 
           {error ? <Alert tone="danger">{error}</Alert> : null}
 
-          {missingText.length > 0 ? (
-            <div className="space-y-4">
-              {missingText.map((f) => (
-                <Field key={f} label={LABELS[f]} htmlFor={`cp-${f}`}>
-                  <Input
-                    id={`cp-${f}`}
-                    value={draft[f] ?? ""}
-                    autoFocus={f === missingText[0]}
-                    minLength={3}
-                    onChange={(e) => { setError(null); setDraft((d) => ({ ...d, [f]: e.target.value })); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !busy) void saveText(); }}
-                  />
-                </Field>
-              ))}
-              <Button onClick={() => void saveText()} disabled={busy} className="w-full">
-                {busy ? <Spinner /> : "Continue"}
-              </Button>
-            </div>
-          ) : emailMissing ? (
-            <div className="space-y-4">
+          <div className="space-y-4">
+            {TEXT_FIELDS.map((f, i) => (
+              <Field key={f} label={LABELS[f]} htmlFor={`cp-${f}`}>
+                <Input
+                  id={`cp-${f}`}
+                  value={draft[f] ?? ""}
+                  autoFocus={i === 0}
+                  minLength={3}
+                  onChange={(e) => { setError(null); setDraft((d) => ({ ...d, [f]: e.target.value })); }}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !busy) void saveText(); }}
+                />
+              </Field>
+            ))}
+            <Button onClick={() => void saveText()} disabled={busy} className="w-full">
+              {busy ? <Spinner /> : "Save"}
+            </Button>
+          </div>
+
+          {emailMissing ? (
+            <div className="space-y-3 border-t border-border pt-4">
               <p className="text-sm text-muted-foreground">
-                Last step — confirm an email address so we can send you results and
-                reminders.
+                Confirm an email address so we can send you results and reminders.
               </p>
-              <Button onClick={() => setEmailOpen(true)} className="w-full">
+              <Button variant="secondary" onClick={() => setEmailOpen(true)} className="w-full">
                 Add your email
               </Button>
             </div>
