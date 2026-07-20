@@ -26,20 +26,36 @@ from django.db import migrations, models
 
 SYNTHETIC_SUFFIX = "@telegram.mastersat.local"
 
+# telegram_id is a BigIntegerField. A value above this cannot be stored, and passing one
+# to a queryset makes Postgres raise NumericValueOutOfRange (bigint out of range) — which
+# is exactly what took a deploy down at this step. One production row (pk 182, 'jayunxx')
+# carries a 20-digit id in its synthetic address; that is precisely why its telegram_id is
+# already NULL — it never fit the column. Such a row cannot be recovered and must be
+# skipped, not crashed on.
+BIGINT_MAX = 9223372036854775807
+
 
 def drop_placeholder_addresses(apps, schema_editor):
     User = apps.get_model("users", "User")
 
     # Telegram login now resolves by telegram_id alone, so recover it from the address
-    # first for any row the 0008 backfill missed. Production has one such account; drop
-    # its address without this and it can never be reached by Telegram again — the
-    # address was its only remaining link.
+    # first for any row the 0008 backfill missed. Drop its address without this and it can
+    # never be reached by Telegram again — the address is its only remaining link. The
+    # account keeps its username (checked before shipping), so a row we cannot recover is
+    # left un-Telegram-linked rather than stranded.
     for pk, email in User.objects.filter(
         email__iendswith=SYNTHETIC_SUFFIX, telegram_id__isnull=True
     ).values_list("pk", "email"):
         digits = str(email or "").split("@", 1)[0][2:]
-        if digits.isdigit() and not User.objects.filter(telegram_id=int(digits)).exists():
-            User.objects.filter(pk=pk).update(telegram_id=int(digits))
+        if not digits.isdigit():
+            continue
+        tid = int(digits)
+        if tid > BIGINT_MAX:
+            # Unstorable id (see BIGINT_MAX). Leave telegram_id NULL; the email is nulled
+            # below like every other synthetic row and the username still signs them in.
+            continue
+        if not User.objects.filter(telegram_id=tid).exists():
+            User.objects.filter(pk=pk).update(telegram_id=tid)
 
     User.objects.filter(email__iendswith=SYNTHETIC_SUFFIX).update(email=None)
     User.objects.filter(email__iendswith="@released.mastersat.invalid").update(email=None)
