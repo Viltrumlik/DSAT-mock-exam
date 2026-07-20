@@ -432,13 +432,17 @@ function LessonDetailView({
   lessonId,
   row,
   canManage,
+  focusLabel,
   onBack,
 }: {
   classId: number;
   lessonId: number;
   row: LessonRow;
   canManage: boolean;
-  onBack: () => void;
+  /** "Today's lesson" etc. when this was auto-selected; empty when browsed to. */
+  focusLabel?: string;
+  /** Present only when there is a plan to go back to. */
+  onBack?: () => void;
 }) {
   const { data, isLoading, isError, refetch } = useLessonDetail(classId, lessonId);
   const [tab, setTab] = useState<"homework" | "classwork">("homework");
@@ -451,15 +455,20 @@ function LessonDetailView({
 
   return (
     <div className="space-y-4">
-      <button
-        onClick={onBack}
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden />
-        All lessons
-      </button>
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          All lessons
+        </button>
+      )}
 
       <div className="flex flex-wrap items-center gap-2">
+        {focusLabel && (
+          <Pill tone="primary">{focusLabel}</Pill>
+        )}
         <h2 className="text-xl font-bold text-foreground">
           {isMidterm ? data.midterm?.title || "Midterm" : `Lesson ${data.lesson_number}`}
         </h2>
@@ -492,7 +501,9 @@ function LessonDetailView({
 export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
   const classId = classroom.id;
   const { data, isLoading, isError, refetch } = useLessonPlan(classId);
-  const [openId, setOpenId] = useState<number | null>(null);
+  // "list" = the teacher explicitly opened the full plan; a number = a specific lesson;
+  // null = the default, which lands on the server-chosen focus lesson (today's).
+  const [view, setView] = useState<number | "list" | null>(null);
   const reschedule = useRescheduleLessons(classId);
 
   // Derive from capabilities, never by comparing role strings inline — capabilities.ts
@@ -517,21 +528,43 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
     );
   }
 
-  const open = openId != null ? data.lessons.find((l) => l.lesson_id === openId) : undefined;
+  // Which lesson to show. By default (view === null) the server picks — today's lesson,
+  // or the nearest one — so the teacher lands straight on it with no picker. "list" is
+  // the opt-in escape to browse the whole plan.
+  const targetId = view === "list" ? null : view ?? data.focus_lesson_id ?? null;
+  const open = targetId != null ? data.lessons.find((l) => l.lesson_id === targetId) : undefined;
   if (open) {
+    const focusLabel =
+      view == null
+        ? { today: "Today's lesson", next: "Next lesson", last: "Most recent lesson", undated: "" }[
+            data.focus ?? "undated"
+          ]
+        : "";
     return (
       <LessonDetailView
         classId={classId}
         lessonId={open.lesson_id}
         row={open}
         canManage={canManage}
-        onBack={() => setOpenId(null)}
+        focusLabel={focusLabel}
+        // More than one session? Offer the full plan. A single-session plan has nothing
+        // to go back to, so the button is hidden.
+        onBack={data.lessons.length > 1 ? () => setView("list") : undefined}
       />
     );
   }
 
   return (
     <div className="space-y-4">
+      {data.focus_lesson_id != null && (
+        <button
+          onClick={() => setView(null)}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Back to today
+        </button>
+      )}
       <Card>
         <CardHeader
           title={data.journal?.title || "Lesson plan"}
@@ -572,7 +605,7 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
             {data.lessons.map((l) => (
               <li key={l.lesson_id}>
                 <button
-                  onClick={() => setOpenId(l.lesson_id)}
+                  onClick={() => setView(l.lesson_id)}
                   className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-surface-2"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-bold text-muted-foreground">
