@@ -113,17 +113,63 @@ def _revoke_midterm_access_after_result(attempt: TestAttempt, mock) -> None:
             "midterm access revoke failed for student=%s mock=%s", student_id, getattr(mock, "pk", None)
         )
 
+def _legacy_retake_block(user, mock_exam):
+    """Refuse a RETAKE the student is not eligible for, mirroring the v2 runner's rule.
+
+    The v2 runner gates every retake through ``midterms.access.retake_eligibility``; this
+    legacy path used to skip it entirely, so a student who PASSED the parent could still
+    open the retake here. The verdict lives on the ``midterms.Midterm`` mirror, resolved
+    from the legacy exam via ``legacy_mock_exam_id``.
+
+    Fails OPEN only when there is genuinely no mirror (a legacy exam the v2 migration never
+    covered has no verdicts to consult, and must keep behaving as before). Once a mirror
+    exists its answer is authoritative — a pass is never downgraded to "allowed".
+    """
+    try:
+        from midterms.access import retake_eligibility
+        from midterms.models import Midterm
+    except Exception:  # pragma: no cover - midterms app absent → nothing to enforce
+        return None
+
+    mirror = Midterm.objects.filter(legacy_mock_exam_id=mock_exam.pk).first()
+    if mirror is None:
+        return None
+    ok, reason = retake_eligibility(user, mirror)
+    if ok:
+        return None
+    detail = {
+        "retake_no_result": "The retake is only for students who sat the original midterm.",
+        "retake_already_passed": "You passed this midterm, so there is no retake to sit.",
+    }.get(reason, "You are not eligible for this retake.")
+    return Response({"code": reason, "message": detail}, status=status.HTTP_403_FORBIDDEN)
+
+
 def _midterm_start_guard(user, mock_exam):
     """Return a blocking Response if the student may not START this midterm now, else None.
 
-    Rules (all conditional on a per-classroom ``MidtermSchedule`` existing — unscheduled
-    midterms behave as before):
+    Retake eligibility is enforced on every fresh start, scheduled or not: a retake is
+    second-chance-only regardless of whether anyone scheduled it. This mirrors
+    ``midterms.access.can_start_midterm``, which the v2 runner uses.
+
+    The remaining rules are all conditional on a per-classroom ``MidtermSchedule`` existing —
+    unscheduled midterms behave as before:
       - already has a completed attempt → blocked (no retake);
-      - has an active (in-progress) attempt → allowed (resume), window not re-checked;
       - fresh start → allowed only while a schedule for one of the student's classrooms is open.
     """
     from classes.models import ClassroomMembership
     from classes.models_schedule import MidtermSchedule
+
+    has_active = (
+        TestAttempt.objects.filter(student=user, mock_exam=mock_exam, is_completed=False)
+        .exclude(current_state=TestAttempt.STATE_ABANDONED)
+        .exists()
+    )
+    # An in-flight sitting is exempt: the student cleared the gate when they started, and a
+    # parent re-scored mid-exam must not brick them out of their own paper.
+    if not has_active:
+        blocked = _legacy_retake_block(user, mock_exam)
+        if blocked is not None:
+            return blocked
 
     classroom_ids = list(
         ClassroomMembership.objects.filter(
@@ -143,11 +189,6 @@ def _midterm_start_guard(user, mock_exam):
             status=status.HTTP_403_FORBIDDEN,
         )
     # Resuming an existing in-progress attempt is always allowed.
-    has_active = (
-        TestAttempt.objects.filter(student=user, mock_exam=mock_exam, is_completed=False)
-        .exclude(current_state=TestAttempt.STATE_ABANDONED)
-        .exists()
-    )
     if has_active:
         return None
 
@@ -2092,7 +2133,8 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         qs = Question.objects.filter(
             module_id=self.kwargs["module_pk"],
             module__practice_test_id=self.kwargs["test_pk"],
-        )
+        # skill_name/domain_name are serialized per row — join them in one query.
+        ).select_related("skill", "skill__domain")
         # Subject scoping: a teacher may not read/edit another subject's questions
         # (incl. correct_answer + explanation); global staff (None) are unrestricted.
         subjs = visible_practice_test_platform_subjects_for_query(self.request.user)

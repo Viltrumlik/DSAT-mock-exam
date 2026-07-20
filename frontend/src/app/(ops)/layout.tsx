@@ -15,6 +15,7 @@ import {
   KeyRound,
   CalendarClock,
   NotebookText,
+  Timer,
 } from "lucide-react";
 
 /**
@@ -44,6 +45,14 @@ const OPS_NAV = [
     href: "/ops/journals",
     label: "Journals",
     icon: NotebookText,
+    exact: false,
+  },
+  // Reports only — midterm *authoring* still lives in the Builder console. This is the
+  // read-only pass/fail record for a classroom.
+  {
+    href: "/ops/midterms",
+    label: "Midterms",
+    icon: Timer,
     exact: false,
   },
   // Operational assignment management + midterm authoring moved out of the admin panel

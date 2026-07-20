@@ -70,6 +70,8 @@ type AdminMidterm = {
   midterm_level: string | null;
   midterm_period: string | null;
   midterm_type: string | null;
+  midterm_pass_mark: number | null;
+  midterm_retake_of: number | null;
   tests: AdminTestSection[];
   publish_ready: boolean;
   publish_block_reason: string;
@@ -88,6 +90,10 @@ type MidtermForm = {
   midterm_level: string;
   midterm_period: string;
   midterm_type: string;
+  /** Blank = the scale default (50 / 500). Always on the midterm's own scale. */
+  midterm_pass_mark: string;
+  /** Blank = none. Only meaningful when midterm_type === "RETAKE". */
+  midterm_retake_of: string;
 };
 
 const DEFAULT_FORM: MidtermForm = {
@@ -103,6 +109,15 @@ const DEFAULT_FORM: MidtermForm = {
   midterm_level: "",
   midterm_period: "",
   midterm_type: "MIDTERM",
+  midterm_pass_mark: "",
+  midterm_retake_of: "",
+};
+
+// Pass mark is expressed on the midterm's own scale — SCALE_800 floors at 200 because
+// a blank paper already scores 200 there, so it can never be a 0-based percentage.
+const PASS_MARK_SCALE: Record<string, { min: number; max: number; placeholder: string }> = {
+  SCALE_100: { min: 0, max: 100, placeholder: "50" },
+  SCALE_800: { min: 200, max: 800, placeholder: "500" },
 };
 
 // Midterm taxonomy option sets (mirror backend MockExam midterm_* choices).
@@ -178,6 +193,7 @@ function MidtermModal({
   initial,
   saving,
   error,
+  retakeCandidates,
   onSubmit,
   onClose,
 }: {
@@ -186,6 +202,8 @@ function MidtermModal({
   initial: MidtermForm;
   saving: boolean;
   error: string | null;
+  /** Published midterms this one may be a retake of — already subject-filtered. */
+  retakeCandidates: AdminMidterm[];
   onSubmit: (f: MidtermForm) => void;
   onClose: () => void;
 }) {
@@ -203,6 +221,13 @@ function MidtermModal({
       setForm((p) => ({ ...p, [k]: e.target.value }));
 
   const twoModules = form.midterm_module_count === "2";
+  // A pre-midterm is a diagnostic, never pass/fail graded — it has no pass mark.
+  const graded = form.midterm_type !== "PRE_MIDTERM";
+  const isRetake = form.midterm_type === "RETAKE";
+  const passMarkScale = PASS_MARK_SCALE[form.midterm_scoring_scale] ?? PASS_MARK_SCALE.SCALE_100;
+  const subjectCandidates = retakeCandidates.filter(
+    (m) => (m.midterm_subject ?? "READING_WRITING") === form.midterm_subject,
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -254,11 +279,13 @@ function MidtermModal({
                 value={form.midterm_subject}
                 onChange={(e) => {
                   const subj = e.target.value as "READING_WRITING" | "MATH";
-                  // Foundation is Math-only — drop it when switching to R&W.
+                  // Foundation is Math-only — drop it when switching to R&W. The retake
+                  // parent is subject-scoped too, so a cross-subject one must go as well.
                   setForm((p) => ({
                     ...p,
                     midterm_subject: subj,
                     midterm_level: subj !== "MATH" && p.midterm_level === "foundation" ? "" : p.midterm_level,
+                    midterm_retake_of: "",
                   }));
                 }}
                 className={SI}
@@ -311,6 +338,48 @@ function MidtermModal({
                 : "Final score is a clean 0–100 percentage. Every question counts equally."}
             </p>
           </div>
+
+          {/* Pass mark — graded types only, labelled with the scale's own range. */}
+          {graded && (
+            <div>
+              <label className={FL}>
+                Pass mark ({passMarkScale.min}–{passMarkScale.max})
+              </label>
+              <input
+                type="number"
+                min={passMarkScale.min}
+                max={passMarkScale.max}
+                value={form.midterm_pass_mark}
+                onChange={set("midterm_pass_mark")}
+                placeholder={passMarkScale.placeholder}
+                className={SI}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Score a student must reach to pass, on this midterm&rsquo;s own scale. Leave blank
+                for the default ({passMarkScale.placeholder}).
+              </p>
+            </div>
+          )}
+
+          {/* Retake parent — the failing cohort of this midterm is who gets access. */}
+          {isRetake && (
+            <div>
+              <label className={FL}>Retake of</label>
+              <select value={form.midterm_retake_of} onChange={set("midterm_retake_of")} className={SI}>
+                <option value="">— No parent midterm —</option>
+                {subjectCandidates.map((m) => (
+                  <option key={m.id} value={String(m.id)}>
+                    {m.title || `Midterm #${m.id}`}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {subjectCandidates.length === 0
+                  ? "No published midterms in this subject yet — publish one first."
+                  : "Only students who FAILED the selected midterm will get access to this retake. Students who passed are never granted it."}
+              </p>
+            </div>
+          )}
 
           {/* Module count + timing */}
           <div>
@@ -498,6 +567,14 @@ function MidtermRow({
               <FileText className="h-3 w-3" />
               {exam.midterm_target_question_count} target questions
             </span>
+
+            {/* Pass mark — only meaningful once the midterm is pass/fail graded. */}
+            {exam.midterm_pass_mark != null && exam.midterm_type !== "PRE_MIDTERM" && (
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <CheckCircle2 className="h-3 w-3" />
+                Pass at {exam.midterm_pass_mark}
+              </span>
+            )}
 
             {/* Modules created */}
             {totalModules > 0 && (
@@ -717,6 +794,15 @@ export default function BuilderMidtermsPage() {
         midterm_level: form.midterm_level,
         midterm_period: form.midterm_period,
         midterm_type: form.midterm_type,
+        // Blank clears back to the scale default; a pre-midterm is never graded.
+        midterm_pass_mark:
+          form.midterm_type === "PRE_MIDTERM" || form.midterm_pass_mark.trim() === ""
+            ? null
+            : Number(form.midterm_pass_mark),
+        midterm_retake_of:
+          form.midterm_type === "RETAKE" && form.midterm_retake_of
+            ? Number(form.midterm_retake_of)
+            : null,
       };
       if (editingMidterm) {
         await examsAdminApi.updateMockExam(editingMidterm.id, payload);
@@ -803,8 +889,23 @@ export default function BuilderMidtermsPage() {
         midterm_level: editingMidterm.midterm_level ?? "",
         midterm_period: editingMidterm.midterm_period ?? "",
         midterm_type: editingMidterm.midterm_type ?? "MIDTERM",
+        midterm_pass_mark:
+          editingMidterm.midterm_pass_mark != null ? String(editingMidterm.midterm_pass_mark) : "",
+        midterm_retake_of:
+          editingMidterm.midterm_retake_of != null ? String(editingMidterm.midterm_retake_of) : "",
       }
     : DEFAULT_FORM;
+
+  // A retake's parent must be a published midterm; itself and other retakes are excluded
+  // so a chain of retakes can never form. Pre-midterms are excluded too: they are never
+  // pass/fail graded, so a retake parented to one is unsittable for every student.
+  // Subject filtering happens inside the modal, where the (editable) subject field lives.
+  const retakeCandidates = midterms.filter(
+    (m) =>
+      m.is_published &&
+      m.id !== editingMidterm?.id &&
+      (m.midterm_type ?? "MIDTERM") === "MIDTERM",
+  );
 
   const published = midterms.filter((m) => m.is_published).length;
   const drafts = midterms.filter((m) => !m.is_published).length;
@@ -980,6 +1081,7 @@ export default function BuilderMidtermsPage() {
         initial={modalInitial}
         saving={saving}
         error={saveError}
+        retakeCandidates={retakeCandidates}
         onSubmit={(f) => void handleSave(f)}
         onClose={() => setModalOpen(false)}
       />

@@ -29,6 +29,10 @@ import {
   type ModuleQuestionsApi,
 } from "@/features/questionsAdmin/hooks";
 import type { AdminModuleQuestion } from "@/features/questionsAdmin/types";
+import {
+  bankSubjectForQuestionType,
+  useSkillTaxonomyQuery,
+} from "@/features/questionsAdmin/skillTaxonomy";
 import { normalizeApiError } from "@/lib/apiError";
 import {
   AlertCircle,
@@ -78,6 +82,8 @@ type QuestionDraft = {
   correct_answer: string;
   explanation: string;
   score: number;
+  /** questionbank.BankSkill id; null = unclassified, which is always allowed. */
+  skill: number | null;
   /** Only meaningful when examKind === "MIDTERM". */
   midtermFormat: MidtermFormat;
 };
@@ -112,6 +118,7 @@ function questionToDraft(q: AdminModuleQuestion, sectionSubject?: string, examKi
     correct_answer: q.correct_answer ?? "",
     explanation: q.explanation ?? "",
     score: q.score ?? 10,
+    skill: q.skill ?? null,
     midtermFormat: examKind === "MIDTERM" ? detectMidtermFormat(q) : "mc",
   };
 }
@@ -206,6 +213,8 @@ function QuestionEditor({
       fd.append("correct_answer", effectiveDraft.correct_answer);
       fd.append("explanation", effectiveDraft.explanation);
       fd.append("score", String(effectiveDraft.score));
+      // DRF reads "" from multipart as null for a nullable relation — that's the clear.
+      fd.append("skill", effectiveDraft.skill == null ? "" : String(effectiveDraft.skill));
       if (imageFiles.question) fd.append("question_image", imageFiles.question);
       if (imageFiles.a) fd.append("option_a_image", imageFiles.a);
       if (imageFiles.b) fd.append("option_b_image", imageFiles.b);
@@ -230,6 +239,7 @@ function QuestionEditor({
         correct_answer: effectiveDraft.correct_answer,
         explanation: effectiveDraft.explanation,
         score: effectiveDraft.score,
+        skill: effectiveDraft.skill,
       };
     }
     try {
@@ -263,6 +273,23 @@ function QuestionEditor({
   // ── SAT subject awareness ──────────────────────────────────────────────────
   const allowedTypes = allowedQuestionTypesForSubject(sectionSubject);
   const typeWarning = questionTypeWarning(draft.question_type, sectionSubject);
+
+  // ── Taxonomy picker ────────────────────────────────────────────────────────
+  // The bank's skills are subject-scoped, so the list follows the question's own type
+  // (READING and WRITING share one ENGLISH list). Blank stays a valid answer.
+  const bankSubject = bankSubjectForQuestionType(draft.question_type);
+  const taxonomy = useSkillTaxonomyQuery(bankSubject);
+  const taxonomyDomains = taxonomy.data ?? [];
+  // A skill saved before the question changed type is no longer in the fetched list;
+  // keep showing its stored label rather than silently rendering "Unclassified".
+  const skillIsOffList =
+    draft.skill != null && !taxonomyDomains.some((d) => d.skills.some((s) => s.id === draft.skill));
+
+  /** Switching bank subject invalidates the chosen skill — the server would 400 on it. */
+  const patchQuestionType = (next: QuestionDraft["question_type"]) => {
+    const keepSkill = bankSubjectForQuestionType(next) === bankSubject;
+    patch({ question_type: next, ...(keepSkill ? {} : { skill: null }) });
+  };
 
   const updateErr = update.isError && update.error ? normalizeApiError(update.error).message : null;
   const deleteErr = del.isError && del.error ? normalizeApiError(del.error).message : null;
@@ -392,7 +419,7 @@ function QuestionEditor({
                 <select
                   className={INPUT}
                   value={draft.question_type}
-                  onChange={(e) => patch({ question_type: e.target.value as QuestionDraft["question_type"] })}
+                  onChange={(e) => patchQuestionType(e.target.value as QuestionDraft["question_type"])}
                 >
                   {allowedTypes.map((t) => (
                     <option key={t} value={t}>
@@ -437,6 +464,42 @@ function QuestionEditor({
             </div>
           </>
         )}
+
+        {/* SAT skill — optional taxonomy tag; feeds the per-skill error report. */}
+        <div>
+          <label className={FIELD_LABEL}>SAT skill (optional)</label>
+          <select
+            className={INPUT}
+            value={draft.skill ?? ""}
+            onChange={(e) => patch({ skill: e.target.value ? Number(e.target.value) : null })}
+          >
+            <option value="">Unclassified</option>
+            {skillIsOffList && (
+              <option value={String(draft.skill)}>
+                {question.skill_name || `Skill #${draft.skill}`}
+                {question.domain_name ? ` (${question.domain_name})` : ""}
+              </option>
+            )}
+            {taxonomyDomains.map((d) => (
+              <optgroup key={d.domain_id} label={d.domain}>
+                {d.skills.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {taxonomy.isLoading
+              ? "Loading skills…"
+              : taxonomy.isError
+              ? "Skill list unavailable — the question can still be saved unclassified."
+              : taxonomyDomains.length === 0
+              ? "No skills seeded for this subject yet."
+              : "Groups the question in the student's error report. Leave unclassified if unsure."}
+          </p>
+        </div>
 
         {/* Question text */}
         <div>

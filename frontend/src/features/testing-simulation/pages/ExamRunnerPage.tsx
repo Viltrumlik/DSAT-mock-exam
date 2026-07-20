@@ -15,7 +15,15 @@ import { examApi, midtermExamApi, mockExamApi } from "../services/examApiClient"
 import type { Attempt } from "../types";
 import { mockApi } from "@/lib/mockApi";
 import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attemptMerge";
-import { calculatorAllowed, isMath, moduleLabel, pauseAllowed, questions as selectQuestions, subjectKind } from "../state/selectors";
+import {
+  calculatorAllowed,
+  isMath,
+  isMidtermAttempt,
+  moduleLabel,
+  pauseAllowed,
+  questions as selectQuestions,
+  subjectKind,
+} from "../state/selectors";
 import { FIVE_MINUTE_WARNING_SECONDS } from "../utils/time";
 import { clamp } from "../utils/time";
 import { parseOptions } from "../utils/options";
@@ -32,6 +40,8 @@ import { ErrorScreen, LoadingScreen, ScoringScreen } from "../components/StatusS
 import { WelcomeScreen } from "../components/WelcomeScreen";
 import { MidtermRulesScreen } from "../components/MidtermRulesScreen";
 import { MidtermCodeScreen } from "../components/MidtermCodeScreen";
+import { OffscreenTerminatedScreen, OffscreenWarning } from "../components/OffscreenWarning";
+import { useOffscreenGuard } from "../hooks/useOffscreenGuard";
 import { midtermApi } from "@/lib/midtermApi";
 import { MockBreakScreen } from "../components/MockBreakScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
@@ -112,6 +122,13 @@ export function ExamRunnerPage() {
   const liveQuestions = useMemo(() => selectQuestions(attempt), [attempt]);
   const currentQuestion = liveQuestions[currentIndex];
 
+  // THE midterm predicate. There used to be two — one from `?src=midterm` (which only says
+  // which backend to talk to) and one from the attempt's own mock_kind — and gates keyed on
+  // whichever was in scope, so the reference sheet appeared on a Math midterm reached
+  // without the param. The param answers "before the attempt loads"; the attempt answers
+  // "what this paper actually is"; every midterm rule below reads this one value.
+  const isMidterm = isMidtermSrc || isMidtermAttempt(attempt);
+
   // ── SAT-experience tools (isolated from the engine) ─────────────────────────
   const tools = useExamTools({
     attemptId,
@@ -161,6 +178,13 @@ export function ExamRunnerPage() {
       /* sessionStorage unavailable — keep in-memory */
     }
   }, [attemptId]);
+  // A midterm the server has already taken past NOT_STARTED is a RESUME: the student read
+  // the rules and cleared the access code to get here (`start` 403s until the code is
+  // verified), so sending them back through both is a bug — `welcomeAck` lives in
+  // sessionStorage and is empty in a new tab or after a browser restart, while `?welcome=1`
+  // is still sitting in the URL they resumed from.
+  const midtermResumed =
+    isMidterm && attempt != null && attempt.current_state !== ATTEMPT_STATE.NOT_STARTED;
   // Show the welcome/Start screen for a fresh pastpaper (?welcome=1) AND, as a
   // safety net, for ANY non-mock attempt the backend is still holding in
   // NOT_STARTED — so an entry path that dropped the welcome param can't strand
@@ -168,6 +192,7 @@ export function ExamRunnerPage() {
   const showWelcome =
     !mockFlow &&
     !welcomeAck &&
+    !midtermResumed &&
     (welcomeParam || attempt?.current_state === ATTEMPT_STATE.NOT_STARTED);
   // SPR directions panel collapse state — persisted for the tab session so it is
   // remembered while navigating between Student-Produced Response questions.
@@ -243,19 +268,54 @@ export function ExamRunnerPage() {
     }
   }, [tools.fullscreen, start, attempt?.current_state, ackWelcome]);
 
-  // Midterm access-code gate (classroom flavor). After the rules screen we probe
-  // whether a code is required: no code → start immediately; code required → show
-  // the code-entry screen. The code screen verifies then starts.
+  // Midterm access-code gate (classroom flavor). The rules screen comes FIRST and the code
+  // is asked for only after it, so we probe up front — an empty code succeeds only when no
+  // code is required — and the rules screen can then tell the student whether they need one
+  // instead of the Continue button discovering it mid-click. null = not answered yet.
   const [codeGateOpen, setCodeGateOpen] = useState(false);
+  const [requiresCode, setRequiresCode] = useState<boolean | null>(null);
+  const midtermAttemptId = attempt?.id;
+  const midtermState = attempt?.current_state;
+  useEffect(() => {
+    if (!isMidterm || midtermAttemptId == null) return;
+    if (midtermState !== ATTEMPT_STATE.NOT_STARTED) return; // a running attempt is past this
+    if (requiresCode !== null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await midtermApi.verifyCode(midtermAttemptId, "");
+        if (!cancelled) setRequiresCode(Boolean(r.requires_code));
+      } catch {
+        if (!cancelled) setRequiresCode(true); // rejected empty code = a code is required
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isMidterm, midtermAttemptId, midtermState, requiresCode]);
+  // The server records the verification on the attempt, so a student who entered the code
+  // and then lost the tab before `start` landed isn't asked for it twice.
+  const midtermCodeVerified = Boolean(
+    (attempt as { code_verified?: boolean; code_verified_at?: string | null } | null)?.code_verified ||
+      (attempt as { code_verified_at?: string | null } | null)?.code_verified_at,
+  );
   const handleMidtermProceed = useCallback(async () => {
     if (!attempt) return;
+    if (midtermCodeVerified || requiresCode === false) {
+      await handleStart();
+      return;
+    }
+    if (requiresCode === true) {
+      setCodeGateOpen(true);
+      return;
+    }
     try {
-      await midtermApi.verifyCode(attempt.id, ""); // succeeds only when no code is required
+      await midtermApi.verifyCode(attempt.id, ""); // the probe hasn't landed yet — ask now
       await handleStart();
     } catch {
       setCodeGateOpen(true);
     }
-  }, [attempt, handleStart]);
+  }, [attempt, handleStart, midtermCodeVerified, requiresCode]);
   const verifyThenStart = useCallback(
     async (code: string) => {
       if (!attempt) return;
@@ -281,6 +341,11 @@ export function ExamRunnerPage() {
   const fsSupported = tools.fullscreen.supported;
   const fsEnforced =
     !mockFlow &&
+    // Midterms are policed by the off-screen rule instead (below): leaving fullscreen is
+    // one of the ways it detects a student leaving, and it has its own overlay, its own
+    // countdown and a far harsher consequence. Running both would stack two modals over
+    // each other and race two countdowns to two different endings.
+    !isMidterm &&
     !showWelcome &&
     !multiTab.blocked &&
     transitionTo === null &&
@@ -333,12 +398,53 @@ export function ExamRunnerPage() {
     return () => clearInterval(iv);
   }, [showFsWarning]);
 
+  // ── Off-screen rule (midterms only) ─────────────────────────────────────────
+  // Enforced only while the student is genuinely sitting the paper: never over the rules /
+  // code / transition screens, never from a blocked duplicate tab, and never before the
+  // module is on screen — every one of those is a place the runner itself moves focus or
+  // fullscreen around, and an offence costs a third of the student's allowance.
+  const offscreenEnforced =
+    isMidterm &&
+    !showWelcome &&
+    !multiTab.blocked &&
+    transitionTo === null &&
+    !loading &&
+    Boolean(currentQuestion) &&
+    (attempt?.current_state === ATTEMPT_STATE.MODULE_1_ACTIVE ||
+      attempt?.current_state === ATTEMPT_STATE.MODULE_2_ACTIVE);
+  const offscreen = useOffscreenGuard({
+    attemptId,
+    attempt,
+    enabled: offscreenEnforced,
+    applyAttempt,
+  });
+  const goToMidtermResult = useCallback(
+    () => router.push(`/midterm/result/${attemptId}`),
+    [router, attemptId],
+  );
+  // Hold the terminal screen long enough to be read, then move on. The button on it does
+  // the same thing immediately; the completion-routing effect stands down while it shows.
+  useEffect(() => {
+    if (!offscreen.terminated) return;
+    const t = setTimeout(goToMidtermResult, 6000);
+    return () => clearTimeout(t);
+  }, [offscreen.terminated, goToMidtermResult]);
+
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
     // `!reportOpen`: while the "Report a problem" dialog is open the exam UI stays
     // mounted underneath; without this, letter/arrow keys typed toward the dialog
     // would leak into the exam and silently change the graded answer / navigate.
-    enabled: !loading && Boolean(currentQuestion) && transitionTo === null && !multiTab.blocked && !reportOpen,
+    // `offscreen.countdown`: the off-screen warning covers the paper, so it must swallow the
+    // keyboard too — the overlay blocks clicks by covering them, but an arrow key would sail
+    // straight through and let a student keep working through their own warning.
+    enabled:
+      !loading &&
+      Boolean(currentQuestion) &&
+      transitionTo === null &&
+      !multiTab.blocked &&
+      !reportOpen &&
+      offscreen.countdown === null,
     onPrev: guardedPrev,
     onNext: guardedNext,
     onToggleMark: () => currentQuestion && toggleFlag(currentQuestion.id),
@@ -405,9 +511,6 @@ export function ExamRunnerPage() {
   flaggedRef.current = flagged;
 
   const mathQuestions = isMath(attempt);
-  // Midterms never offer the reference sheet. The CALCULATOR is no longer blanket-denied:
-  // it is level-gated server-side (Math + middle/senior) — see calculatorAllowed().
-  const isMidtermExam = attempt?.practice_test_details?.mock_kind === "MIDTERM";
   useMathRendering(!loading && Boolean(attempt?.current_module_details), `${moduleId}:${currentIndex}`);
 
   // ── Timer warnings: 5 min, 1 min, expiry (per module; read-only on the clock) ─
@@ -473,6 +576,10 @@ export function ExamRunnerPage() {
   // ── Route out on completion (respecting mock flow) ──────────────────────────
   useEffect(() => {
     if (!attempt || !isCompleted(attempt)) return;
+    // A sitting the off-screen rule ended is completed the instant the server takes the
+    // paper in, and routing on that would replace the exam with the result page before the
+    // student is told WHY. The terminal screen owns the redirect in that case.
+    if (offscreen.terminated) return;
     const meid = search.get("mockExamId");
     const kind = subjectKind(attempt);
     if (mockFlow && meid && kind === "READING_WRITING") {
@@ -487,7 +594,7 @@ export function ExamRunnerPage() {
     }
     // Midterms route to their own result page: standalone shows the score + certificate
     // immediately; a classroom midterm shows "awaiting release" until the teacher publishes.
-    if (isMidtermExam || isMidtermSrc) {
+    if (isMidterm) {
       router.push(`/midterm/result/${attemptId}`);
       return;
     }
@@ -496,7 +603,7 @@ export function ExamRunnerPage() {
       return;
     }
     router.push(`/review/${attemptId}`);
-  }, [attempt, mockFlow, search, router, attemptId, isMidtermExam, isMidtermSrc, isMockSrc]);
+  }, [attempt, mockFlow, search, router, attemptId, isMidterm, isMockSrc, offscreen.terminated]);
 
   // ── Resizable split divider ─────────────────────────────────────────────────
   const mainRef = useRef<HTMLDivElement | null>(null);
@@ -651,6 +758,7 @@ export function ExamRunnerPage() {
   // ── Render gates ────────────────────────────────────────────────────────────
   const questions = liveQuestions;
   const twoPane = !mathQuestions; // RW shows passage + answers; Math is single column
+  const answeredCount = questions.filter((q) => Boolean(answers[q.id])).length;
 
   // A duplicate tab must not run a second timer/poller for the same attempt.
   // (Engine hooks above are already suspended via pollingEnabled / paused / enabled.)
@@ -660,6 +768,12 @@ export function ExamRunnerPage() {
 
   if (exiting) {
     return <LoadingScreen label="Saving your progress…" />;
+  }
+
+  // The off-screen rule forfeited the sitting. The SERVER already submitted the paper —
+  // this screen only explains it before the redirect (see the terminal-screen effect).
+  if (offscreen.terminated) {
+    return <OffscreenTerminatedScreen onContinue={goToMidtermResult} />;
   }
 
   if (error) {
@@ -694,15 +808,23 @@ export function ExamRunnerPage() {
   if (isScoring(attempt)) {
     return <ScoringScreen notice={null} />;
   }
-  // Welcome / Start screen for a NOT_STARTED attempt (forward-compatible with a
-  // future server-side timer hold). Today the backend auto-starts on create, so
-  // the active-attempt branch below is the one that fires.
-  if (showWelcome && !loading && attempt && attempt.current_state === ATTEMPT_STATE.NOT_STARTED) {
+  // ── Start gate: rules → access code → Start ─────────────────────────────────
+  // ONE block for both shapes of a not-yet-begun attempt: the midterm backend holds it in
+  // NOT_STARTED (no module payload yet), the pastpaper backend auto-starts on create (module
+  // already loaded). This used to be two near-identical blocks either side of the loading
+  // guard, and every midterm change had to be made twice — which is how the reference-sheet
+  // and predicate drift got in. The minutes/question-count fall back to the test's own
+  // module 1 metadata, which is present in both shapes.
+  if (showWelcome && !loading && attempt) {
+    const activeModule = attempt.current_module_details;
     const startMinutes =
-      attempt.current_module_details?.time_limit_minutes ??
+      activeModule?.time_limit_minutes ??
       attempt.practice_test_details.modules.find((m) => m.module_order === 1)?.time_limit_minutes;
+    const startQuestionCount = activeModule?.questions.length;
     const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
-    if (isMidtermSrc || isMidtermExam) {
+    if (isMidterm) {
+      // Rules FIRST — the code screen is only reachable from it, so a student never types a
+      // code before being told what they're agreeing to.
       if (codeGateOpen) {
         return (
           <MidtermCodeScreen
@@ -713,15 +835,27 @@ export function ExamRunnerPage() {
           />
         );
       }
+      const details = attempt.practice_test_details as typeof attempt.practice_test_details & {
+        scoring_scale?: string | null;
+        pass_mark?: number | null;
+        midterm_type?: string | null;
+      };
       return (
         <MidtermRulesScreen
-          title={attempt.practice_test_details.title || moduleLabel(attempt)}
+          title={details.title || moduleLabel(attempt)}
           subjectLabel={subjLabel}
           minutes={startMinutes}
-          questionCount={attempt.current_module_details?.questions.length}
+          questionCount={startQuestionCount}
           starting={starting}
           fullscreenSupported={tools.fullscreen.supported}
           onProceed={() => void handleMidtermProceed()}
+          scoringScale={details.scoring_scale ?? null}
+          passMark={details.pass_mark ?? null}
+          isRetake={details.midterm_type === "RETAKE"}
+          // Unknown until the probe lands; assume a code IS needed so a classroom student is
+          // never told to start without one they then get asked for.
+          requiresCode={requiresCode !== false}
+          calculatorEnabled={calculatorAllowed(attempt)}
         />
       );
     }
@@ -730,7 +864,7 @@ export function ExamRunnerPage() {
         moduleTitle={moduleLabel(attempt)}
         subjectLabel={subjLabel}
         minutes={startMinutes}
-        questionCount={attempt.current_module_details?.questions.length}
+        questionCount={startQuestionCount}
         starting={starting}
         fullscreenSupported={tools.fullscreen.supported}
         onStart={() => void handleStart()}
@@ -748,47 +882,6 @@ export function ExamRunnerPage() {
       );
     }
     return <LoadingScreen />;
-  }
-
-  // Fresh-start welcome (active attempt). The backend auto-starts on create, so
-  // by now the module is loaded; show the welcome until the student clicks Start
-  // (which enters fullscreen + acknowledges it). Resumes have no ?welcome=1.
-  if (showWelcome) {
-    const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
-    if (isMidtermSrc || isMidtermExam) {
-      if (codeGateOpen) {
-        return (
-          <MidtermCodeScreen
-            onSubmitCode={verifyThenStart}
-            onBack={() => setCodeGateOpen(false)}
-            starting={starting}
-            fullscreenSupported={tools.fullscreen.supported}
-          />
-        );
-      }
-      return (
-        <MidtermRulesScreen
-          title={attempt.practice_test_details.title || moduleLabel(attempt)}
-          subjectLabel={subjLabel}
-          minutes={attempt.current_module_details.time_limit_minutes}
-          questionCount={attempt.current_module_details.questions.length}
-          starting={starting}
-          fullscreenSupported={tools.fullscreen.supported}
-          onProceed={() => void handleMidtermProceed()}
-        />
-      );
-    }
-    return (
-      <WelcomeScreen
-        moduleTitle={moduleLabel(attempt)}
-        subjectLabel={subjLabel}
-        minutes={attempt.current_module_details.time_limit_minutes}
-        questionCount={attempt.current_module_details.questions.length}
-        starting={starting}
-        fullscreenSupported={tools.fullscreen.supported}
-        onStart={() => void handleStart()}
-      />
-    );
   }
 
   const warning = timerReady && secondsLeft <= FIVE_MINUTE_WARNING_SECONDS && secondsLeft > 0;
@@ -811,7 +904,7 @@ export function ExamRunnerPage() {
         onSubmit={() => void submit()}
         submitting={submitting}
         isLastModule={isLastModule}
-        submitLocked={isMidtermExam || isMidtermSrc}
+        submitLocked={isMidterm}
         studentName={studentName}
       />
     );
@@ -831,7 +924,10 @@ export function ExamRunnerPage() {
         timerWarning={warning}
         showDirections={showDirections}
         onToggleDirections={() => setShowDirections((v) => !v)}
-        mathTools={mathQuestions && !isMidtermExam}
+        // Reference sheet: SAT Math only. Midterms never offer it (midtermRules.ts), and this
+        // gate must read the unified predicate — keyed on the query param alone it leaked the
+        // sheet into any midterm reached without it.
+        mathTools={mathQuestions && !isMidterm}
         showCalculator={calculatorAllowed(attempt)}
         tools={tools}
         pauseAllowed={pauseAllowed(attempt, mockFlow)}
@@ -928,6 +1024,7 @@ export function ExamRunnerPage() {
       <SatColorRule />
       <ExamFooter
         navLabel={`Question ${currentIndex + 1} of ${questions.length}`}
+        progressLabel={`${answeredCount} of ${questions.length} answered`}
         onToggleNavigator={() => setNavigatorOpen((v) => !v)}
         canGoBack={currentIndex > 0}
         onBack={guardedPrev}
@@ -962,6 +1059,34 @@ export function ExamRunnerPage() {
           native fullscreen transition. Unsupported browsers never see this. */}
       {showFsWarning && (
         <FullscreenWarning secondsLeft={fsCountdown ?? undefined} onReturn={() => void tools.fullscreen.enter()} />
+      )}
+
+      {/* Off-screen rule (midterms). Covers everything, including the fullscreen warning it
+          replaces, and stays up until the student is back — the guard detects that itself. */}
+      {offscreen.countdown !== null && (
+        <OffscreenWarning
+          secondsLeft={offscreen.countdown}
+          chancesLeft={offscreen.chancesLeft}
+          showReturnToFullscreen={tools.fullscreen.supported && !tools.fullscreen.isFullscreen}
+          onReturnToFullscreen={() => void tools.fullscreen.enter()}
+        />
+      )}
+
+      {/* Returned in time: the warning is gone, so say what it cost — otherwise the student
+          only finds out they were on their last chance by losing the paper. */}
+      {offscreen.notice && (
+        <div role="alert" className="fixed inset-x-0 top-20 z-[70] flex justify-center px-4">
+          <div className="flex max-w-lg items-center gap-4 rounded-xl border border-red-200 bg-white px-5 py-3 shadow-xl">
+            <span className="text-sm font-semibold text-slate-700">{offscreen.notice}</span>
+            <button
+              type="button"
+              onClick={offscreen.dismissNotice}
+              className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Timer warnings (5 min / 1 min / expiry) — announced to screen readers. */}

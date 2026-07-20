@@ -25,7 +25,7 @@ testing-simulation/
 ├── services/     examApiClient (typed 6-endpoint client), draftStore (offline backup)
 ├── state/        attemptMerge (forward-only guard), selectors (derived views)  — pure
 ├── hooks/        useServerClock, useModuleTimer, useExamAttempt, useAnswers,
-│                 useModuleSubmit, useAutosave, useMathRendering
+│                 useModuleSubmit, useAutosave, useMathRendering, useOffscreenGuard
 ├── components/   ExamHeader, Timer, PassagePane, AnswerPane, ChoiceList,
 │                 SprInput, QuestionNavigator, ExamFooter, ModuleTransitionOverlay,
 │                 StatusScreens
@@ -43,7 +43,9 @@ ExamRunnerPage
  ├─ useAnswers ──────── per-module answers/flags/eliminations + navigation
  ├─ useModuleSubmit ─── lock + idempotency + 409 reconcile + watchdog + retry
  ├─ useAutosave ─────── debounced save_attempt + local draft (module-id guarded)
- └─ useMathRendering ── KaTeX re-render on DOM mutation
+ ├─ useMathRendering ── KaTeX re-render on DOM mutation
+ └─ useOffscreenGuard ─ MIDTERMS ONLY: reports leaving the exam window; the server
+                        owns the count, the grace and the forfeit (POST offscreen/)
 ```
 
 ## Backend contract (wire-compatible, unchanged)
@@ -64,6 +66,7 @@ tools/
 ├── calculator/                Calculator.tsx + expression.ts (safe evaluator, no eval)
 ├── ReferenceSheet.tsx         SAT Math reference figures
 ├── useFullscreen.ts           Fullscreen API wrapper
+├── fullscreenIntent.ts        marks transitions the runner asked for (read by useOffscreenGuard)
 ├── highlight/                 offsets.ts (char-range ↔ DOM) + store + useHighlighter + popover
 ├── notes/                     NotesPanel + notesStore (localStorage, never submitted)
 ├── MoreMenu.tsx               secondary-tool dropdown (fullscreen/highlight/notes/zoom/pause/help)

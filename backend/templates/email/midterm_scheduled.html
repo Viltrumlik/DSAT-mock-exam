@@ -1,0 +1,188 @@
+{% extends "email/base.html" %}
+
+{% comment %}
+The date block, the facts grid and the button are all TABLES with background colours.
+An SVG calendar icon would be stripped by Gmail and Outlook.com, and a remote PNG stays
+blocked until the recipient clicks "display images" — which most students never do — so
+the one graphic in this message is built out of two stacked table cells.
+{% endcomment %}
+
+{% block subject %}{{ headline }}: {{ midterm_title }}{% endblock %}
+
+{% block preheader %}{{ weekday_label }} {{ date_label }} at {{ start_time }} — be seated by {{ seated_by }}.{% endblock %}
+
+{% block content %}
+  <h1 class="ms-h1 ms-ink" style="margin:0 0 8px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
+    {{ headline }}
+  </h1>
+
+  <p class="ms-mute" style="margin:0 0 22px;font-size:15px;font-weight:600;line-height:1.6;color:#64748b;">
+    {{ midterm_title }}{% if is_retake %} — your second sitting{% endif %}
+  </p>
+
+  {% comment %} Date panel: brand-blue calendar block beside the time. {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr>
+      <td class="ms-card" style="background:#ffffff;border:1px solid #e7ebf3;border-radius:17px;padding:18px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="88" style="width:88px;vertical-align:top;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="88" style="width:88px;">
+                <tr>
+                  <td align="center" style="background:#2a68c0;border-radius:14px 14px 0 0;padding:7px 0;font-size:11px;font-weight:800;letter-spacing:0.12em;color:#ffffff;">
+                    {{ month_label }}
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="background:#f4f7fc;border:1px solid #cfe0f7;border-top:0;border-radius:0 0 14px 14px;padding:8px 0 10px;">
+                    <div style="font-size:34px;font-weight:800;line-height:1;color:#0f1729;">{{ day_number }}</div>
+                    <div style="margin-top:4px;font-size:11px;font-weight:700;color:#64748b;">{{ weekday_label }}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+            <td style="padding-left:18px;vertical-align:middle;">
+              <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;">STARTS AT</div>
+              <div class="ms-ink" style="margin-top:5px;font-size:30px;font-weight:800;line-height:1;color:#0f1729;">{{ start_time }}</div>
+              <div class="ms-mute" style="margin-top:7px;font-size:13px;font-weight:600;line-height:1.5;color:#64748b;">
+                {% if duration_label %}{{ duration_label }}{% if end_time %} &middot; ends {{ end_time }}{% endif %}<br />{% endif %}
+                {{ timezone_label }} time
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  {% comment %}
+    Vertical gaps are spacer ROWS, not margins: Word (Outlook) drops margin on a table and
+    the panels would end up touching.
+  {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr><td height="10" style="height:10px;line-height:10px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td class="ms-inset" style="background:#e7effb;border:1px solid #cfe0f7;border-radius:13px;padding:12px 16px;">
+        <span class="ms-ink" style="font-size:13px;font-weight:700;line-height:1.5;color:#0f1729;">
+          Be seated and logged in by {{ seated_by }}.
+        </span>
+      </td>
+    </tr>
+    <tr><td height="18" style="height:18px;line-height:18px;font-size:0;">&nbsp;</td></tr>
+  </table>
+
+  {% comment %} Facts, 2x2. Fixed 50% cells — Outlook ignores width on a div. {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr>
+      <td width="50%" style="width:50%;padding:0 5px 10px 0;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">SUBJECT</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ subject_label }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="50%" style="width:50%;padding:0 0 10px 5px;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">CLASS</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ classroom_name }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" style="width:50%;padding:0 5px 0 0;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">QUESTIONS</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ question_label }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="50%" style="width:50%;padding:0 0 0 5px;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">SCORING</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ scoring_label }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  {% comment %}
+    The rules are here, not only in the runner, because they change what a student does
+    the night before: nothing to bring, no pause to plan around, and a screen they must
+    not leave. Bullets are table cells — a <ul> indents differently in every client.
+  {% endcomment %}
+  <p class="ms-ink" style="margin:26px 0 10px;font-size:15px;font-weight:800;color:#0f1729;">Before you sit down</p>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr>
+      <td width="18" style="width:18px;padding:0 0 9px;vertical-align:top;font-size:14px;font-weight:800;color:#2a68c0;">&bull;</td>
+      <td class="ms-mute" style="padding:0 0 9px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">One sitting.</strong> The timer never pauses, for any reason.
+      </td>
+    </tr>
+    <tr>
+      <td width="18" style="width:18px;padding:0 0 9px;vertical-align:top;font-size:14px;font-weight:800;color:#2a68c0;">&bull;</td>
+      <td class="ms-mute" style="padding:0 0 9px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Fullscreen is required</strong> from the first question to the last.
+      </td>
+    </tr>
+    <tr>
+      <td width="18" style="width:18px;padding:0 0 9px;vertical-align:top;font-size:14px;font-weight:800;color:#2a68c0;">&bull;</td>
+      <td class="ms-mute" style="padding:0 0 9px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:800;color:#0f1729;">Leaving the screen ends your exam.</strong>
+        You have 3 seconds to come back, twice. The third time it is submitted immediately,
+        with whatever you have answered so far.
+      </td>
+    </tr>
+    <tr>
+      <td width="18" style="width:18px;padding:0 0 9px;vertical-align:top;font-size:14px;font-weight:800;color:#2a68c0;">&bull;</td>
+      <td class="ms-mute" style="padding:0 0 9px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Your teacher reads out a 6-digit access code</strong>
+        at the start. You cannot begin without it, so being late costs you exam time.
+      </td>
+    </tr>
+    <tr>
+      <td width="18" style="width:18px;padding:0 0 9px;vertical-align:top;font-size:14px;font-weight:800;color:#2a68c0;">&bull;</td>
+      <td class="ms-mute" style="padding:0 0 9px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">One attempt</strong> — unless you finish below the pass
+        mark, which is what a retake is for.
+      </td>
+    </tr>
+    <tr>
+      <td width="18" style="width:18px;vertical-align:top;font-size:14px;font-weight:800;color:#2a68c0;">&bull;</td>
+      <td class="ms-mute" style="font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Bring nothing.</strong> No notes, no phone, no calculator
+        of your own — the exam gives you one if it allows one at all.
+      </td>
+    </tr>
+  </table>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+    <tr><td height="26" style="height:26px;line-height:26px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td align="center" style="background:#2a68c0;border-radius:14px;">
+        <a href="{{ midterm_url }}"
+           style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:800;line-height:1;color:#ffffff;text-decoration:none;">
+          Open the midterm page
+        </a>
+      </td>
+    </tr>
+  </table>
+
+  <p class="ms-faint" style="margin:16px 0 0;font-size:13px;font-weight:500;line-height:1.6;color:#94a3b8;">
+    Can&rsquo;t attend? Tell your teacher before the start time.
+  </p>
+{% endblock %}

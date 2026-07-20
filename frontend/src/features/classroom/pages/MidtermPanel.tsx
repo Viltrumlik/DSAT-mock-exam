@@ -8,7 +8,7 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import { classesApi } from "@/lib/api";
 import { midtermApi } from "@/lib/midtermApi";
 import { downloadBlob } from "@/lib/download";
-import { Card, CardHeader, Button, Field, Input, Tabs, LoadingState, ErrorState, StatCard } from "../ui";
+import { Card, CardHeader, Button, Field, Input, Tabs, LoadingState, ErrorState, StatCard, ConfirmDialog } from "../ui";
 import { AssignVersionModal } from "./AssignVersionModal";
 
 const fileSlug = (t: string) => (t || "").trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "midterm";
@@ -38,6 +38,8 @@ interface PanelData {
     starts_at: string | null; deadline: string | null; ignore_start: boolean;
     results_released: boolean; available_at: string | null; is_before_start: boolean; is_open: boolean;
     access_code: string | null; requires_code: boolean;
+    /** When the class was emailed the schedule. Set once — a second start mails nobody. */
+    notified_at: string | null;
   };
   students: PanelStudent[];
   stats: { assigned: number; completed: number; average: number | null; highest: number | null; lowest: number | null };
@@ -69,7 +71,7 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
       invalidate();
       pushGlobalToast({ tone: "success", message: `Access code: ${res.access_code}` });
     },
-    onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
+    // Failures are surfaced by the caller (confirmStart), which also owns the dialog state.
   });
 
   const [tab, setTab] = useState<"students" | "schedule">("students");
@@ -79,6 +81,11 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
   const [busyCode, setBusyCode] = useState<string | null>(null);
   const [busyAll, setBusyAll] = useState(false);
   const [assignVersionOpen, setAssignVersionOpen] = useState(false);
+  // Start dialog: the class cannot be granted the midterm without a start time, and the
+  // teacher is told before confirming that pressing it mails every student.
+  const [startOpen, setStartOpen] = useState(false);
+  const [startAt, setStartAt] = useState("");
+  const [startBusy, setStartBusy] = useState(false);
 
   useEffect(() => {
     if (!data) return;
@@ -99,6 +106,28 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
       pushGlobalToast({ tone: "success", message: "Schedule saved." });
     } catch (e) {
       pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+    }
+  }
+
+  function openStartDialog() {
+    setStartAt(toLocalInput(data?.schedule.starts_at ?? null));
+    setStartOpen(true);
+  }
+
+  // Two calls on purpose: the schedule PATCH is what makes the start time real (and what
+  // mails the class), and only a scheduled midterm may be handed an access code.
+  async function confirmStart() {
+    const iso = fromLocalInput(startAt);
+    if (!iso) return;
+    setStartBusy(true);
+    try {
+      await updateSchedule.mutateAsync({ starts_at: iso });
+      await startCode.mutateAsync();
+      setStartOpen(false);
+    } catch (e) {
+      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
+    } finally {
+      setStartBusy(false);
     }
   }
 
@@ -184,21 +213,21 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
           </div>
         </div>
 
-        {/* Access code — "Start midterm" generates the 6-digit code students enter to begin. */}
+        {/* Access code — "Start midterm" sets the start time and generates the 6-digit code. */}
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface-2/40 px-4 py-3">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Access code</p>
             {schedule.access_code ? (
               <p className="mt-0.5 font-mono text-2xl font-extrabold tracking-[0.3em] text-foreground tabular-nums">{schedule.access_code}</p>
             ) : (
-              <p className="mt-0.5 text-sm text-muted-foreground">No code yet — students can start without one. Generate a code to gate entry.</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">No code yet — read it out to the room when the exam starts.</p>
             )}
           </div>
           <Button
             variant={schedule.access_code ? "secondary" : "primary"}
             icon={KeyRound}
-            loading={startCode.isPending}
-            onClick={() => startCode.mutate()}
+            loading={startBusy}
+            onClick={openStartDialog}
           >
             {schedule.access_code ? "Regenerate code" : "Start midterm — generate code"}
           </Button>
@@ -258,7 +287,7 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
         ) : (
           <div className="mt-4 max-w-lg space-y-4">
             <p className="flex items-center gap-2 text-sm text-muted-foreground"><Clock className="h-4 w-4" /> Students see a countdown until the start time, then a “Start midterm” button.</p>
-            <Field label="Opens at (start)" hint="Leave empty to open immediately.">
+            <Field label="Opens at (start)" hint="Required — a midterm with no start time is open to the class right now.">
               <Input type="datetime-local" value={startsInput} onChange={(e) => setStartsInput(e.target.value)} />
             </Field>
             <Field label="Deadline (optional)" hint="After this time students can no longer start.">
@@ -268,13 +297,35 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
               <input type="checkbox" checked={ignoreStart} onChange={(e) => setIgnoreStart(e.target.checked)} className="h-4 w-4 rounded border-border" />
               Ignore start time — open now
             </label>
-            <Button icon={Save} loading={updateSchedule.isPending} onClick={saveSchedule}>Save schedule</Button>
+            <Button icon={Save} loading={updateSchedule.isPending} disabled={!startsInput} onClick={saveSchedule}>Save schedule</Button>
             {schedule.results_released && (
               <p className="text-xs font-medium text-emerald-600">Results published — students can see their scores.</p>
             )}
           </div>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={startOpen}
+        title="Start this midterm for the class?"
+        description="A midterm without a start time is open to every student the moment it is assigned, so the date and time are required."
+        confirmLabel="Set time & generate code"
+        loading={startBusy}
+        confirmDisabled={!startAt}
+        onConfirm={confirmStart}
+        onCancel={() => setStartOpen(false)}
+      >
+        <div className="mt-4 space-y-3">
+          <Field label="Starts at" hint="Students see a countdown until this moment, then a “Start midterm” button.">
+            <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
+          </Field>
+          <p className="rounded-xl bg-primary/10 px-3 py-2 text-sm font-medium text-foreground">
+            {schedule.notified_at
+              ? `The class was emailed on ${new Date(schedule.notified_at).toLocaleString()}. Changing the time here does not email them again — tell them yourself.`
+              : `Confirming emails all ${stats.assigned} student${stats.assigned !== 1 ? "s" : ""} in this class the date, time and rules. It is sent once.`}
+          </p>
+        </div>
+      </ConfirmDialog>
 
       {assignVersionOpen && (
         <AssignVersionModal

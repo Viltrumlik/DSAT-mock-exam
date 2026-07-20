@@ -9,6 +9,8 @@ from rest_framework.settings import api_settings
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 
+from questionbank.models import BankSkill
+
 from .models import (
     BulkAssignmentDispatch,
     MockExam,
@@ -552,6 +554,16 @@ class TestAttemptSerializer(serializers.ModelSerializer):
 
 # ── Admin Serializers ────────────────────────────────────────────────────────
 
+# ``Question.question_type`` is the exam-side taxonomy (MATH / READING / WRITING) while
+# the Question Bank scopes its skills by Subject (MATH / ENGLISH). Reading and Writing are
+# one bank subject, so both fold into ENGLISH.
+BANK_SUBJECT_BY_QUESTION_TYPE = {
+    "MATH": "MATH",
+    "READING": "ENGLISH",
+    "WRITING": "ENGLISH",
+}
+
+
 class AdminQuestionSerializer(serializers.ModelSerializer):
     correct_answer = serializers.CharField(source='correct_answers', required=True)
     module_id = serializers.IntegerField(read_only=True)
@@ -566,6 +578,13 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
     clear_option_b_image = serializers.BooleanField(write_only=True, required=False)
     clear_option_c_image = serializers.BooleanField(write_only=True, required=False)
     clear_option_d_image = serializers.BooleanField(write_only=True, required=False)
+    # Taxonomy: write the BankSkill id, read back the labels too so the builder can render
+    # the current classification without a second lookup against the taxonomy endpoint.
+    skill = serializers.PrimaryKeyRelatedField(
+        queryset=BankSkill.objects.all(), required=False, allow_null=True,
+    )
+    skill_name = serializers.SerializerMethodField()
+    domain_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Question
@@ -573,8 +592,15 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                   'is_math_input', 'correct_answer', 'score', 'explanation', 'order',
                   'option_a', 'option_b', 'option_c', 'option_d',
                   'option_a_image', 'option_b_image', 'option_c_image', 'option_d_image',
+                  'skill', 'skill_name', 'domain_name',
                   'clear_question_image', 'clear_option_a_image', 'clear_option_b_image',
                   'clear_option_c_image', 'clear_option_d_image']
+
+    def get_skill_name(self, obj) -> str:
+        return obj.skill.name if obj.skill_id else ""
+
+    def get_domain_name(self, obj) -> str:
+        return obj.skill.domain.name if obj.skill_id else ""
 
     def create(self, validated_data):
         # Clear flags are serializer-only controls and must not be passed to model create().
@@ -744,6 +770,25 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                         }
                     )
 
+        # ── Taxonomy ──────────────────────────────────────────────────────────
+        # The skill is optional (NULL = unclassified, which is where ~2000 legacy
+        # questions still sit), but a supplied one must belong to this question's
+        # bank subject — otherwise a Math question could carry a Reading skill and
+        # silently poison the per-skill error report.
+        skill = attrs.get("skill")
+        if skill is not None:
+            q_type = attrs.get("question_type") or getattr(self.instance, "question_type", "")
+            expected = BANK_SUBJECT_BY_QUESTION_TYPE.get(q_type)
+            if expected and skill.domain.subject != expected:
+                raise serializers.ValidationError(
+                    {
+                        "skill": (
+                            f"'{skill.name}' is a {skill.domain.get_subject_display()} skill, "
+                            f"but this is a {q_type} question."
+                        )
+                    }
+                )
+
         # Stub creation (POST with empty fields from admin "Add question") skips
         # content validation so a blank question can be saved and filled in later.
         is_stub = self.context.get('is_stub_create', False)
@@ -847,6 +892,14 @@ class AdminPracticeTestPackSerializer(serializers.ModelSerializer):
         return obj.sections.count() if hasattr(obj, "sections") else 0
 
 
+# A pass mark is expressed on the midterm's OWN scale, so the legal band follows the
+# scale: SCALE_800 floors at 200 because a blank paper still scores 200 there.
+MIDTERM_PASS_MARK_RANGE = {
+    MockExam.SCALE_100: (0, 100),
+    MockExam.SCALE_800: (200, 800),
+}
+
+
 class AdminMockExamSerializer(serializers.ModelSerializer):
     tests = AdminPracticeTestSerializer(many=True, read_only=True)
     publish_ready = serializers.SerializerMethodField()
@@ -873,6 +926,8 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
             "midterm_level",
             "midterm_period",
             "midterm_type",
+            "midterm_pass_mark",
+            "midterm_retake_of",
             "tests",
             "publish_ready",
             "publish_block_reason",
@@ -907,6 +962,92 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
     def get_sat_violations(self, obj) -> list[str]:
         return [v.message for v in self._get_violations(obj)]
 
+    def _incoming(self, attrs, field, default):
+        """Value this PATCH will end up with — the payload wins, else the stored row."""
+        if field in attrs:
+            return attrs[field]
+        if self.instance is not None:
+            return getattr(self.instance, field)
+        return default
+
+    def _validate_pass_mark(self, attrs):
+        pass_mark = self._incoming(attrs, "midterm_pass_mark", None)
+        if pass_mark is None:
+            return
+        scale = self._incoming(attrs, "midterm_scoring_scale", MockExam.SCALE_100)
+        low, high = MIDTERM_PASS_MARK_RANGE.get(scale, MIDTERM_PASS_MARK_RANGE[MockExam.SCALE_100])
+        if not (low <= int(pass_mark) <= high):
+            raise serializers.ValidationError(
+                {
+                    "midterm_pass_mark": (
+                        f"Pass mark must be between {low} and {high} on the "
+                        f"{dict(MockExam.MIDTERM_SCORING_SCALE_CHOICES).get(scale, scale)} scale."
+                    )
+                }
+            )
+
+    def _validate_retake_of(self, attrs):
+        parent = self._incoming(attrs, "midterm_retake_of", None)
+        midterm_type = self._incoming(attrs, "midterm_type", MockExam.TYPE_MIDTERM)
+        if parent is None:
+            return
+        if midterm_type != MockExam.TYPE_RETAKE:
+            raise serializers.ValidationError(
+                {"midterm_retake_of": "Only a retake midterm can point at a parent midterm."}
+            )
+        if self.instance is not None and parent.pk == self.instance.pk:
+            raise serializers.ValidationError(
+                {"midterm_retake_of": "A midterm cannot be a retake of itself."}
+            )
+        if parent.kind != MockExam.KIND_MIDTERM:
+            raise serializers.ValidationError(
+                {"midterm_retake_of": "The parent must be a midterm."}
+            )
+        # A pre-midterm is a diagnostic and never issues a pass/fail verdict, so the retake
+        # gate would find no result for ANY student and refuse the whole cohort with a
+        # misleading "you didn't sit the original" — the retake would be unsittable.
+        if parent.midterm_type == MockExam.TYPE_PRE_MIDTERM:
+            raise serializers.ValidationError(
+                {
+                    "midterm_retake_of": (
+                        "A pre-midterm cannot be the parent of a retake — it is never "
+                        "pass/fail graded, so no student would be eligible."
+                    )
+                }
+            )
+        subject = self._incoming(attrs, "midterm_subject", "READING_WRITING")
+        if parent.midterm_subject != subject:
+            raise serializers.ValidationError(
+                {"midterm_retake_of": "The parent midterm must have the same subject as this retake."}
+            )
+
+    def _validate_not_orphaning_retakes(self, attrs):
+        """Refuse to turn a midterm that ALREADY HAS retakes into a pre-midterm.
+
+        ``_validate_retake_of`` only ever inspects the row's own parent, so the same broken
+        state was still reachable from the other end: save the retake correctly, then flip
+        the PARENT to PRE_MIDTERM. A pre-midterm issues no verdict, so its retake becomes
+        unsittable for the entire cohort with a misleading "you didn't sit the original".
+        """
+        if self.instance is None:
+            return
+        midterm_type = self._incoming(attrs, "midterm_type", None)
+        if midterm_type != MockExam.TYPE_PRE_MIDTERM:
+            return
+        children = list(
+            MockExam.objects.filter(midterm_retake_of_id=self.instance.pk).values_list("title", flat=True)[:3]
+        )
+        if children:
+            raise serializers.ValidationError(
+                {
+                    "midterm_type": (
+                        "This midterm has a retake ({}), so it cannot become a pre-midterm — "
+                        "a pre-midterm is never pass/fail graded and nobody would be eligible "
+                        "for the retake. Detach the retake first.".format(", ".join(children))
+                    )
+                }
+            )
+
     def validate(self, attrs):
         kind = attrs.get("kind", getattr(self.instance, "kind", MockExam.KIND_MOCK_SAT))
         if kind == MockExam.KIND_MIDTERM:
@@ -918,6 +1059,9 @@ class AdminMockExamSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"midterm_module_count": "Must be 1 or 2."}
                 )
+            self._validate_pass_mark(attrs)
+            self._validate_retake_of(attrs)
+            self._validate_not_orphaning_retakes(attrs)
         return attrs
 
 

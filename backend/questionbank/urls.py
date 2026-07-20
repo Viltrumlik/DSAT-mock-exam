@@ -22,6 +22,8 @@ urlpatterns = [
     path("versions/", views.BankQuestionVersionListView.as_view(), name="version-list"),
     path("domains/", views.BankDomainListView.as_view(), name="domain-list"),
     path("skills/", views.BankSkillListView.as_view(), name="skill-list"),
+    # Grouped domain→skills tree for subject-aware pickers (exam question editor).
+    path("taxonomy/", views.BankTaxonomyView.as_view(), name="taxonomy"),
     # Student practice (M9) — APPROVED-only, no answer leak
     path("practice/", views.PracticeQuestionListView.as_view(), name="practice-list"),
     path("practice/taxonomy/", views.PracticeTaxonomyView.as_view(), name="practice-taxonomy"),

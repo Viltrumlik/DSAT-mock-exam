@@ -16,6 +16,11 @@ export type AdminModuleQuestion = {
   correct_answer: string;
   explanation: string;
   score: number;
+  /** questionbank.BankSkill id, or null for the ~2000 legacy questions with no taxonomy. */
+  skill?: number | null;
+  /** Read-only labels for `skill`, so the picker renders without a second fetch. */
+  skill_name?: string;
+  domain_name?: string;
   question_image?: string | null;
   option_a_image?: string | null;
   option_b_image?: string | null;

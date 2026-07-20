@@ -19,6 +19,7 @@ from django.http import HttpResponse
 from rest_framework import status as http
 from rest_framework.response import Response
 
+from access.engine.assignment_service import AssignmentService
 from access.engine.classroom_service import ClassroomAccessService
 from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
@@ -32,9 +33,14 @@ from midterms.certificate_service import (
 from midterms.models import Midterm, MidtermVersion, MidtermVersionAssignment
 
 from .capabilities import classroom_capabilities
+from .mail_midterm import notify_class_midterm_scheduled
 from .models_certificates import MidtermCertificate
 from .models_schedule import MidtermSchedule
-from .views_assign import _CLASSROOM_TO_MIDTERM_SUBJECT, _parse_schedule_dt
+from .views_assign import (
+    _CLASSROOM_TO_MIDTERM_SUBJECT,
+    _parse_schedule_dt,
+    missing_starts_at_response,
+)
 from .views_certificates import serialize_certificate
 from .views_rankings import _ClassroomScopedView
 
@@ -55,6 +61,7 @@ def _serialize_schedule(sched):
             "is_open": True,
             "access_code": None,
             "requires_code": False,
+            "notified_at": None,
         }
     return {
         "midterm_id": sched.midterm_id,
@@ -68,6 +75,9 @@ def _serialize_schedule(sched):
         # Teacher-only panel — safe to surface the code so it can be shared with the room.
         "access_code": sched.access_code or None,
         "requires_code": sched.requires_code(),
+        # When the class was emailed. Drives the panel's wording: the second press of
+        # "Start midterm" mails nobody.
+        "notified_at": sched.notified_at.isoformat() if sched.notified_at else None,
     }
 
 
@@ -159,8 +169,81 @@ class MidtermV2CertificatesDownloadAllView(_ClassroomScopedView):
         return resp
 
 
+def _classroom_student_ids(classroom) -> list[int]:
+    """The roster the access engine grants to (every student membership of the classroom)."""
+    from .models import ClassroomMembership
+
+    return list(
+        classroom.memberships.filter(role=ClassroomMembership.ROLE_STUDENT).values_list("user_id", flat=True)
+    )
+
+
+def _grant_to_classroom(classroom, midterm, actor):
+    """Grant ``midterm`` to the classroom. Returns ``(engine_result, retake_summary|None)``.
+
+    A retake is a SECOND CHANCE, not a second sitting — the builder promises "students who
+    passed are never granted it" — so a retake is granted only to the roster members who
+    actually failed its parent, never to the whole room. Everything else (an ordinary
+    midterm, a pre-midterm, a retake with no parent recorded) is the unchanged whole-class
+    assignment.
+    """
+    from midterms.access import retake_eligible_students
+
+    if midterm.midterm_type != Midterm.TYPE_RETAKE or not midterm.retake_of_id:
+        return (
+            ClassroomAccessService.assign_resource_to_classroom(
+                classroom, RT_MIDTERM_V2, midterm.id, actor=actor, note="teacher midterm assignment (v2)",
+            ),
+            None,
+        )
+
+    from midterms.models import MidtermOutcome
+
+    roster = set(_classroom_student_ids(classroom))
+    eligible = roster & set(retake_eligible_students(midterm).values_list("pk", flat=True))
+    # The two reasons a roster member is skipped read very differently to a teacher: one
+    # cleared the parent, the other never sat it (so there is no verdict to retake).
+    passed = roster & set(
+        MidtermOutcome.objects.filter(midterm_id=midterm.retake_of_id, passed=True).values_list(
+            "student_id", flat=True
+        )
+    )
+    result = AssignmentService.bulk_assign_resource(
+        list(User.objects.filter(pk__in=eligible)),
+        RT_MIDTERM_V2,
+        midterm.id,
+        actor=actor,
+        source=ResourceAccessGrant.SOURCE_CLASSROOM,
+        classroom=classroom,
+        note="teacher retake assignment (v2, failers only)",
+    )
+    result["classroom_id"] = classroom.pk
+    result["resource_type"] = RT_MIDTERM_V2
+    result["resource_id"] = midterm.id
+    summary = {
+        "granted": len(eligible),
+        "skipped_passed": len(passed),
+        "skipped_no_result": len(roster) - len(eligible) - len(passed),
+    }
+    return result, summary
+
+
+def _retake_detail(summary: dict) -> str:
+    """Plain-English assignment outcome for the teacher's toast."""
+    parts = [f"Retake granted to {summary['granted']} student(s)."]
+    if summary["skipped_passed"]:
+        parts.append(f"{summary['skipped_passed']} skipped — already passed the original midterm.")
+    if summary["skipped_no_result"]:
+        parts.append(f"{summary['skipped_no_result']} skipped — no result on the original midterm.")
+    return " ".join(parts)
+
+
 class AssignMidtermV2View(_ClassroomScopedView):
-    """Assign a published midterm to every enrolled student (whole-class flavor)."""
+    """Assign a published midterm to every enrolled student (whole-class flavor).
+
+    Exception: a retake goes only to the students who failed its parent — see
+    ``_grant_to_classroom``.
+    """
 
     def post(self, request, classroom_pk):
         classroom = self.get_classroom()
@@ -192,11 +275,15 @@ class AssignMidtermV2View(_ClassroomScopedView):
         if starts_at is not None and deadline is not None and deadline <= starts_at:
             return Response({"detail": "Deadline must be after the start time."}, status=http.HTTP_400_BAD_REQUEST)
 
+        # Mandatory window — but only when there is not one already: re-assigning to pick up
+        # a late student sends no schedule fields and must keep the teacher's chosen window.
+        existing = MidtermSchedule.objects.filter(classroom=classroom, midterm=midterm).first()
+        if starts_at is None and (existing is None or existing.starts_at is None):
+            return missing_starts_at_response()
+
         # The SCHEDULE owns the access window; do NOT set grant.expires_at=deadline (that would
         # strip access from a student mid-attempt at the deadline).
-        result = ClassroomAccessService.assign_resource_to_classroom(
-            classroom, RT_MIDTERM_V2, midterm.id, actor=request.user, note="teacher midterm assignment (v2)",
-        )
+        result, retake_summary = _grant_to_classroom(classroom, midterm, request.user)
         schedule, created = MidtermSchedule.objects.get_or_create(
             classroom=classroom, midterm=midterm,
             defaults={"starts_at": starts_at, "deadline": deadline, "created_by": request.user},
@@ -211,7 +298,12 @@ class AssignMidtermV2View(_ClassroomScopedView):
                 update_fields.append("deadline")
             if update_fields:
                 schedule.save(update_fields=[*update_fields, "updated_at"])
-        return Response({"detail": "Midterm assigned to classroom.", **result}, status=http.HTTP_200_OK)
+        notify_class_midterm_scheduled(schedule)
+        detail = "Midterm assigned to classroom."
+        if retake_summary is not None:
+            detail = _retake_detail(retake_summary)
+            result["retake"] = retake_summary
+        return Response({"detail": detail, **result}, status=http.HTTP_200_OK)
 
 
 class MidtermV2PanelView(_ClassroomScopedView):
@@ -292,31 +384,50 @@ class MidtermV2PanelView(_ClassroomScopedView):
         if midterm is None:
             return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
 
-        sched, _ = MidtermSchedule.objects.get_or_create(
-            classroom=classroom, midterm=midterm, defaults={"created_by": request.user}
-        )
         data = request.data or {}
+        # Validate BEFORE touching the row: creating it first and then rejecting the payload
+        # leaves behind exactly the thing this endpoint must never produce — a schedule with
+        # no start time, i.e. a midterm open to the class immediately.
+        starts_at = deadline = None
         if "starts_at" in data:
-            v = _parse_schedule_dt(data.get("starts_at"))
-            if v == "INVALID":
+            starts_at = _parse_schedule_dt(data.get("starts_at"))
+            if starts_at == "INVALID":
                 return Response({"detail": "Invalid starts_at."}, status=http.HTTP_400_BAD_REQUEST)
-            sched.starts_at = v
+            # A blank start is not an edit, it is the bypass: it reopens the exam to everyone.
+            if starts_at is None:
+                return missing_starts_at_response()
         if "deadline" in data:
-            v = _parse_schedule_dt(data.get("deadline"))
-            if v == "INVALID":
+            deadline = _parse_schedule_dt(data.get("deadline"))
+            if deadline == "INVALID":
                 return Response({"detail": "Invalid deadline."}, status=http.HTTP_400_BAD_REQUEST)
-            sched.deadline = v
+
+        sched = MidtermSchedule.objects.filter(classroom=classroom, midterm=midterm).first()
+        effective_start = starts_at or (sched.starts_at if sched else None)
+        if effective_start is None:
+            return missing_starts_at_response()
+        effective_deadline = deadline if "deadline" in data else (sched.deadline if sched else None)
+        if effective_deadline is not None and effective_deadline <= effective_start:
+            return Response({"detail": "Deadline must be after the start time."}, status=http.HTTP_400_BAD_REQUEST)
+
+        if sched is None:
+            sched = MidtermSchedule(classroom=classroom, midterm=midterm, created_by=request.user)
+        sched.starts_at = effective_start
+        sched.deadline = effective_deadline
         if "ignore_start" in data:
             sched.ignore_start = bool(data.get("ignore_start"))
-        if sched.starts_at and sched.deadline and sched.deadline <= sched.starts_at:
-            return Response({"detail": "Deadline must be after the start time."}, status=http.HTTP_400_BAD_REQUEST)
         sched.save()
+        notify_class_midterm_scheduled(sched)
         return Response({"schedule": _serialize_schedule(sched)})
 
 
 class MidtermV2StartCodeView(_ClassroomScopedView):
     """POST /classes/<pk>/midterms-v2/<midterm_id>/start-code/ — generate/rotate the
-    6-digit access code students must enter to begin ("Start midterm")."""
+    6-digit access code students must enter to begin ("Start midterm").
+
+    Accepts an optional ``starts_at``: the panel's start dialog sets the window and takes
+    the code in one request, so a teacher can never end up with a code on a schedule that
+    has no start time (which would open the exam to the class immediately).
+    """
 
     def post(self, request, classroom_pk, midterm_id):
         classroom = self.get_classroom()
@@ -326,11 +437,23 @@ class MidtermV2StartCodeView(_ClassroomScopedView):
         midterm = Midterm.objects.filter(pk=midterm_id).first()
         if midterm is None:
             return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
-        sched, _ = MidtermSchedule.objects.get_or_create(
-            classroom=classroom, midterm=midterm, defaults={"created_by": request.user}
-        )
+
+        starts_at = _parse_schedule_dt((request.data or {}).get("starts_at"))
+        if starts_at == "INVALID":
+            return Response({"detail": "Invalid starts_at."}, status=http.HTTP_400_BAD_REQUEST)
+        sched = MidtermSchedule.objects.filter(classroom=classroom, midterm=midterm).first()
+        if starts_at is None and (sched is None or sched.starts_at is None):
+            return missing_starts_at_response()
+
+        if sched is None:
+            sched = MidtermSchedule(classroom=classroom, midterm=midterm, created_by=request.user)
+        if starts_at is not None:
+            sched.starts_at = starts_at
+        if sched.deadline is not None and sched.deadline <= sched.starts_at:
+            return Response({"detail": "Deadline must be after the start time."}, status=http.HTTP_400_BAD_REQUEST)
         code = sched.generate_access_code()
-        sched.save(update_fields=["access_code", "access_code_set_at", "updated_at"])
+        sched.save()
+        notify_class_midterm_scheduled(sched)
         return Response({"access_code": code, "schedule": _serialize_schedule(sched)})
 
 

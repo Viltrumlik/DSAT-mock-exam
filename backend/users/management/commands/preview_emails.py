@@ -26,14 +26,37 @@ SAMPLES = [
         "verification_code.html",
         {"code": "079431", "ttl_minutes": 15},
     ),
+    (
+        "midterm_scheduled.html",
+        {
+            "headline": "Your midterm is scheduled",
+            "is_retake": False,
+            # Long enough to prove the title wraps rather than stretching the shell.
+            "midterm_title": "Reading & Writing Midterm 3 — Senior",
+            "classroom_name": "ENG-Senior-Tue/Thu",
+            "subject_label": "Reading & Writing",
+            "question_label": "30 questions",
+            "scoring_label": "Out of 800 · pass at 500",
+            "month_label": "JUL",
+            "day_number": "24",
+            "weekday_label": "Thursday",
+            "date_label": "24 July 2026",
+            "start_time": "09:30",
+            "end_time": "10:30",
+            "duration_label": "60 minutes",
+            "seated_by": "09:15",
+            "timezone_label": "Asia/Tashkent",
+            "midterm_url": "https://mastersat.uz/midterm",
+        },
+    ),
 ]
 
 
 class Command(BaseCommand):
     help = "Render the email templates with sample data for visual review."
 
-    # Deliberately one entry. The platform sends exactly one message today; when the
-    # next one lands, add it here so it is reviewable without a real send.
+    # Every template the platform sends belongs in SAMPLES: a message that cannot be
+    # previewed gets designed by sending real mail to a real class.
 
     def add_arguments(self, parser):
         parser.add_argument(

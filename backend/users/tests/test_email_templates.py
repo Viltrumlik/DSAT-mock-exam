@@ -13,8 +13,29 @@ from django.test import SimpleTestCase, override_settings
 
 from core.mail import brand_context
 
+MIDTERM_SAMPLE = {
+    "headline": "Your midterm is scheduled",
+    "is_retake": False,
+    "midterm_title": "Reading & Writing Midterm 3",
+    "classroom_name": "ENG-Senior-Tue/Thu",
+    "subject_label": "Reading & Writing",
+    "question_label": "30 questions",
+    "scoring_label": "Out of 800 · pass at 500",
+    "month_label": "JUL",
+    "day_number": "24",
+    "weekday_label": "Thursday",
+    "date_label": "24 July 2026",
+    "start_time": "09:30",
+    "end_time": "10:30",
+    "duration_label": "60 minutes",
+    "seated_by": "09:15",
+    "timezone_label": "Asia/Tashkent",
+    "midterm_url": "https://mastersat.uz/midterm",
+}
+
 TEMPLATES = {
     "email/verification_code.html": {"code": "079431", "ttl_minutes": 15},
+    "email/midterm_scheduled.html": MIDTERM_SAMPLE,
 }
 
 
@@ -73,12 +94,21 @@ class EmailShellTests(SimpleTestCase):
         self.assertIn("000123", html)
 
     def test_autoescape_is_on_in_the_shell(self):
-        """Nothing user-supplied reaches a template today — code and ttl are both
-        server-generated. This guards the shell for the messages that come next, which
-        will interpolate names and titles."""
+        """The shell interpolates the site URL into both an href and a link label."""
         with override_settings(EMAIL_SITE_URL="https://x.uz/<script>alert(1)</script>"):
             html = self._render(
                 "email/verification_code.html", TEMPLATES["email/verification_code.html"]
             )
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;", html)
+
+    def test_staff_authored_title_is_escaped(self):
+        """The midterm title is the first user-supplied string to reach a template, and it
+        lands in the body, the <title> and the inbox preheader. A staff account that turns
+        one of those into markup has scripted every student's mail client."""
+        html = self._render(
+            "email/midterm_scheduled.html",
+            {**MIDTERM_SAMPLE, "midterm_title": "<script>alert(1)</script>"},
+        )
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)

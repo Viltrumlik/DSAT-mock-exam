@@ -15,6 +15,12 @@ export interface ConfirmDialogProps {
   tone?: "primary" | "danger";
   /** Shows a spinner on the confirm button and disables both actions. */
   loading?: boolean;
+  /**
+   * Blocks confirming while the body's own inputs are incomplete — a dialog that collects
+   * something (a date, a reason) has no other way to say "not yet". Cancel stays live:
+   * an unfinished form must never trap the teacher in the modal.
+   */
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -33,6 +39,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   tone = "primary",
   loading = false,
+  confirmDisabled = false,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -48,7 +55,12 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onCancel} disabled={loading}>
             {cancelLabel}
           </Button>
-          <Button variant={tone === "danger" ? "danger" : "primary"} onClick={onConfirm} loading={loading}>
+          <Button
+            variant={tone === "danger" ? "danger" : "primary"}
+            onClick={onConfirm}
+            loading={loading}
+            disabled={confirmDisabled}
+          >
             {confirmLabel}
           </Button>
         </>

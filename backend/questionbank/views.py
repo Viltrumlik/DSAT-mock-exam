@@ -35,6 +35,7 @@ from .models import (
     BankSkill,
     ImportBatch,
     ImportCandidate,
+    Subject,
 )
 from .triage import TriageError
 
@@ -276,6 +277,57 @@ class BankSkillListView(generics.ListAPIView):
         if p.get("subject"):
             qs = qs.filter(domain__subject=p["subject"])
         return qs.order_by("domain__display_order", "display_order", "name")
+
+
+# Callers outside the bank hold an exam-side subject (READING_WRITING) or a
+# Question.question_type (READING / WRITING), all of which are the bank's single
+# ENGLISH subject. Accepting the aliases keeps the translation out of every client.
+_SUBJECT_ALIASES = {
+    "MATH": Subject.MATH,
+    "ENGLISH": Subject.ENGLISH,
+    "READING_WRITING": Subject.ENGLISH,
+    "READING": Subject.ENGLISH,
+    "WRITING": Subject.ENGLISH,
+}
+
+
+def _bank_subject(raw):
+    return _SUBJECT_ALIASES.get(str(raw or "").strip().upper())
+
+
+@extend_schema(tags=["questionbank"], parameters=[OpenApiParameter("subject", str)])
+class BankTaxonomyView(APIView):
+    """GET /api/questionbank/taxonomy/ — domains with their skills nested.
+
+    ``domains/`` + ``skills/`` would make a grouped picker do two round-trips and join
+    them client-side; this returns the tree the ``<optgroup>`` already needs.
+    """
+
+    permission_classes = QB_PERMISSIONS
+
+    def get(self, request):
+        domains = BankDomain.objects.all()
+        raw_subject = request.query_params.get("subject")
+        if raw_subject:
+            subject = _bank_subject(raw_subject)
+            # An unknown subject must return nothing rather than the whole taxonomy —
+            # a typo'd filter that silently offers Math skills on an English question
+            # is worse than an empty picker.
+            if subject is None:
+                return Response({"results": []})
+            domains = domains.filter(subject=subject)
+        domains = domains.order_by("subject", "display_order", "name").prefetch_related("skills")
+        return Response({
+            "results": [
+                {
+                    "domain_id": d.id,
+                    "domain": d.name,
+                    "subject": d.subject,
+                    "skills": [{"id": s.id, "name": s.name} for s in d.skills.all()],
+                }
+                for d in domains
+            ]
+        })
 
 
 # ══════════════════════════════════════════════════════════════════════════════

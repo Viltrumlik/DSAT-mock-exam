@@ -23,9 +23,26 @@ export function questions(attempt: Attempt | null): ExamQuestion[] {
   return attempt?.current_module_details?.questions ?? [];
 }
 
+/**
+ * Whether this attempt is a midterm, as the SERVER labelled it.
+ *
+ * The runner is reached for a midterm by `?src=midterm`, but that query param says which
+ * BACKEND to talk to, not what the paper is — a resumed link, a copied URL or an admin
+ * preview can lose it. `mock_kind` travels with the attempt itself, so anything that
+ * changes what a midterm looks like keys on this and not on the param.
+ */
+export function isMidtermAttempt(attempt: Attempt | null): boolean {
+  return attempt?.practice_test_details?.mock_kind === "MIDTERM";
+}
+
 export function moduleLabel(attempt: Attempt | null): string {
-  const order = attempt?.current_module_details?.module_order ?? 1;
   const subject = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
+  // A midterm is ONE paper, not a section of a longer test — the SAT "Section 2, Module 1"
+  // rail is meaningless there and reads as if more modules were coming.
+  if (isMidtermAttempt(attempt)) {
+    return attempt?.practice_test_details?.title?.trim() || `${subject} Midterm`;
+  }
+  const order = attempt?.current_module_details?.module_order ?? 1;
   const section = subjectKind(attempt) === "MATH" ? 2 : 1;
   return `Section ${section}, Module ${order}: ${subject}`;
 }

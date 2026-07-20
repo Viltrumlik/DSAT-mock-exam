@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 from exams.models import Module, Question
 from midterms.models import Midterm, MidtermAttempt, MidtermVersion, MidtermVersionAssignment
 from midterms.tests_api import force_expire, grant
-from midterms.tests_classroom import enroll, make_classroom
+from midterms.tests_classroom import enroll, make_classroom, open_window
 
 User = get_user_model()
 
@@ -134,7 +134,14 @@ class VersionAssignmentApiTests(TestCase):
         self.vA = _add_version(self.mt, 1, "a")
         self.vB = _add_version(self.mt, 2, "b")
         self.tc = APIClient(); self.tc.force_authenticate(self.teacher)
-        self.tc.post(f"/api/classes/{self.room.id}/midterms-v2/assign/", {"midterm_id": self.mt.id}, format="json")
+        # Assign carries a start time — a schedule-less assign is refused, and without the
+        # grants it creates the roster (and so every assignment below) would be empty.
+        r = self.tc.post(
+            f"/api/classes/{self.room.id}/midterms-v2/assign/",
+            {"midterm_id": self.mt.id, "starts_at": open_window()},
+            format="json",
+        )
+        assert r.status_code == 200, r.content
 
     def test_preview_is_not_saved_then_commit_persists(self):
         cid = self.room.id

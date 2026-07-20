@@ -31,6 +31,7 @@ from access.resources import RT_MIDTERM
 from exams.models import MockExam
 
 from .capabilities import classroom_capabilities
+from .mail_midterm import notify_class_midterm_scheduled
 from .models import Classroom, ClassroomMembership
 from .models_schedule import MidtermSchedule
 from .views_rankings import _ClassroomScopedView
@@ -46,6 +47,23 @@ def _parse_schedule_dt(value):
     if timezone.is_naive(dt):
         dt = timezone.make_aware(dt, timezone.get_current_timezone())
     return dt
+
+
+def missing_starts_at_response():
+    """400 for a teacher-facing path that would leave a schedule with no start time.
+
+    A ``MidtermSchedule`` with a NULL ``starts_at`` is not a half-filled form — it is an
+    exam the whole class can open right now (see the model docstring), so every dialog that
+    creates one has to carry a start. Reported as a field error, not just a detail, so the
+    form can mark the input that is missing.
+    """
+    return Response(
+        {
+            "detail": "Set the date and time this midterm starts.",
+            "starts_at": ["A start date and time is required."],
+        },
+        status=http.HTTP_400_BAD_REQUEST,
+    )
 
 User = get_user_model()
 
@@ -95,6 +113,13 @@ class AssignMidtermView(_ClassroomScopedView):
                 status=http.HTTP_400_BAD_REQUEST,
             )
 
+        # The window is mandatory, but only where one does not exist yet: re-assigning to
+        # pick up a late student legitimately sends no schedule fields, and that must keep
+        # the window the teacher already chose rather than being rejected.
+        existing = MidtermSchedule.objects.filter(classroom=classroom, mock_exam=exam).first()
+        if starts_at is None and (existing is None or existing.starts_at is None):
+            return missing_starts_at_response()
+
         result = ClassroomAccessService.assign_resource_to_classroom(
             classroom, RT_MIDTERM, exam.id, actor=request.user, note="teacher midterm assignment",
             expires_at=deadline,
@@ -119,6 +144,7 @@ class AssignMidtermView(_ClassroomScopedView):
                 update_fields.append("deadline")
             if update_fields:
                 schedule.save(update_fields=[*update_fields, "updated_at"])
+        notify_class_midterm_scheduled(schedule)
         return Response({"detail": "Midterm assigned to classroom.", **result}, status=http.HTTP_200_OK)
 
 

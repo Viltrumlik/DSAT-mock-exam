@@ -83,6 +83,10 @@ class IssuanceLogicTests(MidtermCertificateFixture):
         self.assertEqual(MidtermCertificate.objects.count(), 0)
 
     def test_ranking_ties_snapshot_and_release(self):
+        # Assigning is what creates the schedule; issuance only flips its release flag.
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, mock_exam=self.midterm, starts_at=timezone.now()
+        )
         self._complete(self.s0, 750)
         self._complete(self.s1, 700)
         self._complete(self.s2, 700)  # tie with s1
@@ -122,6 +126,20 @@ class IssuanceLogicTests(MidtermCertificateFixture):
         self.assertEqual(again.code, code)
         self.assertEqual(again.rank, 1)
         self.assertEqual(again.score, 800)
+
+    def test_issuing_never_manufactures_a_schedule(self):
+        """Releasing results must not create a schedule row.
+
+        A row created here would have no starts_at, and a NULL start means the midterm is
+        open to the whole class from that moment — publishing results would reopen the exam
+        to anyone who had not sat it. With no schedule, results are visible anyway.
+        """
+        self._complete(self.s0, 700)
+        self._complete(self.s1, 700)
+        self._complete(self.s2, 700)
+        result = issue_certificates(self.classroom, self.midterm, self.owner)
+        self.assertTrue(result["ok"])
+        self.assertFalse(MidtermSchedule.objects.filter(classroom=self.classroom).exists())
 
 
 class PanelCohortTests(MidtermCertificateFixture):

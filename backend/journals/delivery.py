@@ -623,6 +623,12 @@ def grant_midterm(classroom, session: JournalLesson, *, actor) -> tuple[Classroo
         starts_at = delivery.scheduled_for - timedelta(
             days=session.midterm_access_days_before or 0
         )
+    # The one path allowed to create a schedule without a start time. Every teacher-facing
+    # path (assign / panel PATCH / start-code) now rejects that, because a NULL starts_at is
+    # a midterm open to the whole class; here the window is derived from the lesson, and a
+    # journal session with no scheduled date has nothing to derive it from. The lesson grant
+    # itself is what gates entry, so the class is not exposed by the missing start — and no
+    # class email goes out from here either: this grant follows the lesson, not a dialog.
     schedule, created_schedule = MidtermSchedule.objects.get_or_create(
         classroom=classroom,
         midterm_id=session.midterm_exam_id,
