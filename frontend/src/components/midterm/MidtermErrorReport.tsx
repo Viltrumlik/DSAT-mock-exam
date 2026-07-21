@@ -55,7 +55,6 @@ export default function MidtermErrorReport({ report }: { report: ErrorReport }) 
   const [busy, setBusy] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
   const mistakes = Math.max(0, report.total_count - report.correct_count);
-  const focus = report.skills.slice(0, 3);
 
   /** Print-to-PDF of this card alone; the print stylesheet hides everything around it. */
   function printReport() {
@@ -135,37 +134,6 @@ export default function MidtermErrorReport({ report }: { report: ErrorReport }) 
         </p>
         {report.skills.length === 0 ? <EmptyState report={report} /> : <div className="mt-5"><SkillMistakeChart skills={report.skills} /></div>}
       </div>
-
-      {focus.length > 0 && (
-        <div className="mt-8">
-          <h3 className="text-[15px] font-extrabold" style={{ color: "var(--mer-text)" }}>
-            Priority focus areas
-          </h3>
-          <ol className="mt-3 flex flex-col gap-2">
-            {focus.map((s, i) => (
-              <li key={`${s.skill_id ?? s.skill}`} className="mer-tile flex items-center gap-3 rounded-2xl px-4 py-3">
-                <span
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12px] font-extrabold text-white"
-                  style={{ background: "var(--mer-series)" }}
-                >
-                  {i + 1}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-bold" style={{ color: "var(--mer-text)" }}>
-                    {s.skill}
-                  </span>
-                  <span className="block truncate text-[12px] font-semibold" style={{ color: "var(--mer-text-muted)" }}>
-                    {s.domain}
-                  </span>
-                </span>
-                <span className="shrink-0 text-[13px] font-extrabold tabular-nums" style={{ color: "var(--mer-text-2)" }}>
-                  {s.wrong} of {s.total} missed
-                </span>
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
 
       {report.unclassified_wrong > 0 && (
         <p className="mt-6 flex items-start gap-2 text-[12px] font-semibold" style={{ color: "var(--mer-text-muted)" }}>

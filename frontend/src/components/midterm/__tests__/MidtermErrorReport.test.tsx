@@ -69,16 +69,6 @@ describe("MidtermErrorReport", () => {
     expect(tiles.some((t) => t.startsWith("Weak skills") && t.includes("4"))).toBe(true);
   });
 
-  it("lists exactly the top three skills as priority focus areas", async () => {
-    await render(BASE);
-    const items = host.querySelectorAll("ol li");
-    expect(items).toHaveLength(3);
-    expect(items[0].textContent).toContain("Nonlinear functions");
-    expect(items[0].textContent).toContain("5 of 6 missed");
-    // The 4th skill is charted but is not a priority.
-    expect([...items].some((li) => li.textContent?.includes("Area and volume"))).toBe(false);
-  });
-
   it("drops the score tile on an ungraded midterm instead of inventing a score", async () => {
     await render({ ...BASE, is_graded: false, score: null, pass_mark: null, passed: null });
     const tiles = [...host.querySelectorAll(".mer-tile")].map((t) => t.textContent ?? "");
