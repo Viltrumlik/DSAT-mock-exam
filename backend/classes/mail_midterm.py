@@ -44,9 +44,9 @@ logger = logging.getLogger(__name__)
 SEATED_BEFORE_MINUTES = 15
 
 _SUBJECT_LABELS = {
-    "READING_WRITING": "Reading & Writing",
+    "READING_WRITING": "English",
     "MATH": "Math",
-    "ENGLISH": "Reading & Writing",
+    "ENGLISH": "English",
 }
 
 

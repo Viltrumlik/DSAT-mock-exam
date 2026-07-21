@@ -129,10 +129,13 @@ the one graphic in this message is built out of two stacked table cells.
   {% endcomment %}
   <p class="ms-ink" style="margin:28px 0 12px;font-size:15px;font-weight:800;color:#0f1729;">The rules — read them before the day</p>
 
-  {% comment %} REQUIRED {% endcomment %}
+  {% comment %}
+    REQUIRED. The heading spans BOTH columns (colspan=2): without it the heading cell falls
+    into the 26px emoji column and "BRING & HAVE READY" wraps one word per line.
+  {% endcomment %}
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
     <tr>
-      <td style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#1a7f43;">✅ BRING &amp; HAVE READY</td>
+      <td colspan="2" style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#1a7f43;">✅&nbsp; BRING &amp; HAVE READY</td>
     </tr>
     <tr>
       <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🔋</td>
@@ -158,9 +161,9 @@ the one graphic in this message is built out of two stacked table cells.
 
   {% comment %} ALLOWED {% endcomment %}
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
-    <tr><td height="12" style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>
+    <tr><td colspan="2" height="12" style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>
     <tr>
-      <td style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#1a7f43;">👍 ALLOWED</td>
+      <td colspan="2" style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#1a7f43;">👍&nbsp; ALLOWED</td>
     </tr>
     <tr>
       <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">📝</td>
@@ -186,9 +189,9 @@ the one graphic in this message is built out of two stacked table cells.
 
   {% comment %} PROHIBITED {% endcomment %}
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
-    <tr><td height="12" style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>
+    <tr><td colspan="2" height="12" style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>
     <tr>
-      <td style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#c02626;">⛔ NOT ALLOWED</td>
+      <td colspan="2" style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#c02626;">⛔&nbsp; NOT ALLOWED</td>
     </tr>
     <tr>
       <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🖥️</td>

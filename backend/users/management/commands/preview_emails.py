@@ -32,9 +32,9 @@ SAMPLES = [
             "headline": "Your midterm is scheduled",
             "is_retake": False,
             # Long enough to prove the title wraps rather than stretching the shell.
-            "midterm_title": "Reading & Writing Midterm 3 — Senior",
-            "classroom_name": "ENG-Senior-Tue/Thu",
-            "subject_label": "Reading & Writing",
+            "midterm_title": "English Midterm 3 — Senior",
+            "classroom_name": "Senior G12 · English · Abdulahad N.",
+            "subject_label": "English",
             "question_label": "30 questions",
             "scoring_label": "Out of 800 · pass at 500",
             "month_label": "JUL",
