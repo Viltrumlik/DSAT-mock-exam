@@ -84,6 +84,21 @@ class Midterm(TimestampedModel):
     REFERENCE_SHEET_ENABLED = False
     PAUSE_ENABLED = False
 
+    # ── flavour ──────────────────────────────────────────────────────────────
+    # Mirrors ``exams.MockExam.midterm_type`` verbatim (the builder authors it there).
+    # PRE_MIDTERM is deliberately exempt from the pass/fail machinery: it is a diagnostic,
+    # so it issues no MidtermOutcome and can never gate a retake.
+    TYPE_PRE_MIDTERM = "PRE_MIDTERM"
+    TYPE_MIDTERM = "MIDTERM"
+    TYPE_RETAKE = "RETAKE"
+    MIDTERM_TYPE_CHOICES = [
+        (TYPE_PRE_MIDTERM, "Pre-midterm"),
+        (TYPE_MIDTERM, "Midterm"),
+        (TYPE_RETAKE, "Retake midterm"),
+    ]
+    # Types that produce a pass/fail verdict. Pre-midterms are scored but never judged.
+    GRADED_TYPES = (TYPE_MIDTERM, TYPE_RETAKE)
+
     title = models.CharField(max_length=255, db_index=True)
     subject = models.CharField(max_length=20, choices=SUBJECT_CHOICES, default=READING_WRITING, db_index=True)
     level = models.CharField(
@@ -95,6 +110,31 @@ class Midterm(TimestampedModel):
         help_text="Blank = untagged (no calculator). Foundation applies to Math only.",
     )
     scoring_scale = models.CharField(max_length=16, choices=SCALE_CHOICES, default=SCALE_100)
+    midterm_type = models.CharField(
+        max_length=16,
+        choices=MIDTERM_TYPE_CHOICES,
+        default=TYPE_MIDTERM,
+        db_index=True,
+        help_text="Pre-midterm / midterm / retake. Pre-midterms are never pass/fail graded.",
+    )
+    pass_mark = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Score a student must reach to PASS, on this midterm's own scale "
+            "(0-100 or 200-800). Blank = the 50%-of-questions default for the scale."
+        ),
+    )
+    # A RETAKE points at the midterm it is the second chance for. Access to the retake is
+    # granted only to students who FAILED that parent (see access.retake_eligible_students).
+    retake_of = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="retakes",
+        help_text="For a RETAKE: the midterm whose failers may sit this.",
+    )
     duration_minutes = models.PositiveIntegerField(default=60, help_text="Single-module strict timer.")
     question_limit = models.PositiveSmallIntegerField(default=30, help_text="Authoring cap on question count.")
 
@@ -171,6 +211,29 @@ class Midterm(TimestampedModel):
     @property
     def score_ceiling(self) -> int:
         return 800 if self.scoring_scale == self.SCALE_800 else 100
+
+    # ── pass/fail ────────────────────────────────────────────────────────────
+    @property
+    def is_graded(self) -> bool:
+        """Whether sitting this midterm produces a pass/fail verdict.
+
+        False for pre-midterms, which are diagnostics: they are scored and certificated
+        like any other midterm but never judged, so they can neither be failed nor unlock
+        a retake.
+        """
+        return self.midterm_type in self.GRADED_TYPES
+
+    @property
+    def effective_pass_mark(self) -> int:
+        """The pass mark on this midterm's own scale, falling back to the scale default."""
+        from .outcomes import effective_pass_mark
+
+        return effective_pass_mark(self)
+
+    def is_passing_score(self, score) -> bool:
+        from .outcomes import is_passing
+
+        return is_passing(score, self)
 
     def delete(self, *args, **kwargs):
         # PROTECT stops the owned Module being deleted out from under a live midterm; on
@@ -266,6 +329,21 @@ class MidtermAttempt(TimestampedModel):
     scoring_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    # ── proctoring: off-screen offences ──────────────────────────────────────
+    # Counted SERVER-side because a client-only tally is reset by a refresh or a new tab,
+    # which is exactly what a student trying to game the rule would do. The browser reports
+    # each offence; the server decides what it costs (see views.report_offscreen).
+    offscreen_violations = models.PositiveSmallIntegerField(
+        default=0, help_text="Times the student left the exam window during this attempt."
+    )
+    # Set when the attempt was ended by the system rather than by the clock, so the result
+    # page and the admin report can say WHY a paper was cut short.
+    TERMINATION_OFFSCREEN = "OFFSCREEN"
+    TERMINATION_CHOICES = [(TERMINATION_OFFSCREEN, "Left the exam window")]
+    terminated_reason = models.CharField(
+        max_length=24, choices=TERMINATION_CHOICES, blank=True, default="", db_index=True
+    )
 
     # Idempotency anchor for the post-deploy migration of legacy exams.TestAttempt.
     legacy_test_attempt_id = models.BigIntegerField(null=True, blank=True, unique=True, db_index=True)
@@ -465,7 +543,157 @@ class MidtermAttempt(TimestampedModel):
         self.refresh_from_db()
         self._assert_invariants()
         self._log("complete", from_state=STATE_SCORING, detail={"score": int(result["score"])})
+        # Freeze what the score was made of, then record the verdict. Both are derived
+        # data: a failure here must not un-complete a scored attempt, so neither is
+        # allowed to raise (the attempt row is already correct without them).
+        try:
+            MidtermQuestionResult.freeze_for(self)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("midterm per-question freeze failed for attempt %s", self.pk)
+        try:
+            MidtermOutcome.record_for(self)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("midterm outcome record failed for attempt %s", self.pk)
         return True
+
+
+class MidtermQuestionResult(models.Model):
+    """One frozen per-question verdict for a completed attempt.
+
+    Exists because correctness used to be derived at READ time against the *live*
+    ``exams.Question`` rows, and midterm content is live-synced from the builder
+    (``midterms.sync`` refreshes mirrored questions in place and trims removed ones). So a
+    report rebuilt a month later could silently disagree with the score the student was
+    given — or lose questions entirely. Freezing at scoring time makes a past result a
+    historical fact.
+
+    ``skill_name``/``domain_name`` are denormalized copies, not just the FK: retiring or
+    renaming a taxonomy row must not rewrite last term's error report.
+    """
+
+    attempt = models.ForeignKey(
+        MidtermAttempt, on_delete=models.CASCADE, related_name="question_results", db_index=True
+    )
+    # Deliberately a plain integer, NOT a FK: builder edits delete mirrored questions, and
+    # a CASCADE would erase the history this table exists to preserve.
+    question_id = models.BigIntegerField(db_index=True)
+    order = models.PositiveIntegerField(default=0)
+    is_correct = models.BooleanField(default=False, db_index=True)
+    answered = models.BooleanField(default=False, help_text="False = omitted (counts as wrong).")
+
+    skill = models.ForeignKey(
+        "questionbank.BankSkill", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    skill_name = models.CharField(max_length=255, blank=True, default="")
+    domain_name = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        db_table = "midterms_question_result"
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["attempt", "question_id"], name="uniq_midterm_qresult_per_attempt"
+            ),
+        ]
+        indexes = [models.Index(fields=["attempt", "is_correct"])]
+
+    def __str__(self):
+        return f"MidtermQuestionResult(attempt={self.attempt_id}, q={self.question_id}, correct={self.is_correct})"
+
+    @classmethod
+    def freeze_for(cls, attempt) -> int:
+        """Write (or rewrite) the per-question rows for a just-completed ``attempt``.
+
+        Grades through ``exams.Question.check_answer`` — the same single grading atom the
+        scorer uses — so the frozen rows can never disagree with the frozen score. Returns
+        the number of rows written. Idempotent: re-running replaces the set.
+        """
+        answers = attempt.answers or {}
+        rows = []
+        for i, q in enumerate(attempt.effective_questions()):
+            raw = answers.get(str(q.id))
+            skill = getattr(q, "skill", None)
+            rows.append(
+                cls(
+                    attempt_id=attempt.pk,
+                    question_id=int(q.id),
+                    order=i,
+                    is_correct=bool(q.check_answer(raw)),
+                    answered=raw not in (None, ""),
+                    skill=skill,
+                    skill_name=(getattr(skill, "name", "") or ""),
+                    domain_name=(getattr(getattr(skill, "domain", None), "name", "") or ""),
+                )
+            )
+        cls.objects.filter(attempt_id=attempt.pk).delete()
+        cls.objects.bulk_create(rows, batch_size=200)
+        return len(rows)
+
+
+class MidtermOutcome(models.Model):
+    """The pass/fail verdict for one student on one midterm — the retake gate.
+
+    A separate table rather than a flag on the attempt because the verdict is a different
+    fact from the attempt: it is what a *retake grant* and the *admin report* are keyed on,
+    it must survive an attempt being re-scored, and it carries the pass mark that was in
+    force at the time (changing a midterm's pass mark later must not silently re-judge
+    students who already sat it).
+
+    Never written for a PRE_MIDTERM — a diagnostic has no verdict to give.
+    """
+
+    midterm = models.ForeignKey(Midterm, on_delete=models.CASCADE, related_name="outcomes", db_index=True)
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="midterm_outcomes", db_index=True
+    )
+    attempt = models.ForeignKey(
+        MidtermAttempt, on_delete=models.SET_NULL, null=True, blank=True, related_name="outcome_rows"
+    )
+
+    score = models.IntegerField(null=True, blank=True)
+    # Frozen at verdict time — see the class docstring.
+    pass_mark = models.PositiveSmallIntegerField()
+    scoring_scale = models.CharField(max_length=16, blank=True, default="")
+    passed = models.BooleanField(db_index=True)
+
+    decided_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "midterms_outcome"
+        ordering = ["-decided_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["midterm", "student"], name="uniq_midterm_outcome_per_student"),
+        ]
+        indexes = [models.Index(fields=["midterm", "passed"])]
+
+    def __str__(self):
+        verdict = "PASS" if self.passed else "FAIL"
+        return f"MidtermOutcome(midterm={self.midterm_id}, student={self.student_id}, {verdict})"
+
+    @classmethod
+    def record_for(cls, attempt):
+        """Record (or refresh) the verdict for a completed ``attempt``.
+
+        Returns the ``MidtermOutcome``, or ``None`` when the midterm is not graded
+        (pre-midterm) or the attempt has no score yet.
+        """
+        midterm = attempt.midterm
+        if not midterm.is_graded or attempt.score is None:
+            return None
+        mark = midterm.effective_pass_mark
+        outcome, _created = cls.objects.update_or_create(
+            midterm_id=midterm.pk,
+            student_id=attempt.student_id,
+            defaults={
+                "attempt_id": attempt.pk,
+                "score": int(attempt.score),
+                "pass_mark": int(mark),
+                "scoring_scale": midterm.scoring_scale,
+                "passed": int(attempt.score) >= int(mark),
+            },
+        )
+        return outcome
 
 
 class MidtermAttemptIdempotencyKey(models.Model):

@@ -13,6 +13,12 @@ per-midterm control panel:
 Enforcement is deliberately conditional on a schedule *existing*: a midterm with no
 ``MidtermSchedule`` behaves exactly as before (visible, startable, score shown on submit),
 so legacy/unscheduled midterms are unaffected.
+
+That fallback is why ``starts_at`` is mandatory on every teacher-facing path that creates a
+row (assign, panel PATCH, start-code): a schedule with a NULL ``starts_at`` is not a
+half-configured exam, it is an exam that is open to the whole class right now. The one
+deliberate exception is ``journals.delivery``, which derives the window from the lesson
+date rather than from a teacher's dialog.
 """
 
 from __future__ import annotations
@@ -49,6 +55,11 @@ class MidtermSchedule(models.Model):
     # from the control panel via the "Start midterm" action.
     access_code = models.CharField(max_length=6, blank=True, default="", db_index=True)
     access_code_set_at = models.DateTimeField(null=True, blank=True)
+
+    # When the class was emailed that this midterm is scheduled. Claimed with a conditional
+    # UPDATE before anything is sent (see classes/mail_midterm.py), so re-saving a schedule —
+    # or two teachers pressing the button at once — cannot mail the class twice.
+    notified_at = models.DateTimeField(null=True, blank=True)
 
     # Results release (issuing certificates flips this true).
     results_released = models.BooleanField(default=False, db_index=True)

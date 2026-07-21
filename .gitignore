@@ -42,3 +42,4 @@ backend/uat.sqlite3
 graphify-out/
 test-results/
 email_previews/
+.proto/

@@ -59,6 +59,23 @@ export interface MidtermCatalogItem {
   is_published: boolean;
 }
 
+/** What one reported off-screen offence cost the student (see midterms/views.offscreen). */
+export interface OffscreenReport {
+  /** Offences recorded for this attempt so far, server-side. */
+  violations: number;
+  /** Seconds to return before the paper is taken in; 0 once the allowance is spent. */
+  grace_seconds: number;
+  /** True when this offence ended the sitting — the SERVER has already submitted it. */
+  terminated: boolean;
+  limit: number;
+  /**
+   * Fresh attempt snapshot. Absent on the post-completion no-op path (a closing tab firing
+   * one last event), so callers must treat it as optional. Untyped here because the runner
+   * owns the attempt contract and validates it with `parseAttempt`.
+   */
+  attempt?: unknown;
+}
+
 export interface StandaloneResultRow {
   student_id: number;
   student_name: string;
@@ -93,6 +110,21 @@ export const midtermApi = {
   async verifyCode(attemptId: number, code: string): Promise<{ ok: boolean; requires_code: boolean }> {
     const r = await api.post(`/midterms/attempts/${attemptId}/verify_code/`, { code });
     return r.data as { ok: boolean; requires_code: boolean };
+  },
+  /**
+   * Report that the student left the exam window, and learn what it cost them.
+   *
+   * The tally lives on the server; this only says "it happened". `idempotencyKey` must be
+   * stable for ONE absence — a retried report may not burn two of the three chances — and
+   * must be fresh for a new one, or the server dedupes a real offence away.
+   */
+  async reportOffscreen(attemptId: number, idempotencyKey: string): Promise<OffscreenReport> {
+    const r = await api.post(
+      `/midterms/attempts/${attemptId}/offscreen/`,
+      {},
+      { headers: { "Idempotency-Key": idempotencyKey } },
+    );
+    return r.data as OffscreenReport;
   },
 
   // ── teacher: standalone area ───────────────────────────────────────────────

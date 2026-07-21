@@ -24,9 +24,11 @@ from exams.models import MockExam, TestAttempt
 
 from .capabilities import classroom_capabilities
 from .certificates_service import _assigned_cohort, _rank_by_student, certificate_codes_for
+from .mail_midterm import notify_class_midterm_scheduled
 from .models import ClassroomMembership
 from .models_certificates import MidtermCertificate
 from .models_schedule import MidtermSchedule
+from .views_assign import missing_starts_at_response
 from .views_certificates import cert_api_path
 from .views_rankings import _ClassroomScopedView, _display_name
 
@@ -156,11 +158,7 @@ class MidtermPanelView(_ClassroomScopedView):
         if mock is None:
             return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
 
-        schedule, _ = MidtermSchedule.objects.get_or_create(
-            classroom=classroom, mock_exam=mock, defaults={"created_by": request.user}
-        )
         data = request.data
-        update_fields = []
 
         def _parse_dt(value):
             if value in (None, ""):
@@ -172,36 +170,43 @@ class MidtermPanelView(_ClassroomScopedView):
                 dt = timezone.make_aware(dt, timezone.get_current_timezone())
             return dt
 
-        if "starts_at" in data:
-            parsed = _parse_dt(data.get("starts_at"))
-            if parsed == "INVALID":
-                return Response({"detail": "Invalid starts_at."}, status=http.HTTP_400_BAD_REQUEST)
-            schedule.starts_at = parsed
-            update_fields.append("starts_at")
-        if "deadline" in data:
-            parsed = _parse_dt(data.get("deadline"))
-            if parsed == "INVALID":
-                return Response({"detail": "Invalid deadline."}, status=http.HTTP_400_BAD_REQUEST)
-            schedule.deadline = parsed
-            update_fields.append("deadline")
-        if "ignore_start" in data:
-            schedule.ignore_start = bool(data.get("ignore_start"))
-            update_fields.append("ignore_start")
+        # Read the row rather than get_or_create: on a rejected payload the old code had
+        # already written a schedule with no start time, which is a midterm open to the
+        # whole class (see MidtermSchedule's docstring). Nothing is created until the
+        # window validates.
+        schedule = MidtermSchedule.objects.filter(classroom=classroom, mock_exam=mock).first()
+        starts_at_in = _parse_dt(data.get("starts_at")) if "starts_at" in data else None
+        if starts_at_in == "INVALID":
+            return Response({"detail": "Invalid starts_at."}, status=http.HTTP_400_BAD_REQUEST)
+        # A blank starts_at used to null the window back out — that is the bypass, not an edit.
+        if "starts_at" in data and starts_at_in is None:
+            return missing_starts_at_response()
+        if starts_at_in is None and (schedule is None or schedule.starts_at is None):
+            return missing_starts_at_response()
 
+        deadline_in = schedule.deadline if schedule else None
+        if "deadline" in data:
+            deadline_in = _parse_dt(data.get("deadline"))
+            if deadline_in == "INVALID":
+                return Response({"detail": "Invalid deadline."}, status=http.HTTP_400_BAD_REQUEST)
+
+        effective_start = starts_at_in or (schedule.starts_at if schedule else None)
         # A window that closes before it opens can never be used — reject it. Validate the
         # effective post-patch pair (an incoming field may combine with a stored one).
-        if (
-            schedule.starts_at is not None
-            and schedule.deadline is not None
-            and schedule.deadline <= schedule.starts_at
-        ):
+        if deadline_in is not None and deadline_in <= effective_start:
             return Response(
                 {"detail": "Deadline must be after the start time."},
                 status=http.HTTP_400_BAD_REQUEST,
             )
 
-        if update_fields:
-            schedule.save(update_fields=[*update_fields, "updated_at"])
+        if schedule is None:
+            schedule = MidtermSchedule(classroom=classroom, mock_exam=mock, created_by=request.user)
+        schedule.starts_at = effective_start
+        schedule.deadline = deadline_in
+        if "ignore_start" in data:
+            schedule.ignore_start = bool(data.get("ignore_start"))
+        schedule.save()
+        notify_class_midterm_scheduled(schedule)
         return Response(serialize_schedule(schedule))
 
 

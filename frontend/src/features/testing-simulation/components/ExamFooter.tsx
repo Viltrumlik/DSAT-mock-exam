@@ -3,6 +3,8 @@ import { ChevronUp } from "lucide-react";
 
 interface ExamFooterProps {
   navLabel: string;
+  /** "12 of 22 answered" — progress the student would otherwise have to count by hand. */
+  progressLabel?: string;
   onToggleNavigator: () => void;
   canGoBack: boolean;
   onBack: () => void;
@@ -19,6 +21,7 @@ interface ExamFooterProps {
 /** Bottom bar: student identity + question-grid toggle + Back / Next / Submit. */
 export function ExamFooter({
   navLabel,
+  progressLabel,
   onToggleNavigator,
   canGoBack,
   onBack,
@@ -40,16 +43,21 @@ export function ExamFooter({
         ) : null}
       </div>
 
-      {/* Center: the question-navigator pill (Bluebook-style rounded pill). */}
-      <button
-        type="button"
-        onClick={onToggleNavigator}
-        aria-haspopup="dialog"
-        className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800"
-      >
-        {navLabel}
-        <ChevronUp className="h-4 w-4" />
-      </button>
+      {/* Center: the question-navigator pill (Bluebook-style rounded pill) + progress. */}
+      <div className="flex flex-col items-center gap-1">
+        <button
+          type="button"
+          onClick={onToggleNavigator}
+          aria-haspopup="dialog"
+          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800"
+        >
+          {navLabel}
+          <ChevronUp className="h-4 w-4" />
+        </button>
+        {progressLabel ? (
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{progressLabel}</span>
+        ) : null}
+      </div>
 
       {/* Right: Back (secondary/outlined) + Next/Submit (primary). */}
       <div className="flex flex-1 items-center justify-end gap-3">

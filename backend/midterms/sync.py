@@ -29,6 +29,10 @@ _QUESTION_FIELDS = [
     "option_a", "option_b", "option_c", "option_d",
     "option_a_image", "option_b_image", "option_c_image", "option_d_image",
     "correct_answers", "is_math_input", "score", "explanation",
+    # Taxonomy rides along so a skill set in the builder reaches the mirrored question the
+    # error report actually grades. Omitting it would leave every mirrored question
+    # unclassified no matter what the builder shows.
+    "skill_id",
 ]
 
 
@@ -68,6 +72,8 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
             "scoring_scale": getattr(mock, "midterm_scoring_scale", None) or Midterm.SCALE_100,
             "duration_minutes": duration,
             "question_limit": int(getattr(mock, "midterm_module_question_limit", 30) or 30),
+            "midterm_type": getattr(mock, "midterm_type", None) or Midterm.TYPE_MIDTERM,
+            "pass_mark": getattr(mock, "midterm_pass_mark", None),
             "is_published": bool(getattr(mock, "is_published", False)),
             "published_at": getattr(mock, "published_at", None),
         },
@@ -82,6 +88,18 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     # the tier to "Any level", leaving the calculator stuck ON with no way to turn it off.
     midterm.level = getattr(mock, "midterm_level", "") or ""
     midterm.scoring_scale = getattr(mock, "midterm_scoring_scale", None) or midterm.scoring_scale
+    midterm.midterm_type = getattr(mock, "midterm_type", None) or Midterm.TYPE_MIDTERM
+    # Mirror VERBATIM, including None — same reasoning as `level` above. `pass_mark` is
+    # nullable and None MEANS "use the scale default", so an `or` fallback here would make
+    # clearing the pass mark in the builder impossible.
+    midterm.pass_mark = getattr(mock, "midterm_pass_mark", None)
+    # Resolve the retake link through the mirrors: the builder points one MockExam at
+    # another, and the runtime needs the corresponding Midterm rows. Left as None until the
+    # parent's mirror exists, so publish order never breaks the sync.
+    parent_mock_id = getattr(mock, "midterm_retake_of_id", None)
+    midterm.retake_of = (
+        Midterm.objects.filter(legacy_mock_exam_id=parent_mock_id).first() if parent_mock_id else None
+    )
     midterm.duration_minutes = duration
     midterm.question_limit = int(getattr(mock, "midterm_module_question_limit", 30) or 30)
     midterm.is_published = bool(getattr(mock, "is_published", False))

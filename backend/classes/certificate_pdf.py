@@ -220,7 +220,8 @@ def _render_reportlab_certificate_pdf(cert: "MidtermCertificate") -> bytes:
     has_rank = cert.rank is not None and cert.cohort_size is not None
 
     # Header row.
-    _spaced(c, BOLD, 14 if has_rank else 10, BLUE_TXT, mx0, cy + ch - 46, "CERTIFICATE OF ACHIEVEMENT", ls=2.2)
+    # Headline is tier-dependent too: a participation result is not an "achievement".
+    _spaced(c, BOLD, 14 if has_rank else 10, BLUE_TXT, mx0, cy + ch - 46, cert.tier_info["headline"], ls=2.2)
     if not has_rank:
         _spaced(c, REG, 10, GRAY, mx1, cy + ch - 46, f"NO. {cert.number}", ls=1.0, align="right")
 
@@ -250,9 +251,15 @@ def _render_reportlab_certificate_pdf(cert: "MidtermCertificate") -> bytes:
     _spaced(c, REG, 13, GRAY, rx, by + 42, "Awarded to")
     name_size = _fit_font(c, cert.student_name, BOLD, 32, mx1 - rx)
     _spaced(c, BOLD, name_size, NAVY, rx, by + 10, cert.student_name)
-    body = f"for outstanding performance on the {cert.midterm_title}."
+    # Score-tier citation (see MidtermCertificate.tier_info) — never a fixed "outstanding
+    # performance", which reads as mockery on a weak paper. The title is appended here
+    # rather than baked into the tier string so the same sentence serves the HTML renderer,
+    # which already shows the title elsewhere on the card.
+    body = f"{cert.tier_info['citation']} — {cert.midterm_title}."
     lines = _wrap(c, body, REG, 11, mx1 - rx)
     yy = by - 16
+    # Cap at 3 lines: below this sits the class-rank chip, which the layout hard-codes
+    # against `yy`. A longer citation is truncated rather than allowed to collide.
     for ln in lines[:3]:
         _spaced(c, REG, 11, BODY, rx, yy, ln)
         yy -= 16

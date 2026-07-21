@@ -27,6 +27,8 @@ from .access import (
 )
 from .idempotency import consume_idempotency_key
 from .models import Midterm, MidtermAttempt
+from .proctoring import GRACE_SECONDS as OFFSCREEN_GRACE_SECONDS
+from .proctoring import VIOLATION_LIMIT as OFFSCREEN_VIOLATION_LIMIT
 from .serializers import MidtermAttemptSerializer
 from .state_machine import STATE_ABANDONED, STATE_ACTIVE, STATE_COMPLETED, STATE_SCORING
 from .tasks import enqueue_midterm_scoring
@@ -40,6 +42,8 @@ _REASON_DETAIL = {
     "midterm_not_open": "This midterm has not opened yet.",
     "midterm_closed": "This midterm's deadline has passed.",
     "midterm_no_code": "This midterm hasn't started yet. Wait for your teacher to start it and share the access code.",
+    "retake_no_result": "The retake is only for students who sat the original midterm.",
+    "retake_already_passed": "You passed this midterm, so there is no retake to sit.",
 }
 
 
@@ -177,6 +181,69 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
             attempt=attempt, endpoint="start", key=idempotency_key_from_request(request), compute=compute
         )
 
+    @action(detail=True, methods=["post"], url_path="offscreen")
+    def offscreen(self, request, pk=None):
+        """Report that the student left the exam window; return what it cost them.
+
+        The offence count lives HERE, not in the browser, because a client-side tally is
+        cleared by a refresh or a new tab — precisely what a student gaming the rule would
+        do. The browser reports the event; the server decides the consequence:
+
+            offence 1 and 2  -> ``grace_seconds`` to return, else the client submits
+            offence 3        -> no grace; the attempt is terminated immediately here
+
+        Idempotent per browser event via the standard idempotency key, so a retried
+        report cannot burn two of the student's three chances.
+        """
+        attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        if attempt.current_state != STATE_ACTIVE:
+            # Nothing to police once the paper is in. Report the current tally so a late
+            # event from a closing tab is a harmless no-op rather than an error.
+            return Response(
+                {
+                    "violations": int(attempt.offscreen_violations or 0),
+                    "grace_seconds": 0,
+                    "terminated": bool(attempt.terminated_reason),
+                    "limit": OFFSCREEN_VIOLATION_LIMIT,
+                }
+            )
+
+        def compute():
+            terminated = False
+            with transaction.atomic():
+                locked = self._lock_queryset().select_for_update().get(pk=pk)
+                if locked.current_state != STATE_ACTIVE:
+                    count = int(locked.offscreen_violations or 0)
+                else:
+                    count = int(locked.offscreen_violations or 0) + 1
+                    MidtermAttempt.objects.filter(pk=locked.pk).update(offscreen_violations=count)
+                    locked.offscreen_violations = count
+                    if count >= OFFSCREEN_VIOLATION_LIMIT:
+                        # Third strike: end it here rather than trusting the client to.
+                        locked.submit()
+                        MidtermAttempt.objects.filter(pk=locked.pk).update(
+                            terminated_reason=MidtermAttempt.TERMINATION_OFFSCREEN
+                        )
+                        terminated = True
+            refreshed = self.get_queryset().get(pk=pk)
+            if terminated and refreshed.current_state == STATE_SCORING:
+                enqueue_midterm_scoring(attempt_id=refreshed.id, request=request)
+                refreshed.refresh_from_db()
+            return Response(
+                {
+                    "violations": int(refreshed.offscreen_violations or 0),
+                    # 0 once the allowance is spent — the client stops offering a countdown.
+                    "grace_seconds": 0 if terminated else OFFSCREEN_GRACE_SECONDS,
+                    "terminated": terminated,
+                    "limit": OFFSCREEN_VIOLATION_LIMIT,
+                    "attempt": MidtermAttemptSerializer(refreshed).data,
+                }
+            )
+
+        return consume_idempotency_key(
+            attempt=attempt, endpoint="offscreen", key=idempotency_key_from_request(request), compute=compute
+        )
+
     @action(detail=True, methods=["post"], url_path="submit_module")
     def submit_module(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
@@ -184,9 +251,16 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         # out (the deadline is authoritative, enforced here regardless of client).
         # Checked before the idempotency wrapper so the 403 is never cached and a
         # legitimate post-deadline submit with the same key still succeeds.
+        #
+        # The ONE exception is a proctoring termination: a student who has spent their
+        # off-screen allowance has forfeited the rest of the sitting, so their paper is
+        # taken in early BY the rule. The bypass is not client-assertable — it requires
+        # the server-side violation count to already be at the limit, so a crafted request
+        # cannot use it to submit early.
         if attempt.current_state == STATE_ACTIVE:
             timing = attempt.get_timing()
-            if timing is not None and not timing.is_expired:
+            forfeited = int(attempt.offscreen_violations or 0) >= OFFSCREEN_VIOLATION_LIMIT
+            if timing is not None and not timing.is_expired and not forfeited:
                 return Response(
                     {"detail": "This midterm can only be submitted when its time runs out."},
                     status=status.HTTP_403_FORBIDDEN,

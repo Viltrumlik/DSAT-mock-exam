@@ -14,6 +14,8 @@ from rest_framework import serializers
 
 from exams.serializers import QuestionSerializer
 
+from .proctoring import GRACE_SECONDS as OFFSCREEN_GRACE_SECONDS
+from .proctoring import VIOLATION_LIMIT as OFFSCREEN_VIOLATION_LIMIT
 from .state_machine import (
     STATE_ACTIVE,
     STATE_NOT_STARTED,
@@ -93,6 +95,15 @@ class MidtermAttemptSerializer(serializers.Serializer):
             "can_submit": bool(is_active and not is_expired),
             "can_resume": state in (STATE_NOT_STARTED, STATE_ACTIVE),
             "results_ready": bool(attempt.is_completed),
+            # ── proctoring: off-screen rule ──────────────────────────────────
+            # The runner renders the warning and the countdown, so it needs the tally and
+            # the limits — but it never DECIDES them (the server owns the count; see
+            # MidtermAttemptViewSet.offscreen). Sent on every snapshot so a refresh or a
+            # second tab picks up the true count instead of starting from zero.
+            "offscreen_violations": int(attempt.offscreen_violations or 0),
+            "offscreen_limit": OFFSCREEN_VIOLATION_LIMIT,
+            "offscreen_grace_seconds": OFFSCREEN_GRACE_SECONDS,
+            "terminated_reason": attempt.terminated_reason or "",
             # Score + answer key are NEVER on the runner path; the review endpoint gates them.
             "score": None,
             "completed_modules": [module.id] if (attempt.is_completed and module is not None) else [],

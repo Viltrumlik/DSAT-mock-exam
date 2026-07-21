@@ -67,6 +67,10 @@ def serialize_certificate_full(cert: MidtermCertificate) -> dict:
         "rank": cert.rank,
         "cohort_size": cert.cohort_size,
         "download_url": cert_api_path(cert.code),
+        # Tier-dependent wording (tier / tier_label / headline / citation / note). Sent
+        # rather than re-derived client-side so the React card and both PDF renderers
+        # cannot drift apart. See MidtermCertificate.tier_info.
+        **cert.tier_info,
     }
 
 

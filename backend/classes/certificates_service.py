@@ -120,11 +120,17 @@ def _rank_by_student(latest: dict[int, object]) -> tuple[dict[int, int], int]:
 
 
 def _release_results(classroom, mock_exam, actor) -> None:
-    """Flip the schedule's results_released flag so students can see their score."""
-    schedule, _ = MidtermSchedule.objects.get_or_create(
-        classroom=classroom, mock_exam=mock_exam,
-        defaults={"created_by": actor if getattr(actor, "is_authenticated", False) else None},
-    )
+    """Flip an EXISTING schedule's results_released flag so students can see their score.
+
+    Never creates the row. A schedule created here would carry no ``starts_at``, and a NULL
+    start does not mean "not configured yet" — it means the midterm is open to the whole
+    class from this moment (see ``classes.models_schedule``), so publishing results would
+    reopen the paper to anyone who had not sat it. With no schedule at all, results are
+    already visible (the legacy/unscheduled default), so there is nothing to release.
+    """
+    schedule = MidtermSchedule.objects.filter(classroom=classroom, mock_exam=mock_exam).first()
+    if schedule is None:
+        return
     if not schedule.results_released:
         schedule.results_released = True
         schedule.results_released_at = timezone.now()

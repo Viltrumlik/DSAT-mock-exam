@@ -210,8 +210,14 @@ def issue_classroom_certificates(midterm: Midterm, classroom, actor, *, force=Fa
         certs.append(cert)
 
     # Release results (issuing = revealing scores for the classroom flavor).
-    sched, _ = MidtermSchedule.objects.get_or_create(classroom=classroom, midterm=midterm)
-    if not sched.results_released:
+    #
+    # Only ever UPDATE an existing schedule — never create one. A row created here would
+    # have no starts_at, and a NULL start is not "unset", it means the exam is open to the
+    # whole class right now (see classes.models_schedule): publishing results would hand
+    # the paper to anyone who had not sat it. Nothing is lost by skipping it, because an
+    # issued CLASSROOM certificate is itself a release signal in midterm_results_state.
+    sched = MidtermSchedule.objects.filter(classroom=classroom, midterm=midterm).first()
+    if sched is not None and not sched.results_released:
         sched.results_released = True
         sched.results_released_at = timezone.now()
         sched.released_by = actor

@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   KeyRound,
   School,
+  Timer,
   Users,
   Zap,
 } from "lucide-react";
@@ -116,6 +117,12 @@ const QUICK_LINKS = [
     icon: School,
     title: "Classrooms",
     cta: "View",
+  },
+  {
+    href: "/ops/midterms",
+    icon: Timer,
+    title: "Midterms",
+    cta: "Report",
   },
   {
     href: "/ops/access",

@@ -145,3 +145,27 @@ class MidtermCertificate(models.Model):
     @property
     def date_display(self) -> str:
         return self.issued_at.strftime("%B %d, %Y") if self.issued_at else ""
+
+    @property
+    def period_display(self) -> str:
+        """The 'June 2026'-style round this certificate is for."""
+        return self.issued_at.strftime("%B %Y") if self.issued_at else ""
+
+    @property
+    def tier_info(self) -> dict:
+        """Tier-dependent wording for this score — the ONE source every renderer reads.
+
+        The certificate is drawn by four independent renderers (reportlab, Chromium+HTML,
+        and the React page, plus the two HTML templates they share). Each used to carry
+        its own hard-coded "for outstanding performance" sentence, so a wording change had
+        to land in seven files or the PDF and the on-screen card would disagree. They now
+        all read this property, directly or through the API payload.
+        """
+        from midterms.outcomes import citation_for
+
+        return citation_for(
+            self.score,
+            self.scoring_scale,
+            period=self.period_display,
+            subject=self.subject_label.title(),
+        )

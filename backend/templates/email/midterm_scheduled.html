@@ -1,0 +1,279 @@
+{% extends "email/base.html" %}
+
+{% comment %}
+The date block, the facts grid and the button are all TABLES with background colours.
+An SVG calendar icon would be stripped by Gmail and Outlook.com, and a remote PNG stays
+blocked until the recipient clicks "display images" — which most students never do — so
+the one graphic in this message is built out of two stacked table cells.
+{% endcomment %}
+
+{% block subject %}{{ headline }}: {{ midterm_title }}{% endblock %}
+
+{% block preheader %}{{ weekday_label }} {{ date_label }} at {{ start_time }} — be seated by {{ seated_by }}.{% endblock %}
+
+{% block content %}
+  <h1 class="ms-h1 ms-ink" style="margin:0 0 8px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
+    {{ headline }}
+  </h1>
+
+  <p class="ms-mute" style="margin:0 0 22px;font-size:15px;font-weight:600;line-height:1.6;color:#64748b;">
+    {{ midterm_title }}{% if is_retake %} — your second sitting{% endif %}
+  </p>
+
+  {% comment %} Date panel: brand-blue calendar block beside the time. {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr>
+      <td class="ms-card" style="background:#ffffff;border:1px solid #e7ebf3;border-radius:17px;padding:18px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="88" style="width:88px;vertical-align:top;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="88" style="width:88px;">
+                <tr>
+                  <td align="center" style="background:#2a68c0;border-radius:14px 14px 0 0;padding:7px 0;font-size:11px;font-weight:800;letter-spacing:0.12em;color:#ffffff;">
+                    {{ month_label }}
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="background:#f4f7fc;border:1px solid #cfe0f7;border-top:0;border-radius:0 0 14px 14px;padding:8px 0 10px;">
+                    <div style="font-size:34px;font-weight:800;line-height:1;color:#0f1729;">{{ day_number }}</div>
+                    <div style="margin-top:4px;font-size:11px;font-weight:700;color:#64748b;">{{ weekday_label }}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+            <td style="padding-left:18px;vertical-align:middle;">
+              <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;">STARTS AT</div>
+              <div class="ms-ink" style="margin-top:5px;font-size:30px;font-weight:800;line-height:1;color:#0f1729;">{{ start_time }}</div>
+              <div class="ms-mute" style="margin-top:7px;font-size:13px;font-weight:600;line-height:1.5;color:#64748b;">
+                {% if duration_label %}{{ duration_label }}{% if end_time %} &middot; ends {{ end_time }}{% endif %}<br />{% endif %}
+                {{ timezone_label }} time
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  {% comment %}
+    Vertical gaps are spacer ROWS, not margins: Word (Outlook) drops margin on a table and
+    the panels would end up touching.
+  {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr><td height="10" style="height:10px;line-height:10px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td class="ms-inset" style="background:#e7effb;border:1px solid #cfe0f7;border-radius:13px;padding:12px 16px;">
+        <span class="ms-ink" style="font-size:13px;font-weight:700;line-height:1.5;color:#0f1729;">
+          Be seated and logged in by {{ seated_by }}.
+        </span>
+      </td>
+    </tr>
+    <tr><td height="18" style="height:18px;line-height:18px;font-size:0;">&nbsp;</td></tr>
+  </table>
+
+  {% comment %} Facts, 2x2. Fixed 50% cells — Outlook ignores width on a div. {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr>
+      <td width="50%" style="width:50%;padding:0 5px 10px 0;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">SUBJECT</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ subject_label }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="50%" style="width:50%;padding:0 0 10px 5px;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">CLASS</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ classroom_name }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td width="50%" style="width:50%;padding:0 5px 0 0;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">QUESTIONS</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ question_label }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+      <td width="50%" style="width:50%;padding:0 0 0 5px;vertical-align:top;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+          <tr>
+            <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:11px 14px;">
+              <div class="ms-faint" style="font-size:10px;font-weight:800;letter-spacing:0.1em;color:#94a3b8;">SCORING</div>
+              <div class="ms-ink" style="margin-top:3px;font-size:14px;font-weight:700;line-height:1.4;color:#0f1729;">{{ scoring_label }}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  {% comment %}
+    The exact rules from the runner's start screen (MidtermRulesScreen), grouped the same
+    way — Required / Allowed / Prohibited — so a student reads the identical thing here the
+    night before and on the day. lucide icons can't survive an inbox, so each rule carries
+    the emoji that stands in for its icon. Every row is a table cell: a <ul> indents
+    differently in every client, and emoji live in their own fixed-width cell so a
+    two-line rule wraps under its text, not under the emoji.
+  {% endcomment %}
+  <p class="ms-ink" style="margin:28px 0 12px;font-size:15px;font-weight:800;color:#0f1729;">The rules — read them before the day</p>
+
+  {% comment %}
+    REQUIRED. The heading spans BOTH columns (colspan=2): without it the heading cell falls
+    into the 26px emoji column and "BRING & HAVE READY" wraps one word per line.
+  {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr>
+      <td colspan="2" style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#1a7f43;">✅&nbsp; BRING &amp; HAVE READY</td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🔋</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        A <strong class="ms-ink" style="font-weight:700;color:#0f1729;">fully charged device</strong> that stays on for 1–2 hours.
+      </td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">📶</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        A <strong class="ms-ink" style="font-weight:700;color:#0f1729;">stable internet connection.</strong> Your answers save automatically as you go.
+      </td>
+    </tr>
+    {% if requires_code %}
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🔑</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        The <strong class="ms-ink" style="font-weight:700;color:#0f1729;">6-digit access code</strong> your teacher reads out — you enter it right before you start, so being late costs you exam time.
+      </td>
+    </tr>
+    {% endif %}
+  </table>
+
+  {% comment %} ALLOWED {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr><td colspan="2" height="12" style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td colspan="2" style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#1a7f43;">👍&nbsp; ALLOWED</td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">📝</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Blank scratch paper</strong> and a pen or pencil for your working.
+      </td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🚩</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Flagging questions</strong> to review and return to before time runs out.
+      </td>
+    </tr>
+    {% if calculator_enabled %}
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🧮</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        The <strong class="ms-ink" style="font-weight:700;color:#0f1729;">built-in Desmos calculator</strong> from the toolbar. No physical calculator.
+      </td>
+    </tr>
+    {% endif %}
+  </table>
+
+  {% comment %} PROHIBITED {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr><td colspan="2" height="12" style="height:12px;line-height:12px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td colspan="2" style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#c02626;">⛔&nbsp; NOT ALLOWED</td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🖥️</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Other apps, tabs, or programs</strong> — close everything else before you begin.
+      </td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">📚</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Notes, books,</strong> or any other reference material.
+      </td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">📱</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Phones, smartwatches, headphones,</strong> or earbuds.
+      </td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">📷</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        Any <strong class="ms-ink" style="font-weight:700;color:#0f1729;">camera, screen recorder,</strong> or recording device.
+      </td>
+    </tr>
+    <tr>
+      <td width="26" style="width:26px;padding:0;vertical-align:top;font-size:16px;line-height:1.5;">🚷</td>
+      <td class="ms-mute" style="font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:800;color:#0f1729;">Leaving full screen or switching windows.</strong>
+        You get {{ offscreen_grace_seconds }} seconds to come back, and only {{ offscreen_warnings }} warning{{ offscreen_warnings|pluralize }} — after that your paper is submitted immediately.
+      </td>
+    </tr>
+  </table>
+
+  {% comment %}
+    The three rules a student is most likely to be caught out by, called out again as tinted
+    panels — the same three highlighted on the runner's start screen.
+  {% endcomment %}
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr><td height="16" style="height:16px;line-height:16px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td style="background:#fdf6e3;border:1px solid #f6e2a8;border-radius:13px;padding:13px 16px;">
+        <span style="font-size:14px;font-weight:500;line-height:1.55;color:#7a5a10;">
+          ⏱️ <strong style="font-weight:800;color:#5c440b;">One sitting.</strong> The timer starts the moment you begin and <strong style="font-weight:700;">cannot be paused or reset</strong>. You can’t submit early — the midterm submits itself when time runs out.
+        </span>
+      </td>
+    </tr>
+    <tr><td height="8" style="height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td style="background:#fdecec;border:1px solid #f6c9c9;border-radius:13px;padding:13px 16px;">
+        <span style="font-size:14px;font-weight:500;line-height:1.55;color:#8f2020;">
+          🛡️ <strong style="font-weight:800;color:#6f1a1a;">Stay on the screen.</strong> Leave the exam window and you have <strong style="font-weight:700;">{{ offscreen_grace_seconds }} seconds</strong> to return — {{ offscreen_warnings }} time{{ offscreen_warnings|pluralize }}. On the next one your paper is <strong style="font-weight:700;">submitted immediately</strong>, however much time is left.
+        </span>
+      </td>
+    </tr>
+    <tr><td height="8" style="height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td class="ms-inset" style="background:#f4f7fc;border:1px solid #e7ebf3;border-radius:13px;padding:13px 16px;">
+        <span class="ms-mute" style="font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+          {% if is_retake %}
+            🔁 <strong class="ms-ink" style="font-weight:800;color:#0f1729;">This is your retake.</strong> It is offered because you didn’t reach the pass mark first time. You sit a midterm once — there is no retake of a retake.
+          {% else %}
+            🔁 <strong class="ms-ink" style="font-weight:800;color:#0f1729;">One attempt.</strong> {% if pass_mark_label %}You need <strong class="ms-ink" style="font-weight:700;color:#0f1729;">{{ pass_mark_label }}</strong> to pass. {% endif %}You sit this midterm once — if you finish below the pass mark, your teacher can open a retake for you.
+          {% endif %}
+        </span>
+      </td>
+    </tr>
+  </table>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+    <tr><td height="26" style="height:26px;line-height:26px;font-size:0;">&nbsp;</td></tr>
+    <tr>
+      <td align="center" style="background:#2a68c0;border-radius:14px;">
+        <a href="{{ midterm_url }}"
+           style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:800;line-height:1;color:#ffffff;text-decoration:none;">
+          Open the midterm page
+        </a>
+      </td>
+    </tr>
+  </table>
+
+  <p class="ms-faint" style="margin:16px 0 0;font-size:13px;font-weight:500;line-height:1.6;color:#94a3b8;">
+    Can&rsquo;t attend? Tell your teacher before the start time.
+  </p>
+{% endblock %}

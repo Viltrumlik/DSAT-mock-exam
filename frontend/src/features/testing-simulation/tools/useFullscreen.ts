@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 
+import { markSelfFullscreenTransition } from "./fullscreenIntent";
+
 /**
  * Thin, cross-browser wrapper over the Fullscreen API. Self-contained — no exam
  * coupling. Tracks state via the change event (standard + webkit) so the UI
@@ -41,6 +43,9 @@ export function useFullscreen(target?: () => Element | null) {
     const el = (target?.() ?? document.documentElement) as FsEl;
     const req = el.requestFullscreen ?? el.webkitRequestFullscreen;
     if (!req) return;
+    // Marked BEFORE the request: the change event can land before the promise settles,
+    // and the off-screen rule must already know this transition is ours.
+    markSelfFullscreenTransition();
     try {
       await req.call(el);
     } catch {
@@ -53,6 +58,7 @@ export function useFullscreen(target?: () => Element | null) {
     const d = document as FsDoc;
     const ex = document.exitFullscreen ?? d.webkitExitFullscreen;
     if (!ex) return;
+    markSelfFullscreenTransition();
     try {
       await ex.call(document);
     } catch {

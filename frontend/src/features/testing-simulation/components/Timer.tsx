@@ -24,8 +24,9 @@ export function Timer({ secondsLeft, hidden, onToggleHidden, warning, pauseAllow
     <div className="flex flex-col items-center gap-1">
       {hidden ? (
         // Hidden state shows an unmistakable clock icon so the student knows the
-        // timer is minimized, not gone.
-        <Clock className="h-7 w-7 text-slate-500" aria-hidden />
+        // timer is minimized, not gone. Under five minutes it turns red even while
+        // hidden — hiding the countdown must not hide the fact that it's nearly up.
+        <Clock className={`h-7 w-7 ${warning ? "text-red-600" : "text-slate-500"}`} aria-hidden />
       ) : (
         <div
           className={`text-2xl font-bold tabular-nums tracking-tight ${warning ? "text-red-600" : "text-slate-900"}`}
@@ -33,6 +34,12 @@ export function Timer({ secondsLeft, hidden, onToggleHidden, warning, pauseAllow
         >
           {formatClock(secondsLeft)}
         </div>
+      )}
+
+      {warning && (
+        <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-red-700">
+          Less than 5 minutes
+        </span>
       )}
 
       <div className="flex items-center gap-2">
