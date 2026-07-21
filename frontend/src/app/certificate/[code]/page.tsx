@@ -47,7 +47,7 @@ function monthYearOf(dateStr: string): string {
 
 /** The values swapped over the template's fixed placeholder text nodes. */
 function injectData(c: CertData) {
-  const subjectShort = /math/i.test(c.subject) ? "Math" : /read|engl/i.test(c.subject) ? "Reading" : (c.subject_label || "Math");
+  const subjectShort = /math/i.test(c.subject) ? "Math" : /read|engl/i.test(c.subject) ? "English" : (c.subject_label || "Math");
   return {
     score: String(c.score),
     ceiling: String(c.score_ceiling),

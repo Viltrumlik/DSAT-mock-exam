@@ -67,6 +67,52 @@ def missing_starts_at_response():
 
 User = get_user_model()
 
+
+def _assign_legacy_midterm_grant(classroom, exam, actor, *, expires_at=None):
+    """Grant a legacy midterm to a classroom, narrowing a RETAKE to its parent's failers.
+
+    The v2 assign path (``views_midterm_v2._grant_to_classroom``) already does this; the
+    legacy MockExam-based path did not, so a retake assigned here was handed to the whole
+    room. The start gate blocks a passer, but the stray grant misrepresents who is owed the
+    retake and — worse — the scheduling email summons students who cannot sit it. Resolving
+    the mirror lets the same failers-only rule apply. Any failure to resolve the mirror
+    degrades to the unchanged whole-class assignment.
+    """
+    try:
+        from midterms.access import retake_eligible_students
+        from midterms.models import Midterm
+
+        mirror = (
+            Midterm.objects.filter(legacy_mock_exam_id=exam.id)
+            .only("id", "midterm_type", "retake_of_id")
+            .first()
+        )
+        if mirror is not None and mirror.midterm_type == Midterm.TYPE_RETAKE and mirror.retake_of_id:
+            from access.engine.assignment_service import AssignmentService
+            from access.models import ResourceAccessGrant
+
+            from .views_midterm_v2 import _classroom_student_ids
+
+            roster = set(_classroom_student_ids(classroom))
+            eligible = roster & set(retake_eligible_students(mirror).values_list("pk", flat=True))
+            result = AssignmentService.bulk_assign_resource(
+                list(User.objects.filter(pk__in=eligible)),
+                RT_MIDTERM,
+                exam.id,
+                actor=actor,
+                source=ResourceAccessGrant.SOURCE_CLASSROOM,
+                classroom=classroom,
+                expires_at=expires_at,
+                note="teacher retake assignment (legacy, failers only)",
+            )
+            result.update({"granted": len(eligible), "skipped_not_eligible": len(roster) - len(eligible)})
+            return result
+    except Exception:  # pragma: no cover - defensive; whole-class assign is the safe fallback
+        pass
+    return ClassroomAccessService.assign_resource_to_classroom(
+        classroom, RT_MIDTERM, exam.id, actor=actor, note="teacher midterm assignment", expires_at=expires_at,
+    )
+
 # Classroom subject (ENGLISH/MATH) → midterm subject (READING_WRITING/MATH).
 _CLASSROOM_TO_MIDTERM_SUBJECT = {
     Classroom.SUBJECT_MATH: "MATH",
@@ -120,10 +166,7 @@ class AssignMidtermView(_ClassroomScopedView):
         if starts_at is None and (existing is None or existing.starts_at is None):
             return missing_starts_at_response()
 
-        result = ClassroomAccessService.assign_resource_to_classroom(
-            classroom, RT_MIDTERM, exam.id, actor=request.user, note="teacher midterm assignment",
-            expires_at=deadline,
-        )
+        result = _assign_legacy_midterm_grant(classroom, exam, request.user, expires_at=deadline)
 
         # Upsert the per-classroom schedule (start countdown + deadline). Assigning never
         # releases results — that happens when certificates are issued. On RE-assign, only

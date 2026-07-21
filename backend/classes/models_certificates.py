@@ -136,7 +136,7 @@ class MidtermCertificate(models.Model):
 
     @property
     def subject_label(self) -> str:
-        return "MATHEMATICS" if self.subject == "MATH" else "READING & WRITING"
+        return "MATHEMATICS" if self.subject == "MATH" else "ENGLISH"
 
     @property
     def subject_glyph(self) -> str:

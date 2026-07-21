@@ -32,7 +32,7 @@ _VIEWER_ROLES = {ROLE_TEACHER, ROLE_ADMIN, ROLE_TEST_ADMIN, ROLE_SUPER_ADMIN}
 
 SUBJECT_LABELS = {
     "MATH": "Mathematics",
-    "READING_WRITING": "Reading & Writing",
+    "READING_WRITING": "English",
 }
 
 
