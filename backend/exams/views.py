@@ -1148,6 +1148,29 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     )
                     autoheal_attempt_for_runtime(attempt)
 
+                    # Module-targeted submit (idempotency BY MODULE, not by version). The client
+                    # sends the module_id it is submitting. A retried/duplicate submit that was
+                    # prepared for an EARLIER module must never be applied to the module the
+                    # attempt has since advanced to — that finalized Module 2 with Module 1's
+                    # answers (the "score computed without doing Module 2" bug). If the targeted
+                    # module is no longer active, the intended submit already landed: return the
+                    # current state as a success no-op instead of submitting the wrong module.
+                    _target_mid = request.data.get("module_id")
+                    try:
+                        _target_mid = int(_target_mid) if _target_mid is not None else None
+                    except (TypeError, ValueError):
+                        _target_mid = None
+                    if _target_mid is not None and getattr(attempt.current_module, "id", None) != _target_mid:
+                        logger.info(
+                            "[FORENSIC] submit_module_stale_target_noop attempt_id=%s target=%s current=%s state=%s",
+                            attempt.id, _target_mid, getattr(attempt.current_module, "id", None), attempt.current_state,
+                        )
+                        metric_incr("exam_module_submit_stale_target_noop_total")
+                        fresh = TestAttempt.objects.select_related("practice_test", "current_module").prefetch_related(
+                            "practice_test__modules", "current_module__questions"
+                        ).get(pk=attempt0.pk)
+                        return Response(self.get_serializer(fresh).data)
+
                     # IMPORTANT (production): submit must not be blocked by expected_version_number mismatches.
                     # Autosave/polling can legitimately bump version_number right before a user clicks Submit.
                     # For submit we treat this as a SOFT conflict: we log it, but continue under the row lock

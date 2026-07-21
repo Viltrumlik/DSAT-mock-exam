@@ -16,6 +16,9 @@ import { type Attempt, parseAttempt } from "../types";
 interface MutationOptions {
   idempotencyKey?: string;
   expectedVersionNumber?: number;
+  /** The module this submit is FOR. The server no-ops if the attempt has already advanced
+   *  past it, so a retried/duplicate submit can't finalize the next module by mistake. */
+  moduleId?: number;
 }
 
 function idemHeaders(key?: string): Record<string, string> | undefined {
@@ -81,9 +84,11 @@ export function createExamApi(base: string) {
       flagged: number[],
       opts: MutationOptions = {},
     ): Promise<Attempt> {
+      const body: Record<string, unknown> = { answers, flagged };
+      if (opts.moduleId != null) body.module_id = opts.moduleId;
       const r = await api.post(
         `${base}/${attemptId}/submit_module/`,
-        withVersion({ answers, flagged }, opts.expectedVersionNumber),
+        withVersion(body, opts.expectedVersionNumber),
         { headers: idemHeaders(opts.idempotencyKey) },
       );
       return parseAttempt(r.data, "POST submit_module");
