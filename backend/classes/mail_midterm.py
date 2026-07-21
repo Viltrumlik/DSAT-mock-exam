@@ -64,15 +64,19 @@ def _legacy_facts(exam) -> dict:
     minutes = sum(m.time_limit_minutes or 0 for m in modules)
     questions = Question.objects.filter(module__practice_test__mock_exam_id=exam.pk).count()
     scale = getattr(exam, "midterm_scoring_scale", "") or ""
+    subject = getattr(exam, "midterm_subject", "") or ""
+    level = str(getattr(exam, "midterm_level", "") or "").lower()
     return {
         "title": exam.title or f"Midterm #{exam.pk}",
-        "subject": getattr(exam, "midterm_subject", "") or "",
+        "subject": subject,
         "duration_minutes": minutes or None,
         "question_count": questions or None,
         "scoring_scale": scale,
         "pass_mark": getattr(exam, "midterm_pass_mark", None),
         "is_graded": str(getattr(exam, "midterm_type", "") or "").upper() != "PRE_MIDTERM",
         "is_retake": str(getattr(exam, "midterm_type", "") or "").upper() == "RETAKE",
+        # Mirror Midterm.calculator_enabled without importing it: Math at middle/senior.
+        "calculator_enabled": subject.upper() == "MATH" and level in ("middle", "senior"),
     }
 
 
@@ -86,6 +90,7 @@ def _midterm_facts(midterm) -> dict:
         "pass_mark": midterm.effective_pass_mark,
         "is_graded": midterm.is_graded,
         "is_retake": midterm.midterm_type == midterm.TYPE_RETAKE,
+        "calculator_enabled": bool(midterm.calculator_enabled),
     }
 
 
@@ -110,6 +115,19 @@ def _scoring_label(facts: dict) -> str:
     return f"Out of {ceiling} · pass at {pass_mark}"
 
 
+def _pass_mark_label(facts: dict) -> str:
+    """"60 / 100"-style pass mark for the retake rule, or "" for an ungraded pre-midterm."""
+    from midterms.outcomes import default_pass_mark, scale_bounds
+
+    if not facts["is_graded"]:
+        return ""
+    ceiling = scale_bounds(facts["scoring_scale"])[1]
+    pass_mark = facts["pass_mark"]
+    if pass_mark is None:
+        pass_mark = default_pass_mark(facts["scoring_scale"])
+    return f"{pass_mark} / {ceiling}"
+
+
 def build_context(schedule: MidtermSchedule) -> dict | None:
     """Template context for one schedule, or ``None`` when it cannot be described.
 
@@ -125,6 +143,11 @@ def build_context(schedule: MidtermSchedule) -> dict | None:
     seated = start - timedelta(minutes=SEATED_BEFORE_MINUTES)
     duration = facts["duration_minutes"]
     end = start + timedelta(minutes=duration) if duration else None
+
+    # The rules block mirrors the runner's start screen (MidtermRulesScreen). The off-screen
+    # numbers come from the same backend constants the runner reads, so the email can never
+    # promise a student a different grace than the exam enforces.
+    from midterms.proctoring import GRACE_SECONDS, VIOLATION_LIMIT
 
     context = brand_context(
         headline="Your retake is scheduled" if facts["is_retake"] else "Your midterm is scheduled",
@@ -143,6 +166,14 @@ def build_context(schedule: MidtermSchedule) -> dict | None:
         duration_label=f"{duration} minutes" if duration else "",
         seated_by=seated.strftime("%H:%M"),
         timezone_label=str(timezone.get_current_timezone()),
+        # Rule flags — mirror the runner's rules screen so the two never disagree.
+        is_graded=facts["is_graded"],
+        calculator_enabled=facts["calculator_enabled"],
+        # A classroom midterm always hands out a code (this mail is classroom-only).
+        requires_code=True,
+        pass_mark_label=_pass_mark_label(facts),
+        offscreen_grace_seconds=GRACE_SECONDS,
+        offscreen_warnings=VIOLATION_LIMIT - 1,
     )
     context["midterm_url"] = f"{context['site_url']}/midterm"
     return context
@@ -150,6 +181,52 @@ def build_context(schedule: MidtermSchedule) -> dict | None:
 
 def _subject_line(context: dict) -> str:
     return f"{context['headline']}: {context['midterm_title']}"
+
+
+def _text_rules(context: dict) -> str:
+    """The rules as plain text, grouped exactly like the HTML part and the runner screen.
+
+    The off-screen numbers come from the same context the HTML reads, so a client that shows
+    only the text part can never promise a different grace than the exam enforces.
+    """
+    grace = context["offscreen_grace_seconds"]
+    warnings = context["offscreen_warnings"]
+    warn_word = "warning" if warnings == 1 else "warnings"
+
+    bring = ["- A fully charged device that stays on for 1-2 hours.",
+             "- A stable internet connection (answers save automatically)."]
+    if context.get("requires_code"):
+        bring.append("- The 6-digit access code your teacher reads out — enter it right before you start.")
+
+    allowed = ["- Blank scratch paper and a pen or pencil.",
+               "- Flagging questions to review before time runs out."]
+    if context.get("calculator_enabled"):
+        allowed.append("- The built-in Desmos calculator from the toolbar. No physical calculator.")
+
+    not_allowed = [
+        "- Other apps, tabs, or programs — close everything else first.",
+        "- Notes, books, or any other reference material.",
+        "- Phones, smartwatches, headphones, or earbuds.",
+        "- Any camera, screen recorder, or recording device.",
+        f"- Leaving full screen or switching windows. You get {grace} seconds to come back, "
+        f"and only {warnings} {warn_word}; after that your paper is submitted immediately.",
+    ]
+
+    if context.get("is_retake"):
+        one = ("- This is your retake, offered because you didn't reach the pass mark first time. "
+               "You sit a midterm once; there is no retake of a retake.")
+    else:
+        need = f"You need {context['pass_mark_label']} to pass. " if context.get("pass_mark_label") else ""
+        one = (f"- One attempt. {need}You sit this midterm once — if you finish below the pass mark, "
+               "your teacher can open a retake for you.")
+
+    return (
+        "BRING & HAVE READY\n" + "\n".join(bring) + "\n\n"
+        "ALLOWED\n" + "\n".join(allowed) + "\n\n"
+        "NOT ALLOWED\n" + "\n".join(not_allowed) + "\n\n"
+        "The timer starts when you begin and cannot be paused or reset; you cannot submit early.\n"
+        + one + "\n"
+    )
 
 
 def _text_body(context: dict) -> str:
@@ -167,15 +244,8 @@ def _text_body(context: dict) -> str:
         f"Subject: {context['subject_label']}\n"
         f"Questions: {context['question_label']}\n"
         f"Scoring: {context['scoring_label']}\n\n"
-        "Rules\n"
-        "- One sitting. The timer does not pause, for any reason.\n"
-        "- Fullscreen is required for the whole exam.\n"
-        "- LEAVING THE SCREEN ENDS YOUR EXAM. You have 3 seconds to come back, twice.\n"
-        "  The third time, your exam is submitted immediately.\n"
-        "- Your teacher reads out a 6-digit access code at the start — you cannot begin without it.\n"
-        "- One attempt, unless you finish below the pass mark.\n"
-        "- Bring nothing: no notes, no phone, no calculator of your own.\n\n"
-        f"Open the midterm page: {context['midterm_url']}\n\n"
+        + _text_rules(context)
+        + f"\nOpen the midterm page: {context['midterm_url']}\n\n"
         "Can't attend? Tell your teacher before the start time.\n\n"
         "This message was sent automatically; please do not reply to it.\n"
     )

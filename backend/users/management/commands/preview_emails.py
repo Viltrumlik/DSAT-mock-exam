@@ -47,6 +47,14 @@ SAMPLES = [
             "seated_by": "09:15",
             "timezone_label": "Asia/Tashkent",
             "midterm_url": "https://mastersat.uz/midterm",
+            # Rule flags — mirror MidtermRulesScreen. A Math middle/senior midterm would set
+            # calculator_enabled True; this R&W sample leaves it off, as the runner does.
+            "is_graded": True,
+            "calculator_enabled": False,
+            "requires_code": True,
+            "pass_mark_label": "500 / 800",
+            "offscreen_grace_seconds": 3,
+            "offscreen_warnings": 2,
         },
     ),
 ]

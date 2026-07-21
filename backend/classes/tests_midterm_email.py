@@ -278,10 +278,14 @@ class FanOutTests(MidtermEmailFixture):
         local = timezone.localtime(sched.starts_at)
         self.assertIn(local.strftime("%H:%M"), html)
         self.assertIn((local - timedelta(minutes=15)).strftime("%H:%M"), html)
-        self.assertIn("Leaving the screen ends your exam", html)
+        # The rules mirror the runner's start screen — the grouped headings and the
+        # off-screen rule (worded as on the screen) must both be present.
+        self.assertIn("NOT ALLOWED", html)
+        self.assertIn("Leaving full screen or switching windows", html)
         self.assertIn(self.classroom.name, html)
         # Both parts are present: some clients render only the plain text.
-        self.assertIn("LEAVING THE SCREEN ENDS YOUR EXAM", msg.body)
+        self.assertIn("NOT ALLOWED", msg.body)
+        self.assertIn("Leaving full screen or switching windows", msg.body)
 
     def test_a_scripted_title_cannot_reach_the_inbox_as_markup(self):
         Midterm.objects.filter(pk=self.midterm.pk).update(title="<script>alert(1)</script>")
