@@ -99,6 +99,10 @@ export function useModuleSubmit({
         const snap = await api.submitModule(attemptId, ans, flg, {
           idempotencyKey: retry === 0 ? key : `${key}.r${retry}`,
           expectedVersionNumber: baseVersion,
+          // Target THIS module. If the attempt already advanced past it (a retry landing
+          // after the first submit succeeded), the server no-ops instead of finalizing the
+          // next module with these (stale) answers.
+          moduleId,
         });
         finish(snap);
       } catch (err) {
@@ -117,6 +121,7 @@ export function useModuleSubmit({
                 const snap2 = await api.submitModule(attemptId, ans, flg, {
                   idempotencyKey: `${submitKey(attemptId, conflict.current_module_details?.id ?? moduleId, conflict.version_number)}.retry`,
                   expectedVersionNumber: conflict.version_number,
+                  moduleId: conflict.current_module_details?.id ?? moduleId,
                 });
                 finish(snap2);
                 return;
