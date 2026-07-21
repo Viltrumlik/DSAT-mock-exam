@@ -97,17 +97,38 @@ class MockAttemptViewSet(viewsets.GenericViewSet):
         flagged = request.data.get("flagged")
 
         def compute():
+            noop = False
             with transaction.atomic():
                 locked = self.get_queryset().select_for_update().get(pk=pk)
-                timing = locked.get_timing()
-                if timing and timing.is_expired:
-                    # Deadline passed: advance WITHOUT accepting the late payload —
-                    # already-autosaved answers still count. Closes the timer-bypass
-                    # where a client suppresses autosave to keep a module open and
-                    # then submits answers entered after the server deadline.
-                    locked.submit_module(answers=None, flagged=None)
-                else:
-                    locked.submit_module(answers=answers, flagged=flagged)
+                # Module-targeted submit (idempotency BY MODULE): a retried/duplicate submit
+                # prepared for an EARLIER module must never finalize the module the attempt has
+                # since advanced to. The full mock has FOUR submittable boundaries
+                # (E1->E2->BREAK->M1->M2), so the same retry that skipped Module 2 on pastpapers
+                # would skip a mock section here. If the targeted module is no longer active, the
+                # intended submit already landed: return current state as a success no-op.
+                _target_mid = request.data.get("module_id")
+                try:
+                    _target_mid = int(_target_mid) if _target_mid is not None else None
+                except (TypeError, ValueError):
+                    _target_mid = None
+                if _target_mid is not None:
+                    _active = locked.mock.active_module(locked.current_state)
+                    if getattr(_active, "id", None) != _target_mid:
+                        noop = True
+                        logger.info(
+                            "[FORENSIC] mock_submit_module_stale_target_noop attempt_id=%s target=%s current_state=%s active=%s",
+                            locked.pk, _target_mid, locked.current_state, getattr(_active, "id", None),
+                        )
+                if not noop:
+                    timing = locked.get_timing()
+                    if timing and timing.is_expired:
+                        # Deadline passed: advance WITHOUT accepting the late payload —
+                        # already-autosaved answers still count. Closes the timer-bypass
+                        # where a client suppresses autosave to keep a module open and
+                        # then submits answers entered after the server deadline.
+                        locked.submit_module(answers=None, flagged=None)
+                    else:
+                        locked.submit_module(answers=answers, flagged=flagged)
             return self._after_submit_snapshot(request, pk)
 
         return consume_idempotency_key(attempt=attempt, endpoint="submit_module", key=idempotency_key_from_request(request), compute=compute)
