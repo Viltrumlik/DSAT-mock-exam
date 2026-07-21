@@ -88,6 +88,16 @@ def _truncate(c, s, font, size, max_w):
     return s + "…"
 
 
+def _name_already_present(teacher: str, classroom_name: str) -> bool:
+    """Whether the teacher is already named in the classroom name.
+
+    Matches on the FIRST token so "Abdulahad N." in the class name suppresses the full
+    "Abdulahad Normuhammadov" append. Case-insensitive; a blank teacher never matches.
+    """
+    first = teacher.split()[0].lower() if teacher.split() else ""
+    return bool(first) and first in classroom_name.lower()
+
+
 def _date(dt) -> str:
     return f"{dt.day} {dt.strftime('%B %Y')}" if dt else "—"
 
@@ -139,9 +149,13 @@ def _header_band(c, classroom, midterm, scheduled_at, generated_at):
         lx += lw + 10
     _text(c, bold, 14, HexColor("#ffffff"), lx, y0 + BAND_H - 34, "Midterm Results Report", ls=0.6)
 
+    # Classroom names in this system often already carry the teacher ("… · Abdulahad N."),
+    # so only append the teacher when it is not already spelled out in the name — otherwise
+    # the header reads "… Abdulahad N. · Abdulahad Normuhammadov".
     left = f"{classroom['name']}"
-    if classroom.get("teacher_name"):
-        left += f"  ·  {classroom['teacher_name']}"
+    teacher = (classroom.get("teacher_name") or "").strip()
+    if teacher and not _name_already_present(teacher, classroom["name"]):
+        left += f"  ·  {teacher}"
     _text(c, reg, 9.5, HexColor("#cdddf5"), MARGIN, y0 + 26, _truncate(c, left, reg, 9.5, 300))
     if classroom.get("level"):
         _text(c, reg, 8, HexColor("#9dbdea"), MARGIN, y0 + 13, classroom["level"].upper(), ls=1.2)
@@ -306,6 +320,10 @@ def render_classroom_midterm_report_pdf(
 # never disagree with the sheet they were looking at.
 
 CHART_H = 150          # plot area height
+# The on-screen chart truncates long SAT skill names ("Two-variable data: Mode…") and keeps
+# the full name in the table below; the PDF matches, because an untruncated angled label
+# overruns its neighbours. The full name is always in the Detail table under the chart.
+LABEL_CAP = 90  # pt — roughly the width the on-screen 24-char cap produces
 # Angled skill labels. A label of length L rotated by LABEL_ANGLE reaches L*cos(angle) to the
 # LEFT and L*sin(angle) DOWN from its bar, and both directions can run off the sheet: too much
 # horizontal reach and the leftmost bar's label slides past the page margin, too much vertical
@@ -413,7 +431,7 @@ def _error_chart(c, skills, y_base):
         c.rotate(LABEL_ANGLE)
         c.setFillColor(BODY)
         c.setFont(reg, 6.8)
-        c.drawRightString(0, 0, _truncate(c, s["skill"], reg, 6.8, min(LABEL_MAX_W, room)))
+        c.drawRightString(0, 0, _truncate(c, s["skill"], reg, 6.8, min(LABEL_CAP, room)))
         c.restoreState()
 
     return y_base - CHART_LABEL_H

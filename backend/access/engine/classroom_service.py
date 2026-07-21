@@ -94,6 +94,13 @@ class ClassroomAccessService:
         )
         created = 0
         for rt, rid in assignments:
+            # A retake is only ever for students who FAILED its parent. A student enrolling
+            # now was not in the class when the parent was sat, so they have no failing
+            # verdict and are not eligible — backfilling the grant blindly would hand them a
+            # retake they can never start (can_start_midterm re-checks and 403s), leaving a
+            # dangling grant that misrepresents who is owed the retake.
+            if not cls._retake_backfill_allowed(rt, rid, user):
+                continue
             grant = AssignmentService.assign_resource(
                 user, rt, rid, actor=actor,
                 source=ResourceAccessGrant.SOURCE_CLASSROOM, classroom=classroom,
@@ -106,6 +113,29 @@ class ClassroomAccessService:
             "user_id": getattr(user, "pk", user),
             "assignments_synced": created,
         }
+
+    @staticmethod
+    def _retake_backfill_allowed(resource_type, resource_id, user) -> bool:
+        """False only for a retake-midterm grant the enrolling ``user`` is not eligible for.
+
+        Anything that is not a retake midterm (every other resource, and an ordinary
+        midterm) backfills normally. Defensive: any failure to resolve the midterm degrades
+        to allowing the backfill — the start gate re-checks eligibility regardless.
+        """
+        try:
+            from access.resources import RT_MIDTERM_V2
+            from midterms.access import retake_eligibility
+            from midterms.models import Midterm
+
+            if resource_type != RT_MIDTERM_V2:
+                return True
+            midterm = Midterm.objects.filter(pk=resource_id).only("id", "midterm_type", "retake_of_id").first()
+            if midterm is None or midterm.midterm_type != Midterm.TYPE_RETAKE:
+                return True
+            ok, _reason = retake_eligibility(user, midterm)
+            return ok
+        except Exception:  # pragma: no cover - defensive; start gate is the backstop
+            return True
 
     @classmethod
     @transaction.atomic

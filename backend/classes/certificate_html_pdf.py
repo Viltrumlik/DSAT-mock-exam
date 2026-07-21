@@ -51,12 +51,12 @@ CHROMIUM_ARGS = ["--no-sandbox", "--disable-gpu", "--font-render-hinting=none"]
 
 _SUBJECT_FULL = {
     "MATH": "Mathematics", "MATHEMATICS": "Mathematics",
-    "READING": "Reading & Writing", "READING_WRITING": "Reading & Writing",
-    "ENGLISH": "English", "READING & WRITING": "Reading & Writing",
+    "READING": "English", "READING_WRITING": "English",
+    "ENGLISH": "English", "READING & WRITING": "English",
 }
 _SUBJECT_SHORT = {
     "MATH": "Math", "MATHEMATICS": "Math",
-    "READING": "Reading", "READING_WRITING": "Reading",
+    "READING": "English", "READING_WRITING": "English",
     "ENGLISH": "English",
 }
 

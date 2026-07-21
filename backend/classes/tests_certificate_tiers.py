@@ -76,6 +76,13 @@ class TierInfoTests(TestCase):
         self.assertIn("Mathematics", text)
 
 
+    def test_reading_writing_is_labelled_english(self):
+        # The platform calls the R&W subject "English" everywhere the student sees it.
+        cert = _cert(score=90, subject="READING_WRITING")
+        self.assertEqual(cert.subject_label, "ENGLISH")
+        self.assertIn("English", cert.tier_info["citation"])
+
+
 class RendererAgreementTests(TestCase):
     """Every renderer must be handed the SAME sentence."""
 

@@ -336,3 +336,24 @@ class ReportPdfTests(TestCase):
         pages = paginate([])
         self.assertEqual(pages, [[]])
         self.assertTrue(self._render([]).startswith(b"%PDF"))
+
+
+class HeaderTeacherNameTests(TestCase):
+    """The classroom-report header must not print the teacher twice when the class name
+    already contains them."""
+
+    def test_teacher_in_the_class_name_is_not_appended_again(self):
+        from midterms.report_pdf import _name_already_present
+
+        # Real classroom names in this system embed the teacher, e.g. "… · Abdulahad N.".
+        self.assertTrue(_name_already_present("Abdulahad Normuhammadov", "Senior G12 · English · Abdulahad N."))
+
+    def test_a_teacher_absent_from_the_name_is_still_appended(self):
+        from midterms.report_pdf import _name_already_present
+
+        self.assertFalse(_name_already_present("Nodir Tursunov", "Math Senior A"))
+
+    def test_blank_teacher_never_matches(self):
+        from midterms.report_pdf import _name_already_present
+
+        self.assertFalse(_name_already_present("", "Any classroom"))
