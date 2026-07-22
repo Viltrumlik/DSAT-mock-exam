@@ -1,17 +1,16 @@
 """
-Question Bank services — the ONLY supported way to create questions, mutate
-their content, and cut immutable versions.
+Question Bank services — the ONLY supported way to create questions and mutate
+their content.
 
 Why centralise here:
-  - qb_id allocation, content_hash, and version snapshots must always move
-    together. Scattered writes would let them drift.
-  - Versions are append-only and self-sufficient (snapshot_json) so consumers
-    can pin a version and stay frozen across future edits.
+  - qb_id allocation and content_hash must always move together. Scattered writes
+    would let them drift.
+  - Questions are a LIVE single source of truth: an edit updates the row in place
+    and propagates to every consumer (see assessments.domain.bank_integration).
+    There is no version chain.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 from typing import Any
 
 from django.core.exceptions import ValidationError
@@ -19,17 +18,14 @@ from django.db import transaction
 
 from .models import (
     BankQuestion,
-    BankQuestionVersion,
     QuestionStatus,
     Subject,
 )
 from .qb_id import allocate_qb_id
 
-SNAPSHOT_SCHEMA_VERSION = 1
-
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Canonical payload — used for BOTH content_hash and the version snapshot.
+# Canonical payload — the basis for content_hash (dedup).
 # ──────────────────────────────────────────────────────────────────────────────
 def _image_ref(field) -> str | None:
     """Stable string reference to an ImageField for snapshots (name, not URL)."""
@@ -67,34 +63,6 @@ def build_content_payload(q: BankQuestion) -> dict[str, Any]:
     }
 
 
-def build_snapshot(q: BankQuestion) -> dict[str, Any]:
-    """Self-sufficient version snapshot: content + taxonomy + provenance."""
-    return {
-        "schema_version": SNAPSHOT_SCHEMA_VERSION,
-        "qb_id": q.qb_id,
-        "status": q.status,
-        "taxonomy": {
-            "subject": q.subject,
-            "domain": q.domain.name if q.domain_id else None,
-            "domain_code": q.domain.code if q.domain_id else None,
-            "skill": q.skill.name if q.skill_id else None,
-            "skill_code": q.skill.code if q.skill_id else None,
-            "difficulty": q.difficulty or None,
-        },
-        "provenance": {
-            "source_type": q.source_type,
-            "source_reference": q.source_reference,
-            "import_batch_id": q.import_batch_id,
-        },
-        "content": build_content_payload(q),
-    }
-
-
-def _canonical_checksum(snapshot: dict[str, Any]) -> str:
-    canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
 def compute_content_hash(q: BankQuestion) -> str:
     from .dedup import question_content_hash
 
@@ -108,39 +76,6 @@ def compute_content_hash(q: BankQuestion) -> str:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Versioning
-# ──────────────────────────────────────────────────────────────────────────────
-@transaction.atomic
-def create_version(q: BankQuestion, *, user=None) -> BankQuestionVersion:
-    """
-    Cut a new immutable version capturing the question's current content, and
-    advance ``current_version``. Append-only: previous versions are never touched.
-    """
-    last = (
-        BankQuestionVersion.objects.select_for_update()
-        .filter(bank_question=q)
-        .order_by("-version_number")
-        .first()
-    )
-    next_number = (last.version_number + 1) if last else 1
-    snapshot = build_snapshot(q)
-    version = BankQuestionVersion(
-        bank_question=q,
-        version_number=next_number,
-        snapshot_json=snapshot,
-        snapshot_checksum=_canonical_checksum(snapshot),
-        previous_version=last,
-        created_by=user,
-    )
-    version.save()
-    # current_version pointer + refreshed content_hash on the live row.
-    q.current_version = version
-    q.content_hash = compute_content_hash(q)
-    q.save(update_fields=["current_version", "content_hash", "updated_at"])
-    return version
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # Creation
 # ──────────────────────────────────────────────────────────────────────────────
 @transaction.atomic
@@ -151,12 +86,11 @@ def create_bank_question(
     question_text: str,
     status: str = QuestionStatus.TRIAGE,
     user=None,
-    cut_initial_version: bool = True,
     **fields: Any,
 ) -> BankQuestion:
     """
-    Create a BankQuestion with an allocated permanent qb_id, compute its
-    content_hash, and (by default) cut version 1.
+    Create a BankQuestion with an allocated permanent qb_id and compute its
+    content_hash.
 
     Taxonomy (domain/skill/difficulty) is intentionally NOT defaulted here — a
     migrated/imported question lands UNCLASSIFIED unless a human passes it.
@@ -183,18 +117,17 @@ def create_bank_question(
     )
     q.content_hash = compute_content_hash(q)
     q.save()
-    if cut_initial_version:
-        create_version(q, user=user)
     return q
 
 
 @transaction.atomic
-def update_bank_question(q: BankQuestion, *, user=None, cut_version: bool = True, **fields: Any) -> BankQuestion:
+def update_bank_question(q: BankQuestion, *, user=None, **fields: Any) -> BankQuestion:
     """
-    Apply edits to a live BankQuestion, recompute content_hash, and (by default)
-    cut a NEW immutable version. **Status is preserved** — editing an APPROVED
-    question keeps it APPROVED (published consumers froze a copy at add-time, so
-    they are unaffected). Status transitions go through triage.py, not here.
+    Apply edits to a live BankQuestion in place and recompute content_hash.
+    **Status is preserved** — editing an APPROVED question keeps it APPROVED.
+    Status transitions go through triage.py, not here. The question is a live
+    single source of truth: the edit propagates to every consumer at the API
+    boundary (assessments.domain.bank_integration.propagate_bank_question_to_consumers).
     """
     new_ext = fields.get("external_id")
     if new_ext is not None:
@@ -210,6 +143,4 @@ def update_bank_question(q: BankQuestion, *, user=None, cut_version: bool = True
         setattr(q, field, value)
     q.content_hash = compute_content_hash(q)
     q.save()
-    if cut_version:
-        create_version(q, user=user)
     return q

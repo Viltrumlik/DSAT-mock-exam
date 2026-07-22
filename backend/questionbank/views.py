@@ -7,6 +7,8 @@ project default but is listed explicitly for clarity.
 """
 from __future__ import annotations
 
+import logging
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
@@ -24,6 +26,8 @@ from users.permissions import IsAuthenticatedAndNotFrozen
 from . import audit, serializers as qb, triage
 from .import_pipeline import promote_batch
 
+logger = logging.getLogger(__name__)
+
 # Parsers for content authoring (images via multipart; JSON also accepted).
 _WRITE_PARSERS = [MultiPartParser, FormParser, JSONParser]
 from .models import (
@@ -31,7 +35,6 @@ from .models import (
     BankPassage,
     BankQuestion,
     BankQuestionAttempt,
-    BankQuestionVersion,
     BankSkill,
     ImportBatch,
     ImportCandidate,
@@ -128,7 +131,7 @@ class BankQuestionDetailView(generics.RetrieveUpdateAPIView):
     parser_classes = _WRITE_PARSERS
     queryset = BankQuestion.objects.select_related(
         "domain", "skill", "passage", "import_batch",
-        "suggested_domain", "suggested_skill", "current_version",
+        "suggested_domain", "suggested_skill",
     )
 
     def get_serializer_class(self):
@@ -149,6 +152,17 @@ class BankQuestionDetailView(generics.RetrieveUpdateAPIView):
             event_type=audit.EVT_UPDATE, question=question, actor=request.user,
             previous_state=prev, new_state=question.status,
         )
+        # Live shared reference: an edit here flows to every assessment that uses this
+        # question, instead of leaving each consumer as a frozen copy. Best-effort —
+        # never fail the edit if a downstream copy can't be updated.
+        try:
+            from assessments.domain.bank_integration import propagate_bank_question_to_consumers
+
+            propagated = propagate_bank_question_to_consumers(question)
+            if propagated:
+                logger.info("bank_question_propagated qb_id=%s consumers=%s", question.qb_id, propagated)
+        except Exception:  # noqa: BLE001 - propagation must not break authoring
+            logger.exception("bank_question_propagation_failed qb_id=%s", getattr(question, "qb_id", "?"))
         return Response(qb.BankQuestionDetailSerializer(question).data)
 
 
@@ -216,31 +230,6 @@ class BankPassageDetailView(generics.RetrieveAPIView):
     permission_classes = QB_PERMISSIONS
     serializer_class = qb.BankPassageSerializer
     queryset = BankPassage.objects.all()
-
-
-@extend_schema(
-    tags=["questionbank"],
-    parameters=[
-        OpenApiParameter("bank_question", int, description="Filter to one question's lineage."),
-        OpenApiParameter("include_snapshot", bool, description="Include immutable snapshot_json."),
-    ],
-)
-class BankQuestionVersionListView(generics.ListAPIView):
-    """GET /api/questionbank/versions/ — append-only version lineage."""
-
-    permission_classes = QB_PERMISSIONS
-    pagination_class = QbPagination
-
-    def get_serializer_class(self):
-        if _truthy(self.request.query_params.get("include_snapshot")):
-            return qb.BankQuestionVersionDetailSerializer
-        return qb.BankQuestionVersionSerializer
-
-    def get_queryset(self):
-        qs = BankQuestionVersion.objects.all()
-        if (bq_id := _int_or_none(self.request.query_params.get("bank_question"))) is not None:
-            qs = qs.filter(bank_question_id=bq_id)
-        return qs.order_by("bank_question_id", "-version_number")
 
 
 @extend_schema(tags=["questionbank"], parameters=[OpenApiParameter("subject", str)])

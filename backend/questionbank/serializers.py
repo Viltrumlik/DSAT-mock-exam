@@ -19,7 +19,6 @@ from .models import (
     BankDomain,
     BankPassage,
     BankQuestion,
-    BankQuestionVersion,
     BankSkill,
     Difficulty,
     ImportBatch,
@@ -144,10 +143,6 @@ class BankQuestionDetailSerializer(serializers.ModelSerializer):
     option_b_image = serializers.SerializerMethodField()
     option_c_image = serializers.SerializerMethodField()
     option_d_image = serializers.SerializerMethodField()
-    current_version_number = serializers.IntegerField(
-        source="current_version.version_number", read_only=True, default=None
-    )
-    version_count = serializers.IntegerField(source="versions.count", read_only=True)
     # Reuse signal: how many assessment questions link back to this bank question.
     assessment_usage_count = serializers.IntegerField(
         source="assessment_questions.count", read_only=True
@@ -164,7 +159,7 @@ class BankQuestionDetailSerializer(serializers.ModelSerializer):
             "option_a_image", "option_b_image", "option_c_image", "option_d_image",
             "correct_answer", "student_answer", "explanation", "points",
             "content_hash", "source_type", "source_reference", "import_batch",
-            "current_version_number", "version_count", "assessment_usage_count",
+            "assessment_usage_count",
             "suggestion", "metadata", "created_at", "updated_at",
         ]
 
@@ -266,7 +261,7 @@ _CLEAR_IMAGE_MAP = {
 
 class BankQuestionWriteSerializer(serializers.ModelSerializer):
     """Create/edit a bank question (multipart for images). Delegates to services so
-    content_hash + versioning always move together. Status is NOT set here —
+    content_hash is always recomputed on save. Status is NOT set here —
     transitions go through the triage endpoints; create lands in TRIAGE."""
 
     domain = serializers.PrimaryKeyRelatedField(
@@ -342,22 +337,6 @@ class BankQuestionWriteSerializer(serializers.ModelSerializer):
     def update(self, instance, validated):
         self._apply_clears(validated)
         return update_bank_question(instance, user=self._actor, **validated)
-
-
-class BankQuestionVersionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = BankQuestionVersion
-        fields = [
-            "id", "bank_question", "version_number", "snapshot_checksum",
-            "previous_version", "created_by", "created_at",
-        ]
-
-
-class BankQuestionVersionDetailSerializer(BankQuestionVersionSerializer):
-    """Adds the immutable snapshot payload (opt-in via ?include_snapshot=true)."""
-
-    class Meta(BankQuestionVersionSerializer.Meta):
-        fields = BankQuestionVersionSerializer.Meta.fields + ["snapshot_json"]
 
 
 # ── Triage write inputs (Phase B) ─────────────────────────────────────────────

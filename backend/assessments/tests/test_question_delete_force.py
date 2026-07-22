@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 
 from access import constants as acc_const
 from assessments.models import (
-    AssessmentSet, AssessmentQuestion, AssessmentSetVersion,
+    AssessmentSet, AssessmentQuestion,
     HomeworkAssignment, AssessmentAttempt, AssessmentAnswer, AssessmentResult,
 )
 from classes.models import Assignment, Classroom
@@ -55,10 +55,6 @@ class QuestionDeleteTests(TestCase):
         self.assertEqual(self._orders(), [0, 1])
 
     def _attach_answer(self, question):
-        version = AssessmentSetVersion.objects.create(
-            assessment_set=self.set, version_number=1,
-            snapshot_json={"schema_version": 1}, snapshot_checksum="a" * 64,
-        )
         classroom = Classroom.objects.create(
             name="C", subject=Classroom.SUBJECT_MATH,
             lesson_days=Classroom.DAYS_ODD, created_by=self.admin,
@@ -69,10 +65,10 @@ class QuestionDeleteTests(TestCase):
         )
         hw = HomeworkAssignment.objects.create(
             classroom=classroom, assessment_set=self.set, assignment=assignment,
-            assigned_by=self.admin, set_version=version,
+            assigned_by=self.admin,
         )
         student = User.objects.create_user("qdel_stu@test.com", "secret123")
-        attempt = AssessmentAttempt.objects.create(homework=hw, student=student, set_version=version)
+        attempt = AssessmentAttempt.objects.create(homework=hw, student=student)
         AssessmentAnswer.objects.create(attempt=attempt, question=question, answer="B")
         result = AssessmentResult.objects.create(
             attempt=attempt, score_points=3, max_points=3, percent=100,

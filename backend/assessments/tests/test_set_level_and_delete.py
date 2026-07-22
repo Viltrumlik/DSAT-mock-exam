@@ -7,7 +7,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
-from assessments.models import AssessmentSet, AssessmentSetVersion, HomeworkAssignment
+from assessments.models import AssessmentSet, HomeworkAssignment
 from assessments.serializers import AssessmentSetAdminWriteSerializer
 from classes.models import Assignment, Classroom
 
@@ -85,16 +85,6 @@ class SetDeleteGuardTests(TestCase):
         self.assertEqual(resp.status_code, 204, resp.content)
         self.assertFalse(AssessmentSet.objects.filter(pk=s.id).exists())
 
-    def test_delete_published_set_returns_409(self):
-        s = self._mk_set("Published set")
-        AssessmentSetVersion.objects.create(
-            assessment_set=s, version_number=1,
-            snapshot_json={"schema_version": 1}, snapshot_checksum="c" * 64,
-        )
-        resp = self._delete(s.id)
-        self.assertEqual(resp.status_code, 409, resp.content)
-        self.assertTrue(AssessmentSet.objects.filter(pk=s.id).exists())
-
     def test_delete_assigned_set_returns_409(self):
         s = self._mk_set("Assigned set")
         classroom = Classroom.objects.create(
@@ -112,13 +102,9 @@ class SetDeleteGuardTests(TestCase):
         self.assertEqual(resp.status_code, 409, resp.content)
         self.assertTrue(AssessmentSet.objects.filter(pk=s.id).exists())
 
-    def test_force_delete_removes_published_assigned_set_with_attempts(self):
+    def test_force_delete_removes_assigned_set_with_attempts(self):
         from assessments.models import AssessmentAttempt, AssessmentAnswer
         s = self._mk_set("Force me")
-        version = AssessmentSetVersion.objects.create(
-            assessment_set=s, version_number=1,
-            snapshot_json={"schema_version": 1}, snapshot_checksum="f" * 64,
-        )
         classroom = Classroom.objects.create(
             name="C", subject=Classroom.SUBJECT_MATH,
             lesson_days=Classroom.DAYS_ODD, created_by=self.admin,
@@ -129,19 +115,18 @@ class SetDeleteGuardTests(TestCase):
         )
         hw = HomeworkAssignment.objects.create(
             classroom=classroom, assessment_set=s, assignment=assignment,
-            assigned_by=self.admin, set_version=version,
+            assigned_by=self.admin,
         )
         student = User.objects.create_user("force_student@test.com", "secret123")
-        attempt = AssessmentAttempt.objects.create(homework=hw, student=student, set_version=version)
+        attempt = AssessmentAttempt.objects.create(homework=hw, student=student)
         AssessmentAnswer.objects.create(attempt=attempt, question_id=1, answer="B")
 
         # Without force: blocked.
         self.assertEqual(self._delete(s.id).status_code, 409)
 
-        # With force: gone, along with version + homework + attempt + answers.
+        # With force: gone, along with homework + attempt + answers.
         resp = self.client.delete(f"/api/assessments/admin/sets/{s.id}/?force=true")
         self.assertEqual(resp.status_code, 204, resp.content)
         self.assertFalse(AssessmentSet.objects.filter(pk=s.id).exists())
-        self.assertFalse(AssessmentSetVersion.objects.filter(pk=version.id).exists())
         self.assertFalse(HomeworkAssignment.objects.filter(pk=hw.id).exists())
         self.assertFalse(AssessmentAttempt.objects.filter(pk=attempt.id).exists())

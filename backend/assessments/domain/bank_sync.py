@@ -122,9 +122,6 @@ def sync_assessment_question_to_bank(aq, *, user=None):
         if existing.source_reference != _source_ref(aq):
             return existing
         update_bank_question(existing, user=user, question_text=question_text, **fields)
-        if aq.bank_version_id != existing.current_version_id:
-            aq.bank_version = existing.current_version
-            aq.save(update_fields=["bank_version"])
         return existing
 
     # Dedup against the bank: identical content reuses the existing row.
@@ -157,6 +154,5 @@ def sync_assessment_question_to_bank(aq, *, user=None):
             ])
 
     aq.bank_question = bank
-    aq.bank_version = bank.current_version
-    aq.save(update_fields=["bank_question", "bank_version"])
+    aq.save(update_fields=["bank_question"])
     return bank

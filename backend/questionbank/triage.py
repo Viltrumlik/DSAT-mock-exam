@@ -8,8 +8,6 @@ Triage workflow — the human-driven path from imported question to APPROVED.
 Rules enforced here (not in views) so every caller is consistent:
   - A question cannot be APPROVED while UNCLASSIFIED (domain/skill required).
   - Classifying never auto-approves — a human still makes the approve call.
-  - Approving cuts a new immutable version so the approved taxonomy is captured
-    in the version history (analytics integrity).
 """
 from __future__ import annotations
 
@@ -17,7 +15,6 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from .models import BankDomain, BankQuestion, BankSkill, Difficulty, QuestionStatus
-from .services import create_version
 
 
 class TriageError(ValidationError):
@@ -50,12 +47,11 @@ def classify_question(
 
 @transaction.atomic
 def approve_question(question: BankQuestion, *, user=None) -> BankQuestion:
-    """Flip to APPROVED. Requires full taxonomy. Cuts a new version."""
+    """Flip to APPROVED. Requires full taxonomy."""
     if question.domain_id is None or question.skill_id is None or not question.difficulty:
         raise TriageError("Cannot approve an UNCLASSIFIED question: domain, skill and difficulty are required.")
     question.status = QuestionStatus.APPROVED
     question.save(update_fields=["status", "updated_at"])
-    create_version(question, user=user)
     return question
 
 

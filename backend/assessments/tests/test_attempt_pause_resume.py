@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 
 from access import constants as acc_const
 from assessments.models import (
-    AssessmentSet, AssessmentQuestion, AssessmentSetVersion,
+    AssessmentSet, AssessmentQuestion,
     HomeworkAssignment, AssessmentAttempt,
 )
 from classes.models import Assignment, Classroom, ClassroomMembership
@@ -36,10 +36,6 @@ class AttemptPauseResumeTests(TestCase):
                 assessment_set=self.set, order=i, prompt=f"Q{i}",
                 question_type=AssessmentQuestion.TYPE_SHORT_TEXT, correct_answer="x",
             )
-        self.version = AssessmentSetVersion.objects.create(
-            assessment_set=self.set, version_number=1,
-            snapshot_json={"schema_version": 1}, snapshot_checksum="a" * 64,
-        )
         self.classroom = Classroom.objects.create(
             name="C", subject=Classroom.SUBJECT_MATH,
             lesson_days=Classroom.DAYS_ODD, created_by=self.teacher,
@@ -53,14 +49,14 @@ class AttemptPauseResumeTests(TestCase):
         )
         self.hw = HomeworkAssignment.objects.create(
             classroom=self.classroom, assessment_set=self.set, assignment=self.assignment,
-            assigned_by=self.teacher, set_version=self.version,
+            assigned_by=self.teacher,
         )
         self.client = APIClient()
         self.client.force_authenticate(self.student)
 
     def _mk_attempt(self, **over):
         return AssessmentAttempt.objects.create(
-            homework=self.hw, student=self.student, set_version=self.version,
+            homework=self.hw, student=self.student,
             question_order=[q.id for q in self.set.questions.all()],
             **over,
         )

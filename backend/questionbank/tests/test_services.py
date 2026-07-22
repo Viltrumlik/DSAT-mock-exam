@@ -1,9 +1,9 @@
 from django.test import TestCase
 
 from questionbank.content_hash import compute_question_content_hash
-from questionbank.models import BankQuestion, BankQuestionVersion, QbIdCounter, QuestionStatus, Subject
+from questionbank.models import BankQuestion, QbIdCounter, QuestionStatus, Subject
 from questionbank.qb_id import allocate_qb_id, format_qb_id
-from questionbank.services import create_bank_question, create_version
+from questionbank.services import create_bank_question, update_bank_question
 
 
 class QbIdTests(TestCase):
@@ -45,40 +45,27 @@ class ContentHashTests(TestCase):
         self.assertNotEqual(h1, h2)
 
 
-class VersioningTests(TestCase):
-    def test_initial_version_created(self):
+class LiveEditTests(TestCase):
+    """A bank question is the LIVE source of truth — edits mutate the row in place
+    (no version chain) and recompute content_hash."""
+
+    def test_create_lands_in_triage_with_hash(self):
         q = create_bank_question(
             subject=Subject.MATH, question_type="MULTIPLE_CHOICE", question_text="2+2?",
             option_a="3", option_b="4", correct_answer="B",
         )
-        self.assertIsNotNone(q.current_version)
-        self.assertEqual(q.current_version.version_number, 1)
         self.assertTrue(q.content_hash)
         self.assertEqual(q.status, QuestionStatus.TRIAGE)
 
-    def test_edit_creates_new_immutable_version_with_lineage(self):
+    def test_edit_mutates_in_place_and_rehashes(self):
         q = create_bank_question(
             subject=Subject.MATH, question_type="MULTIPLE_CHOICE", question_text="2+2?",
             option_a="3", option_b="4", correct_answer="B",
         )
-        v1 = q.current_version
-        q.explanation = "Because arithmetic."
-        q.save(update_fields=["explanation"])
-        v2 = create_version(q)
+        original_hash = q.content_hash
+        update_bank_question(q, question_text="2+3?", correct_answer="B")
         q.refresh_from_db()
-        self.assertEqual(v2.version_number, 2)
-        self.assertEqual(v2.previous_version_id, v1.id)
-        self.assertEqual(q.current_version_id, v2.id)
-        # v1 snapshot is untouched (frozen) — old explanation preserved.
-        self.assertNotEqual(v1.snapshot_json["content"]["explanation"], "Because arithmetic.")
-
-    def test_versions_are_immutable_and_undeletable(self):
-        q = create_bank_question(
-            subject=Subject.ENGLISH, question_type="MULTIPLE_CHOICE", question_text="x?",
-        )
-        v = q.current_version
-        with self.assertRaises(ValueError):
-            v.snapshot_checksum = "tampered"
-            v.save()
-        with self.assertRaises(ValueError):
-            v.delete()
+        self.assertEqual(q.question_text, "2+3?")
+        self.assertNotEqual(q.content_hash, original_hash)
+        # No version rows exist — same single row is edited.
+        self.assertEqual(BankQuestion.objects.filter(pk=q.pk).count(), 1)

@@ -7,7 +7,6 @@ from rest_framework import serializers
 
 from .models import (
     AssessmentSet,
-    AssessmentSetVersion,
     AssessmentQuestion,
     HomeworkAssignment,
     AssessmentAttempt,
@@ -645,49 +644,4 @@ class MyAssessmentResultResponseSerializer(serializers.Serializer):
     result = ResultSerializer(required=True, allow_null=True)
 
 
-@extend_schema_serializer(component_name="AssessmentSetVersion")
-class AssessmentSetVersionSerializer(serializers.ModelSerializer):
-    """
-    Read-only serializer for AssessmentSetVersion.
-
-    snapshot_json is intentionally excluded from the default fields — it is
-    large and should only be returned when explicitly requested (e.g. a
-    dedicated snapshot-download endpoint). Use snapshot_json_field below
-    if you need to include it.
-    """
-
-    set_id = serializers.IntegerField(source="assessment_set_id", read_only=True)
-    set_title = serializers.CharField(source="assessment_set.title", read_only=True)
-    published_by_email = serializers.SerializerMethodField()
-
-    class Meta:
-        model = AssessmentSetVersion
-        fields = [
-            "id",
-            "set_id",
-            "set_title",
-            "version_number",
-            "snapshot_checksum",
-            "question_count",
-            "published_by",
-            "published_by_email",
-            "published_at",
-        ]
-        read_only_fields = fields
-
-    def get_published_by_email(self, obj) -> str | None:
-        if obj.published_by_id is None:
-            return None
-        return getattr(obj.published_by, "email", None)
-
-
-@extend_schema_serializer(component_name="AdminPublishResponse")
-class AdminPublishResponseSerializer(serializers.Serializer):
-    """Returned by POST /admin/sets/{pk}/publish/."""
-
-    version = AssessmentSetVersionSerializer(read_only=True)
-    created = serializers.BooleanField(
-        read_only=True,
-        help_text="True = new version was created; False = identical content, existing version returned.",
-    )
 

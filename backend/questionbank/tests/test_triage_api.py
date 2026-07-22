@@ -70,13 +70,12 @@ class QbTriageApiTests(TestCase):
         res = self.client.post(reverse("questionbank:question-approve", args=[self.q.id]))
         self.assertEqual(res.status_code, 400)
 
-    def test_classify_then_approve_cuts_version(self):
+    def test_classify_then_approve(self):
         self.client.post(reverse("questionbank:question-classify", args=[self.q.id]), self._classify_payload())
         res = self.client.post(reverse("questionbank:question-approve", args=[self.q.id]))
         self.assertEqual(res.status_code, 200)
         self.q.refresh_from_db()
         self.assertEqual(self.q.status, QuestionStatus.APPROVED)
-        self.assertEqual(self.q.versions.count(), 2)  # initial + approve
         self.assertTrue(GovernanceEvent.objects.filter(event_type="qb_question_approve", entity_id=self.q.id).exists())
 
     # ── Reject ───────────────────────────────────────────────────────────────

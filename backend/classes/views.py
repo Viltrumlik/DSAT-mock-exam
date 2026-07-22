@@ -2055,12 +2055,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         for sid in ordered_ids:
             try:
                 from assessments.models import AssessmentSet, HomeworkAssignment as AssessHW
-                from assessments.domain.homework_versioning import ensure_current_version, resync_stale_homeworks
                 aset = AssessmentSet.objects.get(pk=sid)
-                # Snapshot the set's CURRENT content (idempotent — reuses the last
-                # version if unchanged). Fixes stale snapshots when a set was edited
-                # after its first version/assign.
-                pinned_version = ensure_current_version(set_id=aset.pk, actor=request.user)
+                # A homework is a plain classroom↔set link; content is served LIVE from
+                # the set's questions at attempt time, so teacher edits reach every
+                # not-yet-started attempt automatically (no snapshot to pin/resync).
                 try:
                     with transaction.atomic():
                         AssessHW.objects.create(
@@ -2068,7 +2066,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                             assessment_set=aset,
                             assignment=assignment,
                             assigned_by=request.user,
-                            set_version=pinned_version,
                         )
                 except IntegrityError:
                     # Set already assigned to this classroom (uniq_assessment_hw_classroom_set):
@@ -2077,12 +2074,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                         "assessment set %s already assigned to classroom %s; skipping",
                         sid, classroom.pk,
                     )
-                # Propagate the current content to this set's other not-started
-                # homeworks (teacher edits reach not-yet-started classes).
-                try:
-                    resync_stale_homeworks(assessment_set=aset, version=pinned_version)
-                except Exception:
-                    logger.exception("resync_stale_homeworks failed for set %s", sid)
             except AssessmentSet.DoesNotExist:
                 logger.warning("assessment_set_id=%s not found; skipping", sid)
             except Exception:
@@ -2163,10 +2154,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         ones — but never deletes a homework that has student attempts (they would
         CASCADE-delete with the HomeworkAssignment)."""
         from assessments.models import AssessmentSet, HomeworkAssignment as AssessHW
-        from assessments.domain.homework_versioning import (
-            ensure_current_version,
-            resync_stale_homeworks,
-        )
 
         classroom = assignment.classroom
 
@@ -2207,7 +2194,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                 logger.warning("assessment_set_id=%s not found on edit; skipping", sid)
                 continue
             try:
-                pinned_version = ensure_current_version(set_id=aset.pk, actor=request.user)
                 try:
                     with transaction.atomic():
                         AssessHW.objects.create(
@@ -2215,7 +2201,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                             assessment_set=aset,
                             assignment=assignment,
                             assigned_by=request.user,
-                            set_version=pinned_version,
                         )
                 except IntegrityError:
                     # Set already assigned to this classroom via another assignment
@@ -2224,10 +2209,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                         "assessment set %s already assigned to classroom %s; not re-attaching on edit",
                         sid, classroom.pk,
                     )
-                try:
-                    resync_stale_homeworks(assessment_set=aset, version=pinned_version)
-                except Exception:
-                    logger.exception("resync_stale_homeworks failed for set %s", sid)
             except Exception:
                 logger.exception(
                     "Failed to attach assessment homework on edit assignment_id=%s set_id=%s",

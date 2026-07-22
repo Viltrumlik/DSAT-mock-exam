@@ -9,7 +9,6 @@ import {
   Library,
   LayoutGrid,
   Tag,
-  SendHorizonal,
   Archive,
   FileText,
   BookMarked,
@@ -61,9 +60,8 @@ const SIMULATION_NAV: NavItem[] = [
   { href: "/builder/full-mocks",      label: "Full mocks",     icon: Timer,           exact: false },
 ];
 
-// Operations (publishing, archive)
+// Operations (archive)
 const OPS_NAV: NavItem[] = [
-  { href: "/builder/publish-queue", label: "Publish queue", icon: SendHorizonal, exact: false },
   { href: "/builder/archived",      label: "Archived",      icon: Archive,       exact: false },
 ];
 

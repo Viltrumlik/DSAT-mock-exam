@@ -108,23 +108,10 @@ export type QbQuestionDetail = {
   source_type: string;
   source_reference: string;
   import_batch: number | null;
-  current_version_number: number | null;
-  version_count: number;
   suggestion: QbSuggestion | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
-};
-
-export type QbVersion = {
-  id: number;
-  bank_question: number;
-  version_number: number;
-  snapshot_checksum: string;
-  previous_version: number | null;
-  created_by: number | null;
-  created_at: string;
-  snapshot_json?: unknown;
 };
 
 export type QbImportBatch = {

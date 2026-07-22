@@ -40,7 +40,6 @@ import {
   useBuilderStore,
   useBuilderViewSet,
 } from "@/features/assessments/builder/store";
-import { PublishSlideOver } from "@/features/assessments/builder/PublishSlideOver";
 import { SATQuestionPreview } from "@/features/assessments/builder/SATQuestionPreview";
 import { QuestionRow } from "@/features/assessments/builder/QuestionRow";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
@@ -73,6 +72,7 @@ import {
   RotateCcw,
   Save,
   Smartphone,
+  Upload,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -167,6 +167,35 @@ export default function BuilderSetEditorContainer() {
         toast.push({ tone: "error", message: normalizeApiError(e).message });
       } finally {
         setPickerBusy(false);
+      }
+    },
+    [setId, detail, toast],
+  );
+
+  // ── CSV import (append questions to this set) ──────────────────────────────
+  const csvInputRef = useRef<HTMLInputElement>(null);
+  const [csvBusy, setCsvBusy] = useState(false);
+  const importCsv = useCallback(
+    async (file: File) => {
+      setCsvBusy(true);
+      try {
+        const res = await assessmentAuthoringApi.appendQuestionsCsv(setId, file);
+        await detail.refetch();
+        toast.push({ tone: "success", message: `Imported ${res.created_count} question${res.created_count === 1 ? "" : "s"} from CSV.` });
+      } catch (e) {
+        // The backend returns per-row errors when a CSV is invalid — surface the first one.
+        const err = e as { response?: { data?: { detail?: string; errors?: { row: number; errors: unknown }[] } } };
+        const data = err?.response?.data;
+        let msg = normalizeApiError(e).message;
+        if (data?.errors?.length) {
+          const first = data.errors[0];
+          msg = `${data.detail ?? "Some rows are invalid."} (row ${first.row})`;
+        } else if (data?.detail) {
+          msg = data.detail;
+        }
+        toast.push({ tone: "error", message: msg });
+      } finally {
+        setCsvBusy(false);
       }
     },
     [setId, detail, toast],
@@ -272,8 +301,7 @@ export default function BuilderSetEditorContainer() {
     [questions, selectedQuestionId],
   );
 
-  // ── Publish slide-over + viewport toggle ──────────────────────────────────────
-  const [publishOpen, setPublishOpen] = useState(false);
+  // ── Viewport toggle ──────────────────────────────────────
   const [viewportMode, setViewportMode] = useState<"desktop" | "mobile">("desktop");
   const [saveMode, setSaveMode] = useState<"save" | "save-next" | "save-new">("save");
   const [saveModeOpen, setSaveModeOpen] = useState(false);
@@ -719,7 +747,6 @@ export default function BuilderSetEditorContainer() {
     );
   }
 
-  const canPublish = validation.length === 0;
   const isPublished = Boolean((view as any)?.is_active);
 
   return (
@@ -798,21 +825,14 @@ export default function BuilderSetEditorContainer() {
           >
             ↪ Redo
           </button>
-          {!isPublished && (
-            <button
-              type="button"
-              onClick={() => setPublishOpen(true)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-extrabold transition-colors",
-                canPublish
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                  : "border border-border bg-card text-muted-foreground hover:bg-surface-2",
-              )}
-              title={canPublish ? "Open publish panel" : `${validation.length} issue${validation.length !== 1 ? "s" : ""} to fix before publishing`}
+          {validation.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"
+              title="Fix these before this set can be approved"
             >
               <Rocket className="h-3.5 w-3.5" />
-              {canPublish ? "Publish…" : `${validation.length} issue${validation.length !== 1 ? "s" : ""}`}
-            </button>
+              {validation.length} issue{validation.length !== 1 ? "s" : ""} to fix
+            </span>
           )}
         </div>
       </header>
@@ -867,6 +887,27 @@ export default function BuilderSetEditorContainer() {
               <Database className="h-4 w-4" />
               Add from Question Bank
             </button>
+            <button
+              type="button"
+              disabled={csvBusy}
+              onClick={() => csvInputRef.current?.click()}
+              title="Append questions from a CSV file (columns: question_type, prompt, option_a–d, correct_answer, points, explanation)"
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors disabled:opacity-50"
+            >
+              <Upload className="h-4 w-4" />
+              {csvBusy ? "Importing…" : "Import CSV"}
+            </button>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = ""; // allow re-selecting the same file
+                if (f) void importCsv(f);
+              }}
+            />
           </div>
 
           <QuestionBankPickerModal
@@ -1275,22 +1316,6 @@ export default function BuilderSetEditorContainer() {
           </div>
         </aside>
       </div>
-
-      {/* Publish slide-over */}
-      <PublishSlideOver
-        isOpen={publishOpen}
-        onClose={() => setPublishOpen(false)}
-        setId={view.id}
-        set={view as AssessmentSet}
-        onPublishSuccess={() => {
-          setPublishOpen(false);
-          void detail.refetch();
-        }}
-        onJumpToQuestion={(questionId) => {
-          selectQuestion(questionId);
-          setPublishOpen(false);
-        }}
-      />
     </div>
   );
 }

@@ -16,23 +16,6 @@ export type PaginatedSets = {
 
 // ─── Publish validation types ─────────────────────────────────────────────────
 
-export type ValidationSeverity = "blocking" | "warning";
-
-export type ValidationFinding = {
-  severity: ValidationSeverity;
-  code: string;
-  message: string;
-  question_id?: number;
-  context?: Record<string, unknown>;
-};
-
-export type PublishValidationReport = {
-  is_publishable: boolean;
-  blocking_count: number;
-  warning_count: number;
-  findings: ValidationFinding[];
-};
-
 // ─── Question Bank picker types (M4) ──────────────────────────────────────────
 
 export type BankPickerRow = {
@@ -44,7 +27,6 @@ export type BankPickerRow = {
   difficulty: string;
   question_type: string;
   question_text: string;
-  current_version: number | null;
 };
 
 export type BankPickerDomain = { id: number; subject: string; name: string; code: string };
@@ -109,17 +91,6 @@ export const assessmentsAdminApi = {
     });
     return (r.data as { ordered_ids?: number[] })?.ordered_ids ?? orderedIds;
   },
-  /**
-   * Dry-run publish validation.
-   * Calls GET /assessments/admin/sets/{id}/validate-publish/ and returns the
-   * full PublishValidationReport (blocking + warning findings).
-   * Does NOT create a version or emit governance events.
-   */
-  validatePublish: async (id: number): Promise<PublishValidationReport> => {
-    const r = await api.get(`/assessments/admin/sets/${id}/validate-publish/`);
-    return r.data as PublishValidationReport;
-  },
-
   telemetry: async (key: string) => {
     await api.post("/assessments/admin/builder/telemetry/", { key });
   },
@@ -154,6 +125,31 @@ export const assessmentsAdminApi = {
       order,
     });
     return r.data as AssessmentQuestion;
+  },
+
+  // ── CSV import ─────────────────────────────────────────────────────────────
+  /** Create a NEW set from a CSV of questions. Set-level fields ride alongside the file. */
+  importSetCsv: async (
+    fields: { subject: Subject; source: string; level?: string; category?: string; title: string; description?: string },
+    file: File,
+  ): Promise<AssessmentSet & { created_count: number }> => {
+    const fd = new FormData();
+    fd.append("subject", fields.subject);
+    fd.append("source", fields.source);
+    if (fields.level) fd.append("level", fields.level);
+    if (fields.category) fd.append("category", fields.category);
+    fd.append("title", fields.title);
+    if (fields.description) fd.append("description", fields.description);
+    fd.append("file", file);
+    const r = await api.post("/assessments/admin/sets/import-csv/", fd);
+    return r.data as AssessmentSet & { created_count: number };
+  },
+  /** Append questions to an existing set from a CSV. */
+  appendQuestionsCsv: async (setId: number, file: File): Promise<{ set_id: number; created_count: number; question_ids: number[] }> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await api.post(`/assessments/admin/sets/${setId}/questions/import-csv/`, fd);
+    return r.data as { set_id: number; created_count: number; question_ids: number[] };
   },
 
   // Homework assign (teacher/staff)

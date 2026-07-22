@@ -31,14 +31,6 @@ export function useQbQuestion(id: number) {
   });
 }
 
-export function useQbVersions(id: number, includeSnapshot = false) {
-  return useQuery({
-    queryKey: qbKeys.versions(id, includeSnapshot),
-    queryFn: () => questionBankApi.listVersions(id, includeSnapshot),
-    enabled: Number.isFinite(id) && id > 0,
-  });
-}
-
 export function useQbDomains(subject?: string) {
   return useQuery({
     queryKey: qbKeys.domains(subject),

@@ -4,7 +4,6 @@ from .models import (
     BankDomain,
     BankPassage,
     BankQuestion,
-    BankQuestionVersion,
     BankSkill,
     ImportBatch,
     QbIdCounter,
@@ -50,20 +49,8 @@ class BankQuestionAdmin(admin.ModelAdmin):
     list_display = ("qb_id", "subject", "status", "domain", "skill", "difficulty", "question_type", "created_at")
     list_filter = ("subject", "status", "difficulty", "question_type", "source_type")
     search_fields = ("qb_id", "question_text", "content_hash", "source_reference")
-    readonly_fields = ("qb_id", "content_hash", "current_version", "created_at", "updated_at")
+    readonly_fields = ("qb_id", "content_hash", "created_at", "updated_at")
     autocomplete_fields = ("domain", "skill", "passage")
-
-
-@admin.register(BankQuestionVersion)
-class BankQuestionVersionAdmin(admin.ModelAdmin):
-    list_display = ("bank_question", "version_number", "snapshot_checksum", "created_at")
-    search_fields = ("bank_question__qb_id", "snapshot_checksum")
-    # Immutable records: view-only in admin.
-    def has_change_permission(self, request, obj=None):
-        return False
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(QbIdCounter)

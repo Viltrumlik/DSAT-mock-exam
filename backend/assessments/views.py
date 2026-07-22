@@ -33,11 +33,11 @@ from .views_authoring import (
     AdminAssessmentSetReorderView,
     AdminQuestionBankSelectView,
     AdminAssessmentQuestionFromBankView,
+    AdminAssessmentSetCsvImportView,
+    AdminAssessmentSetQuestionsCsvImportView,
     AdminQuestionBankTaxonomyView,
-    AdminPublishAssessmentSetView,
     AdminValidatePublishView,
     AdminAssessmentSetStatusView,
-    AdminAssessmentSetVersionListView,
     _sync_question_to_bank,
     _bank_sync_logger,
 )
@@ -78,11 +78,11 @@ __all__ = [
     "AdminAssessmentSetReorderView",
     "AdminQuestionBankSelectView",
     "AdminAssessmentQuestionFromBankView",
+    "AdminAssessmentSetCsvImportView",
+    "AdminAssessmentSetQuestionsCsvImportView",
     "AdminQuestionBankTaxonomyView",
-    "AdminPublishAssessmentSetView",
     "AdminValidatePublishView",
     "AdminAssessmentSetStatusView",
-    "AdminAssessmentSetVersionListView",
     # Assign
     "AssignAssessmentHomeworkView",
     # Attempt flow

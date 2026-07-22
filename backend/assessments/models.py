@@ -126,113 +126,6 @@ class AssessmentSet(models.Model):
         return cls.ALLOWED_LEVELS_BY_SUBJECT.get(subject, ())
 
 
-class AssessmentSetVersion(models.Model):
-    """
-    Immutable snapshot of an AssessmentSet at a specific point in time.
-
-    GOVERNANCE INVARIANTS:
-      INV-S01  Records are append-only. save() raises if called on an existing PK.
-      INV-S02  Records cannot be deleted. delete() raises unconditionally.
-      INV-S03  (assessment_set, snapshot_checksum) unique constraint prevents
-               duplicate versions for identical content.
-      INV-S04  snapshot_json is self-sufficient: zero dependency on live
-               AssessmentQuestion rows after snapshot creation.
-      INV-S05  All FKs pointing here use on_delete=PROTECT — no cascading
-               deletion can silently remove historical academic records.
-
-    ROLLBACK SAFETY:
-      The nullable set_version FKs on HomeworkAssignment and AssessmentAttempt
-      default to NULL so pre-snapshot workers and old deploys continue working
-      with the live-lookup fallback path. No impossible rollback state.
-
-    SNAPSHOT SCHEMA VERSION:
-      Check snapshot_json["schema_version"] before parsing. Currently 1.
-      Bump SNAPSHOT_SCHEMA_VERSION in snapshot_builder.py on breaking changes.
-    """
-
-    assessment_set = models.ForeignKey(
-        AssessmentSet,
-        on_delete=models.PROTECT,   # Cannot delete a set that has published versions
-        related_name="versions",
-    )
-    version_number = models.PositiveIntegerField(db_index=True)
-
-    # The immutable content payload — self-sufficient for rendering and grading.
-    snapshot_json = models.JSONField()
-
-    # SHA-256 of canonical JSON — used for integrity verification and idempotency.
-    snapshot_checksum = models.CharField(max_length=64, db_index=True)
-
-    # Denormalised question count for fast display without parsing snapshot_json.
-    question_count = models.PositiveIntegerField(default=0)
-
-    # ── Lineage chain ─────────────────────────────────────────────────────────
-    # Self-referential FK to the immediately preceding version.
-    # NULL for the first version of a set (no predecessor).
-    # Enables: supersession graph, "what changed between v3 and v4?",
-    # "which versions succeeded this one?", ancestry walks.
-    #
-    # GOVERNANCE: this FK uses PROTECT — deleting a version that is
-    # referenced as a predecessor is not allowed (the chain is permanent).
-    previous_version = models.ForeignKey(
-        "self",
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="successor_versions",
-        help_text="The immediately preceding published version (null = first version).",
-    )
-
-    # Audit trail
-    published_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        related_name="published_assessment_versions",
-        null=True,    # null = system-generated backfill, not a human publish action
-        blank=True,
-    )
-    published_at = models.DateTimeField(default=timezone.now, db_index=True)
-
-    class Meta:
-        db_table = "assessment_set_versions"
-        ordering = ["-published_at", "-version_number"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["assessment_set", "version_number"],
-                name="uniq_set_version_number",
-            ),
-            models.UniqueConstraint(
-                fields=["assessment_set", "snapshot_checksum"],
-                name="uniq_set_version_checksum",
-            ),
-        ]
-        # No extra Meta.indexes needed:
-        # - (assessment_set, version_number) is covered by uniq_set_version_number constraint
-        # - (assessment_set, snapshot_checksum) is covered by uniq_set_version_checksum constraint
-        # - published_at index is on the field (db_index=True)
-
-    # ── Immutability guards ───────────────────────────────────────────────────
-
-    def save(self, *args, **kwargs) -> None:  # type: ignore[override]
-        """IMMUTABILITY GUARD: reject any mutation of an existing version row."""
-        if self.pk is not None:
-            raise ValueError(
-                "AssessmentSetVersion records are immutable. "
-                "Do not modify published versions — create a new version instead."
-            )
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):  # type: ignore[override]
-        """IMMUTABILITY GUARD: permanent academic records cannot be deleted."""
-        raise ValueError(
-            "AssessmentSetVersion records are permanent academic records "
-            "and cannot be deleted."
-        )
-
-    def __str__(self) -> str:
-        return f"SetVersion(set={self.assessment_set_id} v{self.version_number})"
-
-
 class AssessmentQuestion(models.Model):
     TYPE_MULTIPLE_CHOICE = "multiple_choice"
     TYPE_SHORT_TEXT = "short_text"
@@ -274,17 +167,12 @@ class AssessmentQuestion(models.Model):
     # Solution explanation shown to students after grading
     explanation = models.TextField(blank=True, default="")
 
-    # Question Bank links (M1, additive/nullable). bank_version pins the immutable
-    # bank version this row was sourced from. Published assessments already freeze
-    # via AssessmentSetVersion snapshots; these links add bank provenance/reuse
-    # without changing snapshot semantics. NULL = not yet linked to the bank.
+    # Question Bank link (additive/nullable). Records which bank question this row
+    # was sourced from; a later bank edit propagates back onto this row (live single
+    # source of truth). NULL = not linked to the bank.
     bank_question = models.ForeignKey(
         "questionbank.BankQuestion", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="assessment_questions", db_index=True,
-    )
-    bank_version = models.ForeignKey(
-        "questionbank.BankQuestionVersion", on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="assessment_questions",
     )
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
@@ -311,13 +199,8 @@ class HomeworkAssignment(models.Model):
 
     Integrates with existing class homework feed via a linked `classes.Assignment` row.
 
-    VERSION PINNING (Phase 1 — nullable rollout):
-      set_version is NULL for assignments created before snapshot architecture.
-      New assignments (post-publish endpoint) will have set_version populated.
-      Grading and bundle delivery check set_version first; if NULL they fall
-      back to the live question lookup path (backward compatibility).
-
-      Phase 2: backfill existing assignments; make non-nullable.
+    Content is served LIVE from the set's AssessmentQuestion rows at attempt time;
+    an in-progress attempt pins WHICH questions via its ``question_order`` list.
     """
 
     classroom = models.ForeignKey(
@@ -329,16 +212,6 @@ class HomeworkAssignment(models.Model):
         AssessmentSet,
         on_delete=models.PROTECT,
         related_name="homework_assignments",
-    )
-    # Phase 1: nullable — old assignments have no version pin yet.
-    # Phase 2 (post-backfill): add non-null constraint.
-    set_version = models.ForeignKey(
-        AssessmentSetVersion,
-        on_delete=models.PROTECT,   # Cannot delete a version with live assignments
-        related_name="homework_assignments",
-        null=True,
-        blank=True,
-        db_index=True,
     )
     # A homework (Assignment) can bundle MANY assessments, so this is a FK, not
     # a OneToOne. Reverse accessor: ``assignment.assessment_homeworks`` (queryset).
@@ -472,17 +345,6 @@ class AssessmentAttempt(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="assessment_attempts",
-    )
-    # Phase 1: nullable — old attempts have no version pin yet.
-    # Grading and review read from this when present; fall back to live lookup
-    # when NULL. Phase 2 (post-backfill): add non-null constraint.
-    set_version = models.ForeignKey(
-        AssessmentSetVersion,
-        on_delete=models.PROTECT,   # Cannot delete a version with historical attempts
-        related_name="attempts",
-        null=True,
-        blank=True,
-        db_index=True,
     )
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_IN_PROGRESS, db_index=True)
     started_at = models.DateTimeField(default=timezone.now, db_index=True)

@@ -267,25 +267,6 @@ def _check_points(aset, questions: list) -> list[ValidationFinding]:
     return findings
 
 
-def _check_snapshot_structure(aset, questions: list) -> list[ValidationFinding]:
-    """
-    Pre-flight: verify the snapshot builder will produce a valid structure.
-    Calls validate_snapshot_structure on a dry-run snapshot.
-    """
-    from .snapshot_builder import build_snapshot
-    from .snapshot_compat import validate_snapshot_structure
-
-    try:
-        snap = build_snapshot(aset)
-        errors = validate_snapshot_structure(snap)
-        return [
-            _blocking("snapshot_structure_error", f"Snapshot validation error: {e}")
-            for e in errors
-        ]
-    except Exception as exc:
-        return [_blocking("snapshot_build_error", f"Snapshot build failed: {exc}")]
-
-
 # ── Warning checks ─────────────────────────────────────────────────────────────
 
 
@@ -369,7 +350,6 @@ _BLOCKING_CHECKS: list = [
     _check_correct_answers,
     _check_duplicate_order,
     _check_points,
-    _check_snapshot_structure,
 ]
 
 # WARNING: informational only — do not block publish.

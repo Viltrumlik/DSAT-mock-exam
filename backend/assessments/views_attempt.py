@@ -18,7 +18,6 @@ from .models import (
     AssessmentAnswer,
     AssessmentResult,
     AssessmentAttemptAuditEvent,
-    AssessmentSetVersion,
 )
 from .throttles import AssessmentAnswerPerAttemptThrottle
 from .async_tasks import grade_attempt_task
@@ -48,15 +47,15 @@ from .helpers import (
 logger = logging.getLogger(__name__)
 
 
-def _frozen_question_ids(assessment_set_id: int, version=None) -> list[int]:
+def _frozen_question_ids(assessment_set_id: int) -> list[int]:
     """The ordered question ids to pin onto an attempt at start — the set's CURRENT
     live active order.
 
-    Content is delivered/graded/reviewed LIVE (like the pastpaper runner — no
-    version snapshot), so this pins only WHICH questions the attempt covers, from
-    the live set at start. A NEW attempt (or retry) therefore always picks up the
-    teacher's latest questions; a question ADDED after the student started is not
-    in this frozen list, so it can't grow their in-progress attempt.
+    Content is delivered/graded/reviewed LIVE (like the pastpaper runner), so this
+    pins only WHICH questions the attempt covers, from the live set at start. A NEW
+    attempt (or retry) therefore always picks up the teacher's latest questions; a
+    question ADDED after the student started is not in this frozen list, so it can't
+    grow their in-progress attempt.
     """
     return list(
         AssessmentQuestion.objects.filter(assessment_set_id=assessment_set_id, is_active=True)
@@ -86,7 +85,7 @@ class StartAttemptView(APIView):
         assignment_id = ser.validated_data.get("assignment_id")
 
         base_qs = HomeworkAssignment.objects.select_related(
-            "assignment", "classroom", "assessment_set", "set_version"
+            "assignment", "classroom", "assessment_set"
         )
         if homework_id:
             hw = base_qs.filter(pk=int(homework_id)).first()
@@ -126,21 +125,12 @@ class StartAttemptView(APIView):
                 .first()
             )
         if not att:
-            # Each NEW attempt (a first take OR a retry) uses the set's LATEST
-            # published version, so a student always works on the teacher's most
-            # recent content — not the snapshot frozen when the homework was first
-            # assigned. (An in-progress attempt is reused above so content never
-            # shifts mid-attempt.) Falls back to the homework's pinned version, then
-            # to a live query for pre-snapshot sets.
-            attempt_version = (
-                AssessmentSetVersion.objects.filter(assessment_set_id=hw.assessment_set_id)
-                .order_by("-version_number")
-                .first()
-            ) or hw.set_version
-            # Freeze the question list at start (snapshot when available, else the
-            # current live order). Always non-empty so grading/review/runner all
-            # read this exact list and never track later teacher edits.
-            qids = _frozen_question_ids(hw.assessment_set_id, attempt_version)
+            # Freeze WHICH questions this attempt covers, from the set's current live
+            # active order. A NEW attempt (first take OR retry) therefore always picks
+            # up the teacher's latest questions; an in-progress attempt is reused above
+            # so content never shifts mid-attempt. question_order is the sole pin —
+            # content itself is served/graded/reviewed live from AssessmentQuestion.
+            qids = _frozen_question_ids(hw.assessment_set_id)
 
             # Apply focus filter: only include explicitly requested question IDs
             # (validated against the full set so students can't inject arbitrary IDs).
@@ -161,9 +151,6 @@ class StartAttemptView(APIView):
                 last_activity_at=timezone.now(),
                 grading_status=AssessmentAttempt.GRADING_PENDING,
                 question_order=qids,
-                # Pin the resolved (latest) version onto the attempt so grading uses
-                # exactly the content this attempt was served.
-                set_version=attempt_version,
             )
             _audit_attempt(
                 att,
@@ -171,8 +158,6 @@ class StartAttemptView(APIView):
                 event_type=AssessmentAttemptAuditEvent.EVENT_STARTED,
                 payload={
                     "question_count": len(qids),
-                    "snapshot_pinned": attempt_version is not None,
-                    "set_version_id": attempt_version.id if attempt_version else None,
                     "retry_mode": bool(focus_ids),
                 },
             )
@@ -181,24 +166,13 @@ class StartAttemptView(APIView):
             if not att.last_activity_at:
                 att.last_activity_at = timezone.now()
                 update_fields.append("last_activity_at")
-            # Repair a legacy/edge attempt that was never frozen — no snapshot pin
-            # and/or an empty question_order. Such an attempt runs on the live path
-            # and its question count TRACKS the mutable set, so a teacher adding
-            # questions mid-attempt made the student's count grow (27 → 29). Freeze
-            # it now — to its pinned version if it has one, else the latest, else the
-            # current live content — so from here on the attempt is stable.
-            if att.set_version_id is None or not att.question_order:
-                repair_version = att.set_version or (
-                    AssessmentSetVersion.objects.filter(assessment_set_id=hw.assessment_set_id)
-                    .order_by("-version_number")
-                    .first()
-                )
-                if att.set_version_id is None and repair_version is not None:
-                    att.set_version = repair_version
-                    update_fields.append("set_version")
-                if not att.question_order:
-                    att.question_order = _frozen_question_ids(hw.assessment_set_id, repair_version)
-                    update_fields.append("question_order")
+            # Repair a legacy/edge attempt with an empty question_order. Without a
+            # frozen list it runs on the fully-live path and its question count TRACKS
+            # the mutable set (a teacher adding questions mid-attempt grew 27 → 29).
+            # Freeze it now to the current live content so it is stable from here on.
+            if not att.question_order:
+                att.question_order = _frozen_question_ids(hw.assessment_set_id)
+                update_fields.append("question_order")
             if update_fields:
                 att.save(update_fields=update_fields)
 
@@ -226,7 +200,7 @@ class AttemptBundleView(APIView):
     )
     def get(self, request, attempt_id: int):
         att = AssessmentAttempt.objects.select_related(
-            "homework__classroom", "homework__assessment_set", "set_version"
+            "homework__classroom", "homework__assessment_set"
         ).filter(pk=attempt_id, student=request.user).first()
         if not att:
             return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -454,13 +428,12 @@ class SubmitAttemptView(APIView):
             AssessmentQuestion.objects.filter(assessment_set=aset, is_active=True).order_by("order", "id")
         )
         q_by_id = {q.id: q for q in base_questions}
-        # Mid-attempt teacher edits are IGNORED: the attempt was frozen to a fixed
-        # question list at start (att.question_order + its set_version snapshot), so
-        # a submit is ALWAYS accepted and graded against that frozen list — never
-        # blocked with a "restart" just because the live set changed since. Grading
-        # (grade_attempt) reads the pinned snapshot, so even a question deleted from
-        # the live set after the student started is still gradeable. A brand-new
-        # attempt on the latest version is what the student gets on retry instead.
+        # Mid-attempt teacher edits to the SET MEMBERSHIP are IGNORED: the attempt was
+        # frozen to a fixed question list at start (att.question_order), so a submit is
+        # ALWAYS accepted and graded against that frozen list — never blocked with a
+        # "restart" just because the live set changed. Content is read live from the
+        # AssessmentQuestion rows for the pinned ids. A brand-new attempt with the
+        # latest questions is what the student gets on retry instead.
         order_ids = [int(x) for x in (att.question_order or []) if isinstance(x, (int, str)) and str(x).isdigit()]
         questions = [q_by_id[qid] for qid in order_ids if qid in q_by_id] if order_ids else base_questions
 

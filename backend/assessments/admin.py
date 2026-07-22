@@ -2,7 +2,6 @@ from django.contrib import admin
 
 from .models import (
     AssessmentSet,
-    AssessmentSetVersion,
     AssessmentQuestion,
     HomeworkAssignment,
     AssessmentAttempt,
@@ -11,52 +10,6 @@ from .models import (
     SecurityAlert,
     GovernanceEvent,
 )
-
-
-@admin.register(AssessmentSetVersion)
-class AssessmentSetVersionAdmin(admin.ModelAdmin):
-    """
-    IMMUTABLE RECORD — read-only in admin. Never allow edits or deletes.
-    All fields are readonly to prevent accidental modification of academic records.
-    """
-
-    list_display = (
-        "id",
-        "assessment_set",
-        "version_number",
-        "question_count",
-        "snapshot_checksum_short",
-        "published_by",
-        "published_at",
-    )
-    list_filter = ("published_at",)
-    search_fields = ("assessment_set__title", "published_by__email", "snapshot_checksum")
-    ordering = ("-published_at", "-version_number")
-
-    # All fields readonly — immutable records cannot be edited.
-    readonly_fields = (
-        "assessment_set",
-        "version_number",
-        "snapshot_json",
-        "snapshot_checksum",
-        "question_count",
-        "published_by",
-        "published_at",
-    )
-
-    def snapshot_checksum_short(self, obj):
-        return obj.snapshot_checksum[:12] + "…" if obj.snapshot_checksum else ""
-
-    snapshot_checksum_short.short_description = "Checksum"
-
-    def has_add_permission(self, request):
-        return False  # Versions are created only via publish_assessment_set()
-
-    def has_change_permission(self, request, obj=None):
-        return False  # Immutable
-
-    def has_delete_permission(self, request, obj=None):
-        return False  # Permanent academic records
 
 
 @admin.register(AssessmentSet)
