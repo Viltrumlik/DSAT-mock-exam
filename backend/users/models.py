@@ -54,9 +54,15 @@ class UserManager(BaseUserManager):
         if eff_role == auth_const.ROLE_TEACHER:
             if getattr(user, "subject", None) not in auth_const.ALL_DOMAIN_SUBJECTS:
                 raise ValueError("Teacher accounts require subject: math or english.")
-        elif eff_role in (auth_const.ROLE_ADMIN, auth_const.ROLE_TEST_ADMIN):
+        elif eff_role in (
+            auth_const.ROLE_ADMIN,
+            auth_const.ROLE_TEST_ADMIN,
+            auth_const.ROLE_TEST_AUDITOR,
+        ):
             if getattr(user, "subject", None) not in (None, ""):
-                raise ValueError("Admin and test_admin accounts must not have a subject set.")
+                raise ValueError(
+                    "Admin, test_admin, and test_auditor accounts must not have a subject set."
+                )
         user.save(using=self._db)
         return user
 
@@ -212,10 +218,14 @@ class User(AbstractUser):
                 raise ValidationError(
                     {"subject": "Teacher accounts require subject: math or english."}
                 )
-        elif role in (auth_const.ROLE_ADMIN, auth_const.ROLE_TEST_ADMIN):
+        elif role in (
+            auth_const.ROLE_ADMIN,
+            auth_const.ROLE_TEST_ADMIN,
+            auth_const.ROLE_TEST_AUDITOR,
+        ):
             if subj is not None:
                 raise ValidationError(
-                    {"subject": "Admin and test_admin accounts must not have a subject set."}
+                    {"subject": "Admin, test_admin, and test_auditor accounts must not have a subject set."}
                 )
         elif role == auth_const.ROLE_SUPER_ADMIN:
             if subj is not None:

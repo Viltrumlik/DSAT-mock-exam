@@ -105,7 +105,8 @@ export default function BuilderSetEditorContainer() {
   const upsertQuestion = useUpsertAssessmentQuestion(setId);
   const delQuestion = useDeleteAssessmentQuestion(setId);
   const setReviewStatus = useSetReviewStatus();
-  const canApprove = getRole() === "admin" || getRole() === "super_admin";
+  const canApprove =
+    getRole() === "admin" || getRole() === "super_admin" || getRole() === "test_auditor";
   const changeReviewStatus = (status: ReviewStatus) => {
     setReviewStatus.mutate(
       { id: setId, status },

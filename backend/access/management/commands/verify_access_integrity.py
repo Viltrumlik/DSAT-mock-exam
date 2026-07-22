@@ -54,7 +54,9 @@ class Command(BaseCommand):
                     )
                 )
 
-        for u in User.objects.filter(role__in=(C.ROLE_ADMIN, C.ROLE_TEST_ADMIN)).iterator():
+        for u in User.objects.filter(
+            role__in=(C.ROLE_ADMIN, C.ROLE_TEST_ADMIN, C.ROLE_TEST_AUDITOR)
+        ).iterator():
             raw = getattr(u, "subject", None)
             if raw not in (None, ""):
                 n += 1
