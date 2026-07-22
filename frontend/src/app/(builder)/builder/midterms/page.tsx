@@ -37,6 +37,7 @@ import {
   Zap,
 } from "lucide-react";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import { cn } from "@/lib/cn";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -162,10 +163,22 @@ function formatDate(s: string | null | undefined): string {
 }
 
 function subjectLabel(s: string | null | undefined): string {
-  if (s === "READING_WRITING") return "Reading & Writing";
-  if (s === "MATH") return "Mathematics";
+  if (s === "READING_WRITING") return "English";
+  if (s === "MATH") return "Math";
   return s ?? "—";
 }
+
+// The two subjects the drill-down browses (English == the READING_WRITING platform subject).
+const MIDTERM_SUBJECTS: { code: "READING_WRITING" | "MATH"; label: string }[] = [
+  { code: "READING_WRITING", label: "English" },
+  { code: "MATH", label: "Math" },
+];
+// Real level codes for a subject (Foundation is Math-only), without the "Any level" entry.
+function levelCodesForSubject(subject: string): string[] {
+  return subject === "MATH" ? ["foundation", "junior", "middle", "senior"] : ["junior", "middle", "senior"];
+}
+// Sentinel for the "Untagged / Any level" bucket (legacy midterms with a blank level).
+const UNTAGGED_LEVEL = "__untagged__";
 
 function parseError(e: unknown): string {
   const data = (e as { response?: { data?: unknown } })?.response?.data;
@@ -194,6 +207,7 @@ function MidtermModal({
   saving,
   error,
   retakeCandidates,
+  lockSubjectLevel = false,
   onSubmit,
   onClose,
 }: {
@@ -204,6 +218,8 @@ function MidtermModal({
   error: string | null;
   /** Published midterms this one may be a retake of — already subject-filtered. */
   retakeCandidates: AdminMidterm[];
+  /** When creating from a subject→level context, subject+level are fixed to that bucket. */
+  lockSubjectLevel?: boolean;
   onSubmit: (f: MidtermForm) => void;
   onClose: () => void;
 }) {
@@ -275,24 +291,28 @@ function MidtermModal({
             </div>
             <div>
               <label className={FL}>Subject</label>
-              <select
-                value={form.midterm_subject}
-                onChange={(e) => {
-                  const subj = e.target.value as "READING_WRITING" | "MATH";
-                  // Foundation is Math-only — drop it when switching to R&W. The retake
-                  // parent is subject-scoped too, so a cross-subject one must go as well.
-                  setForm((p) => ({
-                    ...p,
-                    midterm_subject: subj,
-                    midterm_level: subj !== "MATH" && p.midterm_level === "foundation" ? "" : p.midterm_level,
-                    midterm_retake_of: "",
-                  }));
-                }}
-                className={SI}
-              >
-                <option value="READING_WRITING">Reading &amp; Writing</option>
-                <option value="MATH">Mathematics</option>
-              </select>
+              {lockSubjectLevel ? (
+                <div className={`${SI} flex items-center bg-surface-2 text-muted-foreground`}>{subjectLabel(form.midterm_subject)}</div>
+              ) : (
+                <select
+                  value={form.midterm_subject}
+                  onChange={(e) => {
+                    const subj = e.target.value as "READING_WRITING" | "MATH";
+                    // Foundation is Math-only — drop it when switching to R&W. The retake
+                    // parent is subject-scoped too, so a cross-subject one must go as well.
+                    setForm((p) => ({
+                      ...p,
+                      midterm_subject: subj,
+                      midterm_level: subj !== "MATH" && p.midterm_level === "foundation" ? "" : p.midterm_level,
+                      midterm_retake_of: "",
+                    }));
+                  }}
+                  className={SI}
+                >
+                  <option value="READING_WRITING">English</option>
+                  <option value="MATH">Math</option>
+                </select>
+              )}
             </div>
           </div>
 
@@ -300,11 +320,17 @@ function MidtermModal({
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className={FL}>Level</label>
-              <select value={form.midterm_level} onChange={set("midterm_level")} className={SI}>
-                {levelOptionsForSubject(form.midterm_subject).map((o) => (
-                  <option key={o.v} value={o.v}>{o.l}</option>
-                ))}
-              </select>
+              {lockSubjectLevel ? (
+                <div className={`${SI} flex items-center bg-surface-2 text-muted-foreground`}>
+                  {form.midterm_level ? MIDTERM_LEVEL_LABELS[form.midterm_level] ?? form.midterm_level : "Any level"}
+                </div>
+              ) : (
+                <select value={form.midterm_level} onChange={set("midterm_level")} className={SI}>
+                  {levelOptionsForSubject(form.midterm_subject).map((o) => (
+                    <option key={o.v} value={o.v}>{o.l}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <div>
               <label className={FL}>Type</label>
@@ -741,8 +767,13 @@ export default function BuilderMidtermsPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<number | null>(null);
   const [resultsExam, setResultsExam] = useState<AdminMidterm | null>(null);
-  // Builder filters — by monthly period and midterm type (and level).
-  const [filterLevel, setFilterLevel] = useState("ALL");
+  // Drill-down navigation: pick a subject (English/Math), then a level, then the midterms
+  // in that bucket. "Add midterm" is only possible once both are chosen, and a new midterm
+  // inherits the current subject+level. Legacy midterms with a blank level live under an
+  // "Untagged" level bucket.
+  const [selectedSubject, setSelectedSubject] = useState<"READING_WRITING" | "MATH" | null>(null);
+  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+  // In-pane secondary filters — by monthly period and midterm type.
   const [filterPeriod, setFilterPeriod] = useState("ALL");
   const [filterType, setFilterType] = useState("ALL");
 
@@ -764,7 +795,9 @@ export default function BuilderMidtermsPage() {
     void load();
   }, []);
 
+  // New midterm inherits the subject+level of the bucket the admin is standing in.
   const openCreate = () => {
+    if (!selectedSubject || !selectedLevel) return; // gated: pick subject → level first
     setEditingMidterm(null);
     setSaveError(null);
     setModalOpen(true);
@@ -894,7 +927,12 @@ export default function BuilderMidtermsPage() {
         midterm_retake_of:
           editingMidterm.midterm_retake_of != null ? String(editingMidterm.midterm_retake_of) : "",
       }
-    : DEFAULT_FORM;
+    : {
+        // Create: seed subject+level from the current drill-down context (locked in the modal).
+        ...DEFAULT_FORM,
+        midterm_subject: selectedSubject ?? "READING_WRITING",
+        midterm_level: selectedLevel && selectedLevel !== UNTAGGED_LEVEL ? selectedLevel : "",
+      };
 
   // A retake's parent must be a published midterm; itself and other retakes are excluded
   // so a chain of retakes can never form. Pre-midterms are excluded too: they are never
@@ -909,12 +947,25 @@ export default function BuilderMidtermsPage() {
 
   const published = midterms.filter((m) => m.is_published).length;
   const drafts = midterms.filter((m) => !m.is_published).length;
-  const filteredMidterms = midterms.filter((m) => {
-    if (filterLevel !== "ALL" && (m.midterm_level || "") !== filterLevel) return false;
+
+  // Drill-down slices + counts.
+  const subjectOf = (m: AdminMidterm) => (m.midterm_subject ?? "READING_WRITING");
+  const countForSubject = (code: string) => midterms.filter((m) => subjectOf(m) === code).length;
+  const subjectMidterms = selectedSubject ? midterms.filter((m) => subjectOf(m) === selectedSubject) : [];
+  const countForLevel = (lvl: string) =>
+    subjectMidterms.filter((m) => (lvl === UNTAGGED_LEVEL ? !(m.midterm_level || "") : (m.midterm_level || "") === lvl)).length;
+  const hasUntagged = subjectMidterms.some((m) => !(m.midterm_level || ""));
+  const filteredMidterms = subjectMidterms.filter((m) => {
+    const lvl = m.midterm_level || "";
+    if (selectedLevel === UNTAGGED_LEVEL) { if (lvl !== "") return false; }
+    else if (selectedLevel && lvl !== selectedLevel) return false;
     if (filterPeriod !== "ALL" && (m.midterm_period || "") !== filterPeriod) return false;
     if (filterType !== "ALL" && (m.midterm_type || "MIDTERM") !== filterType) return false;
     return true;
   });
+  const selectedLevelLabel =
+    selectedLevel === UNTAGGED_LEVEL ? "Untagged" : selectedLevel ? MIDTERM_LEVEL_LABELS[selectedLevel] ?? selectedLevel : "";
+  const canCreate = Boolean(selectedSubject && selectedLevel);
 
   return (
     <div className="space-y-5">
@@ -941,16 +992,47 @@ export default function BuilderMidtermsPage() {
             <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            New midterm
-          </button>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              New midterm
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Breadcrumb — subject → level drill-down */}
+      <nav className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+        <button
+          type="button"
+          onClick={() => { setSelectedSubject(null); setSelectedLevel(null); setFilterType("ALL"); setFilterPeriod("ALL"); }}
+          className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedSubject ? "text-primary" : "text-foreground")}
+        >
+          All subjects
+        </button>
+        {selectedSubject && (
+          <>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <button
+              type="button"
+              onClick={() => { setSelectedLevel(null); setFilterType("ALL"); setFilterPeriod("ALL"); }}
+              className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedLevel ? "text-primary" : "text-foreground")}
+            >
+              {subjectLabel(selectedSubject)}
+            </button>
+          </>
+        )}
+        {selectedSubject && selectedLevel && (
+          <>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <span className="rounded-lg px-2 py-1 text-foreground">{selectedLevelLabel}</span>
+          </>
+        )}
+      </nav>
 
       {/* Stats */}
       {!loading && midterms.length > 0 && (
@@ -974,11 +1056,10 @@ export default function BuilderMidtermsPage() {
         </div>
       )}
 
-      {/* Filters — period + type (+ level) */}
-      {!loading && midterms.length > 0 && (
+      {/* In-pane secondary filters — type + period (level & subject are the drill-down) */}
+      {!loading && canCreate && filteredMidterms.length + (filterType !== "ALL" || filterPeriod !== "ALL" ? 1 : 0) > 0 && (
         <div className="flex flex-wrap items-end gap-3">
           {[
-            { label: "Level", value: filterLevel, set: setFilterLevel, opts: [{ v: "ALL", l: "All levels" }, { v: "foundation", l: "Foundation" }, { v: "junior", l: "Junior" }, { v: "middle", l: "Middle" }, { v: "senior", l: "Senior" }] },
             { label: "Type", value: filterType, set: setFilterType, opts: [{ v: "ALL", l: "All types" }, ...TYPE_OPTIONS] },
             { label: "Period", value: filterPeriod, set: setFilterPeriod, opts: [{ v: "ALL", l: "All periods" }, ...PERIOD_OPTIONS.filter((o) => o.v !== "")] },
           ].map((f) => (
@@ -993,10 +1074,10 @@ export default function BuilderMidtermsPage() {
               </select>
             </div>
           ))}
-          {(filterLevel !== "ALL" || filterType !== "ALL" || filterPeriod !== "ALL") && (
+          {(filterType !== "ALL" || filterPeriod !== "ALL") && (
             <button
               type="button"
-              onClick={() => { setFilterLevel("ALL"); setFilterType("ALL"); setFilterPeriod("ALL"); }}
+              onClick={() => { setFilterType("ALL"); setFilterPeriod("ALL"); }}
               className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2"
             >
               Clear
@@ -1025,36 +1106,98 @@ export default function BuilderMidtermsPage() {
         </div>
       )}
 
-      {/* Content */}
+      {/* Content — drill-down: subject → level → midterms */}
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
-      ) : midterms.length === 0 ? (
+      ) : selectedSubject === null ? (
+        /* Step 1 — choose a subject */
+        <div className="grid gap-4 sm:grid-cols-2">
+          {MIDTERM_SUBJECTS.map((s) => {
+            const n = countForSubject(s.code);
+            return (
+              <button
+                key={s.code}
+                type="button"
+                onClick={() => { setSelectedSubject(s.code); setSelectedLevel(null); }}
+                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-6 text-left transition-colors hover:border-primary hover:bg-surface-2"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", s.code === "MATH" ? "bg-purple-100 text-purple-700" : "bg-teal-100 text-teal-700")}>
+                    <GraduationCap className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="text-lg font-extrabold text-foreground">{s.label}</p>
+                    <p className="text-sm text-muted-foreground">{n} midterm{n !== 1 ? "s" : ""}</p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </button>
+            );
+          })}
+        </div>
+      ) : selectedLevel === null ? (
+        /* Step 2 — choose a level within the subject */
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {levelCodesForSubject(selectedSubject).map((code) => {
+            const n = countForLevel(code);
+            return (
+              <button
+                key={code}
+                type="button"
+                onClick={() => { setSelectedLevel(code); setFilterType("ALL"); setFilterPeriod("ALL"); }}
+                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
+              >
+                <div>
+                  <p className="text-base font-extrabold text-foreground">{MIDTERM_LEVEL_LABELS[code]}</p>
+                  <p className="text-sm text-muted-foreground">{n} midterm{n !== 1 ? "s" : ""}</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </button>
+            );
+          })}
+          {hasUntagged && (
+            <button
+              type="button"
+              onClick={() => { setSelectedLevel(UNTAGGED_LEVEL); setFilterType("ALL"); setFilterPeriod("ALL"); }}
+              className="group flex items-center justify-between rounded-2xl border border-dashed border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
+            >
+              <div>
+                <p className="text-base font-extrabold text-foreground">Untagged</p>
+                <p className="text-sm text-muted-foreground">{countForLevel(UNTAGGED_LEVEL)} without a level</p>
+              </div>
+              <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            </button>
+          )}
+        </div>
+      ) : filteredMidterms.length === 0 ? (
+        /* Step 3 — empty bucket */
         <div className="rounded-2xl border border-border bg-card p-12 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
             <GraduationCap className="h-7 w-7 text-muted-foreground/40" />
           </div>
-          <p className="font-extrabold text-foreground">No midterms yet</p>
-          <p className="mt-1 mx-auto max-w-xs text-sm text-muted-foreground leading-relaxed">
-            Create a midterm exam, configure its structure and timing, then author
-            questions for each module. Assign it to a classroom when ready.
+          <p className="font-extrabold text-foreground">
+            {filterType !== "ALL" || filterPeriod !== "ALL" ? "No midterms match these filters" : `No ${subjectLabel(selectedSubject)} · ${selectedLevelLabel} midterms yet`}
           </p>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            New midterm
-          </button>
-        </div>
-      ) : filteredMidterms.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-          <p className="font-extrabold text-foreground">No midterms match these filters</p>
-          <p className="mt-1 text-sm text-muted-foreground">Try a different level, type, or period.</p>
+          <p className="mt-1 mx-auto max-w-xs text-sm text-muted-foreground leading-relaxed">
+            {filterType !== "ALL" || filterPeriod !== "ALL"
+              ? "Try a different type or period."
+              : "Create a midterm in this level, configure its structure, then author its questions."}
+          </p>
+          {canCreate && filterType === "ALL" && filterPeriod === "ALL" && (
+            <button
+              type="button"
+              onClick={openCreate}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              New midterm
+            </button>
+          )}
         </div>
       ) : (
+        /* Step 3 — the midterms in this subject+level */
         <div className="space-y-4">
           {filteredMidterms.map((m) => (
             <MidtermRow
@@ -1082,6 +1225,7 @@ export default function BuilderMidtermsPage() {
         saving={saving}
         error={saveError}
         retakeCandidates={retakeCandidates}
+        lockSubjectLevel={!editingMidterm}
         onSubmit={(f) => void handleSave(f)}
         onClose={() => setModalOpen(false)}
       />
