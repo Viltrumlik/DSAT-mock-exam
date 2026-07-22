@@ -16,23 +16,6 @@ export type PaginatedSets = {
 
 // ─── Publish validation types ─────────────────────────────────────────────────
 
-export type ValidationSeverity = "blocking" | "warning";
-
-export type ValidationFinding = {
-  severity: ValidationSeverity;
-  code: string;
-  message: string;
-  question_id?: number;
-  context?: Record<string, unknown>;
-};
-
-export type PublishValidationReport = {
-  is_publishable: boolean;
-  blocking_count: number;
-  warning_count: number;
-  findings: ValidationFinding[];
-};
-
 // ─── Question Bank picker types (M4) ──────────────────────────────────────────
 
 export type BankPickerRow = {
@@ -44,7 +27,6 @@ export type BankPickerRow = {
   difficulty: string;
   question_type: string;
   question_text: string;
-  current_version: number | null;
 };
 
 export type BankPickerDomain = { id: number; subject: string; name: string; code: string };
@@ -109,17 +91,6 @@ export const assessmentsAdminApi = {
     });
     return (r.data as { ordered_ids?: number[] })?.ordered_ids ?? orderedIds;
   },
-  /**
-   * Dry-run publish validation.
-   * Calls GET /assessments/admin/sets/{id}/validate-publish/ and returns the
-   * full PublishValidationReport (blocking + warning findings).
-   * Does NOT create a version or emit governance events.
-   */
-  validatePublish: async (id: number): Promise<PublishValidationReport> => {
-    const r = await api.get(`/assessments/admin/sets/${id}/validate-publish/`);
-    return r.data as PublishValidationReport;
-  },
-
   telemetry: async (key: string) => {
     await api.post("/assessments/admin/builder/telemetry/", { key });
   },

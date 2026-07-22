@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { Archive, ArrowLeft, Pencil, RotateCcw, Sparkles } from "lucide-react";
 
-import { useQbArchive, useQbQuestion, useQbRestore, useQbVersions } from "@/domains/questionBank/hooks";
+import { useQbArchive, useQbQuestion, useQbRestore } from "@/domains/questionBank/hooks";
 import { QbStatusBadge } from "@/domains/questionBank/components/QbStatusBadge";
 import { BankQuestionEditor } from "@/domains/questionBank/components/BankQuestionEditor";
 import {
@@ -15,7 +15,7 @@ import {
 } from "@/domains/questionBank/utils";
 import type { QbQuestionDetail } from "@/domains/questionBank/types";
 
-type Tab = "preview" | "details" | "versions";
+type Tab = "preview" | "details";
 
 export default function QuestionBankDetailPage() {
   const params = useParams<{ id: string }>();
@@ -70,7 +70,7 @@ export default function QuestionBankDetailPage() {
       ) : (
         <>
           <div className="flex gap-1 border-b border-border">
-            {(["preview", "details", "versions"] as const).map((t) => (
+            {(["preview", "details"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -81,14 +81,13 @@ export default function QuestionBankDetailPage() {
                     : "border-b-2 border-transparent px-4 py-2 text-sm font-bold text-muted-foreground hover:text-foreground"
                 }
               >
-                {t === "preview" ? "Preview" : t === "details" ? "Details" : `Versions (${q.version_count})`}
+                {t === "preview" ? "Preview" : "Details"}
               </button>
             ))}
           </div>
 
           {tab === "preview" && <PreviewTab q={q} />}
           {tab === "details" && <DetailsTab q={q} />}
-          {tab === "versions" && <VersionsTab id={id} />}
         </>
       )}
     </div>
@@ -166,7 +165,6 @@ function DetailsTab({ q }: { q: QbQuestionDetail }) {
         <Field label="Content hash">
           <span className="font-mono text-xs">{q.content_hash || "—"}</span>
         </Field>
-        <Field label="Current version">{q.current_version_number ?? "—"}</Field>
         <Field label="Created">{new Date(q.created_at).toLocaleString()}</Field>
       </div>
 
@@ -188,43 +186,6 @@ function DetailsTab({ q }: { q: QbQuestionDetail }) {
           ) : null}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function VersionsTab({ id }: { id: number }) {
-  const [includeSnapshot, setIncludeSnapshot] = useState(false);
-  const { data, isLoading } = useQbVersions(id, includeSnapshot);
-  const versions = data?.results ?? [];
-
-  return (
-    <div className="space-y-3">
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-        <input type="checkbox" checked={includeSnapshot} onChange={(e) => setIncludeSnapshot(e.target.checked)} />
-        Show immutable snapshot payload
-      </label>
-      {isLoading ? (
-        <Centered>Loading…</Centered>
-      ) : versions.length === 0 ? (
-        <Centered>No versions.</Centered>
-      ) : (
-        <ul className="space-y-2">
-          {versions.map((v) => (
-            <li key={v.id} className="rounded-xl border border-border bg-card p-4">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-foreground">Version {v.version_number}</span>
-                <span className="text-xs text-muted-foreground">{new Date(v.created_at).toLocaleString()}</span>
-              </div>
-              <p className="mt-1 font-mono text-xs text-muted-foreground">checksum: {v.snapshot_checksum}</p>
-              {includeSnapshot && v.snapshot_json ? (
-                <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-surface-2 p-3 text-xs text-foreground">
-                  {JSON.stringify(v.snapshot_json, null, 2)}
-                </pre>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

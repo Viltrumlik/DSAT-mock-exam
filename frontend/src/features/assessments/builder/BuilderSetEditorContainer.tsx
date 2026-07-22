@@ -40,7 +40,6 @@ import {
   useBuilderStore,
   useBuilderViewSet,
 } from "@/features/assessments/builder/store";
-import { PublishSlideOver } from "@/features/assessments/builder/PublishSlideOver";
 import { SATQuestionPreview } from "@/features/assessments/builder/SATQuestionPreview";
 import { QuestionRow } from "@/features/assessments/builder/QuestionRow";
 import { FormulaToolbar } from "@/components/FormulaToolbar";
@@ -302,8 +301,7 @@ export default function BuilderSetEditorContainer() {
     [questions, selectedQuestionId],
   );
 
-  // ── Publish slide-over + viewport toggle ──────────────────────────────────────
-  const [publishOpen, setPublishOpen] = useState(false);
+  // ── Viewport toggle ──────────────────────────────────────
   const [viewportMode, setViewportMode] = useState<"desktop" | "mobile">("desktop");
   const [saveMode, setSaveMode] = useState<"save" | "save-next" | "save-new">("save");
   const [saveModeOpen, setSaveModeOpen] = useState(false);
@@ -749,7 +747,6 @@ export default function BuilderSetEditorContainer() {
     );
   }
 
-  const canPublish = validation.length === 0;
   const isPublished = Boolean((view as any)?.is_active);
 
   return (
@@ -828,21 +825,14 @@ export default function BuilderSetEditorContainer() {
           >
             ↪ Redo
           </button>
-          {!isPublished && (
-            <button
-              type="button"
-              onClick={() => setPublishOpen(true)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-xl px-4 py-1.5 text-sm font-extrabold transition-colors",
-                canPublish
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                  : "border border-border bg-card text-muted-foreground hover:bg-surface-2",
-              )}
-              title={canPublish ? "Open publish panel" : `${validation.length} issue${validation.length !== 1 ? "s" : ""} to fix before publishing`}
+          {validation.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700"
+              title="Fix these before this set can be approved"
             >
               <Rocket className="h-3.5 w-3.5" />
-              {canPublish ? "Publish…" : `${validation.length} issue${validation.length !== 1 ? "s" : ""}`}
-            </button>
+              {validation.length} issue{validation.length !== 1 ? "s" : ""} to fix
+            </span>
           )}
         </div>
       </header>
@@ -1326,22 +1316,6 @@ export default function BuilderSetEditorContainer() {
           </div>
         </aside>
       </div>
-
-      {/* Publish slide-over */}
-      <PublishSlideOver
-        isOpen={publishOpen}
-        onClose={() => setPublishOpen(false)}
-        setId={view.id}
-        set={view as AssessmentSet}
-        onPublishSuccess={() => {
-          setPublishOpen(false);
-          void detail.refetch();
-        }}
-        onJumpToQuestion={(questionId) => {
-          selectQuestion(questionId);
-          setPublishOpen(false);
-        }}
-      />
     </div>
   );
 }

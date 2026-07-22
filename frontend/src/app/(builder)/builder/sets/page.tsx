@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { useAssessmentSetsList, useDeleteAssessmentSet, useSetReviewStatus } from "@/features/assessments/hooks";
 import { getRole, getSubject } from "@/lib/permissions";
-import { Plus, Search, RefreshCw, SendHorizonal, Trash2, ChevronRight, BookOpen, Sigma, Upload, X } from "lucide-react";
+import { Plus, Search, RefreshCw, Trash2, ChevronRight, BookOpen, Sigma, Upload, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, SetLineage } from "@/components/governance";
 import { ConfirmDialog } from "@/features/classroom/ui";
@@ -186,8 +186,8 @@ export default function BuilderSetsPage() {
         <div>
           <h1 className="text-xl font-bold text-foreground tracking-tight">Assessments</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Assessment sets group reusable questions into a deliverable unit. Publishing creates an
-            immutable snapshot that can be assigned to classrooms.
+            Assessment sets group reusable questions into a deliverable unit. Approve a set to make
+            it assignable to classrooms.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -284,21 +284,6 @@ export default function BuilderSetsPage() {
         </div>
       )}
 
-      {/* Publish queue callout when drafts exist */}
-      {!isLoading && draftCount > 0 && (
-        <Link
-          href="/builder/publish-queue"
-          className="flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 hover:border-amber-300 hover:bg-amber-100 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <SendHorizonal className="h-4 w-4 text-amber-700" />
-            <p className="text-sm font-bold text-amber-900">
-              {draftCount} draft set{draftCount === 1 ? "" : "s"} in the Publish Queue
-            </p>
-          </div>
-          <span className="text-xs font-bold text-amber-700">Review →</span>
-        </Link>
-      )}
 
       {/* Search + filter — only in the set list (subject & level are the drill-down) */}
       {canCreate && (
@@ -439,13 +424,6 @@ export default function BuilderSetsPage() {
               const questionCount = (s.questions ?? []).length;
               const activeQs = (s.questions ?? []).filter((q: { is_active?: boolean }) => q.is_active).length;
               const reviewStatus = (s.review_status ?? "draft") as ReviewStatus;
-              const isDraft = !s.is_active;
-              const isPublishReady =
-                isDraft &&
-                questionCount > 0 &&
-                activeQs > 0 &&
-                Boolean(s.title?.trim()) &&
-                Boolean(s.category?.trim());
               return (
                 <div
                   key={s.id}
@@ -517,15 +495,6 @@ export default function BuilderSetsPage() {
                         </option>
                       ))}
                     </select>
-                    {isPublishReady && (
-                      <Link
-                        href={`/builder/sets/${s.id}/publish`}
-                        className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-2.5 py-1.5 text-xs font-extrabold text-white hover:bg-emerald-700 transition-colors"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Publish
-                      </Link>
-                    )}
                     <Link
                       href={`/builder/sets/${s.id}`}
                       className="text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"

@@ -18,7 +18,6 @@ import type {
   QbQuestionListItem,
   QbSkill,
   QbValidation,
-  QbVersion,
   QbWritePayload,
 } from "./types";
 
@@ -72,12 +71,6 @@ export const questionBankApi = {
   },
   getQuestion: async (id: number): Promise<QbQuestionDetail> => {
     const r = await api.get(`${BASE}/questions/${id}/`);
-    return r.data;
-  },
-  listVersions: async (questionId: number, includeSnapshot = false): Promise<QbPaginated<QbVersion>> => {
-    const r = await api.get(`${BASE}/versions/`, {
-      params: clean({ bank_question: questionId, include_snapshot: includeSnapshot ? "true" : undefined }),
-    });
     return r.data;
   },
   listDomains: async (subject?: string): Promise<QbDomain[]> => {

@@ -314,8 +314,8 @@ export default function QuestionBankPage() {
 
       {/* Governance note */}
       <p className="text-xs text-muted-foreground text-center pb-2">
-        Questions in active assignments are protected by immutable snapshots. Editing an active
-        question creates a new revision automatically.
+        A question is the live source of truth: editing it here updates it everywhere it&apos;s
+        used, including in assessments.
       </p>
     </div>
   );

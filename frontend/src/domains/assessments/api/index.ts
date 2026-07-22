@@ -57,17 +57,6 @@ export async function createAssessmentSet(payload: {
 }
 
 /**
- * Publish an assessment set (transitions to PUBLISHED / is_active: true).
- * Once published, the question snapshot is locked.
- *
- * @note This is the simplified pre-snapshot implementation.
- *       Post-snapshot: this will create an AssessmentSetVersion record.
- */
-export async function publishAssessmentSet(id: number): Promise<AssessmentSet> {
-  return assessmentsAdminApi.updateSet(id, { is_active: true });
-}
-
-/**
  * Archive an assessment set (transitions to ARCHIVED / is_active: false).
  * Only allowed if no active assignments are using this set.
  */
