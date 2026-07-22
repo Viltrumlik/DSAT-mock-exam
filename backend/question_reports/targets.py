@@ -16,6 +16,8 @@ class ResolvedTarget:
     question_order: Optional[int]
     question_excerpt: str
     qb_id: str
+    subject: str = ""
+    module_label: str = ""
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -56,21 +58,31 @@ def _resolve_exam(question_id: int) -> Optional[ResolvedTarget]:
     resource_type = QuestionErrorReport.RESOURCE_UNKNOWN
     resource_id: Optional[int] = None
     resource_title = ""
+    # Subject defaults to the question's own type (Math/Reading/Writing); overridden
+    # by the container's subject (e.g. "Reading & Writing") where available.
+    subject = q.get_question_type_display() if hasattr(q, "get_question_type_display") else ""
 
     module = q.module
+    module_label = f"Module {module.module_order}" if module and module.module_order else ""
     if module is not None:
         # Midterm owns exactly one Module (reverse OneToOne). Query by id to avoid
         # relying on the reverse-accessor DoesNotExist dance.
         from midterms.models import Midterm
 
-        midterm = Midterm.objects.filter(question_module_id=module.id).only("id", "title").first()
+        midterm = (
+            Midterm.objects.filter(question_module_id=module.id)
+            .only("id", "title", "subject")
+            .first()
+        )
         if midterm is not None:
             resource_type = QuestionErrorReport.RESOURCE_MIDTERM
             resource_id = midterm.id
             resource_title = midterm.title or ""
+            subject = midterm.get_subject_display()
         else:
             pt = module.practice_test
             if pt is not None:
+                subject = pt.get_subject_display()
                 if pt.practice_test_pack_id:
                     pack = pt.practice_test_pack
                     resource_type = QuestionErrorReport.RESOURCE_PRACTICE_TEST
@@ -100,8 +112,12 @@ def _resolve_exam(question_id: int) -> Optional[ResolvedTarget]:
                     resource_type = QuestionErrorReport.RESOURCE_MOCK
                     resource_id = section.mock_id
                     resource_title = section.mock.title or ""
+                    subject = section.get_subject_display()
 
-    return ResolvedTarget(resource_type, resource_id, resource_title, order, excerpt, qb_id)
+    return ResolvedTarget(
+        resource_type, resource_id, resource_title, order, excerpt, qb_id,
+        subject=subject, module_label=module_label,
+    )
 
 
 def _resolve_assessment(question_id: int) -> Optional[ResolvedTarget]:
@@ -117,7 +133,9 @@ def _resolve_assessment(question_id: int) -> Optional[ResolvedTarget]:
     order = int(aq.order or 0) + 1
     excerpt = _excerpt(aq.prompt or aq.question_prompt or "")
     qb_id = aq.bank_question.qb_id if getattr(aq, "bank_question_id", None) else ""
-    title = aq.assessment_set.title if aq.assessment_set_id else ""
+    aset = aq.assessment_set if aq.assessment_set_id else None
+    title = aset.title if aset else ""
+    subject = aset.get_subject_display() if aset else ""
     return ResolvedTarget(
         QuestionErrorReport.RESOURCE_ASSESSMENT,
         aq.assessment_set_id,
@@ -125,6 +143,8 @@ def _resolve_assessment(question_id: int) -> Optional[ResolvedTarget]:
         order,
         excerpt,
         qb_id,
+        subject=subject,
+        module_label="",  # assessments have no modules
     )
 
 
@@ -170,6 +190,12 @@ def build_report_message(report: QuestionErrorReport) -> str:
         "🚩 <b>Question error report</b>",
         status_line,
         f"<b>Resource:</b> {e(resource_label)} — {e(report.resource_title or '—')}",
+    ]
+    if report.subject:
+        lines.append(f"<b>Subject:</b> {e(report.subject)}")
+    if report.module_label:
+        lines.append(f"<b>Module:</b> {e(report.module_label)}")
+    lines += [
         f"<b>Question:</b> {e(qnum)}"
         + (f" · <code>{e(report.qb_id)}</code>" if report.qb_id else ""),
         f"<b>Category:</b> {e(category_label)}",
