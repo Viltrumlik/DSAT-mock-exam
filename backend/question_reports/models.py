@@ -86,6 +86,8 @@ class QuestionErrorReport(models.Model):
     )
     resource_id = models.BigIntegerField(null=True, blank=True)
     resource_title = models.CharField(max_length=255, blank=True, default="")
+    subject = models.CharField(max_length=32, blank=True, default="")
+    module_label = models.CharField(max_length=32, blank=True, default="")
     question_order = models.PositiveIntegerField(null=True, blank=True, help_text="1-based number.")
     question_excerpt = models.CharField(max_length=280, blank=True, default="")
     qb_id = models.CharField(max_length=32, blank=True, default="", db_index=True)

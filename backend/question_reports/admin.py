@@ -29,6 +29,8 @@ class QuestionErrorReportAdmin(admin.ModelAdmin):
         "resource_type",
         "resource_id",
         "resource_title",
+        "subject",
+        "module_label",
         "question_order",
         "question_excerpt",
         "qb_id",
