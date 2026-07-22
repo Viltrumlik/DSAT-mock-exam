@@ -1,6 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useUpsertAssessmentSet } from "@/features/assessments/hooks";
 import type { Subject } from "@/features/assessments/types";
@@ -8,15 +9,33 @@ import { normalizeApiError } from "@/lib/apiError";
 import { getSubject } from "@/lib/permissions";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
-import { levelsForSubject, levelLabel } from "@/lib/levels";
+import { levelsForSubject, levelLabel, type LevelKey } from "@/lib/levels";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
+const LOCKED = `${INPUT} flex items-center bg-surface-2 text-muted-foreground`;
+const SUBJECT_LABELS: Record<string, string> = { math: "Math", english: "English" };
 
-export default function NewAssessmentSetPage() {
+function NewAssessmentSetForm() {
   const router = useRouter();
   const upsert = useUpsertAssessmentSet();
   const subj = getSubject();
+  const params = useSearchParams();
+
+  // Subject+level come from the builder drill-down (?subject=&level=). A teacher is also
+  // locked to their own subject. When they arrive from a bucket, both are fixed so the new
+  // set lands where the admin was standing.
+  const rawSubject = params.get("subject");
+  const validSubject: Subject | null =
+    rawSubject === "math" || rawSubject === "english" ? rawSubject : null;
+  const effSubject: Subject = (subj || validSubject || "math") as Subject;
+  const rawLevel = params.get("level");
+  const validLevel: string | null =
+    validSubject && rawLevel && levelsForSubject(effSubject).includes(rawLevel as LevelKey)
+      ? rawLevel
+      : null;
+  const lockedSubject = Boolean(subj) || Boolean(validSubject);
+  const lockedLevel = Boolean(validLevel);
 
   const [form, setForm] = useState<{
     subject: Subject;
@@ -27,9 +46,9 @@ export default function NewAssessmentSetPage() {
     description: string;
     is_active: boolean;
   }>({
-    subject: subj || "math",
+    subject: effSubject,
     source: "",
-    level: "",
+    level: validLevel ?? "",
     category: "",
     title: "",
     description: "",
@@ -64,7 +83,11 @@ export default function NewAssessmentSetPage() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-extrabold text-foreground">Create assessment set</p>
-          <p className="mt-1 text-sm text-muted-foreground">Draft a set, then add questions.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {lockedLevel
+              ? `New ${SUBJECT_LABELS[form.subject]} · ${levelLabel(form.level)} set — then add questions.`
+              : "Draft a set, then add questions."}
+          </p>
         </div>
         <button
           type="button"
@@ -87,27 +110,30 @@ export default function NewAssessmentSetPage() {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Subject</p>
-            <select
-              className={INPUT}
-              value={form.subject}
-              onChange={(e) => {
-                const subject = e.target.value as Subject;
-                // Reset source/level if they aren't valid for the newly-selected subject
-                // (e.g. English has no Foundation level).
-                const sourceOk = allowedSourcesForSubject(subject).includes(form.source as never);
-                const levelOk = levelsForSubject(subject).includes(form.level as never);
-                setForm({
-                  ...form,
-                  subject,
-                  source: sourceOk ? form.source : "",
-                  level: levelOk ? form.level : "",
-                });
-              }}
-              disabled={Boolean(subj)}
-            >
-              <option value="math">math</option>
-              <option value="english">english</option>
-            </select>
+            {lockedSubject ? (
+              <div className={LOCKED}>{SUBJECT_LABELS[form.subject] ?? form.subject}</div>
+            ) : (
+              <select
+                className={INPUT}
+                value={form.subject}
+                onChange={(e) => {
+                  const subject = e.target.value as Subject;
+                  // Reset source/level if they aren't valid for the newly-selected subject
+                  // (e.g. English has no Foundation level).
+                  const sourceOk = allowedSourcesForSubject(subject).includes(form.source as never);
+                  const levelOk = levelsForSubject(subject).includes(form.level as never);
+                  setForm({
+                    ...form,
+                    subject,
+                    source: sourceOk ? form.source : "",
+                    level: levelOk ? form.level : "",
+                  });
+                }}
+              >
+                <option value="math">Math</option>
+                <option value="english">English</option>
+              </select>
+            )}
           </div>
           <div>
             <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Active</p>
@@ -138,16 +164,20 @@ export default function NewAssessmentSetPage() {
           </div>
           <div>
             <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">Level *</p>
-            <select
-              className={INPUT}
-              value={form.level}
-              onChange={(e) => setForm({ ...form, level: e.target.value })}
-            >
-              <option value="">Select a level…</option>
-              {levelOptions.map((l) => (
-                <option key={l} value={l}>{levelLabel(l)}</option>
-              ))}
-            </select>
+            {lockedLevel ? (
+              <div className={LOCKED}>{levelLabel(form.level)}</div>
+            ) : (
+              <select
+                className={INPUT}
+                value={form.level}
+                onChange={(e) => setForm({ ...form, level: e.target.value })}
+              >
+                <option value="">Select a level…</option>
+                {levelOptions.map((l) => (
+                  <option key={l} value={l}>{levelLabel(l)}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -177,3 +207,10 @@ export default function NewAssessmentSetPage() {
   );
 }
 
+export default function NewAssessmentSetPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewAssessmentSetForm />
+    </Suspense>
+  );
+}
