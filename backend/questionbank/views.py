@@ -7,6 +7,8 @@ project default but is listed explicitly for clarity.
 """
 from __future__ import annotations
 
+import logging
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q
@@ -23,6 +25,8 @@ from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import audit, serializers as qb, triage
 from .import_pipeline import promote_batch
+
+logger = logging.getLogger(__name__)
 
 # Parsers for content authoring (images via multipart; JSON also accepted).
 _WRITE_PARSERS = [MultiPartParser, FormParser, JSONParser]
@@ -149,6 +153,17 @@ class BankQuestionDetailView(generics.RetrieveUpdateAPIView):
             event_type=audit.EVT_UPDATE, question=question, actor=request.user,
             previous_state=prev, new_state=question.status,
         )
+        # Live shared reference: an edit here flows to every assessment that uses this
+        # question, instead of leaving each consumer as a frozen copy. Best-effort —
+        # never fail the edit if a downstream copy can't be updated.
+        try:
+            from assessments.domain.bank_integration import propagate_bank_question_to_consumers
+
+            propagated = propagate_bank_question_to_consumers(question)
+            if propagated:
+                logger.info("bank_question_propagated qb_id=%s consumers=%s", question.qb_id, propagated)
+        except Exception:  # noqa: BLE001 - propagation must not break authoring
+            logger.exception("bank_question_propagation_failed qb_id=%s", getattr(question, "qb_id", "?"))
         return Response(qb.BankQuestionDetailSerializer(question).data)
 
 

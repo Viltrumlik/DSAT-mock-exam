@@ -111,6 +111,46 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion):
         )
 
 
+def _apply_bank_content(aq, bank_question) -> None:
+    """Overwrite an AssessmentQuestion's content from its linked bank question."""
+    aq.prompt = bank_question.question_text
+    aq.question_prompt = bank_question.question_prompt or ""
+    aq.question_type = _TYPE_MAP.get(bank_question.question_type, aq.question_type)
+    aq.choices = _choices_from_bank(bank_question)
+    aq.correct_answer = bank_question.correct_answer
+    aq.points = bank_question.points or 1
+    aq.explanation = bank_question.explanation or ""
+    for f in _IMAGE_FIELDS:
+        setattr(aq, f, _img_name(getattr(bank_question, f)))
+    aq.save(
+        update_fields=[
+            "prompt", "question_prompt", "question_type", "choices",
+            "correct_answer", "points", "explanation", *_IMAGE_FIELDS, "updated_at",
+        ]
+    )
+
+
+def propagate_bank_question_to_consumers(bank_question) -> int:
+    """Push a bank question's current content onto EVERY AssessmentQuestion linked to it.
+
+    This is the live shared-reference behaviour: editing a question in the Question Bank
+    updates it everywhere it is used, instead of leaving each consumer as a frozen copy.
+    Called at the QB edit boundary (see questionbank.views.BankQuestionDetailView). The
+    assessment→bank mirror (domain/bank_sync.py) writes bank rows directly via the service
+    layer, not through that view, so there is no echo loop. Returns rows updated.
+    """
+    # Local import: assessments already depends on questionbank, and this keeps the
+    # reverse edge (questionbank calling assessments) off the module-load path.
+    from assessments.models import AssessmentQuestion
+
+    updated = 0
+    with transaction.atomic():
+        for aq in AssessmentQuestion.objects.filter(bank_question=bank_question):
+            _apply_bank_content(aq, bank_question)
+            updated += 1
+    return updated
+
+
 def selectable_bank_questions(*, subject: str | None = None, domain_id=None, skill_id=None,
                               difficulty: str | None = None, search: str | None = None):
     """APPROVED-only queryset for the builder's 'Select From Question Bank' picker."""
