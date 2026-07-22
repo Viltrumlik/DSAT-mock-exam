@@ -18,7 +18,7 @@ from assessments.domain.bank_integration import create_question_from_bank, selec
 from assessments.models import AssessmentSet
 from assessments.views import _image_map_for
 from questionbank.models import BankDomain, BankSkill, Difficulty, Subject
-from questionbank.services import create_bank_question, create_version
+from questionbank.services import create_bank_question, update_bank_question
 from questionbank.triage import approve_question, classify_question
 
 User = get_user_model()
@@ -68,19 +68,20 @@ class M4ImageFreezeTests(TestCase):
         self.assertTrue(img_map[aq.id]["question_image"].endswith(DIAGRAM))
         self.assertTrue(img_map[aq.id]["option_a_image"].endswith(OPTION_IMG))
 
-    def test_image_survives_later_bank_edit(self):
-        """Freeze proof: editing the bank image + cutting a new version must not
-        mutate the already-added assessment question's image."""
+    def test_image_propagates_on_bank_edit(self):
+        """Live shared reference: editing the bank image propagates to the linked
+        assessment question (single source of truth)."""
+        from assessments.domain.bank_integration import propagate_bank_question_to_consumers
+
         bank = self._approved_bank_q_with_image()
         aq = create_question_from_bank(self._set(), bank)
 
-        # Author edits the bank question's diagram and cuts a new version.
-        bank.question_image = "question_bank/questions/diagram_v2.png"
-        bank.save(update_fields=["question_image"])
-        create_version(bank, user=self.user)
+        # Author edits the bank question's diagram; the edit flows to consumers.
+        update_bank_question(bank, question_image="question_bank/questions/diagram_v2.png")
+        propagate_bank_question_to_consumers(bank)
 
         aq.refresh_from_db()
-        self.assertEqual(aq.question_image.name, DIAGRAM)  # still v1 — frozen
+        self.assertEqual(aq.question_image.name, "question_bank/questions/diagram_v2.png")
 
     def test_text_only_bank_question_has_no_images(self):
         q = create_bank_question(

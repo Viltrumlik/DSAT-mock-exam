@@ -67,7 +67,6 @@ class AttemptPedagogicalReviewView(APIView):
                 "homework__classroom",
                 "homework__assessment_set",
                 "homework__assignment",
-                "set_version",
             )
             .prefetch_related("answers__question", "teacher_feedback__teacher")
             .filter(pk=attempt_id, student=request.user)

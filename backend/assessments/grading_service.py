@@ -41,24 +41,22 @@ def grade_attempt(*, attempt_id: int) -> AssessmentResult | None:
     """
     Idempotent grading transaction.
 
-    SNAPSHOT-AWARE:
-      - If att.set_version_id is not None, grades against the immutable snapshot
-        pinned at attempt creation — content is guaranteed stable regardless of
-        any edits made to the live set after the attempt was started.
-      - If att.set_version_id is None (pre-snapshot attempt), falls back to live
-        question lookup — legacy behaviour, fully backward compatible.
+    Grades the LIVE AssessmentQuestion rows for the ids frozen onto the attempt
+    (``question_order``) — see ``_questions_from_attempt``. Content is served,
+    graded and reviewed from the live rows; the attempt pins only WHICH questions
+    it covers.
 
     Locks the attempt row for the duration of the transaction.
     Duplicate Celery deliveries are handled idempotently.
     """
     # Lock the row first (Postgres rejects FOR UPDATE on the nullable side
-    # of an outer join — `homework` and `set_version` are nullable FKs).
+    # of an outer join — `homework` is a nullable FK).
     locked_exists = AssessmentAttempt.objects.select_for_update().filter(pk=attempt_id).exists()
     if not locked_exists:
         return None
     att = (
         AssessmentAttempt.objects
-        .select_related("homework", "homework__assessment_set", "set_version")
+        .select_related("homework", "homework__assessment_set")
         .filter(pk=attempt_id)
         .first()
     )
@@ -143,7 +141,6 @@ def grade_attempt(*, attempt_id: int) -> AssessmentResult | None:
         payload={
             "percent": str(percent),
             "async": True,
-            "snapshot_graded": att.set_version_id is not None,
         },
     )
     return res

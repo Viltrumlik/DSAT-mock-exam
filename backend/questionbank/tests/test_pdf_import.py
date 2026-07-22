@@ -165,7 +165,6 @@ class PipelineTests(TestCase):
         q = BankQuestion.objects.first()
         self.assertEqual(q.source_type, "PDF_IMPORT")
         self.assertEqual(q.source_reference, "sat_rw.pdf")
-        self.assertIsNotNone(q.current_version)
 
     def test_math_batch_is_not_promoted(self):
         batch = create_batch_from_pages([PAGE_1, PAGE_2], filename="sat_math.pdf")

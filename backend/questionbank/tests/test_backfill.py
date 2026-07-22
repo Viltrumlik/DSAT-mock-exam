@@ -62,8 +62,6 @@ class BackfillTests(TestCase):
         dup_a = Question.objects.get(correct_answers="B")
         dup_b = Question.objects.get(correct_answers="b")
         self.assertEqual(dup_a.bank_question_id, dup_b.bank_question_id)
-        # bank_version pinned.
-        self.assertIsNotNone(dup_a.bank_version_id)
 
         # Math question mapped to STUDENT_PRODUCED with list correct answer.
         math_bank = BankQuestion.objects.get(source_reference__startswith="exams.Question", question_type="STUDENT_PRODUCED")

@@ -1,14 +1,11 @@
 """
-M4 — Question Bank → Assessment Builder integration (ASSESSMENTS ONLY).
+Question Bank → Assessment Builder integration (ASSESSMENTS ONLY).
 
-Assessments are the safest consumer to integrate first because they already
-freeze content via immutable AssessmentSetVersion snapshots. This module does
-NOT touch the attempt, grading, or review engines. It only:
-
-  1. lets the builder create an AssessmentQuestion FROM an APPROVED bank question
-     (copying content + recording the bank_question/bank_version link), and
-  2. (in snapshot_builder) pins qb_id + version_number into the snapshot so a
-     published assessment is frozen against future bank edits.
+This module lets the builder create an AssessmentQuestion FROM an APPROVED bank
+question (copying content + recording a ``bank_question`` link), and pushes a
+later Question Bank edit back onto every linked AssessmentQuestion
+(``propagate_bank_question_to_consumers``) — the bank question is the live single
+source of truth, not a frozen copy.
 
 GATE: only status=APPROVED bank questions may be added. TRIAGE/IMPORTED/REJECTED/
 ARCHIVED are never selectable.
@@ -57,11 +54,11 @@ def _choices_from_bank(bank: BankQuestion) -> list[dict]:
 def create_question_from_bank(assessment_set, bank_question: BankQuestion):
     """
     Create a new AssessmentQuestion in ``assessment_set`` sourced from an APPROVED
-    bank question. Returns the new AssessmentQuestion (live, not yet snapshotted).
+    bank question. Returns the new AssessmentQuestion.
 
-    The content is COPIED (assessments own their editable working copy); the link
-    back to (bank_question, bank_version=current_version) records provenance and
-    is what the snapshot pins at publish time.
+    The content is copied and the row records ``bank_question`` for provenance +
+    live propagation: a later Question Bank edit flows back onto this row via
+    ``propagate_bank_question_to_consumers`` (single source of truth).
     """
     # Local import avoids any import cycle with assessments.models.
     from assessments.models import AssessmentQuestion
@@ -71,18 +68,9 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion):
             f"Question {bank_question.qb_id} is not APPROVED (status={bank_question.status}); "
             "only approved Question Bank questions can be added to an assessment."
         )
-    if bank_question.current_version_id is None:
-        raise ValidationError(
-            f"Question {bank_question.qb_id} has no current version to pin."
-        )
 
-    # FREEZE-SAFE IMAGE COPY: reference the bank's image files by storage name on
-    # the new (editable) AssessmentQuestion row. The frozen attempt/review delivery
-    # paths supplement images from the live row (_image_map_for in views.py), so the
-    # diagram survives publish. It is freeze-safe because (a) this row owns its own
-    # copy of the name — a later bank edit cuts a NEW bank version and never mutates
-    # this row, and (b) django-cleanup is absent so the referenced file is never
-    # deleted. Math diagrams therefore survive publish without being dropped.
+    # Reference the bank's image files by storage name on the new AssessmentQuestion
+    # row (django-cleanup is absent so the referenced file is never deleted).
     image_fields = {f: _img_name(getattr(bank_question, f)) for f in _IMAGE_FIELDS}
 
     # Order is server-owned: ALWAYS append under a set row-lock held through the
@@ -106,7 +94,6 @@ def create_question_from_bank(assessment_set, bank_question: BankQuestion):
             explanation=bank_question.explanation or "",
             is_active=True,
             bank_question=bank_question,
-            bank_version=bank_question.current_version,
             **image_fields,
         )
 

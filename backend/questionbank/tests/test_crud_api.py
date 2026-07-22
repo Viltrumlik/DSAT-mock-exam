@@ -101,9 +101,8 @@ class QbCrudApiTests(TestCase):
         q.refresh_from_db()
         return q
 
-    def test_edit_keeps_status_and_cuts_version(self):
+    def test_edit_keeps_status_and_mutates_in_place(self):
         q = self._approved_q()
-        versions_before = q.versions.count()
         res = self.client.patch(
             reverse("questionbank:question-detail", args=[q.id]),
             {"question_text": "edited stem"}, format="json",
@@ -112,7 +111,6 @@ class QbCrudApiTests(TestCase):
         q.refresh_from_db()
         self.assertEqual(q.question_text, "edited stem")
         self.assertEqual(q.status, QuestionStatus.APPROVED)  # status preserved
-        self.assertEqual(q.versions.count(), versions_before + 1)  # new version cut
         self.assertTrue(GovernanceEvent.objects.filter(event_type="qb_question_update", entity_id=q.id).exists())
 
     def test_edit_can_change_taxonomy(self):

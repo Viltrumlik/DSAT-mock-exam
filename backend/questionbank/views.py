@@ -35,7 +35,6 @@ from .models import (
     BankPassage,
     BankQuestion,
     BankQuestionAttempt,
-    BankQuestionVersion,
     BankSkill,
     ImportBatch,
     ImportCandidate,
@@ -132,7 +131,7 @@ class BankQuestionDetailView(generics.RetrieveUpdateAPIView):
     parser_classes = _WRITE_PARSERS
     queryset = BankQuestion.objects.select_related(
         "domain", "skill", "passage", "import_batch",
-        "suggested_domain", "suggested_skill", "current_version",
+        "suggested_domain", "suggested_skill",
     )
 
     def get_serializer_class(self):
@@ -231,31 +230,6 @@ class BankPassageDetailView(generics.RetrieveAPIView):
     permission_classes = QB_PERMISSIONS
     serializer_class = qb.BankPassageSerializer
     queryset = BankPassage.objects.all()
-
-
-@extend_schema(
-    tags=["questionbank"],
-    parameters=[
-        OpenApiParameter("bank_question", int, description="Filter to one question's lineage."),
-        OpenApiParameter("include_snapshot", bool, description="Include immutable snapshot_json."),
-    ],
-)
-class BankQuestionVersionListView(generics.ListAPIView):
-    """GET /api/questionbank/versions/ — append-only version lineage."""
-
-    permission_classes = QB_PERMISSIONS
-    pagination_class = QbPagination
-
-    def get_serializer_class(self):
-        if _truthy(self.request.query_params.get("include_snapshot")):
-            return qb.BankQuestionVersionDetailSerializer
-        return qb.BankQuestionVersionSerializer
-
-    def get_queryset(self):
-        qs = BankQuestionVersion.objects.all()
-        if (bq_id := _int_or_none(self.request.query_params.get("bank_question"))) is not None:
-            qs = qs.filter(bank_question_id=bq_id)
-        return qs.order_by("bank_question_id", "-version_number")
 
 
 @extend_schema(tags=["questionbank"], parameters=[OpenApiParameter("subject", str)])

@@ -19,7 +19,6 @@ urlpatterns = [
     path("questions/<int:pk>/accept-suggestion/", views.BankQuestionAcceptSuggestionView.as_view(), name="question-accept-suggestion"),
     path("passages/", views.BankPassageListView.as_view(), name="passage-list"),
     path("passages/<int:pk>/", views.BankPassageDetailView.as_view(), name="passage-detail"),
-    path("versions/", views.BankQuestionVersionListView.as_view(), name="version-list"),
     path("domains/", views.BankDomainListView.as_view(), name="domain-list"),
     path("skills/", views.BankSkillListView.as_view(), name="skill-list"),
     # Grouped domain→skills tree for subject-aware pickers (exam question editor).

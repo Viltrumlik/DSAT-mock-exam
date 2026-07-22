@@ -15,7 +15,7 @@ from questionbank.models import (
     SourceType,
     Subject,
 )
-from questionbank.services import create_bank_question, create_version
+from questionbank.services import create_bank_question
 
 User = get_user_model()
 
@@ -49,11 +49,6 @@ class QbReadonlyApiTests(TestCase):
             suggested_difficulty="EASY", suggestion_confidence=0.82,
             suggestion_model="claude-test", suggestion_rationale="Mentions a linear equation.",
         )
-        # A second version on the English question for the lineage test.
-        cls.q_eng.question_text = "Edited central idea?"
-        cls.q_eng.save(update_fields=["question_text"])
-        create_version(cls.q_eng)
-
         cls.admin = User.objects.create_user(
             email="qb-admin@example.com", password="pw",
             role="super_admin", is_staff=True, is_superuser=True,
@@ -115,8 +110,6 @@ class QbReadonlyApiTests(TestCase):
         self.assertEqual(res.data["qb_id"], self.q_eng.qb_id)
         self.assertEqual(res.data["domain"]["code"], "info-ideas")
         self.assertEqual(res.data["passage"]["id"], self.passage.id)
-        self.assertEqual(res.data["version_count"], 2)
-        self.assertEqual(res.data["current_version_number"], 2)
 
     def test_detail_suggestion_includes_rationale(self):
         res = self.client.get(reverse("questionbank:question-detail", args=[self.q_math.id]))
@@ -128,15 +121,6 @@ class QbReadonlyApiTests(TestCase):
         self.assertEqual(self.client.get(reverse("questionbank:passage-list")).data["count"], 1)
         res = self.client.get(reverse("questionbank:passage-detail", args=[self.passage.id]))
         self.assertEqual(res.data["question_count"], 1)
-
-    # ── Versions ─────────────────────────────────────────────────────────────
-    def test_versions_filter_and_snapshot_opt_in(self):
-        url = reverse("questionbank:version-list")
-        base = self.client.get(url, {"bank_question": self.q_eng.id})
-        self.assertEqual(base.data["count"], 2)
-        self.assertNotIn("snapshot_json", base.data["results"][0])
-        opted = self.client.get(url, {"bank_question": self.q_eng.id, "include_snapshot": "true"})
-        self.assertIn("snapshot_json", opted.data["results"][0])
 
     # ── Taxonomy ─────────────────────────────────────────────────────────────
     def test_domains_unpaginated_and_subject_filter(self):

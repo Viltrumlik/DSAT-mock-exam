@@ -111,8 +111,7 @@ class Command(BaseCommand):
                 )
                 self._copy_images_exam(q, bank)
                 q.bank_question = bank
-                q.bank_version = bank.current_version
-                q.save(update_fields=["bank_question", "bank_version"], _plain_db_save=True)
+                q.save(update_fields=["bank_question"], _plain_db_save=True)
             except Exception as exc:  # noqa: BLE001 — keep going, count failures
                 stats["errors"] += 1
                 self.stderr.write(f"exams.Question {q.id}: {exc}")
@@ -177,8 +176,7 @@ class Command(BaseCommand):
                 self._attach_category_suggestion(bank, subject, aset.category)
                 self._copy_images_assessment(q, bank)
                 q.bank_question = bank
-                q.bank_version = bank.current_version
-                q.save(update_fields=["bank_question", "bank_version"])
+                q.save(update_fields=["bank_question"])
             except Exception as exc:  # noqa: BLE001
                 stats["errors"] += 1
                 self.stderr.write(f"assessments.AssessmentQuestion {q.id}: {exc}")

@@ -23,15 +23,12 @@ from access import constants as acc_const
 from users.permissions import IsAuthenticatedAndNotFrozen
 from .models import (
     AssessmentSet,
-    AssessmentSetVersion,
     AssessmentQuestion,
 )
 from .serializers import (
     AssessmentSetSerializer,
     AssessmentSetAdminSerializer,
     AssessmentSetAdminWriteSerializer,
-    AssessmentSetVersionSerializer,
-    AdminPublishResponseSerializer,
     AssessmentQuestionAdminWriteSerializer,
     ApiAssessmentDetailSerializer,
 )
@@ -229,14 +226,13 @@ class AdminAssessmentSetDetailView(APIView):
         if _hidden_from_test_admin(actor, inst):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # A set that was ever published (has a version) or assigned to a class is an
-        # academic record protected by on_delete=PROTECT — a bare delete() would 500.
-        # Block it by default; the author can deactivate it, or pass ?force=true to
-        # remove it ALONG WITH its student attempts/grades and homework links.
+        # A set assigned to a class is an academic record protected by on_delete=PROTECT
+        # — a bare delete() would 500. Block it by default; the author can deactivate it,
+        # or pass ?force=true to remove it ALONG WITH its student attempts/grades and
+        # homework links.
         force = str(request.query_params.get("force", "")).strip().lower() in ("1", "true", "yes", "on")
         has_refs = (
-            inst.versions.exists()
-            or inst.homework_assignments.exists()
+            inst.homework_assignments.exists()
             or inst.homework_audit_events.exists()
         )
 
@@ -297,13 +293,9 @@ class AdminAssessmentSetDetailView(APIView):
             )
             try:
                 with transaction.atomic():
-                    AssessmentAttempt.objects.filter(
-                        Q(homework__assessment_set=inst) | Q(set_version__assessment_set=inst)
-                    ).delete()
+                    AssessmentAttempt.objects.filter(homework__assessment_set=inst).delete()
                     HomeworkAssignment.objects.filter(assessment_set=inst).delete()
                     AssessmentHomeworkAuditEvent.objects.filter(assessment_set=inst).delete()
-                    AssessmentSetVersion.objects.filter(assessment_set=inst).update(previous_version=None)
-                    AssessmentSetVersion.objects.filter(assessment_set=inst).delete()
                     _emit_delete_audit()
                     inst.delete()
             except ProtectedError:
@@ -410,11 +402,11 @@ class AdminAssessmentQuestionDetailView(APIView):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
         # AssessmentAnswer.question is on_delete=PROTECT, so a question a student
-        # has already answered can't be dropped by a bare delete() (it 500s). But
-        # students attempt against a FROZEN AssessmentSetVersion snapshot and their
-        # scores live on AssessmentResult (a stored aggregate) — neither references
-        # the live question — so removing it and its per-question answer rows leaves
-        # past attempts and grades intact. Mirror the set-delete contract: block by
+        # has already answered can't be dropped by a bare delete() (it 500s). But an
+        # answered attempt records answers on AssessmentAnswer and its score on
+        # AssessmentResult (a stored aggregate), so removing the question together with
+        # its per-question answer rows leaves past attempts and grades intact. Mirror
+        # the set-delete contract: block by
         # default with a 409, and let the author pass ?force=true to remove the
         # question together with those answer records.
         force = str(request.query_params.get("force", "")).strip().lower() in (
@@ -522,7 +514,6 @@ class AdminQuestionBankSelectView(APIView):
                 "difficulty": q.difficulty,
                 "question_type": q.question_type,
                 "question_text": q.question_text,
-                "current_version": q.current_version.version_number if q.current_version_id else None,
             }
             for q in page
         ]
@@ -704,79 +695,6 @@ class AdminQuestionBankTaxonomyView(APIView):
         )
 
 
-class AdminPublishAssessmentSetView(APIView):
-    """
-    POST /assessments/admin/sets/{pk}/publish/
-
-    Transition an AssessmentSet from DRAFT → PUBLISHED state by building an
-    immutable AssessmentSetVersion snapshot.
-
-    GOVERNANCE:
-      - Enforces all publish preconditions (INV-001 through INV-003 from PublishService).
-      - Idempotent: re-publishing identical content returns existing version (HTTP 200).
-      - Creating a new version returns HTTP 201.
-      - Concurrency-safe via select_for_update() inside publish_assessment_set().
-
-    FRONTEND INTEGRATION:
-      Currently the publish page calls PATCH is_active=true (legacy toggle).
-      Sprint 5: swap publishSet() in builder/sets/[id]/publish/page.tsx to call this endpoint.
-    """
-
-    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
-
-    @extend_schema(
-        tags=["assessments"],
-        summary="Publish assessment set (create immutable snapshot)",
-        responses={
-            200: AdminPublishResponseSerializer,
-            201: AdminPublishResponseSerializer,
-            400: ApiAssessmentDetailSerializer,
-            404: ApiAssessmentDetailSerializer,
-        },
-    )
-    def post(self, request, pk: int):
-        from .domain.publish_service import publish_assessment_set, PublishValidationError
-
-        # A test_admin may only publish sets they authored.
-        _guard_set = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=pk)
-        if _hidden_from_test_admin(request.user, _guard_set):
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        # Determine whether a version already exists before publishing so we can
-        # return the correct HTTP status (200 = idempotent / 201 = new version).
-        existing_count = AssessmentSetVersion.objects.filter(assessment_set_id=pk).count()
-
-        try:
-            version = publish_assessment_set(set_id=pk, actor=request.user)
-        except AssessmentSet.DoesNotExist:
-            return Response({"detail": f"AssessmentSet #{pk} not found."}, status=status.HTTP_404_NOT_FOUND)
-        except PublishValidationError as exc:
-            return Response({"detail": str(exc), "code": exc.code}, status=status.HTTP_400_BAD_REQUEST)
-
-        new_count = AssessmentSetVersion.objects.filter(assessment_set_id=pk).count()
-        created = new_count > existing_count
-
-        # When a NEW version was created (content changed), propagate it to this
-        # set's not-yet-started homeworks so a teacher's edits reach assigned
-        # classes — students already engaged (in_progress/submitted/graded) keep
-        # their frozen snapshot.
-        resynced = 0
-        if created:
-            try:
-                from .domain.homework_versioning import resync_stale_homeworks
-                resynced = resync_stale_homeworks(assessment_set=version.assessment_set, version=version)
-            except Exception:
-                import logging
-                logging.getLogger(__name__).exception("resync_stale_homeworks failed for set %s", pk)
-
-        data = {
-            "version": AssessmentSetVersionSerializer(version).data,
-            "created": created,
-            "homeworks_resynced": resynced,
-        }
-        return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
-
-
 class AdminValidatePublishView(APIView):
     """
     GET /assessments/admin/sets/{pk}/validate-publish/
@@ -831,11 +749,12 @@ class AdminAssessmentSetStatusView(APIView):
       - submit for review (→ needs_review):  any author of the set.
       - send back        (→ draft):          any author or an approver.
       - re-open          (approved → needs_review): any author or an approver.
-      - approve          (→ approved):       APPROVER ONLY (admin/super_admin). The
-                          approval ALSO publishes an immutable version so an approved
-                          set always has a snapshot to pin homeworks to; if the set
-                          fails publish validation the status does NOT change and the
-                          blocking findings are returned.
+      - approve          (→ approved):       APPROVER ONLY (admin/super_admin). Approval
+                          runs the publish validator against the set's LIVE active
+                          questions; if it is not publishable the status does NOT change
+                          and the blocking findings are returned. On success the set is
+                          both approved and activated (is_active=True). Content is served
+                          live — there is no immutable version snapshot.
 
     Every transition emits a GovernanceEvent (INV-GE03).
     """
@@ -863,8 +782,6 @@ class AdminAssessmentSetStatusView(APIView):
         responses={200: AssessmentSetAdminSerializer, 400: ApiAssessmentDetailSerializer, 403: ApiAssessmentDetailSerializer},
     )
     def post(self, request, pk: int):
-        from .domain.publish_service import publish_assessment_set, PublishValidationError
-
         target = (request.data.get("status") or "").strip()
         valid_targets = {c[0] for c in AssessmentSet.REVIEW_STATUS_CHOICES}
         if target not in valid_targets:
@@ -887,36 +804,42 @@ class AdminAssessmentSetStatusView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Approval is gated on the approver capability AND publishes a version.
+        # Approval is gated on the approver capability AND runs the publish validator
+        # against the LIVE active questions. On success the set is approved + activated.
         if target == AssessmentSet.STATUS_APPROVED:
             from access.services import can_approve_assessment
+            from .domain.publish_validator import validate_for_publish
 
             if not can_approve_assessment(request.user):
                 return Response(
                     {"detail": "Only an admin or super admin can approve a set."},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            try:
-                version = publish_assessment_set(set_id=pk, actor=request.user)
-            except PublishValidationError as exc:
-                return Response(
-                    {
-                        "detail": f"Cannot approve — the set is not publishable: {exc}",
-                        "code": exc.code,
-                        "findings": [f.to_dict() for f in exc.findings[:10]],
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
             with transaction.atomic():
                 locked = AssessmentSet.objects.select_for_update().get(pk=pk)
+                active_questions = list(
+                    AssessmentQuestion.objects.filter(
+                        assessment_set=locked, is_active=True
+                    ).order_by("order", "id")
+                )
+                report = validate_for_publish(locked, active_questions)
+                if not report.is_publishable:
+                    return Response(
+                        {
+                            "detail": "Cannot approve — the set is not publishable.",
+                            "findings": [f.to_dict() for f in report.blocking_findings[:10]],
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 locked.review_status = AssessmentSet.STATUS_APPROVED
-                locked.save(update_fields=["review_status", "updated_at"])
+                locked.is_active = True
+                locked.save(update_fields=["review_status", "is_active", "updated_at"])
                 emit_governance_event(
                     event_type=GovernanceEvent.EVENT_APPROVE,
                     actor=request.user,
                     entity_type="AssessmentSet",
                     entity_id=pk,
-                    payload={"from": current, "version_id": version.pk, "version_number": version.version_number},
+                    payload={"from": current, "to": target},
                     correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
                 )
                 aset = locked
@@ -937,28 +860,3 @@ class AdminAssessmentSetStatusView(APIView):
             )
             aset = locked
         return Response(AssessmentSetAdminSerializer(aset).data, status=status.HTTP_200_OK)
-
-
-class AdminAssessmentSetVersionListView(APIView):
-    """
-    GET /assessments/admin/sets/{pk}/versions/
-
-    List all published versions for an AssessmentSet, newest first.
-    Used by the builder version history panel.
-    """
-
-    permission_classes = [IsAuthenticatedAndNotFrozen, CanViewTests]
-
-    @extend_schema(
-        tags=["assessments"],
-        summary="List published versions for a set",
-        responses={200: AssessmentSetVersionSerializer(many=True)},
-    )
-    def get(self, request, pk: int):
-        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=pk)
-        if _hidden_from_test_admin(request.user, aset):
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-        versions = AssessmentSetVersion.objects.filter(assessment_set=aset).select_related(
-            "published_by"
-        ).order_by("-version_number")
-        return Response(AssessmentSetVersionSerializer(versions, many=True).data)

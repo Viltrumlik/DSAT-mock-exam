@@ -8,9 +8,8 @@ assessments) gain nullable links in M1. Nothing here modifies an existing table.
 Design invariants:
   - QB-ID is permanent and never reused (see qb_id.py).
   - BankPassage stores R&W stimulus text once; many questions reference it.
-  - BankQuestion holds the live, editable state; BankQuestionVersion is an
-    append-only immutable snapshot per edit (governance mirrors
-    assessments.AssessmentSetVersion).
+  - BankQuestion is the LIVE single source of truth: an edit updates the row in
+    place and propagates to every consumer (no version chain).
   - UNCLASSIFIED == NULL domain/skill + status=TRIAGE. We do NOT create sentinel
     "Unclassified" taxonomy rows, so analytics filter cleanly on
     (status=APPROVED, domain__isnull=False).
@@ -22,7 +21,6 @@ from __future__ import annotations
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
-from django.utils import timezone
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -279,9 +277,6 @@ class BankQuestion(TimestampedModel):
     suggestion_model = models.CharField(max_length=128, blank=True, default="")
     suggestion_rationale = models.TextField(blank=True, default="")
 
-    current_version = models.ForeignKey(
-        "BankQuestionVersion", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
-    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="authored_bank_questions",
@@ -308,56 +303,6 @@ class BankQuestion(TimestampedModel):
 
     def __str__(self) -> str:
         return f"{self.qb_id} [{self.status}]"
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Versioning — append-only, immutable, lineage-linked
-# ──────────────────────────────────────────────────────────────────────────────
-class BankQuestionVersion(models.Model):
-    """
-    Immutable snapshot of a BankQuestion at one point in time. Consumers pin
-    (bank_question, version_number) at publish so published content is frozen.
-
-    Governance (mirrors assessments.AssessmentSetVersion):
-      - append-only: save() rejects mutation of an existing row,
-      - undeletable: delete() raises,
-      - lineage via previous_version (PROTECT),
-      - snapshot_json is self-sufficient for rendering/grading.
-    """
-    bank_question = models.ForeignKey(BankQuestion, on_delete=models.PROTECT, related_name="versions")
-    version_number = models.PositiveIntegerField(db_index=True)
-    snapshot_json = models.JSONField()
-    snapshot_checksum = models.CharField(max_length=64, db_index=True)
-    previous_version = models.ForeignKey(
-        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="successor_versions",
-    )
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
-        related_name="created_bank_question_versions",
-    )
-    created_at = models.DateTimeField(default=timezone.now, db_index=True)
-
-    class Meta:
-        db_table = "qb_question_versions"
-        ordering = ["bank_question_id", "-version_number"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["bank_question", "version_number"], name="uniq_qb_question_version_number",
-            ),
-        ]
-
-    def save(self, *args, **kwargs):  # type: ignore[override]
-        if self.pk is not None:
-            raise ValueError(
-                "BankQuestionVersion records are immutable. Create a new version instead."
-            )
-        super().save(*args, **kwargs)
-
-    def delete(self, *args, **kwargs):  # type: ignore[override]
-        raise ValueError("BankQuestionVersion records are permanent and cannot be deleted.")
-
-    def __str__(self) -> str:
-        return f"{self.bank_question_id} v{self.version_number}"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

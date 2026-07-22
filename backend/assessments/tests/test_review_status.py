@@ -15,7 +15,6 @@ from access.models import UserAccess
 from assessments.models import (
     AssessmentQuestion,
     AssessmentSet,
-    AssessmentSetVersion,
     GovernanceEvent,
 )
 from classes.models import Classroom, ClassroomMembership
@@ -94,14 +93,13 @@ class ReviewStatusTransitionTests(TestCase):
         r = self._post(self.teacher, AssessmentSet.STATUS_APPROVED)
         self.assertEqual(r.status_code, 403, r.content)
 
-    def test_admin_approves_and_publishes(self):
-        self.assertFalse(AssessmentSetVersion.objects.filter(assessment_set=self.set).exists())
+    def test_admin_approves_and_activates(self):
         r = self._post(self.admin, AssessmentSet.STATUS_APPROVED)
         self.assertEqual(r.status_code, 200, r.content)
         self.set.refresh_from_db()
         self.assertEqual(self.set.review_status, AssessmentSet.STATUS_APPROVED)
-        # Approval published an immutable version so homeworks can pin it.
-        self.assertTrue(AssessmentSetVersion.objects.filter(assessment_set=self.set).exists())
+        # Approval also activates the set (content is served live).
+        self.assertTrue(self.set.is_active)
         self.assertTrue(
             GovernanceEvent.objects.filter(
                 event_type=GovernanceEvent.EVENT_APPROVE, entity_id=self.set.id
@@ -119,10 +117,9 @@ class ReviewStatusTransitionTests(TestCase):
             format="json", HTTP_HOST=_QHOST,
         )
         self.assertEqual(r.status_code, 400, r.content)
-        self.assertEqual(r.json().get("code") is not None, True)
+        self.assertIn("findings", r.json())
         empty.refresh_from_db()
         self.assertEqual(empty.review_status, AssessmentSet.STATUS_DRAFT)
-        self.assertFalse(AssessmentSetVersion.objects.filter(assessment_set=empty).exists())
 
     def test_invalid_status_rejected(self):
         r = self._post(self.admin, "bogus")

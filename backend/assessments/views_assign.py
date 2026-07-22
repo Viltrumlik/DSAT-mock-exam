@@ -26,7 +26,6 @@ from classes.models import (
 from classes.security import classroom_authz_for_user
 from .models import (
     AssessmentSet,
-    AssessmentSetVersion,
     HomeworkAssignment,
 )
 from .throttles import (
@@ -163,12 +162,9 @@ class AssignAssessmentHomeworkView(APIView):
                     instructions=instructions,
                     due_at=due_at,
                 )
-                # Snapshot the set's CURRENT content (idempotent; publishes a fresh
-                # version only if the live set changed since the last one). Fixes
-                # stale snapshots when a set was edited after its first version.
-                from .domain.homework_versioning import ensure_current_version, resync_stale_homeworks
-                pinned_version = ensure_current_version(set_id=aset.pk, actor=request.user)
-
+                # A homework is a plain classroom↔set link; content is served LIVE from
+                # the set's AssessmentQuestion rows at attempt time (the attempt freezes
+                # WHICH questions via question_order), so nothing is pinned here.
                 try:
                     with transaction.atomic():
                         hw = HomeworkAssignment.objects.create(
@@ -176,7 +172,6 @@ class AssignAssessmentHomeworkView(APIView):
                             assessment_set=aset,
                             assignment=assignment,
                             assigned_by=request.user,
-                            set_version=pinned_version,
                         )
                 except IntegrityError:
                     assessments_metric_incr("homework_duplicate_prevented")
@@ -194,11 +189,6 @@ class AssignAssessmentHomeworkView(APIView):
                             context={"actor_id": request.user.pk, "classroom_id": classroom.pk, "set_id": aset.pk},
                         )
                         raise
-                # Propagate current content to this set's other not-started homeworks.
-                try:
-                    resync_stale_homeworks(assessment_set=aset, version=pinned_version, exclude_homework_ids=[hw.pk])
-                except Exception:
-                    logger.exception("resync_stale_homeworks failed for set %s", aset.pk)
         from .models import AssessmentHomeworkAuditEvent, GovernanceEvent
 
         AssessmentHomeworkAuditEvent.objects.create(
@@ -210,7 +200,7 @@ class AssignAssessmentHomeworkView(APIView):
             payload={"host": request.get_host(), "title": title},
         )
 
-        # Governance event: track which version (if any) was pinned to this assignment.
+        # Governance event: record the classroom↔set homework link.
         from .domain.governance_events import emit_governance_event
         emit_governance_event(
             event_type=GovernanceEvent.EVENT_ASSIGNMENT_PIN,
@@ -220,11 +210,6 @@ class AssignAssessmentHomeworkView(APIView):
             payload={
                 "set_id": aset.pk,
                 "classroom_id": classroom.pk,
-                "pinned_version_id": hw.set_version_id,
-                "pinned_version_number": (
-                    hw.set_version.version_number if hw.set_version_id else None
-                ),
-                "snapshot_pinned": hw.set_version_id is not None,
             },
             correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
         )

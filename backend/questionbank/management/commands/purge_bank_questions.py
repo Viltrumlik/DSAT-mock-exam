@@ -15,7 +15,6 @@ from django.db import transaction
 from questionbank.models import (
     BankPassage,
     BankQuestion,
-    BankQuestionVersion,
     ImportBatch,
 )
 
@@ -26,7 +25,7 @@ except ImportError:  # pragma: no cover
 
 
 class Command(BaseCommand):
-    help = "Delete ALL bank questions/versions/attempts/passages/import-batches (keeps taxonomy)."
+    help = "Delete ALL bank questions/attempts/passages/import-batches (keeps taxonomy)."
 
     def add_arguments(self, parser):
         parser.add_argument("--confirm", action="store_true", help="Actually delete.")
@@ -35,7 +34,6 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         counts = {
             "questions": BankQuestion.objects.count(),
-            "versions": BankQuestionVersion.objects.count(),
             "attempts": BankQuestionAttempt.objects.count() if BankQuestionAttempt else 0,
             "passages": BankPassage.objects.count(),
             "import_batches": ImportBatch.objects.count(),
@@ -49,14 +47,8 @@ class Command(BaseCommand):
             raise CommandError("Refusing to delete without --confirm (or use --dry-run).")
 
         with transaction.atomic():
-            # Break pointer FKs first so the protected rows become deletable:
-            #  - BankQuestion.current_version → version (SET_NULL)
-            #  - BankQuestionVersion.previous_version → version (self-FK, PROTECT chain)
-            BankQuestion.objects.update(current_version=None)
-            BankQuestionVersion.objects.update(previous_version=None)
             if BankQuestionAttempt:
                 BankQuestionAttempt.objects.all().delete()
-            BankQuestionVersion.objects.all().delete()  # PROTECTs questions until gone
             BankQuestion.objects.all().delete()
             BankPassage.objects.all().delete()           # PROTECTed only while a Q points at it
             ImportBatch.objects.all().delete()

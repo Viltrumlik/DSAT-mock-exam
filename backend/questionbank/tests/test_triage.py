@@ -35,15 +35,12 @@ class TriageWorkflowTests(TestCase):
         q.refresh_from_db()
         self.assertEqual(q.status, QuestionStatus.TRIAGE)
 
-    def test_classify_then_approve_cuts_version_and_gates(self):
+    def test_classify_then_approve_gates(self):
         q = self._q()
-        v1 = q.current_version
         classify_question(q, domain=self.algebra, skill=self.linear, difficulty=Difficulty.EASY)
         approve_question(q)
         q.refresh_from_db()
         self.assertEqual(q.status, QuestionStatus.APPROVED)
-        self.assertNotEqual(q.current_version_id, v1.id)  # approval cut a new version
-        self.assertEqual(q.current_version.version_number, 2)
 
     def test_skill_must_belong_to_domain(self):
         q = self._q()
