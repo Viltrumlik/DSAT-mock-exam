@@ -17,6 +17,7 @@ import {
   Database,
   GraduationCap,
   MonitorPlay,
+  ShieldCheck,
 } from "lucide-react";
 
 export type NavItem = {
@@ -67,6 +68,15 @@ export const studentNav: NavSection[] = [
     ],
   },
 ];
+
+/**
+ * Content-QA reviewer entry (test_auditor and other content staff). Composed into the
+ * top of the student sidebar only for reviewers — see StudentAppShell.
+ */
+export const reviewNavSection: NavSection = {
+  section: "",
+  items: [{ href: "/review", label: "Review Center", icon: ShieldCheck }],
+};
 
 /** Teacher information architecture (see docs/UI_REBUILD_IA.md §5). */
 export const teacherNav: NavSection[] = [
