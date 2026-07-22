@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { classesApi, examsAdminApi } from "@/lib/api";
-import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus } from "lucide-react";
+import { classesApi, examsAdminApi, type ClassroomMember } from "@/lib/api";
+import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
 
@@ -17,6 +17,12 @@ type Row = {
   teacher_details?: TeacherDetails;
 };
 type TeacherOpt = { id: number; email: string; name: string };
+type StudentOpt = { id: number; email: string; name: string };
+
+function memberName(m: ClassroomMember): string {
+  const u = m.user;
+  return [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.username || u.email || `Student #${u.id}`;
+}
 
 type CreateForm = {
   name: string;
@@ -38,6 +44,7 @@ function normList(d: unknown): Row[] {
 export default function OpsClassroomGovernancePage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [teachers, setTeachers] = useState<TeacherOpt[]>([]);
+  const [students, setStudents] = useState<StudentOpt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -47,6 +54,11 @@ export default function OpsClassroomGovernancePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateForm>(BLANK_CREATE);
+  // Roster (student add/remove) modal
+  const [roster, setRoster] = useState<{ row: Row } | null>(null);
+  const [rosterMembers, setRosterMembers] = useState<ClassroomMember[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [studentSearch, setStudentSearch] = useState("");
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -56,11 +68,13 @@ export default function OpsClassroomGovernancePage() {
       try {
         const u = await examsAdminApi.getUsers();
         const list = (Array.isArray(u) ? u : (u as { results?: unknown[] })?.results ?? []) as Record<string, unknown>[];
-        setTeachers(list.filter((x) => String(x.role).toLowerCase() === "teacher").map((x) => ({
-          id: Number(x.id), email: String(x.email),
-          name: [x.first_name, x.last_name].filter(Boolean).join(" ").trim() || String(x.email),
-        })));
-      } catch { /* teacher picker optional */ }
+        const toOpt = (x: Record<string, unknown>) => ({
+          id: Number(x.id), email: String(x.email ?? ""),
+          name: [x.first_name, x.last_name].filter(Boolean).join(" ").trim() || String(x.email ?? `#${x.id}`),
+        });
+        setTeachers(list.filter((x) => String(x.role).toLowerCase() === "teacher").map(toOpt));
+        setStudents(list.filter((x) => String(x.role).toLowerCase() === "student").map(toOpt));
+      } catch { /* people pickers optional */ }
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Could not load the classroom directory (admin only).");
@@ -129,6 +143,42 @@ export default function OpsClassroomGovernancePage() {
     } finally { setBusy(false); }
   }
 
+  async function openRoster(row: Row) {
+    setRoster({ row }); setRosterMembers([]); setStudentSearch(""); setRosterLoading(true); setError(null);
+    try { setRosterMembers(await classesApi.roster(row.id)); }
+    catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not load the roster.");
+    } finally { setRosterLoading(false); }
+  }
+
+  async function addStudent(userId: number) {
+    if (!roster) return;
+    setBusy(true); setError(null);
+    try {
+      await classesApi.addMember(roster.row.id, userId);
+      setRosterMembers(await classesApi.roster(roster.row.id));
+      await load(); // refresh the directory's member counts
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not add the student.");
+    } finally { setBusy(false); }
+  }
+
+  async function removeStudent(userId: number, name: string) {
+    if (!roster) return;
+    if (!window.confirm(`Remove ${name} from “${roster.row.name}”? They can rejoin with the class code, or you can re-add them here.`)) return;
+    setBusy(true); setError(null);
+    try {
+      await classesApi.removeMember(roster.row.id, userId);
+      setRosterMembers(await classesApi.roster(roster.row.id));
+      await load();
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not remove the student.");
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -187,6 +237,7 @@ export default function OpsClassroomGovernancePage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
+                  <button disabled={busy} onClick={() => openRoster(c)} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><Users className="h-3.5 w-3.5" /> Students</button>
                   <button disabled={busy} onClick={() => { setModal({ kind: "assign", row: c }); setPickTeacher(""); }} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><UserCog className="h-3.5 w-3.5" /> Assign teacher</button>
                   <button disabled={busy} onClick={() => { setModal({ kind: "transfer", row: c }); setPickTeacher(""); }} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><ArrowLeftRight className="h-3.5 w-3.5" /> Transfer</button>
                   <button disabled={busy} onClick={() => del(c)} className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50" aria-label={`Delete ${c.name}`}><Trash2 className="h-3.5 w-3.5" /></button>
@@ -277,6 +328,83 @@ export default function OpsClassroomGovernancePage() {
           </div>
         </div>
       )}
+
+      {roster && (() => {
+        const activeStudents = rosterMembers.filter((m) => m.role.toUpperCase() === "STUDENT" && m.status.toUpperCase() === "ACTIVE");
+        const activeIds = new Set(activeStudents.map((m) => m.user.id));
+        const q = studentSearch.trim().toLowerCase();
+        const candidates = students
+          .filter((s) => !activeIds.has(s.id))
+          .filter((s) => q.length === 0 || s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q))
+          .slice(0, 25);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setRoster(null)}>
+            <div className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-foreground">Students — {roster.row.name}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Add a student without a class code, or remove one. Removal is reversible.</p>
+                </div>
+                <button onClick={() => setRoster(null)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2" aria-label="Close"><X className="h-4 w-4" /></button>
+              </div>
+
+              {/* Add student */}
+              <div className="mt-4">
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Add a student</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <input type="search" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} placeholder="Search students by name or email…"
+                    className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                </div>
+                {studentSearch.trim().length > 0 && (
+                  <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+                    {candidates.length === 0 ? (
+                      <div className="px-3 py-3 text-sm text-muted-foreground">No matching students.</div>
+                    ) : candidates.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{s.email}</p>
+                        </div>
+                        <button disabled={busy} onClick={() => addStudent(s.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"><UserPlus className="h-3.5 w-3.5" /> Add</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Current roster */}
+              <div className="mt-5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="text-xs font-bold text-muted-foreground">Enrolled students</label>
+                  <span className="text-xs font-semibold text-muted-foreground">{rosterLoading ? "…" : `${activeStudents.length}`}</span>
+                </div>
+                {rosterLoading ? (
+                  <div className="flex justify-center p-6"><div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>
+                ) : activeStudents.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">No students yet. Add one above or share the class code.</div>
+                ) : (
+                  <div className="rounded-xl border border-border divide-y divide-border">
+                    {activeStudents.map((m) => (
+                      <div key={m.user.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{memberName(m)}</p>
+                          <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
+                        </div>
+                        <button disabled={busy} onClick={() => removeStudent(m.user.id, memberName(m))} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50 shrink-0"><UserMinus className="h-3.5 w-3.5" /> Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 flex justify-end">
+                <button onClick={() => setRoster(null)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2">Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import api from "@/lib/api";
+import api, { classesApi } from "@/lib/api";
 import {
   Search,
   UserCheck,
@@ -14,6 +14,7 @@ import {
   MailCheck,
   MailQuestion,
   Trash2,
+  School,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -40,7 +41,19 @@ type UserRecord = {
   previous_email?: string | null;
   /** Graded/submitted rows this account holds. Also the delete blast radius. */
   attempt_count?: number;
+  /** Students only: their classroom memberships (with status), for showing + removing
+   *  a student from a class directly here. Populated by the admin user-list serializer. */
+  bulk_assign_profile?: {
+    classrooms?: { id: number; name: string; subject?: string; status?: string }[];
+  } | null;
 };
+
+/** A student's ACTIVE classroom memberships (removal is a soft delete → status REMOVED). */
+function activeClassrooms(u: UserRecord): { id: number; name: string; subject?: string }[] {
+  return (u.bulk_assign_profile?.classrooms ?? []).filter(
+    (c) => String(c.status ?? "ACTIVE").toUpperCase() !== "REMOVED",
+  );
+}
 
 type RoleFilter = "all" | "student" | "teacher" | "test_admin" | "admin" | "super_admin";
 
@@ -591,6 +604,39 @@ export default function OpsUsersPage() {
     }
   };
 
+  // ── Remove a student from one of their classrooms (soft delete) ────────────────
+  const [removingClass, setRemovingClass] = useState<string | null>(null); // `${userId}:${classId}` in flight
+  const removeFromClass = async (u: UserRecord, classroom: { id: number; name: string }) => {
+    const name = [u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || u.email || `User ${u.id}`;
+    if (!window.confirm(`Remove ${name} from “${classroom.name}”? They can rejoin with the class code, or be re-added from Classrooms.`)) return;
+    const key = `${u.id}:${classroom.id}`;
+    setRemovingClass(key);
+    try {
+      await classesApi.removeMember(classroom.id, u.id);
+      setUsers((prev) =>
+        prev.map((x) =>
+          x.id === u.id
+            ? {
+                ...x,
+                bulk_assign_profile: {
+                  ...(x.bulk_assign_profile ?? {}),
+                  classrooms: (x.bulk_assign_profile?.classrooms ?? []).map((c) =>
+                    c.id === classroom.id ? { ...c, status: "REMOVED" } : c,
+                  ),
+                },
+              }
+            : x,
+        ),
+      );
+      push({ tone: "success", message: `Removed from “${classroom.name}”.` });
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      push({ tone: "error", message: typeof detail === "string" ? detail : "Could not remove from class." });
+    } finally {
+      setRemovingClass(null);
+    }
+  };
+
   // ── Bulk actions ─────────────────────────────────────────────────────────────
   const runBulk = async (action: BulkAction) => {
     const ids = [...selected];
@@ -877,6 +923,29 @@ export default function OpsUsersPage() {
                             {roleLabel}
                           </span>
                         </div>
+                        {/* Student classroom memberships — remove-from-class directly here. */}
+                        {u.role === "student" && activeClassrooms(u).length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1" onClick={(e) => e.stopPropagation()}>
+                            {activeClassrooms(u).map((c) => {
+                              const busy = removingClass === `${u.id}:${c.id}`;
+                              return (
+                                <span key={c.id} className="group inline-flex items-center gap-1 rounded-lg bg-surface-2 pl-2 pr-1 py-0.5 text-[11px] font-semibold text-foreground">
+                                  <School className="h-3 w-3 text-muted-foreground" />
+                                  <span className="max-w-[10rem] truncate">{c.name}</span>
+                                  <button
+                                    type="button"
+                                    title={`Remove from ${c.name}`}
+                                    disabled={busy}
+                                    onClick={() => void removeFromClass(u, c)}
+                                    className="rounded p-0.5 text-muted-foreground hover:bg-rose-500/10 hover:text-rose-600 disabled:opacity-50"
+                                  >
+                                    {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+                                  </button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap hidden sm:table-cell">
                         <span className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", roleColor)}>

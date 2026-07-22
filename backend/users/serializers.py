@@ -539,6 +539,10 @@ class UserSerializer(serializers.ModelSerializer):
                     "id": cid,
                     "name": m.classroom.name,
                     "subject": m.classroom.subject,
+                    # Status lets the ops /users page show only ACTIVE classrooms and target
+                    # the right classroom for a code-less "remove from class" action. Removal
+                    # is a soft delete (status=REMOVED), so both statuses can appear here.
+                    "status": m.status,
                 }
             )
         return {

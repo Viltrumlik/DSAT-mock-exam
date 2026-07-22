@@ -51,7 +51,7 @@ from .views_midterm_v2 import (
     MidtermV2PanelView,
     MidtermV2StartCodeView,
 )
-from .views_roster import MemberManageView
+from .views_roster import MemberManageView, ClassroomRosterView
 
 
 router = DefaultRouter()
@@ -72,6 +72,7 @@ urlpatterns = [
     path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
     path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
     path("<int:classroom_pk>/comments/", ClassCommentListCreateView.as_view(), name="class-comments"),
+    path("<int:classroom_pk>/members/", ClassroomRosterView.as_view(), name="class-roster"),
     path("<int:classroom_pk>/members/<int:user_id>/", MemberManageView.as_view(), name="class-member-manage"),
     path("<int:classroom_pk>/rankings/recompute/", RankingRecomputeView.as_view(), name="class-rankings-recompute"),
     path("<int:classroom_pk>/rankings/config/", RankingConfigView.as_view(), name="class-rankings-config"),

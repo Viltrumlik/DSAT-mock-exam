@@ -1054,7 +1054,38 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/interventions/`);
         return r.data;
     },
+    // --- Roster management (ops admin) ---
+    /** Full roster for a classroom (admins can read any class). Pass includeRemoved to also see removed members. */
+    roster: async (classId: number, includeRemoved = false): Promise<ClassroomMember[]> => {
+        const r = await api.get(`/classes/${classId}/members/`, includeRemoved ? { params: { include_removed: 1 } } : {});
+        return Array.isArray(r.data) ? r.data : (r.data?.members ?? []);
+    },
+    /** Code-less student enrollment (admins only): add an existing student account to a class without a join code. */
+    addMember: async (classId: number, userId: number) => {
+        const r = await api.post(`/classes/${classId}/members/`, { user_id: userId });
+        return r.data;
+    },
+    /** Remove a student from a class (soft delete, status=REMOVED). Reuses the roster member-manage endpoint. */
+    removeMember: async (classId: number, userId: number) => {
+        const r = await api.patch(`/classes/${classId}/members/${userId}/`, { status: 'REMOVED' });
+        return r.data;
+    },
 };
+
+export interface ClassroomMember {
+    id: number;
+    role: string;
+    status: string;
+    joined_at: string;
+    user: {
+        id: number;
+        email: string | null;
+        username: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        profile_image_url: string | null;
+    };
+}
 
 export const examsAdminApi = {
     // Users
