@@ -327,7 +327,10 @@ export function MathText({ text, className, block = false }: MathTextProps) {
     return (
       <div
         ref={ref as React.RefObject<HTMLDivElement>}
-        className={cn("leading-relaxed", className)}
+        // max-w-full + overflow-x-auto: normal wrapped text never triggers a
+        // scrollbar, but a single-line formula (KaTeX is now nowrap) that is
+        // wider than the card scrolls horizontally instead of overflowing it.
+        className={cn("leading-relaxed max-w-full overflow-x-auto", className)}
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );

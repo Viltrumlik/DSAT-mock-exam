@@ -245,6 +245,26 @@ optgroup {
   font-family: var(--font-sans);
 }
 
+/* Keep math formulas on a single line everywhere (builder editors + student
+   runner + review). KaTeX splits an INLINE expression (\(…\) / $…$) into
+   multiple `.base` inline-blocks at each operator/relation so long inline math
+   can line-break; katex.min.css sets `white-space:nowrap` on each `.base` but
+   NOT on the `.katex` wrapper, so in narrow builder preview boxes a formula
+   breaks across two lines ("half on top, half on bottom"). Forcing the wrapper
+   to nowrap keeps the whole expression on one line. Display math ($$…$$ / \[…\])
+   is unaffected — it already nowraps via `.katex-display>.katex`. Overflow-x is
+   handled on block wrappers (display math + the MathText block variant), never on
+   the inline `.katex` span (overflow on an inline-block shifts its baseline and
+   would misalign inline math within a sentence). */
+.katex {
+  white-space: nowrap;
+}
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 /* Typography scale */
 .ds-title-xl {
   font-size: clamp(1.875rem, 4vw, 2.75rem);
