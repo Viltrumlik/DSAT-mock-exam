@@ -5,6 +5,7 @@ from django.db.models import ProtectedError
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
@@ -35,6 +36,7 @@ from .serializers import (
     ApiAssessmentDetailSerializer,
 )
 from .services.authoring_service import create_question, reorder_questions
+from .domain.csv_import import decode_csv, parse_rows
 from .domain.question_ordering import dense_compact_set_orders_locked
 from .domain.governance_events import emit_governance_event
 from .models import GovernanceEvent
@@ -549,6 +551,110 @@ class AdminAssessmentQuestionFromBankView(APIView):
             msg = exc.messages[0] if getattr(exc, "messages", None) else str(exc)
             return Response({"detail": msg}, status=status.HTTP_400_BAD_REQUEST)
         return Response(AssessmentQuestionAdminWriteSerializer(aq).data, status=status.HTTP_201_CREATED)
+
+
+def _import_questions_from_csv(request, aset):
+    """Read the uploaded CSV, validate every row, and create the questions atomically.
+
+    All-or-nothing: if any row is invalid, nothing is created and a per-row error list is
+    returned so the author can fix the file. Returns ``(created_ids, error_response)`` — on
+    success ``error_response`` is None; on failure ``created_ids`` is None.
+    """
+    upload = request.FILES.get("file")
+    if upload is None:
+        return None, Response({"detail": "Attach a CSV file in the 'file' field."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        text = decode_csv(upload.read())
+    except UnicodeDecodeError:
+        return None, Response({"detail": "Could not read the file — save it as UTF-8 CSV."}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        payloads = parse_rows(text)
+    except ValueError as exc:
+        return None, Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    if not payloads:
+        return None, Response({"detail": "The CSV has no question rows."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate every row up front so a bad row never leaves a half-populated set.
+    validated = []
+    errors = []
+    for offset, payload in enumerate(payloads):
+        ser = AssessmentQuestionAdminWriteSerializer(data=payload)
+        if ser.is_valid():
+            validated.append(ser)
+        else:
+            errors.append({"row": offset + 2, "errors": ser.errors})  # +2: header is row 1
+    if errors:
+        return None, Response(
+            {"detail": "Some rows are invalid; nothing was imported.", "errors": errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    created_ids = []
+    with transaction.atomic():
+        for ser in validated:
+            q = create_question(aset, ser)
+            created_ids.append(q.id)
+            _sync_question_to_bank(q)
+    _demote_approved_set(
+        aset.pk, request.user, reason="csv_import",
+        correlation_id=request.META.get("HTTP_X_REQUEST_ID", ""),
+    )
+    return created_ids, None
+
+
+class AdminAssessmentSetCsvImportView(APIView):
+    """Create a NEW assessment set and populate it from an uploaded CSV of questions.
+
+    Multipart body: the set-level fields (subject, source, level, category, title,
+    description, is_active) plus a ``file`` CSV of question rows. All-or-nothing — if any
+    row is invalid the set is not created either.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        denied = _deny_cross_subject(request, (request.data or {}).get("subject"))
+        if denied:
+            return denied
+        set_ser = AssessmentSetAdminWriteSerializer(data=request.data)
+        set_ser.is_valid(raise_exception=True)
+        with transaction.atomic():
+            aset = set_ser.save(created_by=request.user)
+            created_ids, err = _import_questions_from_csv(request, aset)
+            if err is not None:
+                # Undo the set so a bad CSV leaves nothing behind.
+                transaction.set_rollback(True)
+                return err
+        inst = AssessmentSet.objects.filter(pk=aset.pk).prefetch_related("questions").first()
+        data = AssessmentSetSerializer(inst).data
+        data["created_count"] = len(created_ids)
+        return Response(data, status=status.HTTP_201_CREATED)
+
+
+class AdminAssessmentSetQuestionsCsvImportView(APIView):
+    """Append questions to an EXISTING set from an uploaded CSV. Multipart body: ``file``."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, CanAuthorAssessmentContent]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, set_pk: int):
+        aset = get_object_or_404(AssessmentSet.objects.select_related("created_by"), pk=set_pk)
+        if _hidden_from_test_admin(request.user, aset):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        # Teacher subject scoping (defense-in-depth, mirrors the detail endpoints).
+        actor = request.user
+        if not is_global_scope_staff(actor) and not getattr(actor, "is_superuser", False):
+            ds = user_domain_subject(actor)
+            if ds and aset.subject != ds:
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        created_ids, err = _import_questions_from_csv(request, aset)
+        if err is not None:
+            return err
+        return Response(
+            {"set_id": aset.pk, "created_count": len(created_ids), "question_ids": created_ids},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class AdminQuestionBankTaxonomyView(APIView):

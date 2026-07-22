@@ -1,15 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useRef, useState } from "react";
 import { useAssessmentSetsList, useDeleteAssessmentSet, useSetReviewStatus } from "@/features/assessments/hooks";
 import { getRole, getSubject } from "@/lib/permissions";
-import { Plus, Search, RefreshCw, SendHorizonal, Trash2, ChevronRight, BookOpen, Sigma } from "lucide-react";
+import { Plus, Search, RefreshCw, SendHorizonal, Trash2, ChevronRight, BookOpen, Sigma, Upload, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, SetLineage } from "@/components/governance";
 import { ConfirmDialog } from "@/features/classroom/ui";
 import { levelLabel, levelsForSubject, type LevelKey } from "@/lib/levels";
 import { REVIEW_STATUS_LABELS, type ReviewStatus } from "@/features/assessments/types";
+import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
+import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
+import type { Subject } from "@/features/assessments/types";
 import { useToast } from "@/components/ToastProvider";
 
 type SubjectKey = "english" | "math";
@@ -48,6 +52,14 @@ export default function BuilderSetsPage() {
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const setStatus = useSetReviewStatus();
   const toast = useToast();
+  const router = useRouter();
+
+  // Create a new set directly from a CSV of questions (subject+level from the bucket).
+  const [csvOpen, setCsvOpen] = useState(false);
+  const [csvTitle, setCsvTitle] = useState("");
+  const [csvSource, setCsvSource] = useState("");
+  const [csvBusy, setCsvBusy] = useState(false);
+  const csvFileRef = useRef<HTMLInputElement>(null);
 
   const changeStatus = (id: number, status: ReviewStatus) => {
     setStatus.mutate(
@@ -97,6 +109,34 @@ export default function BuilderSetsPage() {
     setPendingDelete(null);
     setDeleteError(null);
     setDeleteBlocked(false);
+  };
+
+  const submitCsvImport = async () => {
+    const file = csvFileRef.current?.files?.[0];
+    if (!selectedSubject || !csvTitle.trim() || !csvSource || !file) return;
+    setCsvBusy(true);
+    try {
+      const res = await assessmentsAdminApi.importSetCsv(
+        {
+          subject: selectedSubject as Subject,
+          source: csvSource,
+          level: selectedLevel && selectedLevel !== UNASSIGNED_LEVEL ? selectedLevel : undefined,
+          title: csvTitle.trim(),
+        },
+        file,
+      );
+      toast.push({ tone: "success", message: `Created “${csvTitle.trim()}” with ${res.created_count} question${res.created_count === 1 ? "" : "s"}.` });
+      router.push(`/builder/sets/${res.id}`);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string; errors?: { row: number }[] } } };
+      const data = err?.response?.data;
+      const msg = data?.errors?.length
+        ? `${data.detail ?? "Some rows are invalid."} (row ${data.errors[0].row})`
+        : data?.detail || "Could not import the CSV.";
+      toast.push({ tone: "error", message: msg });
+    } finally {
+      setCsvBusy(false);
+    }
   };
 
   const sets = useMemo(() => data?.results ?? (Array.isArray(data) ? data : []), [data]);
@@ -165,6 +205,16 @@ export default function BuilderSetsPage() {
           >
             Question Bank
           </Link>
+          {canCreate && (
+            <button
+              type="button"
+              onClick={() => { setCsvTitle(""); setCsvSource(""); if (csvFileRef.current) csvFileRef.current.value = ""; setCsvOpen(true); }}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
+            >
+              <Upload className="h-4 w-4" />
+              Import CSV
+            </button>
+          )}
           {canCreate && (
             <Link
               href={newSetHref}
@@ -502,6 +552,47 @@ export default function BuilderSetsPage() {
           </div>
         )}
       </div>
+      )}
+
+      {csvOpen && selectedSubject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !csvBusy && setCsvOpen(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-foreground">Import set from CSV</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {SUBJECTS.find((s) => s.code === selectedSubject)?.label}
+                  {selectedLevelLabel ? ` · ${selectedLevelLabel}` : ""} — one question per row.
+                </p>
+              </div>
+              <button onClick={() => !csvBusy && setCsvOpen(false)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2" aria-label="Close"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Title</label>
+                <input autoFocus value={csvTitle} onChange={(e) => setCsvTitle(e.target.value)} placeholder="e.g. Algebra — Unit 1" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Source</label>
+                <select value={csvSource} onChange={(e) => setCsvSource(e.target.value)} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
+                  <option value="">Select a source…</option>
+                  {allowedSourcesForSubject(selectedSubject as Subject).map((s) => (
+                    <option key={s} value={s}>{sourceLabel(s)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">CSV file</label>
+                <input ref={csvFileRef} type="file" accept=".csv,text/csv" className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-primary" />
+                <p className="mt-1 text-[11px] text-muted-foreground">Columns: question_type, prompt, option_a–d, correct_answer, points, explanation.</p>
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setCsvOpen(false)} disabled={csvBusy} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2 disabled:opacity-50">Cancel</button>
+              <button onClick={() => void submitCsvImport()} disabled={csvBusy || !csvTitle.trim() || !csvSource} className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{csvBusy ? "Importing…" : "Import"}</button>
+            </div>
+          </div>
+        </div>
       )}
 
       <ConfirmDialog
