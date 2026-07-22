@@ -5,8 +5,13 @@ space-insensitive). Recognised columns:
 
     question_type    multiple_choice | short_text | numeric | boolean
                      (aliases accepted: mcq, mc; text, sa; spr, grid-in, number; tf, true/false)
-    prompt           the question stem                                    (required)
-    question_prompt  optional stimulus / passage shown above the stem
+    prompt           the PRIMARY block, rendered FIRST/at the top          (required)
+                     · Math: the question itself.
+                     · Reading: the passage / stimulus.
+    question_prompt  optional secondary block rendered AFTER `prompt`, right
+                     above the choices. For a reading question this is the
+                     ACTUAL QUESTION (e.g. "Based on the text, why…?"); leave
+                     blank when `prompt` already is the question.
     option_a..d      multiple-choice choice text (blank options are skipped);
                      assembled into choices [{"id": "A", "text": ...}]
     correct_answer   MCQ: the correct choice letter (A/B/C/D);
