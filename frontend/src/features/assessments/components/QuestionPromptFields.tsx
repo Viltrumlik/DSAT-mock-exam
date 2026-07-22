@@ -36,13 +36,13 @@ export function QuestionPromptFields({
 }) {
   return (
     <>
-      {/* ── Question text ── */}
+      {/* ── Primary content (rendered FIRST, at the top) ── */}
       <div>
-        <label className={LABEL}>Question text (stem)</label>
+        <label className={LABEL}>Main content — shown first (Math: the question · Reading: the passage)</label>
         <textarea
           className={`${INPUT} min-h-[140px] leading-relaxed`}
           disabled={disabled}
-          placeholder="Enter the full question text here. LaTeX math is supported: \( x^2 + 1 = 0 \)"
+          placeholder="Shown at the top. Math: the full question. Reading: the passage/stimulus. LaTeX supported: \( x^2 + 1 = 0 \). Bold **like this**, italic *like this*."
           value={draft.prompt}
           onChange={(e) => onPatch({ prompt: e.target.value })}
           onFocus={trackFocus((v) => onPatch({ prompt: v }))}
@@ -67,13 +67,13 @@ export function QuestionPromptFields({
         disabled={disabled}
       />
 
-      {/* ── Stimulus / passage excerpt ── */}
+      {/* ── Question prompt (rendered AFTER the main content, right above the choices) ── */}
       <div>
-        <label className={LABEL}>Stimulus / passage excerpt (optional)</label>
+        <label className={LABEL}>Question prompt — shown right above the choices (optional)</label>
         <textarea
           className={`${INPUT} min-h-[80px] leading-relaxed`}
           disabled={disabled}
-          placeholder="Secondary text shown above the answer choices — e.g. a short passage excerpt or graph description."
+          placeholder="For a reading question: the actual question shown under the passage, e.g. “Based on the text, why …?”. Leave blank if the main content already is the question."
           value={draft.question_prompt}
           onChange={(e) => onPatch({ question_prompt: e.target.value })}
           onFocus={trackFocus((v) => onPatch({ question_prompt: v }))}

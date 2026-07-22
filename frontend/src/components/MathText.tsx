@@ -229,12 +229,17 @@ function applyNewlines(text: string): string {
  * Does NOT process content inside LaTeX delimiters — KaTeX handles those.
  */
 function applyMarkdown(text: string): string {
+  // Content class allows an explicit <br> (an authored line break inside an
+  // emphasis span, e.g. a title wrapped across a soft break) but still excludes
+  // every other `<` and all bare `\n`. Because prepareRichText now runs this
+  // BEFORE applyNewlines, a real newline inside the markers is still a literal
+  // `\n` here and is excluded — so `**bold\ntext**` is NOT bolded (the
+  // "emphasis must not cross a real line break" safety boundary is preserved).
+  const INNER = String.raw`(?:<br\s*/?>|[^*\n<])+?`;
   // Bold: **text** — processed before italic to prevent partial `*` matches.
-  // [^*\n<] excludes `<` so the match cannot span a <br> tag inserted by
-  // applyNewlines, preserving the "bold must not cross lines" boundary.
-  let out = text.replace(/\*\*([^*\n<]+?)\*\*/g, "<b>$1</b>");
-  // Italic: *text* — same exclusion of `<` for the same reason.
-  out = out.replace(/(?<!\*)\*([^*\n<]+?)\*(?!\*)/g, "<i>$1</i>");
+  let out = text.replace(new RegExp(`\\*\\*(${INNER})\\*\\*`, "g"), "<b>$1</b>");
+  // Italic: *text*
+  out = out.replace(new RegExp(`(?<!\\*)\\*(${INNER})\\*(?!\\*)`, "g"), "<i>$1</i>");
   return out;
 }
 
@@ -243,8 +248,10 @@ function applyMarkdown(text: string): string {
  *
  * Pipeline (order is load-bearing — do not reorder without updating tests):
  *   1. stripDangerousTags  — security: remove executable / dangerous HTML
- *   2. applyNewlines       — semantics: \n → <br> for textarea-authored content
- *   3. applyMarkdown       — formatting: **bold** / *italic* → HTML tags
+ *   2. applyMarkdown       — formatting: **bold** / *italic* → HTML tags, run on
+ *                            the RAW text so its `\n` exclusion still blocks
+ *                            emphasis spanning a real line break
+ *   3. applyNewlines       — semantics: \n → <br> for textarea-authored content
  *
  * Input:  raw string from the database (authored content)
  * Output: HTML string safe for dangerouslySetInnerHTML in the MathText
@@ -254,7 +261,7 @@ function applyMarkdown(text: string): string {
  * It is regression-tested by `src/components/__tests__/MathText.security.test.ts`.
  */
 export function prepareRichText(raw: string): string {
-  return applyMarkdown(applyNewlines(stripDangerousTags(raw)));
+  return applyNewlines(applyMarkdown(stripDangerousTags(raw)));
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────

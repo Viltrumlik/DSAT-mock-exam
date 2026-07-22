@@ -67,11 +67,19 @@ export default function BuilderSetsPage() {
       {
         onSuccess: () =>
           toast.push({ message: `Status set to “${REVIEW_STATUS_LABELS[status]}”.`, tone: "success" }),
-        onError: (e: unknown) =>
-          toast.push({
-            message: (e as { message?: string })?.message || "Could not change status.",
-            tone: "error",
-          }),
+        onError: (e: unknown) => {
+          // Surface the specific approval blockers (e.g. "must have a category") rather
+          // than a bare "400". The backend puts the reasons in detail; findings[] carries
+          // the per-issue breakdown when detail is generic.
+          const resp = (e as { response?: { data?: { detail?: string; findings?: { message?: string }[] } } })?.response?.data;
+          const findingMsgs = (resp?.findings ?? []).map((f) => f?.message).filter(Boolean).join("; ");
+          const msg =
+            resp?.detail ||
+            (findingMsgs ? `Cannot approve — fix these first: ${findingMsgs}` : null) ||
+            (e as { message?: string })?.message ||
+            "Could not change status.";
+          toast.push({ message: msg, tone: "error" });
+        },
       },
     );
   };

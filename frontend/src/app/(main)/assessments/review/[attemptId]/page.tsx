@@ -214,7 +214,21 @@ function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; i
       />
 
       <div className="space-y-5 p-6 sm:p-7">
-        {/* passage / stimulus */}
+        {/* main content — shown FIRST (Reading: the passage · Math: the question) */}
+        <AssessmentText
+          text={q.prompt}
+          block
+          className="rounded-2xl border border-border bg-surface-2 p-6 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
+        />
+
+        {/* figure (above the question prompt) */}
+        {figure ? (
+          <div className="flex justify-center overflow-hidden rounded-2xl border border-border bg-surface-2">
+            <img src={figure} alt="Question figure" className="max-h-[420px] max-w-full object-contain p-4" />
+          </div>
+        ) : null}
+
+        {/* question prompt — shown AFTER the main content (Reading: the actual question) */}
         {q.question_prompt && q.question_prompt.trim().length > 0 ? (
           <AssessmentText
             text={q.question_prompt}
@@ -222,20 +236,6 @@ function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; i
             className="border-l-4 border-primary/50 bg-surface-2/50 py-2 pl-5 pr-4 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
           />
         ) : null}
-
-        {/* figure (above the stem) */}
-        {figure ? (
-          <div className="flex justify-center overflow-hidden rounded-2xl border border-border bg-surface-2">
-            <img src={figure} alt="Question figure" className="max-h-[420px] max-w-full object-contain p-4" />
-          </div>
-        ) : null}
-
-        {/* question stem */}
-        <AssessmentText
-          text={q.prompt}
-          block
-          className="rounded-2xl border border-border bg-surface-2 p-6 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
-        />
 
         {/* answer analysis */}
         <div>

@@ -824,9 +824,17 @@ class AdminAssessmentSetStatusView(APIView):
                 )
                 report = validate_for_publish(locked, active_questions)
                 if not report.is_publishable:
+                    # Name the actual blocking reasons in `detail` so the message is
+                    # actionable even where the client can't render the findings array.
+                    reasons = "; ".join(
+                        f.message for f in report.blocking_findings[:6] if getattr(f, "message", "")
+                    )
                     return Response(
                         {
-                            "detail": "Cannot approve — the set is not publishable.",
+                            "detail": (
+                                f"Cannot approve — fix these first: {reasons}"
+                                if reasons else "Cannot approve — the set is not publishable."
+                            ),
                             "findings": [f.to_dict() for f in report.blocking_findings[:10]],
                         },
                         status=status.HTTP_400_BAD_REQUEST,

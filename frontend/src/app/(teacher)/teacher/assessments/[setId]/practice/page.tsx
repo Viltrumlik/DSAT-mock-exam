@@ -243,16 +243,18 @@ export default function TeacherAssessmentPracticePage() {
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
             <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400">Question {currentIdx + 1} of {total}</p>
-            {current.question_prompt && current.question_prompt.trim().length > 0 ? (
-              <AssessmentText text={current.question_prompt} block className="border-l-4 border-primary/50 bg-slate-50 py-2 pl-5 pr-4 font-[Georgia] text-base leading-relaxed text-slate-900" />
-            ) : null}
+            {/* main content — shown FIRST (Reading: the passage · Math: the question) */}
+            <AssessmentText text={current.prompt} block className="rounded-2xl border border-slate-200 bg-slate-50 p-6 font-[Georgia] text-base font-medium leading-relaxed text-slate-900" />
             {figure ? (
               <div className="flex justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={figure} alt="Question figure" className="max-h-[420px] max-w-full object-contain p-4" />
               </div>
             ) : null}
-            <AssessmentText text={current.prompt} block className="rounded-2xl border border-slate-200 bg-slate-50 p-6 font-[Georgia] text-base font-medium leading-relaxed text-slate-900" />
+            {/* question prompt — shown AFTER the main content (Reading: the actual question) */}
+            {current.question_prompt && current.question_prompt.trim().length > 0 ? (
+              <AssessmentText text={current.question_prompt} block className="border-l-4 border-primary/50 bg-slate-50 py-2 pl-5 pr-4 font-[Georgia] text-base leading-relaxed text-slate-900" />
+            ) : null}
             <AnswerInput
               type={current.question_type}
               choices={(Array.isArray(current.choices) ? current.choices : []) as AssessmentChoice[]}

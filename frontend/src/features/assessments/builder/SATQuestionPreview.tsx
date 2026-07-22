@@ -105,25 +105,20 @@ export function SATQuestionPreview({
         </span>
       </div>
       <div className="space-y-4 p-5">
-        {/* Stimulus / passage context block */}
-        {stimulusContext?.trim() && (
-          <div className="rounded-xl border border-border/60 bg-surface-2/30 px-4 py-3">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-              Passage context
-            </p>
-            <AssessmentText
-              text={stimulusContext}
-              block
-              className="text-sm leading-relaxed text-foreground/80 italic"
-            />
-          </div>
-        )}
-        {/* Question stem */}
+        {/* Main content — rendered FIRST/at the top (Math: the question · Reading: the passage). */}
         <AssessmentText
           text={prompt}
           block
           className="text-sm font-medium leading-relaxed text-foreground"
         />
+        {/* Question prompt — rendered AFTER the main content, right above the choices. */}
+        {stimulusContext?.trim() && (
+          <AssessmentText
+            text={stimulusContext}
+            block
+            className="text-sm leading-relaxed text-foreground"
+          />
+        )}
 
         {question_type === "multiple_choice" && choices.length > 0 && (
           <div className="space-y-2">
