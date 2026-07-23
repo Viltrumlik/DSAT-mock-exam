@@ -809,6 +809,21 @@ html:not(.dark) .shell-sidebar-gold {
    typography scale, motion, and a11y helpers the new components use.
    ════════════════════════════════════════════════════════════════ */
 
+/* Testing Simulation runner (Bluebook look): the UI chrome — clock, header,
+   footer, buttons, navigator — uses a neutral grotesque (SF on Apple, Helvetica/
+   Arial elsewhere) so the clock matches Bluebook. Long-form content (passage,
+   question stem, answer choices) opts back into Georgia locally via font-[Georgia],
+   which wins over this inherited value. The `.ts-runner button` variant (0,1,1)
+   beats the global `button { font-family: var(--font-sans) }` rule (0,0,1). */
+.ts-runner,
+.ts-runner button,
+.ts-runner input,
+.ts-runner select,
+.ts-runner textarea {
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial,
+    "Segoe UI", Roboto, sans-serif;
+}
+
 /* Surfaces driven by the new shell use the sans UI stack; the serif
    body default is preserved for long-form reading passages. */
 .ds-app {

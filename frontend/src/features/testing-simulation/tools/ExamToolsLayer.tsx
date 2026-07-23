@@ -36,6 +36,7 @@ export function ExamToolsLayer({ tools, attemptId }: ExamToolsLayerProps) {
           onUnderline={tools.highlighter.applyUnderline}
           onDelete={tools.highlighter.deleteAnnotation}
           onClose={tools.highlighter.dismiss}
+          onAddNote={tools.toggleNotes}
         />
       )}
     </>

@@ -29,7 +29,7 @@ export function Timer({ secondsLeft, hidden, onToggleHidden, warning, pauseAllow
         <Clock className={`h-7 w-7 ${warning ? "text-red-600" : "text-slate-500"}`} aria-hidden />
       ) : (
         <div
-          className={`text-2xl font-bold tabular-nums tracking-tight ${warning ? "text-red-600" : "text-slate-900"}`}
+          className={`text-[26px] font-bold leading-none tabular-nums tracking-[0.02em] ${warning ? "text-red-600" : "text-slate-900"}`}
           aria-live="off"
         >
           {formatClock(secondsLeft)}

@@ -3,8 +3,6 @@ import { ChevronUp } from "lucide-react";
 
 interface ExamFooterProps {
   navLabel: string;
-  /** "12 of 22 answered" — progress the student would otherwise have to count by hand. */
-  progressLabel?: string;
   onToggleNavigator: () => void;
   canGoBack: boolean;
   onBack: () => void;
@@ -21,7 +19,6 @@ interface ExamFooterProps {
 /** Bottom bar: student identity + question-grid toggle + Back / Next / Submit. */
 export function ExamFooter({
   navLabel,
-  progressLabel,
   onToggleNavigator,
   canGoBack,
   onBack,
@@ -33,39 +30,36 @@ export function ExamFooter({
   navLocked = false,
 }: ExamFooterProps) {
   return (
-    <footer className="flex shrink-0 items-center justify-between bg-slate-50 px-6 py-3">
+    <footer className="flex shrink-0 items-center justify-between bg-white px-6 py-3">
       {/* Left: persistent student identity. */}
       <div className="flex flex-1 items-center">
         {studentName ? (
-          <span className="truncate text-sm font-semibold text-slate-600" title={studentName}>
+          <span className="truncate text-[15px] font-bold text-slate-700" title={studentName}>
             {studentName}
           </span>
         ) : null}
       </div>
 
-      {/* Center: the question-navigator pill (Bluebook-style rounded pill) + progress. */}
-      <div className="flex flex-col items-center gap-1">
+      {/* Center: the question-navigator pill (Bluebook near-black rounded pill). */}
+      <div className="flex flex-col items-center">
         <button
           type="button"
           onClick={onToggleNavigator}
           aria-haspopup="dialog"
-          className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-slate-800"
+          className="inline-flex items-center gap-2 rounded-full bg-[#151515] px-6 py-2.5 text-[15px] font-bold text-white transition-colors hover:bg-[#2a2a2a]"
         >
           {navLabel}
           <ChevronUp className="h-4 w-4" />
         </button>
-        {progressLabel ? (
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{progressLabel}</span>
-        ) : null}
       </div>
 
-      {/* Right: Back (secondary/outlined) + Next/Submit (primary). */}
+      {/* Right: Back + Next/Submit (both Bluebook indigo). */}
       <div className="flex flex-1 items-center justify-end gap-3">
         <button
           type="button"
           onClick={onBack}
           disabled={!canGoBack || navLocked}
-          className="rounded-full border border-slate-300 bg-white px-6 py-2 text-sm font-bold text-slate-700 transition-colors hover:border-slate-400 disabled:opacity-40"
+          className="rounded-full bg-[#253985] px-9 py-2.5 text-[15px] font-bold text-white transition-colors hover:bg-[#1d2d6b] disabled:opacity-40"
         >
           Back
         </button>
@@ -74,7 +68,7 @@ export function ExamFooter({
             type="button"
             onClick={onSubmitModule}
             disabled={submitting || navLocked}
-            className="rounded-full bg-blue-700 px-7 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-50"
+            className="rounded-full bg-[#253985] px-9 py-2.5 text-[15px] font-bold text-white transition-colors hover:bg-[#1d2d6b] disabled:opacity-50"
           >
             {submitting ? "Submitting…" : "Submit"}
           </button>
@@ -83,7 +77,7 @@ export function ExamFooter({
             type="button"
             onClick={onNext}
             disabled={navLocked}
-            className="rounded-full bg-blue-700 px-7 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-blue-800 disabled:opacity-60"
+            className="rounded-full bg-[#253985] px-9 py-2.5 text-[15px] font-bold text-white transition-colors hover:bg-[#1d2d6b] disabled:opacity-60"
           >
             Next
           </button>

@@ -1,5 +1,5 @@
 "use client";
-import { Calculator, ChevronDown, Flag, Highlighter, StickyNote } from "lucide-react";
+import { Calculator, ChevronDown, Highlighter, StickyNote } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -66,9 +66,9 @@ export function ExamHeader({
           type="button"
           onClick={onToggleDirections}
           aria-expanded={showDirections}
-          className="mt-0.5 inline-flex items-center gap-1 text-sm font-semibold text-slate-700 hover:text-slate-900"
+          className="mt-0.5 inline-flex items-center gap-1 text-[15px] text-slate-800 hover:text-slate-950"
         >
-          Directions <ChevronDown className="h-4 w-4" />
+          Directions <ChevronDown className={`h-4 w-4 transition-transform ${showDirections ? "rotate-180" : ""}`} />
         </button>
       </div>
 
@@ -85,7 +85,7 @@ export function ExamHeader({
         />
       </div>
 
-      <div className="flex items-center justify-end gap-5">
+      <div className="flex items-center justify-end gap-6">
         {showCalculator && (
           <ToolButton label="Calculator" active={tools.calculatorOpen} onClick={tools.toggleCalculator}>
             <Calculator className="h-5 w-5" />
@@ -96,22 +96,23 @@ export function ExamHeader({
             <span className="text-base font-bold italic leading-none">x²</span>
           </ToolButton>
         )}
-        <ToolButton label="Highlights" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
-          <Highlighter className="h-5 w-5" />
-        </ToolButton>
-        {onReportProblem && (
-          <ToolButton label="Report" onClick={onReportProblem}>
-            <Flag className="h-5 w-5" />
-          </ToolButton>
-        )}
-        <ToolButton label="Notes" active={tools.notesOpen} onClick={tools.toggleNotes}>
-          <StickyNote className="h-5 w-5" />
+        {/* Bluebook groups highlighting + notes under one control. It toggles the
+            highlighter (select-to-highlight); the notes pad opens from a highlight's
+            note button or the More menu. */}
+        <ToolButton label="Highlights & Notes" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
+          <span className="flex items-center gap-1.5">
+            <Highlighter className="h-[18px] w-[18px]" />
+            <StickyNote className="h-[18px] w-[18px]" />
+          </span>
         </ToolButton>
         <MoreMenu
           isFullscreen={tools.fullscreen.isFullscreen}
           onToggleFullscreen={tools.fullscreen.toggle}
           highlighterActive={tools.highlighterActive}
           onToggleHighlighter={tools.toggleHighlighter}
+          notesOpen={tools.notesOpen}
+          onToggleNotes={tools.toggleNotes}
+          onReportProblem={onReportProblem}
           onZoomIn={tools.zoomIn}
           onZoomOut={tools.zoomOut}
           onToggleHelp={tools.toggleHelp}
