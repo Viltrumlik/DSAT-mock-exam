@@ -51,7 +51,7 @@ function ReviewViewerInner() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center">
         <p className="text-sm text-muted-foreground">Unknown item.</p>
-        <Link href="/review" className="mt-3 inline-block text-sm font-semibold text-primary hover:underline">
+        <Link href="/review-center" className="mt-3 inline-block text-sm font-semibold text-primary hover:underline">
           Back to Review Center
         </Link>
       </div>
@@ -61,7 +61,7 @@ function ReviewViewerInner() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 sm:py-8">
       <Link
-        href="/review"
+        href="/review-center"
         className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />

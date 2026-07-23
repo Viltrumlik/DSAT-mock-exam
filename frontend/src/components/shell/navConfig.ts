@@ -75,7 +75,7 @@ export const studentNav: NavSection[] = [
  */
 export const reviewNavSection: NavSection = {
   section: "",
-  items: [{ href: "/review", label: "Review Center", icon: ShieldCheck }],
+  items: [{ href: "/review-center", label: "Review Center", icon: ShieldCheck }],
 };
 
 /** Teacher information architecture (see docs/UI_REBUILD_IA.md §5). */
