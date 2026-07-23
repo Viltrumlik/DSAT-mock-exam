@@ -662,6 +662,39 @@ class ResumeAttemptView(APIView):
         )
         if not att:
             return Response({"detail": "Attempt not found."}, status=status.HTTP_404_NOT_FOUND)
+        if att.status == AssessmentAttempt.STATUS_ABANDONED and att.submitted_at is None:
+            # Resurrect a reaped attempt. An inactivity-abandon destroys nothing —
+            # the answers are still rows — but without this path the returning
+            # student's every save 400s "locked (abandoned)" while the runner
+            # keeps accepting picks, which is exactly how answered questions end
+            # up graded Omitted. Guards: only a timeout/self-abandon (never a
+            # submitted attempt), only within the resurrect window, and only if
+            # the active-time lifetime (the same gate the save path enforces)
+            # is not exhausted.
+            now = timezone.now()
+            window_s = int(getattr(dj_settings, "ASSESSMENT_ATTEMPT_RESURRECT_WINDOW_SECONDS", 48 * 3600) or 0)
+            max_life = int(getattr(dj_settings, "ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS", 6 * 60 * 60) or 0)
+            gap = max(0, int((now - att.abandoned_at).total_seconds())) if att.abandoned_at else 0
+            recent = window_s <= 0 or gap <= window_s
+            # Bank the dead gap as pause (in memory first) so it is neither billed
+            # as active time nor counted against the lifetime gate.
+            att.paused_seconds = int(att.paused_seconds or 0) + gap
+            within_life = not (max_life > 0 and att.started_at and att.elapsed_seconds(now) > max_life)
+            if recent and within_life:
+                att.status = AssessmentAttempt.STATUS_IN_PROGRESS
+                att.abandoned_at = None
+                att.paused_at = None
+                att.last_activity_at = now
+                att.save(update_fields=["status", "abandoned_at", "paused_at", "paused_seconds", "last_activity_at"])
+                _audit_attempt(
+                    att, actor=request.user,
+                    event_type=AssessmentAttemptAuditEvent.EVENT_RESUMED,
+                    payload={"from": "abandoned", "gap_seconds": gap},
+                )
+                att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+                return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)
+            att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
+            return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)
         if att.status != AssessmentAttempt.STATUS_IN_PROGRESS:
             att = AssessmentAttempt.objects.filter(pk=att.pk).prefetch_related("answers").first()
             return Response(AttemptSerializer(att).data, status=status.HTTP_200_OK)

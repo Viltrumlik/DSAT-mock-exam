@@ -199,6 +199,68 @@ describe("useAutosave — an answer must never be dropped", () => {
     h.unmount();
   });
 
+  it("adopts the canonical attempt from a 409 and re-sends with the fresh version", async () => {
+    // The keepalive leave-flush and pause both bump the server version without
+    // this hook's closure ever seeing it (they are fire-and-forget). The next
+    // debounced save then carries a stale expected_version and gets a HARD 409
+    // that writes nothing. Retrying blind with the SAME captured version can
+    // only 409 again — the prod "409 burst" (initial + 3 backoff retries, all
+    // stale). The hook must adopt the canonical attempt the 409 body carries so
+    // the effect re-sends against the fresh version.
+    const calls: Array<number | undefined> = [];
+    let serverVersion = 5; // where the keepalive already moved the server
+    const api409 = {
+      saveAttempt: vi.fn(
+        (_id: number, answers: Record<string, string>, _f: number[], opts?: { expectedVersionNumber?: number }) => {
+          calls.push(opts?.expectedVersionNumber);
+          saved.push({ ...answers });
+          if ((opts?.expectedVersionNumber ?? 0) < serverVersion) {
+            return Promise.reject({ response: { status: 409, data: { attempt: makeAttempt(serverVersion) } } });
+          }
+          serverVersion += 1;
+          return Promise.resolve(makeAttempt(serverVersion));
+        },
+      ),
+    };
+
+    const held: { h: ReturnType<typeof renderAutosave> | null } = { h: null };
+    held.h = renderAutosave({
+      attempt: makeAttempt(1),
+      attemptId: ATTEMPT_ID,
+      answers: { "1": "A" },
+      flagged: [],
+      answersModuleId: MODULE_ID,
+      applyAttempt: (next: Attempt) => held.h?.applyAttempt(next),
+      enabled: true,
+      online: true,
+      api: api409 as unknown as Parameters<typeof useAutosave>[0]["api"],
+      debounceMs: 500,
+    });
+    const h = held.h;
+
+    // t=500: save #1 fires with the stale version (1 < 5) and 409s.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    // Adoption re-runs the effect (version 1 -> 5); its debounce re-sends. Give
+    // the old blind backoff retries (2s/4s/8s) room to fire if they still existed.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+
+    expect(api409.saveAttempt.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(calls[0]).toBe(1);
+    expect(
+      calls[1],
+      `the send after the 409 must carry the version adopted from its body; sent versions: ${JSON.stringify(calls)}`,
+    ).toBe(5);
+    expect(
+      calls.filter((v) => v === 1).length,
+      `the stale version must never be re-sent blind; sent versions: ${JSON.stringify(calls)}`,
+    ).toBe(1);
+    h.unmount();
+  });
+
   it("keeps the local draft until the answers in it have actually been sent", async () => {
     const h = setup();
     await act(async () => {

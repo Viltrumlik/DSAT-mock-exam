@@ -20,10 +20,26 @@ def abandon_inactive_attempts() -> dict:
     """
     timeout_s = int(getattr(settings, "ASSESSMENT_ATTEMPT_INACTIVITY_TIMEOUT_SECONDS", 3600) or 3600)
     timeout_s = max(300, min(7 * 24 * 3600, timeout_s))
-    cutoff = timezone.now() - timedelta(seconds=timeout_s)
+    # A PAUSED attempt is a legitimate resumable state (save-and-exit, auto-pause
+    # on tab-leave) — the save path explicitly promises "pause overnight and
+    # resume the next day". Pause does not touch last_activity_at, so reaping
+    # paused attempts on the short inactivity window broke that promise: the
+    # student came back, and every answer save 400'd "locked (abandoned)".
+    # Paused attempts therefore get their own, much longer leash.
+    paused_timeout_s = int(
+        getattr(settings, "ASSESSMENT_ATTEMPT_PAUSED_INACTIVITY_TIMEOUT_SECONDS", 72 * 3600) or 72 * 3600
+    )
+    paused_timeout_s = max(timeout_s, min(30 * 24 * 3600, paused_timeout_s))
+    now_ts = timezone.now()
+    cutoff = now_ts - timedelta(seconds=timeout_s)
+    paused_cutoff = now_ts - timedelta(seconds=paused_timeout_s)
 
     qs = AssessmentAttempt.objects.filter(status=AssessmentAttempt.STATUS_IN_PROGRESS).filter(
-        Q(last_activity_at__lte=cutoff) | Q(last_activity_at__isnull=True, started_at__lte=cutoff)
+        (
+            Q(paused_at__isnull=True)
+            & (Q(last_activity_at__lte=cutoff) | Q(last_activity_at__isnull=True, started_at__lte=cutoff))
+        )
+        | Q(paused_at__isnull=False, paused_at__lte=paused_cutoff)
     )
 
     # Evaluate candidates first (small batches) to avoid long locks.
@@ -35,9 +51,15 @@ def abandon_inactive_attempts() -> dict:
             att = AssessmentAttempt.objects.select_for_update().filter(pk=pk).first()
             if not att or att.status != AssessmentAttempt.STATUS_IN_PROGRESS:
                 continue
-            last = att.last_activity_at or att.started_at
-            if last and last > cutoff:
-                continue
+            if att.paused_at is not None:
+                if att.paused_at > paused_cutoff:
+                    continue
+                applied_timeout = paused_timeout_s
+            else:
+                last = att.last_activity_at or att.started_at
+                if last and last > cutoff:
+                    continue
+                applied_timeout = timeout_s
             att.status = AssessmentAttempt.STATUS_ABANDONED
             att.abandoned_at = now
             att.last_activity_at = now
@@ -46,7 +68,7 @@ def abandon_inactive_attempts() -> dict:
                 attempt=att,
                 actor=None,
                 event_type=AssessmentAttemptAuditEvent.EVENT_TIMEOUT_ABANDONED,
-                payload={"timeout_seconds": timeout_s},
+                payload={"timeout_seconds": applied_timeout, "paused": att.paused_at is not None},
             )
             abandoned += 1
     return {"abandoned": abandoned, "checked": len(ids), "timeout_seconds": timeout_s}

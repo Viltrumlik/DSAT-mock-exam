@@ -697,6 +697,21 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     savedTimerRef.current = setTimeout(() => setSaveState("idle"), 2000);
   };
 
+  // When the inactivity reaper abandoned this attempt while the student was
+  // away, the server allows resume() to un-abandon it (nothing was submitted —
+  // the answer rows are intact). Returns true when the attempt is live again;
+  // callers then retry the save that hit "locked (abandoned)". Without this,
+  // the runner keeps accepting picks while every save 400s, and the student's
+  // work grades Omitted.
+  const resurrectLockedAttempt = useCallback(async (): Promise<boolean> => {
+    try {
+      const att = await assessmentsStudentApi.resume({ attempt_id: attemptId });
+      return (att as { status?: string } | null)?.status === "in_progress";
+    } catch {
+      return false;
+    }
+  }, [attemptId]);
+
   // Resolves to `true` only when BOTH the offline queue and the debounced
   // pending map are fully drained to the server. Callers that gate a
   // destructive next step (submit → clear-draft) MUST check this so answers
@@ -707,6 +722,9 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
     // would no-op and strand the just-resolved answers. The caller passes force to
     // proceed anyway.
     if (!opts?.force && conflicts.length) return false; // wait for conflict resolution
+    // At most one resurrect per flush pass: a second "locked" 400 after a
+    // successful resume means the attempt is terminally closed — surface it.
+    let resurrectTried = false;
 
     // Flush offline queue first
     if (online) {
@@ -747,6 +765,20 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
                 if (s > seqCounter.current) seqCounter.current = s;
                 ok = true;
                 break;
+              }
+              // Reaper-abandoned mid-session: revive once, then retry this save.
+              const lockedDetail = String((e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail ?? "");
+              if (ax.status === 400 && lockedDetail.includes("locked (abandoned)")) {
+                if (!resurrectTried) {
+                  resurrectTried = true;
+                  if (await resurrectLockedAttempt()) {
+                    a -= 1; // retry the same answer against the revived attempt
+                    continue;
+                  }
+                }
+                setSaveState("error");
+                setSaveError("This attempt was closed after long inactivity and couldn't be reopened. Your answers are stored locally — please contact your teacher.");
+                return false;
               }
               if (![0, 429, 503].includes(ax.status ?? 0) || a === 3) break;
               await backoffDelayMs(a);
@@ -798,6 +830,20 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
               ok = true;
               break;
             }
+            // Reaper-abandoned mid-session: revive once, then retry this save.
+            const lockedDetail = String((e as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail ?? "");
+            if (ax.status === 400 && lockedDetail.includes("locked (abandoned)")) {
+              if (!resurrectTried) {
+                resurrectTried = true;
+                if (await resurrectLockedAttempt()) {
+                  a -= 1; // retry the same answer against the revived attempt
+                  continue;
+                }
+              }
+              setSaveState("error");
+              setSaveError("This attempt was closed after long inactivity and couldn't be reopened. Your answers are stored locally — please contact your teacher.");
+              return false;
+            }
             if (![0, 429, 503].includes(ax.status ?? 0) || a === 3) {
               setSaveState("error");
               setSaveError("Couldn't save your answer. It's stored locally and will retry.");
@@ -827,10 +873,23 @@ export default function StudentAttemptRunnerContainer({ attemptId }: { attemptId
       Object.keys(offlineQueue.current).length === 0 &&
       Object.keys(pendingSaves.current).length === 0
     );
-  }, [conflicts.length, online, attemptId, save, refetch, applyServerFp]);
+  }, [conflicts.length, online, attemptId, save, refetch, applyServerFp, resurrectLockedAttempt]);
 
   // Keep the ref in sync so the online-event handler always calls the latest version
   flushSaveRef.current = flushSave;
+
+  // Heal on entry: if the loaded attempt is reaper-abandoned (unsubmitted), the
+  // student has just come back after a long gap — resurrect before they touch
+  // anything so the very first autosave doesn't 400 "locked (abandoned)".
+  const mountResurrectRef = useRef(false);
+  useEffect(() => {
+    const status = (attempt as { status?: string } | undefined)?.status;
+    if (status !== "abandoned" || mountResurrectRef.current) return;
+    mountResurrectRef.current = true;
+    void (async () => {
+      if (await resurrectLockedAttempt()) await refetch();
+    })();
+  }, [attempt, resurrectLockedAttempt, refetch]);
 
   const enqueueSave = useCallback(
     (qid: number, value: unknown) => {

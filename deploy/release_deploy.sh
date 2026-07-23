@@ -47,6 +47,9 @@ SKIP_PM2_RELOAD="${SKIP_PM2_RELOAD:-0}"
 SKIP_HEALTH_CHECKS="${SKIP_HEALTH_CHECKS:-0}"
 AUTO_DB_RESTORE_ON_FAIL="${AUTO_DB_RESTORE_ON_FAIL:-1}"
 DEPLOY_HEALTH_URL="${DEPLOY_HEALTH_URL:-http://127.0.0.1:8000/api/health/live/}"
+# Frontend SSR health (set empty to skip). Backend health alone missed the
+# 2026-07-23 outage where every Next.js route 500'd at runtime.
+DEPLOY_FRONTEND_HEALTH_URL="${DEPLOY_FRONTEND_HEALTH_URL-http://127.0.0.1:3000/}"
 PM2_ONLINE_WAIT_S="${PM2_ONLINE_WAIT_S:-45}"
 
 LOCK_FILE="$SHARED/.deploy.lock"
@@ -479,6 +482,21 @@ else
     DEPLOY_STAGE="post_cutover_http"
     if [[ -n "${DEPLOY_HEALTH_URL:-}" ]]; then
       wait_for_http_health "$DEPLOY_HEALTH_URL" "$PM2_ONLINE_WAIT_S" || {
+        trap - ERR
+        perform_post_cutover_failure_rollback
+        exit 1
+      }
+    fi
+
+    # Frontend SSR check. The backend URL above says nothing about Next.js: an
+    # App Router misconfiguration (e.g. two different slug names at the same
+    # dynamic path position) passes `next build` but throws at runtime under
+    # `next start`, 500-ing EVERY route while the backend health stays green —
+    # exactly the 2026-07-23 outage. Curl the real frontend so that class of
+    # failure rolls back automatically instead of shipping a dead site.
+    DEPLOY_STAGE="post_cutover_frontend_http"
+    if [[ -n "${DEPLOY_FRONTEND_HEALTH_URL:-}" ]]; then
+      wait_for_http_health "$DEPLOY_FRONTEND_HEALTH_URL" "$PM2_ONLINE_WAIT_S" || {
         trap - ERR
         perform_post_cutover_failure_rollback
         exit 1
