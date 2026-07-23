@@ -56,6 +56,11 @@ ROLE_SUPER_ADMIN = "super_admin"
 ROLE_ADMIN = "admin"
 ROLE_TEACHER = "teacher"
 ROLE_TEST_ADMIN = "test_admin"
+# Content reviewer / QA: a global-scope, subject-less staff role that may review ALL
+# tests (assessments, pastpapers, mocks, midterms) read-only on the student site with no
+# timer/fullscreen/proctoring, and may enter the builder to change set status (incl.
+# approve) and edit questions. Not a user/classroom manager — no manage_users / assign_access.
+ROLE_TEST_AUDITOR = "test_auditor"
 ROLE_STUDENT = "student"
 
 CANONICAL_ROLES = frozenset(
@@ -64,6 +69,7 @@ CANONICAL_ROLES = frozenset(
         ROLE_ADMIN,
         ROLE_TEACHER,
         ROLE_TEST_ADMIN,
+        ROLE_TEST_AUDITOR,
         ROLE_STUDENT,
     }
 )

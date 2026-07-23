@@ -55,7 +55,7 @@ function activeClassrooms(u: UserRecord): { id: number; name: string; subject?: 
   );
 }
 
-type RoleFilter = "all" | "student" | "teacher" | "test_admin" | "admin" | "super_admin";
+type RoleFilter = "all" | "student" | "teacher" | "test_admin" | "test_auditor" | "admin" | "super_admin";
 
 /** Normalized full name, used to group duplicate registrations. */
 function fullNameKey(u: UserRecord): string {
@@ -86,12 +86,13 @@ const ACTION_PAST: Record<BulkAction, string> = {
   delete: "deleted",
 };
 
-const ALL_ROLES = ["student", "teacher", "test_admin", "admin", "super_admin"] as const;
+const ALL_ROLES = ["student", "teacher", "test_admin", "test_auditor", "admin", "super_admin"] as const;
 
 const ROLE_LABELS: Record<string, string> = {
   student: "Student",
   teacher: "Teacher",
   test_admin: "Test admin",
+  test_auditor: "Test auditor",
   admin: "Admin",
   super_admin: "Super admin",
 };
@@ -100,6 +101,7 @@ const ROLE_COLORS: Record<string, string> = {
   student: "bg-blue-100 text-blue-800",
   teacher: "bg-teal-100 text-teal-800",
   test_admin: "bg-amber-100 text-amber-800",
+  test_auditor: "bg-cyan-100 text-cyan-800",
   admin: "bg-purple-100 text-purple-800",
   super_admin: "bg-red-100 text-red-800",
 };
@@ -741,6 +743,7 @@ export default function OpsUsersPage() {
           <option value="student">Students</option>
           <option value="teacher">Teachers</option>
           <option value="test_admin">Test admins</option>
+          <option value="test_auditor">Test auditors</option>
           <option value="admin">Admins</option>
           <option value="super_admin">Super admins</option>
         </select>

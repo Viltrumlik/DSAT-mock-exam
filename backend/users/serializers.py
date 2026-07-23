@@ -571,6 +571,7 @@ class UserSerializer(serializers.ModelSerializer):
         acc_const.ROLE_STUDENT: 1,
         acc_const.ROLE_TEACHER: 2,
         acc_const.ROLE_TEST_ADMIN: 3,
+        acc_const.ROLE_TEST_AUDITOR: 3,
         acc_const.ROLE_ADMIN: 3,
         acc_const.ROLE_SUPER_ADMIN: 4,
     }
@@ -637,7 +638,12 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"subject": "Teacher accounts require subject: math or english."}
                 )
-        elif role in (acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN, acc_const.ROLE_SUPER_ADMIN):
+        elif role in (
+            acc_const.ROLE_ADMIN,
+            acc_const.ROLE_TEST_ADMIN,
+            acc_const.ROLE_TEST_AUDITOR,
+            acc_const.ROLE_SUPER_ADMIN,
+        ):
             validated_data["subject"] = None
         elif role == acc_const.ROLE_STUDENT:
             validated_data["subject"] = None
@@ -676,6 +682,7 @@ class UserSerializer(serializers.ModelSerializer):
             elif eff_role in (
                 acc_const.ROLE_ADMIN,
                 acc_const.ROLE_TEST_ADMIN,
+                acc_const.ROLE_TEST_AUDITOR,
                 acc_const.ROLE_SUPER_ADMIN,
                 acc_const.ROLE_STUDENT,
             ):
@@ -697,9 +704,12 @@ class UserSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"subject": "Teacher accounts require subject: math or english."}
                 )
-        elif eff in (acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN) and sj not in (None, ""):
+        elif (
+            eff in (acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN, acc_const.ROLE_TEST_AUDITOR)
+            and sj not in (None, "")
+        ):
             raise serializers.ValidationError(
-                {"subject": "Admin and test_admin accounts must not have a subject set."}
+                {"subject": "Admin, test_admin, and test_auditor accounts must not have a subject set."}
             )
         _sync_global_user_access(user)
         return user

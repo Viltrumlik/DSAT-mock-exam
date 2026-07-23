@@ -113,6 +113,17 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
                 constants.PERM_SUBMIT_TEST,
             }
         ),
+        constants.ROLE_TEST_AUDITOR: frozenset(
+            {
+                # Content QA reviewer. view_dashboard makes it staff (is_admin) so it can
+                # enter the builder; manage_tests lets it change set status and edit
+                # questions. NO assign_access / manage_users / create_classroom: an auditor
+                # reviews and fixes test content, it does not manage users or classrooms.
+                constants.PERM_VIEW_DASHBOARD,
+                constants.PERM_MANAGE_TESTS,
+                constants.PERM_SUBMIT_TEST,
+            }
+        ),
         constants.ROLE_STUDENT: frozenset({constants.PERM_SUBMIT_TEST}),
     }
 
@@ -213,7 +224,7 @@ def bulk_assign_request_platform_subjects(data: object) -> frozenset[str]:
 
 
 def is_global_scope_staff(user) -> bool:
-    """True for Django superuser and roles admin / test_admin / super_admin (no single subject scope)."""
+    """True for Django superuser and roles admin / test_admin / test_auditor / super_admin (no single subject scope)."""
     if not user or not getattr(user, "is_authenticated", False):
         return False
     if getattr(user, "is_superuser", False):
@@ -223,6 +234,7 @@ def is_global_scope_staff(user) -> bool:
         constants.ROLE_SUPER_ADMIN,
         constants.ROLE_ADMIN,
         constants.ROLE_TEST_ADMIN,
+        constants.ROLE_TEST_AUDITOR,
     )
 
 
@@ -232,8 +244,10 @@ def can_approve_assessment(user) -> bool:
 
     Deliberately STRICTER than ``is_global_scope_staff``: a ``test_admin`` is a
     global-scope library author but may only build and submit for review — approving
-    their own (or anyone's) content would defeat the review gate. Only Django
-    superusers and the ``admin`` / ``super_admin`` roles approve.
+    their own (or anyone's) content would defeat the review gate. Django superusers,
+    the ``admin`` / ``super_admin`` roles, and the ``test_auditor`` reviewer approve;
+    the auditor is a dedicated QA sign-off role, so it holds the approve authority the
+    library author (``test_admin``) intentionally lacks.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return False
@@ -242,6 +256,7 @@ def can_approve_assessment(user) -> bool:
     return normalized_role(user) in (
         constants.ROLE_SUPER_ADMIN,
         constants.ROLE_ADMIN,
+        constants.ROLE_TEST_AUDITOR,
     )
 
 
@@ -320,7 +335,7 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
     role = normalized_role(user)
     UserAccess = _user_access_model()
 
-    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN, constants.ROLE_TEST_AUDITOR):
         return True
 
     if role == constants.ROLE_TEACHER:
@@ -366,7 +381,7 @@ def has_access_for_classroom(user, domain_subject: str, classroom_id: int) -> bo
     UserAccess = _user_access_model()
     cid = int(classroom_id)
 
-    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN, constants.ROLE_TEST_AUDITOR):
         return True
 
     if role == constants.ROLE_STUDENT:
@@ -742,8 +757,8 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if is_privileged:
         return True
 
-    # admin / test_admin: global scope — no user.subject alignment for resource subject.
-    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN):
+    # admin / test_admin / test_auditor: global scope — no user.subject alignment for resource subject.
+    if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN, constants.ROLE_TEST_AUDITOR):
         return True
 
     if role == constants.ROLE_TEACHER:

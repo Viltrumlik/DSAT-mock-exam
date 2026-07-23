@@ -19,7 +19,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from access.constants import ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_TEACHER, ROLE_TEST_ADMIN
+from access.constants import (
+    ROLE_ADMIN,
+    ROLE_SUPER_ADMIN,
+    ROLE_TEACHER,
+    ROLE_TEST_ADMIN,
+    ROLE_TEST_AUDITOR,
+)
 from access.services import normalized_role
 
 from .access import midterm_results_state
@@ -28,7 +34,7 @@ from .models import MidtermAttempt, MidtermOutcome
 User = get_user_model()
 
 # Roles allowed to read somebody else's report (a student only ever sees their own).
-_VIEWER_ROLES = {ROLE_TEACHER, ROLE_ADMIN, ROLE_TEST_ADMIN, ROLE_SUPER_ADMIN}
+_VIEWER_ROLES = {ROLE_TEACHER, ROLE_ADMIN, ROLE_TEST_ADMIN, ROLE_TEST_AUDITOR, ROLE_SUPER_ADMIN}
 
 SUBJECT_LABELS = {
     "MATH": "Mathematics",

@@ -46,9 +46,15 @@ export function isTestAdmin(): boolean {
   return getRole() === "test_admin";
 }
 
+/** Role is test_auditor (backend: global QA reviewer — reviews all tests, edits + approves). */
+export function isTestAuditor(): boolean {
+  return getRole() === "test_auditor";
+}
+
 /**
  * Matches backend `/api/exams/admin` — any non-student may create/edit/delete tests and questions.
- * Use so test_admin (often no `lms_subject`) and staff without granular `lms_permissions` still get UI affordances.
+ * Use so test_admin / test_auditor (global staff, no `lms_subject`) and staff without granular
+ * `lms_permissions` still get UI affordances.
  */
 export function canManageQuestionsConsole(): boolean {
   if (can("*")) return true;
@@ -56,7 +62,8 @@ export function canManageQuestionsConsole(): boolean {
   return (
     r === "super_admin" ||
     r === "admin" ||
-    r === "test_admin"
+    r === "test_admin" ||
+    r === "test_auditor"
   );
 }
 

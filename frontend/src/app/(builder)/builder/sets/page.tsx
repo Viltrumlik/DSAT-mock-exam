@@ -42,7 +42,7 @@ export default function BuilderSetsPage() {
   // For global staff (admin/test_admin/super_admin), default to "all subjects".
   const role = getRole();
   const scopedSubject = (role === "teacher" ? getSubject() : null) as SubjectKey | null;
-  const canApprove = role === "admin" || role === "super_admin";
+  const canApprove = role === "admin" || role === "super_admin" || role === "test_auditor";
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [reviewFilter, setReviewFilter] = useState<"all" | ReviewStatus>("all");

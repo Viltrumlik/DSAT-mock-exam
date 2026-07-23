@@ -7,7 +7,8 @@ import { authApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { cn } from "@/lib/cn";
 import { AppShell } from "./AppShell";
-import { studentNav } from "./navConfig";
+import { studentNav, reviewNavSection } from "./navConfig";
+import { isReviewerRole } from "@/features/reviewCenter/ui";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
 export default function StudentAppShell({ children }: { children: React.ReactNode }) {
@@ -15,8 +16,17 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   const queryClient = useQueryClient();
   const { isAuthenticated, me, globalInteractionBlockedHard } = useMe();
 
-  const m = me as { first_name?: string; last_name?: string; profile_image_url?: string | null } | undefined;
+  const m = me as {
+    first_name?: string;
+    last_name?: string;
+    profile_image_url?: string | null;
+    role?: string;
+  } | undefined;
   const name = [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim() || undefined;
+
+  // Content reviewers (test_auditor + admins) get a Review Center entry at the top of the
+  // student sidebar. Everyone else sees the standard student IA.
+  const nav = isReviewerRole(m?.role) ? [reviewNavSection, ...studentNav] : studentNav;
 
   // Immersive, sidebar-less takeovers (like the pastpaper /exam & /review routes):
   //  - the assessment runner (/assessments/attempt/<id>) — its `fixed inset-0 z-50`
@@ -49,7 +59,7 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
     <AuthGuard>
       <AppShell
         brand={{ name: "MasterSAT", logoSrc: "/images/logo.png" }}
-        nav={studentNav}
+        nav={nav}
         pathname={pathname}
         user={isAuthenticated ? { name, avatarUrl: m?.profile_image_url ?? null } : null}
         onSignOut={() => authApi.logout(queryClient)}
