@@ -1329,6 +1329,13 @@ export const examsAdminApi = {
         );
         return r.data;
     },
+    /** Append questions to a module from a CSV file (all-or-nothing on the server). */
+    importQuestionsCsv: async (testId: number, moduleId: number, file: File) => {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/bulk-import/`, fd);
+        return r.data as { module_id: number; created_count: number; question_ids: number[] };
+    },
 };
 
 export const vocabularyApi = {

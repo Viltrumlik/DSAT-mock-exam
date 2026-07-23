@@ -2239,6 +2239,63 @@ class AdminQuestionViewSet(viewsets.ModelViewSet):
         dense_compact_module_orders_locked(module_id)
         _resync_midterm_mirror(module_id)
 
+    @action(detail=False, methods=["post"], url_path="bulk-import")
+    def bulk_import(self, request, test_pk=None, module_pk=None):
+        """
+        Append questions to this module from an uploaded CSV (multipart field ``file``).
+
+        Every row is validated through the same AdminQuestionSerializer the builder uses
+        (no grading-guard bypass); if ANY row is invalid or the per-module cap would be
+        exceeded, nothing is imported and a 400 lists the offending rows. Covers both
+        pastpaper modules and legacy MockExam(kind=MIDTERM) modules — the serializer's
+        midterm detection applies the right rules, and the midterm mirror is resynced.
+        """
+        from .midterm_rules import midterm_module_question_limit
+        from .models import MockExam as _MockExam
+        from .question_csv_import import import_questions_csv
+        from .sat_rules import SAT_MODULE_QUESTION_COUNT
+
+        module = get_object_or_404(Module, pk=module_pk, practice_test_id=test_pk)
+        upload = request.FILES.get("file")
+        if upload is None:
+            return Response(
+                {"detail": "Attach a CSV file in the 'file' field."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pt = module.practice_test
+        exam = getattr(pt, "mock_exam", None) or (
+            _MockExam.objects.filter(pk=pt.mock_exam_id).first() if (pt and pt.mock_exam_id) else None
+        )
+        is_midterm = bool(exam and exam.kind == _MockExam.KIND_MIDTERM)
+        subject = getattr(pt, "subject", None) or "READING_WRITING"
+
+        if is_midterm:
+            cap = midterm_module_question_limit(exam)
+            cap_label = f"Module {module.module_order}"
+        elif subject in SAT_MODULE_QUESTION_COUNT:
+            cap = SAT_MODULE_QUESTION_COUNT[subject]
+            subj_label = "Reading & Writing" if subject == "READING_WRITING" else "Math"
+            cap_label = f"{subj_label} Module {module.module_order}"
+        else:
+            cap = 10 ** 9
+            cap_label = f"Module {module.module_order}"
+
+        created, err = import_questions_csv(
+            module=module,
+            subject=subject,
+            raw_bytes=upload.read(),
+            cap=cap,
+            cap_label=cap_label,
+        )
+        if err is not None:
+            return Response(err, status=status.HTTP_400_BAD_REQUEST)
+        _resync_midterm_mirror(module.pk)
+        return Response(
+            {"module_id": module.pk, "created_count": len(created), "question_ids": created},
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=True, methods=['post'])
     def reorder(self, request, test_pk=None, module_pk=None, pk=None):
         question = self.get_object()
