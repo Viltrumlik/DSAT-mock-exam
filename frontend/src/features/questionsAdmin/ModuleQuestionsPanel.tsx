@@ -23,6 +23,7 @@ import {
   examsModuleQuestionsApi,
   useCreateModuleQuestion,
   useDeleteModuleQuestion,
+  useImportModuleQuestionsCsv,
   useModuleQuestionsQuery,
   useReorderModuleQuestionsBulk,
   useUpdateModuleQuestion,
@@ -46,6 +47,7 @@ import {
   RefreshCcw,
   Save,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
@@ -1048,6 +1050,34 @@ export default function ModuleQuestionsPanel(props: {
 
   const create = useCreateModuleQuestion(testId, moduleId, api);
   const reorderBulk = useReorderModuleQuestionsBulk(testId, moduleId, api);
+  const importCsv = useImportModuleQuestionsCsv(testId, moduleId, api);
+  const csvInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [csvMsg, setCsvMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleCsvFile = async (file: File | null) => {
+    if (!file) return;
+    setCsvMsg(null);
+    try {
+      const res = await importCsv.mutateAsync(file);
+      const n = res.created_count;
+      setCsvMsg({ ok: true, text: `Imported ${n} question${n === 1 ? "" : "s"} from CSV.` });
+    } catch (e: unknown) {
+      const data = (e as { response?: { data?: { detail?: string; errors?: Array<{ row?: number; errors?: Record<string, unknown> }> } } })?.response?.data;
+      let text = normalizeApiError(e).message;
+      if (data?.detail) {
+        text = data.detail;
+        const first = Array.isArray(data.errors) ? data.errors[0] : undefined;
+        if (first?.row && first.errors && typeof first.errors === "object") {
+          const [field, msgs] = Object.entries(first.errors)[0] ?? [];
+          const msg = Array.isArray(msgs) ? String(msgs[0]) : String(msgs ?? "");
+          text = `Row ${first.row}${field ? ` · ${field}` : ""}: ${msg || data.detail}`;
+        }
+      }
+      setCsvMsg({ ok: false, text });
+    } finally {
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  };
 
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
 
@@ -1214,6 +1244,27 @@ export default function ModuleQuestionsPanel(props: {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={(e) => void handleCsvFile(e.target.files?.[0] ?? null)}
+          />
+          <button
+            type="button"
+            onClick={() => csvInputRef.current?.click()}
+            disabled={importCsv.isPending || atCapacity}
+            title={atCapacity ? "This module is already full." : "Append questions from a CSV file"}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
+          >
+            {importCsv.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Upload className="h-3.5 w-3.5" />
+            )}
+            Import CSV
+          </button>
           <button
             type="button"
             onClick={() => void refetch()}
@@ -1255,6 +1306,26 @@ export default function ModuleQuestionsPanel(props: {
           )}
         </div>
       </div>
+
+      {csvMsg && (
+        <div
+          className={`mb-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
+            csvMsg.ok
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              : "border-red-300 bg-red-50 text-red-700"
+          }`}
+        >
+          {csvMsg.ok ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          <span className="min-w-0 flex-1">{csvMsg.text}</span>
+          <button type="button" onClick={() => setCsvMsg(null)} className="shrink-0 opacity-60 hover:opacity-100">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Error banners */}
       {listErrMsg && (

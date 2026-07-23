@@ -24,7 +24,10 @@ export type ModuleQuestionsApi = {
   ) => Promise<unknown>;
   deleteQuestion: (a: number, b: number, questionId: number) => Promise<unknown>;
   reorderQuestionsBulk: (a: number, b: number, orderedIds: number[]) => Promise<unknown>;
+  importCsv: (a: number, b: number, file: File) => Promise<CsvImportResult>;
 };
+
+export type CsvImportResult = { module_id: number; created_count: number; question_ids: number[] };
 
 export const examsModuleQuestionsApi: ModuleQuestionsApi = {
   source: "exams",
@@ -33,6 +36,7 @@ export const examsModuleQuestionsApi: ModuleQuestionsApi = {
   updateQuestion: (t, m, qid, data, isFormData) => examsAdminApi.updateQuestion(t, m, qid, data, isFormData),
   deleteQuestion: (t, m, qid) => examsAdminApi.deleteQuestion(t, m, qid),
   reorderQuestionsBulk: (t, m, ids) => examsAdminApi.reorderQuestionsBulk(t, m, ids),
+  importCsv: (t, m, file) => examsAdminApi.importQuestionsCsv(t, m, file),
 };
 
 function unwrapQuestionsList(data: unknown): AdminModuleQuestion[] {
@@ -119,6 +123,21 @@ export function useDeleteModuleQuestion(
     mutationFn: async (questionId: number) => {
       await api.deleteQuestion(testId, moduleId, questionId);
     },
+    onSettled: async () => {
+      await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(api.source, testId, moduleId) });
+    },
+  });
+}
+
+/** Append questions to this module from a CSV file (all-or-nothing on the server). */
+export function useImportModuleQuestionsCsv(
+  testId: number,
+  moduleId: number,
+  api: ModuleQuestionsApi = examsModuleQuestionsApi,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (file: File): Promise<CsvImportResult> => api.importCsv(testId, moduleId, file),
     onSettled: async () => {
       await qc.invalidateQueries({ queryKey: questionsModuleKeys.list(api.source, testId, moduleId) });
     },

@@ -715,14 +715,19 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
         if self.instance is not None:
             module = self.instance.module
         else:
-            view = self.context.get("view")
-            if view is not None and hasattr(view, "kwargs"):
-                test_pk = view.kwargs.get("test_pk")
-                module_pk = view.kwargs.get("module_pk")
-                if test_pk and module_pk:
-                    module = get_object_or_404(
-                        Module, pk=module_pk, practice_test_id=test_pk
-                    )
+            # Bulk CSV import passes the resolved target Module directly, because
+            # mock/midterm modules have no practice_test and so cannot be found via the
+            # view.kwargs (test_pk, module_pk) lookup below.
+            module = self.context.get("bulk_module")
+            if module is None:
+                view = self.context.get("view")
+                if view is not None and hasattr(view, "kwargs"):
+                    test_pk = view.kwargs.get("test_pk")
+                    module_pk = view.kwargs.get("module_pk")
+                    if test_pk and module_pk:
+                        module = get_object_or_404(
+                            Module, pk=module_pk, practice_test_id=test_pk
+                        )
 
         if module is not None:
             pt = module.practice_test

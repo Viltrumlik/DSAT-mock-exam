@@ -138,6 +138,13 @@ export const mocksAdminApi = {
     });
     return unwrapQuestions(r.data);
   },
+  /** Append questions to a mock module from a CSV file (all-or-nothing on the server). */
+  importModuleQuestionsCsv: async (mockId: number, moduleId: number, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await api.post(`${base}/${mockId}/modules/${moduleId}/questions/bulk-import/`, fd);
+    return r.data as { module_id: number; created_count: number; question_ids: number[] };
+  },
 };
 
 export type MocksAdminApi = typeof mocksAdminApi;
@@ -156,4 +163,5 @@ export const mocksModuleQuestionsApi: ModuleQuestionsApi = {
     mocksAdminApi.updateModuleQuestion(mockId, moduleId, qid, data, isFormData),
   deleteQuestion: (mockId, moduleId, qid) => mocksAdminApi.deleteModuleQuestion(mockId, moduleId, qid),
   reorderQuestionsBulk: (mockId, moduleId, ids) => mocksAdminApi.reorderModuleQuestions(mockId, moduleId, ids),
+  importCsv: (mockId, moduleId, file) => mocksAdminApi.importModuleQuestionsCsv(mockId, moduleId, file),
 };

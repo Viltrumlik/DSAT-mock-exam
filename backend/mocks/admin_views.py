@@ -129,6 +129,42 @@ class AdminMockModuleQuestionViewSet(viewsets.ModelViewSet):
         instance.delete()
         dense_compact_module_orders_locked(module_id)
 
+    @action(detail=False, methods=["post"], url_path="bulk-import")
+    def bulk_import(self, request, mock_pk=None, module_pk=None):
+        """
+        Append questions to this mock module from an uploaded CSV (multipart field
+        ``file``). All-or-nothing: every row is validated through AdminQuestionSerializer;
+        if any row is invalid or the SAT per-module cap would be exceeded, nothing is
+        imported and a 400 lists the offending rows.
+        """
+        from exams.question_csv_import import import_questions_csv
+
+        module = self._module()
+        subject = self._subject()
+        upload = request.FILES.get("file")
+        if upload is None:
+            return Response(
+                {"detail": "Attach a CSV file in the 'file' field."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cap = SAT_MODULE_QUESTION_COUNT.get(subject, 30)
+        subj_label = "Reading & Writing" if subject == READING_WRITING else "Math"
+        cap_label = f"{subj_label} Module {module.module_order}"
+        created, err = import_questions_csv(
+            module=module,
+            subject=subject,
+            raw_bytes=upload.read(),
+            cap=cap,
+            cap_label=cap_label,
+        )
+        if err is not None:
+            return Response(err, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"module_id": module.pk, "created_count": len(created), "question_ids": created},
+            status=status.HTTP_201_CREATED,
+        )
+
     @action(detail=False, methods=["post"], url_path="bulk-reorder")
     def bulk_reorder(self, request, mock_pk=None, module_pk=None):
         ordered = request.data.get("ordered_ids") or []
