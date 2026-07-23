@@ -117,7 +117,7 @@ export default function ReviewCenterPage() {
             return (
               <li key={it.id}>
                 <Link
-                  href={`/review/${tab}/${it.id}?title=${encodeURIComponent(it.title)}`}
+                  href={`/review-center/${tab}/${it.id}?title=${encodeURIComponent(it.title)}`}
                   className="group flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 transition hover:border-primary/40 hover:shadow-sm"
                 >
                   <div className="min-w-0 flex-1">
