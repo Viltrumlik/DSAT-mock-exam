@@ -108,9 +108,22 @@ export function useAutosave({
         // answer grades Omitted. It costs nothing to keep (a stale draft can only
         // fill gaps the server is missing, never override newer server answers),
         // and useModuleSubmit already clears it once the module is submitted.
-      } catch {
+      } catch (e) {
         // Keep the local draft regardless — it is what recovers this work.
         if (cancelled) return;
+        // Version conflict: save_attempt answers a stale expected_version with a
+        // HARD 409 that writes nothing, carrying the canonical attempt in the
+        // body. Adopt it instead of retrying blind — the fire-and-forget leave
+        // flush and pause keepalive both bump the version without this closure
+        // ever seeing it, so re-sending the SAME captured version can only 409
+        // again (the prod "409 burst": initial + 3 backoff retries, all stale).
+        // Applying the snapshot bumps `version`, an effect dep, so the effect
+        // re-runs and re-sends these answers against the fresh version.
+        const conflict = (e as { response?: { status?: number; data?: { attempt?: Attempt } } })?.response;
+        if (conflict?.status === 409 && conflict.data?.attempt) {
+          applyRef.current(conflict.data.attempt);
+          return;
+        }
         if (retries < MAX_RETRIES) {
           retries += 1;
           timer = setTimeout(flush, 2 ** retries * 1000);

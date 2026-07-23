@@ -302,12 +302,34 @@ function invalidateMaskedCsrfToken(): void {
 }
 
 /**
+ * Last-occurrence csrftoken cookie. Only a FALLBACK for when the masked-token
+ * cache is cold (page opened, no axios mutation ran yet, student leaves → the
+ * keepalive pause/answer flush would otherwise go out with NO header and be
+ * rejected "CSRF token missing"). The js-cookie objection above was that it
+ * returns the FIRST occurrence while Django reads the LAST — so this reads the
+ * LAST, matching Django's parse order. Django accepts the unmasked cookie
+ * secret in X-CSRFToken.
+ */
+function lastCsrfCookie(): string | null {
+    try {
+        const matches = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/g);
+        if (!matches || matches.length === 0) return null;
+        const last = matches[matches.length - 1] ?? "";
+        const value = last.slice(last.indexOf("=") + 1);
+        return value ? decodeURIComponent(value) : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Synchronously read the cached masked CSRF token (no network). Fire-and-forget
  * keepalive requests sent on tab close (e.g. the exam runner's auto-pause) cannot
- * await the async fetch, so they reuse the token already cached during the session.
+ * await the async fetch, so they reuse the token already cached during the session,
+ * falling back to the last csrftoken cookie when the cache is still cold.
  */
 export function getCachedCsrfToken(): string | null {
-    return _maskedCsrfToken;
+    return _maskedCsrfToken ?? lastCsrfCookie();
 }
 
 api.interceptors.request.use(async (config) => {
