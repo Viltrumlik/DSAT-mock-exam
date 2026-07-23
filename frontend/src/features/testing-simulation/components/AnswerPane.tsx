@@ -4,6 +4,7 @@ import { Bookmark } from "lucide-react";
 import SafeHtml from "@/components/SafeHtml";
 import type { ExamQuestion } from "../types";
 import { ChoiceList } from "./ChoiceList";
+import { SatColorRule } from "./SatColorRule";
 import { SprInput } from "./SprInput";
 import { renderExamHtml } from "../utils/richContent";
 import { resolveImageUrl } from "../utils/image";
@@ -53,47 +54,38 @@ export const AnswerPane = memo(function AnswerPane({
       style={{ fontSize: `${15 * zoom}px`, ...(calcReserve > 0 ? { paddingLeft: calcReserve } : null), ...style }}
     >
       <div className={`w-full max-w-3xl ${calcReserve > 0 ? "mr-auto" : "mx-auto"}`}>
-        {/* Question header band — coloured block, kept within the centred content. */}
-        <div className="mb-4 flex items-center justify-between rounded-lg bg-stone-100 px-4 py-2.5">
-          <div className="flex items-center gap-6">
-            <span className="flex items-center justify-center rounded-md bg-slate-900 px-3 py-1.5 text-sm font-bold tracking-tight text-white">
-              {displayNumber}
-            </span>
+        {/* Question header: black number block + grey band (Bluebook). */}
+        <div className="mb-0 flex items-stretch overflow-hidden rounded-[3px]">
+          <span className="flex items-center bg-[#151515] px-3 py-1.5 text-lg font-bold tracking-tight text-white">
+            {displayNumber}
+          </span>
+          <div className="flex flex-1 items-center justify-between bg-[#eceef1] px-3">
             <button
               type="button"
               onClick={onToggleFlag}
-              className={`flex items-center text-xs font-bold underline-offset-2 transition-colors ${flagged ? "text-red-600 underline" : "text-slate-500 hover:text-slate-900"}`}
+              className={`flex items-center gap-2 text-[15px] transition-colors ${flagged ? "font-bold text-[#b0122a] underline underline-offset-[3px]" : "text-slate-700 hover:text-slate-900"}`}
             >
-              <span className={`mr-1.5 flex h-5 w-5 items-center justify-center rounded-sm border ${flagged ? "border-red-300" : "border-slate-400"}`}>
-                <Bookmark className={`h-3.5 w-3.5 ${flagged ? "fill-red-600 text-red-600" : "text-slate-400"}`} />
-              </span>
+              <Bookmark className={`h-[19px] w-[17px] ${flagged ? "fill-[#b0122a] text-[#b0122a]" : "fill-none text-slate-500"}`} />
               {flagged ? "Marked for Review" : "Mark for Review"}
             </button>
+            {/* Answer-elimination toggle is meaningless for SPR (no choices). */}
+            {!isSpr && (
+              <button
+                type="button"
+                onClick={onToggleEliminationMode}
+                title="Cross out answer choices"
+                aria-pressed={eliminationMode}
+                className={`relative flex h-[26px] w-[34px] items-center justify-center rounded-[5px] border-[1.5px] transition-colors ${eliminationMode ? "border-[#2b47c9] bg-[#2b47c9] text-white" : "border-slate-500 bg-white text-slate-800 hover:border-slate-700"}`}
+              >
+                <span className="text-[11px] font-extrabold italic leading-none tracking-tight">ABC</span>
+                <span className="absolute left-[3px] right-[3px] top-1/2 h-[1.6px] -translate-y-1/2 -rotate-[10deg] bg-current" />
+              </button>
+            )}
           </div>
-          {/* Answer-elimination toggle is meaningless for SPR (no choices). */}
-          {!isSpr && (
-            <button
-              type="button"
-              onClick={onToggleEliminationMode}
-              title="Eliminate answer choices"
-              className={`flex items-center justify-center rounded-md border-2 p-1 px-1.5 transition-all ${eliminationMode ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
-            >
-              <span className="relative">
-                <span className="text-[10px] font-black italic tracking-tighter">ABC</span>
-                <span className="absolute left-1/2 top-1/2 h-[1.5px] w-full -translate-x-1/2 -translate-y-1/2 rotate-[15deg] bg-current" />
-              </span>
-            </button>
-          )}
         </div>
 
-        {/* Decorative SAT rule */}
-        <div
-          className="mb-8 h-[3px] w-full"
-          style={{
-            background:
-              "repeating-linear-gradient(to right, #b91c1c 0, #b91c1c 48px, transparent 48px, transparent 54px, #ca8a04 54px, #ca8a04 102px, transparent 102px, transparent 108px, #15803d 108px, #15803d 156px, transparent 156px, transparent 162px, #0f172a 162px, #0f172a 210px, transparent 210px, transparent 216px)",
-          }}
-        />
+        {/* SAT multi-colour rule under the question header. */}
+        <SatColorRule className="mb-8 mt-0" />
         {/* Math question figure (single-pane layout has no PassagePane). */}
         {figure && (
           <div className="mb-6 flex justify-center">

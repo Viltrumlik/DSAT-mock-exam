@@ -34,12 +34,12 @@ export function QuestionNavigator({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/20 pb-[68px]" onClick={onClose}>
-      <div className="relative mx-4 w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="relative mx-4 w-full max-w-xl rounded-[3px] bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {/* Downward pointer to the "Question X of Y" button below. */}
         <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-x-8 border-t-8 border-x-transparent border-t-white" />
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-bold tracking-tight text-slate-900">{title}</h3>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700">
+        <div className="relative mb-4">
+          <h3 className="px-8 text-center text-lg font-bold tracking-tight text-slate-900">{title} Questions</h3>
+          <button type="button" onClick={onClose} className="absolute right-0 top-0 text-slate-400 hover:text-slate-700">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -48,7 +48,7 @@ export function QuestionNavigator({
           <span className="flex items-center gap-1.5"><span className="h-3.5 w-3.5 rounded-sm border border-dashed border-slate-400" /> Unanswered</span>
           <span className="flex items-center gap-1.5"><Flag className="h-4 w-4 fill-red-500 text-red-500" /> For Review</span>
         </div>
-        <div className="grid grid-cols-6 gap-x-3 gap-y-2 pt-3">
+        <div className="grid grid-cols-10 gap-x-3 gap-y-3 pt-3">
           {questions.map((q, i) => {
             const answered = Boolean(answers[q.id]);
             const isCurrent = i === currentIndex;
@@ -65,8 +65,8 @@ export function QuestionNavigator({
                   aria-current={isCurrent ? "true" : undefined}
                   className={`relative flex h-10 w-10 items-center justify-center rounded-md text-sm font-bold transition-colors ${
                     answered
-                      ? "border border-slate-800 bg-slate-800 text-white"
-                      : "border border-dashed border-slate-400 text-slate-700 hover:border-slate-600"
+                      ? "border border-[#253985] bg-[#253985] text-white"
+                      : "border border-dashed border-slate-400 text-[#2b47c9] hover:border-slate-600"
                   } ${isCurrent ? "underline underline-offset-2" : ""}`}
                 >
                   {i + 1}
@@ -83,7 +83,7 @@ export function QuestionNavigator({
               onClose();
               onGoToReview();
             }}
-            className="rounded-full border-2 border-blue-600 px-6 py-2 text-sm font-bold text-blue-700 transition-colors hover:bg-blue-50"
+            className="rounded-full border-2 border-[#2b47c9] px-6 py-2 text-sm font-bold text-[#2b47c9] transition-colors hover:bg-blue-50"
           >
             Go to Review Page
           </button>

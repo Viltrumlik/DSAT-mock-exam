@@ -33,6 +33,7 @@ import { ReportProblemModal } from "@/features/question-reports/ReportProblemMod
 import { SatColorRule } from "../components/SatColorRule";
 import { PassagePane } from "../components/PassagePane";
 import { AnswerPane } from "../components/AnswerPane";
+import { DirectionsOverlay } from "../components/DirectionsOverlay";
 import { ExamFooter } from "../components/ExamFooter";
 import { QuestionNavigator } from "../components/QuestionNavigator";
 import { ModuleTransitionOverlay } from "../components/ModuleTransitionOverlay";
@@ -219,6 +220,14 @@ export function ExamRunnerPage() {
   const [splitPct, setSplitPct] = useState(50);
   const [transitionTo, setTransitionTo] = useState<number | null>(null);
   const zoom = tools.zoom;
+
+  // Directions popover hangs from just below the header — measure its bottom on open
+  // so it anchors correctly regardless of header height / zoom.
+  const topChromeRef = useRef<HTMLDivElement>(null);
+  const [dirTop, setDirTop] = useState(84);
+  useEffect(() => {
+    if (showDirections && topChromeRef.current) setDirTop(topChromeRef.current.getBoundingClientRect().bottom);
+  }, [showDirections]);
 
   // ── Navigation freeze (item: Next / Back Freeze Protection) ──────────────────
   // After Next/Back, lock navigation for 500ms so a double-click (or held key)
@@ -758,7 +767,6 @@ export function ExamRunnerPage() {
   // ── Render gates ────────────────────────────────────────────────────────────
   const questions = liveQuestions;
   const twoPane = !mathQuestions; // RW shows passage + answers; Math is single column
-  const answeredCount = questions.filter((q) => Boolean(answers[q.id])).length;
 
   // A duplicate tab must not run a second timer/poller for the same attempt.
   // (Engine hooks above are already suspended via pollingEnabled / paused / enabled.)
@@ -911,11 +919,12 @@ export function ExamRunnerPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-white">
+    <div className="ts-runner flex h-screen flex-col bg-white">
       {/* The simulation fills the full viewport edge-to-edge — no side gutters or capped
           width. Shared by every exam type (pastpaper / practice / midterm / mock) since
           they all render this runner. */}
       <div className="flex h-full w-full flex-col bg-white">
+      <div ref={topChromeRef} className="shrink-0">
       <ExamHeader
         moduleTitle={moduleLabel(attempt)}
         secondsLeft={secondsLeft}
@@ -938,6 +947,7 @@ export function ExamRunnerPage() {
 
       />
       <SatColorRule />
+      </div>
 
       <ReportProblemModal
         open={reportOpen}
@@ -955,10 +965,18 @@ export function ExamRunnerPage() {
             <PassagePane question={currentQuestion} zoom={zoom} style={{ width: `${splitPct}%`, flex: "none" }} />
             <div
               onMouseDown={onDividerDown}
-              className="w-1 shrink-0 cursor-col-resize bg-slate-200 transition-colors hover:bg-blue-400"
+              className="relative w-[2px] shrink-0 cursor-col-resize select-none bg-slate-300"
               role="separator"
               aria-orientation="vertical"
-            />
+            >
+              {/* Bluebook drag handle (dark pill with double-arrow). */}
+              <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-11 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-[#1b1b1b] text-white">
+                <svg viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
+                  <path d="M8 7l-5 5 5 5V7z" />
+                  <path d="M16 7l5 5-5 5V7z" />
+                </svg>
+              </span>
+            </div>
             <AnswerPane
               question={currentQuestion}
               displayNumber={currentIndex + 1}
@@ -1024,7 +1042,6 @@ export function ExamRunnerPage() {
       <SatColorRule />
       <ExamFooter
         navLabel={`Question ${currentIndex + 1} of ${questions.length}`}
-        progressLabel={`${answeredCount} of ${questions.length} answered`}
         onToggleNavigator={() => setNavigatorOpen((v) => !v)}
         canGoBack={currentIndex > 0}
         onBack={guardedPrev}
@@ -1048,6 +1065,17 @@ export function ExamRunnerPage() {
         onJump={goTo}
         onGoToReview={() => setReviewOpen(true)}
       />
+
+      {/* Directions popover — hangs from the header's "Directions" button, covers
+          the passage region, and leaves the question visible (Bluebook). */}
+      {showDirections && (
+        <DirectionsOverlay
+          anchorBottom={dirTop}
+          widthPct={twoPane ? splitPct : 50}
+          subject={subjectKind(attempt)}
+          onClose={() => setShowDirections(false)}
+        />
+      )}
 
       {/* All SAT-experience tool overlays (calculator, reference, notes, help,
           highlight popover). Single mount point; each is engine-isolated. */}

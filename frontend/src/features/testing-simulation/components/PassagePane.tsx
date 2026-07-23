@@ -16,10 +16,10 @@ export const PassagePane = memo(function PassagePane({ question, zoom, style }: 
   const figure = resolveImageUrl(question.question_image);
   return (
     <div
-      className="min-w-0 overflow-y-auto border-r border-slate-200 p-10"
-      style={{ fontSize: `${16 * zoom}px`, ...style }}
+      className="min-w-0 overflow-y-auto p-10"
+      style={{ fontSize: `${17 * zoom}px`, ...style }}
     >
-      <div id="ts-passage" className="prose prose-slate max-w-none font-sans leading-relaxed text-slate-800">
+      <div id="ts-passage" className="prose prose-slate max-w-none leading-relaxed text-slate-900">
         {figure && (
           <div className="mb-6 flex justify-center rounded-lg border border-slate-100 bg-slate-50 p-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}

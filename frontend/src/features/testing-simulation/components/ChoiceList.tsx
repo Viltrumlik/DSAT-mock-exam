@@ -29,26 +29,26 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
               type="button"
               onClick={() => !isEliminated && onSelect(key)}
               aria-pressed={isSelected}
-              className={`flex min-h-[50px] flex-1 items-center rounded-xl border-2 p-3 px-4 transition-all ${
+              className={`flex min-h-[56px] flex-1 items-center rounded-[11px] transition-colors ${
                 isSelected
-                  ? "border-blue-600 bg-blue-50/20 outline outline-2 outline-offset-1 outline-blue-600"
+                  ? "border-2 border-[#2b47c9] bg-[#f2f5fd] px-[17px] py-3"
                   : isEliminated
-                    ? "cursor-not-allowed border-slate-100 opacity-50 grayscale"
-                    : "border-slate-300 bg-white hover:border-slate-400"
+                    ? "cursor-not-allowed border border-slate-200 px-[18px] py-[13px] opacity-50"
+                    : "border border-[#c8ccd4] bg-white px-[18px] py-[13px] hover:border-slate-400"
               }`}
             >
               <span
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 font-[Georgia] text-sm font-bold ${
+                className={`flex h-[29px] w-[29px] shrink-0 items-center justify-center rounded-full border-[1.5px] text-[15px] font-semibold ${
                   isSelected
-                    ? "border-blue-600 bg-blue-600 text-white"
+                    ? "border-[#2b47c9] bg-[#2b47c9] text-white"
                     : isEliminated
                       ? "border-slate-300 text-slate-400"
-                      : "border-slate-400 text-slate-800"
+                      : "border-[#757b86] text-slate-800"
                 }`}
               >
                 {key}
               </span>
-              <span className={`ml-4 w-full text-left font-[Georgia] text-[15px] text-slate-800 ${isEliminated ? "line-through decoration-slate-400" : ""}`}>
+              <span className={`ml-4 w-full text-left font-[Georgia] text-[16px] leading-snug text-slate-900 ${isEliminated ? "line-through decoration-slate-400" : ""}`}>
                 {img ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={img} alt={`Option ${key}`} className="max-h-[200px] max-w-full rounded-lg border border-slate-100 object-contain shadow-sm" />
