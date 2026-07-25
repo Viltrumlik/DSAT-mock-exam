@@ -118,7 +118,11 @@ export default function AssessmentResultPage() {
     if (retrying) return;
     setRetrying(true);
     try {
-      const att = await start.mutateAsync(homeworkId ? { homework_id: homeworkId } : { assignment_id: aid });
+      // Fall back to the loaded attempt's homework_id when the ?homework= param is missing,
+      // so a bundle (assignment with several assessments) resolves instead of 400ing.
+      const effHwId =
+        homeworkId ?? ((attempt as Record<string, unknown> | null)?.homework_id as number | undefined);
+      const att = await start.mutateAsync(effHwId ? { homework_id: effHwId } : { assignment_id: aid });
       router.push(`/assessments/attempt/${att.id}`);
     } catch (e) {
       pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
