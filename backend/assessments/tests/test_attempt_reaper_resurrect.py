@@ -137,6 +137,41 @@ class ReaperAndResurrectTests(TestCase):
         )
         self.assertEqual(r2.status_code, 200, r2.content)
 
+    @override_settings(
+        ASSESSMENT_ATTEMPT_PAUSED_INACTIVITY_TIMEOUT_SECONDS=72 * 3600,
+        ASSESSMENT_ATTEMPT_RESURRECT_WINDOW_SECONDS=48 * 3600,
+        ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS=6 * 3600,
+    )
+    def test_paused_attempt_reaped_then_resurrected_does_not_re_expire(self):
+        # Full flow of the confirmed bug: an attempt PAUSED for >72h is reaped by
+        # the paused leash, then the student returns and resumes. The whole pause
+        # window must be banked so elapsed (active) time stays ~30min (<= 6h) and
+        # the next submit does NOT 410 "Attempt expired". Before the fix, resurrect
+        # banked only now-abandoned_at (~0s), dropping the ~72h pause → elapsed
+        # inflated past 6h → the attempt instantly re-expired and was unrecoverable.
+        now = timezone.now()
+        att = self._mk_attempt(
+            started_at=now - timedelta(hours=73),
+            last_activity_at=now - timedelta(hours=72, minutes=30),
+            paused_at=now - timedelta(hours=72, minutes=30),  # ~30min worked, then paused
+        )
+        # Reaper abandons it (paused beyond the 72h leash).
+        abandon_inactive_attempts()
+        att.refresh_from_db()
+        self.assertEqual(att.status, AssessmentAttempt.STATUS_ABANDONED)
+
+        # Student returns and resumes → resurrected, full pause banked.
+        r = self.client.post("/api/assessments/attempts/resume/", {"attempt_id": att.id}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data["status"], AssessmentAttempt.STATUS_IN_PROGRESS)
+        att.refresh_from_db()
+        self.assertGreaterEqual(att.paused_seconds, int(timedelta(hours=72).total_seconds()))
+        self.assertLessEqual(att.elapsed_seconds(), 6 * 3600)  # active time is fine
+
+        # The final submit must succeed (NOT 410 "Attempt expired").
+        rs = self.client.post("/api/assessments/attempts/submit/", {"attempt_id": att.id}, format="json")
+        self.assertIn(rs.status_code, (200, 202), rs.content)
+
     def test_resume_never_resurrects_a_submitted_attempt(self):
         now = timezone.now()
         att = self._mk_attempt(

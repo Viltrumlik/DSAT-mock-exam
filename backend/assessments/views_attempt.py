@@ -440,9 +440,13 @@ class SubmitAttemptView(APIView):
             )
         if att.status == AssessmentAttempt.STATUS_ABANDONED:
             return Response({"detail": "Attempt is abandoned."}, status=status.HTTP_400_BAD_REQUEST)
-        # Max lifetime gate.
+        # Max lifetime gate — measured on *elapsed* (active) time, NOT raw wall-clock,
+        # so a paused window (save-and-exit overnight) does not burn the lifetime. This
+        # MUST match the save-answer gate and the resurrect gate; using wall-clock here
+        # (the previous bug) rejected the final submit of a student who legitimately
+        # paused overnight — they could resume and answer, but not submit their work.
         max_life = int(getattr(dj_settings, "ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS", 6 * 60 * 60) or 0)
-        if max_life > 0 and att.started_at and (timezone.now() - att.started_at).total_seconds() > max_life:
+        if max_life > 0 and att.started_at and att.elapsed_seconds(timezone.now()) > max_life:
             return Response({"detail": "Attempt expired."}, status=status.HTTP_410_GONE)
 
         aset = att.homework.assessment_set
@@ -698,14 +702,21 @@ class ResumeAttemptView(APIView):
             max_life = int(getattr(dj_settings, "ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS", 6 * 60 * 60) or 0)
             gap = max(0, int((now - att.abandoned_at).total_seconds())) if att.abandoned_at else 0
             recent = window_s <= 0 or gap <= window_s
-            # Bank the dead gap as pause (in memory first) so it is neither billed
-            # as active time nor counted against the lifetime gate.
-            att.paused_seconds = int(att.paused_seconds or 0) + gap
+            # Bank the dead time as pause (in memory first) so it is neither billed as
+            # active time nor counted against the lifetime gate. If the reaper abandoned
+            # this attempt WHILE IT WAS PAUSED (the 72h paused leash), paused_at is still
+            # set and the WHOLE pause window (paused_at..now) is dead — banking only the
+            # post-abandon gap would silently drop it, inflating elapsed_seconds so the
+            # attempt instantly re-expires (410) on the next save/submit and becomes
+            # unrecoverable. Clear paused_at here (before the lifetime check) so the check
+            # sees the corrected banked total with no in-flight double count.
+            dead = max(0, int((now - att.paused_at).total_seconds())) if att.paused_at else gap
+            att.paused_seconds = int(att.paused_seconds or 0) + dead
+            att.paused_at = None
             within_life = not (max_life > 0 and att.started_at and att.elapsed_seconds(now) > max_life)
             if recent and within_life:
                 att.status = AssessmentAttempt.STATUS_IN_PROGRESS
                 att.abandoned_at = None
-                att.paused_at = None
                 att.last_activity_at = now
                 att.save(update_fields=["status", "abandoned_at", "paused_at", "paused_seconds", "last_activity_at"])
                 _audit_attempt(
