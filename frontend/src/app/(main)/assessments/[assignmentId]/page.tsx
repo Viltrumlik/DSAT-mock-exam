@@ -71,10 +71,19 @@ export default function AssessmentStartPage() {
   const dueSoon = lifecycleState === "DUE_SOON";
   const relDueLabel = formatAssignmentDue(meta?.due_at);
 
+  // The ?homework= URL param can be lost (bookmark, shared link, a redirect that drops
+  // the query), but the loaded in-progress attempt already knows its homework. Fall back
+  // to it so a bundle (an assignment with several assessments) resolves instead of 400ing
+  // "This homework has multiple assessments — pass homework_id."
+  const effectiveHomeworkId =
+    homeworkId ?? ((attempt as Record<string, unknown> | null)?.homework_id as number | undefined);
+
   const begin = async () => {
     setStartErr(null);
     try {
-      const att = await start.mutateAsync(homeworkId ? { homework_id: homeworkId } : { assignment_id: aid });
+      const att = await start.mutateAsync(
+        effectiveHomeworkId ? { homework_id: effectiveHomeworkId } : { assignment_id: aid },
+      );
       router.push(`/assessments/attempt/${att.id}`);
     } catch (e) {
       setStartErr(normalizeApiError(e).message);
