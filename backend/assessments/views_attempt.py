@@ -91,14 +91,36 @@ class StartAttemptView(APIView):
             hw = base_qs.filter(pk=int(homework_id)).first()
         else:
             # Back-compat: resolve by assignment. A bundle may hold several
-            # assessments — then homework_id is required to disambiguate.
+            # assessments — then homework_id is normally required to disambiguate.
             hws = list(base_qs.filter(assignment_id=int(assignment_id)))
             if len(hws) > 1:
-                return Response(
-                    {"detail": "This homework has multiple assessments — pass homework_id."},
-                    status=status.HTTP_400_BAD_REQUEST,
+                # The ?homework= disambiguator can be lost on resume (a bookmark,
+                # a link that dropped the query, a stale cached page). Rather than
+                # hard-fail the student with "pass homework_id", resume the attempt
+                # they already have in flight: if exactly one of the bundle's
+                # assessments has an in-progress attempt for this student, that is
+                # unambiguously the one "Resume" means. Only when it is genuinely
+                # ambiguous (no in-progress attempt, or two different assessments
+                # both mid-flight) do we still ask the client to specify.
+                hw_ids = [h.id for h in hws]
+                resumable = list(
+                    AssessmentAttempt.objects.filter(
+                        homework_id__in=hw_ids,
+                        student=request.user,
+                        status=AssessmentAttempt.STATUS_IN_PROGRESS,
+                    ).order_by("-started_at", "-id")
                 )
-            hw = hws[0] if hws else None
+                distinct_hw_ids = {a.homework_id for a in resumable}
+                if len(distinct_hw_ids) == 1:
+                    target_id = resumable[0].homework_id
+                    hw = next(h for h in hws if h.id == target_id)
+                else:
+                    return Response(
+                        {"detail": "This homework has multiple assessments — pass homework_id."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            else:
+                hw = hws[0] if hws else None
         if not hw:
             return Response({"detail": "Assessment homework not found."}, status=status.HTTP_404_NOT_FOUND)
 
