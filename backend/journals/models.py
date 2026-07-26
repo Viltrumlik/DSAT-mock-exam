@@ -173,7 +173,10 @@ class JournalLesson(models.Model):
     # --- Homework template fields (identical semantics to classes.Assignment) ---
     title = models.CharField(max_length=200, blank=True, default="")
     instructions = models.TextField(blank=True, default="")
+    # Several links per brief. ``external_urls`` (list) is the source of truth; the singular
+    # ``external_url`` mirrors the first so has_content / release / clients keep working.
     external_url = models.URLField(blank=True, default="")
+    external_urls = models.JSONField(default=list, blank=True)
     attachment_file = models.FileField(upload_to="journal_files/", null=True, blank=True)
     allow_file_upload = models.BooleanField(default=False)
     practice_scope = models.CharField(
@@ -355,7 +358,9 @@ class JournalClasswork(models.Model):
     # --- New topic (authored like a homework brief) ---
     new_topic_title = models.CharField(max_length=200, blank=True, default="")
     new_topic_instructions = models.TextField(blank=True, default="")
+    # Several links on the new-topic block; singular field mirrors the first (see above).
     new_topic_external_url = models.URLField(blank=True, default="")
+    new_topic_external_urls = models.JSONField(default=list, blank=True)
     new_topic_attachment_file = models.FileField(
         upload_to="journal_files/", null=True, blank=True
     )

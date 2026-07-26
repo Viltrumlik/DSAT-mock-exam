@@ -108,6 +108,7 @@ export type HomeworkReview = {
   title: string;
   instructions: string;
   external_url: string;
+  external_urls: string[];
   assessments: LessonAssessment[];
   practice_test_ids: number[];
   practice_test_pack_ids: number[];
@@ -129,6 +130,7 @@ export type Classwork = {
   new_topic_title: string;
   new_topic_instructions: string;
   new_topic_external_url: string;
+  new_topic_external_urls: string[];
   new_topic_practice_test_ids: number[];
   new_topic_practice_test_pack_ids: number[];
   new_topic_assessments: LessonAssessment[];
@@ -160,6 +162,7 @@ export type LessonDetail = {
   title: string;
   instructions: string;
   external_url: string;
+  external_urls: string[];
   allow_file_upload: boolean;
   practice_scope: PracticeScope;
   practice_test_ids: number[];

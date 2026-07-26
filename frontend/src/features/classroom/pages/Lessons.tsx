@@ -16,6 +16,7 @@ import {
   Check,
   ChevronRight,
   Clock,
+  ExternalLink,
   GraduationCap,
   Timer,
 } from "lucide-react";
@@ -37,6 +38,30 @@ import {
 } from "../lessonsHooks";
 import type { LessonItem, LessonRow } from "../lessonsApi";
 import type { ClassroomWithRole } from "../types";
+
+/** Read-only list of a lesson's external links (prefers the multi list, falls back to
+ *  the legacy single link) so a teacher can see and share them with the class. */
+function LessonLinks({ urls, single }: { urls?: string[]; single?: string }) {
+  const list = urls?.length ? urls : single ? [single] : [];
+  if (list.length === 0) return null;
+  return (
+    <ul className="mt-3 space-y-1.5">
+      {list.map((url, i) => (
+        <li key={i}>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex max-w-full items-center gap-2 text-sm text-primary hover:underline"
+          >
+            <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
+            <span className="truncate">{url}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "No date";
@@ -191,6 +216,7 @@ function ClassworkPanel({
             {cw.new_topic.instructions}
           </p>
         )}
+        <LessonLinks urls={cw.new_topic.external_urls} single={cw.new_topic.external_url} />
         {cw.new_topic.items.length > 0 ? (
           <ul className="mt-3 divide-y divide-border">
             {cw.new_topic.items.map((it) => (
@@ -305,6 +331,7 @@ function HomeworkPanel({
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">No instructions written.</p>
         )}
+        <LessonLinks urls={hw.external_urls} single={hw.external_url} />
         <ConfirmDialog
           open={confirmUnapproved}
           title="Some content hasn't been approved yet"

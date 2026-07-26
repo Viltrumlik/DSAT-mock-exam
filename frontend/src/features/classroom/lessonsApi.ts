@@ -60,6 +60,7 @@ export interface LessonDetail extends LessonRow {
   homework: {
     instructions: string;
     external_url: string;
+    external_urls: string[];
     allow_file_upload: boolean;
     practice_test_ids: number[];
     practice_test_pack_ids: number[];
@@ -69,7 +70,7 @@ export interface LessonDetail extends LessonRow {
   classwork?: {
     timetable: { key: string; label: string; minutes: number }[];
     total_minutes: number;
-    new_topic: { title: string; instructions: string; external_url: string; minutes: number; items: LessonItem[] };
+    new_topic: { title: string; instructions: string; external_url: string; external_urls: string[]; minutes: number; items: LessonItem[] };
     exercises: { minutes: number; items: LessonItem[] };
     homework_review_minutes: number;
     break_minutes: number;

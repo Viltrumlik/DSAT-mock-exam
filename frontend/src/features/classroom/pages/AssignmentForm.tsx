@@ -22,12 +22,13 @@ import {
   crTextareaClass,
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
+import MultiLinkInput from "@/components/MultiLinkInput";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { formatApiErrorForToast } from "@/lib/apiError";
 import {
   ArrowLeft, BookOpen, Check, ClipboardList, Clock, FlaskConical, Inbox, Layers,
-  Link2, Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
+  Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
 } from "lucide-react";
 
 type PastpaperRow = Record<string, unknown> & {
@@ -110,7 +111,9 @@ type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment"; ti
 export default function AssignmentForm({ classId, editingAssignment = null, onCancel, onSaved }: Props) {
   const isEditing = editingAssignment != null;
 
-  const [newAsg, setNewAsg] = useState({ title: "", instructions: "", external_url: "" });
+  const [newAsg, setNewAsg] = useState({ title: "", instructions: "" });
+  // Several external links per homework (was a single string). Raw rows; trimmed on save.
+  const [links, setLinks] = useState<string[]>([]);
   // Whether students may upload a file as their submission (independent of any
   // attached pastpaper/assessment — both can coexist, so manual + auto grading).
   const [allowFileUpload, setAllowFileUpload] = useState(false);
@@ -205,7 +208,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const givenAssessmentSets = useMemo(() => filteredAssessmentSets.filter((a) => a.already_assigned), [filteredAssessmentSets]);
 
   const resetForm = () => {
-    setNewAsg({ title: "", instructions: "", external_url: "" });
+    setNewAsg({ title: "", instructions: "" });
+    setLinks([]);
     setAllowFileUpload(false);
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
@@ -269,8 +273,15 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     setNewAsg({
       title: String(editingAssignment.title ?? ""),
       instructions: instrValue,
-      external_url: String(editingAssignment.external_url ?? ""),
     });
+    // Prefer the multi `external_urls` list; fall back to the legacy single `external_url`.
+    const rawLinks = editingAssignment.external_urls;
+    if (Array.isArray(rawLinks) && rawLinks.length > 0) {
+      setLinks(rawLinks.map((u) => String(u)));
+    } else {
+      const single = String(editingAssignment.external_url ?? "").trim();
+      setLinks(single ? [single] : []);
+    }
     // ── Assessments ── prefer the multi `assessment_homeworks` array; fall back to
     // the legacy single `assessment_homework`.
     const nextAssessmentIds = new Set<number>();
@@ -360,7 +371,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         const body: Record<string, unknown> = {
           title: newAsg.title.trim(),
           instructions: newAsg.instructions,
-          external_url: newAsg.external_url.trim() || "",
+          // Always send the full list (even empty) so the backend can add AND clear links.
+          external_urls: links.map((s) => s.trim()).filter(Boolean),
           practice_test: null,
           practice_test_ids: testIds.length > 0 ? testIds : null,
           practice_test_pack_ids: packIds.length > 0 ? packIds : null,
@@ -385,7 +397,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       const fd = new FormData();
       fd.append("title", newAsg.title.trim());
       fd.append("instructions", newAsg.instructions);
-      if (newAsg.external_url.trim()) fd.append("external_url", newAsg.external_url.trim());
+      const cleanLinks = links.map((s) => s.trim()).filter(Boolean);
+      if (cleanLinks.length > 0) fd.append("external_urls", JSON.stringify(cleanLinks));
 
       // A resource counts only if the teacher actually selected it.
       if (selectedTestIds.size > 0) {
@@ -508,7 +521,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     ? "Add a title to get started."
     : !hasInstructions
       ? "Add instructions for students."
-      : cartItems.length === 0 && !allowFileUpload && !newAsg.external_url.trim() && asgFiles.length === 0
+      : cartItems.length === 0 && !allowFileUpload && !links.some((s) => s.trim()) && asgFiles.length === 0
         ? "Add content, a file upload, or a link — then publish."
         : "Ready to publish.";
 
@@ -844,12 +857,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 </button>
               </div>
 
-              {/* External link */}
-              <ClassroomField label="External link" hint="Add a link to outside material, like a video or article." htmlFor="asg-url">
-                <div className="relative">
-                  <Link2 className="pointer-events-none absolute left-3.5 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-muted-foreground" />
-                  <input id="asg-url" type="url" value={newAsg.external_url} onChange={(e) => setNewAsg((p) => ({ ...p, external_url: e.target.value }))} placeholder="https://example.com/resource" className={`${crInputClass} pl-10`} />
-                </div>
+              {/* External links */}
+              <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles.">
+                <MultiLinkInput value={links} onChange={setLinks} inputClassName={crInputClass} idPrefix="asg-url" />
               </ClassroomField>
 
               {/* Files */}

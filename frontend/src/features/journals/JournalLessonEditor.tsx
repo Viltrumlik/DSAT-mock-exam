@@ -30,9 +30,10 @@ import {
   crTextareaClass,
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
+import MultiLinkInput from "@/components/MultiLinkInput";
 import {
   ArrowLeft, BookOpen, Check, ClipboardList, Clock, GraduationCap, Inbox, Layers,
-  Link2, Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
+  Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
 } from "lucide-react";
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
@@ -70,7 +71,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   // form state
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [externalUrl, setExternalUrl] = useState("");
+  const [links, setLinks] = useState<string[]>([]);
   const [allowFileUpload, setAllowFileUpload] = useState(false);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
@@ -101,7 +102,9 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         // prefill
         setTitle(l.title || "");
         setInstructions(l.instructions || "");
-        setExternalUrl(l.external_url || "");
+        setLinks(
+          l.external_urls?.length ? l.external_urls : l.external_url ? [l.external_url] : [],
+        );
         setAllowFileUpload(l.allow_file_upload);
         if (l.practice_scope === "MATH" || l.practice_scope === "ENGLISH" || l.practice_scope === "BOTH") setPracticeScope(l.practice_scope);
         setSelectedAssessmentIds(new Set(l.assessments.map((a) => a.assessment_set_id)));
@@ -208,7 +211,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
     cartItems.length > 0 ||
     allowFileUpload ||
     files.length > 0 ||
-    externalUrl.trim().length > 0 ||
+    links.some((s) => s.trim().length > 0) ||
     (lesson?.attachment_urls.length ?? 0) > 0;
   const ready = hasInstructions && hasContent;
 
@@ -219,7 +222,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
       const body: Record<string, unknown> = {
         title: title.trim(),
         instructions,
-        external_url: externalUrl.trim(),
+        external_urls: links.map((s) => s.trim()).filter(Boolean),
         allow_file_upload: allowFileUpload,
         practice_scope: practiceScope,
         assessment_set_ids: [...selectedAssessmentIds],
@@ -503,11 +506,8 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                 </button>
               </div>
 
-              <ClassroomField label="External link" hint="Add a link to outside material, like a video or article." htmlFor="jl-url">
-                <div className="relative">
-                  <Link2 className="pointer-events-none absolute left-3.5 top-1/2 h-[15px] w-[15px] -translate-y-1/2 text-muted-foreground" />
-                  <input id="jl-url" type="url" value={externalUrl} onChange={(e) => setExternalUrl(e.target.value)} placeholder="https://example.com/resource" className={`${crInputClass} pl-10`} />
-                </div>
+              <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles.">
+                <MultiLinkInput value={links} onChange={setLinks} inputClassName={crInputClass} idPrefix="jl-url" />
               </ClassroomField>
 
               <ClassroomField label="Files" hint="PDF, Word, Excel, PowerPoint, text, or images — students can download these.">

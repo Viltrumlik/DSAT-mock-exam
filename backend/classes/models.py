@@ -308,7 +308,12 @@ class Assignment(models.Model):
     module = models.ForeignKey(
         Module, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_assignments"
     )
+    # A homework can carry SEVERAL links. ``external_urls`` (list) is the source of truth;
+    # the singular ``external_url`` is kept as a mirror of the first link so every existing
+    # reader (student serializer, content_count, journal release copy) keeps working. See
+    # classes.link_utils.resolve_links — the two are always written together.
     external_url = models.URLField(blank=True)
+    external_urls = models.JSONField(default=list, blank=True)
     attachment_file = models.FileField(upload_to="homework_files/", null=True, blank=True)
     # Whether students may upload a file as their submission. Independent of any
     # attached auto-graded content — a homework can have BOTH (a pastpaper/assessment

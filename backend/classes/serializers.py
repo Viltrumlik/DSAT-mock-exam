@@ -252,6 +252,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
     attachment_file_url = serializers.SerializerMethodField(read_only=True)
     attachment_urls = serializers.SerializerMethodField(read_only=True)
     external_url = serializers.CharField(required=False, allow_blank=True)
+    # The full link list. Written through validate() from either `external_urls` (list /
+    # JSON string) or the legacy singular `external_url`, kept mirrored so old and new
+    # clients both work; represented read-only so there is no ambiguous multipart parsing.
+    external_urls = serializers.JSONField(read_only=True)
     mock_exam = serializers.PrimaryKeyRelatedField(
         queryset=MockExam.objects.all(), required=False, allow_null=True
     )
@@ -310,6 +314,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "assessment_progress",
             "module",
             "external_url",
+            "external_urls",
             "allow_file_upload",
             "attachment_file",
             "attachment_file_url",
@@ -887,6 +892,25 @@ class AssignmentSerializer(serializers.ModelSerializer):
         # Reuse DRF URL validator via URLField
         URLValidator()(normalized)
         return normalized
+
+    def validate(self, attrs):
+        """Reconcile the multi-link list with the legacy singular field.
+
+        A homework carries several links: ``external_urls`` is the source of truth and
+        ``external_url`` mirrors its first entry. Read the raw payload (whichever key the
+        client sent) so multipart JSON-string and JSON-body arrays both work, and inject
+        the cleaned pair — leaving both untouched when the client sends neither key.
+        """
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from .link_utils import resolve_links
+
+        try:
+            resolved = resolve_links(getattr(self, "initial_data", {}) or {})
+        except DjangoValidationError as e:
+            raise serializers.ValidationError({"external_urls": list(e.messages)})
+        if resolved is not None:
+            attrs["external_urls"], attrs["external_url"] = resolved
+        return attrs
 
 
 class SubmissionFileSerializer(serializers.ModelSerializer):

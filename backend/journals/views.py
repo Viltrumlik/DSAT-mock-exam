@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
@@ -19,6 +20,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access.permissions import CanManageJournals
+from classes.link_utils import clean_external_urls, first_url, resolve_links
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import services, structure
@@ -47,6 +49,19 @@ _TRUTHY = {"1", "true", "True", "yes", "on"}
 
 
 # --------------------------------------------------------------------------- helpers
+
+def _links_lenient(list_raw, single_raw):
+    """Best-effort link normalization for internal copy/import paths.
+
+    Prefers the list payload, falls back to the legacy single value, and drops (rather
+    than 400s on) an invalid URL — the caller is a trusted export/copy, not a user form.
+    """
+    raw = list_raw if list_raw is not None else single_raw
+    try:
+        return clean_external_urls(raw)
+    except DjangoValidationError:
+        return []
+
 
 def _parse_id_list(raw):
     """Coerce a multipart/JSON value into a list[int]. None → None (field absent)."""
@@ -249,6 +264,7 @@ class JournalExportView(APIView):
                 "title": l.title,
                 "instructions": l.instructions,
                 "external_url": l.external_url,
+                "external_urls": list(l.external_urls or []),
                 "allow_file_upload": l.allow_file_upload,
                 "practice_scope": l.practice_scope,
                 "practice_test_ids": l.practice_test_ids or [],
@@ -272,6 +288,7 @@ class JournalExportView(APIView):
                     "new_topic_title": cw.new_topic_title,
                     "new_topic_instructions": cw.new_topic_instructions,
                     "new_topic_external_url": cw.new_topic_external_url,
+                    "new_topic_external_urls": list(cw.new_topic_external_urls or []),
                     "new_topic_practice_test_ids": cw.new_topic_practice_test_ids or [],
                     "new_topic_practice_test_pack_ids": cw.new_topic_practice_test_pack_ids or [],
                     "exercise_practice_test_ids": cw.exercise_practice_test_ids or [],
@@ -360,7 +377,10 @@ class JournalImportView(APIView):
 
             lesson.title = row.get("title") or ""
             lesson.instructions = row.get("instructions") or ""
-            lesson.external_url = row.get("external_url") or ""
+            lesson.external_urls = _links_lenient(
+                row.get("external_urls"), row.get("external_url")
+            )
+            lesson.external_url = first_url(lesson.external_urls)
             lesson.allow_file_upload = bool(row.get("allow_file_upload"))
             lesson.practice_scope = row.get("practice_scope") or JournalLesson.PRACTICE_SCOPE_BOTH
             lesson.practice_test_ids = row.get("practice_test_ids") or None
@@ -391,7 +411,11 @@ class JournalImportView(APIView):
                         setattr(cw, f, int(cw_row[f]))
                 cw.new_topic_title = cw_row.get("new_topic_title") or ""
                 cw.new_topic_instructions = cw_row.get("new_topic_instructions") or ""
-                cw.new_topic_external_url = cw_row.get("new_topic_external_url") or ""
+                cw.new_topic_external_urls = _links_lenient(
+                    cw_row.get("new_topic_external_urls"),
+                    cw_row.get("new_topic_external_url"),
+                )
+                cw.new_topic_external_url = first_url(cw.new_topic_external_urls)
                 cw.new_topic_practice_test_ids = cw_row.get("new_topic_practice_test_ids") or None
                 cw.new_topic_practice_test_pack_ids = (
                     cw_row.get("new_topic_practice_test_pack_ids") or None
@@ -658,6 +682,7 @@ class LessonDetailView(APIView):
     _CONTENT_KEYS = {
         "instructions",
         "external_url",
+        "external_urls",
         "practice_scope",
         "assessment_set_ids",
         "practice_test_ids",
@@ -738,6 +763,20 @@ class LessonDetailView(APIView):
         ser = JournalLessonWriteSerializer(lesson, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         ser.save()
+
+        # Multi-link: external_urls (list) is the source of truth, external_url mirrors the
+        # first. Handled here, not in the serializer, so multipart JSON-string and JSON-body
+        # arrays both work and the two fields can never drift.
+        try:
+            resolved = resolve_links(request.data)
+        except DjangoValidationError as e:
+            return Response(
+                {"detail": "; ".join(e.messages), "code": "invalid_link"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if resolved is not None:
+            lesson.external_urls, lesson.external_url = resolved
+            lesson.save(update_fields=["external_urls", "external_url", "updated_at"])
 
         if "practice_test_ids" in request.data:
             lesson.practice_test_ids = _parse_id_list(request.data.get("practice_test_ids")) or None
@@ -849,6 +888,21 @@ class ClassworkDetailView(APIView):
         ser = JournalClassworkWriteSerializer(cw, data=request.data, partial=True)
         ser.is_valid(raise_exception=True)
         ser.save()
+
+        # Multi-link on the new-topic block (mirror kept in sync — see LessonDetailView).
+        try:
+            resolved = resolve_links(
+                request.data,
+                list_key="new_topic_external_urls",
+                single_key="new_topic_external_url",
+            )
+        except DjangoValidationError as e:
+            return Response(
+                {"detail": "; ".join(e.messages), "code": "invalid_link"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if resolved is not None:
+            cw.new_topic_external_urls, cw.new_topic_external_url = resolved
 
         for field in self._ID_LIST_FIELDS:
             if field in request.data:
@@ -1020,6 +1074,7 @@ class LessonBulkView(APIView):
             lesson.title = ""
             lesson.instructions = ""
             lesson.external_url = ""
+            lesson.external_urls = []
             lesson.allow_file_upload = False
             lesson.practice_test_ids = None
             lesson.practice_test_pack_ids = None
@@ -1065,6 +1120,7 @@ class LessonBulkView(APIView):
                 return False, "source == target"
             lesson.title = src.title
             lesson.instructions = src.instructions
+            lesson.external_urls = list(src.external_urls or [])
             lesson.external_url = src.external_url
             lesson.allow_file_upload = src.allow_file_upload
             lesson.practice_scope = src.practice_scope

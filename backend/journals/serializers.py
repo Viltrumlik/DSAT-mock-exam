@@ -217,6 +217,7 @@ class JournalClassworkSerializer(serializers.Serializer):
     new_topic_title = serializers.CharField()
     new_topic_instructions = serializers.CharField()
     new_topic_external_url = serializers.CharField()
+    new_topic_external_urls = serializers.SerializerMethodField()
     new_topic_practice_test_ids = serializers.SerializerMethodField()
     new_topic_practice_test_pack_ids = serializers.SerializerMethodField()
     new_topic_assessments = serializers.SerializerMethodField()
@@ -236,6 +237,9 @@ class JournalClassworkSerializer(serializers.Serializer):
 
     def get_timetable(self, obj):
         return obj.timetable()
+
+    def get_new_topic_external_urls(self, obj):
+        return list(obj.new_topic_external_urls or [])
 
     def get_new_topic_practice_test_ids(self, obj):
         return obj.new_topic_practice_test_ids or []
@@ -324,6 +328,7 @@ class JournalClassworkSerializer(serializers.Serializer):
             "title": prev.title,
             "instructions": prev.instructions,
             "external_url": prev.external_url,
+            "external_urls": list(prev.external_urls or []),
             "assessments": _assessment_rows(prev.assessments.all()),
             "practice_test_ids": prev.practice_test_ids or [],
             "practice_test_pack_ids": prev.practice_test_pack_ids or [],
@@ -340,6 +345,7 @@ class JournalClassworkWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = JournalClasswork
+        # new_topic_external_url(s) are handled manually in the view (see JournalLesson).
         fields = [
             "homework_review_minutes",
             "new_topic_minutes",
@@ -348,7 +354,6 @@ class JournalClassworkWriteSerializer(serializers.ModelSerializer):
             "revision_minutes",
             "new_topic_title",
             "new_topic_instructions",
-            "new_topic_external_url",
             "revision_notes",
         ]
         extra_kwargs = {f: {"required": False} for f in fields}
@@ -367,6 +372,7 @@ class JournalLessonDetailSerializer(serializers.Serializer):
     title = serializers.CharField()
     instructions = serializers.CharField()
     external_url = serializers.CharField()
+    external_urls = serializers.SerializerMethodField()
     allow_file_upload = serializers.BooleanField()
     practice_scope = serializers.CharField()
     practice_test_ids = serializers.SerializerMethodField()
@@ -391,6 +397,9 @@ class JournalLessonDetailSerializer(serializers.Serializer):
     classwork_validation = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
+
+    def get_external_urls(self, obj):
+        return list(obj.external_urls or [])
 
     def get_practice_test_ids(self, obj):
         return obj.practice_test_ids or []
@@ -454,10 +463,11 @@ class JournalLessonWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = JournalLesson
+        # NB: external_url / external_urls are handled manually in the view (multi-link
+        # normalization + mirror) so they are deliberately NOT listed here.
         fields = [
             "title",
             "instructions",
-            "external_url",
             "allow_file_upload",
             "practice_scope",
             "category",

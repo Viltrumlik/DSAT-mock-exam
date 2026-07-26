@@ -275,16 +275,26 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
 
       {/* Teacher materials — links + attachments. (Instructions render as numbered
           steps in the hero above, so they're not repeated here.) */}
-      {(assignment.attachment_file_url || (assignment.attachment_urls?.length) || assignment.external_url) && (
+      {(assignment.attachment_file_url ||
+        (assignment.attachment_urls?.length) ||
+        assignment.external_urls?.length ||
+        assignment.external_url) && (
         <Card className="cr-card">
           <CardHeader title="Materials" />
           <div className="mt-3 space-y-2">
-            {assignment.external_url && (
-              <a href={assignment.external_url} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-2 text-sm text-primary hover:underline">
-                <ExternalLink className="h-4 w-4" /> Open linked resource
+            {/* Prefer the multi `external_urls` list; fall back to the legacy single link. */}
+            {(assignment.external_urls?.length
+              ? assignment.external_urls
+              : assignment.external_url
+                ? [assignment.external_url]
+                : []
+            ).map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer"
+                className="flex items-center gap-2 text-sm text-primary hover:underline">
+                <ExternalLink className="h-4 w-4 shrink-0" />
+                <span className="truncate">{url}</span>
               </a>
-            )}
+            ))}
             {(assignment.attachment_urls ?? []).map((f, i) => {
               const name = f.file_name || decodeURIComponent(f.url.split("/").pop() || "") || "Attachment";
               const meta = materialMeta(name);
