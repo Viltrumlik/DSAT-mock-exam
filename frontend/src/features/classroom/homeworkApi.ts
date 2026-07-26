@@ -25,6 +25,7 @@ export interface AssignmentDetail {
     progress?: { state?: ContentState; attempt_id?: number | null } | null;
   }[] | null;
   external_url?: string | null;
+  external_urls?: string[] | null;
   attachment_file_url?: string | null;
   attachment_urls?: { url: string; file_name?: string; content_type?: string; size?: number | null }[];
   practice_bundle_tests?: {

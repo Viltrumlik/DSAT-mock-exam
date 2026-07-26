@@ -10,6 +10,7 @@ import {
   crInputClass,
   crTextareaClass,
 } from "@/components/classroom";
+import MultiLinkInput from "@/components/MultiLinkInput";
 import { cn } from "@/lib/cn";
 import {
   BookOpen,
@@ -68,7 +69,7 @@ export default function JournalClassworkEditor({
   // New topic
   const [topicTitle, setTopicTitle] = useState("");
   const [topicInstructions, setTopicInstructions] = useState("");
-  const [topicUrl, setTopicUrl] = useState("");
+  const [topicLinks, setTopicLinks] = useState<string[]>([]);
   const [topicFiles, setTopicFiles] = useState<File[]>([]);
   const [topicAssessmentIds, setTopicAssessmentIds] = useState<Set<number>>(new Set());
   const [topicTestIds, setTopicTestIds] = useState<Set<number>>(new Set());
@@ -97,7 +98,13 @@ export default function JournalClassworkEditor({
       });
       setTopicTitle(data.new_topic_title || "");
       setTopicInstructions(data.new_topic_instructions || "");
-      setTopicUrl(data.new_topic_external_url || "");
+      setTopicLinks(
+        data.new_topic_external_urls?.length
+          ? data.new_topic_external_urls
+          : data.new_topic_external_url
+            ? [data.new_topic_external_url]
+            : [],
+      );
       setTopicAssessmentIds(new Set(data.new_topic_assessments.map((a) => a.assessment_set_id)));
       setTopicTestIds(new Set(data.new_topic_practice_test_ids || []));
       setExAssessmentIds(new Set(data.exercise_assessments.map((a) => a.assessment_set_id)));
@@ -122,7 +129,7 @@ export default function JournalClassworkEditor({
         ...mins,
         new_topic_title: topicTitle.trim(),
         new_topic_instructions: topicInstructions,
-        new_topic_external_url: topicUrl.trim(),
+        new_topic_external_urls: topicLinks.map((s) => s.trim()).filter(Boolean),
         revision_notes: revisionNotes,
         new_topic_assessment_set_ids: [...topicAssessmentIds],
         new_topic_practice_test_ids: [...topicTestIds],
@@ -248,13 +255,19 @@ export default function JournalClassworkEditor({
               {review.attachment_urls.map((f, i) => (
                 <ReviewItem key={`f-${i}`} icon={FileText} label={f.name} kind="File" href={f.url} />
               ))}
-              {review.external_url && (
-                <ReviewItem icon={ExternalLink} label={review.external_url} kind="Link" href={review.external_url} />
-              )}
+              {(review.external_urls?.length
+                ? review.external_urls
+                : review.external_url
+                  ? [review.external_url]
+                  : []
+              ).map((url, i) => (
+                <ReviewItem key={`l-${i}`} icon={ExternalLink} label={url} kind="Link" href={url} />
+              ))}
             </ul>
             {review.assessments.length === 0 &&
               review.practice_test_ids.length === 0 &&
               review.attachment_urls.length === 0 &&
+              !review.external_urls?.length &&
               !review.external_url && (
                 <p className="text-[12.5px] text-muted-foreground">
                   That session has no attached content yet.
@@ -295,14 +308,13 @@ export default function JournalClassworkEditor({
               className={crTextareaClass}
             />
           </ClassroomField>
-          <ClassroomField label="External link" htmlFor="cw-url">
-            <input
-              id="cw-url"
-              type="url"
-              value={topicUrl}
-              onChange={(e) => setTopicUrl(e.target.value)}
+          <ClassroomField label="External links">
+            <MultiLinkInput
+              value={topicLinks}
+              onChange={setTopicLinks}
+              inputClassName={crInputClass}
               placeholder="https://example.com/slides"
-              className={crInputClass}
+              idPrefix="cw-url"
             />
           </ClassroomField>
 
