@@ -109,6 +109,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
     data["homework"] = {
         "instructions": session.instructions,
         "external_url": session.external_url,
+        "external_urls": list(session.external_urls or []),
         "allow_file_upload": session.allow_file_upload,
         "practice_test_ids": session.practice_test_ids or [],
         "practice_test_pack_ids": session.practice_test_pack_ids or [],
@@ -157,6 +158,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                 "title": cw.new_topic_title,
                 "instructions": cw.new_topic_instructions,
                 "external_url": cw.new_topic_external_url,
+                "external_urls": list(cw.new_topic_external_urls or []),
                 "minutes": cw.new_topic_minutes,
                 "items": _items(
                     by_block.get("NEW_TOPIC", []),

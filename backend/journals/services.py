@@ -248,6 +248,7 @@ def duplicate_journal(
         lesson.title = src.title
         lesson.instructions = src.instructions
         lesson.external_url = src.external_url
+        lesson.external_urls = list(src.external_urls or [])
         lesson.allow_file_upload = src.allow_file_upload
         lesson.practice_scope = src.practice_scope
         lesson.practice_test_ids = src.practice_test_ids
@@ -273,6 +274,7 @@ def duplicate_journal(
                 "new_topic_title",
                 "new_topic_instructions",
                 "new_topic_external_url",
+                "new_topic_external_urls",
                 "new_topic_practice_test_ids",
                 "new_topic_practice_test_pack_ids",
                 "exercise_practice_test_ids",

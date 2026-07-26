@@ -275,6 +275,7 @@ def release_homework(
         title=session.title or f"Lesson {session.lesson_number}",
         instructions=session.instructions,
         external_url=session.external_url,
+        external_urls=list(session.external_urls or []),
         allow_file_upload=session.allow_file_upload,
         practice_scope=session.practice_scope,
         practice_test_ids=session.practice_test_ids or None,
