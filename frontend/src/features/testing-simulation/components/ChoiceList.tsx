@@ -29,11 +29,11 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
               type="button"
               onClick={() => !isEliminated && onSelect(key)}
               aria-pressed={isSelected}
-              className={`flex min-h-[56px] flex-1 items-center rounded-[11px] transition-colors ${
+              className={`relative flex min-h-[56px] flex-1 items-center rounded-[11px] transition-colors ${
                 isSelected
                   ? "border-2 border-[#2b47c9] bg-[#f2f5fd] px-[17px] py-3"
                   : isEliminated
-                    ? "cursor-not-allowed border border-slate-200 px-[18px] py-[13px] opacity-50"
+                    ? "cursor-not-allowed border border-slate-200 bg-white px-[18px] py-[13px]"
                     : "border border-[#c8ccd4] bg-white px-[18px] py-[13px] hover:border-slate-400"
               }`}
             >
@@ -48,7 +48,7 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
               >
                 {key}
               </span>
-              <span className={`ml-4 w-full text-left font-[Georgia] text-[16px] leading-snug text-slate-900 ${isEliminated ? "line-through decoration-slate-400" : ""}`}>
+              <span className={`ml-4 w-full text-left font-[Georgia] text-[16px] leading-snug ${isEliminated ? "text-slate-400" : "text-slate-900"}`}>
                 {img ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={img} alt={`Option ${key}`} className="max-h-[200px] max-w-full rounded-lg border border-slate-100 object-contain shadow-sm" />
@@ -56,6 +56,10 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
                   <SafeHtml className="mathjax-process w-full" html={renderExamHtml(text)} />
                 )}
               </span>
+              {/* Bluebook cross-out: a single line through the whole option (letter + text). */}
+              {isEliminated && (
+                <span className="pointer-events-none absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-slate-500" aria-hidden />
+              )}
             </button>
 
             {eliminationMode &&
@@ -68,7 +72,7 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
                     onEliminate(key);
                   }}
                   title="Restore"
-                  className="shrink-0 text-xs font-bold text-blue-700 underline underline-offset-2 hover:text-blue-800"
+                  className="shrink-0 text-sm font-bold text-[#2b47c9] underline underline-offset-2 hover:text-[#1d2d6b]"
                 >
                   Undo
                 </button>

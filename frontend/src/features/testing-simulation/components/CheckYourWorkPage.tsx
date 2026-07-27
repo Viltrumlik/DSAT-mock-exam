@@ -81,7 +81,7 @@ export function CheckYourWorkPage({
                   key={q.id}
                   type="button"
                   onClick={() => onJump(i)}
-                  className={`relative flex h-10 w-10 items-center justify-center rounded-md text-sm font-bold transition-colors ${
+                  className={`relative flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold transition-colors ${
                     answered
                       ? "border border-[#253985] bg-[#253985] text-white"
                       : "border border-dashed border-slate-400 text-[#2b47c9] hover:border-slate-600"
