@@ -58,7 +58,7 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
               </span>
               {/* Bluebook cross-out: a single line through the whole option (letter + text). */}
               {isEliminated && (
-                <span className="pointer-events-none absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-slate-500" aria-hidden />
+                <span className="pointer-events-none absolute inset-x-1 top-1/2 h-[2px] -translate-y-1/2 bg-[#333]" aria-hidden />
               )}
             </button>
 
@@ -72,7 +72,7 @@ export function ChoiceList({ question, selected, eliminated, eliminationMode, on
                     onEliminate(key);
                   }}
                   title="Restore"
-                  className="shrink-0 text-sm font-bold text-[#2b47c9] underline underline-offset-2 hover:text-[#1d2d6b]"
+                  className="shrink-0 text-sm font-bold text-slate-900 underline underline-offset-2 hover:text-slate-700"
                 >
                   Undo
                 </button>
