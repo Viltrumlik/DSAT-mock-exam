@@ -1,5 +1,5 @@
 "use client";
-import { Calculator, ChevronDown, File, Highlighter, PenLine } from "lucide-react";
+import { Calculator, ChevronDown, PenLine } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -100,16 +100,9 @@ export function ExamHeader({
             highlighter (select-to-highlight); the notes pad opens from a highlight's
             note button or the More menu. */}
         <ToolButton label="Highlights & Notes" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
-          {/* Bluebook shows a single pen glyph at rest; the highlighter + note pair
-              appears (in blue) only when highlighting is active. */}
-          {tools.highlighterActive ? (
-            <span className="flex items-center gap-1.5">
-              <Highlighter className="h-[18px] w-[18px]" />
-              <File className="h-[18px] w-[18px]" />
-            </span>
-          ) : (
-            <PenLine className="h-[18px] w-[18px]" />
-          )}
+          {/* One pen glyph in BOTH states; only the colour changes — black at rest,
+              blue when active (per the user's design). */}
+          <PenLine className="h-[18px] w-[18px]" />
         </ToolButton>
         <MoreMenu
           isFullscreen={tools.fullscreen.isFullscreen}
