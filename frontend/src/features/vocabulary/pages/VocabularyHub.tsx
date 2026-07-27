@@ -7,6 +7,9 @@
  * builder authors), the student's own custom sets, and sets a teacher assigned
  * as homework. All three counts live on the tab bar so a student can see there
  * is homework waiting without opening the tab.
+ *
+ * Visually this is the AssignmentDetail idiom: gradient hero → meta tiles built
+ * from real aggregates → pill tab bar → staggered cards.
  */
 
 import { useMemo, useState } from "react";
@@ -16,15 +19,19 @@ import {
   CalendarClock,
   CheckCircle2,
   GraduationCap,
+  Layers,
   Library,
   Plus,
   Sparkles,
   Trash2,
+  TrendingUp,
+  Type,
   Users,
 } from "lucide-react";
 
 import { Badge, Button, Card, CardContent, EmptyState, IconButton, Modal, Tabs, type TabItem } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
+import { cn } from "@/lib/cn";
 
 import { SectionCard } from "../components/SectionCard";
 import { SetCard } from "../components/SetCard";
@@ -65,6 +72,28 @@ export function VocabularyHub() {
     return groups.reduce((n, g) => n + g.sets.filter((s) => !s.completed).length, 0);
   }, [homework.data]);
 
+  /** Hero meta tiles — real aggregates summed across every published section. */
+  const totals = useMemo(() => {
+    const list = sections.data ?? [];
+    return list.reduce(
+      (acc, s) => ({
+        words: acc.words + s.word_count,
+        sets: acc.sets + s.set_count,
+        mastered: acc.mastered + s.progress.mastered,
+        learning: acc.learning + s.progress.learning,
+      }),
+      { words: 0, sets: 0, mastered: 0, learning: 0 },
+    );
+  }, [sections.data]);
+
+  const heroReady = Boolean(sections.data);
+  const tiles = [
+    { label: "Words", icon: Type, value: totals.words },
+    { label: "Mastered", icon: CheckCircle2, value: totals.mastered },
+    { label: "Learning", icon: TrendingUp, value: totals.learning },
+    { label: "Sets", icon: Layers, value: totals.sets },
+  ];
+
   const tabs: TabItem[] = [
     {
       value: "bank",
@@ -87,27 +116,67 @@ export function VocabularyHub() {
   ];
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="ds-overline text-primary">Vocabulary</p>
-          <h1 className="ds-h1 mt-1">Build your word bank</h1>
-          <p className="ds-small mt-1">
-            Four ways to study every set — flashcards, matching, speed and a full test. Any one of them counts as done.
-          </p>
+    <div
+      className="mx-auto flex max-w-6xl flex-col gap-6 pb-12"
+      style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}
+    >
+      {/* HERO — eyebrow, title, aggregate meta tiles, primary action. */}
+      <Card className="cr-cardrise overflow-hidden">
+        <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary-hover px-6 py-7 text-primary-foreground sm:px-[34px] sm:py-[30px]">
+          <div aria-hidden className="pointer-events-none absolute -bottom-12 -right-8 h-52 w-52 rounded-full bg-white/[0.06]" />
+          <div aria-hidden className="pointer-events-none absolute -top-20 right-24 h-40 w-40 rounded-full bg-white/[0.04]" />
+
+          <div className="relative flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <span className="inline-flex items-center gap-1.5 rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold">
+                <Sparkles className="h-3.5 w-3.5" aria-hidden /> Vocabulary
+              </span>
+              <h1 className="mt-[14px] text-[30px] font-extrabold leading-none tracking-[-0.025em] sm:text-[34px]">
+                Build your word bank
+              </h1>
+              <p className="mt-3 max-w-xl text-sm font-medium leading-relaxed opacity-[0.78]">
+                Four ways to study every set — flashcards, matching, speed and a full test. Any one of them counts as done.
+              </p>
+            </div>
+            <Link href="/vocabulary/new-set" className="ds-ring rounded-xl">
+              <Button variant="secondary" className="cr-press" leftIcon={<Plus />} tabIndex={-1}>
+                New set
+              </Button>
+            </Link>
+          </div>
+
+          <div className="relative mt-[26px] flex flex-wrap gap-x-[34px] gap-y-4">
+            {tiles.map((t, i) => (
+              <div key={t.label} className="cr-pillin" style={{ animationDelay: `${i * 60}ms` }}>
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">{t.label}</div>
+                <div className="mt-[5px] inline-flex items-center gap-1.5 rounded-lg bg-white/[0.16] px-[11px] py-[3px] text-[17px] font-extrabold">
+                  <t.icon className="h-4 w-4 opacity-80" aria-hidden />
+                  <span className="ds-num">{heroReady ? t.value : "—"}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <Link href="/vocabulary/new-set" className="ds-ring rounded-xl">
-          <Button leftIcon={<Plus />} tabIndex={-1}>
-            New set
-          </Button>
-        </Link>
+      </Card>
+
+      {/* -my-1/py-1 keeps the active pill's shadow from being clipped by the
+          horizontal scroller that saves the three tabs on a phone. */}
+      <div className="-my-1 max-w-full overflow-x-auto py-1">
+        <Tabs
+          tabs={tabs}
+          value={tab}
+          onValueChange={(v) => setTab(v as TabKey)}
+          variant="pill"
+          aria-label="Vocabulary sections"
+          className="whitespace-nowrap"
+        />
       </div>
 
-      <Tabs tabs={tabs} value={tab} onValueChange={(v) => setTab(v as TabKey)} aria-label="Vocabulary sections" />
-
-      {tab === "bank" ? <BankTab query={sections} /> : null}
-      {tab === "mine" ? <MySetsTab query={mySets} /> : null}
-      {tab === "homework" ? <HomeworkTab query={homework} /> : null}
+      <div key={tab} className="cr-section">
+        {tab === "bank" ? <BankTab query={sections} /> : null}
+        {tab === "mine" ? <MySetsTab query={mySets} /> : null}
+        {tab === "homework" ? <HomeworkTab query={homework} /> : null}
+      </div>
     </div>
   );
 }
@@ -130,12 +199,13 @@ function BankTab({ query }: { query: ReturnType<typeof useVocabSections> }) {
   if (sections.length === 0) {
     return (
       <EmptyState
+        className="cr-cardrise"
         icon={Library}
         title="No word lists published yet"
         description="Your teachers publish vocabulary sections here. In the meantime you can build a set of your own."
         action={
           <Link href="/vocabulary/new-set" className="ds-ring rounded-xl">
-            <Button variant="secondary" leftIcon={<Plus />} tabIndex={-1}>
+            <Button variant="secondary" className="cr-press" leftIcon={<Plus />} tabIndex={-1}>
               Build my own set
             </Button>
           </Link>
@@ -146,8 +216,8 @@ function BankTab({ query }: { query: ReturnType<typeof useVocabSections> }) {
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {sections.map((s) => (
-        <SectionCard key={s.id} section={s} />
+      {sections.map((s, i) => (
+        <SectionCard key={s.id} section={s} index={i} />
       ))}
     </div>
   );
@@ -180,12 +250,13 @@ function MySetsTab({ query }: { query: ReturnType<typeof useMySets> }) {
     <>
       {sets.length === 0 ? (
         <EmptyState
+          className="cr-cardrise"
           icon={Sparkles}
           title="Make a set of the words you keep missing"
           description="Pull any words from the question bank into a set of your own, then study it with all four modes."
           action={
             <Link href="/vocabulary/new-set" className="ds-ring rounded-xl">
-              <Button leftIcon={<Plus />} tabIndex={-1}>
+              <Button className="cr-press" leftIcon={<Plus />} tabIndex={-1}>
                 New set
               </Button>
             </Link>
@@ -193,9 +264,10 @@ function MySetsTab({ query }: { query: ReturnType<typeof useMySets> }) {
         />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {sets.map((s) => (
+          {sets.map((s, i) => (
             <SetCard
               key={s.id}
+              index={i}
               title={s.title}
               href={`/vocabulary/sets/${s.id}`}
               wordCount={s.word_count}
@@ -248,6 +320,7 @@ function HomeworkTab({ query }: { query: ReturnType<typeof useVocabHomework> }) 
   if (groups.length === 0) {
     return (
       <EmptyState
+        className="cr-cardrise"
         icon={GraduationCap}
         title="No vocabulary homework right now"
         description="When a teacher assigns a word list it lands here with its due date. Until then, pick any set from the question bank."
@@ -257,40 +330,58 @@ function HomeworkTab({ query }: { query: ReturnType<typeof useVocabHomework> }) 
 
   return (
     <div className="flex flex-col gap-5">
-      {groups.map((g) => (
-        <HomeworkGroupCard key={`${g.assignment_id}`} group={g} />
+      {groups.map((g, i) => (
+        <HomeworkGroupCard key={`${g.assignment_id}`} group={g} index={i} />
       ))}
     </div>
   );
 }
 
-function HomeworkGroupCard({ group }: { group: VocabHomeworkGroup }) {
+function HomeworkGroupCard({ group, index }: { group: VocabHomeworkGroup; index: number }) {
   const done = group.sets.filter((s) => s.completed).length;
   const allDone = done === group.sets.length && group.sets.length > 0;
   const due = dueChip(group.due_at);
 
   return (
-    <Card>
+    // cr-cardrise, not cr-card: this is a container — it should enter, but it
+    // must not lift (or pop the nested set-card icons) on hover.
+    <Card
+      className={cn("cr-cardrise", allDone && "ring-1 ring-inset ring-success/40")}
+      style={{ animationDelay: `${Math.min(index, 12) * 60}ms` }}
+    >
       <CardContent className="flex flex-col gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="ds-h3 truncate">{group.assignment_title}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-semibold text-muted-foreground">
-              <Link
-                href={`/classes/${group.classroom_id}`}
-                className="ds-ring inline-flex items-center gap-1.5 rounded-md hover:text-foreground"
-              >
-                <Users className="h-3.5 w-3.5" />
-                {group.classroom_name}
-              </Link>
-              {due ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarClock className="h-3.5 w-3.5" />
-                  {due.text}
-                </span>
-              ) : (
-                <span>No deadline</span>
+          <div className="flex min-w-0 items-start gap-3">
+            {/* No `cr-iconpop` here: it only fires under `.cr-card:hover`, and
+                this container deliberately isn't a `cr-card`. */}
+            <span
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                allDone ? "bg-success-soft text-success" : "bg-primary-soft text-primary",
               )}
+            >
+              <GraduationCap className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <h2 className="ds-h3 line-clamp-2">{group.assignment_title}</h2>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <Link
+                  href={`/classes/${group.classroom_id}`}
+                  className="ds-ring cr-pill inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-0.5 text-[12px] font-semibold text-muted-foreground hover:text-foreground"
+                >
+                  <Users className="h-3.5 w-3.5" aria-hidden />
+                  {group.classroom_name}
+                </Link>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-semibold",
+                    due?.late ? "bg-warning-soft text-warning-foreground" : "bg-surface-2 text-muted-foreground",
+                  )}
+                >
+                  <CalendarClock className="h-3.5 w-3.5" aria-hidden />
+                  {due ? due.text : "No deadline"}
+                </span>
+              </div>
             </div>
           </div>
           <Badge variant={allDone ? "success" : due?.late ? "warning" : "neutral"}>
@@ -303,9 +394,10 @@ function HomeworkGroupCard({ group }: { group: VocabHomeworkGroup }) {
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
-          {group.sets.map((s) => (
+          {group.sets.map((s, i) => (
             <SetCard
               key={s.id}
+              index={i}
               title={s.title}
               href={`/vocabulary/sets/${s.id}`}
               wordCount={s.word_count}

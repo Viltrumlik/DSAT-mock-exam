@@ -12,9 +12,11 @@ export function masteredPercent(progress?: ProgressCounts | null): number {
 }
 
 /**
- * New / Learning / Mastered breakdown as one bar. The track *is* the "new"
- * segment, so an untouched set reads as an empty progress bar rather than as a
- * third colour competing for attention.
+ * New / Learning / Mastered breakdown as ONE segmented bar: three coloured
+ * segments sharing a single track, so a glance reads the whole split rather
+ * than just "how far along". An untouched set is all-neutral; a finished one is
+ * all-green. Segments after a non-empty neighbour carry a 1px card-coloured
+ * inset so the boundary stays legible when two tones sit side by side.
  */
 export function MasteryBar({
   progress,
@@ -30,21 +32,31 @@ export function MasteryBar({
   const total = p.total || 0;
   const share = (n: number) => (total > 0 ? (n / total) * 100 : 0);
 
+  const segments = [
+    { key: "mastered", fill: "bg-success", value: p.mastered },
+    { key: "learning", fill: "bg-warning", value: p.learning },
+    { key: "new", fill: "bg-border-strong", value: p.new },
+  ];
+
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <div
-        className="flex h-2 w-full overflow-hidden rounded-full bg-surface-3"
+        className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-3"
         role="img"
         aria-label={`${p.mastered} mastered, ${p.learning} learning, ${p.new} new`}
       >
-        <div
-          className="h-full bg-success transition-[width] duration-500 ease-out"
-          style={{ width: `${share(p.mastered)}%` }}
-        />
-        <div
-          className="h-full bg-warning transition-[width] duration-500 ease-out"
-          style={{ width: `${share(p.learning)}%` }}
-        />
+        {segments.map((s, i) => (
+          <span
+            key={s.key}
+            className={cn(
+              "cr-bar h-full transition-[width] duration-500 ease-out",
+              s.fill,
+              // Hairline separator only when something actually precedes it.
+              i > 0 && segments[i - 1].value > 0 && s.value > 0 && "shadow-[inset_1px_0_0_var(--card)]",
+            )}
+            style={{ width: `${share(s.value)}%`, animationDelay: `${i * 90}ms` }}
+          />
+        ))}
       </div>
       {legend ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-semibold text-muted-foreground">

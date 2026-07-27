@@ -8,12 +8,17 @@
  * These modes are immersive takeovers (`fixed inset-0 z-50`) — StudentAppShell
  * routes them past its scroll container so the layer isn't trapped in the
  * shell's stacking context.
+ *
+ * Visually this is the student design language, not a bespoke one: the slim top
+ * bar mirrors the app header, the outcome screen borrows the gradient hero and
+ * the `cr-*` celebration motion from the results/homework surfaces, and every
+ * number is `.ds-num` so digits don't jitter as a clock or counter ticks.
  */
 
-import { AlertTriangle, ArrowLeft, BookOpen, RotateCcw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookOpen, RotateCcw, Sparkles, Trophy } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import type { ReactNode } from "react";
+import { useMemo, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { Badge, Button, EmptyState, Progress, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -25,6 +30,12 @@ import type { ModeSession } from "./useModeSession";
 import type { DistractorWord } from "./utils";
 
 export const setHref = (setId: number) => `/vocabulary/sets/${setId}`;
+
+/**
+ * The takeover renders outside the student shell, so it carries the app's face
+ * itself — same declaration the student pages use.
+ */
+const MODE_FONT: CSSProperties = { fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" };
 
 interface ModeFrameProps {
   setId: number;
@@ -39,43 +50,65 @@ interface ModeFrameProps {
 
 export function ModeFrame({ setId, title, subtitle, right, progress, children }: ModeFrameProps) {
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      <header className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-3 sm:px-6">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background" style={MODE_FONT}>
+      {/* Progress rides the very top edge of the takeover. The empty rail keeps
+          the header from jumping 6px when a mode boots without one. */}
+      {/* The rail mirrors `Progress`'s own shape (h-1.5, rounded-full) rather
+          than trying to square it off: `cn` is a naive join, so a `rounded-none`
+          here would lose to the primitive's `rounded-full` anyway. */}
+      {progress != null ? (
+        <Progress value={progress} size="sm" className="shrink-0" label="Round progress" />
+      ) : (
+        <div className="h-1.5 shrink-0 rounded-full bg-surface-2" aria-hidden />
+      )}
+
+      <header className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-3 py-2.5 sm:px-5">
         <Link
           href={setHref(setId)}
-          className="ds-ring inline-flex shrink-0 items-center gap-1.5 rounded-lg text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground"
+          className="ds-ring inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1.5 text-[13px] font-bold text-muted-foreground transition-[color,border-color,background-color] duration-150 hover:border-border-strong hover:text-foreground sm:px-3"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft className="h-4 w-4" aria-hidden />
           <span className="hidden sm:inline">Back to vocabulary</span>
           <span className="sm:hidden">Back</span>
         </Link>
         <div className="min-w-0 flex-1 text-center">
-          <p className="truncate text-sm font-bold text-foreground">{title}</p>
-          {subtitle ? <p className="truncate text-[12px] text-muted-foreground">{subtitle}</p> : null}
+          <p className="truncate text-[13px] font-extrabold leading-tight tracking-[-0.01em] text-foreground">
+            {title}
+          </p>
+          {subtitle ? (
+            <p className="truncate text-[11px] font-semibold leading-tight text-muted-foreground">{subtitle}</p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center justify-end gap-2">{right}</div>
       </header>
-      {progress != null ? <Progress value={progress} size="sm" className="rounded-none" label="Round progress" /> : null}
+
       <div className="flex-1 overflow-y-auto">{children}</div>
     </div>
   );
 }
 
-/** Header pill for a clock or a counter. */
+/**
+ * Header pill for a clock or a counter. The four accent tones mirror
+ * `STUDY_MODE_ACCENT` in `components/StudyModeCard` — a mode's header pill
+ * carries the same colour its launcher card does on the set page.
+ */
 export function ModePill({
   children,
   tone = "neutral",
 }: {
   children: ReactNode;
-  tone?: "neutral" | "primary" | "danger";
+  tone?: "neutral" | "primary" | "info" | "warning" | "success" | "danger";
 }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-bold tabular-nums",
+        "ds-num inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-extrabold shadow-card",
         tone === "neutral" && "border-border bg-surface-2 text-muted-foreground",
         tone === "primary" && "border-primary/20 bg-primary-soft text-primary",
-        tone === "danger" && "border-danger/20 bg-danger-soft text-danger-foreground",
+        tone === "info" && "border-info/20 bg-info-soft text-info-foreground",
+        tone === "warning" && "border-warning/25 bg-warning-soft text-warning-foreground",
+        tone === "success" && "border-success/25 bg-success-soft text-success-foreground",
+        tone === "danger" && "border-danger/25 bg-danger-soft text-danger-foreground",
       )}
     >
       {children}
@@ -86,7 +119,7 @@ export function ModePill({
 /** Keycap used in the modes' shortcut hints. */
 export function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-sans text-[11px] font-bold text-muted-foreground">
+    <kbd className="inline-flex min-w-[1.4rem] items-center justify-center rounded-md border border-border bg-surface-2 px-1.5 py-0.5 font-sans text-[11px] font-extrabold text-muted-foreground shadow-card">
       {children}
     </kbd>
   );
@@ -122,8 +155,9 @@ export function ModeBoot({
   if (isLoading) {
     return (
       <ModeFrame setId={setId} title={title}>
-        <div className="flex h-full items-center justify-center">
+        <div className="flex h-full flex-col items-center justify-center gap-3">
           <Spinner className="h-7 w-7" />
+          <p className="text-[13px] font-semibold text-muted-foreground">Dealing your words…</p>
         </div>
       </ModeFrame>
     );
@@ -134,6 +168,7 @@ export function ModeBoot({
       <ModeFrame setId={setId} title={title}>
         <div className="mx-auto max-w-lg px-4 py-16">
           <EmptyState
+            className="cr-cardrise"
             icon={AlertTriangle}
             title="This set isn't available"
             description="It may have been removed, or it isn't shared with you."
@@ -153,6 +188,7 @@ export function ModeBoot({
       <ModeFrame setId={setId} title={title} subtitle={set.title}>
         <div className="mx-auto max-w-lg px-4 py-16">
           <EmptyState
+            className="cr-cardrise"
             icon={BookOpen}
             title="No words to study yet"
             description="This set is empty. Add words to it and the study modes will light up."
@@ -186,6 +222,7 @@ export function ModeStartError({
     <ModeFrame setId={setId} title={title}>
       <div className="mx-auto max-w-lg px-4 py-16">
         <EmptyState
+          className="cr-cardrise"
           icon={AlertTriangle}
           title="Couldn't start this round"
           description={message}
@@ -214,11 +251,20 @@ export interface ModeStat {
 export function ModeStatGrid({ stats }: { stats: ModeStat[] }) {
   return (
     <div className={cn("grid gap-3", stats.length >= 3 ? "grid-cols-3" : "grid-cols-2")}>
-      {stats.map((s) => (
-        <div key={s.label} className="rounded-2xl border border-border bg-card p-4 text-center shadow-card">
+      {stats.map((s, i) => (
+        <div
+          key={s.label}
+          className={cn(
+            "cr-pillin rounded-2xl border p-4 text-center shadow-card",
+            s.tone === "success" && "border-success/25 bg-success-soft",
+            s.tone === "danger" && "border-danger/25 bg-danger-soft",
+            (!s.tone || s.tone === "neutral") && "border-border bg-card",
+          )}
+          style={{ animationDelay: `${i * 60}ms` }}
+        >
           <p
             className={cn(
-              "text-2xl font-extrabold tabular-nums",
+              "ds-num text-[26px] font-extrabold leading-none tracking-[-0.02em] sm:text-[30px]",
               s.tone === "success" && "text-success-foreground",
               s.tone === "danger" && "text-danger-foreground",
               (!s.tone || s.tone === "neutral") && "text-foreground",
@@ -226,8 +272,140 @@ export function ModeStatGrid({ stats }: { stats: ModeStat[] }) {
           >
             {s.value}
           </p>
-          <p className="mt-1 text-[12px] font-semibold text-muted-foreground">{s.label}</p>
+          <p className="mt-2 text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">
+            {s.label}
+          </p>
         </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Celebration ─────────────────────────────────────────────────────────────
+   The 3-cannon popper burst + confetti rain the results screen uses, generated
+   from a fixed seed so a re-render never reshuffles mid-flight. Colours come
+   from the theme's chart ramp (CSS variables), so the burst is legible in both
+   light and dark. `.cr-popper`/`.cr-confetti` are already reduced-motion
+   guarded; the layer is hidden outright in that mode so nothing sits frozen
+   on screen. */
+
+interface Fleck {
+  id: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  color: string;
+  duration: number;
+  delay: number;
+  fx?: string;
+  fy?: string;
+  rot?: string;
+}
+
+const FLECK_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+];
+
+/** Tiny LCG — deterministic so the burst is stable across re-renders. */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+function buildCelebration(): { poppers: Fleck[]; confetti: Fleck[] } {
+  const rnd = seededRandom(0x5a7c0de);
+  const poppers: Fleck[] = [];
+  const cannons = [
+    { left: 6, top: 94, aim: 1 },
+    { left: 94, top: 94, aim: -1 },
+    { left: 50, top: 98, aim: 0 },
+  ];
+  cannons.forEach((cannon, ci) => {
+    for (let i = 0; i < 12; i += 1) {
+      const spread = 90 + rnd() * 220;
+      poppers.push({
+        id: `p${ci}-${i}`,
+        left: cannon.left,
+        top: cannon.top,
+        width: 6 + Math.round(rnd() * 5),
+        height: 6 + Math.round(rnd() * 5),
+        color: FLECK_COLORS[Math.floor(rnd() * FLECK_COLORS.length)],
+        duration: 1.1 + rnd() * 0.9,
+        delay: rnd() * 0.22,
+        fx: `${cannon.aim * spread + (rnd() - 0.5) * 120}px`,
+        fy: `${-(180 + rnd() * 260)}px`,
+        rot: `${Math.round((rnd() - 0.5) * 900)}deg`,
+      });
+    }
+  });
+
+  const confetti: Fleck[] = [];
+  for (let i = 0; i < 26; i += 1) {
+    confetti.push({
+      id: `c${i}`,
+      left: rnd() * 100,
+      top: -4,
+      width: 5 + Math.round(rnd() * 5),
+      height: 9 + Math.round(rnd() * 8),
+      color: FLECK_COLORS[Math.floor(rnd() * FLECK_COLORS.length)],
+      duration: 2.4 + rnd() * 1.8,
+      delay: rnd() * 1.6,
+    });
+  }
+
+  return { poppers, confetti };
+}
+
+function CelebrationLayer() {
+  const { poppers, confetti } = useMemo(() => buildCelebration(), []);
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed inset-0 z-[60] overflow-hidden motion-reduce:hidden"
+    >
+      {poppers.map((p) => (
+        <span
+          key={p.id}
+          className="cr-popper"
+          style={
+            {
+              left: `${p.left}%`,
+              top: `${p.top}%`,
+              width: `${p.width}px`,
+              height: `${p.height}px`,
+              backgroundColor: p.color,
+              animationDuration: `${p.duration}s`,
+              animationDelay: `${p.delay}s`,
+              "--fx": p.fx,
+              "--fy": p.fy,
+              "--rot": p.rot,
+            } as CSSProperties
+          }
+        />
+      ))}
+      {confetti.map((c) => (
+        <span
+          key={c.id}
+          className="cr-confetti"
+          style={{
+            left: `${c.left}%`,
+            top: `${c.top}%`,
+            width: `${c.width}px`,
+            height: `${c.height}px`,
+            backgroundColor: c.color,
+            animationDuration: `${c.duration}s`,
+            animationDelay: `${c.delay}s`,
+          }}
+        />
       ))}
     </div>
   );
@@ -241,6 +419,12 @@ interface ModeOutcomeProps {
   session: Pick<ModeSession, "finishing" | "error" | "summary" | "retry">;
   onRestart: () => void;
   restartLabel?: string;
+  /**
+   * Fire the confetti burst and bounce the trophy. Modes pass `true` for a
+   * clean sweep (no mistakes); finishing the set always celebrates too, so
+   * leaving this unset is safe.
+   */
+  celebrate?: boolean;
   /** Extra content between the stats and the actions (e.g. the test review). */
   children?: ReactNode;
 }
@@ -254,13 +438,30 @@ export function ModeOutcome({
   session,
   onRestart,
   restartLabel = "Study again",
+  celebrate,
   children,
 }: ModeOutcomeProps) {
+  const partying = Boolean(celebrate) || Boolean(session.summary?.set_completed);
+
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
-      <div className="text-center">
-        <h2 className="ds-h2">{title}</h2>
-        {description ? <p className="ds-lead mt-2">{description}</p> : null}
+      {partying ? <CelebrationLayer /> : null}
+
+      {/* HERO — gradient panel in the results/homework idiom. */}
+      <div className="cr-celebpop relative overflow-hidden rounded-3xl bg-gradient-to-br from-primary to-primary-hover px-6 py-9 text-center text-primary-foreground shadow-modal sm:px-10">
+        <div aria-hidden className="pointer-events-none absolute -right-10 -top-14 h-52 w-52 rounded-full bg-white/[0.07]" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-16 -left-12 h-44 w-44 rounded-full bg-white/[0.05]" />
+        <span className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.16]">
+          <Trophy className={cn("h-8 w-8", partying && "cr-trophy")} aria-hidden />
+        </span>
+        <h2 className="relative mt-4 text-[28px] font-extrabold leading-none tracking-[-0.025em] sm:text-[32px]">
+          {title}
+        </h2>
+        {description ? (
+          <p className="relative mx-auto mt-3 max-w-md text-[15px] font-medium leading-relaxed opacity-[0.82]">
+            {description}
+          </p>
+        ) : null}
       </div>
 
       <ModeStatGrid stats={stats} />
@@ -278,18 +479,22 @@ export function ModeOutcome({
             </Button>
           </span>
         ) : session.summary?.set_completed ? (
-          <Badge variant="success">Set complete</Badge>
+          <Badge variant="success" className="cr-pillin">
+            <Sparkles className="h-3 w-3" aria-hidden /> Set complete
+          </Badge>
         ) : null}
       </div>
 
       {children}
 
       <div className="flex flex-wrap items-center justify-center gap-3">
-        <Button onClick={onRestart} leftIcon={<RotateCcw />}>
+        <Button size="lg" onClick={onRestart} leftIcon={<RotateCcw />}>
           {restartLabel}
         </Button>
         <Link href={setHref(setId)}>
-          <Button variant="secondary">Back to vocabulary</Button>
+          <Button size="lg" variant="secondary">
+            Back to vocabulary
+          </Button>
         </Link>
       </div>
     </div>

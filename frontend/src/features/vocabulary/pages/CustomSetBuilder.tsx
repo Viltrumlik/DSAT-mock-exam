@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Check, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, Check, Library, ListChecks, Plus, Search, Sparkles, Trash2, X } from "lucide-react";
 
 import {
   Badge,
@@ -22,6 +22,7 @@ import {
   Field,
   IconButton,
   Input,
+  Progress,
   Select,
   Skeleton,
 } from "@/components/ui";
@@ -35,6 +36,12 @@ import { useCreateMySet, useUpdateMySet, useVocabSections, useVocabSet, useWordS
 
 /** Mirrors `VocabSet.TARGET_WORD_COUNT` — a guide on the tray, never a hard cap. */
 const TARGET_WORD_COUNT = 25;
+
+const JAKARTA = "var(--font-plus-jakarta), system-ui, sans-serif";
+
+/** Rows enter in sequence; the tail of a long result list shouldn't crawl in. */
+const STAGGER_MS = 40;
+const STAGGER_CAP = 12;
 
 /** The tray has to render words that arrived from two shapes (search hit / set word). */
 type SelectedWord = {
@@ -133,7 +140,7 @@ export function CustomSetBuilder() {
 
   if (notEditable) {
     return (
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12" style={{ fontFamily: JAKARTA }}>
         <BackLink />
         <EmptyState
           icon={Sparkles}
@@ -141,7 +148,9 @@ export function CustomSetBuilder() {
           description="Only sets you built yourself can be changed. Start a fresh one and pick the words you want."
           action={
             <Link href="/vocabulary/new-set" className="ds-ring rounded-xl">
-              <Button tabIndex={-1}>Build a new set</Button>
+              <Button className="cr-press" tabIndex={-1}>
+                Build a new set
+              </Button>
             </Link>
           }
         />
@@ -151,29 +160,59 @@ export function CustomSetBuilder() {
 
   if (editingId && existing.isError) {
     return (
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12" style={{ fontFamily: JAKARTA }}>
         <BackLink />
         <VocabErrorState title="Couldn't open that set" onRetry={() => void existing.refetch()} />
       </div>
     );
   }
 
+  const hits = results.data ?? [];
+  const pct = Math.min(100, Math.round((selected.length / TARGET_WORD_COUNT) * 100));
+  const remaining = TARGET_WORD_COUNT - selected.length;
+  const trayHint =
+    selected.length === 0
+      ? `Aim for about ${TARGET_WORD_COUNT} — that's one full set.`
+      : remaining > 0
+        ? `${remaining} more to hit a full set.`
+        : "Full set — add more if you want a longer drill.";
+
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12" style={{ fontFamily: JAKARTA }}>
       <BackLink />
 
-      <div>
+      <header className="cr-section">
         <p className="ds-overline text-primary">My sets</p>
-        <h1 className="ds-h1 mt-1">{editingId ? "Edit set" : "Build a set"}</h1>
-        <p className="ds-small mt-1">
+        <h1 className="ds-display mt-1">{editingId ? "Edit set" : "Build a set"}</h1>
+        <p className="ds-lead mt-1.5 max-w-xl">
           Search the question bank, add the words you want to drill, and study them with all four modes.
         </p>
-      </div>
+      </header>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         {/* ── Bank search ─────────────────────────────────────────────── */}
-        <Card>
+        <Card className="cr-cardrise">
           <CardContent className="flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                <Library className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="ds-h3">Word bank</h2>
+                <p className="ds-small mt-0.5">
+                  {query.length === 0 || results.isLoading || results.isError ? (
+                    "Every published section, searchable by word or definition."
+                  ) : (
+                    <>
+                      <span className="ds-num font-bold text-foreground">{hits.length}</span>
+                      {hits.length === 1 ? " match for " : " matches for "}
+                      <span className="font-bold text-foreground">“{query}”</span>
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 value={rawQuery}
@@ -228,7 +267,7 @@ export function CustomSetBuilder() {
                 description="The word bank didn't answer. Try that search again."
                 onRetry={() => void results.refetch()}
               />
-            ) : (results.data ?? []).length === 0 ? (
+            ) : hits.length === 0 ? (
               <EmptyState
                 compact
                 icon={Search}
@@ -237,15 +276,18 @@ export function CustomSetBuilder() {
               />
             ) : (
               <ul className="flex flex-col gap-2">
-                {(results.data ?? []).map((w) => {
+                {hits.map((w, i) => {
                   const added = selectedIds.has(w.id);
                   return (
                     <li
                       key={w.id}
                       className={cn(
-                        "flex items-start gap-3 rounded-xl border p-3 transition-colors",
-                        added ? "border-primary/30 bg-primary-soft" : "border-border bg-surface-1",
+                        "cr-rowin flex items-start gap-3 rounded-xl border p-3 transition-colors",
+                        added
+                          ? "border-primary/30 bg-primary-soft"
+                          : "border-border bg-surface-1 hover:border-border-strong",
                       )}
+                      style={{ animationDelay: `${Math.min(i, STAGGER_CAP) * STAGGER_MS}ms` }}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -258,6 +300,7 @@ export function CustomSetBuilder() {
                       <Button
                         size="sm"
                         variant={added ? "subtle" : "secondary"}
+                        className={added ? undefined : "cr-press"}
                         leftIcon={added ? <Check /> : <Plus />}
                         disabled={added}
                         onClick={() =>
@@ -281,7 +324,7 @@ export function CustomSetBuilder() {
 
         {/* ── Tray ────────────────────────────────────────────────────── */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          <Card>
+          <Card className="cr-cardrise">
             <CardContent className="flex flex-col gap-4">
               <Field label="Set name" htmlFor="vocab-set-title" required error={titleError}>
                 <Input
@@ -298,11 +341,16 @@ export function CustomSetBuilder() {
               </Field>
 
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-baseline gap-2">
-                  <span className="ds-h4">Selected</span>
-                  <span className="ds-num text-sm font-bold text-muted-foreground">
-                    {selected.length} / {TARGET_WORD_COUNT}
+                <div className="flex items-center gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+                    <ListChecks className="h-[18px] w-[18px]" />
                   </span>
+                  <div>
+                    <span className="ds-h4">Selected</span>
+                    <p className="ds-num text-[13px] font-bold text-muted-foreground">
+                      {selected.length} / {TARGET_WORD_COUNT}
+                    </p>
+                  </div>
                 </div>
                 {selected.length > 0 ? (
                   <Button variant="ghost" size="sm" leftIcon={<Trash2 />} onClick={() => setSelected([])}>
@@ -318,16 +366,15 @@ export function CustomSetBuilder() {
                   ))}
                 </div>
               ) : selected.length === 0 ? (
-                <EmptyState
-                  compact
-                  icon={Sparkles}
-                  title="No words yet"
-                  description={`Aim for about ${TARGET_WORD_COUNT} — that's one full set.`}
-                />
+                <EmptyState compact icon={Sparkles} title="No words yet" description={trayHint} />
               ) : (
                 <ul className="flex max-h-[46vh] flex-col gap-1.5 overflow-y-auto pr-1">
                   {selected.map((w, i) => (
-                    <li key={w.id} className="flex items-center gap-2 rounded-xl bg-surface-2 py-2 pl-3 pr-2">
+                    <li
+                      key={w.id}
+                      className="cr-rowin flex items-center gap-2 rounded-xl bg-surface-2 py-2 pl-3 pr-2 transition-colors hover:bg-surface-3"
+                      style={{ animationDelay: `${Math.min(i, STAGGER_CAP) * STAGGER_MS}ms` }}
+                    >
                       <span className="ds-num w-6 shrink-0 text-[12px] font-bold text-label-foreground">{i + 1}</span>
                       <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{w.word}</span>
                       <IconButton
@@ -343,12 +390,44 @@ export function CustomSetBuilder() {
                   ))}
                 </ul>
               )}
-
-              <Button fullWidth loading={saving} disabled={selected.length === 0} onClick={() => void save()}>
-                {editingId ? "Save changes" : "Create set"}
-              </Button>
             </CardContent>
           </Card>
+        </div>
+      </div>
+
+      {/* ── Sticky save bar — running count against the 25-word target ─ */}
+      <div className="sticky bottom-4 z-20">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-2xl border border-border bg-card/95 p-3.5 shadow-pop backdrop-blur">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
+              <ListChecks className="h-5 w-5" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-1.5">
+                <span className="ds-num text-[22px] font-extrabold leading-none text-foreground">{selected.length}</span>
+                <span className="ds-num text-[13px] font-bold text-muted-foreground">/ {TARGET_WORD_COUNT} words</span>
+              </div>
+              <p className="ds-small mt-1 truncate">{trayHint}</p>
+            </div>
+          </div>
+
+          <div className="min-w-[140px] flex-1">
+            <Progress
+              value={pct}
+              size="sm"
+              tone={selected.length >= TARGET_WORD_COUNT ? "success" : "primary"}
+              label={`${selected.length} of ${TARGET_WORD_COUNT} words selected`}
+            />
+          </div>
+
+          <Button
+            className="cr-press"
+            loading={saving}
+            disabled={selected.length === 0}
+            onClick={() => void save()}
+          >
+            {editingId ? "Save changes" : "Create set"}
+          </Button>
         </div>
       </div>
     </div>

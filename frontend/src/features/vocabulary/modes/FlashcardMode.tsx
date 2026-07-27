@@ -5,10 +5,15 @@
  * "still learning" pile is empty. Every verdict from every round is reported, so
  * a word answered wrong then right records both attempts and the streak-based
  * progress model sees the real history.
+ *
+ * Accent: **primary** — the same one `STUDY_MODE_ACCENT.flashcard` gives the
+ * Flashcards card on the set page. The verdict buttons are danger/success
+ * because they *are* the grade, not because of the accent.
  */
 
-import { Check, RotateCcw, Sparkles, X } from "lucide-react";
+import { Check, Flag, RotateCcw, RotateCw, Sparkles, X } from "lucide-react";
 import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -118,6 +123,7 @@ function FlashcardRunner({
           ]}
           session={session}
           onRestart={onRestart}
+          celebrate={correct === results.length}
         />
       </ModeFrame>
     );
@@ -125,33 +131,55 @@ function FlashcardRunner({
 
   if (phase === "review") {
     const learned = deck.filter((w) => !missed.some((m) => m.id === w.id));
+    const clearedPct = deck.length === 0 ? 0 : (learned.length / deck.length) * 100;
     return (
       <ModeFrame setId={setId} title={TITLE} subtitle={set.title}>
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
-          <div className="text-center">
-            <h2 className="ds-h2">Round {round} done</h2>
-            <p className="ds-lead mt-2">Keep going — the pile shrinks every round.</p>
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-8">
+          {/* CHECKPOINT — a progress moment between rounds, not a results table. */}
+          <div className="cr-cardrise overflow-hidden rounded-3xl border border-border bg-card p-6 shadow-pop">
+            <div className="flex items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary">
+                <Flag className="h-6 w-6" aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="ds-overline">Checkpoint</p>
+                <h2 className="ds-h2 mt-1">Round {round} done</h2>
+                <p className="ds-small mt-1.5">Keep going — the pile shrinks every round.</p>
+              </div>
+            </div>
+
+            {/* Segmented bar: what stuck this round vs what's coming back. */}
+            <div className="mt-5 flex h-2.5 w-full overflow-hidden rounded-full bg-surface-3">
+              <div className="cr-bar h-full bg-success" style={{ width: `${clearedPct}%` }} />
+              <div className="cr-bar h-full bg-warning" style={{ width: `${100 - clearedPct}%` }} />
+            </div>
+            <p className="mt-2.5 text-[12px] font-semibold text-muted-foreground">
+              <span className="ds-num font-extrabold text-foreground">{learned.length}</span> of{" "}
+              <span className="ds-num font-extrabold text-foreground">{deck.length}</span> cards cleared this round
+            </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <ReviewColumn
               tone="success"
-              title="Learned"
+              title="You know these"
               count={learned.length}
               words={learned}
               emptyText="Nothing landed this round — that's what the next one is for."
+              delay={0}
             />
             <ReviewColumn
               tone="warning"
-              title="Still learning"
+              title="Keep practising these"
               count={missed.length}
               words={missed}
               emptyText=""
+              delay={80}
             />
           </div>
 
           <div className="flex justify-center">
-            <Button size="lg" onClick={practiseMissed} leftIcon={<RotateCcw />}>
+            <Button size="lg" className="cr-press" onClick={practiseMissed} leftIcon={<RotateCcw />}>
               Practice {missed.length} word{missed.length === 1 ? "" : "s"} again
             </Button>
           </div>
@@ -174,8 +202,11 @@ function FlashcardRunner({
     >
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
         {round > 1 ? (
-          <p className="text-center text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Round {round} · still learning
+          <p className="flex justify-center">
+            <span className="cr-pillin inline-flex items-center gap-1.5 rounded-full border border-warning/25 bg-warning-soft px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-warning-foreground">
+              <RotateCcw className="h-3 w-3" aria-hidden />
+              Round <span className="ds-num">{round}</span> · still learning
+            </span>
           </p>
         ) : null}
 
@@ -214,7 +245,7 @@ function FlipCard({
         type="button"
         onClick={onFlip}
         aria-label={flipped ? "Show the word" : "Show the definition"}
-        className="ds-ring block h-[min(58vh,420px)] w-full rounded-3xl text-left"
+        className="ds-ring cr-lift block h-[min(58vh,420px)] w-full rounded-3xl text-left"
       >
         <div
           className={cn(
@@ -222,26 +253,44 @@ function FlipCard({
             flipped && "[transform:rotateY(180deg)]",
           )}
         >
-          <CardFace>
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Word</p>
-            <p className="mt-4 text-center text-3xl font-extrabold text-foreground sm:text-4xl">{word.word}</p>
+          <CardFace hint="Flip for definition">
+            <p className="ds-overline">Word</p>
+            <p className="ds-display mt-4 break-words text-center">{word.word}</p>
             {word.part_of_speech ? (
-              <p className="mt-2 text-sm italic text-muted-foreground">{word.part_of_speech}</p>
+              <span className="mt-4 inline-flex items-center rounded-full border border-border bg-surface-2 px-3 py-1 text-[12px] font-bold italic text-muted-foreground">
+                {word.part_of_speech}
+              </span>
             ) : null}
           </CardFace>
-          <CardFace back>
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Definition</p>
-            <p className="mt-4 text-center text-xl font-semibold text-foreground sm:text-2xl">{word.definition}</p>
+          <CardFace back hint="Flip for word">
+            <p className="ds-overline">Definition</p>
+            <p className="mt-4 max-w-xl text-center text-xl font-bold leading-snug text-foreground sm:text-2xl">
+              {word.definition}
+            </p>
             {word.part_of_speech ? (
-              <p className="mt-3 text-sm italic text-muted-foreground">{word.part_of_speech}</p>
+              <span className="mt-3 inline-flex items-center rounded-full border border-border bg-surface-2 px-3 py-1 text-[12px] font-bold italic text-muted-foreground">
+                {word.part_of_speech}
+              </span>
             ) : null}
             {word.example ? (
-              <p className="mt-4 max-w-md text-center text-sm text-muted-foreground">“{word.example}”</p>
+              <p className="mt-5 max-w-md rounded-xl border-l-2 border-primary/40 bg-surface-2 px-4 py-2.5 text-left text-[13px] italic leading-relaxed text-muted-foreground">
+                “{word.example}”
+              </p>
             ) : null}
             {word.synonyms.length ? (
-              <p className="mt-4 text-[12px] text-muted-foreground">
-                <span className="font-semibold">Synonyms:</span> {word.synonyms.join(", ")}
-              </p>
+              <div className="mt-4 flex max-w-md flex-wrap items-center justify-center gap-1.5">
+                <span className="text-[11px] font-extrabold uppercase tracking-[0.08em] text-muted-foreground">
+                  Synonyms
+                </span>
+                {word.synonyms.map((s, i) => (
+                  <span
+                    key={`${s}-${i}`}
+                    className="rounded-full bg-primary-soft px-2.5 py-1 text-[12px] font-bold text-primary"
+                  >
+                    {s}
+                  </span>
+                ))}
+              </div>
             ) : null}
           </CardFace>
         </div>
@@ -250,15 +299,34 @@ function FlipCard({
   );
 }
 
-function CardFace({ children, back }: { children: React.ReactNode; back?: boolean }) {
+/**
+ * One side of the card. The corner chip is the flip affordance — the whole
+ * face is clickable, but nothing on a plain word says "there's a back" without
+ * it.
+ */
+function CardFace({ children, back, hint }: { children: ReactNode; back?: boolean; hint: string }) {
   return (
     <div
       className={cn(
-        "absolute inset-0 flex flex-col items-center justify-center overflow-y-auto rounded-3xl border border-border bg-card p-6 shadow-card [backface-visibility:hidden]",
+        "absolute inset-0 overflow-hidden rounded-3xl border border-border bg-card shadow-pop [backface-visibility:hidden]",
         back && "[transform:rotateY(180deg)]",
       )}
     >
-      {children}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-primary-soft"
+      />
+      <div className="h-full overflow-y-auto">
+        <div className="relative flex min-h-full flex-col items-center justify-center px-6 pb-16 pt-12">
+          {children}
+        </div>
+      </div>
+      <span
+        aria-hidden
+        className="absolute bottom-4 right-4 inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-[11px] font-extrabold text-muted-foreground"
+      >
+        <RotateCw className="h-3 w-3" /> {hint}
+      </span>
     </div>
   );
 }
@@ -270,17 +338,17 @@ function VerdictButton({
 }: {
   tone: "wrong" | "correct";
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "ds-ring cr-press inline-flex h-14 items-center justify-center gap-2 rounded-2xl border text-[15px] font-bold",
+        "ds-ring cr-press inline-flex h-16 items-center justify-center gap-2.5 rounded-2xl border-2 text-[16px] font-extrabold shadow-card",
         tone === "wrong"
-          ? "border-danger/25 bg-danger-soft text-danger-foreground hover:border-danger/40"
-          : "border-success/25 bg-success-soft text-success-foreground hover:border-success/40",
+          ? "border-danger/25 bg-danger-soft text-danger-foreground hover:border-danger/60"
+          : "border-success/25 bg-success-soft text-success-foreground hover:border-success/60",
       )}
     >
       {children}
@@ -294,25 +362,40 @@ function ReviewColumn({
   count,
   words,
   emptyText,
+  delay,
 }: {
   tone: "success" | "warning";
   title: string;
   count: number;
   words: VocabWord[];
   emptyText: string;
+  delay: number;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 shadow-card">
-      <div className="flex items-center gap-2">
-        {tone === "success" ? (
-          <Sparkles className="h-4 w-4 text-success" />
-        ) : (
-          <RotateCcw className="h-4 w-4 text-warning" />
-        )}
-        <p className="ds-h4">{title}</p>
+    <div
+      className={cn(
+        "cr-cardrise rounded-2xl border bg-card p-4 shadow-card",
+        tone === "success" ? "border-success/25" : "border-warning/25",
+      )}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className="flex items-center gap-2.5">
         <span
           className={cn(
-            "ml-auto rounded-full px-2 py-0.5 text-[12px] font-bold tabular-nums",
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+            tone === "success" ? "bg-success-soft text-success" : "bg-warning-soft text-warning",
+          )}
+        >
+          {tone === "success" ? (
+            <Sparkles className="h-4.5 w-4.5" aria-hidden />
+          ) : (
+            <RotateCcw className="h-4.5 w-4.5" aria-hidden />
+          )}
+        </span>
+        <p className="ds-h4 min-w-0 flex-1 truncate">{title}</p>
+        <span
+          className={cn(
+            "ds-num rounded-full px-2.5 py-0.5 text-[13px] font-extrabold",
             tone === "success"
               ? "bg-success-soft text-success-foreground"
               : "bg-warning-soft text-warning-foreground",
@@ -324,9 +407,18 @@ function ReviewColumn({
       {words.length === 0 ? (
         emptyText ? <p className="mt-3 text-[13px] text-muted-foreground">{emptyText}</p> : null
       ) : (
-        <ul className="mt-3 flex flex-col gap-1.5">
-          {words.map((w) => (
-            <li key={w.id} className="truncate text-sm font-semibold text-foreground">
+        <ul className="mt-4 flex flex-wrap gap-1.5">
+          {words.map((w, i) => (
+            <li
+              key={w.id}
+              className={cn(
+                "cr-rowin max-w-full truncate rounded-full border px-2.5 py-1 text-[13px] font-bold",
+                tone === "success"
+                  ? "border-success/20 bg-success-soft text-success-foreground"
+                  : "border-warning/20 bg-warning-soft text-warning-foreground",
+              )}
+              style={{ animationDelay: `${delay + i * 40}ms` }}
+            >
               {w.word}
             </li>
           ))}

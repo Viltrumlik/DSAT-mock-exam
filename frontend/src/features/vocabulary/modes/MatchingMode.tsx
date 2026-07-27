@@ -4,9 +4,13 @@
  * Matching mode — words and definitions shuffled into one grid, dealt six at a
  * time. A round is a wall: it can't be left until every pair is found, and the
  * clock counts up across the whole set so the score is "how fast", not "how many".
+ *
+ * Accent: **info** — the same one `STUDY_MODE_ACCENT.matching` gives the Matching
+ * card on the set page. Danger (a wrong pair) and success (board cleared) are
+ * feedback, not accent, and outrank it where they appear.
  */
 
-import { Timer } from "lucide-react";
+import { Layers, Timer } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { formatClock } from "@/features/testing-simulation/utils/time";
@@ -25,6 +29,25 @@ const TITLE = "Matching";
 const WRONG_FLASH_MS = 650;
 /** Beat between the last pair fading out and the next round dealing. */
 const ROUND_BREAK_MS = 550;
+
+/**
+ * The "wrong pair" shake. Kept local rather than added to globals.css because
+ * it's the only surface that uses it; the reduced-motion rule mirrors the
+ * global guard so the flash still reads without any movement.
+ */
+const SHAKE_CSS = `
+@keyframes vocab-match-shake {
+  0%, 100% { transform: translateX(0); }
+  18% { transform: translateX(-6px); }
+  38% { transform: translateX(5px); }
+  58% { transform: translateX(-3px); }
+  78% { transform: translateX(2px); }
+}
+.vocab-match-shake { animation: vocab-match-shake .42s cubic-bezier(.36,.07,.19,.97) both; }
+@media (prefers-reduced-motion: reduce) {
+  .vocab-match-shake { animation: none; }
+}
+`;
 
 export function MatchingMode({ setId }: { setId: number }) {
   return (
@@ -85,8 +108,8 @@ function MatchingRunner({
   }
 
   const clock = (
-    <ModePill tone={done ? "primary" : "neutral"}>
-      <Timer className="h-3.5 w-3.5" />
+    <ModePill tone={done ? "info" : "neutral"}>
+      <Timer className="h-3.5 w-3.5" aria-hidden />
       {formatClock(elapsed)}
     </ModePill>
   );
@@ -106,6 +129,7 @@ function MatchingRunner({
           ]}
           session={session}
           onRestart={onRestart}
+          celebrate={mistakes === 0}
         />
       </ModeFrame>
     );
@@ -115,13 +139,28 @@ function MatchingRunner({
     <ModeFrame
       setId={setId}
       title={TITLE}
-      subtitle={`${set.title} · round ${roundIndex + 1} of ${rounds.length}`}
+      subtitle={set.title}
       progress={(roundIndex / rounds.length) * 100}
-      right={clock}
+      right={
+        <>
+          <span className="hidden sm:inline-flex">
+            <ModePill tone="info">
+              <Layers className="h-3.5 w-3.5" aria-hidden />
+              Round {roundIndex + 1} / {rounds.length}
+            </ModePill>
+          </span>
+          {clock}
+        </>
+      }
     >
+      {/* Mounted beside the board, not inside it, so the keyframes survive the
+          remount that deals each new round. */}
+      <style>{SHAKE_CSS}</style>
       <MatchingRound
         key={roundIndex}
         words={rounds[roundIndex] ?? []}
+        roundNumber={roundIndex + 1}
+        roundCount={rounds.length}
         onMistake={handleMistake}
         onComplete={handleRoundDone}
       />
@@ -131,10 +170,14 @@ function MatchingRunner({
 
 function MatchingRound({
   words,
+  roundNumber,
+  roundCount,
   onMistake,
   onComplete,
 }: {
   words: VocabWord[];
+  roundNumber: number;
+  roundCount: number;
   onMistake: (wordIds: number[]) => void;
   onComplete: () => void;
 }) {
@@ -190,40 +233,64 @@ function MatchingRound({
   };
 
   const remaining = (cards.length - matched.size) / 2;
+  const total = cards.length / 2;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-6">
-      <p className="text-center text-[13px] text-muted-foreground">
-        Tap a word, then its definition. {remaining} pair{remaining === 1 ? "" : "s"} left.
-      </p>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6">
+      {/* Board header — instruction on the left, live pair counter on the right. */}
+      <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:justify-between">
+        <p className="text-[13px] font-semibold text-muted-foreground">
+          Tap a word, then its definition.
+        </p>
+        <div className="flex items-center gap-2">
+          <span className="ds-num inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 px-3 py-1 text-[12px] font-extrabold text-muted-foreground sm:hidden">
+            Round {roundNumber} / {roundCount}
+          </span>
+          <span
+            className={cn(
+              "ds-num inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] font-extrabold",
+              remaining === 0
+                ? "border-success/25 bg-success-soft text-success-foreground"
+                : "border-info/20 bg-info-soft text-info-foreground",
+            )}
+          >
+            {remaining} of {total} pair{total === 1 ? "" : "s"} left
+          </span>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {cards.map((card) => {
+        {cards.map((card, i) => {
           const isMatched = matched.has(card.key);
           const isSelected = selected === card.key;
           const isWrong = !!wrongPair?.includes(card.key);
           return (
-            <button
-              key={card.key}
-              type="button"
-              onClick={() => pick(card)}
-              disabled={isMatched}
-              aria-pressed={isSelected}
-              className={cn(
-                "ds-ring flex min-h-[104px] items-center justify-center rounded-2xl border p-3 text-center transition-[opacity,border-color,background-color,transform] duration-200 motion-reduce:transition-none",
-                card.face === "word"
-                  ? "text-[15px] font-extrabold text-foreground"
-                  : "text-[13px] font-medium text-foreground",
-                isMatched
-                  ? "pointer-events-none border-transparent bg-surface-2 opacity-25"
-                  : isWrong
-                    ? "border-danger/50 bg-danger-soft text-danger-foreground"
-                    : isSelected
-                      ? "border-primary bg-primary-soft text-primary"
-                      : "border-border bg-card shadow-card hover:border-border-strong hover:-translate-y-0.5 motion-reduce:hover:translate-y-0",
-              )}
-            >
-              <span className="line-clamp-4">{card.text}</span>
-            </button>
+            // The entrance animation lives on the wrapper: `cr-rowin` fills
+            // forwards, and holding `transform: none` on the button itself
+            // would cancel the selected/matched transforms below.
+            <div key={card.key} className="cr-rowin" style={{ animationDelay: `${i * 45}ms` }}>
+              <button
+                type="button"
+                onClick={() => pick(card)}
+                disabled={isMatched}
+                aria-pressed={isSelected}
+                className={cn(
+                  "ds-ring flex h-full min-h-[104px] w-full items-center justify-center rounded-2xl border-2 p-3 text-center transition-[opacity,border-color,background-color,box-shadow,transform] duration-200 motion-reduce:transition-none",
+                  card.face === "word"
+                    ? "text-[15px] font-extrabold text-foreground"
+                    : "text-[13px] font-medium text-foreground",
+                  isMatched
+                    ? "pointer-events-none scale-[0.94] border-transparent bg-surface-2 text-muted-foreground opacity-30 shadow-none"
+                    : isWrong
+                      ? "vocab-match-shake border-danger bg-danger-soft text-danger-foreground shadow-pop"
+                      : isSelected
+                        ? "-translate-y-1 border-info bg-info-soft text-info-foreground shadow-pop"
+                        : "border-border bg-card shadow-card hover:-translate-y-0.5 hover:border-border-strong hover:shadow-pop motion-reduce:hover:translate-y-0",
+                )}
+              >
+                <span className="line-clamp-4">{card.text}</span>
+              </button>
+            </div>
           );
         })}
       </div>

@@ -4,6 +4,10 @@
  * Speed mode — sixty seconds, one word at a time, two definitions to choose
  * between. A click advances instantly: no confirm step, no feedback pause, the
  * whole point is recognition under time pressure.
+ *
+ * Accent: **warning** — the same one `STUDY_MODE_ACCENT.speed` gives the Speed
+ * card on the set page, so the mode a student picked is the mode they land in.
+ * Danger is reserved for the last ten seconds, and outranks the accent there.
  */
 
 import { Timer, Zap } from "lucide-react";
@@ -116,19 +120,34 @@ function SpeedRunner({
   if (phase === "leadin") {
     return (
       <ModeFrame setId={setId} title={TITLE} subtitle={set.title}>
-        <div className="flex h-full flex-col items-center justify-center gap-6 px-4">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">Get ready</p>
-          <p
-            key={tick}
-            className="cr-pop text-[124px] font-extrabold leading-none tabular-nums text-primary sm:text-[168px]"
-            aria-live="assertive"
-          >
-            {Math.max(1, tick)}
-          </p>
-          <p className="max-w-sm text-center text-sm text-muted-foreground">
-            {SPEED_ROUND_SECONDS} seconds. Pick the right definition — press <Kbd>1</Kbd> or <Kbd>2</Kbd> to go
-            faster.
-          </p>
+        <div className="relative flex h-full flex-col items-center justify-center gap-7 px-4 py-10">
+          {/* Ambient halo behind the digit — centred by flex so the float animation
+              never fights a translate utility. */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
+            <div className="cr-float h-[min(82vw,460px)] w-[min(82vw,460px)] rounded-full bg-warning-soft" />
+          </div>
+
+          <p className="ds-overline cr-pillin relative">Get ready</p>
+
+          {/* The digit re-mounts on every tick (keyed), so the pop replays 3 → 2 → 1. */}
+          <div className="cr-pulse relative flex h-[min(56vw,224px)] w-[min(56vw,224px)] items-center justify-center rounded-full border border-warning/30 bg-card">
+            <p
+              key={tick}
+              className="cr-celebpop ds-num text-[92px] font-extrabold leading-none tracking-[-0.05em] text-warning-foreground sm:text-[124px]"
+              aria-live="assertive"
+            >
+              {Math.max(1, tick)}
+            </p>
+          </div>
+
+          <div className="relative flex max-w-sm flex-col items-center gap-2 text-center">
+            <p className="text-[15px] font-bold text-foreground">
+              <span className="ds-num">{SPEED_ROUND_SECONDS}</span> seconds. Pick the right definition.
+            </p>
+            <p className="text-[13px] text-muted-foreground">
+              Press <Kbd>1</Kbd> or <Kbd>2</Kbd> to go faster.
+            </p>
+          </div>
         </div>
       </ModeFrame>
     );
@@ -160,6 +179,9 @@ function SpeedRunner({
     );
   }
 
+  const urgent = secondsLeft <= URGENT_SECONDS;
+  const optionCount = current?.options.length ?? 0;
+
   return (
     <ModeFrame
       setId={setId}
@@ -170,35 +192,87 @@ function SpeedRunner({
         <>
           <ModePill>
             <Zap className="h-3.5 w-3.5" />
-            {index + 1} / {prompts.length}
+            <span className="ds-num">
+              {index + 1} / {prompts.length}
+            </span>
           </ModePill>
-          <ModePill tone={secondsLeft <= URGENT_SECONDS ? "danger" : "primary"}>
-            <Timer className="h-3.5 w-3.5" />
-            {formatClock(secondsLeft)}
-          </ModePill>
+          {/* ModePill takes no className, so the urgency pulse rides on a wrapper. */}
+          <span className={cn("inline-flex rounded-full", urgent && "animate-pulse")}>
+            <ModePill tone={urgent ? "danger" : "warning"}>
+              <Timer className="h-3.5 w-3.5" />
+              <span className="ds-num">{formatClock(secondsLeft)}</span>
+            </ModePill>
+          </span>
         </>
       }
     >
-      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-8">
-        <p className="text-center text-3xl font-extrabold text-foreground sm:text-4xl">{current?.word}</p>
-        <div className="grid gap-3">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6 sm:gap-6 sm:py-10">
+        {/* PROMPT — re-mounts per word so the pop marks each new card. */}
+        <div
+          key={index}
+          className={cn(
+            "cr-pop relative overflow-hidden rounded-3xl border bg-card p-6 text-center shadow-pop sm:p-8",
+            urgent ? "border-danger/45" : "border-border",
+          )}
+        >
+          <div
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute -right-10 -top-14 h-40 w-40 rounded-full",
+              urgent ? "bg-danger-soft" : "bg-warning-soft",
+            )}
+          />
+          <p className="ds-overline relative">Which definition fits?</p>
+          <p className="relative mt-3 text-[32px] font-extrabold leading-[1.1] tracking-[-0.03em] text-foreground sm:text-[44px]">
+            {current?.word}
+          </p>
+          <span
+            className={cn(
+              "ds-num relative mt-4 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[13px] font-extrabold",
+              urgent
+                ? "animate-pulse border-danger/40 bg-danger-soft text-danger-foreground"
+                : "border-border bg-surface-2 text-muted-foreground",
+            )}
+          >
+            <Timer className="h-3.5 w-3.5" aria-hidden />
+            {formatClock(secondsLeft)}
+          </span>
+        </div>
+
+        {/* CHOICES — big targets; the badge doubles as the 1 / 2 key hint. */}
+        <div className={cn("grid gap-3 sm:gap-4", optionCount > 1 && "sm:grid-cols-2")}>
           {current?.options.map((option, i) => (
             <button
               key={`${current.wordId}-${i}`}
               type="button"
               onClick={() => answer(i)}
+              style={{ animationDelay: `${i * 50}ms` }}
               className={cn(
-                "ds-ring cr-press flex min-h-[84px] items-center gap-3 rounded-2xl border border-border bg-card p-4 text-left",
-                "text-[15px] font-semibold text-foreground shadow-card hover:border-primary/40 hover:bg-primary-soft",
+                // cr-pillin, not cr-rowin: a speed round can't afford a long
+                // entrance travel between words.
+                // rounded-2xl matches the answer options in Matching and Test —
+                // one radius for "a thing you pick" across all four modes.
+                "ds-ring cr-press cr-pillin group flex min-h-[132px] flex-col items-start gap-3 rounded-2xl border border-border bg-card p-5 text-left shadow-card sm:min-h-[156px]",
+                "hover:border-warning/45 hover:bg-warning-soft active:border-warning",
               )}
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-[13px] font-bold text-muted-foreground">
+              {/* Soft accent fill, not a solid one: `--warning` is a light amber
+                  in dark mode, so white-on-warning would fail contrast there. */}
+              <span className="ds-num flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-[15px] font-extrabold text-muted-foreground group-hover:bg-warning-soft group-hover:text-warning-foreground">
                 {i + 1}
               </span>
-              <span>{option.text}</span>
+              <span className="text-[16px] font-semibold leading-snug text-foreground sm:text-[17px]">
+                {option.text}
+              </span>
             </button>
           ))}
         </div>
+
+        {optionCount > 1 ? (
+          <p className="text-center text-[12px] font-medium text-muted-foreground">
+            Press <Kbd>1</Kbd> or <Kbd>2</Kbd> — arrows work too
+          </p>
+        ) : null}
       </div>
     </ModeFrame>
   );
