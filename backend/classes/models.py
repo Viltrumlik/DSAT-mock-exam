@@ -383,6 +383,12 @@ class Assignment(models.Model):
     status = models.CharField(
         max_length=12, choices=STATUS_CHOICES, default=STATUS_PUBLISHED, db_index=True
     )
+
+    # Set once the "new homework" email has been sent to the class, so editing or
+    # re-publishing a homework never re-mails the students. Claimed with a conditional
+    # UPDATE (see classes.mail_homework.notify_homework_assigned) so concurrent requests
+    # cannot both send.
+    notified_at = models.DateTimeField(null=True, blank=True)
     published_at = models.DateTimeField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
 

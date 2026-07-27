@@ -57,6 +57,25 @@ SAMPLES = [
             "offscreen_warnings": 2,
         },
     ),
+    (
+        "homework_assigned.html",
+        {
+            "homework_title": "Unit 4 — Reading & Writing practice set",
+            "category_label": "Homework",
+            "classroom_name": "Senior G12 · English · Abdulahad N.",
+            "instructions": "Read the passage twice before you start. Focus on transitions and "
+            "command-of-evidence questions — those were the weakest last week.",
+            "contents": ["2 assessments to complete", "1 past paper", "1 file to download", "A file for you to hand in"],
+            "has_due": True,
+            "due_date": "Wednesday, 29 July 2026",
+            "due_time": "18:00",
+            "due_month": "JUL",
+            "due_day": "29",
+            "due_weekday": "WED",
+            "timezone_label": "Asia/Tashkent",
+            "homework_url": "https://mastersat.uz/classes/12/assignments/340",
+        },
+    ),
 ]
 
 

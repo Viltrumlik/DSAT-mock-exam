@@ -33,9 +33,26 @@ MIDTERM_SAMPLE = {
     "midterm_url": "https://mastersat.uz/midterm",
 }
 
+HOMEWORK_SAMPLE = {
+    "homework_title": "Unit 4 — Reading & Writing practice set",
+    "category_label": "Homework",
+    "classroom_name": "Senior G12 · English · Abdulahad N.",
+    "instructions": "Read the passage twice before you start.",
+    "contents": ["2 assessments to complete", "1 past paper", "A file for you to hand in"],
+    "has_due": True,
+    "due_date": "Wednesday, 29 July 2026",
+    "due_time": "18:00",
+    "due_month": "JUL",
+    "due_day": "29",
+    "due_weekday": "WED",
+    "timezone_label": "Asia/Tashkent",
+    "homework_url": "https://mastersat.uz/classes/12/assignments/340",
+}
+
 TEMPLATES = {
     "email/verification_code.html": {"code": "079431", "ttl_minutes": 15},
     "email/midterm_scheduled.html": MIDTERM_SAMPLE,
+    "email/homework_assigned.html": HOMEWORK_SAMPLE,
 }
 
 
@@ -112,3 +129,14 @@ class EmailShellTests(SimpleTestCase):
         )
         self.assertNotIn("<script>alert(1)</script>", html)
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", html)
+
+    def test_homework_title_and_instructions_are_escaped(self):
+        """The homework title and instructions are teacher-supplied and land in the body,
+        the <title> and the preheader — markup there scripts every student's mail client."""
+        html = self._render(
+            "email/homework_assigned.html",
+            {**HOMEWORK_SAMPLE, "homework_title": "<script>t</script>", "instructions": "<b>i</b>"},
+        )
+        self.assertNotIn("<script>t</script>", html)
+        self.assertNotIn("<b>i</b>", html)
+        self.assertIn("&lt;script&gt;t&lt;/script&gt;", html)
