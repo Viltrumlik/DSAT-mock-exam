@@ -54,7 +54,7 @@ export function MoreMenu(props: MoreMenuProps) {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex flex-col items-center text-xs font-semibold text-slate-600 hover:text-slate-900"
+        className="flex flex-col items-center gap-0.5 text-xs font-semibold text-slate-900 hover:text-slate-600"
       >
         <MoreVertical className="h-5 w-5" />
         More

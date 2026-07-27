@@ -1,5 +1,5 @@
 "use client";
-import { Calculator, ChevronDown, Highlighter, StickyNote } from "lucide-react";
+import { Calculator, ChevronDown, File, Highlighter } from "lucide-react";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -30,7 +30,7 @@ function ToolButton({ label, active, onClick, children }: { label: string; activ
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`flex flex-col items-center text-xs font-semibold ${active ? "text-blue-700" : "text-slate-600 hover:text-slate-900"}`}
+      className={`flex flex-col items-center gap-0.5 text-xs font-semibold ${active ? "text-[#2b47c9]" : "text-slate-900 hover:text-slate-600"}`}
     >
       {children}
       {label}
@@ -102,7 +102,7 @@ export function ExamHeader({
         <ToolButton label="Highlights & Notes" active={tools.highlighterActive} onClick={tools.toggleHighlighter}>
           <span className="flex items-center gap-1.5">
             <Highlighter className="h-[18px] w-[18px]" />
-            <StickyNote className="h-[18px] w-[18px]" />
+            <File className="h-[18px] w-[18px]" />
           </span>
         </ToolButton>
         <MoreMenu
