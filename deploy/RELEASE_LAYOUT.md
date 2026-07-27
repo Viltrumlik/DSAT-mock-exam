@@ -16,6 +16,27 @@ Production deploys use **immutable release directories** under `releases/<RELEAS
     media/                   # real uploads (e.g. profiles/); Nginx serves this path
     backups/                 # pg_dump -Fc files + release_state.json
     release_state.json       # written by release_deploy.sh / rollback.sh
+    maintenance/             # 503 page Nginx serves while PM2 is down mid-deploy
+```
+
+### Maintenance page
+
+`release_deploy.sh` copies `deploy/maintenance/` → `shared/maintenance/` at the
+`link_shared` stage — before PM2 stops, so the refreshed page is already in place when the
+downtime starts. It lives under `shared/` rather than `current/` precisely because the
+`current` symlink is being swapped exactly when the page is needed.
+
+Nginx turns the resulting 502 into it (`error_page 502 503 504`), answering **503 +
+`Retry-After: 60`** so crawlers hold the ranking. Three different bodies by request type:
+a page gets the HTML, `/api/` gets JSON (axios would choke on HTML), and a static asset gets
+a bare bodyless 503. The page polls `/api/health/live/` and reloads itself on recovery.
+
+**Nginx config is NOT deployed by the script** — after pulling this change, update the server
+once by hand:
+
+```bash
+sudo cp /var/www/satapp/current/deploy/nginx.conf /etc/nginx/sites-available/satapp
+sudo nginx -t && sudo systemctl reload nginx
 ```
 
 `RELEASE_ID` format: `YYYYMMDD-HHMMSS-<short_git_sha>` (example: `20260504-143022-a1b2c3d`).
