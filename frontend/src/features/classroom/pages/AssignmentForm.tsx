@@ -27,8 +27,8 @@ import { materialMeta } from "@/features/classroom/pages/materialMeta";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { formatApiErrorForToast } from "@/lib/apiError";
 import {
-  ArrowLeft, BookOpen, Check, ClipboardList, Clock, FlaskConical, Inbox, Layers,
-  Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
+  ArrowLeft, BookOpen, Check, ChevronRight, ClipboardList, Clock, FlaskConical, Inbox, Languages,
+  Layers, Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
 } from "lucide-react";
 
 type PastpaperRow = Record<string, unknown> & {
@@ -61,7 +61,20 @@ type PracticeTestPackOption = {
   already_assigned?: boolean;
 };
 
-type TabKey = "pastpapers" | "packs" | "assessments" | "submission";
+type VocabSetOption = {
+  id: number;
+  title: string;
+  word_count: number;
+  already_assigned?: boolean;
+};
+
+type VocabSectionOption = {
+  id: number;
+  title: string;
+  sets: VocabSetOption[];
+};
+
+type TabKey = "pastpapers" | "packs" | "assessments" | "vocabulary" | "submission";
 
 type Props = {
   classId: number;
@@ -106,7 +119,7 @@ function readAttachments(a: Record<string, unknown> | null | undefined): Attachm
 }
 
 // A live-cart entry (aggregates selections across every tab in the left column).
-type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment"; title: string; meta: string; assigned: boolean; onRemove: () => void };
+type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment" | "vocabulary"; title: string; meta: string; assigned: boolean; onRemove: () => void };
 
 export default function AssignmentForm({ classId, editingAssignment = null, onCancel, onSaved }: Props) {
   const isEditing = editingAssignment != null;
@@ -120,6 +133,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
   const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
+  const [selectedVocabSetIds, setSelectedVocabSetIds] = useState<Set<number>>(new Set());
   // Deadline is composed from two dropdowns (no calendar): a date (next 7 days) + a time.
   const [asgFiles, setAsgFiles] = useState<File[]>([]);
   const [replaceAttachments, setReplaceAttachments] = useState(false);
@@ -140,12 +154,17 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [packSearch, setPackSearch] = useState("");
   const [assessmentSearch, setAssessmentSearch] = useState("");
   const [assessmentSource, setAssessmentSource] = useState("ALL");
+  const [vocabSearch, setVocabSearch] = useState("");
+  // Vocabulary is the one two-level tab: null = the section list, otherwise the
+  // opened section's sets.
+  const [openVocabSectionId, setOpenVocabSectionId] = useState<number | null>(null);
 
   const [assignmentOptions, setAssignmentOptions] = useState<{
     practice_tests: PastpaperRow[];
     assessment_sets: AssessmentSetOption[];
     practice_test_packs: PracticeTestPackOption[];
-  }>({ practice_tests: [], assessment_sets: [], practice_test_packs: [] });
+    vocabulary_sections: VocabSectionOption[];
+  }>({ practice_tests: [], assessment_sets: [], practice_test_packs: [], vocabulary_sections: [] });
   const [asgOptionsLoading, setAsgOptionsLoading] = useState(false);
   const [asgOptionsError, setAsgOptionsError] = useState<string | null>(null);
   const [creatingAsg, setCreatingAsg] = useState(false);
@@ -207,6 +226,37 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const availableAssessmentSets = useMemo(() => filteredAssessmentSets.filter((a) => !a.already_assigned), [filteredAssessmentSets]);
   const givenAssessmentSets = useMemo(() => filteredAssessmentSets.filter((a) => a.already_assigned), [filteredAssessmentSets]);
 
+  // ── Vocabulary (two-level: sections → sets) ─────────────────────────────────
+  const openVocabSection = useMemo(
+    () => assignmentOptions.vocabulary_sections.find((s) => s.id === openVocabSectionId) ?? null,
+    [assignmentOptions.vocabulary_sections, openVocabSectionId]
+  );
+  // Set id → its row plus the section it lives in, so the cart can label a
+  // selection made in a section the teacher has since navigated away from.
+  const vocabSetIndex = useMemo(() => {
+    const m = new Map<number, { set: VocabSetOption; sectionTitle: string }>();
+    for (const section of assignmentOptions.vocabulary_sections) {
+      for (const set of section.sets) m.set(set.id, { set, sectionTitle: section.title });
+    }
+    return m;
+  }, [assignmentOptions.vocabulary_sections]);
+  const filteredVocabSections = useMemo(() => {
+    const q = vocabSearch.trim().toLowerCase();
+    if (!q) return assignmentOptions.vocabulary_sections;
+    // Match the section itself or any of its sets, so searching a set name still
+    // surfaces the section that holds it.
+    return assignmentOptions.vocabulary_sections.filter(
+      (s) => s.title.toLowerCase().includes(q) || s.sets.some((set) => set.title.toLowerCase().includes(q))
+    );
+  }, [assignmentOptions.vocabulary_sections, vocabSearch]);
+  const filteredVocabSets = useMemo(() => {
+    const sets = openVocabSection?.sets ?? [];
+    const q = vocabSearch.trim().toLowerCase();
+    return q ? sets.filter((s) => s.title.toLowerCase().includes(q)) : sets;
+  }, [openVocabSection, vocabSearch]);
+  const availableVocabSets = useMemo(() => filteredVocabSets.filter((s) => !s.already_assigned), [filteredVocabSets]);
+  const givenVocabSets = useMemo(() => filteredVocabSets.filter((s) => s.already_assigned), [filteredVocabSets]);
+
   const resetForm = () => {
     setNewAsg({ title: "", instructions: "" });
     setLinks([]);
@@ -214,6 +264,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
     setSelectedPackIds(new Set());
+    setSelectedVocabSetIds(new Set());
     setAsgFiles([]);
     setReplaceAttachments(false);
     setEditAsgFiles([]);
@@ -234,6 +285,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
             practice_tests: Array.isArray(d.practice_tests) ? d.practice_tests : [],
             assessment_sets: Array.isArray(d.assessment_sets) ? d.assessment_sets : [],
             practice_test_packs: Array.isArray(d.practice_test_packs) ? d.practice_test_packs : [],
+            vocabulary_sections: Array.isArray(d.vocabulary_sections)
+              ? d.vocabulary_sections.map((s) => ({ ...s, sets: Array.isArray(s.sets) ? s.sets : [] }))
+              : [],
           });
           const subj = typeof d.classroom_subject === "string" ? d.classroom_subject : "";
           setClassroomSubject(subj);
@@ -242,7 +296,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       } catch (e: unknown) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
         if (!cancelled) {
-          setAssignmentOptions({ practice_tests: [], assessment_sets: [], practice_test_packs: [] });
+          setAssignmentOptions({ practice_tests: [], assessment_sets: [], practice_test_packs: [], vocabulary_sections: [] });
           setAsgOptionsError(typeof msg === "string" ? msg : "Could not load test lists.");
         }
       } finally {
@@ -330,6 +384,19 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       if (Number.isFinite(tid)) nextTestIds.add(tid);
     }
     setSelectedTestIds(nextTestIds);
+
+    // ── Vocabulary sets ── one `vocab_homeworks` row per attached set.
+    const nextVocabSetIds = new Set<number>();
+    const vhs = editingAssignment.vocab_homeworks;
+    if (Array.isArray(vhs)) {
+      for (const item of vhs) {
+        const sid = item && typeof item === "object" && "set_id" in item
+          ? Number((item as { set_id?: number }).set_id)
+          : NaN;
+        if (Number.isFinite(sid)) nextVocabSetIds.add(sid);
+      }
+    }
+    setSelectedVocabSetIds(nextVocabSetIds);
     setAllowFileUpload(Boolean(editingAssignment.allow_file_upload));
 
     const ps = editingAssignment.practice_scope;
@@ -379,6 +446,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           // Reconcile attached assessments on edit — always send the full selection
           // (including empty) so the backend can attach AND detach.
           assessment_set_ids: [...selectedAssessmentIds],
+          // Same reconcile contract for vocabulary sets.
+          vocabulary_set_ids: [...selectedVocabSetIds],
           practice_scope: practiceScope,
           allow_file_upload: allowFileUpload,
           allow_unapproved: allowUnapproved,
@@ -412,6 +481,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       if (selectedAssessmentIds.size > 0) {
         fd.append("assessment_set_ids", JSON.stringify([...selectedAssessmentIds]));
         if (allowUnapproved) fd.append("allow_unapproved", "true");
+      }
+      if (selectedVocabSetIds.size > 0) {
+        fd.append("vocabulary_set_ids", JSON.stringify([...selectedVocabSetIds]));
       }
       fd.append("allow_file_upload", String(allowFileUpload));
       for (const f of asgFiles) fd.append("attachment_file", f);
@@ -455,6 +527,19 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       return next;
     });
     if (!wasSel && !newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: aset.title }));
+  };
+  const handleVocabSetSelect = (vset: VocabSetOption) => {
+    const wasSel = selectedVocabSetIds.has(vset.id);
+    setSelectedVocabSetIds((prev) => {
+      const next = new Set(prev);
+      if (wasSel) next.delete(vset.id);
+      else next.add(vset.id);
+      return next;
+    });
+    if (!wasSel && !newAsg.title.trim()) {
+      const sectionTitle = vocabSetIndex.get(vset.id)?.sectionTitle ?? "";
+      setNewAsg((prev) => ({ ...prev, title: sectionTitle ? `${sectionTitle} · ${vset.title}` : vset.title }));
+    }
   };
   const handlePackSelect = (ptp: PracticeTestPackOption) => {
     const wasSel = selectedPackIds.has(ptp.id);
@@ -507,9 +592,28 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         onRemove: () => handleAssessmentSelect(a),
       });
     }
+    for (const id of selectedVocabSetIds) {
+      const entry = vocabSetIndex.get(id);
+      // An id prefilled from an edit whose section is no longer published has no
+      // row to describe it — keep it in the cart so saving doesn't silently detach it.
+      out.push({
+        key: `vocab-${id}`,
+        type: "vocabulary",
+        title: entry ? entry.set.title : `Vocabulary set #${id}`,
+        meta: entry
+          ? `${entry.sectionTitle} · ${entry.set.word_count} word${entry.set.word_count !== 1 ? "s" : ""}`
+          : "Vocabulary",
+        assigned: !!entry?.set.already_assigned,
+        onRemove: () => entry ? handleVocabSetSelect(entry.set) : setSelectedVocabSetIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        }),
+      });
+    }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pastpaperCards, assignmentOptions, selectedTestIds, selectedPackIds, selectedAssessmentIds, sectionAssigned]);
+  }, [pastpaperCards, assignmentOptions, selectedTestIds, selectedPackIds, selectedAssessmentIds, selectedVocabSetIds, vocabSetIndex, sectionAssigned]);
 
   const hasTitle = newAsg.title.trim().length > 0;
   const hasInstructions = newAsg.instructions.trim().length > 0;
@@ -530,6 +634,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     pastpaper: "bg-primary",
     practice: "bg-emerald-500",
     assessment: "bg-[#6d4ec7]",
+    vocabulary: "bg-amber-500",
   };
   const searchInputCls = `${crInputClass} pl-10`;
 
@@ -617,11 +722,48 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     </PickCard>
   );
 
+  // A vocabulary section is a drill-down, not a selection — a chevron affordance
+  // instead of PickCard's check circle, with a count of what's picked inside it.
+  const renderVocabSectionCard = (section: VocabSectionOption) => {
+    const words = section.sets.reduce((n, s) => n + s.word_count, 0);
+    const picked = section.sets.reduce((n, s) => n + (selectedVocabSetIds.has(s.id) ? 1 : 0), 0);
+    return (
+      <button
+        key={section.id}
+        type="button"
+        onClick={() => { setOpenVocabSectionId(section.id); setVocabSearch(""); }}
+        className="cr-press relative flex w-full flex-col gap-1.5 rounded-[14px] border-[1.5px] border-border bg-card p-4 pr-9 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
+      >
+        <ChevronRight className="absolute right-3 top-4 h-4 w-4 text-muted-foreground" aria-hidden />
+        <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Vocabulary</span>
+        <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{section.title}</span>
+        <span className="text-[12px] font-semibold text-muted-foreground">
+          {section.sets.length} set{section.sets.length !== 1 ? "s" : ""} · {words} word{words !== 1 ? "s" : ""}
+        </span>
+        {picked > 0 ? (
+          <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-primary">
+            <Check className="h-2.5 w-2.5" strokeWidth={3} /> {picked} selected
+          </span>
+        ) : null}
+      </button>
+    );
+  };
+
+  const renderVocabSetCard = (vset: VocabSetOption, given: boolean) => (
+    <PickCard key={vset.id} selected={selectedVocabSetIds.has(vset.id)} given={given} onClick={() => handleVocabSetSelect(vset)}>
+      <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Word set</span>
+      <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{vset.title}</span>
+      <span className="text-[12px] font-semibold text-muted-foreground">{vset.word_count} word{vset.word_count !== 1 ? "s" : ""}</span>
+    </PickCard>
+  );
+
   // Practice test packs are no longer offered when creating an assignment.
-  // Pastpapers only appear for Middle/Senior classes.
+  // Pastpapers only appear for Middle/Senior classes. Vocabulary is general SAT
+  // prep, so every class gets it regardless of subject or level.
   const TABS: { key: TabKey; label: string; icon: typeof BookOpen }[] = [
     ...(showPastpapers ? [{ key: "pastpapers" as const, label: "Pastpapers", icon: BookOpen }] : []),
     { key: "assessments", label: "Assessments", icon: ClipboardList },
+    { key: "vocabulary", label: "Vocabulary", icon: Languages },
     { key: "submission", label: "Submission", icon: SlidersHorizontal },
   ];
   const panelCls = "flex flex-col gap-4 rounded-[20px] border border-border bg-background p-6 shadow-sm";
@@ -695,7 +837,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
               {cartItems.length === 0 ? (
                 <div className="flex flex-col items-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-5 text-center">
                   <Inbox className="h-6 w-6 text-muted-foreground/60" />
-                  <p className="text-[13px] text-muted-foreground">Nothing selected yet. Add a pastpaper, practice test, or assessment from the library on the right.</p>
+                  <p className="text-[13px] text-muted-foreground">Nothing selected yet. Add a pastpaper, assessment, or vocabulary set from the library on the right.</p>
                 </div>
               ) : (
                 <ul className="flex flex-col">
@@ -837,6 +979,59 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 </>
               )}
               <p className={captionCls}>Select one or more quizzes and tests to assign. Items marked &quot;Already assigned&quot; were used in an earlier assignment for this class.</p>
+            </div>
+          )}
+
+          {/* Vocabulary — two levels: sections, then that section's word sets */}
+          {activeTab === "vocabulary" && (
+            <div className={panelCls} role="tabpanel">
+              {openVocabSection == null ? (
+                <>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input value={vocabSearch} onChange={(e) => setVocabSearch(e.target.value)} placeholder="Search vocabulary…" className={searchInputCls} />
+                  </div>
+                  {filteredVocabSections.length === 0 ? (
+                    <EmptyPanel
+                      icon={Languages}
+                      title={vocabSearch.trim() ? "No vocabulary matches" : "No vocabulary sections yet"}
+                      text={vocabSearch.trim() ? "Try clearing the search." : "Create and publish one in the Builder console first."}
+                    />
+                  ) : (
+                    <div className={cardGrid}>{filteredVocabSections.map(renderVocabSectionCard)}</div>
+                  )}
+                  <p className={captionCls}>Open a section to choose its word sets. A set is done once the student finishes any one of the four study modes.</p>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setOpenVocabSectionId(null); setVocabSearch(""); }}
+                      className="inline-flex items-center gap-1.5 rounded-lg border-[1.5px] border-border bg-card px-2.5 py-1.5 text-[12.5px] font-bold text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5" /> All sections
+                    </button>
+                    {groupTitle(openVocabSection.title)}
+                    <span className="ml-auto whitespace-nowrap rounded-lg bg-surface-2 px-2.5 py-1 text-xs font-bold text-muted-foreground">
+                      {openVocabSection.sets.reduce((n, s) => n + (selectedVocabSetIds.has(s.id) ? 1 : 0), 0)} of {openVocabSection.sets.length} selected
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <input value={vocabSearch} onChange={(e) => setVocabSearch(e.target.value)} placeholder={`Search sets in ${openVocabSection.title}…`} className={searchInputCls} />
+                  </div>
+                  {filteredVocabSets.length === 0 ? (
+                    <EmptyPanel icon={Languages} title="No word sets here" text="Add sets to this section in the Builder console." />
+                  ) : (
+                    <>
+                      {availableVocabSets.length > 0 && (<>{groupTitle("Available")}<div className={cardGrid}>{availableVocabSets.map((s) => renderVocabSetCard(s, false))}</div></>)}
+                      {givenVocabSets.length > 0 && (<>{groupTitle("Already assigned")}<div className={cardGrid}>{givenVocabSets.map((s) => renderVocabSetCard(s, true))}</div></>)}
+                    </>
+                  )}
+                  <p className={captionCls}>Pick as many sets as you like — they stay selected while you browse other sections.</p>
+                </>
+              )}
             </div>
           )}
 

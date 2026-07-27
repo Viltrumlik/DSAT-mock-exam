@@ -24,6 +24,16 @@ export interface AssignmentDetail {
     set?: { id: number; subject?: string; title?: string; category?: string } | null;
     progress?: { state?: ContentState; attempt_id?: number | null } | null;
   }[] | null;
+  /** Every vocabulary set attached to this homework (a homework can carry several). */
+  vocab_homeworks?: {
+    id: number;
+    set_id: number;
+    set_title: string;
+    section_title: string;
+    word_count: number;
+    /** Present once the student has studied it; absent on the teacher payload. */
+    state?: ContentState;
+  }[] | null;
   external_url?: string | null;
   external_urls?: string[] | null;
   attachment_file_url?: string | null;
@@ -83,7 +93,7 @@ export const homeworkApi = {
 };
 
 /** Derive the assignment kind that drives the primary action + "what to submit". */
-export type AssignmentKind = "QUIZ" | "MOCK" | "PASTPAPER" | "PRACTICE" | "MODULE" | "FILE";
+export type AssignmentKind = "QUIZ" | "MOCK" | "PASTPAPER" | "PRACTICE" | "MODULE" | "VOCAB" | "FILE";
 
 export function assignmentKind(a: AssignmentDetail): AssignmentKind {
   if (a.assessment_homework != null) return "QUIZ";
@@ -93,6 +103,9 @@ export function assignmentKind(a: AssignmentDetail): AssignmentKind {
   if (a.practice_test_pack != null) return "PRACTICE";
   if (a.practice_test != null || (a.practice_test_ids && a.practice_test_ids.length)) return "PASTPAPER";
   if (a.module != null) return "MODULE";
+  // Must sit ahead of the FILE fallback: a vocabulary-only homework has nothing to
+  // upload, so falling through would render the file-submission UI as its primary action.
+  if (a.vocab_homeworks && a.vocab_homeworks.length) return "VOCAB";
   return "FILE";
 }
 
@@ -109,6 +122,7 @@ export const KIND_LABEL: Record<AssignmentKind, string> = {
   PASTPAPER: "Past Paper",
   PRACTICE: "Practice Test",
   MODULE: "Module Test",
+  VOCAB: "Vocabulary",
   FILE: "Homework",
 };
 
@@ -241,6 +255,21 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
     const tid = a.practice_test ?? a.practice_test_ids?.[0];
     if (tid != null) add(out, "MODULE", "Open Module Test", `/practice-test/${tid}`);
   }
+  // One launcher per assigned vocabulary set. The set page is the hub for all four
+  // study modes, so Start/Resume/Review all route to the same place — only the
+  // button wording changes with the student's progress.
+  for (const vh of a.vocab_homeworks ?? []) {
+    const section = (vh.section_title || "").trim();
+    const title = (vh.set_title || "").trim() || `Set #${vh.set_id}`;
+    out.push({
+      kind: "VOCAB",
+      name: section ? `${section} · ${title}` : title,
+      label: "Open Vocabulary",
+      href: `/vocabulary/sets/${vh.set_id}`,
+      mode: stateToMode(vh.state),
+      attemptId: null,
+    });
+  }
   return out;
 }
 
@@ -272,6 +301,12 @@ export function startHref(classId: number, a: AssignmentDetail): string | null {
   if (kind === "MODULE") {
     const tid = a.practice_test ?? a.practice_test_ids?.[0];
     return tid != null ? `/practice-test/${tid}` : null;
+  }
+  if (kind === "VOCAB") {
+    // One set → straight to it; several → null so the caller opens the detail page,
+    // which lists a launcher card per set.
+    const vhs = a.vocab_homeworks ?? [];
+    return vhs.length === 1 ? `/vocabulary/sets/${vhs[0].set_id}` : null;
   }
   return null; // FILE has no external start
 }

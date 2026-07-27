@@ -64,7 +64,7 @@ const navSections: NavSection[] = [
     section: "Account",
     items: [
       { href: "/profile", label: "Profile", icon: UserCircle },
-      { href: "/vocabulary/daily", label: "Vocabulary", icon: Languages },
+      { href: "/vocabulary", label: "Vocabulary", icon: Languages },
     ],
   },
 ];
