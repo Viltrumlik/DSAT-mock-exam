@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import io
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -237,6 +238,7 @@ class SetImportTests(CsvFixture):
         body = r.json()
         self.assertEqual(body["set_id"], self.vset.id)
         self.assertEqual(body["created_count"], 3)
+        self.assertEqual((body["created_words"], body["linked_words"]), (3, 0))
         self.assertEqual(len(body["word_ids"]), 3)
         self.assertEqual(VocabSet.objects.count(), 1)  # no extra sets from the `set` column
         self.assertEqual(self._words_of(self.vset), ["abate", "candid", "deft"])
@@ -283,3 +285,51 @@ class SetImportTests(CsvFixture):
         custom = VocabSet.objects.create(owner=student, title="Mine")
         r = self._import_set(custom, GOOD_ROWS)
         self.assertEqual(r.status_code, 404, r.content)
+
+    def test_reused_headwords_are_not_reported_as_newly_authored(self):
+        VocabWord.objects.create(section=self.section, word="abate", definition="to lessen")
+        r = self._import_set(
+            self.vset,
+            [
+                ["", "Abate", "to lessen", "", "", ""],
+                ["", "candid", "frank", "", "", ""],
+            ],
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        body = r.json()
+        self.assertEqual(body["created_count"], 2)  # items added to the SET
+        self.assertEqual(body["created_words"], 1)  # only "candid" is a new bank word
+        self.assertEqual(body["linked_words"], 1)  # "abate" was already in the section
+        self.assertEqual(VocabWord.objects.filter(section=self.section).count(), 2)
+
+
+class ImportRaceTests(CsvFixture):
+    """
+    Two authors importing the same headword at once. The re-read inside the write
+    transaction narrows the window but cannot close it, so the INSERT itself has to
+    settle the race — with a clean link, not a 500.
+    """
+
+    def test_a_headword_committed_mid_write_is_linked(self):
+        real_create = VocabSet.objects.create
+
+        def create_set_then_race(**kwargs):
+            # Stands in for the other author: this runs inside _write_plans' transaction,
+            # after its re-read of the section's words and before the first word INSERT.
+            VocabWord.objects.create(
+                section=self.section, word="abate", definition="to grow less"
+            )
+            return real_create(**kwargs)
+
+        with mock.patch.object(
+            VocabSet.objects, "create", side_effect=create_set_then_race
+        ):
+            r = self._import_section([["1", "abate", "to lessen", "", "", ""]])
+
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual((r.json()["created_words"], r.json()["linked_words"]), (0, 1))
+        # One row for the headword — the winner's, wording untouched — linked into the set.
+        words = list(VocabWord.objects.filter(section=self.section))
+        self.assertEqual([w.definition for w in words], ["to grow less"])
+        items = VocabSetItem.objects.filter(vocab_set_id=r.json()["set_ids"][0])
+        self.assertEqual([i.word_id for i in items], [words[0].id])

@@ -11,7 +11,7 @@
  */
 
 import { Timer, Zap } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 
 import { formatClock } from "@/features/testing-simulation/utils/time";
 import { cn } from "@/lib/cn";
@@ -64,13 +64,10 @@ function SpeedRunner({
   const [phase, setPhase] = useState<Phase>("leadin");
   const [index, setIndex] = useState(0);
   const [results, setResults] = useState<SessionResult[]>([]);
-  // The expiry callback is latched inside the timer, so it can't read state
-  // through a closure — it reads the ref instead.
-  const resultsRef = useRef<SessionResult[]>([]);
 
-  const end = (final: SessionResult[]) => {
+  const end = () => {
     setPhase("done");
-    session.finish(final);
+    session.finish();
   };
 
   const tick = useLeadInTicks(SPEED_LEAD_IN_TICKS, SPEED_LEAD_IN_STEP_MS, phase === "leadin", () =>
@@ -80,7 +77,7 @@ function SpeedRunner({
   const secondsLeft = useCountdownSeconds({
     durationSeconds: SPEED_ROUND_SECONDS,
     running: phase === "playing",
-    onExpire: () => end(resultsRef.current),
+    onExpire: () => end(),
   });
 
   const current = prompts[index];
@@ -90,14 +87,15 @@ function SpeedRunner({
     const option = current.options[optionIndex];
     if (!option) return;
 
-    const next = [...results, { word_id: current.wordId, correct: option.correct }];
-    resultsRef.current = next;
-    setResults(next);
+    // Reported the instant it is picked: a sixty-second round is one a student
+    // abandons mid-way, and the answers up to that point still count.
+    session.report({ word_id: current.wordId, correct: option.correct });
+    setResults([...results, { word_id: current.wordId, correct: option.correct }]);
 
     if (index + 1 < prompts.length) {
       setIndex(index + 1);
     } else {
-      end(next);
+      end();
     }
   };
 

@@ -21,7 +21,7 @@ from __future__ import annotations
 import csv
 import io
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from .models import VocabSet, VocabSetItem, VocabWord
 from .serializers import VocabWordWriteSerializer
@@ -70,6 +70,15 @@ def _word_key(word: str) -> str:
     strictly safer: it can only ever reuse an existing row, never violate the constraint.
     """
     return (word or "").strip().lower()
+
+
+def _find_section_word(section, word: str) -> VocabWord | None:
+    """The section's row for this headword, matched exactly the way ``_word_key`` does."""
+    key = _word_key(word)
+    for candidate in section.words.filter(word__iexact=(word or "").strip()):
+        if _word_key(candidate.word) == key:
+            return candidate
+    return None
 
 
 def decode_csv(raw: bytes) -> str:
@@ -192,7 +201,8 @@ def _write_plans(section, plans: list[dict]) -> dict:
 
     with transaction.atomic():
         # Re-read inside the transaction: another author may have added the same headword
-        # to this section between planning and writing.
+        # to this section between planning and writing. The re-read narrows the race but
+        # cannot close it — the INSERT below is what actually settles it.
         section_words = {_word_key(w.word): w for w in section.words.all()}
         next_set_order = section.sets.count()
 
@@ -211,16 +221,31 @@ def _write_plans(section, plans: list[dict]) -> dict:
                 key = _word_key(data["word"])
                 word = section_words.get(key)
                 if word is None:
-                    word = VocabWord.objects.create(
-                        section=section,
-                        word=data["word"],
-                        definition=data["definition"],
-                        part_of_speech=data.get("part_of_speech") or VocabWord.PART_OTHER,
-                        example=data.get("example") or "",
-                        synonyms=data.get("synonyms") or [],
-                    )
+                    # Savepoint per row: a concurrent author who inserted this headword
+                    # first makes our INSERT violate uniq_vocab_word_per_section, and
+                    # without the savepoint that error would poison the whole import.
+                    try:
+                        with transaction.atomic():
+                            word = VocabWord.objects.create(
+                                section=section,
+                                word=data["word"],
+                                definition=data["definition"],
+                                part_of_speech=(
+                                    data.get("part_of_speech") or VocabWord.PART_OTHER
+                                ),
+                                example=data.get("example") or "",
+                                synonyms=data.get("synonyms") or [],
+                            )
+                    except IntegrityError:
+                        word = _find_section_word(section, data["word"])
+                        if word is None:
+                            raise  # Not the headword clash — a real failure.
+                        # They won the race; their row is the section's row for this
+                        # word, so this import links it exactly as a pre-existing one.
+                        linked_words += 1
+                    else:
+                        created_words += 1
                     section_words[key] = word
-                    created_words += 1
                 else:
                     # The section already teaches this word — link it, do not duplicate it
                     # (and do not overwrite the wording an author may have edited by hand).
@@ -343,7 +368,12 @@ def import_set_csv(*, vocab_set, raw_bytes: bytes) -> tuple[dict | None, dict | 
     return (
         {
             "set_id": vocab_set.pk,
+            # Items ADDED TO THE SET. A headword the section already teaches is reused
+            # rather than authored again, so this is not the number of new bank words —
+            # created_words / linked_words split it.
             "created_count": len(result["word_ids"]),
+            "created_words": result["created_words"],
+            "linked_words": result["linked_words"],
             "word_ids": result["word_ids"],
         },
         None,

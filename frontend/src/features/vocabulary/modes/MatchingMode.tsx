@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { formatClock } from "@/features/testing-simulation/utils/time";
 import { cn } from "@/lib/cn";
 
-import type { SessionResult, VocabSetDetail, VocabWord } from "../types";
+import type { VocabSetDetail, VocabWord } from "../types";
 import { ModeBoot, ModeFrame, ModeOutcome, ModePill, ModeStartError } from "./ModeChrome";
 import { useElapsedSeconds } from "./timers";
 import { useModeSession } from "./useModeSession";
@@ -76,16 +76,24 @@ function MatchingRunner({
   const [done, setDone] = useState(false);
   // Words touched by a wrong attempt anywhere in the run — they score as missed.
   const [missed, setMissed] = useState<Set<number>>(() => new Set());
+  // Grading happens inside a click handler that may itself be the one recording
+  // a mistake, so it reads the ref: state would still be a render behind.
+  const missedRef = useRef<Set<number>>(new Set());
 
   const elapsed = useElapsedSeconds(!done);
 
   const handleMistake = (wordIds: number[]) => {
-    setMissed((prev) => {
-      const next = new Set(prev);
-      wordIds.forEach((id) => next.add(id));
-      return next;
-    });
+    const next = new Set(missedRef.current);
+    wordIds.forEach((id) => next.add(id));
+    missedRef.current = next;
+    setMissed(next);
     setMistakes((m) => m + 1);
+  };
+
+  // A word is graded the moment its pair is found — wrong-then-right still
+  // scores as missed — so an abandoned run records the pairs already solved.
+  const handlePairFound = (wordId: number) => {
+    session.report({ word_id: wordId, correct: !missedRef.current.has(wordId) });
   };
 
   const handleRoundDone = () => {
@@ -94,13 +102,7 @@ function MatchingRunner({
       return;
     }
     setDone(true);
-    // Safe to read from this render: a round only completes on a click that
-    // lands after every mistake in it has already been folded into state.
-    const results: SessionResult[] = set.words.map((w) => ({
-      word_id: w.id,
-      correct: !missed.has(w.id),
-    }));
-    session.finish(results);
+    session.finish();
   };
 
   if (session.fatal && session.error) {
@@ -162,6 +164,7 @@ function MatchingRunner({
         roundNumber={roundIndex + 1}
         roundCount={rounds.length}
         onMistake={handleMistake}
+        onPairFound={handlePairFound}
         onComplete={handleRoundDone}
       />
     </ModeFrame>
@@ -173,12 +176,14 @@ function MatchingRound({
   roundNumber,
   roundCount,
   onMistake,
+  onPairFound,
   onComplete,
 }: {
   words: VocabWord[];
   roundNumber: number;
   roundCount: number;
   onMistake: (wordIds: number[]) => void;
+  onPairFound: (wordId: number) => void;
   onComplete: () => void;
 }) {
   // Lazy initial state, not useMemo: the deal must survive every re-render of
@@ -213,6 +218,7 @@ function MatchingRound({
     }
 
     if (isMatchingPair(first, card)) {
+      onPairFound(card.wordId);
       const next = new Set(matched);
       next.add(first.key);
       next.add(card.key);

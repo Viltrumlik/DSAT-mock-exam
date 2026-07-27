@@ -97,6 +97,15 @@ describe("pickDistractors", () => {
     expect(picked.map((w) => w.word)).toEqual(["opaque"]);
   });
 
+  it("drops a candidate that means the same thing — it would be a second right answer", () => {
+    const twins: DistractorWord[] = [
+      { id: 1, word: "candid", definition: "  Frank and open  " },
+      { id: 2, word: "opaque", definition: "not transparent" },
+    ];
+    const picked = pickDistractors(twins, { id: 9, word: "forthright", definition: "frank and open" }, 3, () => 0);
+    expect(picked.map((w) => w.word)).toEqual(["opaque"]);
+  });
+
   it("dedupes candidates spelled the same as each other", () => {
     const dupes: DistractorWord[] = [
       { id: 1, word: "lucid", definition: "clear" },
@@ -207,6 +216,22 @@ describe("buildTestQuestions", () => {
       expect(q.options).toHaveLength(4);
       expect(new Set(q.options).size).toBe(4);
       expect(q.options[q.answerIndex]).toBe(q.word);
+    }
+  });
+
+  it("never offers two correct words when the pool holds a same-definition twin", () => {
+    // `twin` means exactly what word 1 means, so "which word means definition 1?"
+    // would have two right answers if it were ever dealt as a decoy.
+    const twin: DistractorWord = { id: 99, word: "twin", definition: " Definition 1 " };
+    // Exactly three candidates for three decoy slots: the twin is dealt unless
+    // it is rejected outright, whatever the shuffle does.
+    const tightPool = [word(1), twin, word(2), word(3)];
+    for (const rnd of [0, 0.25, 0.5, 0.75, 1]) {
+      const mcq = buildTestQuestions([word(1)], tightPool, () => rnd)[0];
+      expect(mcq.kind).toBe("mcq");
+      if (mcq.kind !== "mcq") continue;
+      expect(mcq.options).not.toContain("twin");
+      expect(mcq.options[mcq.answerIndex]).toBe("word1");
     }
   });
 

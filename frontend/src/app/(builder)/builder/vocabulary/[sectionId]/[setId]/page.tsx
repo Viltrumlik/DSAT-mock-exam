@@ -292,7 +292,10 @@ export default function BuilderVocabularySetPage() {
       const res = await importMut.mutateAsync(file);
       setCsvMsg({
         ok: true,
-        text: `Imported ${res.created_count} word${res.created_count === 1 ? "" : "s"} into this set.`,
+        // "Imported 25" used to count reused words as newly authored ones.
+        text: `Imported ${res.created_words} new word${res.created_words === 1 ? "" : "s"} into this set${
+          res.linked_words ? ` · ${res.linked_words} existing word${res.linked_words === 1 ? "" : "s"} reused` : ""
+        }.`,
       });
     } catch (e: unknown) {
       setCsvMsg({ ok: false, text: csvImportErrorText(e) });

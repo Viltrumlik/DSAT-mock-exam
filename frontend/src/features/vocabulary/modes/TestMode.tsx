@@ -28,7 +28,7 @@ import type { ReactNode } from "react";
 import { Badge, Button, Input } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-import type { SessionResult, VocabSetDetail } from "../types";
+import type { VocabSetDetail } from "../types";
 import { Kbd, ModeBoot, ModeFrame, ModeOutcome, ModePill, ModeStartError } from "./ModeChrome";
 import { useModeKeys } from "./useModeKeys";
 import { useModeSession } from "./useModeSession";
@@ -90,17 +90,17 @@ function TestRunner({
   const current = questions[index];
 
   const submit = (answer: GradedAnswer) => {
-    const next = [...answers, answer];
-    setAnswers(next);
+    setAnswers([...answers, answer]);
     setTyped("");
+    // The student sees no feedback until the end, but the server hears every
+    // answer as it lands — an abandoned test still records what was answered.
+    session.report({ word_id: answer.question.wordId, correct: answer.correct });
     if (index + 1 < questions.length) {
       setIndex(index + 1);
       return;
     }
     setDone(true);
-    session.finish(
-      next.map<SessionResult>((a) => ({ word_id: a.question.wordId, correct: a.correct })),
-    );
+    session.finish();
   };
 
   const answerMcq = (optionIndex: number) => {

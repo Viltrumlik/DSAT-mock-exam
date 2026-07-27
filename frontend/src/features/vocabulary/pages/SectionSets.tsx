@@ -7,7 +7,6 @@
  * with the section's real aggregates as stat tiles underneath.
  */
 
-import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Layers, Library, Type } from "lucide-react";
 
@@ -21,23 +20,16 @@ import { useVocabSection } from "../hooks";
 export function SectionSets({ sectionId }: { sectionId: number }) {
   const q = useVocabSection(sectionId);
 
-  /** Sets / Words / Mastered, summed over the section's sets. */
-  const totals = useMemo(() => {
-    const sets = q.data?.sets ?? [];
-    return sets.reduce(
-      (acc, s) => ({
-        sets: acc.sets + 1,
-        words: acc.words + s.word_count,
-        mastered: acc.mastered + s.progress.mastered,
-        completed: acc.completed + (s.completed ? 1 : 0),
-      }),
-      { sets: 0, words: 0, mastered: 0, completed: 0 },
-    );
-  }, [q.data]);
+  const sets = q.data?.sets ?? [];
+  // Words and Mastered come from the SECTION's own aggregates, the same ones the
+  // hub card shows. Summing the sets would count a word that appears in two of
+  // them twice, so the hub said 25 and this page said 50 one click later.
+  const wordCount = q.data?.word_count ?? 0;
+  const mastered = q.data?.progress.mastered ?? 0;
 
   const valid = Number.isFinite(sectionId) && sectionId > 0;
-  const masteredPct = totals.words > 0 ? Math.round((totals.mastered / totals.words) * 100) : 0;
-  const allDone = totals.sets > 0 && totals.completed === totals.sets;
+  const masteredPct = wordCount > 0 ? Math.round((mastered / wordCount) * 100) : 0;
+  const allDone = sets.length > 0 && sets.every((s) => s.completed);
 
   return (
     <div
@@ -94,14 +86,14 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <StatTile icon={Layers} label="Sets" value={totals.sets} index={0} />
-                <StatTile icon={Type} label="Words" value={totals.words} index={1} />
-                <StatTile icon={CheckCircle2} label="Mastered" value={totals.mastered} index={2} tone="success" />
+                <StatTile icon={Layers} label="Sets" value={sets.length} index={0} />
+                <StatTile icon={Type} label="Words" value={wordCount} index={1} />
+                <StatTile icon={CheckCircle2} label="Mastered" value={mastered} index={2} tone="success" />
               </div>
             </CardContent>
           </Card>
 
-          {q.data.sets.length === 0 ? (
+          {sets.length === 0 ? (
             <EmptyState
               className="cr-cardrise"
               icon={Library}
@@ -110,7 +102,7 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
             />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {q.data.sets.map((s, i) => (
+              {sets.map((s, i) => (
                 <SetCard
                   key={s.id}
                   index={i}

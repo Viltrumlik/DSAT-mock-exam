@@ -318,10 +318,30 @@ class VocabStudySession(models.Model):
     def __str__(self) -> str:
         return f"{self.user_id}:{self.vocab_set_id}:{self.mode}"
 
-    def finish(self, *, correct: int, total: int, duration_ms: int, at=None) -> None:
-        """Caller saves."""
+    # Written together by record_batch(); handed to save(update_fields=...) by callers.
+    BATCH_FIELDS = ("correct_count", "total_count", "duration_ms", "accuracy")
+
+    def record_batch(self, *, correct: int, total: int, duration_ms: int = 0) -> None:
+        """
+        Fold one flush of answers into the running totals. Caller saves.
+
+        Counts ACCUMULATE rather than overwrite: a mode flushes the answers it has when
+        the student leaves and again when it completes, each flush carrying only what it
+        has not sent yet. ``duration_ms`` is a running clock, not a delta, so the largest
+        value reported wins.
+        """
+        self.correct_count += max(0, int(correct))
+        self.total_count += max(0, int(total))
+        self.duration_ms = max(self.duration_ms, max(0, int(duration_ms)))
+        self.accuracy = (
+            round((self.correct_count / self.total_count) * 100, 1) if self.total_count else 0.0
+        )
+
+    def complete(self, at=None) -> None:
+        """
+        Mark the run finished. Caller saves.
+
+        Separate from :meth:`record_batch` because a partial flush must record progress
+        WITHOUT completing the set — quitting halfway is not "any one mode completed".
+        """
         self.completed_at = at or timezone.now()
-        self.correct_count = max(0, int(correct))
-        self.total_count = max(0, int(total))
-        self.duration_ms = max(0, int(duration_ms))
-        self.accuracy = round((self.correct_count / self.total_count) * 100, 1) if self.total_count else 0.0

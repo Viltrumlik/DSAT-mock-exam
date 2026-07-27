@@ -1,8 +1,8 @@
-import api from "@/lib/api";
+import api, { getCachedCsrfToken } from "@/lib/api";
 
 import type {
   CustomSetSummary,
-  SessionResult,
+  SessionFinishPayload,
   SessionSummary,
   StudyMode,
   StudySession,
@@ -71,10 +71,36 @@ export const vocabularyApi = {
 
   finishSession: async (
     sessionId: number,
-    body: { duration_ms: number; results: SessionResult[] },
+    body: SessionFinishPayload,
   ): Promise<SessionSummary> => {
     const r = await api.post(`${BASE}/sessions/${sessionId}/finish/`, body);
     return r.data as SessionSummary;
+  },
+
+  /**
+   * Fire-and-forget partial flush that survives a tab close (`keepalive`), so a
+   * round the student walks out of still records the answers they gave. Mirrors
+   * the exam runner's `saveAttemptKeepalive`; axios cannot set `keepalive`, so
+   * this one path goes through `fetch` and carries the CSRF token itself.
+   *
+   * `partial` is forced on: this call may never complete the session.
+   */
+  flushSessionPartial: (
+    sessionId: number,
+    body: Omit<SessionFinishPayload, "partial">,
+  ): void => {
+    try {
+      const token = getCachedCsrfToken();
+      void fetch(`/api${BASE}/sessions/${sessionId}/finish/`, {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
+        body: JSON.stringify({ ...body, partial: true }),
+      });
+    } catch {
+      /* best-effort: the completing finish re-sends anything still unsent */
+    }
   },
 };
 

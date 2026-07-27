@@ -82,7 +82,10 @@ const normalizeText = (s: string) => s.trim().toLowerCase();
 /**
  * Wrong answers for matching / speed / test. Drawn from `pool` (the set itself,
  * topped up from the bank when the set is too small), never repeating the target
- * word or a same-spelled duplicate from another section.
+ * word, a same-spelled duplicate from another section, or a word that *means*
+ * the target: every mode asks the student to tell a definition from the word it
+ * belongs to, so a same-definition candidate is a second correct answer rather
+ * than a distractor.
  */
 export function pickDistractors<T extends DistractorWord>(
   pool: readonly T[],
@@ -92,11 +95,15 @@ export function pickDistractors<T extends DistractorWord>(
 ): T[] {
   if (count <= 0) return [];
   const seenWords = new Set<string>([normalizeText(exclude.word)]);
+  const excludedDefinition = normalizeText(exclude.definition);
   const candidates: T[] = [];
   for (const candidate of pool) {
     if (candidate.id === exclude.id) continue;
     const key = normalizeText(candidate.word);
     if (seenWords.has(key)) continue;
+    // Checked before `key` is reserved: a twin dropped here must not block a
+    // genuinely different word that happens to share its spelling.
+    if (normalizeText(candidate.definition) === excludedDefinition) continue;
     seenWords.add(key);
     candidates.push(candidate);
   }
@@ -148,9 +155,7 @@ export function buildSpeedPrompts(
   rng: Rng = Math.random,
 ): SpeedPrompt[] {
   return shuffle(words, rng).map((w) => {
-    const decoy = pickDistractors(pool, w, TEST_MCQ_OPTION_COUNT, rng).find(
-      (d) => normalizeText(d.definition) !== normalizeText(w.definition),
-    );
+    const [decoy] = pickDistractors(pool, w, 1, rng);
     const options: SpeedOption[] = [{ text: w.definition, correct: true }];
     // A one-word set has nothing to contrast against; show the single option
     // rather than inventing a decoy.
@@ -239,11 +244,7 @@ export function buildTestQuestions(
 
     if (kind === "truefalse") {
       const wantsGenuine = rng() < 0.5;
-      const decoy = wantsGenuine
-        ? undefined
-        : pickDistractors(pool, w, TEST_MCQ_OPTION_COUNT, rng).find(
-            (d) => normalizeText(d.definition) !== normalizeText(w.definition),
-          );
+      const decoy = wantsGenuine ? undefined : pickDistractors(pool, w, 1, rng)[0];
       // No usable decoy (tiny set) → fall back to a genuine pairing.
       return decoy
         ? { ...base, kind, shownDefinition: decoy.definition, isGenuine: false }

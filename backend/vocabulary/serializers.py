@@ -84,6 +84,40 @@ def section_progress_buckets(user, section_ids, word_totals: dict[int, int]) -> 
     return buckets
 
 
+def set_progress_buckets(user, vocab_set_ids, word_totals: dict[int, int]) -> dict[int, dict]:
+    """
+    Per-set progress buckets in ONE grouped query — the set-level twin of
+    :func:`section_progress_buckets`.
+
+    Joins progress rows to their set through ``VocabSetItem`` so a section's set cards
+    cost O(sets) queries instead of materializing every word in the section. As above,
+    ``new`` is derived rather than counted: it is whatever the student has not touched.
+    """
+    buckets = {sid: empty_progress() for sid in vocab_set_ids}
+    for sid, total in word_totals.items():
+        if sid in buckets:
+            buckets[sid]["total"] = total
+    if not vocab_set_ids:
+        return buckets
+    # ``order_by()`` is load-bearing: VocabSetItem carries a default ordering and Django
+    # folds ordering columns into the GROUP BY, which would split each count per item.
+    rows = (
+        VocabWordProgress.objects.filter(
+            user=user, word__set_items__vocab_set_id__in=vocab_set_ids
+        )
+        .values("word__set_items__vocab_set_id", "status")
+        .order_by()
+        .annotate(n=Count("id"))
+    )
+    for row in rows:
+        bucket = buckets.get(row["word__set_items__vocab_set_id"])
+        if bucket is not None and row["status"] in bucket:
+            bucket[row["status"]] += row["n"]
+    for bucket in buckets.values():
+        bucket["new"] = max(0, bucket["total"] - bucket["learning"] - bucket["mastered"])
+    return buckets
+
+
 # --------------------------------------------------------------------------- counts
 
 
@@ -273,6 +307,10 @@ class VocabWordWriteSerializer(serializers.Serializer):
 class CustomSetWriteSerializer(serializers.Serializer):
     """A student's own set. ``word_ids`` REPLACES membership, so order is meaningful."""
 
+    # A set targets 25 words; the cap only stops a payload that would have the student
+    # rewrite every set item on every PATCH.
+    MAX_WORDS = 500
+
     title = serializers.CharField(max_length=200)
     word_ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=True)
 
@@ -283,6 +321,11 @@ class CustomSetWriteSerializer(serializers.Serializer):
             if wid not in seen:
                 seen.add(wid)
                 ordered.append(wid)
+        # Counted after de-duplication: the cap is on set SIZE, not on payload length.
+        if len(ordered) > self.MAX_WORDS:
+            raise serializers.ValidationError(
+                f"A set cannot hold more than {self.MAX_WORDS} words."
+            )
         return ordered
 
 
@@ -303,6 +346,9 @@ class SessionFinishSerializer(serializers.Serializer):
 
     duration_ms = serializers.IntegerField(min_value=0, required=False, default=0)
     results = SessionResultSerializer(many=True)
+    # A flush the mode fires on unload: record these answers, but do NOT complete the
+    # run. Absent means the mode ran to completion, which is the finishing call.
+    partial = serializers.BooleanField(required=False, default=False)
 
     def validate_results(self, value):
         if len(value) > self.MAX_RESULTS:

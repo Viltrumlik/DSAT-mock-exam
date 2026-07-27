@@ -61,10 +61,12 @@ function FlashcardRunner({
 
   const answer = (correct: boolean) => {
     if (!current) return;
-    const nextResults = [...results, { word_id: current.id, correct }];
     const nextMissed = correct ? missed : [...missed, current];
-    setResults(nextResults);
+    setResults([...results, { word_id: current.id, correct }]);
     setMissed(nextMissed);
+    // Reported here, not at the end: a student who quits after 20 of 25 cards
+    // keeps those 20 verdicts.
+    session.report({ word_id: current.id, correct });
 
     if (index + 1 < deck.length) {
       setIndex(index + 1);
@@ -73,7 +75,7 @@ function FlashcardRunner({
     }
     if (nextMissed.length === 0) {
       setPhase("done");
-      session.finish(nextResults);
+      session.finish();
     } else {
       setPhase("review");
     }

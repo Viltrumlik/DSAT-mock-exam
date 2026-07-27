@@ -36,22 +36,24 @@ from .serializers import (
     SessionStartSerializer,
     completed_set_ids,
     empty_progress,
-    progress_buckets,
-    progress_status_map,
     section_counts,
     section_progress_buckets,
     session_out,
     session_summary_out,
     set_detail_out,
+    set_progress_buckets,
     set_word_counts,
     word_search_out,
-    words_by_set,
 )
 
 VOCAB_STUDENT_PERMS = [IsAuthenticatedAndNotFrozen]
 
 WORD_SEARCH_DEFAULT_LIMIT = 40
 WORD_SEARCH_MAX_LIMIT = 100
+
+# A student curates their own study lists; past a couple of hundred they are hoarding,
+# not studying, and every list endpoint pays for it.
+MAX_CUSTOM_SETS_PER_STUDENT = 200
 
 
 # --------------------------------------------------------------------------- helpers
@@ -68,12 +70,25 @@ def _member_classroom_ids(user) -> list[int]:
 
 def _readable_set(user, pk: int) -> VocabSet | None:
     """
-    A bank set in a PUBLISHED section, or a custom set the requester owns. Anything else
-    is invisible — callers 404 rather than 403 so set ids can't be probed.
+    A bank set in a PUBLISHED section, a custom set the requester owns, or a set assigned
+    to the requester as live homework. Anything else is invisible — callers 404 rather
+    than 403 so set ids can't be probed.
+
+    Homework outranks the publish flag on purpose: unpublishing hides a section from the
+    bank browse, it does not revoke work already assigned. Without this an author who
+    followed the section-delete guard's own advice ("unpublish the section instead")
+    would strand every classroom that had the set as homework.
     """
     return (
         VocabSet.objects.select_related("section")
-        .filter(Q(owner=user) | Q(section__is_published=True))
+        .filter(
+            Q(owner=user)
+            | Q(section__is_published=True)
+            | Q(
+                homework_links__classroom_id__in=_member_classroom_ids(user),
+                homework_links__assignment__status=Assignment.STATUS_PUBLISHED,
+            )
+        )
         .filter(pk=pk)
         .first()
     )
@@ -142,7 +157,13 @@ class SectionListView(APIView):
 
 
 class SectionDetailView(APIView):
-    """One published section and its sets, each with the requester's progress."""
+    """
+    One published section and its sets, each with the requester's progress.
+
+    The section-level ``word_count`` / ``progress`` come from the SAME helpers the hub
+    list uses, so the two screens cannot disagree: a word that appears in two sets is one
+    word in the section and two items across the set cards.
+    """
 
     permission_classes = VOCAB_STUDENT_PERMS
 
@@ -150,26 +171,29 @@ class SectionDetailView(APIView):
         section = get_object_or_404(VocabSection, pk=pk, is_published=True)
         sets = list(VocabSet.objects.filter(section=section))
         set_ids = [s.id for s in sets]
-        by_set = words_by_set(set_ids)
-        all_word_ids = [w.id for words in by_set.values() for w in words]
-        status_map = progress_status_map(request.user, all_word_ids)
+        # Grouped counts, never the words themselves: a set card needs a total and three
+        # bucket numbers, and a section can hold thousands of words.
+        counts = set_word_counts(set_ids)
+        buckets = set_progress_buckets(request.user, set_ids, counts)
         done = completed_set_ids(request.user, set_ids)
+        _set_counts, word_counts = section_counts([section.id])
+        section_buckets = section_progress_buckets(request.user, [section.id], word_counts)
         return Response(
             {
                 "id": section.id,
                 "title": section.title,
                 "slug": section.slug,
                 "description": section.description,
+                "word_count": word_counts.get(section.id, 0),
+                "progress": section_buckets.get(section.id, empty_progress()),
                 "sets": [
                     {
                         "id": s.id,
                         "title": s.title,
                         "order": s.order,
-                        "word_count": len(by_set[s.id]),
+                        "word_count": counts.get(s.id, 0),
                         "completed": s.id in done,
-                        "progress": progress_buckets(
-                            [w.id for w in by_set[s.id]], status_map
-                        ),
+                        "progress": buckets.get(s.id, empty_progress()),
                     }
                     for s in sets
                 ],
@@ -237,6 +261,17 @@ class MySetListCreateView(APIView):
     def post(self, request):
         ser = CustomSetWriteSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        owned = VocabSet.objects.filter(owner=request.user).count()
+        if owned >= MAX_CUSTOM_SETS_PER_STUDENT:
+            return Response(
+                {
+                    "detail": (
+                        f"You already have {MAX_CUSTOM_SETS_PER_STUDENT} sets. Delete one "
+                        "before creating another."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         word_ids, denied = _validate_bank_word_ids(ser.validated_data["word_ids"])
         if denied is not None:
             return denied
@@ -370,11 +405,19 @@ class SessionCreateView(APIView):
 
 class SessionFinishView(APIView):
     """
-    Grade one study run and fold its answers into the student's word progress.
+    Fold one flush of a study run into the student's word progress.
+
+    The body carries only the answers the client has not sent yet, so the server APPENDS:
+    the session's counts accumulate across flushes and ``duration_ms`` — a running clock,
+    not a delta — keeps the largest value reported.
+
+    ``partial: true`` is the flush a mode fires when the student navigates away mid-run.
+    It records the answers but leaves ``completed_at`` unset, so 20 of 25 flashcards are
+    banked without the set counting as completed.
 
     Safe to call twice: a session that already has ``completed_at`` returns its existing
-    summary untouched instead of double-applying progress. The modes flush on unload, so
-    a duplicate finish is a normal event, not an error.
+    summary and ignores the body entirely instead of double-applying progress. The modes
+    flush on unload, so a duplicate finish is a normal event, not an error.
     """
 
     permission_classes = VOCAB_STUDENT_PERMS
@@ -390,6 +433,7 @@ class SessionFinishView(APIView):
         ser.is_valid(raise_exception=True)
         results = ser.validated_data["results"]
         duration_ms = ser.validated_data.get("duration_ms") or 0
+        is_partial = ser.validated_data.get("partial", False)
 
         set_word_ids = set(
             VocabSetItem.objects.filter(vocab_set_id=session.vocab_set_id).values_list(
@@ -432,21 +476,16 @@ class SessionFinishView(APIView):
                     ]
                 )
 
-            locked.finish(
+            locked.record_batch(
                 correct=sum(1 for r in graded if r["correct"]),
                 total=len(graded),
                 duration_ms=duration_ms,
-                at=now,
             )
-            locked.save(
-                update_fields=[
-                    "completed_at",
-                    "correct_count",
-                    "total_count",
-                    "duration_ms",
-                    "accuracy",
-                ]
-            )
+            update_fields = list(VocabStudySession.BATCH_FIELDS)
+            if not is_partial:
+                locked.complete(at=now)
+                update_fields.append("completed_at")
+            locked.save(update_fields=update_fields)
 
         locked.vocab_set = session.vocab_set
         return Response(session_summary_out(locked, user=request.user))

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { normalizeApiError } from "@/lib/apiError";
 
+import { vocabularyApi } from "../api";
 import { useFinishSession, useStartSession } from "../hooks";
 import type { SessionResult, SessionSummary, StudyMode } from "../types";
 
@@ -22,6 +23,37 @@ function readErrorMessage(e: unknown): string {
   return normalized.message;
 }
 
+/**
+ * Unsent-tail bookkeeping. Both the unload flush and the completing finish hit
+ * an endpoint that APPENDS what it is given, so every result must reach the
+ * server exactly once: `take` hands over only what has not gone out yet, and
+ * `restore` re-queues a batch whose request failed.
+ *
+ * Exported for its unit test; a mode only ever sees the hook.
+ */
+export function createResultLedger() {
+  const all: SessionResult[] = [];
+  let sent = 0;
+  return {
+    append(result: SessionResult) {
+      all.push(result);
+    },
+    /** Everything not yet handed to the server, marked as sent. */
+    take(): SessionResult[] {
+      const tail = all.slice(sent);
+      sent = all.length;
+      return tail;
+    },
+    /** Give a batch back after a send the server never received. */
+    restore(tail: SessionResult[]) {
+      sent -= tail.length;
+    },
+    get unsent(): number {
+      return all.length - sent;
+    },
+  };
+}
+
 export interface ModeSession {
   /** True once the server has a session row to grade against. */
   ready: boolean;
@@ -33,16 +65,26 @@ export interface ModeSession {
   error: string | null;
   /** True when the failure was the *start* call, i.e. the round can't begin. */
   fatal: boolean;
+  /**
+   * Record one graded answer, the moment it is graded. Reporting as the student
+   * plays is what gives an abandoned round something to flush.
+   */
+  report: (result: SessionResult) => void;
   /** Grade the run. Only the first call counts; later ones are ignored. */
-  finish: (results: SessionResult[]) => void;
+  finish: () => void;
   /** Re-run whichever step failed. */
   retry: () => void;
 }
 
 /**
- * Session plumbing shared by all four modes: open a session on mount, grade it
- * once at the end. `duration_ms` is measured from the moment the server
- * acknowledged the session, so a slow POST doesn't inflate the student's time.
+ * Session plumbing shared by all four modes: open a session on mount, report
+ * each answer as it happens, grade it once at the end. `duration_ms` is measured
+ * from the moment the server acknowledged the session, so a slow POST doesn't
+ * inflate the student's time.
+ *
+ * A student who leaves mid-round used to record nothing. The unsent answers are
+ * now flushed on the way out (`partial`, so the set is not marked complete), and
+ * the ledger guarantees the server's append can never see the same answer twice.
  */
 export function useModeSession(setId: number, mode: StudyMode): ModeSession {
   const startMutation = useStartSession();
@@ -68,7 +110,11 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
   const startedAtRef = useRef(Date.now());
   const sessionIdRef = useRef<number | null>(null);
   const bootedRef = useRef(false);
-  const pendingRef = useRef<SessionResult[] | null>(null);
+  const ledgerRef = useRef(createResultLedger());
+  /** The round has ended and `finish` owns the session from here. */
+  const completingRef = useRef(false);
+  /** The server has stamped `completed_at`; nothing more may be sent. */
+  const completedRef = useRef(false);
   const inflightRef = useRef(false);
 
   const begin = useCallback(async () => {
@@ -86,9 +132,10 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
   }, [setId, mode]);
 
   const submit = useCallback(() => {
-    const results = pendingRef.current;
     const id = sessionIdRef.current;
-    if (results == null || id == null || inflightRef.current) return;
+    if (!completingRef.current || id == null || inflightRef.current || completedRef.current) return;
+    // Whatever a partial flush already sent stays sent — the server appends.
+    const results = ledgerRef.current.take();
     inflightRef.current = true;
     setFinishing(true);
     setError(null);
@@ -98,12 +145,33 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
         duration_ms: Math.max(0, Date.now() - startedAtRef.current),
         results,
       })
-      .then((s) => setSummary(s))
-      .catch((e) => setError(readErrorMessage(e)))
+      .then((s) => {
+        completedRef.current = true;
+        setSummary(s);
+      })
+      .catch((e) => {
+        // The server never saw them, so `retry` must send the same tail again
+        // rather than grade an empty round.
+        ledgerRef.current.restore(results);
+        setError(readErrorMessage(e));
+      })
       .finally(() => {
         inflightRef.current = false;
         setFinishing(false);
       });
+  }, []);
+
+  /**
+   * Send the tail this session has not sent yet WITHOUT completing it. Called on
+   * the way out, so it must be cheap, synchronous and never throw.
+   */
+  const flushPartial = useCallback(() => {
+    const id = sessionIdRef.current;
+    if (id == null || completedRef.current || ledgerRef.current.unsent === 0) return;
+    vocabularyApi.flushSessionPartial(id, {
+      duration_ms: Math.max(0, Date.now() - startedAtRef.current),
+      results: ledgerRef.current.take(),
+    });
   }, []);
 
   useEffect(() => {
@@ -119,14 +187,33 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
     if (sessionId != null) submit();
   }, [sessionId, submit]);
 
-  const finish = useCallback(
-    (results: SessionResult[]) => {
-      if (pendingRef.current != null) return;
-      pendingRef.current = results;
-      submit();
-    },
-    [submit],
-  );
+  useEffect(() => {
+    const onPageHide = () => flushPartial();
+    const onVisibility = () => {
+      // iOS Safari does not reliably fire pagehide; there, backgrounding the tab
+      // is the last event before the page may be discarded outright.
+      if (document.visibilityState === "hidden") flushPartial();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+      // The mode's own "Back to vocabulary" is a client-side navigation: no
+      // pagehide fires, so this unmount is the only notice the round is over.
+      flushPartial();
+    };
+  }, [flushPartial]);
+
+  const report = useCallback((result: SessionResult) => {
+    ledgerRef.current.append(result);
+  }, []);
+
+  const finish = useCallback(() => {
+    if (completingRef.current) return;
+    completingRef.current = true;
+    submit();
+  }, [submit]);
 
   const retry = useCallback(() => {
     if (sessionIdRef.current == null) {
@@ -136,5 +223,5 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
     submit();
   }, [begin, submit]);
 
-  return { ready: sessionId != null, finishing, summary, error, fatal, finish, retry };
+  return { ready: sessionId != null, finishing, summary, error, fatal, report, finish, retry };
 }

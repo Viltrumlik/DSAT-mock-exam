@@ -117,6 +117,15 @@ def _set_has_homework(vocab_set: VocabSet) -> bool:
     return vocab_set.homework_links.exists()
 
 
+def _word_has_homework(word: VocabWord) -> bool:
+    return VocabHomework.objects.filter(vocab_set__items__word=word).exists()
+
+
+def _definition_key(text: str) -> str:
+    """Definitions compared for "is this the same wording?" — trimmed, case-folded."""
+    return (text or "").strip().lower()
+
+
 def _csv_bytes_or_error(request) -> tuple[bytes | None, Response | None]:
     upload = request.FILES.get("file")
     if upload is None:
@@ -340,12 +349,27 @@ class AdminSetWordListCreateView(APIView):
         existing = VocabWord.objects.filter(
             section_id=vocab_set.section_id, word__iexact=data["word"].strip()
         ).first()
-        if existing is not None and VocabSetItem.objects.filter(
-            vocab_set=vocab_set, word=existing
-        ).exists():
-            return Response(
-                {"word": ["Already in this set."]}, status=status.HTTP_400_BAD_REQUEST
-            )
+        if existing is not None:
+            if VocabSetItem.objects.filter(vocab_set=vocab_set, word=existing).exists():
+                return Response(
+                    {"word": ["Already in this set."]}, status=status.HTTP_400_BAD_REQUEST
+                )
+            # Linking reuses the existing row, so a definition that differs from it would
+            # be discarded with no signal — and adopting it instead would rewrite the
+            # wording for every other set that already teaches this word. Neither is ours
+            # to choose: make the author say which one they meant.
+            submitted = _definition_key(data["definition"])
+            if submitted != _definition_key(existing.definition):
+                return Response(
+                    {
+                        "definition": [
+                            f'"{existing.word}" already exists in this section, defined as '
+                            f'"{existing.definition}". Match that definition to add the '
+                            "existing word to this set, or edit the existing word first."
+                        ]
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         with transaction.atomic():
             word = existing
@@ -414,6 +438,19 @@ class AdminWordDetailView(APIView):
         # progress row cascade away with it. There is no "unlink from this set only" —
         # a bank word exists to be studied, and an unused one is noise.
         word = get_object_or_404(VocabWord, pk=pk)
+        # Same guard as set- and section-delete, for the same reason: without it an
+        # assigned set that cannot be deleted can still be emptied word by word, taking
+        # every student's progress with it.
+        if _word_has_homework(word):
+            return Response(
+                {
+                    "detail": (
+                        "This word is in a set that is assigned as homework. Unassign the "
+                        "set from every class before deleting the word."
+                    )
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         word.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

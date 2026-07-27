@@ -63,6 +63,14 @@ export interface VocabSectionDetail {
   title: string;
   slug: string;
   description: string;
+  /**
+   * DISTINCT words in the section — the same number the hub shows, and NOT the
+   * sum of `sets[].word_count`: a word that belongs to two sets is one word here
+   * and would be counted twice by that sum.
+   */
+  word_count: number;
+  /** Section-level buckets over those distinct words. */
+  progress: ProgressCounts;
   sets: VocabSetSummary[];
 }
 
@@ -112,6 +120,22 @@ export interface StudySession {
 export interface SessionResult {
   word_id: number;
   correct: boolean;
+}
+
+/**
+ * Body of `POST sessions/<id>/finish/`. The server APPENDS `results` to whatever
+ * the session already holds, so a caller must send only what it has not sent
+ * before — see `modes/useModeSession`.
+ */
+export interface SessionFinishPayload {
+  duration_ms: number;
+  results: SessionResult[];
+  /**
+   * True for an unload flush: record the answers WITHOUT stamping the session
+   * complete, so quitting halfway can never satisfy the "any one mode completes
+   * a set" rule. Absent means a completing finish.
+   */
+  partial?: boolean;
 }
 
 export interface SessionSummary {

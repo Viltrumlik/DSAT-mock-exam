@@ -129,7 +129,12 @@ export interface SectionCsvImportResult {
 
 export interface SetCsvImportResult {
   set_id: number;
+  /** Items added to the set — `created_words + linked_words`. */
   created_count: number;
+  /** Words this import authored for the first time. */
+  created_words: number;
+  /** Words that already existed in the section and were linked, not duplicated. */
+  linked_words: number;
   word_ids: number[];
 }
 
