@@ -266,7 +266,7 @@ DEPLOY_STAGE="maintenance_page"
 if [[ -d "$RELEASE_DIR/deploy/maintenance" ]]; then
   echo "-> Refreshing maintenance page -> $SHARED/maintenance"
   mkdir -p "$SHARED/maintenance"
-  cp -f "$RELEASE_DIR/deploy/maintenance/." "$SHARED/maintenance/" -r
+  cp -Rf "$RELEASE_DIR/deploy/maintenance/." "$SHARED/maintenance/"
 else
   echo "-> WARNING: deploy/maintenance missing in this release; leaving the existing page in place"
 fi
