@@ -54,6 +54,16 @@ class AssignmentAssessmentHomeworkSerializer(serializers.Serializer):
     set = AssignmentAssessmentHomeworkSetSerializer(allow_null=True, required=False)
 
 
+@extend_schema_serializer(component_name="AssignmentVocabHomework")
+class AssignmentVocabHomeworkSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    set_id = serializers.IntegerField()
+    set_title = serializers.CharField()
+    section_title = serializers.CharField(allow_blank=True)
+    word_count = serializers.IntegerField()
+    state = serializers.ChoiceField(choices=["not_started", "in_progress", "completed"])
+
+
 @extend_schema_serializer(component_name="AssignmentPracticeBundleTest")
 class AssignmentPracticeBundleTestSerializer(serializers.Serializer):
     id = serializers.IntegerField()
@@ -267,6 +277,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
     )
     practice_test_ids = serializers.JSONField(required=False, allow_null=True)
     practice_test_pack_ids = serializers.JSONField(required=False, allow_null=True)
+    # Vocabulary sets selected in the teacher picker. Write-only because the link rows
+    # (vocabulary.VocabHomework) are created by the viewset, exactly like assessments —
+    # there is no model field behind this key, so create()/update() pop it.
+    vocabulary_set_ids = serializers.JSONField(required=False, allow_null=True, write_only=True)
     practice_scope = serializers.ChoiceField(
         choices=Assignment.PRACTICE_SCOPE_CHOICES,
         required=False,
@@ -276,6 +290,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
     locks_file_upload = serializers.SerializerMethodField(read_only=True)
     assessment_homework = serializers.SerializerMethodField(read_only=True)
     assessment_homeworks = serializers.SerializerMethodField(read_only=True)
+    vocab_homeworks = serializers.SerializerMethodField(read_only=True)
     # Redesigned-homework metadata: an explicit content-type label, the openable
     # contents (each with its display name + item count for the launcher cards),
     # the dominant section subject, a task/item count for the "TASKS" tile, and the
@@ -306,6 +321,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "locks_file_upload",
             "assessment_homework",
             "assessment_homeworks",
+            "vocabulary_set_ids",
+            "vocab_homeworks",
             "content_type",
             "contents",
             "item_count",
@@ -335,6 +352,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "submissions_count",
             "practice_bundle_tests",
             "locks_file_upload",
+            "vocab_homeworks",
             "attachment_urls",
             "published_at",
             "archived_at",
@@ -420,6 +438,76 @@ class AssignmentSerializer(serializers.ModelSerializer):
     def get_assessment_homeworks(self, obj):
         """Every assessment attached to this homework (a bundle can hold many)."""
         return [self._serialize_hw(hw) for hw in self._hw_list(obj)]
+
+    @extend_schema_field(AssignmentVocabHomeworkSerializer(many=True, read_only=True))
+    def get_vocab_homeworks(self, obj):
+        """Vocabulary sets attached to this homework (a homework may carry several).
+
+        Powers the student launcher card, which deep-links straight to
+        /vocabulary/sets/<set_id>. Vocabulary has no attempt object, so ``state`` is
+        derived from the requester's study sessions instead: a set is ``completed`` once
+        ANY one of the four study modes has been finished on it (the platform-wide
+        completion rule), ``in_progress`` while a session is open, else ``not_started``.
+        Without it every launcher would read "Start" forever, even after the student
+        finished the set."""
+        from django.db.models import Count
+        from vocabulary.models import VocabSetItem, VocabStudySession
+
+        # select_related rather than .all(): the viewset re-serializes the assignment
+        # right after reconciling the links on edit, so this must never replay a
+        # prefetch cache built before those writes.
+        try:
+            hws = [
+                hw for hw in obj.vocab_homeworks.select_related("vocab_set__section")
+                if hw.vocab_set_id
+            ]
+        except Exception:
+            return []
+        if not hws:
+            return []
+        # One grouped count for every attached set. ``order_by()`` is load-bearing:
+        # VocabSetItem has a default ordering, and Django folds ordering columns into
+        # the GROUP BY, which would split the counts per (vocab_set, order) pair.
+        counts = dict(
+            VocabSetItem.objects.filter(vocab_set_id__in=[hw.vocab_set_id for hw in hws])
+            .values_list("vocab_set")
+            .order_by()
+            .annotate(n=Count("id"))
+        )
+        # Two flat queries rather than a per-card exists() probe.
+        set_ids = [hw.vocab_set_id for hw in hws]
+        request = self.context.get("request")
+        viewer = getattr(request, "user", None)
+        done_ids: set[int] = set()
+        open_ids: set[int] = set()
+        if viewer is not None and getattr(viewer, "is_authenticated", False):
+            sessions = VocabStudySession.objects.filter(user=viewer, vocab_set_id__in=set_ids)
+            done_ids = set(
+                sessions.filter(completed_at__isnull=False).values_list("vocab_set_id", flat=True)
+            )
+            open_ids = set(
+                sessions.filter(completed_at__isnull=True).values_list("vocab_set_id", flat=True)
+            )
+
+        out = []
+        for hw in hws:
+            vset = hw.vocab_set
+            section = getattr(vset, "section", None)
+            if vset.id in done_ids:
+                state = "completed"
+            elif vset.id in open_ids:
+                state = "in_progress"
+            else:
+                state = "not_started"
+            out.append({
+                "id": hw.id,
+                "set_id": vset.id,
+                "set_title": vset.title,
+                "section_title": getattr(section, "title", "") or "",
+                "word_count": counts.get(vset.id, 0),
+                "state": state,
+            })
+        return out
 
     @extend_schema_field(AssignmentCreatedBySerializer(read_only=True))
     def get_created_by(self, obj):
@@ -797,6 +885,34 @@ class AssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Duplicate practice test pack ids.")
         return out
 
+    def validate_vocabulary_set_ids(self, value):
+        """Normalize the picker's selection to a deduped int list.
+
+        Multipart create posts a JSON *string*, the JSON PATCH body posts a real list;
+        both must work. An empty list is meaningful on edit (it detaches everything), so
+        unlike practice_test_ids this normalizes to [] rather than None."""
+        if value in (None, ""):
+            return []
+        if isinstance(value, str):
+            s = value.strip()
+            if not s or s == "null":
+                return []
+            try:
+                value = json.loads(s)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError("vocabulary_set_ids must be a list of integers.")
+        if not isinstance(value, (list, tuple)):
+            raise serializers.ValidationError("vocabulary_set_ids must be a list of integers.")
+        out: list[int] = []
+        for x in value:
+            try:
+                v = int(x)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError("vocabulary_set_ids must be a list of integers.")
+            if v not in out:
+                out.append(v)
+        return out
+
     def validate(self, attrs):
         inst = self.instance
 
@@ -871,11 +987,14 @@ class AssignmentSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        # Not a model field — the viewset turns it into VocabHomework rows after save.
+        validated_data.pop("vocabulary_set_ids", None)
         inst = super().create(validated_data)
         grant_practice_test_library_access_for_assignment(inst)
         return inst
 
     def update(self, instance, validated_data):
+        validated_data.pop("vocabulary_set_ids", None)
         inst = super().update(instance, validated_data)
         grant_practice_test_library_access_for_assignment(inst)
         return inst
@@ -900,6 +1019,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
         ``external_url`` mirrors its first entry. Read the raw payload (whichever key the
         client sent) so multipart JSON-string and JSON-body arrays both work, and inject
         the cleaned pair — leaving both untouched when the client sends neither key.
+
+        NOTE: this class declares ``validate`` twice; Python keeps this later definition,
+        so anything cross-field belongs here.
         """
         from django.core.exceptions import ValidationError as DjangoValidationError
         from .link_utils import resolve_links
@@ -910,6 +1032,27 @@ class AssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"external_urls": list(e.messages)})
         if resolved is not None:
             attrs["external_urls"], attrs["external_url"] = resolved
+
+        # Only bank sets are assignable. A custom set belongs to one student, so handing
+        # it to a classroom would show the rest of the class a set they cannot open.
+        # Checked here so a bad selection is rejected before any Assignment row exists.
+        wanted_vocab = attrs.get("vocabulary_set_ids") or []
+        if wanted_vocab:
+            from vocabulary.models import VocabSet
+
+            custom_ids = list(
+                VocabSet.objects.filter(pk__in=wanted_vocab, owner__isnull=False)
+                .values_list("id", flat=True)
+            )
+            if custom_ids:
+                raise serializers.ValidationError(
+                    {
+                        "vocabulary_set_ids": (
+                            "Personal vocabulary sets cannot be assigned as homework: "
+                            + ", ".join(str(i) for i in custom_ids)
+                        )
+                    }
+                )
         return attrs
 
 

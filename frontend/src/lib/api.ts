@@ -829,6 +829,58 @@ export type ScheduleEvent = {
     assignment_id?: number;
 };
 
+/** Everything a teacher may attach to a homework (GET /classes/<id>/assignment-options/). */
+export type AssignmentOptions = {
+    classroom_subject: string;
+    classroom_level: string;
+    practice_tests: {
+        id: number;
+        title: string;
+        subject: string;
+        label: string;
+        form_type: string;
+        practice_date: string | null;
+        created_at: string | null;
+        mock_exam: number | null;
+        collection_name: string;
+        is_published: boolean;
+        already_assigned: boolean;
+    }[];
+    assessment_sets: {
+        id: number;
+        title: string;
+        subject: string;
+        source: string;
+        level: string;
+        category: string;
+        description: string;
+        question_count: number;
+        already_assigned: boolean;
+        review_status: "draft" | "needs_review" | "approved";
+        is_approved: boolean;
+    }[];
+    practice_test_packs: {
+        id: number;
+        title: string;
+        description: string;
+        section_count: number;
+        already_assigned: boolean;
+    }[];
+    midterms: {
+        id: number;
+        title: string;
+        subject: string;
+        scoring_scale: string;
+        module_count: number;
+    }[];
+    /** Published vocabulary sections with their assignable bank sets. */
+    vocabulary_sections: {
+        id: number;
+        title: string;
+        sets: { id: number; title: string; word_count: number; already_assigned: boolean }[];
+    }[];
+};
+
 export const classesApi = {
     list: async (): Promise<NormalizedList<Classroom>> => {
         const r = await api.get('/classes/');
@@ -970,9 +1022,9 @@ export const classesApi = {
         return r.data;
     },
     /** Class teacher: mock exams + pastpaper tests for homework form (same visibility as portal lists). */
-    getAssignmentOptions: async (classId: number) => {
+    getAssignmentOptions: async (classId: number): Promise<AssignmentOptions> => {
         const r = await api.get(`/classes/${classId}/assignment-options/`);
-        return r.data;
+        return r.data as AssignmentOptions;
     },
     // Stream
     listPosts: async (classId: number) => {
@@ -1335,51 +1387,6 @@ export const examsAdminApi = {
         fd.append("file", file);
         const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/bulk-import/`, fd);
         return r.data as { module_id: number; created_count: number; question_ids: number[] };
-    },
-};
-
-export const vocabularyApi = {
-    listWords: async (params?: { q?: string; difficulty?: number; part_of_speech?: string }) => {
-        const r = await api.get("/vocabulary/words/", { params });
-        return r.data;
-    },
-    getDaily: async (params?: { target?: number }) => {
-        const r = await api.get("/vocabulary/daily/", { params });
-        return r.data;
-    },
-    review: async (payload: { word_id: number; result: "correct" | "wrong" }) => {
-        const r = await api.post("/vocabulary/review/", payload);
-        return r.data;
-    },
-    adminListWords: async () => {
-        const r = await api.get("/vocabulary/admin/words/");
-        return r.data;
-    },
-    adminCreateWord: async (payload: {
-        word: string;
-        meaning?: string;
-        example?: string;
-        part_of_speech?: string;
-        difficulty?: number;
-    }) => {
-        const r = await api.post("/vocabulary/admin/words/", payload);
-        return r.data;
-    },
-    adminUpdateWord: async (
-        id: number,
-        payload: Partial<{
-            word: string;
-            meaning: string;
-            example: string;
-            part_of_speech: string;
-            difficulty: number;
-        }>,
-    ) => {
-        const r = await api.patch(`/vocabulary/admin/words/${id}/`, payload);
-        return r.data;
-    },
-    adminDeleteWord: async (id: number) => {
-        await api.delete(`/vocabulary/admin/words/${id}/`);
     },
 };
 

@@ -47,7 +47,6 @@ urlpatterns = [
     path('api/access/', include('access.urls')),
     path('api/realtime/', include('realtime.urls')),
     path('api/vocabulary/', include('vocabulary.urls')),
-    path("api/vocab/", include("vocabulary.vocab_urls")),
     path('api/assessments/', include('assessments.urls')),
     path('api/questionbank/', include('questionbank.urls')),
     path('api/midterms/', include('midterms.urls')),

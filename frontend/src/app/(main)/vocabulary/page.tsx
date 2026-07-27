@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { VocabularyHub } from "@/features/vocabulary/pages/VocabularyHub";
 
-export default function VocabularyIndexPage() {
-  redirect("/vocabulary/daily");
+export default function VocabularyPage() {
+  return <VocabularyHub />;
 }

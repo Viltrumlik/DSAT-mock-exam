@@ -167,3 +167,21 @@ class CanAssignTests(BasePermission):
     def has_permission(self, request, view):
         subj = actor_subject_probe_for_domain_perm(request.user)
         return bool(subj and can_assign_tests(request.user, subj))
+
+
+class CanAuthorVocabulary(BasePermission):
+    """
+    Author the vocabulary bank (sections / sets / words) under ``/api/vocabulary/admin/``.
+
+    Builder staff ONLY (admin / test_admin / test_auditor / super_admin / Django
+    superuser). Deliberately NOT :class:`CanManageQuestions`, whose ``can_manage_questions``
+    also returns True for teachers: a teacher only *assigns* an existing vocabulary set as
+    homework and never authors the bank. Vocabulary is subject-agnostic, so there is no
+    domain-subject probe either — every builder sees every section.
+    """
+
+    def has_permission(self, request, view):
+        return is_global_scope_staff(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        return is_global_scope_staff(request.user)

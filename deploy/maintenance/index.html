@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>MasterSAT — we'll be right back</title>
+<style>
+  /* Everything is inline on purpose: this page is served precisely when the
+     app servers are down, so any external asset would fail to load. */
+  :root {
+    --brand: #2a68c0;
+    --brand-soft: #eaf1fb;
+    --ink: #10203a;
+    --muted: #5b6b85;
+    --bg: #f5f8fd;
+    --card: #ffffff;
+    --line: #dfe7f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --brand: #6f9df0;
+      --brand-soft: #16233c;
+      --ink: #eef3fb;
+      --muted: #9fb0c9;
+      --bg: #0b1220;
+      --card: #111c30;
+      --line: #22314c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system,
+          "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 620px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 26px;
+    box-shadow: 0 18px 50px -24px rgba(16, 32, 58, .35);
+    padding: 30px 28px 34px;
+    text-align: center;
+  }
+  .scene { width: 100%; max-width: 420px; margin: 0 auto 6px; display: block; }
+  h1 {
+    margin: 6px 0 8px;
+    font-size: clamp(24px, 5.4vw, 32px);
+    font-weight: 800;
+    letter-spacing: -.02em;
+  }
+  p { margin: 0 auto; max-width: 46ch; color: var(--muted); }
+  .uz { margin-top: 8px; font-size: 14.5px; }
+  .status {
+    display: inline-flex; align-items: center; gap: 9px;
+    margin-top: 20px; padding: 9px 16px;
+    background: var(--brand-soft); color: var(--brand);
+    border-radius: 999px; font-size: 14px; font-weight: 700;
+  }
+  .pulse {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: currentColor; animation: pulse 1.4s ease-in-out infinite;
+  }
+  .dots i { font-style: normal; animation: dots 1.4s infinite; }
+  .dots i:nth-child(2) { animation-delay: .2s; }
+  .dots i:nth-child(3) { animation-delay: .4s; }
+  .foot { margin-top: 16px; font-size: 12.5px; color: var(--muted); opacity: .85; }
+
+  @keyframes pulse { 0%,100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+  @keyframes dots  { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+  /* The builder bobs; the hammer swings on the down-beat. */
+  @keyframes bob    { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+  @keyframes swing  { 0%,100% { transform: rotate(6deg); } 45% { transform: rotate(-46deg); } 55% { transform: rotate(-40deg); } }
+  @keyframes bubble { 0%,100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
+  @keyframes sway   { 0%,100% { transform: rotate(-1.6deg); } 50% { transform: rotate(1.6deg); } }
+  @keyframes wobble { 0%,100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+  @keyframes spark  { 0% { opacity: 0; transform: scale(.4); } 35% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.5); } }
+
+  #builder { animation: bob 2.6s ease-in-out infinite; transform-origin: 50% 100%; }
+  #hammer  { animation: swing 2.6s ease-in-out infinite; transform-origin: 184px 252px; }
+  #bubble  { animation: bubble 2.6s ease-in-out infinite; }
+  #sign    { animation: sway 4.4s ease-in-out infinite; transform-origin: 88px 400px; }
+  #cone    { animation: wobble 3.6s ease-in-out infinite; transform-origin: 432px 404px; }
+  .spark   { animation: spark 2.6s ease-in-out infinite; transform-origin: center; }
+  .spark:nth-of-type(2) { animation-delay: .12s; }
+  .spark:nth-of-type(3) { animation-delay: .24s; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #builder, #hammer, #bubble, #sign, #cone, .spark, .pulse, .dots i {
+      animation: none !important;
+    }
+    #hammer { transform: rotate(-24deg); }
+  }
+</style>
+</head>
+<body>
+  <main class="card" role="main">
+    <svg class="scene" viewBox="0 0 520 430" role="img"
+         aria-label="A friendly builder in a hard hat, hammering next to a sign that reads Site under construction">
+      <defs>
+        <linearGradient id="suit" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#4a86dd"/><stop offset="1" stop-color="#2a68c0"/>
+        </linearGradient>
+        <linearGradient id="hat" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#ffcf4a"/><stop offset="1" stop-color="#f0a91d"/>
+        </linearGradient>
+        <linearGradient id="plank" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#5f92e0"/><stop offset="1" stop-color="#3d74c9"/>
+        </linearGradient>
+      </defs>
+
+      <!-- ground -->
+      <ellipse cx="262" cy="408" rx="150" ry="13" fill="#000" opacity=".07"/>
+
+      <!-- sign -->
+      <g id="sign">
+        <rect x="82" y="286" width="11" height="118" rx="4" fill="#c98a4b"/>
+        <g>
+          <rect x="16" y="276" width="176" height="34" rx="7" fill="url(#plank)"/>
+          <rect x="16" y="314" width="176" height="34" rx="7" fill="url(#plank)"/>
+          <rect x="16" y="352" width="176" height="34" rx="7" fill="url(#plank)"/>
+          <text x="104" y="300" text-anchor="middle" font-family="inherit" font-size="23" font-weight="800" fill="#fff">SITE</text>
+          <text x="104" y="338" text-anchor="middle" font-family="inherit" font-size="23" font-weight="800" fill="#fff">UNDER</text>
+          <text x="104" y="375" text-anchor="middle" font-family="inherit" font-size="15" font-weight="800" fill="#fff" letter-spacing="1">CONSTRUCTION</text>
+        </g>
+      </g>
+
+      <!-- builder -->
+      <g id="builder">
+        <!-- legs + boots -->
+        <rect x="240" y="332" width="26" height="50" rx="13" fill="#2a68c0"/>
+        <rect x="274" y="332" width="26" height="50" rx="13" fill="#2a68c0"/>
+        <ellipse cx="253" cy="388" rx="21" ry="12" fill="#1d4f97"/>
+        <ellipse cx="287" cy="388" rx="21" ry="12" fill="#1d4f97"/>
+
+        <!-- arms first: shoulders tuck under the head and body -->
+        <rect x="196" y="238" width="24" height="72" rx="12" fill="#3f7ed6"
+              transform="rotate(38 208 274)"/>
+        <rect x="316" y="238" width="24" height="66" rx="12" fill="#3f7ed6"
+              transform="rotate(-32 328 271)"/>
+
+        <!-- body -->
+        <rect x="226" y="230" width="84" height="116" rx="38" fill="url(#suit)"/>
+        <!-- tool belt -->
+        <rect x="222" y="298" width="92" height="19" rx="8" fill="#1d4f97"/>
+        <rect x="240" y="288" width="9" height="20" rx="4" fill="#5ac48a"/>
+        <rect x="254" y="288" width="9" height="20" rx="4" fill="#f2803c"/>
+        <rect x="288" y="302" width="24" height="26" rx="7" fill="#1a4585"/>
+        <rect x="294" y="294" width="6" height="16" rx="3" fill="#c9d6ea"/>
+        <circle cx="268" cy="256" r="7" fill="#ffcf4a"/>
+
+        <!-- head -->
+        <circle cx="268" cy="178" r="58" fill="#f7d3ac"/>
+        <ellipse cx="249" cy="176" rx="8" ry="10" fill="#22303f"/>
+        <ellipse cx="289" cy="176" rx="8" ry="10" fill="#22303f"/>
+        <circle cx="269" cy="193" r="5" fill="#e8b98d"/>
+        <path d="M255 204a15 12 0 0 0 28 0z" fill="#c8402f"/>
+        <!-- hard hat -->
+        <path d="M210 144a58 58 0 0 1 116 0z" fill="url(#hat)"/>
+        <rect x="198" y="140" width="140" height="15" rx="7" fill="#f0a91d"/>
+        <rect x="262" y="92" width="12" height="54" rx="6" fill="#ffdd7a"/>
+
+        <!-- hands + tools last so nothing is swallowed by the head -->
+        <!-- left hand grips the hammer; the whole group swings from that grip -->
+        <g id="hammer">
+          <rect x="176" y="176" width="15" height="84" rx="7" fill="#c98a4b"/>
+          <path d="M150 156h46a9 9 0 0 1 9 9v14a9 9 0 0 1-9 9h-46a9 9 0 0 1-9-9v-14a9 9 0 0 1 9-9z" fill="#9aa7b8"/>
+          <rect x="136" y="158" width="13" height="28" rx="5" fill="#7f8c9e"/>
+          <circle cx="184" cy="252" r="14" fill="#f7d3ac"/>
+        </g>
+        <!-- right hand holds the level flat -->
+        <circle cx="344" cy="238" r="14" fill="#f7d3ac"/>
+        <g transform="translate(330 226)">
+          <rect x="0" y="0" width="80" height="23" rx="6" fill="#e8eef8" stroke="#b9c9e2" stroke-width="2"/>
+          <rect x="28" y="5" width="26" height="13" rx="6" fill="#d8f0e2" stroke="#8fbfa4" stroke-width="1.5"/>
+          <circle id="bubble" cx="41" cy="11.5" r="4" fill="#3aa76d"/>
+        </g>
+      </g>
+
+      <!-- impact sparks where the hammer lands -->
+      <g fill="#ffcf4a">
+        <circle class="spark" cx="166" cy="286" r="4"/>
+        <circle class="spark" cx="152" cy="274" r="3"/>
+        <circle class="spark" cx="178" cy="272" r="3"/>
+      </g>
+
+      <!-- cone -->
+      <g id="cone">
+        <ellipse cx="432" cy="404" rx="34" ry="9" fill="#e07a2c"/>
+        <path d="M432 330l26 70h-52z" fill="#f2803c"/>
+        <path d="M424 356h16l3 9h-22z" fill="#fff"/>
+        <path d="M418 378h28l3 9h-34z" fill="#fff"/>
+      </g>
+
+      <!-- nails -->
+      <g fill="#8f9cad">
+        <rect x="330" y="396" width="26" height="5" rx="2.5" transform="rotate(-12 343 398)"/>
+        <rect x="362" y="404" width="22" height="5" rx="2.5" transform="rotate(8 373 406)"/>
+      </g>
+    </svg>
+
+    <h1>We'll be right back</h1>
+    <p>We're shipping an update to MasterSAT. This usually takes a couple of minutes — the page reloads itself the moment we're done.</p>
+    <p class="uz">Saytga yangilanish o'rnatilyapti. Bir necha daqiqa vaqt oladi — tayyor bo'lishi bilan sahifa o'zi yangilanadi.</p>
+
+    <span class="status"><span class="pulse"></span>Working on it<span class="dots"><i>.</i><i>.</i><i>.</i></span></span>
+
+    <p class="foot">Any work you had already saved is safe.</p>
+  </main>
+
+<script>
+// Poll the API's liveness probe and reload as soon as it answers. Deploys stop
+// PM2 before migrating, so this page can be up for a minute or two; nobody
+// should have to guess when to hit refresh.
+(function () {
+  var DELAY = 5000, MAX = 15000, delay = DELAY;
+  function check() {
+    fetch('/api/health/live/', { method: 'GET', cache: 'no-store' })
+      .then(function (r) {
+        // 5xx still means nginx is serving this page's sibling error, not the app.
+        if (r.ok) { location.reload(); return; }
+        throw new Error('not ready');
+      })
+      .catch(function () {
+        // Back off gently so a long migration doesn't hammer the box while it works.
+        delay = Math.min(Math.round(delay * 1.25), MAX);
+        setTimeout(check, delay);
+      });
+  }
+  setTimeout(check, DELAY);
+})();
+</script>
+</body>
+</html>

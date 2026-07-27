@@ -5,7 +5,41 @@ from django.db import models
 from django.utils import timezone
 
 
-class VocabularyWord(models.Model):
+class VocabSection(models.Model):
+    """
+    A named vocabulary collection authored in the builder — "College Panda",
+    "SAT Tashkent", "650 Hard Words". Sections hold sets; sets hold 25 words.
+    """
+
+    title = models.CharField(max_length=200, db_index=True)
+    slug = models.SlugField(max_length=220, unique=True)
+    description = models.TextField(blank=True, default="")
+    order = models.PositiveIntegerField(default=0, db_index=True)
+    is_published = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="vocab_sections_created",
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "vocab_sections"
+        ordering = ["order", "title", "id"]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class VocabWord(models.Model):
+    """
+    One bank word. Words are scoped to their section so two sections may teach
+    the same headword with different wording without colliding.
+    """
+
     PART_NOUN = "noun"
     PART_VERB = "verb"
     PART_ADJECTIVE = "adjective"
@@ -28,244 +62,286 @@ class VocabularyWord(models.Model):
         (PART_OTHER, "Other"),
     )
 
-    DIFF_EASY = 1
-    DIFF_MEDIUM = 2
-    DIFF_HARD = 3
-
+    section = models.ForeignKey(
+        VocabSection,
+        on_delete=models.CASCADE,
+        related_name="words",
+    )
     word = models.CharField(max_length=120, db_index=True)
-    meaning = models.TextField(blank=True, default="")
-    example = models.TextField(blank=True, default="")
+    definition = models.TextField()
     part_of_speech = models.CharField(max_length=24, choices=PART_CHOICES, default=PART_OTHER)
-    difficulty = models.PositiveSmallIntegerField(default=DIFF_MEDIUM, db_index=True)
+    example = models.TextField(blank=True, default="")
+    synonyms = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "vocabulary_words"
+        db_table = "vocab_bank_words"
         ordering = ["word", "id"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["word", "meaning"],
-                name="uniq_vocab_word_meaning",
-            )
+            models.UniqueConstraint(fields=["section", "word"], name="uniq_vocab_word_per_section"),
+        ]
+        indexes = [
+            models.Index(fields=["section", "word"]),
         ]
 
     def __str__(self) -> str:
         return self.word
 
 
-class UserVocabularyProgress(models.Model):
+class VocabSet(models.Model):
+    """
+    A study set of (nominally) 25 words. Exactly one of ``section`` / ``owner``
+    is set: a *bank* set belongs to a builder section, a *custom* set belongs to
+    the student who built it. Both are studied through the identical machinery.
+    """
+
+    TARGET_WORD_COUNT = 25
+
+    section = models.ForeignKey(
+        VocabSection,
+        on_delete=models.CASCADE,
+        related_name="sets",
+        null=True,
+        blank=True,
+    )
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="vocab_custom_sets",
+        null=True,
+        blank=True,
+    )
+    title = models.CharField(max_length=200)
+    order = models.PositiveIntegerField(default=0, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "vocab_sets"
+        ordering = ["order", "id"]
+        constraints = [
+            models.CheckConstraint(
+                # A set is either a bank set (section) or a student set (owner) — never both, never neither.
+                condition=(
+                    models.Q(section__isnull=False, owner__isnull=True)
+                    | models.Q(section__isnull=True, owner__isnull=False)
+                ),
+                name="vocab_set_bank_xor_custom",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["owner", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.title
+
+    @property
+    def is_custom(self) -> bool:
+        return self.owner_id is not None
+
+    def is_completed_by(self, user) -> bool:
+        """A set counts as done once the student finishes ANY one study mode."""
+        return self.sessions.filter(user=user, completed_at__isnull=False).exists()
+
+
+class VocabSetItem(models.Model):
+    vocab_set = models.ForeignKey(VocabSet, on_delete=models.CASCADE, related_name="items")
+    word = models.ForeignKey(VocabWord, on_delete=models.CASCADE, related_name="set_items")
+    order = models.PositiveIntegerField(default=0, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "vocab_set_items"
+        ordering = ["order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["vocab_set", "word"], name="uniq_vocab_set_word"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vocab_set_id}:{self.word_id}"
+
+
+class VocabWordProgress(models.Model):
+    """
+    One row per (user, word). Drives the All / New / Learning / Mastered filter.
+
+    Mastery is streak-based on purpose: the previous generation gated mastery on
+    a cumulative ``wrong_count`` that only ever grew, so a word could become
+    permanently unmasterable. Here any wrong answer resets the streak and demotes
+    to Learning, and three consecutive correct answers master it again.
+    """
+
     STATUS_NEW = "new"
     STATUS_LEARNING = "learning"
     STATUS_MASTERED = "mastered"
-
     STATUS_CHOICES = (
         (STATUS_NEW, "New"),
         (STATUS_LEARNING, "Learning"),
         (STATUS_MASTERED, "Mastered"),
     )
 
+    MASTERY_STREAK = 3
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="vocabulary_progress",
+        related_name="vocab_progress",
     )
-    word = models.ForeignKey(
-        VocabularyWord,
-        on_delete=models.CASCADE,
-        related_name="user_progress",
-    )
+    word = models.ForeignKey(VocabWord, on_delete=models.CASCADE, related_name="progress_rows")
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_NEW, db_index=True)
     correct_count = models.PositiveIntegerField(default=0)
     wrong_count = models.PositiveIntegerField(default=0)
-    last_reviewed = models.DateTimeField(null=True, blank=True, db_index=True)
-
-    # Scheduling (simple spaced repetition)
-    interval_days = models.PositiveIntegerField(default=0)
-    next_review_at = models.DateTimeField(null=True, blank=True, db_index=True)
-
+    streak = models.PositiveIntegerField(default=0)
+    last_reviewed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        db_table = "vocabulary_user_progress"
+        db_table = "vocab_progress"
         constraints = [
-            models.UniqueConstraint(fields=["user", "word"], name="uniq_vocab_user_word"),
+            models.UniqueConstraint(fields=["user", "word"], name="uniq_vocab_progress_user_word"),
         ]
         indexes = [
-            models.Index(fields=["user", "status", "next_review_at"]),
-            models.Index(fields=["user", "next_review_at"]),
+            models.Index(fields=["user", "status"]),
         ]
 
     def __str__(self) -> str:
         return f"{self.user_id}:{self.word_id} ({self.status})"
 
-    def mark_review(self, *, result: str, reviewed_at=None) -> None:
-        """
-        Basic scheduler:
-        - wrong: reset interval, show again soon (minutes)
-        - correct: grow interval (1, 2, 4, 7, 14, 30...) and promote status
-        """
-        reviewed_at = reviewed_at or timezone.now()
-        self.last_reviewed = reviewed_at
-
-        if result == "wrong":
-            self.wrong_count = int(self.wrong_count or 0) + 1
-            self.status = self.STATUS_LEARNING if self.status != self.STATUS_MASTERED else self.STATUS_LEARNING
-            self.interval_days = 0
-            self.next_review_at = reviewed_at + timezone.timedelta(minutes=10)
-            return
-
-        self.correct_count = int(self.correct_count or 0) + 1
-        if self.status == self.STATUS_NEW:
+    def record(self, *, correct: bool, at=None) -> None:
+        """Apply one graded answer. Caller saves."""
+        self.last_reviewed_at = at or timezone.now()
+        if correct:
+            self.correct_count += 1
+            self.streak += 1
+            self.status = (
+                self.STATUS_MASTERED if self.streak >= self.MASTERY_STREAK else self.STATUS_LEARNING
+            )
+        else:
+            self.wrong_count += 1
+            self.streak = 0
             self.status = self.STATUS_LEARNING
 
-        current = int(self.interval_days or 0)
-        if current <= 0:
-            next_days = 1
-        elif current == 1:
-            next_days = 2
-        elif current == 2:
-            next_days = 4
-        elif current == 4:
-            next_days = 7
-        elif current == 7:
-            next_days = 14
-        elif current == 14:
-            next_days = 30
-        else:
-            next_days = min(90, current + 30)
 
-        self.interval_days = next_days
-        self.next_review_at = reviewed_at + timezone.timedelta(days=next_days)
-
-        # Mastery: simple threshold (tunable later)
-        if self.correct_count >= 6 and self.wrong_count <= 3:
-            self.status = self.STATUS_MASTERED
-
-
-# ---------------------------------------------------------------------------
-# Spaced repetition vocab (Word + definitions + SM-2-style progress)
-# ---------------------------------------------------------------------------
-
-
-class Word(models.Model):
+class VocabHomework(models.Model):
     """
-    Lexeme key: surface form + language code (e.g. en, ru).
+    Link row: one assigned bank set on one classroom Assignment. A homework may
+    carry several sets, so this is a plain FK to the Assignment (the same shape
+    ``assessments.HomeworkAssignment`` uses).
+
+    Uniqueness is per-assignment, NOT per-classroom, so the same set can be
+    assigned again in a later lesson for revision.
     """
 
-    text = models.CharField(max_length=200, db_index=True)
-    language = models.CharField(max_length=16, db_index=True, default="en")
+    classroom = models.ForeignKey(
+        "classes.Classroom",
+        on_delete=models.CASCADE,
+        related_name="vocab_homework",
+    )
+    assignment = models.ForeignKey(
+        "classes.Assignment",
+        on_delete=models.CASCADE,
+        related_name="vocab_homeworks",
+    )
+    vocab_set = models.ForeignKey(VocabSet, on_delete=models.PROTECT, related_name="homework_links")
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="vocab_homework_assigned",
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
-        db_table = "vocab_words"
-        ordering = ["language", "text", "id"]
+        db_table = "vocab_homeworks"
+        ordering = ["id"]
         constraints = [
-            models.UniqueConstraint(fields=["text", "language"], name="uniq_vocab_word_text_language"),
+            models.UniqueConstraint(fields=["assignment", "vocab_set"], name="uniq_vocab_hw_assignment_set"),
+        ]
+        indexes = [
+            models.Index(fields=["classroom", "created_at"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.language}:{self.text}"
+        return f"assignment={self.assignment_id} set={self.vocab_set_id}"
 
 
-class WordDefinition(models.Model):
-    word = models.ForeignKey(Word, on_delete=models.CASCADE, related_name="definitions")
-    definition = models.TextField()
-    example = models.TextField(blank=True, default="")
-    order = models.PositiveSmallIntegerField(default=0, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-
-    class Meta:
-        db_table = "vocab_word_definitions"
-        ordering = ["word_id", "order", "id"]
-
-
-class UserWordProgress(models.Model):
+class VocabStudySession(models.Model):
     """
-    One row per (user, Word). ``repetitions`` counts successful steps in the SM-2 loop;
-    ``interval`` is the last scheduled interval in days (0 = learn / re-learn).
+    One run of one study mode over one set. ``homework`` is nullable because
+    self-study on a bank set or on a student's own custom set is not homework.
     """
+
+    MODE_FLASHCARD = "flashcard"
+    MODE_MATCHING = "matching"
+    MODE_SPEED = "speed"
+    MODE_TEST = "test"
+    MODE_CHOICES = (
+        (MODE_FLASHCARD, "Flashcard"),
+        (MODE_MATCHING, "Matching"),
+        (MODE_SPEED, "Speed"),
+        (MODE_TEST, "Test"),
+    )
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="vocab_word_progress",
+        related_name="vocab_sessions",
     )
-    word = models.ForeignKey(Word, on_delete=models.CASCADE, related_name="user_progress_rows")
-    ease_factor = models.FloatField(default=2.5)
-    interval = models.PositiveIntegerField(default=0)
-    repetitions = models.PositiveIntegerField(default=0)
-    next_review_at = models.DateTimeField(null=True, blank=True, db_index=True)
-    introduced_at = models.DateTimeField(null=True, blank=True)
-    learning_phase = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
-    updated_at = models.DateTimeField(auto_now=True, db_index=True)
+    vocab_set = models.ForeignKey(VocabSet, on_delete=models.CASCADE, related_name="sessions")
+    mode = models.CharField(max_length=16, choices=MODE_CHOICES, db_index=True)
+    homework = models.ForeignKey(
+        VocabHomework,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sessions",
+    )
+    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    duration_ms = models.PositiveIntegerField(default=0)
+    correct_count = models.PositiveIntegerField(default=0)
+    total_count = models.PositiveIntegerField(default=0)
+    accuracy = models.FloatField(default=0.0)
 
     class Meta:
-        db_table = "vocab_user_word_progress"
-        constraints = [
-            models.UniqueConstraint(fields=["user", "word"], name="uniq_vocab_user_word_progress"),
-        ]
+        db_table = "vocab_study_sessions"
+        ordering = ["-started_at", "-id"]
         indexes = [
-            models.Index(fields=["user", "next_review_at"]),
+            models.Index(fields=["user", "vocab_set", "completed_at"]),
+            models.Index(fields=["user", "-started_at"]),
         ]
 
     def __str__(self) -> str:
-        return f"{self.user_id}:{self.word_id}"
+        return f"{self.user_id}:{self.vocab_set_id}:{self.mode}"
 
+    # Written together by record_batch(); handed to save(update_fields=...) by callers.
+    BATCH_FIELDS = ("correct_count", "total_count", "duration_ms", "accuracy")
 
-class ReviewLog(models.Model):
-    RESULT_AGAIN = "again"
-    RESULT_HARD = "hard"
-    RESULT_GOOD = "good"
-    RESULT_EASY = "easy"
-    RESULT_CHOICES = (
-        (RESULT_AGAIN, "Again"),
-        (RESULT_HARD, "Hard"),
-        (RESULT_GOOD, "Good"),
-        (RESULT_EASY, "Easy"),
-    )
+    def record_batch(self, *, correct: int, total: int, duration_ms: int = 0) -> None:
+        """
+        Fold one flush of answers into the running totals. Caller saves.
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="vocab_review_logs",
-    )
-    word = models.ForeignKey(Word, on_delete=models.CASCADE, related_name="review_logs")
-    result = models.CharField(max_length=16, choices=RESULT_CHOICES, db_index=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+        Counts ACCUMULATE rather than overwrite: a mode flushes the answers it has when
+        the student leaves and again when it completes, each flush carrying only what it
+        has not sent yet. ``duration_ms`` is a running clock, not a delta, so the largest
+        value reported wins.
+        """
+        self.correct_count += max(0, int(correct))
+        self.total_count += max(0, int(total))
+        self.duration_ms = max(self.duration_ms, max(0, int(duration_ms)))
+        self.accuracy = (
+            round((self.correct_count / self.total_count) * 100, 1) if self.total_count else 0.0
+        )
 
-    class Meta:
-        db_table = "vocab_review_logs"
-        ordering = ["-created_at", "-id"]
-        indexes = [
-            models.Index(fields=["user", "created_at"]),
-            models.Index(fields=["user", "word", "created_at"]),
-        ]
+    def complete(self, at=None) -> None:
+        """
+        Mark the run finished. Caller saves.
 
-
-class UserVocabularyReviewEvent(models.Model):
-    RESULT_CORRECT = "correct"
-    RESULT_WRONG = "wrong"
-    RESULT_CHOICES = ((RESULT_CORRECT, "Correct"), (RESULT_WRONG, "Wrong"))
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="vocabulary_review_events",
-    )
-    word = models.ForeignKey(
-        VocabularyWord,
-        on_delete=models.CASCADE,
-        related_name="review_events",
-    )
-    result = models.CharField(max_length=16, choices=RESULT_CHOICES, db_index=True)
-    reviewed_at = models.DateTimeField(default=timezone.now, db_index=True)
-
-    class Meta:
-        db_table = "vocabulary_review_events"
-        indexes = [
-            models.Index(fields=["user", "reviewed_at"]),
-            models.Index(fields=["user", "result", "reviewed_at"]),
-        ]
-
+        Separate from :meth:`record_batch` because a partial flush must record progress
+        WITHOUT completing the set — quitting halfway is not "any one mode completed".
+        """
+        self.completed_at = at or timezone.now()

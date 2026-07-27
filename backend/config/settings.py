@@ -392,12 +392,6 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# Vocabulary SRS queue caps for GET /api/vocab/today/ (query params cannot exceed these).
-_VOCAB_MAX_NEW_PER_DAY = int(os.getenv("VOCAB_MAX_NEW_PER_DAY", "10"))
-VOCAB_MAX_NEW_PER_DAY = max(0, _VOCAB_MAX_NEW_PER_DAY)
-_VOCAB_MAX_REVIEW_PER_DAY = int(os.getenv("VOCAB_MAX_REVIEW_PER_DAY", "50"))
-VOCAB_MAX_REVIEW_PER_DAY = max(0, _VOCAB_MAX_REVIEW_PER_DAY)
-
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.
 ASSESSMENT_ATTEMPT_INACTIVITY_TIMEOUT_SECONDS = int(
     os.getenv("ASSESSMENT_ATTEMPT_INACTIVITY_TIMEOUT_SECONDS", "3600")

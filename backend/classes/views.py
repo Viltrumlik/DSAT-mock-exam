@@ -981,6 +981,39 @@ class ClassroomViewSet(ModelViewSet):
                 "module_count": mid.midterm_module_count,
             })
 
+        # Vocabulary sections + their sets. Deliberately NOT subject- or level-filtered:
+        # vocabulary is general SAT prep, so every classroom may assign any section.
+        from vocabulary.models import VocabHomework, VocabSection, VocabSetItem
+
+        assigned_vocab_set_ids = set(
+            VocabHomework.objects.filter(classroom=classroom).values_list("vocab_set_id", flat=True)
+        )
+        # One grouped count for the whole picker instead of a COUNT per set card.
+        # ``order_by()`` is load-bearing: VocabSetItem has a default ordering and Django
+        # folds ordering columns into the GROUP BY, which would split the counts.
+        vocab_word_counts = dict(
+            VocabSetItem.objects.filter(vocab_set__section__is_published=True)
+            .values_list("vocab_set")
+            .order_by()
+            .annotate(n=Count("id"))
+        )
+        vocabulary_sections = []
+        for section in VocabSection.objects.filter(is_published=True).prefetch_related("sets"):
+            vocabulary_sections.append({
+                "id": section.id,
+                "title": section.title,
+                "sets": [
+                    {
+                        "id": vset.id,
+                        "title": vset.title,
+                        "word_count": vocab_word_counts.get(vset.id, 0),
+                        "already_assigned": vset.id in assigned_vocab_set_ids,
+                    }
+                    # VocabSet.Meta orders by ``order`` then id.
+                    for vset in section.sets.all()
+                ],
+            })
+
         return Response({
             "classroom_subject": classroom.subject,
             "classroom_level": classroom.level or "",
@@ -988,6 +1021,7 @@ class ClassroomViewSet(ModelViewSet):
             "assessment_sets": assessment_sets,
             "practice_test_packs": practice_test_packs,
             "midterms": midterms,
+            "vocabulary_sections": vocabulary_sections,
         })
 
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen], url_path="leaderboard")
@@ -1921,6 +1955,28 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         seen: set[int] = set()
         return [s for s in wanted if not (s in seen or seen.add(s))]
 
+    @staticmethod
+    def _vocabulary_set_ids_from_request(request) -> list[int]:
+        """Parse vocabulary_set_ids, deduped in order. The multipart create sends a JSON
+        string, the JSON PATCH body sends a real list — both are accepted. There is no
+        legacy singular key: vocabulary homework has always been multi-set."""
+        raw_ids = request.data.get("vocabulary_set_ids")
+        wanted: list[int] = []
+        if raw_ids:
+            if isinstance(raw_ids, str):
+                try:
+                    raw_ids = json.loads(raw_ids)
+                except Exception:
+                    raw_ids = []
+            if isinstance(raw_ids, (list, tuple)):
+                for x in raw_ids:
+                    try:
+                        wanted.append(int(x))
+                    except (TypeError, ValueError):
+                        continue
+        seen: set[int] = set()
+        return [s for s in wanted if not (s in seen or seen.add(s))]
+
     def _unapproved_assessment_guard(self, request, ordered_ids):
         """Return a 400 Response if any selected set is not approved and the teacher
         has not explicitly confirmed via allow_unapproved; else None. Keeps a teacher
@@ -2082,6 +2138,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                     assignment.pk, sid,
                 )
 
+        # Vocabulary sets — reconcile against an empty set of existing links, which is
+        # exactly "attach every selected set" on a freshly created assignment.
+        self._reconcile_vocab_homeworks(request, assignment)
+
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
@@ -2145,6 +2205,12 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         # partial edit that omits assessments leaves existing links untouched.
         if "assessment_set_ids" in request.data or "assessment_set_id" in request.data:
             self._reconcile_assessment_homeworks(request, assignment)
+
+        # Same rule for vocabulary: only touch the links when the client actually sends
+        # the key, so a partial edit that omits vocabulary leaves the selection alone.
+        # The teacher form always sends it on edit (empty list = detach everything).
+        if "vocabulary_set_ids" in request.data:
+            self._reconcile_vocab_homeworks(request, assignment)
 
         return Response(self.get_serializer(assignment).data)
 
@@ -2230,6 +2296,71 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             except Exception:
                 logger.exception(
                     "Failed to detach assessment set %s from assignment %s",
+                    set_id, assignment.pk,
+                )
+
+    def _reconcile_vocab_homeworks(self, request, assignment):
+        """Bring an assignment's attached vocabulary sets in line with the selection.
+
+        Mirrors _reconcile_assessment_homeworks, with two deliberate differences:
+        VocabHomework is unique per (assignment, set) rather than per classroom, so a
+        set the class has already studied CAN be given again for revision; and a link a
+        student has already studied is never detached, because VocabStudySession.homework
+        is SET_NULL and detaching would strand those sessions with no homework to report
+        against.
+        """
+        from vocabulary.models import VocabHomework, VocabSet
+
+        classroom = assignment.classroom
+        wanted = self._vocabulary_set_ids_from_request(request)
+        wanted_set = set(wanted)
+
+        existing = {hw.vocab_set_id: hw for hw in assignment.vocab_homeworks.all()}
+
+        for sid in wanted:
+            if sid in existing:
+                continue
+            # owner__isnull=True keeps a student's personal set out of classroom
+            # homework. The serializer already 400s on those; this is the last line.
+            vset = VocabSet.objects.filter(pk=sid, owner__isnull=True).first()
+            if vset is None:
+                logger.warning("vocabulary set %s not found (or personal); skipping", sid)
+                continue
+            try:
+                try:
+                    with transaction.atomic():
+                        VocabHomework.objects.create(
+                            classroom=classroom,
+                            assignment=assignment,
+                            vocab_set=vset,
+                            assigned_by=request.user,
+                        )
+                except IntegrityError:
+                    # uniq_vocab_hw_assignment_set — already attached (double submit).
+                    logger.info(
+                        "vocabulary set %s already attached to assignment %s; skipping",
+                        sid, assignment.pk,
+                    )
+            except Exception:
+                logger.exception(
+                    "Failed to attach vocabulary homework assignment_id=%s set_id=%s",
+                    assignment.pk, sid,
+                )
+
+        for set_id, hw in existing.items():
+            if set_id in wanted_set:
+                continue
+            if hw.sessions.exists():
+                logger.info(
+                    "keeping vocabulary set %s on assignment %s: student has studied it",
+                    set_id, assignment.pk,
+                )
+                continue
+            try:
+                hw.delete()
+            except Exception:
+                logger.exception(
+                    "Failed to detach vocabulary set %s from assignment %s",
                     set_id, assignment.pk,
                 )
 

@@ -259,6 +259,18 @@ ln -sfn "../../../shared/backend.env" "$RELEASE_DIR/backend/.env"
 ln -sfn "../../../shared/frontend.env.production" "$RELEASE_DIR/frontend/.env.production"
 ln -sfn "../../../shared/media" "$RELEASE_DIR/backend/media"
 
+# Refresh the maintenance page BEFORE PM2 goes down, and into shared/ rather
+# than the release tree: nginx needs it exactly while `current` is being
+# swapped, so it must not live behind that symlink.
+DEPLOY_STAGE="maintenance_page"
+if [[ -d "$RELEASE_DIR/deploy/maintenance" ]]; then
+  echo "-> Refreshing maintenance page -> $SHARED/maintenance"
+  mkdir -p "$SHARED/maintenance"
+  cp -Rf "$RELEASE_DIR/deploy/maintenance/." "$SHARED/maintenance/"
+else
+  echo "-> WARNING: deploy/maintenance missing in this release; leaving the existing page in place"
+fi
+
 if [[ -L "$APP_DIR/current" ]]; then
   OLD_CURRENT_REAL="$(readlink -f "$APP_DIR/current" || true)"
 fi
