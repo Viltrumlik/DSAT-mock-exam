@@ -1904,6 +1904,18 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             a.due_at = homework_due_at(a.classroom)
             fields.append("due_at")
         a.save(update_fields=fields)
+
+        # Publishing a draft is the moment it reaches the students — email them. Only on the
+        # FIRST publish, and notify itself is idempotent, so re-publishing an unarchived
+        # homework never re-mails the class.
+        if first_publish:
+            try:
+                from .mail_homework import notify_homework_assigned
+
+                notify_homework_assigned(a)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception("homework notify failed on publish for assignment %s", a.pk)
+
         return Response({"id": a.id, "status": a.status})
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
@@ -2141,6 +2153,17 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         # Vocabulary sets — reconcile against an empty set of existing links, which is
         # exactly "attach every selected set" on a freshly created assignment.
         self._reconcile_vocab_homeworks(request, assignment)
+
+        # A homework is PUBLISHED by default, so creating one gives it to the class right
+        # away — email the students. Runs LAST so the "what's inside" count reflects every
+        # attached content (assessments + vocab). Best-effort + idempotent (notify claims
+        # notified_at); a mail failure must never fail the assignment the teacher just made.
+        try:
+            from .mail_homework import notify_homework_assigned
+
+            notify_homework_assigned(assignment)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("homework notify failed on create for assignment %s", assignment.pk)
 
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
 
