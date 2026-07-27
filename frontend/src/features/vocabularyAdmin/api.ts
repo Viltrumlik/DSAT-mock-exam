@@ -129,5 +129,3 @@ export function csvImportErrorText(e: unknown): string {
   }
   return text;
 }
-
-export default vocabularyAdminApi;

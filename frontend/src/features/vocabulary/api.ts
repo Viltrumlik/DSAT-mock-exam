@@ -103,5 +103,3 @@ export const vocabularyApi = {
     }
   },
 };
-
-export default vocabularyApi;

@@ -8,5 +8,3 @@ export const vocabularyKeys = {
   mySets: () => [...vocabularyKeys.all, "my-sets"] as const,
   homework: () => [...vocabularyKeys.all, "homework"] as const,
 };
-
-export default vocabularyKeys;
