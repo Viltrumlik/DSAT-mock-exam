@@ -102,7 +102,7 @@ const DEFAULT_FORM: MidtermForm = {
   practice_date: "",
   midterm_subject: "READING_WRITING",
   midterm_scoring_scale: "SCALE_100",
-  midterm_module_count: "2",
+  midterm_module_count: "1",
   midterm_module1_minutes: "60",
   midterm_module2_minutes: "60",
   midterm_target_question_count: "44",
