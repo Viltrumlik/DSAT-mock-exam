@@ -21,6 +21,7 @@ from .state_machine import (
     STATE_ACTIVE,
     STATE_CHOICES,
     STATE_COMPLETED,
+    STATE_MODULE_2_ACTIVE,
     STATE_NOT_STARTED,
     STATE_SCORING,
     TransitionNotAllowed,
@@ -149,6 +150,20 @@ class Midterm(TimestampedModel):
         related_name="midterm",
         help_text="Owned exams.Module holding this midterm's questions.",
     )
+    # SECOND timed module (null = single-module midterm, the default). A 2-module midterm
+    # runs module 1 on its own timer, auto-submits when that timer expires, then runs
+    # module 2 on its own timer. Existing midterms leave this NULL and are unaffected.
+    question_module_2 = models.OneToOneField(
+        "exams.Module",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="midterm_module2",
+        help_text="Owned exams.Module for the SECOND timed module (null = single-module).",
+    )
+    duration_minutes_2 = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Module-2 strict timer (null = single-module midterm)."
+    )
 
     is_published = models.BooleanField(default=False, db_index=True)
     published_at = models.DateTimeField(null=True, blank=True)
@@ -237,11 +252,14 @@ class Midterm(TimestampedModel):
 
     def delete(self, *args, **kwargs):
         # PROTECT stops the owned Module being deleted out from under a live midterm; on
-        # midterm deletion we remove the Midterm first, then its module (cascading Questions).
+        # midterm deletion we remove the Midterm first, then its module(s) (cascading Questions).
         mod = self.question_module
+        mod2 = self.question_module_2
         result = super().delete(*args, **kwargs)
         if mod is not None:
             mod.delete()
+        if mod2 is not None:
+            mod2.delete()
         return result
 
 
@@ -260,6 +278,10 @@ class MidtermVersion(models.Model):
     label = models.CharField(max_length=64, blank=True, default="")
     question_module = models.OneToOneField(
         "exams.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="midterm_version"
+    )
+    # Second module for a 2-module midterm (null = single-module). Mirrors Midterm.question_module_2.
+    question_module_2 = models.OneToOneField(
+        "exams.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="midterm_version_module2"
     )
     # Idempotency anchor: the legacy exams.PracticeTest this version mirrors.
     legacy_practice_test_id = models.BigIntegerField(null=True, blank=True, db_index=True)
@@ -285,9 +307,12 @@ class MidtermVersion(models.Model):
 
     def delete(self, *args, **kwargs):
         mod = self.question_module
+        mod2 = self.question_module_2
         result = super().delete(*args, **kwargs)
         if mod is not None:
             mod.delete()
+        if mod2 is not None:
+            mod2.delete()
         return result
 
 
@@ -296,6 +321,7 @@ class MidtermAttempt(TimestampedModel):
 
     STATE_NOT_STARTED = STATE_NOT_STARTED
     STATE_ACTIVE = STATE_ACTIVE
+    STATE_MODULE_2_ACTIVE = STATE_MODULE_2_ACTIVE
     STATE_SCORING = STATE_SCORING
     STATE_COMPLETED = STATE_COMPLETED
     STATE_ABANDONED = STATE_ABANDONED
@@ -325,7 +351,10 @@ class MidtermAttempt(TimestampedModel):
     # required). start() refuses until this is set when the schedule has a code.
     code_verified_at = models.DateTimeField(null=True, blank=True)
 
-    started_at = models.DateTimeField(null=True, blank=True)  # single timer anchor, written `or now`, never rewound
+    started_at = models.DateTimeField(null=True, blank=True)  # module-1 timer anchor, written `or now`, never rewound
+    # Module-2 timer anchor, written `or now` at the M1→M2 boundary, never rewound. NULL for
+    # a single-module attempt (which never reaches MODULE_2_ACTIVE).
+    module_2_started_at = models.DateTimeField(null=True, blank=True)
     scoring_started_at = models.DateTimeField(null=True, blank=True, db_index=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
@@ -384,6 +413,10 @@ class MidtermAttempt(TimestampedModel):
     def _assert_invariants(self):
         if self.current_state == STATE_ACTIVE and not self.started_at:
             raise TransitionNotAllowed(f"midterm attempt {self.pk} ACTIVE without started_at anchor")
+        if self.current_state == STATE_MODULE_2_ACTIVE and not self.module_2_started_at:
+            raise TransitionNotAllowed(
+                f"midterm attempt {self.pk} MODULE_2_ACTIVE without module_2_started_at anchor"
+            )
         if self.is_completed and self.current_state != STATE_COMPLETED:
             raise TransitionNotAllowed(f"midterm attempt {self.pk} is_completed but state={self.current_state}")
 
@@ -402,20 +435,55 @@ class MidtermAttempt(TimestampedModel):
         except Exception:  # audit must never break a transition
             logger.exception("midterm engine audit write failed for attempt %s", self.pk)
 
-    # ── question source (version-aware) ───────────────────────────────────────
+    # ── question source (version-aware, module-aware) ─────────────────────────
+    @property
+    def _question_source(self):
+        """The Midterm or MidtermVersion whose modules this attempt serves/grades."""
+        return self.version if self.version_id else self.midterm
+
+    def module_count(self) -> int:
+        """1 or 2. A midterm is two-module only when its second module EXISTS and has at
+        least one question — an opted-in but empty module 2 degrades safely to single-module
+        (mirrors the mock engine's shortcut)."""
+        src = self._question_source
+        m2_id = getattr(src, "question_module_2_id", None)
+        if not m2_id:
+            return 1
+        from exams.models import Question
+
+        return 2 if Question.objects.filter(module_id=m2_id).exists() else 1
+
+    def effective_module_for_order(self, order: int):
+        """The exams.Module for module 1 or module 2 (version-aware). None if absent."""
+        src = self._question_source
+        if int(order) == 2:
+            return getattr(src, "question_module_2", None)
+        return getattr(src, "question_module", None)
+
+    def effective_questions_for_order(self, order: int):
+        """Ordered question queryset for one module (1 or 2)."""
+        from exams.models import Question
+
+        mod = self.effective_module_for_order(order)
+        if mod is None:
+            return Question.objects.none()
+        return Question.objects.filter(module_id=mod.id).order_by("order", "id")
+
     @property
     def effective_module(self):
-        """The exams.Module whose questions this attempt is graded/served from —
-        the assigned version's module when set, else the midterm's own module."""
+        """Module 1 — kept for any legacy single-module caller."""
         if self.version_id and self.version.question_module_id:
             return self.version.question_module
         return self.midterm.question_module
 
     def effective_questions(self):
-        """Ordered question set for this attempt (version-aware)."""
-        if self.version_id:
-            return self.version.questions()
-        return self.midterm.questions()
+        """The FULL question set this attempt is scored/frozen over — module 1, plus
+        module 2 when the attempt is two-module. The scorer/freeze/review iterate this, so
+        keeping it a union is what makes them span both modules with no change. Single-module
+        returns the identical queryset as before (byte-identical scoring)."""
+        if self.module_count() < 2:
+            return self.version.questions() if self.version_id else self.midterm.questions()
+        return list(self.effective_questions_for_order(1)) + list(self.effective_questions_for_order(2))
 
     # ── timing ───────────────────────────────────────────────────────────────
     def get_timing(self, *, now=None):
@@ -429,8 +497,10 @@ class MidtermAttempt(TimestampedModel):
 
     # ── transitions (each caller is expected to hold a select_for_update lock) ─
     def start_attempt(self) -> bool:
-        """NOT_STARTED -> ACTIVE. Idempotent no-op once ACTIVE/SCORING/COMPLETED."""
-        if self.current_state in (STATE_ACTIVE, STATE_SCORING, STATE_COMPLETED):
+        """NOT_STARTED -> ACTIVE. Idempotent no-op once already started (any active/terminal
+        state). Module 1 is always where a midterm begins; its ``started_at`` is the only
+        anchor set here."""
+        if self.current_state in (STATE_ACTIVE, STATE_MODULE_2_ACTIVE, STATE_SCORING, STATE_COMPLETED):
             return False
         if self.current_state != STATE_NOT_STARTED:
             raise TransitionNotAllowed(f"cannot start midterm attempt {self.pk} from {self.current_state}")
@@ -459,8 +529,10 @@ class MidtermAttempt(TimestampedModel):
         return True
 
     def autosave(self, *, answers=None, flagged=None) -> bool:
-        """Persist merged answers/flags while ACTIVE (no state change). Never blanks saved work."""
-        if self.current_state != STATE_ACTIVE:
+        """Persist merged answers/flags while active (no state change). Never blanks saved
+        work. Answers are a flat {qid: ans} dict spanning both modules — question ids never
+        collide across the two distinct modules — so autosave is module-agnostic."""
+        if self.current_state not in (STATE_ACTIVE, STATE_MODULE_2_ACTIVE):
             return False
         merged = self._merge_answers(answers)
         merged_flags = self._merge_flagged(flagged)
@@ -468,7 +540,7 @@ class MidtermAttempt(TimestampedModel):
         ts = timezone.now()
         from .models import MidtermAttempt as _MA  # local ref for the raw update
 
-        n = _MA.objects.filter(pk=self.pk, current_state=STATE_ACTIVE, version_number=v0).update(
+        n = _MA.objects.filter(pk=self.pk, current_state=self.current_state, version_number=v0).update(
             answers=merged, flagged=merged_flags, version_number=v0 + 1, updated_at=ts
         )
         if n == 0:
@@ -480,17 +552,65 @@ class MidtermAttempt(TimestampedModel):
         return True
 
     def submit(self, *, answers=None, flagged=None) -> bool:
-        """ACTIVE -> SCORING, persisting merged answers. Idempotent once SCORING/COMPLETED."""
+        """Advance the attempt one step.
+
+        For a live two-module attempt on module 1 this ADVANCES to module 2 (its own timer);
+        otherwise (single-module, or already on module 2) it FINISHES to SCORING. Idempotent
+        once SCORING/COMPLETED. A single-module attempt takes the ACTIVE->SCORING path with
+        the identical CAS write and audit event as before.
+        """
+        if self.current_state == STATE_ACTIVE and self.module_count() >= 2:
+            return self._advance_to_module_2(answers=answers, flagged=flagged)
+        return self.submit_final(answers=answers, flagged=flagged)
+
+    def _advance_to_module_2(self, *, answers=None, flagged=None) -> bool:
+        """ACTIVE (module 1) -> MODULE_2_ACTIVE, persisting merged answers + anchoring the
+        module-2 timer. Idempotent once past module 1."""
+        if self.current_state in (STATE_MODULE_2_ACTIVE, STATE_SCORING, STATE_COMPLETED):
+            return False
+        assert_primary_transition_allowed(STATE_ACTIVE, STATE_MODULE_2_ACTIVE)
+        merged = self._merge_answers(answers)
+        merged_flags = self._merge_flagged(flagged)
+        v0 = int(self.version_number or 0)
+        ts = timezone.now()
+        m2_anchor = self.module_2_started_at or ts  # first-seen, never rewound
+        n = conditional_midterm_attempt_update(
+            pk=int(self.pk),
+            expect_state=STATE_ACTIVE,
+            expect_version=v0,
+            updates={
+                "answers": merged,
+                "flagged": merged_flags,
+                "current_state": STATE_MODULE_2_ACTIVE,
+                "module_2_started_at": m2_anchor,
+                "version_number": v0 + 1,
+                "updated_at": ts,
+            },
+        )
+        if n == 0:
+            self.refresh_from_db()
+            if self.current_state in (STATE_MODULE_2_ACTIVE, STATE_SCORING, STATE_COMPLETED):
+                return False
+            raise TransitionConflict(f"advance lost CAS for midterm attempt {self.pk} (now {self.current_state})")
+        self.refresh_from_db()
+        self._assert_invariants()
+        self._log("advance_module_2", from_state=STATE_ACTIVE)
+        return True
+
+    def submit_final(self, *, answers=None, flagged=None) -> bool:
+        """Terminal submit -> SCORING from whichever module is active. Idempotent once
+        SCORING/COMPLETED. This is the old single-module ``submit`` for the ACTIVE case."""
         if self.current_state in (STATE_SCORING, STATE_COMPLETED):
             return False
-        assert_primary_transition_allowed(self.current_state, STATE_SCORING)
+        from_state = self.current_state  # ACTIVE (single-module) or MODULE_2_ACTIVE
+        assert_primary_transition_allowed(from_state, STATE_SCORING)
         merged = self._merge_answers(answers)
         merged_flags = self._merge_flagged(flagged)
         v0 = int(self.version_number or 0)
         ts = timezone.now()
         n = conditional_midterm_attempt_update(
             pk=int(self.pk),
-            expect_state=STATE_ACTIVE,
+            expect_state=from_state,
             expect_version=v0,
             updates={
                 "answers": merged,
@@ -509,7 +629,7 @@ class MidtermAttempt(TimestampedModel):
             raise TransitionConflict(f"submit lost CAS for midterm attempt {self.pk} (now {self.current_state})")
         self.refresh_from_db()
         self._assert_invariants()
-        self._log("submit", from_state=STATE_ACTIVE)
+        self._log("submit", from_state=from_state)
         return True
 
     def complete(self) -> bool:

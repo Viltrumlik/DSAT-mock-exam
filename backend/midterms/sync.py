@@ -56,11 +56,14 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     from exams.models import Module
     from .models import Midterm
 
-    # A midterm runs as ONE timed module (a single owned question_module), so its duration
-    # is that single module's minutes — NEVER the sum of the builder's two module fields.
-    # Summing turned a 32-minute exam into 40 (32 + module 2) and is wrong for a
-    # single-module sitting; module 2's minutes do not apply.
+    # Module 1's timer. For a SINGLE-module midterm this is the whole exam (never the sum of
+    # the builder's two module fields — summing turned a 32-minute exam into 40).
     duration = max(1, int(getattr(mock, "midterm_module1_minutes", 60) or 60))
+    # Two-module runtime is OPT-IN via an explicit flag, NEVER inferred from module_count
+    # (which defaults to 2): inferring would retroactively split a large existing population.
+    module_count = min(2, max(1, int(getattr(mock, "midterm_module_count", 1) or 1)))
+    two_module = bool(getattr(mock, "midterm_two_module_runtime", False)) and module_count >= 2
+    duration2 = max(1, int(getattr(mock, "midterm_module2_minutes", 60) or 60)) if two_module else None
 
     midterm, _created = Midterm.objects.get_or_create(
         legacy_mock_exam_id=mock.id,
@@ -72,6 +75,7 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
             "level": getattr(mock, "midterm_level", "") or "",
             "scoring_scale": getattr(mock, "midterm_scoring_scale", None) or Midterm.SCALE_100,
             "duration_minutes": duration,
+            "duration_minutes_2": duration2,
             "question_limit": int(getattr(mock, "midterm_module_question_limit", 30) or 30),
             "midterm_type": getattr(mock, "midterm_type", None) or Midterm.TYPE_MIDTERM,
             "pass_mark": getattr(mock, "midterm_pass_mark", None),
@@ -102,6 +106,7 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
         Midterm.objects.filter(legacy_mock_exam_id=parent_mock_id).first() if parent_mock_id else None
     )
     midterm.duration_minutes = duration
+    midterm.duration_minutes_2 = duration2
     midterm.question_limit = int(getattr(mock, "midterm_module_question_limit", 30) or 30)
     midterm.is_published = bool(getattr(mock, "is_published", False))
     midterm.published_at = getattr(mock, "published_at", None)
@@ -116,6 +121,25 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
         if module.time_limit_minutes != duration:
             module.time_limit_minutes = duration
             module.save(update_fields=["time_limit_minutes"])
+
+    # Provision (or tear down) the second module to match the opt-in flag.
+    if two_module:
+        if not midterm.question_module_2_id:
+            module2 = Module.objects.create(practice_test=None, module_order=2, time_limit_minutes=duration2)
+            midterm.question_module_2 = module2
+        else:
+            module2 = midterm.question_module_2
+            if module2.time_limit_minutes != duration2:
+                module2.time_limit_minutes = duration2
+                module2.save(update_fields=["time_limit_minutes"])
+    else:
+        module2 = None
+        if midterm.question_module_2_id:
+            # Reverting two-module -> single: detach then drop the orphaned module.
+            old = midterm.question_module_2
+            midterm.question_module_2 = None
+            midterm.save(update_fields=["question_module_2"])
+            old.delete()
     midterm.save()
 
     # Mirror questions from the legacy sections LIVE — refresh IN PLACE on every sync so
@@ -130,17 +154,62 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
             # MidtermVersion. Leave the flat question_module INTACT — emptying it would
             # orphan any legacy single-set attempts (an attempt with version_id=NULL
             # resolves effective_questions() to the flat module). It is simply dormant for
-            # new (version-pinned) attempts, and display counts are version-aware. A midterm
-            # that was versioned from the start has an empty flat module anyway.
-            _sync_versions(midterm, practice_tests)
+            # new (version-pinned) attempts, and display counts are version-aware.
+            _sync_versions(midterm, practice_tests, two_module=two_module, duration2=duration2)
+        elif two_module:
+            # 2-module runtime: split the single PracticeTest's authored modules by
+            # module_order — module 1 questions into question_module, module 2 into
+            # question_module_2. Each stays live-refreshed (Question.id preserved).
+            for v in list(midterm.versions.all()):
+                v.delete()
+            m1_live = _questions_for_legacy_order(practice_tests, 1)
+            m2_live = _questions_for_legacy_order(practice_tests, 2)
+            # Flipping single→two-module for a midterm that ALREADY has in-progress attempts:
+            # module 1 currently holds the flattened superset (module-1 + module-2 rows) and
+            # module 2 is empty. RE-HOME the overflow rows into module 2, preserving each
+            # Question.id, so any answer a student already gave to a module-2 question is not
+            # orphaned. A plain split (trim + recreate) would give module 2 fresh ids and lose
+            # those answers. Idempotent: a no-op once module 2 already holds rows.
+            _rehome_overflow_to_module2(module, module2, len(m1_live))
+            _sync_module_questions_in_place(module, m1_live)
+            _sync_module_questions_in_place(module2, m2_live)
         else:
-            # Single set: drop any stale versions and flatten questions into the
-            # midterm's own module (legacy single-version behavior).
+            # Single-module (unchanged): flatten ALL authored modules into the one module.
             for v in list(midterm.versions.all()):
                 v.delete()
             _sync_module_questions_in_place(module, _iter_live_questions(practice_tests))
 
     return midterm
+
+
+def _questions_for_legacy_order(practice_tests, order: int) -> list:
+    """The live builder questions of the given PracticeTests belonging to ONE authored
+    module_order (1 or 2), in authoring order. Used to split a 2-module midterm."""
+    out = []
+    for section in practice_tests:
+        for src_mod in section.modules.filter(module_order=order).order_by("id"):
+            out.extend(src_mod.questions.all().order_by("order", "id"))
+    return out
+
+
+def _rehome_overflow_to_module2(module1, module2, n1: int) -> None:
+    """Move ``module1``'s rows past position ``n1`` into ``module2``, PRESERVING Question.id.
+
+    Used exactly once per midterm, on the single→two-module flip: module 1 still holds the
+    old flattened set (module-1 rows THEN module-2 rows) and module 2 is empty. Moving the
+    overflow rows (rather than trim-and-recreate) keeps their ids stable, so a live attempt's
+    saved answers to those questions still resolve after the split. Idempotent — returns
+    immediately once module 2 already holds any row, so re-syncs never disturb it.
+    """
+    from exams.models import Question
+
+    if Question.objects.filter(module_id=module2.id).exists():
+        return  # already split; leave both modules to the in-place refresh
+    rows = list(Question.objects.filter(module_id=module1.id).order_by("order", "id"))
+    for j, q in enumerate(rows[n1:]):
+        q.module_id = module2.id
+        q.order = j
+        q.save(update_fields=["module_id", "order", "updated_at"], _plain_db_save=True)
 
 
 def _iter_live_questions(practice_tests) -> list:
@@ -187,15 +256,20 @@ def _sync_module_questions_in_place(module, live_questions) -> None:
         q.delete()
 
 
-def _sync_versions(midterm, practice_tests) -> None:
+def _sync_versions(midterm, practice_tests, *, two_module: bool = False, duration2=None) -> None:
     """Mirror up to 4 legacy PracticeTests into ``midterm.versions`` (one per version),
     each owning its own Module of questions. IN-PLACE: versions are matched by
     ``legacy_practice_test_id`` and their questions refreshed by position, so re-syncing
-    after a builder edit keeps content live while preserving Question.id for attempts."""
+    after a builder edit keeps content live while preserving Question.id for attempts.
+
+    When ``two_module`` is set, each version also owns a second module (question_module_2),
+    fed from that PracticeTest's module_order=2 questions; otherwise the version stays
+    single-module (flattened) and any stale second module is torn down."""
     from exams.models import Module
     from .models import MidtermVersion
 
     duration = midterm.duration_minutes or 1
+    dur2 = duration2 or duration
     keep_pt_ids = set()
     # Existing versions keep their number; new ones take the next FREE number so a
     # remove-then-add-version sequence can't collide with the (midterm, version_number)
@@ -228,7 +302,26 @@ def _sync_versions(midterm, practice_tests) -> None:
                 module = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=duration)
                 version.question_module = module
                 version.save(update_fields=["question_module"])
-        _sync_module_questions_in_place(module, _iter_live_questions([pt]))
+
+        if two_module:
+            module2 = version.question_module_2
+            if module2 is None:
+                module2 = Module.objects.create(practice_test=None, module_order=2, time_limit_minutes=dur2)
+                version.question_module_2 = module2
+                version.save(update_fields=["question_module_2"])
+            v1_live = _questions_for_legacy_order([pt], 1)
+            # Preserve in-progress attempt answers on a single→two flip (see the non-versioned
+            # branch): re-home this version's overflow rows into module 2 keeping Question.id.
+            _rehome_overflow_to_module2(module, module2, len(v1_live))
+            _sync_module_questions_in_place(module, v1_live)
+            _sync_module_questions_in_place(module2, _questions_for_legacy_order([pt], 2))
+        else:
+            _sync_module_questions_in_place(module, _iter_live_questions([pt]))
+            if version.question_module_2_id:  # reverting 2->1: drop the stale second module
+                old = version.question_module_2
+                version.question_module_2 = None
+                version.save(update_fields=["question_module_2"])
+                old.delete()
     # Drop versions whose legacy PracticeTest no longer exists.
     for v in list(midterm.versions.exclude(legacy_practice_test_id__in=keep_pt_ids)):
         v.delete()

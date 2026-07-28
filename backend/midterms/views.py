@@ -30,7 +30,17 @@ from .models import Midterm, MidtermAttempt
 from .proctoring import GRACE_SECONDS as OFFSCREEN_GRACE_SECONDS
 from .proctoring import VIOLATION_LIMIT as OFFSCREEN_VIOLATION_LIMIT
 from .serializers import MidtermAttemptSerializer
-from .state_machine import STATE_ABANDONED, STATE_ACTIVE, STATE_COMPLETED, STATE_SCORING
+from .state_machine import (
+    STATE_ABANDONED,
+    STATE_ACTIVE,
+    STATE_COMPLETED,
+    STATE_MODULE_2_ACTIVE,
+    STATE_SCORING,
+)
+
+# The two "a module is running" states — the strict timer, off-screen policing and autosave
+# all apply on either module of a two-module midterm.
+_ACTIVE_STATES = (STATE_ACTIVE, STATE_MODULE_2_ACTIVE)
 from .tasks import enqueue_midterm_scoring
 
 logger = logging.getLogger(__name__)
@@ -196,7 +206,7 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         report cannot burn two of the student's three chances.
         """
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
-        if attempt.current_state != STATE_ACTIVE:
+        if attempt.current_state not in _ACTIVE_STATES:
             # Nothing to police once the paper is in. Report the current tally so a late
             # event from a closing tab is a harmless no-op rather than an error.
             return Response(
@@ -212,15 +222,16 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
             terminated = False
             with transaction.atomic():
                 locked = self._lock_queryset().select_for_update().get(pk=pk)
-                if locked.current_state != STATE_ACTIVE:
+                if locked.current_state not in _ACTIVE_STATES:
                     count = int(locked.offscreen_violations or 0)
                 else:
                     count = int(locked.offscreen_violations or 0) + 1
                     MidtermAttempt.objects.filter(pk=locked.pk).update(offscreen_violations=count)
                     locked.offscreen_violations = count
                     if count >= OFFSCREEN_VIOLATION_LIMIT:
-                        # Third strike: end it here rather than trusting the client to.
-                        locked.submit()
+                        # Third strike ends the WHOLE sitting immediately, from either module
+                        # — never an advance to module 2. submit_final goes straight to SCORING.
+                        locked.submit_final()
                         MidtermAttempt.objects.filter(pk=locked.pk).update(
                             terminated_reason=MidtermAttempt.TERMINATION_OFFSCREEN
                         )
@@ -257,7 +268,10 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         # taken in early BY the rule. The bypass is not client-assertable — it requires
         # the server-side violation count to already be at the limit, so a crafted request
         # cannot use it to submit early.
-        if attempt.current_state == STATE_ACTIVE:
+        # The strict early-submit lock applies to the CURRENT module: get_timing() returns
+        # the live module's timing, so module 1 and module 2 are each locked until their own
+        # timer expires. On expiry, submit() advances M1->M2 or finalizes on M2.
+        if attempt.current_state in _ACTIVE_STATES:
             timing = attempt.get_timing()
             forfeited = int(attempt.offscreen_violations or 0) >= OFFSCREEN_VIOLATION_LIMIT
             if timing is not None and not timing.is_expired and not forfeited:
@@ -271,8 +285,9 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         def compute():
             with transaction.atomic():
                 locked = self._lock_queryset().select_for_update().get(pk=pk)
-                if locked.current_state == STATE_ACTIVE:
-                    # Late/expired explicit submit is still accepted (merge + advance).
+                if locked.current_state in _ACTIVE_STATES:
+                    # Late/expired submit accepted: advances M1->M2, or finalizes on the last
+                    # module. Scoring is enqueued below ONLY once the whole paper is in.
                     locked.submit(answers=answers, flagged=flagged)
             refreshed = self.get_queryset().get(pk=pk)
             if refreshed.current_state == STATE_SCORING:
@@ -295,22 +310,30 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
             auto_submitted = False
             with transaction.atomic():
                 locked = self._lock_queryset().select_for_update().get(pk=pk)
-                if locked.current_state == STATE_ACTIVE:
+                if locked.current_state in _ACTIVE_STATES:
                     # Autosave is a HARD conflict on version drift (stale tab) — mirror exams.
                     if expected is not None and int(locked.version_number or 0) != expected:
                         return self._conflict(locked)
                     timing = locked.get_timing()
                     if timing and timing.is_expired:
-                        locked.submit(answers=answers, flagged=flagged)  # deadline passed -> auto-submit
+                        # Current module's timer ran out: submit() advances M1->M2 (new timer)
+                        # or finalizes on module 2. This is the server-driven auto-advance.
+                        locked.submit(answers=answers, flagged=flagged)
                         auto_submitted = True
                     else:
                         locked.autosave(answers=answers, flagged=flagged)
             refreshed = self.get_queryset().get(pk=pk)
-            if auto_submitted and refreshed.current_state == STATE_SCORING:
+            # Only the FINAL module reaching SCORING enqueues scoring. An M1->M2 advance is an
+            # auto-submit that does NOT finish the paper.
+            reached_scoring = auto_submitted and refreshed.current_state == STATE_SCORING
+            if reached_scoring:
                 enqueue_midterm_scoring(attempt_id=refreshed.id, request=request)
                 refreshed.refresh_from_db()
             resp = self._snapshot(refreshed)
-            if auto_submitted:
+            if reached_scoring:
+                # Tell the client the PAPER is over. On an M1->M2 advance the snapshot's own
+                # is_expired is computed against the fresh module-2 timer (False), which is
+                # correct — the runner then renders module 2 rather than the results screen.
                 resp.data["is_expired"] = True
             return resp
 

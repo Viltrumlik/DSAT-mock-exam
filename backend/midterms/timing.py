@@ -34,17 +34,25 @@ class MidtermTiming:
 
 
 def get_midterm_timing(attempt, *, now: timezone.datetime | None = None) -> MidtermTiming | None:
-    """Timing for an ACTIVE midterm attempt. Returns None when not yet started.
+    """Timing for the CURRENTLY-ACTIVE module of a midterm attempt. None when not started.
 
-    The limit comes from the midterm's ``duration_minutes``. A non-positive limit is
-    treated as "no expiry" (defensive) rather than expiring instantly.
+    Picks the anchor + limit for the live module: module 1 uses ``started_at`` +
+    ``duration_minutes``; module 2 uses ``module_2_started_at`` + ``duration_minutes_2``.
+    A single-module attempt never reaches MODULE_2_ACTIVE, so its path is identical to
+    before. A non-positive limit is treated as "no expiry" (defensive).
     """
-    started = getattr(attempt, "started_at", None)
+    from .state_machine import STATE_MODULE_2_ACTIVE
+
+    if getattr(attempt, "current_state", None) == STATE_MODULE_2_ACTIVE:
+        started = getattr(attempt, "module_2_started_at", None)
+        duration = int(getattr(attempt.midterm, "duration_minutes_2", 0) or 0)
+    else:  # module 1 (or any not-yet-module-2 state) — identical to the previous behaviour
+        started = getattr(attempt, "started_at", None)
+        duration = int(getattr(attempt.midterm, "duration_minutes", 0) or 0)
     if not started:
         return None
     if now is None:
         now = timezone.now()
-    duration = int(getattr(attempt.midterm, "duration_minutes", 0) or 0)
     limit_seconds = duration * 60
     if limit_seconds <= 0:
         limit_seconds = 10**9

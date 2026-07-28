@@ -18,6 +18,7 @@ from .proctoring import GRACE_SECONDS as OFFSCREEN_GRACE_SECONDS
 from .proctoring import VIOLATION_LIMIT as OFFSCREEN_VIOLATION_LIMIT
 from .state_machine import (
     STATE_ACTIVE,
+    STATE_MODULE_2_ACTIVE,
     STATE_NOT_STARTED,
     WIRE_STATE,
 )
@@ -30,15 +31,27 @@ class MidtermAttemptSerializer(serializers.Serializer):
     def to_representation(self, attempt):
         now = timezone.now()
         midterm = attempt.midterm
-        # Version-aware: serve the assigned version's questions when the midterm has
-        # versions (else the midterm's own module). The version itself is never exposed.
-        module = attempt.effective_module
         state = attempt.current_state
-        is_active = state == STATE_ACTIVE
+        is_active = state in (STATE_ACTIVE, STATE_MODULE_2_ACTIVE)
+        # The module the student is on: 1 while ACTIVE, 2 while MODULE_2_ACTIVE.
+        current_order = 2 if state == STATE_MODULE_2_ACTIVE else 1
+        count = attempt.module_count()
+
+        mins1 = int(midterm.duration_minutes or 0)
+        mins2 = int(midterm.duration_minutes_2 or 0)
+        mod1 = attempt.effective_module_for_order(1)
+        mod2 = attempt.effective_module_for_order(2) if count >= 2 else None
 
         timing = get_midterm_timing(attempt, now=now) if is_active else None
         remaining = timing.remaining_seconds if timing else None
         is_expired = bool(timing and timing.is_expired)
+
+        # The list of modules this exam has (1 or 2). Drives the runner's module rail.
+        modules_meta = []
+        if mod1 is not None:
+            modules_meta.append({"id": mod1.id, "module_order": 1, "time_limit_minutes": mins1})
+        if mod2 is not None:
+            modules_meta.append({"id": mod2.id, "module_order": 2, "time_limit_minutes": mins2})
 
         module_payload = None
         current_module_id = None
@@ -46,24 +59,26 @@ class MidtermAttemptSerializer(serializers.Serializer):
         saved_answers = None
         flagged = None
         module_duration_seconds = None
-        if is_active and module is not None:
+        cur_mod = mod2 if current_order == 2 else mod1
+        cur_mins = mins2 if current_order == 2 else mins1
+        if is_active and cur_mod is not None:
+            # Serve ONLY the live module's questions/answers/flags/timer. Answers are a flat
+            # {qid: ans} dict spanning both modules, so we scope by the current module's ids
+            # (a no-op for a single-module attempt, where qids are the whole set).
+            cur_questions = list(attempt.effective_questions_for_order(current_order))
+            cur_qids = {str(q.id) for q in cur_questions}
             module_payload = {
-                "id": module.id,
-                "module_order": 1,
-                "time_limit_minutes": int(midterm.duration_minutes or 0),
-                "questions": QuestionSerializer(attempt.effective_questions(), many=True).data,
+                "id": cur_mod.id,
+                "module_order": current_order,
+                "time_limit_minutes": cur_mins,
+                "questions": QuestionSerializer(cur_questions, many=True).data,
             }
-            current_module_id = module.id
-            current_module_start = attempt.started_at.isoformat() if attempt.started_at else None
-            saved_answers = dict(attempt.answers or {})
-            flagged = list(attempt.flagged or [])
-            module_duration_seconds = int(midterm.duration_minutes or 0) * 60
-
-        modules_meta = []
-        if module is not None:
-            modules_meta = [
-                {"id": module.id, "module_order": 1, "time_limit_minutes": int(midterm.duration_minutes or 0)}
-            ]
+            current_module_id = cur_mod.id
+            anchor = attempt.module_2_started_at if current_order == 2 else attempt.started_at
+            current_module_start = anchor.isoformat() if anchor else None
+            saved_answers = {k: v for k, v in (attempt.answers or {}).items() if k in cur_qids}
+            flagged = [f for f in (attempt.flagged or []) if str(f) in cur_qids]
+            module_duration_seconds = cur_mins * 60
 
         return {
             "id": attempt.id,
@@ -93,7 +108,7 @@ class MidtermAttemptSerializer(serializers.Serializer):
             "is_expired": is_expired,
             "is_paused": False,
             "can_submit": bool(is_active and not is_expired),
-            "can_resume": state in (STATE_NOT_STARTED, STATE_ACTIVE),
+            "can_resume": state in (STATE_NOT_STARTED, STATE_ACTIVE, STATE_MODULE_2_ACTIVE),
             "results_ready": bool(attempt.is_completed),
             # ── proctoring: off-screen rule ──────────────────────────────────
             # The runner renders the warning and the countdown, so it needs the tally and
@@ -106,5 +121,7 @@ class MidtermAttemptSerializer(serializers.Serializer):
             "terminated_reason": attempt.terminated_reason or "",
             # Score + answer key are NEVER on the runner path; the review endpoint gates them.
             "score": None,
-            "completed_modules": [module.id] if (attempt.is_completed and module is not None) else [],
+            "completed_modules": (
+                [m.id for m in (mod1, mod2) if m is not None] if attempt.is_completed else []
+            ),
         }
