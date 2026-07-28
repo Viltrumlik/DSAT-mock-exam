@@ -9,9 +9,11 @@ answer key / unreleased score is never exposed (see MidtermAttemptSerializer + r
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -26,7 +28,7 @@ from .access import (
     resolve_version_for_student,
 )
 from .idempotency import consume_idempotency_key
-from .models import Midterm, MidtermAttempt
+from .models import MODULE_BREAK_GRACE_SECONDS, Midterm, MidtermAttempt
 from .proctoring import GRACE_SECONDS as OFFSCREEN_GRACE_SECONDS
 from .proctoring import VIOLATION_LIMIT as OFFSCREEN_VIOLATION_LIMIT
 from .serializers import MidtermAttemptSerializer
@@ -45,6 +47,12 @@ logger = logging.getLogger(__name__)
 # The two "a module is running" states — the strict timer, off-screen policing and autosave
 # all apply on either module of a two-module midterm.
 _ACTIVE_STATES = (STATE_ACTIVE, STATE_MODULE_2_ACTIVE)
+
+# How long past a module's deadline a request may still introduce answers the server has
+# never seen. Deliberately the SAME value the engine already treats as a legitimately late
+# module boundary — a smaller number would have the engine accept the arrival as on-time
+# while throwing that same request's answers away.
+LATE_ANSWER_GRACE_SECONDS = MODULE_BREAK_GRACE_SECONDS
 
 _REASON_DETAIL = {
     "midterm_unpublished": "This midterm is not available yet.",
@@ -83,6 +91,75 @@ def _target_module_id(request):
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _module_deadline(attempt, order: int):
+    """Wall-clock deadline of one module, derived ONLY from the attempt's own anchors.
+
+    Never from anything the client said: an earlier attempt at this resolved the deadline
+    from a client-supplied ``module_id``, so naming module 2 while still on module 1 read the
+    NULL ``module_2_started_at``, produced "no deadline", and banked answers hours late — the
+    very bypass it was written to close, now unbounded.
+    """
+    anchor = attempt.module_2_started_at if int(order) == 2 else attempt.started_at
+    if not anchor:
+        return None
+    minutes = attempt.midterm.duration_for_order(order)
+    if minutes <= 0:
+        return None
+    return anchor + timedelta(minutes=minutes)
+
+
+def _late_answers_accepted(attempt, *, target_order=None, now=None) -> bool:
+    """Whether answers the server has NEVER SEEN may still be banked by this request.
+
+    A closing request legitimately carries the last answers a student gave — that is why the
+    payload is accepted at all, and dropping it wholesale has already cost real students real
+    marks here. But "the closing body is always trusted" is also the timer bypass: suppress
+    autosave, keep answering for an hour, then post everything.
+
+    So it is bounded rather than refused: answers are banked while the module runs and for
+    ``LATE_ANSWER_GRACE_SECONDS`` past its deadline — the same tolerance the engine already
+    declares for a legitimately late module boundary (``MODULE_BREAK_GRACE_SECONDS``) — and
+    declined after that. Declining NEVER erases anything: ``_merge_answers(None)`` returns the
+    saved map untouched, so everything autosaved on time is still scored exactly as it was.
+    """
+    order = int(target_order) if target_order else attempt.current_module_order
+    deadline = _module_deadline(attempt, order)
+    if deadline is None:
+        # That module has no anchor (e.g. a payload aimed at a module 2 that never started).
+        # Fall back to the module actually running, so an unanchored target cannot mean
+        # "unbounded"; if nothing is anchored either, the attempt hasn't started — accept.
+        deadline = _module_deadline(attempt, attempt.current_module_order)
+        if deadline is None:
+            return True
+    return (now or timezone.now()) <= deadline + timedelta(seconds=LATE_ANSWER_GRACE_SECONDS)
+
+
+def _target_order_for(attempt, module_id) -> int:
+    """Which of THIS attempt's modules a module id refers to; the live one when unknown."""
+    if module_id is not None:
+        for order in (1, 2):
+            if getattr(attempt.effective_module_for_order(order), "id", None) == module_id:
+                return order
+    return attempt.current_module_order
+
+
+def _drop_late_payload(attempt, *, endpoint: str, order: int, answers) -> None:
+    """Forensics for a declined payload — counts only, never the answers themselves.
+
+    Worth alerting on: a burst means either a cheat or, more importantly, that honest
+    students are losing work somewhere upstream of the deadline.
+    """
+    deadline = _module_deadline(attempt, order)
+    overdue = int((timezone.now() - deadline).total_seconds()) if deadline else None
+    unseen = [k for k in (answers or {}) if str(k) not in (attempt.answers or {})]
+    logger.warning(
+        "[FORENSIC] midterm_late_answers_declined endpoint=%s attempt_id=%s module_order=%s "
+        "overdue_seconds=%s grace=%s payload_keys=%s unseen_keys=%s",
+        endpoint, attempt.pk, order, overdue, LATE_ANSWER_GRACE_SECONDS,
+        len(answers or {}), len(unseen),
+    )
 
 
 def _is_background_save(request) -> bool:
@@ -333,19 +410,30 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
                         # be the only copy of an answer the student gave to the module that
                         # just closed (the racing autosave can lose that race). `autosave`
                         # merges and never blanks, so banking it is safe and keeps the
-                        # no-op from costing marks.
-                        locked.autosave(answers=answers, flagged=flagged)
+                        # no-op from costing marks — bounded by the same late-answer grace,
+                        # judged against the deadline of the module this payload was FOR
+                        # (the live module's fresh timer would wave everything through).
+                        stale_order = _target_order_for(locked, target_module_id)
+                        if _late_answers_accepted(locked, target_order=stale_order):
+                            locked.autosave(answers=answers, flagged=flagged)
+                        else:
+                            _drop_late_payload(
+                                locked, endpoint="submit_module_stale", order=stale_order, answers=answers
+                            )
                     else:
-                        # The submitted payload IS accepted, deliberately. The mock engine
-                        # drops a late payload to close a timer-bypass (suppress autosave,
-                        # keep typing past the deadline, then submit), but for midterms the
-                        # submit request is often the only carrier of the last answer a
-                        # student gave — the autosave debounce may not have flushed when the
-                        # clock ran out. Dropping it here silently costs honest students
-                        # marks, which this platform has already done to real students more
-                        # than once. Closing that bypass needs a bounded grace window, not a
-                        # blanket refusal; it is deliberately NOT bundled into this fix.
-                        locked.submit(answers=answers, flagged=flagged)
+                        # The submitted payload is accepted — it is often the only carrier
+                        # of the last answer a student gave — but only within the late-answer
+                        # grace. Past that the attempt STILL advances/finalizes; it just does
+                        # so without answers the server never saw. Nothing already saved is
+                        # touched, so an honest paper scores exactly as it did.
+                        if _late_answers_accepted(locked):
+                            locked.submit(answers=answers, flagged=flagged)
+                        else:
+                            _drop_late_payload(
+                                locked, endpoint="submit_module",
+                                order=locked.current_module_order, answers=answers,
+                            )
+                            locked.submit(answers=None, flagged=None)
             refreshed = self.get_queryset().get(pk=pk)
             if refreshed.current_state == STATE_SCORING:
                 enqueue_midterm_scoring(attempt_id=refreshed.id, request=request)
@@ -389,7 +477,16 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
                     elif expired:
                         # Current module's timer ran out: submit() advances M1->M2 (new timer)
                         # or finalizes on module 2. This is the server-driven auto-advance.
-                        locked.submit(answers=answers, flagged=flagged)
+                        # The same grace applies here, or the bypass simply moves endpoints:
+                        # save_attempt's expired branch banks its payload too.
+                        if _late_answers_accepted(locked):
+                            locked.submit(answers=answers, flagged=flagged)
+                        else:
+                            _drop_late_payload(
+                                locked, endpoint="save_attempt",
+                                order=locked.current_module_order, answers=answers,
+                            )
+                            locked.submit(answers=None, flagged=None)
                         auto_submitted = True
                     else:
                         locked.autosave(answers=answers, flagged=flagged)
