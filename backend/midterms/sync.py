@@ -56,10 +56,11 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     from exams.models import Module
     from .models import Midterm
 
-    m1 = int(getattr(mock, "midterm_module1_minutes", 60) or 60)
-    m2 = int(getattr(mock, "midterm_module2_minutes", 60) or 60)
-    count = int(getattr(mock, "midterm_module_count", 1) or 1)
-    duration = max(1, m1 + (m2 if count >= 2 else 0))
+    # A midterm runs as ONE timed module (a single owned question_module), so its duration
+    # is that single module's minutes — NEVER the sum of the builder's two module fields.
+    # Summing turned a 32-minute exam into 40 (32 + module 2) and is wrong for a
+    # single-module sitting; module 2's minutes do not apply.
+    duration = max(1, int(getattr(mock, "midterm_module1_minutes", 60) or 60))
 
     midterm, _created = Midterm.objects.get_or_create(
         legacy_mock_exam_id=mock.id,
