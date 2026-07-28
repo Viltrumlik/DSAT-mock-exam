@@ -167,19 +167,26 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     # match assessments/pastpapers.
     if sync_questions:
         practice_tests = list(mock.tests.all().order_by("id"))
-        if len(practice_tests) >= 2:
-            # Multiple PracticeTests = multiple VERSIONS: mirror each into its own
-            # MidtermVersion. Leave the flat question_module INTACT — emptying it would
-            # orphan any legacy single-set attempts (an attempt with version_id=NULL
-            # resolves effective_questions() to the flat module). It is simply dormant for
-            # new (version-pinned) attempts, and display counts are version-aware.
+        if len(practice_tests) >= 2 and midterm.versions.exists():
+            # LEGACY versioned midterm. Versioning (parallel forms) is RETIRED — no midterm
+            # ever becomes versioned from here on — but a midterm that is ALREADY versioned
+            # keeps being fed, because its attempts pin a version and resolve their questions
+            # through it. Cutting them off would freeze those students' content and, if the
+            # version rows were dropped, de-reference every answer they have given.
+            # Migrate one with `collapse_midterm_versions` once its sitting is over.
+            #
+            # Leave the flat question_module INTACT — emptying it would orphan any legacy
+            # single-set attempts (version_id=NULL resolves to the flat module).
             _sync_versions(midterm, practice_tests, two_module=two_module, duration2=duration2)
         elif two_module:
+            # Versioning retired: only the FIRST authored form is mirrored. A second
+            # PracticeTest no longer spawns a parallel version — the teacher's test is one
+            # paper, edited in place.
+            practice_tests = practice_tests[:1]
             # 2-module runtime: split the single PracticeTest's authored modules by
             # module_order — module 1 questions into question_module, module 2 into
             # question_module_2. Each stays live-refreshed (Question.id preserved).
-            for v in list(midterm.versions.all()):
-                v.delete()
+            _retire_unreferenced_versions(midterm)
             m1_live = _questions_for_legacy_order(practice_tests, 1)
             m2_live = _questions_for_legacy_order(practice_tests, 2)
             # Flipping single→two-module for a midterm that ALREADY has in-progress attempts:
@@ -192,10 +199,10 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
             _sync_module_questions_in_place(module, m1_live)
             _sync_module_questions_in_place(module2, m2_live)
         else:
-            # Single-module (unchanged): flatten ALL authored modules into the one module.
-            for v in list(midterm.versions.all()):
-                v.delete()
-            _sync_module_questions_in_place(module, _iter_live_questions(practice_tests))
+            # Single-module: flatten the FIRST form's authored modules into the one module.
+            # (Versioning retired — a second form is no longer a parallel version.)
+            _retire_unreferenced_versions(midterm)
+            _sync_module_questions_in_place(module, _iter_live_questions(practice_tests[:1]))
 
     return midterm
 
@@ -208,6 +215,38 @@ def _questions_for_legacy_order(practice_tests, order: int) -> list:
         for src_mod in section.modules.filter(module_order=order).order_by("id"):
             out.extend(src_mod.questions.all().order_by("order", "id"))
     return out
+
+
+def _retire_unreferenced_versions(midterm) -> int:
+    """Drop leftover MidtermVersion rows, but ONLY ones nothing points at.
+
+    This used to be an unconditional ``for v in midterm.versions.all(): v.delete()``.
+    ``MidtermVersion.delete()`` cascades its Questions away while ``MidtermAttempt.version``
+    is SET_NULL, so on a midterm whose forms had been reduced to one, that teardown silently
+    de-referenced EVERY answer of every attempt pinned to a version — including students
+    mid-sitting. A version is retired only when no attempt and no version assignment
+    references it; anything still referenced stays dormant until
+    ``collapse_midterm_versions`` migrates it.
+    """
+    from .models import MidtermAttempt, MidtermVersionAssignment
+
+    retired = 0
+    for v in list(midterm.versions.all()):
+        if MidtermAttempt.objects.filter(version_id=v.pk).exists():
+            logger.warning(
+                "midterm %s: version %s kept — attempts still reference it", midterm.pk, v.pk
+            )
+            continue
+        if MidtermVersionAssignment.objects.filter(version_id=v.pk).exists():
+            # A student has been ASSIGNED this form but has not started yet; deleting it
+            # would leave the assignment pointing at nothing and 500 their next start.
+            logger.warning(
+                "midterm %s: version %s kept — assignments still reference it", midterm.pk, v.pk
+            )
+            continue
+        v.delete()
+        retired += 1
+    return retired
 
 
 def _has_live_two_module_attempts(midterm) -> bool:

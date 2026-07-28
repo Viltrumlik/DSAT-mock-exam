@@ -76,9 +76,12 @@ def _resolve_exam(question_id: int) -> Optional[ResolvedTarget]:
 
         midterm = (
             Midterm.objects.filter(_Q(question_module_id=module.id) | _Q(question_module_2_id=module.id))
-            .only("id", "title", "subject")
+            .only("id", "title", "subject", "question_module", "question_module_2")
             .first()
         )
+        # The object that OWNS the module — the midterm itself, or the version whose module
+        # this is. Needed to number a module-2 question across the whole paper (below).
+        paper = midterm
         if midterm is None:
             # Versioned midterm: the served questions hang off a MidtermVersion's module(s),
             # not the midterm's own (dormant) flat one — resolve through to the parent.
@@ -89,12 +92,20 @@ def _resolve_exam(question_id: int) -> Optional[ResolvedTarget]:
                 .select_related("midterm")
                 .first()
             )
+            paper = version
             midterm = version.midterm if version is not None else None
         if midterm is not None:
             resource_type = QuestionErrorReport.RESOURCE_MIDTERM
             resource_id = midterm.id
             resource_title = midterm.title or ""
             subject = midterm.get_subject_display()
+            # Number it the way the STUDENT saw it: a midterm's two modules are one
+            # continuous paper, but `Question.order` restarts at 0 in module 2. Reporting
+            # the raw per-module order means a student saying "question 6 is wrong" and
+            # staff reading "#3" are talking about different questions — on a 3+4 paper,
+            # about a question in a different module. Offset by module 1's size.
+            if paper is not None and paper.question_module_2_id == module.id:
+                order += paper.questions_for_order(1).count()
         else:
             pt = module.practice_test
             if pt is not None:

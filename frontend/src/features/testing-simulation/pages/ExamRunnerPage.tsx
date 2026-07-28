@@ -495,8 +495,7 @@ export function ExamRunnerPage() {
   // and show no indicator (proctored — no save-and-resume affordance).
   const isPastpaper = pauseAllowed(attempt, mockFlow);
 
-  // Autosave only while genuinely interactive (not submitting / transitioning /
-  // paused, and never from a blocked duplicate tab).
+  // Autosave whenever this tab genuinely owns the attempt on a settled module.
   useAutosave({
     attempt,
     attemptId,
@@ -508,7 +507,15 @@ export function ExamRunnerPage() {
     // to switch the autosave off while an answer was still pending — stranding it
     // on exactly the leave path this feature exists to protect. A paused student
     // can't answer, so the effect doesn't re-run and this costs no extra traffic.
-    enabled: !submitting && transitionTo === null && !multiTab.blocked,
+    //
+    // `submitting` is NOT folded in here either, and that distinction matters.
+    // A blocked duplicate tab or a mid-transition frame must write NOTHING (its
+    // `answers` are stale or belong to the previous module, and save_attempt
+    // REPLACES the map). A submit is the opposite: the answers are the newest
+    // there are, so the hook hands whatever it still holds to the server before
+    // standing down, instead of dropping it and hoping the submit closure caught it.
+    enabled: transitionTo === null && !multiTab.blocked,
+    submitting,
     online,
     api: engineApi,
     debounceMs: isPastpaper ? 500 : undefined,

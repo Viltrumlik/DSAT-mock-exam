@@ -17,6 +17,8 @@ import { readDraft } from "../services/draftStore";
 
 const MODULE_ID = 10;
 const ATTEMPT_ID = 77;
+/** Grid-in (student-produced response) question — answered by typing, not clicking. */
+const SPR_QID = "3";
 
 function makeAttempt(version = 1): Attempt {
   return {
@@ -24,7 +26,17 @@ function makeAttempt(version = 1): Attempt {
     current_state: "MODULE_1_ACTIVE",
     is_completed: false,
     version_number: version,
-    current_module_details: { id: MODULE_ID, module_order: 1 },
+    current_module_details: {
+      id: MODULE_ID,
+      module_order: 1,
+      // The autosave reads `is_math_input` to tell a discrete choice (send it at
+      // once) from free text (coalesce the keystrokes).
+      questions: [
+        { id: 1, is_math_input: false },
+        { id: 2, is_math_input: false },
+        { id: Number(SPR_QID), is_math_input: true },
+      ],
+    },
   } as unknown as Attempt;
 }
 
@@ -77,7 +89,7 @@ function renderAutosave(initialProps: Parameters<typeof useAutosave>[0]) {
 describe("useAutosave — an answer must never be dropped", () => {
   let saved: Array<Record<string, string>>;
   let resolvers: Array<() => void>;
-  let api: { saveAttempt: ReturnType<typeof vi.fn> };
+  let api: { saveAttempt: ReturnType<typeof vi.fn>; saveAttemptKeepalive: ReturnType<typeof vi.fn> };
   let version: number;
 
   beforeEach(() => {
@@ -97,6 +109,7 @@ describe("useAutosave — an answer must never be dropped", () => {
           });
         });
       }),
+      saveAttemptKeepalive: vi.fn(),
     };
   });
 
@@ -283,6 +296,241 @@ describe("useAutosave — an answer must never be dropped", () => {
     });
 
     expectQ2Recoverable();
+    h.unmount();
+  });
+});
+
+/**
+ * "har bir savol save bo'lsin" — every answer must reach the server.
+ *
+ * The old policy was a flat 1500ms debounce for everything, so an answer chosen
+ * in the last 1.5s of a module existed ONLY in this tab until the submit payload
+ * happened to carry it. These tests pin the replacement: a choice goes out at
+ * once, typing is coalesced but never hoarded, and a submit takes over the
+ * pending work instead of cancelling it.
+ */
+describe("useAutosave — an answer must reach the server without waiting out a debounce", () => {
+  let saved: Array<Record<string, string>>;
+  let resolvers: Array<() => void>;
+  let api: { saveAttempt: ReturnType<typeof vi.fn>; saveAttemptKeepalive: ReturnType<typeof vi.fn> };
+  let version: number;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    localStorage.clear();
+    saved = [];
+    resolvers = [];
+    version = 1;
+    api = {
+      saveAttempt: vi.fn((_id: number, answers: Record<string, string>) => {
+        saved.push({ ...answers });
+        return new Promise((resolve) => {
+          resolvers.push(() => {
+            version += 1;
+            resolve(makeAttempt(version));
+          });
+        });
+      }),
+      saveAttemptKeepalive: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /**
+   * Mount as a MIDTERM does: no `debounceMs`, so the hook's long default (1500ms)
+   * applies to anything that isn't a deliberate answer. Starting with no answers
+   * mirrors a fresh module.
+   */
+  function setup(overrides: Partial<Parameters<typeof useAutosave>[0]> = {}) {
+    const held: { h: ReturnType<typeof renderAutosave> | null } = { h: null };
+    held.h = renderAutosave({
+      attempt: makeAttempt(1),
+      attemptId: ATTEMPT_ID,
+      answers: {},
+      flagged: [],
+      answersModuleId: MODULE_ID,
+      applyAttempt: (next: Attempt) => held.h?.applyAttempt(next),
+      enabled: true,
+      online: true,
+      api: api as unknown as Parameters<typeof useAutosave>[0]["api"],
+      ...overrides,
+    });
+    return held.h!;
+  }
+
+  const tick = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  it("sends a multiple-choice selection immediately, not after the long debounce", async () => {
+    const h = setup();
+
+    // The student clicks a choice. Under the old flat debounce this sat in the
+    // browser for 1500ms — long enough for the module timer to expire with the
+    // answer nowhere but this tab.
+    h.rerender({ answers: { "1": "A" } });
+    await tick(50);
+
+    expect(
+      api.saveAttempt,
+      "a selected choice must be on its way to the server well inside the old 1500ms debounce",
+    ).toHaveBeenCalledTimes(1);
+    expect(saved[0]).toEqual({ "1": "A" });
+
+    h.unmount();
+  });
+
+  it("keeps sending each further selection promptly", async () => {
+    const h = setup();
+    h.rerender({ answers: { "1": "A" } });
+    await tick(50);
+    await act(async () => {
+      resolvers[0]?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Second question answered. Only the rate floor applies — never the debounce.
+    h.rerender({ answers: { "1": "A", "2": "C" } });
+    await tick(400);
+
+    expect(
+      saved.some((s) => s["2"] === "C"),
+      `the second selection never reached the server: ${JSON.stringify(saved)}`,
+    ).toBe(true);
+    h.unmount();
+  });
+
+  it("coalesces grid-in keystrokes into one request instead of one per character", async () => {
+    const h = setup();
+
+    // Typing "125" into a student-produced-response box, one character per 100ms.
+    h.rerender({ answers: { [SPR_QID]: "1" } });
+    await tick(100);
+    h.rerender({ answers: { [SPR_QID]: "12" } });
+    await tick(100);
+    h.rerender({ answers: { [SPR_QID]: "125" } });
+    await tick(100);
+
+    expect(api.saveAttempt, "typing must not fire a request per keystroke").not.toHaveBeenCalled();
+
+    await tick(400);
+    expect(api.saveAttempt).toHaveBeenCalledTimes(1);
+    expect(saved[0]).toEqual({ [SPR_QID]: "125" });
+    h.unmount();
+  });
+
+  it("never hoards a grid-in answer past the max wait, however long the student keeps typing", async () => {
+    const h = setup();
+
+    // A character every 300ms forever would never settle a pure debounce.
+    h.rerender({ answers: { [SPR_QID]: "1" } });
+    await tick(300);
+    h.rerender({ answers: { [SPR_QID]: "1/" } });
+    await tick(300);
+    h.rerender({ answers: { [SPR_QID]: "1/2" } });
+    await tick(300);
+    h.rerender({ answers: { [SPR_QID]: "1/23" } });
+    await tick(350);
+
+    expect(
+      api.saveAttempt,
+      "a continuously-typed answer must still be sent within the max wait",
+    ).toHaveBeenCalled();
+    expect(saved[0][SPR_QID]).toBe("1/23");
+    h.unmount();
+  });
+
+  it("leaves flag toggles on the long debounce — they are not graded", async () => {
+    const h = setup({ answers: { "1": "A" } });
+    await tick(1500);
+    expect(api.saveAttempt).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolvers[0]?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    h.rerender({ flagged: [1] });
+    await tick(100);
+    expect(api.saveAttempt, "a flag toggle must not trigger an immediate save").toHaveBeenCalledTimes(1);
+
+    await tick(1500);
+    expect(api.saveAttempt).toHaveBeenCalledTimes(2);
+    h.unmount();
+  });
+
+  it("stops re-sending a payload the server has already accepted", async () => {
+    // Every accepted save bumps version_number, which re-runs the effect. Left
+    // unchecked that is an endless save loop — and version churn is exactly what
+    // turns a concurrent keepalive or pause into the prod 409 burst.
+    const h = setup({ answers: { "1": "A" } });
+    await tick(1500);
+    await act(async () => {
+      resolvers[0]?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    await tick(20000);
+    expect(api.saveAttempt).toHaveBeenCalledTimes(1);
+    h.unmount();
+  });
+
+  it("writes NOTHING once a submit has started", async () => {
+    // There was briefly a "hand-off" here (one last saveAttemptKeepalive before standing
+    // down). It was inert on midterms — the keepalive body sets `background: true`, and the
+    // server banks nothing from a background flush past the deadline, which is the only time
+    // a midterm submits — and on pastpapers/mocks it was an unversioned, un-module-targeted
+    // write racing the real submit, i.e. the shape of the "Module 2 skip" incident.
+    // Answers are safe without it: each one is sent the moment it is given, the submit
+    // payload carries the map, and the local draft survives a crash.
+    const h = setup({ answers: { "1": "A" } });
+    await tick(1500);
+    await act(async () => {
+      resolvers[0]?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(saved).toEqual([{ "1": "A" }]);
+
+    // An answer and the submit land in the same commit, then more re-renders follow.
+    h.rerender({ answers: { "1": "A", "2": "B" }, submitting: true });
+    h.rerender({ flagged: [] });
+    await tick(5000);
+
+    expect(api.saveAttemptKeepalive).not.toHaveBeenCalled();
+    expect(saved).toEqual([{ "1": "A" }]); // no second save issued behind the submit
+    h.unmount();
+  });
+
+  it("writes NOTHING from a suspended tab, even during a submit", async () => {
+    // `enabled: false` means a blocked duplicate tab or a mid-transition frame:
+    // these answers are stale or belong to another module, and save_attempt
+    // REPLACES the map — writing here destroys the primary tab's real work.
+    const h = setup({ answers: { "1": "A" } });
+    await tick(1500);
+    await act(async () => {
+      resolvers[0]?.();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    h.rerender({ answers: { "1": "A", "2": "B" }, enabled: false, submitting: true });
+    await tick(5000);
+
+    expect(api.saveAttemptKeepalive).not.toHaveBeenCalled();
+    expect(api.saveAttempt).toHaveBeenCalledTimes(1);
+    h.unmount();
+  });
+
+  it("does not blast the freshly-rehydrated answer map at the server", async () => {
+    // On resume, `answers` goes {} -> the whole restored map in one step. That is
+    // not a student answering, and treating it as one would fire an instant save
+    // (and a version bump) on every module load.
+    const h = setup();
+    h.rerender({ answers: { "1": "A", "2": "B", [SPR_QID]: "7" } });
+    await tick(100);
+    expect(api.saveAttempt).not.toHaveBeenCalled();
     h.unmount();
   });
 });

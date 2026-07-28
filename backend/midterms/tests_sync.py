@@ -132,10 +132,11 @@ class UpsertMidtermFromLegacyTests(TestCase):
         mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
         self.assertEqual(mt2.questions().count(), 2)
 
-    def test_convert_single_to_versioned_preserves_flat_attempt_questions(self):
-        # Regression: adding a version to a single-set midterm that already has attempts
-        # must NOT empty the flat module — those attempts (version_id=NULL) resolve
-        # effective_questions() to the flat module and would otherwise be orphaned.
+    def test_adding_a_second_form_preserves_an_existing_attempt_questions(self):
+        # Regression: adding a second authored form to a midterm that already has attempts
+        # must NOT disturb the questions those attempts resolve. Versioning is retired, so
+        # the second form is simply not served — but the guarantee that matters is the same
+        # one as before: the flat module's Question.ids are untouched, so nothing is orphaned.
         exam, _mod = _legacy_midterm(n_questions=3)
         mt = upsert_midterm_from_legacy(exam)
         self.assertEqual(mt.questions().count(), 3)
@@ -159,9 +160,9 @@ class UpsertMidtermFromLegacyTests(TestCase):
             )
         mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
 
-        # Versions provisioned...
-        self.assertEqual(mt2.versions.count(), 2)
-        # ...but the flat module is INTACT so the legacy attempt isn't orphaned.
+        # No version is created (versioning retired)...
+        self.assertEqual(mt2.versions.count(), 0)
+        # ...and the flat module is INTACT, so the existing attempt isn't orphaned.
         self.assertEqual(sorted(q.id for q in mt2.questions()), flat_ids_before)
         self.assertEqual(sorted(q.id for q in attempt.effective_questions()), flat_ids_before)
 
