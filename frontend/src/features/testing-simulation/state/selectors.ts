@@ -37,10 +37,17 @@ export function isMidtermAttempt(attempt: Attempt | null): boolean {
 
 export function moduleLabel(attempt: Attempt | null): string {
   const subject = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
-  // A midterm is ONE paper, not a section of a longer test — the SAT "Section 2, Module 1"
-  // rail is meaningless there and reads as if more modules were coming.
+  // A single-module midterm is ONE paper — the SAT "Section 2, Module 1" rail is meaningless
+  // and reads as if more modules were coming. A TWO-module midterm does have parts, so it
+  // shows "— Module N" so the student knows which one they are on.
   if (isMidtermAttempt(attempt)) {
-    return attempt?.practice_test_details?.title?.trim() || `${subject} Midterm`;
+    const base = attempt?.practice_test_details?.title?.trim() || `${subject} Midterm`;
+    const modules = attempt?.practice_test_details?.modules ?? [];
+    if (modules.length > 1) {
+      const order = attempt?.current_module_details?.module_order ?? 1;
+      return `${base} — Module ${order}`;
+    }
+    return base;
   }
   const order = attempt?.current_module_details?.module_order ?? 1;
   const section = subjectKind(attempt) === "MATH" ? 2 : 1;

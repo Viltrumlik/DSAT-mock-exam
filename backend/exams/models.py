@@ -356,6 +356,14 @@ class MockExam(TimestampedModel):
         db_index=True,
         help_text="Only used when kind=MIDTERM. Monthly round the midterm belongs to.",
     )
+    midterm_two_module_runtime = models.BooleanField(
+        default=False,
+        help_text=(
+            "Only used when kind=MIDTERM. Run as two sequential timed modules "
+            "(module 1 timer -> auto-submit -> module 2 timer -> score). Off = single-module "
+            "(both authored modules flattened into one timed module)."
+        ),
+    )
     TYPE_PRE_MIDTERM = "PRE_MIDTERM"
     TYPE_MIDTERM = "MIDTERM"
     TYPE_RETAKE = "RETAKE"

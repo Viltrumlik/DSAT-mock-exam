@@ -66,6 +66,7 @@ type AdminMidterm = {
   midterm_module_count: number;
   midterm_module1_minutes: number;
   midterm_module2_minutes: number;
+  midterm_two_module_runtime: boolean;
   midterm_target_question_count: number;
   midterm_module_question_limit: number;
   midterm_level: string | null;
@@ -86,6 +87,8 @@ type MidtermForm = {
   midterm_module_count: "1" | "2";
   midterm_module1_minutes: string;
   midterm_module2_minutes: string;
+  /** Two sequential timed modules (M1 timer → auto-submit → M2 timer → score). */
+  midterm_two_module_runtime: boolean;
   midterm_target_question_count: string;
   midterm_module_question_limit: string;
   midterm_level: string;
@@ -105,6 +108,7 @@ const DEFAULT_FORM: MidtermForm = {
   midterm_module_count: "1",
   midterm_module1_minutes: "60",
   midterm_module2_minutes: "60",
+  midterm_two_module_runtime: false,
   midterm_target_question_count: "44",
   midterm_module_question_limit: "30",
   midterm_level: "",
@@ -442,6 +446,27 @@ function MidtermModal({
               </div>
             )}
           </div>
+
+          {twoModules && (
+            <label className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={form.midterm_two_module_runtime}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, midterm_two_module_runtime: e.target.checked }))
+                }
+              />
+              <span>
+                <span className="font-medium text-foreground">Run as two sequential timed modules</span>
+                <span className="mt-0.5 block text-[12px] text-muted-foreground">
+                  Module&nbsp;1 runs on its own timer, auto-submits when it expires, then
+                  Module&nbsp;2 runs on its own timer — like the real Digital SAT. Off = both
+                  modules are one continuous timed section (Module&nbsp;1&rsquo;s minutes).
+                </span>
+              </span>
+            </label>
+          )}
 
           {/* Target question count */}
           <div>
@@ -822,6 +847,8 @@ export default function BuilderMidtermsPage() {
         midterm_module_count: Number(form.midterm_module_count),
         midterm_module1_minutes: Number(form.midterm_module1_minutes),
         midterm_module2_minutes: Number(form.midterm_module2_minutes),
+        // Only meaningful with 2 modules; the backend also gates on module_count >= 2.
+        midterm_two_module_runtime: form.midterm_module_count === "2" && form.midterm_two_module_runtime,
         midterm_target_question_count: Number(form.midterm_target_question_count),
         midterm_module_question_limit: Number(form.midterm_module_question_limit),
         midterm_level: form.midterm_level,
@@ -917,6 +944,7 @@ export default function BuilderMidtermsPage() {
         midterm_module_count: String(editingMidterm.midterm_module_count) as "1" | "2",
         midterm_module1_minutes: String(editingMidterm.midterm_module1_minutes ?? 60),
         midterm_module2_minutes: String(editingMidterm.midterm_module2_minutes ?? 60),
+        midterm_two_module_runtime: !!editingMidterm.midterm_two_module_runtime,
         midterm_target_question_count: String(editingMidterm.midterm_target_question_count ?? 44),
         midterm_module_question_limit: String(editingMidterm.midterm_module_question_limit ?? 30),
         midterm_level: editingMidterm.midterm_level ?? "",
