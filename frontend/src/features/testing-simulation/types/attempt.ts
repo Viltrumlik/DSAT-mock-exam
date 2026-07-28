@@ -73,6 +73,12 @@ const practiceTestDetailsSchema = z
     level: z.string().nullable().optional(),
     /** Server-decided Desmos gate for midterms (Math + middle/senior). Absent on other exam types. */
     calculator_enabled: z.boolean().nullable().optional(),
+    /**
+     * Questions in the WHOLE paper, across every module. The pre-exam rules screen needs it
+     * because a not-yet-started attempt has no module payload to count, and on a two-module
+     * midterm counting one module would advertise half the exam.
+     */
+    total_question_count: z.number().nullable().optional(),
     modules: z.array(
       z.object({
         id: z.number(),

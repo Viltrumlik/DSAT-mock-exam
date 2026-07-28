@@ -93,7 +93,9 @@ class MidtermVersionTests(TestCase):
 
 
 class MidtermVersionSyncTests(TestCase):
-    def test_sync_mirrors_two_practice_tests_into_two_versions(self):
+    def test_sync_no_longer_mirrors_two_practice_tests_into_versions(self):
+        """Versioning is RETIRED: a second authored form no longer becomes a parallel
+        version. The teacher's midterm is one paper, served and edited in place."""
         from exams.models import MockExam, PracticeTest
         from exams.models import Module as XModule, Question as XQuestion
         from midterms.sync import upsert_midterm_from_legacy
@@ -112,11 +114,10 @@ class MidtermVersionSyncTests(TestCase):
                     correct_answers=correct, is_math_input=False, score=10, order=i,
                 )
         midterm = upsert_midterm_from_legacy(mock)
-        self.assertEqual(midterm.versions.count(), 2)
-        for v in midterm.versions.all():
-            self.assertEqual(v.questions().count(), 3)
-        # Single-set fallback: the flattened module is left empty for versioned midterms.
-        self.assertEqual(midterm.questions().count(), 0)
+        self.assertEqual(midterm.versions.count(), 0)
+        # Only the FIRST form is served, on the midterm's own module.
+        self.assertEqual(midterm.questions().count(), 3)
+        self.assertTrue(all(q.correct_answers == "a" for q in midterm.questions()))
 
 
 class VersionAssignmentApiTests(TestCase):

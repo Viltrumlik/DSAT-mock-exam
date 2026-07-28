@@ -15,9 +15,13 @@ import { pushGlobalToast } from "@/lib/toastBus";
  * ranking (that is the classroom flavor, inside a classroom). Backed by /api/midterms/teacher.
  */
 
+// Covers BOTH the wire spelling (MODULE_1_ACTIVE) and the raw DB value (ACTIVE), because the
+// catalog endpoints send `attempt.current_state` unmapped. A two-module midterm adds
+// MODULE_2_ACTIVE — without it the list rendered the raw enum at the student.
 const stateLabel: Record<string, string> = {
   NOT_STARTED: "Not started",
   MODULE_1_ACTIVE: "In progress",
+  MODULE_2_ACTIVE: "In progress",
   ACTIVE: "In progress",
   SCORING: "Scoring",
   COMPLETED: "Completed",

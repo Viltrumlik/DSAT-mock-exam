@@ -65,20 +65,47 @@ def _resolve_exam(question_id: int) -> Optional[ResolvedTarget]:
     module = q.module
     module_label = f"Module {module.module_order}" if module and module.module_order else ""
     if module is not None:
-        # Midterm owns exactly one Module (reverse OneToOne). Query by id to avoid
-        # relying on the reverse-accessor DoesNotExist dance.
-        from midterms.models import Midterm
+        # A midterm owns ONE OR TWO Modules (reverse OneToOnes: question_module and, for a
+        # two-module midterm, question_module_2). Match either — keying on module 1 alone
+        # dropped every module-2 report to RESOURCE_UNKNOWN, so the Telegram alert named no
+        # midterm and staff could not find the question. Query by id to avoid relying on the
+        # reverse-accessor DoesNotExist dance.
+        from django.db.models import Q as _Q
+
+        from midterms.models import Midterm, MidtermVersion
 
         midterm = (
-            Midterm.objects.filter(question_module_id=module.id)
-            .only("id", "title", "subject")
+            Midterm.objects.filter(_Q(question_module_id=module.id) | _Q(question_module_2_id=module.id))
+            .only("id", "title", "subject", "question_module", "question_module_2")
             .first()
         )
+        # The object that OWNS the module — the midterm itself, or the version whose module
+        # this is. Needed to number a module-2 question across the whole paper (below).
+        paper = midterm
+        if midterm is None:
+            # Versioned midterm: the served questions hang off a MidtermVersion's module(s),
+            # not the midterm's own (dormant) flat one — resolve through to the parent.
+            version = (
+                MidtermVersion.objects.filter(
+                    _Q(question_module_id=module.id) | _Q(question_module_2_id=module.id)
+                )
+                .select_related("midterm")
+                .first()
+            )
+            paper = version
+            midterm = version.midterm if version is not None else None
         if midterm is not None:
             resource_type = QuestionErrorReport.RESOURCE_MIDTERM
             resource_id = midterm.id
             resource_title = midterm.title or ""
             subject = midterm.get_subject_display()
+            # Number it the way the STUDENT saw it: a midterm's two modules are one
+            # continuous paper, but `Question.order` restarts at 0 in module 2. Reporting
+            # the raw per-module order means a student saying "question 6 is wrong" and
+            # staff reading "#3" are talking about different questions — on a 3+4 paper,
+            # about a question in a different module. Offset by module 1's size.
+            if paper is not None and paper.question_module_2_id == module.id:
+                order += paper.questions_for_order(1).count()
         else:
             pt = module.practice_test
             if pt is not None:

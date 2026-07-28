@@ -37,8 +37,11 @@ class MidtermAttemptSerializer(serializers.Serializer):
         current_order = 2 if state == STATE_MODULE_2_ACTIVE else 1
         count = attempt.module_count()
 
-        mins1 = int(midterm.duration_minutes or 0)
-        mins2 = int(midterm.duration_minutes_2 or 0)
+        # Same authority the timer uses (Midterm.duration_for_order), so a NULL
+        # duration_minutes_2 can't make the payload advertise a zero-length module while
+        # get_midterm_timing treats it as never-expiring.
+        mins1 = midterm.duration_for_order(1)
+        mins2 = midterm.duration_for_order(2)
         mod1 = attempt.effective_module_for_order(1)
         mod2 = attempt.effective_module_for_order(2) if count >= 2 else None
 
@@ -94,6 +97,14 @@ class MidtermAttemptSerializer(serializers.Serializer):
                 # Authoritative tool gate: Math middle/senior midterms offer Desmos. Computed
                 # server-side so the runner never re-derives the rule (subject casing differs).
                 "calculator_enabled": bool(midterm.calculator_enabled),
+                # Whole-paper size (both modules, version-aware). ONLY the pre-exam rules
+                # screen reads it — once a module is live the runner counts the payload — so
+                # it is computed only while the attempt is not running. Emitting it always
+                # would add a COUNT (two on a two-module paper) to every autosave and status
+                # poll, i.e. about once a second per active student, for a value nobody reads.
+                "total_question_count": (
+                    None if is_active else attempt._question_source.total_question_count()
+                ),
                 "modules": modules_meta,
             },
             "current_module": current_module_id,

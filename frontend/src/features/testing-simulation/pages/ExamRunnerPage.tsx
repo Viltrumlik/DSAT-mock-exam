@@ -495,8 +495,7 @@ export function ExamRunnerPage() {
   // and show no indicator (proctored — no save-and-resume affordance).
   const isPastpaper = pauseAllowed(attempt, mockFlow);
 
-  // Autosave only while genuinely interactive (not submitting / transitioning /
-  // paused, and never from a blocked duplicate tab).
+  // Autosave whenever this tab genuinely owns the attempt on a settled module.
   useAutosave({
     attempt,
     attemptId,
@@ -508,7 +507,15 @@ export function ExamRunnerPage() {
     // to switch the autosave off while an answer was still pending — stranding it
     // on exactly the leave path this feature exists to protect. A paused student
     // can't answer, so the effect doesn't re-run and this costs no extra traffic.
-    enabled: !submitting && transitionTo === null && !multiTab.blocked,
+    //
+    // `submitting` is NOT folded in here either, and that distinction matters.
+    // A blocked duplicate tab or a mid-transition frame must write NOTHING (its
+    // `answers` are stale or belong to the previous module, and save_attempt
+    // REPLACES the map). A submit is the opposite: the answers are the newest
+    // there are, so the hook hands whatever it still holds to the server before
+    // standing down, instead of dropping it and hoping the submit closure caught it.
+    enabled: transitionTo === null && !multiTab.blocked,
+    submitting,
     online,
     api: engineApi,
     debounceMs: isPastpaper ? 500 : undefined,
@@ -825,10 +832,22 @@ export function ExamRunnerPage() {
   // module 1 metadata, which is present in both shapes.
   if (showWelcome && !loading && attempt) {
     const activeModule = attempt.current_module_details;
+    const allModules = attempt.practice_test_details.modules ?? [];
+    // A NOT_STARTED midterm has no module payload yet, so these come from the test's own
+    // module metadata. For a TWO-module midterm that must be the WHOLE paper: quoting only
+    // module 1 told a student sitting 32+32 that the exam was 32 minutes, and then dropped
+    // them into a second module they were never warned about.
+    // MIDTERM ONLY. A pastpaper renders this same block and is genuinely sat one module at a
+    // time (with its own between-module screens), so its welcome must keep quoting module 1 —
+    // summing there would tell a student their 32-minute module is 64 minutes long.
     const startMinutes =
-      activeModule?.time_limit_minutes ??
-      attempt.practice_test_details.modules.find((m) => m.module_order === 1)?.time_limit_minutes;
-    const startQuestionCount = activeModule?.questions.length;
+      isMidterm && allModules.length > 1
+        ? allModules.reduce((sum, m) => sum + (m.time_limit_minutes ?? 0), 0)
+        : (activeModule?.time_limit_minutes ??
+           allModules.find((m) => m.module_order === 1)?.time_limit_minutes);
+    const startQuestionCount =
+      activeModule?.questions.length ??
+      (isMidterm ? (attempt.practice_test_details.total_question_count ?? undefined) : undefined);
     const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
     if (isMidterm) {
       // Rules FIRST — the code screen is only reachable from it, so a student never types a

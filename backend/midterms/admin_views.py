@@ -42,9 +42,16 @@ class AdminMidtermViewSet(viewsets.ModelViewSet):
         return Midterm.objects.all().order_by("-created_at")
 
     def _sync_module_time(self, midterm):
+        # BOTH modules follow their own authored duration, or module 2's Module row silently
+        # drifts from Midterm.duration_minutes_2.
         if midterm.question_module_id:
-            mins = max(1, int(midterm.duration_minutes or 60))
-            Module.objects.filter(pk=midterm.question_module_id).update(time_limit_minutes=mins)
+            Module.objects.filter(pk=midterm.question_module_id).update(
+                time_limit_minutes=max(1, midterm.duration_for_order(1) or 60)
+            )
+        if midterm.question_module_2_id:
+            Module.objects.filter(pk=midterm.question_module_2_id).update(
+                time_limit_minutes=max(1, midterm.duration_for_order(2) or 60)
+            )
 
     def perform_create(self, serializer):
         midterm = serializer.save(created_by=self.request.user)
@@ -80,20 +87,61 @@ class AdminMidtermViewSet(viewsets.ModelViewSet):
 
 
 class AdminMidtermQuestionViewSet(viewsets.ModelViewSet):
-    """Question editor for a midterm's single module (reuses exams AdminQuestionSerializer)."""
+    """Question editor for a midterm's module(s) (reuses exams AdminQuestionSerializer).
+
+    Reading with NO ``?module=`` returns the WHOLE paper — module 1 then module 2. The only
+    consumer is the Review Center, which fetches this endpoint once and passes no param, so
+    scoping reads to module 1 would show an auditor half a two-module midterm and let them
+    approve a paper they never saw (and 404 on any module-2 question by id). Pass ``?module=1``
+    or ``?module=2`` to work on one module.
+    """
 
     permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminQuestionSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
+    def _module_order(self, default: int = 1) -> int:
+        # `module_order`, never `module`, on the write path: `module` is the Question model's
+        # own FK attname, so a payload that ever carries the module PK would silently route
+        # creation into module 2 whenever that PK happened to be 2.
+        raw = self.request.query_params.get("module") or self.request.data.get("module_order")
+        if raw is None:
+            return default
+        try:
+            return 2 if int(raw) == 2 else 1
+        except (TypeError, ValueError):
+            return default
+
     def _midterm(self) -> Midterm:
         return get_object_or_404(Midterm, pk=self.kwargs["midterm_pk"])
 
     def _module(self) -> Module:
+        """The module a WRITE targets. Module 1 is provisioned on demand; module 2 is NOT.
+
+        Auto-creating module 2 here would silently convert a single-module midterm into a
+        two-module one the moment a question was added to it — the runtime is opt-in via
+        ``MockExam.midterm_two_module_runtime`` precisely so it is never inferred (see
+        midterms/sync.py). Every student starting that published midterm would suddenly be
+        served a two-part paper.
+        """
         midterm = self._midterm()
+        order = self._module_order()
+        if order == 2:
+            if not midterm.question_module_2_id:
+                raise DRFValidationError(
+                    {
+                        "non_field_errors": [
+                            "This midterm has no second module. Enable the two-module runtime "
+                            "for it in the builder before adding module-2 questions."
+                        ]
+                    }
+                )
+            return midterm.question_module_2
         if not midterm.question_module_id:
             module = Module.objects.create(
-                practice_test=None, module_order=1, time_limit_minutes=max(1, int(midterm.duration_minutes or 60))
+                practice_test=None,
+                module_order=1,
+                time_limit_minutes=max(1, midterm.duration_for_order(1) or 60),
             )
             midterm.question_module = module
             midterm.save(update_fields=["question_module"])
@@ -101,9 +149,18 @@ class AdminMidtermQuestionViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         midterm = Midterm.objects.filter(pk=self.kwargs.get("midterm_pk")).first()
-        if midterm is None or not midterm.question_module_id:
+        if midterm is None:
             return Question.objects.none()
-        return Question.objects.filter(module_id=midterm.question_module_id).order_by("order", "id")
+        requested = self.request.query_params.get("module")
+        if requested is not None:
+            return midterm.questions_for_order(self._module_order())
+        # Whole paper, in sitting order (module 1 then module 2).
+        module_ids = [i for i in (midterm.question_module_id, midterm.question_module_2_id) if i]
+        if not module_ids:
+            return Question.objects.none()
+        return Question.objects.filter(module_id__in=module_ids).order_by(
+            "module__module_order", "order", "id"
+        )
 
     def create(self, request, *args, **kwargs):
         midterm = self._midterm()
@@ -130,11 +187,15 @@ class AdminMidtermQuestionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         midterm = self._midterm()
         module = self._module()
+        # question_limit is a PER-MODULE authoring cap (it sizes one timed module), so it is
+        # counted against this module's own rows — but the message names the module so a
+        # two-module midterm's "30" doesn't read as a whole-paper limit of 30.
         limit = int(midterm.question_limit or 30)
         current = Question.objects.filter(module_id=module.pk).count()
         if current >= limit:
+            where = f"Module {module.module_order}" if midterm.question_module_2_id else "This midterm"
             raise DRFValidationError(
-                {"non_field_errors": [f"This midterm already has {current} questions — the maximum is {limit}."]}
+                {"non_field_errors": [f"{where} already has {current} questions — the maximum is {limit}."]}
             )
         serializer.save(module=module, order=current)
 
@@ -145,6 +206,8 @@ class AdminMidtermQuestionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"], url_path="bulk-reorder")
     def bulk_reorder(self, request, midterm_pk=None):
+        # Reordering never PROVISIONS anything — _module() only creates module 1 on demand,
+        # and rejects a module-2 request on a midterm that has no second module.
         module = self._module()
         ordered = request.data.get("ordered_ids") or []
         reindex_module_questions_dense_locked(module.id, list(ordered))

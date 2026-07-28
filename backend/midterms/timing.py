@@ -45,10 +45,10 @@ def get_midterm_timing(attempt, *, now: timezone.datetime | None = None) -> Midt
 
     if getattr(attempt, "current_state", None) == STATE_MODULE_2_ACTIVE:
         started = getattr(attempt, "module_2_started_at", None)
-        duration = int(getattr(attempt.midterm, "duration_minutes_2", 0) or 0)
+        duration = attempt.midterm.duration_for_order(2)
     else:  # module 1 (or any not-yet-module-2 state) — identical to the previous behaviour
         started = getattr(attempt, "started_at", None)
-        duration = int(getattr(attempt.midterm, "duration_minutes", 0) or 0)
+        duration = attempt.midterm.duration_for_order(1)
     if not started:
         return None
     if now is None:
