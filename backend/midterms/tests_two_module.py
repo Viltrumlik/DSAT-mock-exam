@@ -1217,3 +1217,187 @@ class AdminQuestionEditorTests(TestCase):
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual(mt.questions_for_order(2).count(), 3)
         self.assertEqual(mt.questions_for_order(1).count(), 2)  # module 1 untouched
+
+
+class LateAnswerGraceTests(TestCase):
+    """The timer bypass: suppress autosave, keep answering past the deadline, then post the
+    lot. Answers the server has never seen are banked only within the grace window.
+
+    The safety property that makes this shippable: declining a late payload NEVER erases
+    anything. `_merge_answers(None)` returns the saved map untouched, so a paper that was
+    autosaved on time scores exactly as it did before this rule existed.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create(username="late-grace", email="lg@x.io")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def _attempt(self, mt):
+        grant(self.user, mt)
+        r = self.client.post("/api/midterms/attempts/", {"midterm": mt.id}, format="json")
+        aid = r.json()["id"]
+        self.client.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
+        return aid, MidtermAttempt.objects.get(pk=aid)
+
+    def _expire_by(self, attempt, *, seconds_past):
+        """Put the module-1 deadline exactly `seconds_past` seconds in the past."""
+        started = timezone.now() - timedelta(
+            minutes=attempt.midterm.duration_for_order(1)
+        ) - timedelta(seconds=seconds_past)
+        MidtermAttempt.objects.filter(pk=attempt.pk).update(started_at=started)
+        attempt.refresh_from_db()
+
+    def test_at_the_buzzer_answers_are_kept(self):
+        """An honest last answer arrives a beat after the clock — it must count."""
+        mt = make_midterm(two_module=False, n1=3)
+        aid, att = self._attempt(mt)
+        q = [str(x.id) for x in att.effective_questions_for_order(1)]
+        self._expire_by(att, seconds_past=5)
+
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {q[0]: "a", q[1]: "a", q[2]: "a"}}, format="json",
+        )
+        att.refresh_from_db()
+        self.assertEqual(len(att.answers), 3)
+        self.assertEqual(att.score, 100)
+
+    def test_answers_posted_long_after_the_deadline_are_declined(self):
+        mt = make_midterm(two_module=False, n1=3)
+        aid, att = self._attempt(mt)
+        q = [str(x.id) for x in att.effective_questions_for_order(1)]
+        self._expire_by(att, seconds_past=2 * 60 * 60)  # two hours late
+
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {q[0]: "a", q[1]: "a", q[2]: "a"}}, format="json",
+        )
+        att.refresh_from_db()
+        self.assertEqual(att.answers, {})          # never-seen answers not banked
+        self.assertIn(att.current_state, (STATE_SCORING, STATE_COMPLETED))  # still finalized
+
+    def test_declining_never_erases_what_was_saved_on_time(self):
+        """THE guarantee. Everything autosaved during the module is scored unchanged."""
+        mt = make_midterm(two_module=False, n1=4)
+        aid, att = self._attempt(mt)
+        q = [str(x.id) for x in att.effective_questions_for_order(1)]
+
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/save_attempt/",
+            {"answers": {q[0]: "a", q[1]: "a"}}, format="json",
+        )
+        self._expire_by(att, seconds_past=2 * 60 * 60)
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {q[0]: "a", q[1]: "a", q[2]: "a", q[3]: "a"}}, format="json",
+        )
+        att.refresh_from_db()
+        self.assertEqual(att.answers, {q[0]: "a", q[1]: "a"})  # on-time work intact
+        self.assertEqual(att.score, 50)  # 2 of 4 — exactly what was saved in time
+
+    def test_the_bypass_cannot_move_to_save_attempt(self):
+        """Closing only submit_module would relocate the cheat, not remove it."""
+        mt = make_midterm(two_module=False, n1=3)
+        aid, att = self._attempt(mt)
+        q = [str(x.id) for x in att.effective_questions_for_order(1)]
+        self._expire_by(att, seconds_past=2 * 60 * 60)
+
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/save_attempt/",
+            {"answers": {q[0]: "a", q[1]: "a", q[2]: "a"}}, format="json",
+        )
+        att.refresh_from_db()
+        self.assertEqual(att.answers, {})
+
+    def test_naming_an_unstarted_module_2_does_not_buy_unlimited_time(self):
+        """The hole an adversarial pass found in the first attempt at this: resolving the
+        deadline from the CLIENT's module_id let a request name module 2 while still on
+        module 1, read its NULL anchor as 'no deadline', and bank answers hours late."""
+        mt = make_midterm(n1=2, n2=2)
+        aid, att = self._attempt(mt)
+        module_2_id = att.effective_module_for_order(2).id
+        q1 = [str(x.id) for x in att.effective_questions_for_order(1)]
+        self.assertIsNone(att.module_2_started_at)  # module 2 has never started
+        self._expire_by(att, seconds_past=2 * 60 * 60)
+
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {q1[0]: "a", q1[1]: "a"}, "module_id": module_2_id}, format="json",
+        )
+        att.refresh_from_db()
+        self.assertEqual(att.answers, {})  # not banked
+
+    def test_a_late_stale_target_payload_is_also_declined(self):
+        """A module-1 payload arriving hours after module 1 closed, while module 2 runs with
+        a fresh timer — judged against MODULE 1's deadline, not the live one."""
+        mt = make_midterm(n1=2, n2=2)
+        aid, att = self._attempt(mt)
+        module_1_id = att.effective_module_for_order(1).id
+        q1 = [str(x.id) for x in att.effective_questions_for_order(1)]
+
+        self._expire_by(att, seconds_past=2 * 60 * 60)
+        self.client.post(f"/api/midterms/attempts/{aid}/save_attempt/", {"answers": {}}, format="json")
+        att.refresh_from_db()
+        self.assertEqual(att.current_state, STATE_MODULE_2_ACTIVE)  # module 2 timer is fresh
+
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {q1[0]: "a", q1[1]: "a"}, "module_id": module_1_id}, format="json",
+        )
+        att.refresh_from_db()
+        self.assertEqual(att.answers, {})
+        self.assertEqual(att.current_state, STATE_MODULE_2_ACTIVE)  # still not finalized
+
+    def test_a_stale_target_payload_within_grace_is_still_banked(self):
+        """The guard must not over-decline: when a racing module-1 submit does reach the
+        engine, and module 1 closed only moments ago, its answers are still banked.
+
+        Module 2 is given a 1-minute timer so it can expire (and so the front-door
+        early-submit lock lets the request through) while module 1 is still only ~1 minute
+        past its own deadline — comfortably inside the grace.
+        """
+        mt = make_midterm(n1=2, n2=2, mins1=30, mins2=1)
+        aid, att = self._attempt(mt)
+        module_1_id = att.effective_module_for_order(1).id
+        q1 = [str(x.id) for x in att.effective_questions_for_order(1)]
+
+        self._expire_by(att, seconds_past=5)
+        self.client.post(f"/api/midterms/attempts/{aid}/save_attempt/", {"answers": {}}, format="json")
+        att.refresh_from_db()
+        self.assertEqual(att.current_state, STATE_MODULE_2_ACTIVE)
+
+        # Module 2's own minute runs out, so the submit is no longer early-locked.
+        MidtermAttempt.objects.filter(pk=att.pk).update(
+            module_2_started_at=timezone.now() - timedelta(seconds=70)
+        )
+        att.refresh_from_db()
+
+        self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {q1[0]: "a"}, "module_id": module_1_id}, format="json",
+        )
+        att.refresh_from_db()
+        self.assertEqual(att.answers.get(q1[0]), "a")
+
+    def test_a_racing_submit_while_module_2_still_runs_is_early_locked(self):
+        """Documents the front-door behaviour that sits in front of the grace: a module-1
+        submit landing after the advance, while module 2's timer is genuinely running, is
+        refused as an early submit. No answers are lost by it — every answer reached the
+        server as it was given (see the autosave delay table)."""
+        mt = make_midterm(n1=2, n2=2)
+        aid, att = self._attempt(mt)
+        module_1_id = att.effective_module_for_order(1).id
+
+        self._expire_by(att, seconds_past=5)
+        self.client.post(f"/api/midterms/attempts/{aid}/save_attempt/", {"answers": {}}, format="json")
+        att.refresh_from_db()
+        self.assertEqual(att.current_state, STATE_MODULE_2_ACTIVE)
+
+        r = self.client.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {}, "module_id": module_1_id}, format="json",
+        )
+        self.assertEqual(r.status_code, 403, r.content)
+        att.refresh_from_db()
+        self.assertEqual(att.current_state, STATE_MODULE_2_ACTIVE)

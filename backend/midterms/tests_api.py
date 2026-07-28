@@ -37,10 +37,23 @@ def make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a"):
     return mt
 
 
-def force_expire(aid):
-    """Push an attempt's timer well past its deadline so an explicit submit is
-    accepted (midterms otherwise refuse a submit before time runs out)."""
-    MidtermAttempt.objects.filter(pk=aid).update(started_at=timezone.now() - timedelta(hours=3))
+def force_expire(aid, *, seconds_past=30):
+    """Push an attempt's timer just past its deadline so an explicit submit is accepted
+    (midterms otherwise refuse a submit before time runs out).
+
+    Deliberately JUST past, not hours past. These suites hand their whole answer set to the
+    closing submit, which is fine for a student whose clock has only now hit zero — but a
+    payload of never-seen answers arriving hours late is the timer bypass, and the engine
+    declines it (``views._late_answers_accepted``). Three hours here made every one of these
+    tests exercise the cheat path instead of the journey they mean to test.
+    """
+    attempt = MidtermAttempt.objects.select_related("midterm").get(pk=aid)
+    started = (
+        timezone.now()
+        - timedelta(minutes=attempt.midterm.duration_for_order(1))
+        - timedelta(seconds=seconds_past)
+    )
+    MidtermAttempt.objects.filter(pk=aid).update(started_at=started)
 
 
 def grant(user, midterm, classroom=None):
@@ -113,8 +126,10 @@ class MidtermApiTests(TestCase):
         )
         self.assertEqual(r.status_code, 403, r.content)
 
-        # once the timer runs out, submit all correct -> inline score -> COMPLETED
-        MidtermAttempt.objects.filter(pk=aid).update(started_at=timezone.now() - timedelta(minutes=45))
+        # once the timer runs out, submit all correct -> inline score -> COMPLETED.
+        # `force_expire` puts the deadline JUST behind us, the way a real buzzer does — this
+        # used to sit 15 minutes past it, which is the timer-bypass window, not a student's.
+        force_expire(aid)
         r = self.client.post(
             f"/api/midterms/attempts/{aid}/submit_module/",
             {"answers": {q: "a" for q in qids}},
