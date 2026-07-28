@@ -119,7 +119,10 @@ export function createExamApi(base: string) {
           credentials: "include",
           keepalive: true,
           headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
-          body: JSON.stringify(withVersion({ answers, flagged }, expectedVersionNumber)),
+          // `background: true` tells the server this flush comes from a leaving/hidden tab,
+          // so it may persist the answers but must NOT advance a midterm into its next
+          // timed module — that clock would start while nobody is watching the screen.
+          body: JSON.stringify(withVersion({ answers, flagged, background: true }, expectedVersionNumber)),
         });
       } catch {
         /* best-effort: work is also locally drafted and re-saved on resume */

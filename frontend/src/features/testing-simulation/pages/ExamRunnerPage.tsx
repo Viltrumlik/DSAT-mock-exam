@@ -825,10 +825,22 @@ export function ExamRunnerPage() {
   // module 1 metadata, which is present in both shapes.
   if (showWelcome && !loading && attempt) {
     const activeModule = attempt.current_module_details;
+    const allModules = attempt.practice_test_details.modules ?? [];
+    // A NOT_STARTED midterm has no module payload yet, so these come from the test's own
+    // module metadata. For a TWO-module midterm that must be the WHOLE paper: quoting only
+    // module 1 told a student sitting 32+32 that the exam was 32 minutes, and then dropped
+    // them into a second module they were never warned about.
+    // MIDTERM ONLY. A pastpaper renders this same block and is genuinely sat one module at a
+    // time (with its own between-module screens), so its welcome must keep quoting module 1 —
+    // summing there would tell a student their 32-minute module is 64 minutes long.
     const startMinutes =
-      activeModule?.time_limit_minutes ??
-      attempt.practice_test_details.modules.find((m) => m.module_order === 1)?.time_limit_minutes;
-    const startQuestionCount = activeModule?.questions.length;
+      isMidterm && allModules.length > 1
+        ? allModules.reduce((sum, m) => sum + (m.time_limit_minutes ?? 0), 0)
+        : (activeModule?.time_limit_minutes ??
+           allModules.find((m) => m.module_order === 1)?.time_limit_minutes);
+    const startQuestionCount =
+      activeModule?.questions.length ??
+      (isMidterm ? (attempt.practice_test_details.total_question_count ?? undefined) : undefined);
     const subjLabel = subjectKind(attempt) === "MATH" ? "Math" : "Reading and Writing";
     if (isMidterm) {
       // Rules FIRST — the code screen is only reachable from it, so a student never types a

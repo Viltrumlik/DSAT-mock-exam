@@ -9,6 +9,7 @@ Midterm; nothing else is shared with the mock/pastpaper code paths.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
@@ -30,6 +31,12 @@ from .state_machine import (
 
 logger = logging.getLogger(__name__)
 
+# How long after module 1's deadline module 2's clock may still start fresh. Absorbs the
+# reconnect/refresh/latency of an honest boundary crossing while stopping a student from
+# banking an unbounded break by going offline between modules (see
+# ``MidtermAttempt._module_2_anchor``).
+MODULE_BREAK_GRACE_SECONDS = 300
+
 
 class TimestampedModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
@@ -39,8 +46,53 @@ class TimestampedModel(models.Model):
         abstract = True
 
 
-class Midterm(TimestampedModel):
-    """A single-module timed exam definition (staff-authored)."""
+class TwoModuleQuestionSource:
+    """Shared question accessors for anything owning ``question_module`` (+ optionally
+    ``question_module_2``): ``Midterm`` and ``MidtermVersion``.
+
+    Both grew a second module for the two-module runtime, and every "how many questions /
+    which questions" answer has to span both or the paper reads as half its real size.
+    Keeping the accessors here means a new call site cannot silently see module 1 only.
+    """
+
+    def questions_for_order(self, order: int):
+        """Ordered queryset for ONE module (1 or 2); empty when that module is unprovisioned."""
+        from exams.models import Question
+
+        module_id = self.question_module_2_id if int(order) == 2 else self.question_module_id
+        if not module_id:
+            return Question.objects.none()
+        return Question.objects.filter(module_id=module_id).order_by("order", "id")
+
+    def questions(self):
+        """Ordered queryset of MODULE 1's questions.
+
+        Deliberately still module 1 only, and still a QuerySet: callers chain ``.count()``,
+        ``.update()`` and ``.first()`` on it. Use ``all_questions()`` when you mean the whole
+        paper and ``total_question_count()`` when you mean its size.
+        """
+        return self.questions_for_order(1)
+
+    def all_questions(self) -> list:
+        """The whole paper in order: module 1 then module 2 (a list, not a QuerySet)."""
+        return list(self.questions_for_order(1)) + list(self.questions_for_order(2))
+
+    def total_question_count(self) -> int:
+        """Question count across BOTH modules."""
+        total = self.questions_for_order(1).count()
+        if self.question_module_2_id:
+            total += self.questions_for_order(2).count()
+        return total
+
+    def module_count(self) -> int:
+        """1 or 2 — two only when module 2 exists AND holds at least one question."""
+        if not self.question_module_2_id:
+            return 1
+        return 2 if self.questions_for_order(2).exists() else 1
+
+
+class Midterm(TwoModuleQuestionSource, TimestampedModel):
+    """A one- or two-module timed exam definition (staff-authored)."""
 
     READING_WRITING = "READING_WRITING"
     MATH = "MATH"
@@ -184,27 +236,37 @@ class Midterm(TimestampedModel):
     def module(self):
         return self.question_module
 
-    def questions(self):
-        """Ordered queryset of this midterm's exams.Question rows (empty if unprovisioned)."""
-        from exams.models import Question
-
-        if not self.question_module_id:
-            return Question.objects.none()
-        return Question.objects.filter(module_id=self.question_module_id).order_by("order", "id")
-
     def display_question_count(self) -> int:
         """Questions a student actually gets: for a versioned midterm the versions are
         equal-length parallel forms, so use the first version's count; otherwise the flat
         module count. Version-aware so multi-version midterms don't read as empty (their
-        flat ``question_module`` is intentionally unused)."""
+        flat ``question_module`` is intentionally unused).
+
+        Spans BOTH modules — a two-module paper's count is module 1 + module 2. Counting
+        only module 1 halved every count the platform shows (catalogs, journals, the
+        classroom announcement email) and could refuse to publish a midterm whose questions
+        all live in module 2.
+        """
         v = self.versions.order_by("version_number").first()
-        if v is not None:
-            return v.questions().count()
-        return self.questions().count()
+        src = v if v is not None else self
+        return src.total_question_count()
 
     def has_questions(self) -> bool:
         """True when the midterm has at least one question to serve (version-aware)."""
         return self.display_question_count() > 0
+
+    def duration_for_order(self, order: int) -> int:
+        """Minutes allowed for module 1 or module 2 — the SINGLE authority on module timing.
+
+        ``duration_minutes_2`` is nullable (single-module midterms, a reverted toggle, or an
+        attempt reopened by hand), and a NULL there used to mean two different things: the
+        serializer read it as 0 ("zero-length module") while the timer read it as "no expiry".
+        A module that is simultaneously zero-length and infinite can never be finalised by the
+        clock, so both now fall back to module 1's duration through here.
+        """
+        if int(order) == 2:
+            return int(self.duration_minutes_2 or self.duration_minutes or 0)
+        return int(self.duration_minutes or 0)
 
     @classmethod
     def allowed_levels_for_subject(cls, subject: str) -> tuple[str, ...]:
@@ -263,7 +325,7 @@ class Midterm(TimestampedModel):
         return result
 
 
-class MidtermVersion(models.Model):
+class MidtermVersion(TwoModuleQuestionSource, models.Model):
     """One of a midterm's parallel question sets (up to 4).
 
     Each version is a full copy of the midterm with its OWN questions (hung off its own
@@ -297,13 +359,6 @@ class MidtermVersion(models.Model):
 
     def __str__(self):
         return f"MidtermVersion #{self.pk} (midterm={self.midterm_id} v{self.version_number})"
-
-    def questions(self):
-        from exams.models import Question
-
-        if not self.question_module_id:
-            return Question.objects.none()
-        return Question.objects.filter(module_id=self.question_module_id).order_by("order", "id")
 
     def delete(self, *args, **kwargs):
         mod = self.question_module
@@ -404,10 +459,31 @@ class MidtermAttempt(TimestampedModel):
         return base
 
     def _merge_flagged(self, incoming):
-        # The client is authoritative for its full flag set; replace when provided.
+        # The client is authoritative for its own module's flag set; replace when provided.
         if incoming is None:
             return list(self.flagged or [])
-        return list(incoming)
+        if self.module_count() < 2:
+            # Single-module: the client holds the WHOLE paper, so a plain replace is correct
+            # (byte-identical to the pre-two-module behaviour).
+            return list(incoming)
+        # Two-module: the runner is only ever sent the LIVE module's flags (the serializer
+        # scopes them), so a plain replace would blank the other module's flags on the first
+        # save after the boundary. Keep the other module's, replace the live module's.
+        # values_list, not the model objects: this runs on the autosave hot path (~once a
+        # second per active student) and the full rows carry passages, options and image paths.
+        live_ids = {
+            str(i)
+            for i in self.effective_questions_for_order(self.current_module_order).values_list(
+                "id", flat=True
+            )
+        }
+        kept = [f for f in (self.flagged or []) if str(f) not in live_ids]
+        seen = {str(f) for f in kept}
+        for f in incoming:
+            if str(f) not in seen:
+                kept.append(f)
+                seen.add(str(f))
+        return kept
 
     # ── invariants + audit ───────────────────────────────────────────────────
     def _assert_invariants(self):
@@ -441,17 +517,33 @@ class MidtermAttempt(TimestampedModel):
         """The Midterm or MidtermVersion whose modules this attempt serves/grades."""
         return self.version if self.version_id else self.midterm
 
+    @property
+    def current_module_order(self) -> int:
+        """Which module the attempt is on: 2 while MODULE_2_ACTIVE, else 1."""
+        return 2 if self.current_state == STATE_MODULE_2_ACTIVE else 1
+
     def module_count(self) -> int:
         """1 or 2. A midterm is two-module only when its second module EXISTS and has at
         least one question — an opted-in but empty module 2 degrades safely to single-module
-        (mirrors the mock engine's shortcut)."""
-        src = self._question_source
-        m2_id = getattr(src, "question_module_2_id", None)
-        if not m2_id:
-            return 1
-        from exams.models import Question
+        (mirrors the mock engine's shortcut).
 
-        return 2 if Question.objects.filter(module_id=m2_id).exists() else 1
+        Memoised on the instance: this is read on every status poll and several times per
+        scoring pass, and the answer cannot change within a request (it is a property of the
+        midterm's modules, not of the attempt).
+        """
+        cached = getattr(self, "_module_count_memo", None)
+        if cached is not None:
+            return cached
+        count = self._question_source.module_count()
+        self._module_count_memo = count
+        return count
+
+    def refresh_from_db(self, *args, **kwargs):
+        # Drop the memo: refresh_from_db clears cached relations but not plain attributes, so
+        # a long-lived instance (a management command, a test) would keep answering with a
+        # module count from before the midterm was re-shaped.
+        self._module_count_memo = None
+        return super().refresh_from_db(*args, **kwargs)
 
     def effective_module_for_order(self, order: int):
         """The exams.Module for module 1 or module 2 (version-aware). None if absent."""
@@ -461,28 +553,21 @@ class MidtermAttempt(TimestampedModel):
         return getattr(src, "question_module", None)
 
     def effective_questions_for_order(self, order: int):
-        """Ordered question queryset for one module (1 or 2)."""
-        from exams.models import Question
+        """Ordered question queryset for one module (1 or 2), version-aware."""
+        return self._question_source.questions_for_order(order)
 
-        mod = self.effective_module_for_order(order)
-        if mod is None:
-            return Question.objects.none()
-        return Question.objects.filter(module_id=mod.id).order_by("order", "id")
-
-    @property
-    def effective_module(self):
-        """Module 1 — kept for any legacy single-module caller."""
-        if self.version_id and self.version.question_module_id:
-            return self.version.question_module
-        return self.midterm.question_module
-
-    def effective_questions(self):
-        """The FULL question set this attempt is scored/frozen over — module 1, plus
+    def effective_questions(self) -> list:
+        """The FULL ordered question LIST this attempt is scored/frozen over — module 1, plus
         module 2 when the attempt is two-module. The scorer/freeze/review iterate this, so
-        keeping it a union is what makes them span both modules with no change. Single-module
-        returns the identical queryset as before (byte-identical scoring)."""
+        keeping it a union is what makes them span both modules with no change.
+
+        ALWAYS a list, on both paths. It used to return a QuerySet for single-module and a
+        list for two-module, so a caller reaching for ``.count()``/``.filter()`` would pass
+        on single-module fixtures and blow up in production on the first two-module paper.
+        """
         if self.module_count() < 2:
-            return self.version.questions() if self.version_id else self.midterm.questions()
+            src = self.version if self.version_id else self.midterm
+            return list(src.questions())
         return list(self.effective_questions_for_order(1)) + list(self.effective_questions_for_order(2))
 
     # ── timing ───────────────────────────────────────────────────────────────
@@ -520,7 +605,10 @@ class MidtermAttempt(TimestampedModel):
         )
         if n == 0:
             self.refresh_from_db()
-            if self.current_state in (STATE_ACTIVE, STATE_SCORING, STATE_COMPLETED):
+            # Same "already started" set as the guard above — MODULE_2_ACTIVE included, or a
+            # racing start that lands after an expiry-driven advance would raise instead of
+            # no-opping (two tabs, or a retry with a fresh idempotency key).
+            if self.current_state in (STATE_ACTIVE, STATE_MODULE_2_ACTIVE, STATE_SCORING, STATE_COMPLETED):
                 return False
             raise TransitionConflict(f"start lost CAS for midterm attempt {self.pk} (now {self.current_state})")
         self.refresh_from_db()
@@ -563,6 +651,28 @@ class MidtermAttempt(TimestampedModel):
             return self._advance_to_module_2(answers=answers, flagged=flagged)
         return self.submit_final(answers=answers, flagged=flagged)
 
+    def _module_2_anchor(self, now):
+        """When module 2's clock starts, capped so the gap between modules can't be gamed.
+
+        A midterm has no BREAK state: module 2 is meant to begin when module 1's time runs
+        out. Anchoring purely at "whenever the advancing request arrives" made the gap
+        unbounded and student-controlled — close the laptop at the module-1 deadline, come
+        back an hour later, and module 2 still hands you a full fresh timer.
+
+        So the anchor is the module-1 deadline plus a grace window, or now, whichever is
+        EARLIER. Advancing on time is unaffected (now is at the deadline, and the grace
+        absorbs reconnect/refresh latency); a long absence eats into module 2 exactly as
+        sitting in the room would. Never later than ``now``, so a clock skew or a very short
+        module 1 can't hand out a timer that has already partly run.
+        """
+        if not self.started_at:
+            return now
+        minutes = self.midterm.duration_for_order(1)
+        if minutes <= 0:
+            return now
+        deadline = self.started_at + timedelta(minutes=minutes)
+        return min(now, deadline + timedelta(seconds=MODULE_BREAK_GRACE_SECONDS))
+
     def _advance_to_module_2(self, *, answers=None, flagged=None) -> bool:
         """ACTIVE (module 1) -> MODULE_2_ACTIVE, persisting merged answers + anchoring the
         module-2 timer. Idempotent once past module 1."""
@@ -573,7 +683,7 @@ class MidtermAttempt(TimestampedModel):
         merged_flags = self._merge_flagged(flagged)
         v0 = int(self.version_number or 0)
         ts = timezone.now()
-        m2_anchor = self.module_2_started_at or ts  # first-seen, never rewound
+        m2_anchor = self.module_2_started_at or self._module_2_anchor(ts)  # first-seen, never rewound
         n = conditional_midterm_attempt_update(
             pk=int(self.pk),
             expect_state=STATE_ACTIVE,

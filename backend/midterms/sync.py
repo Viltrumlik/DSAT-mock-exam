@@ -135,11 +135,29 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     else:
         module2 = None
         if midterm.question_module_2_id:
-            # Reverting two-module -> single: detach then drop the orphaned module.
-            old = midterm.question_module_2
-            midterm.question_module_2 = None
-            midterm.save(update_fields=["question_module_2"])
-            old.delete()
+            # Reverting two-module -> single.
+            if _has_live_two_module_attempts(midterm):
+                # A student is SITTING this exam right now. Dropping module 2 would either
+                # hard-stick them (mid-module-2: no payload, no timer, no way to submit) or
+                # silently rewrite the paper under them (mid-module-1: module 1 suddenly
+                # holds every question). Keep the two-module shape until they finish; the
+                # next sync reverts it.
+                logger.warning(
+                    "midterm %s: two-module revert deferred — live attempts in progress", midterm.pk
+                )
+                module2 = midterm.question_module_2
+                two_module = True
+                # Restore the module-2 timer we blanked above: `duration2` was computed as
+                # None for the (now deferred) revert, and persisting that would leave the
+                # live module-2 student's clock falling back to module 1's duration.
+                duration2 = max(1, int(getattr(mock, "midterm_module2_minutes", 60) or 60))
+                midterm.duration_minutes_2 = duration2
+            else:
+                _revert_module_2_into_module_1(midterm.question_module_2, module)
+                old = midterm.question_module_2
+                midterm.question_module_2 = None
+                midterm.save(update_fields=["question_module_2"])
+                old.delete()
     midterm.save()
 
     # Mirror questions from the legacy sections LIVE — refresh IN PLACE on every sync so
@@ -190,6 +208,42 @@ def _questions_for_legacy_order(practice_tests, order: int) -> list:
         for src_mod in section.modules.filter(module_order=order).order_by("id"):
             out.extend(src_mod.questions.all().order_by("order", "id"))
     return out
+
+
+def _has_live_two_module_attempts(midterm) -> bool:
+    """True when any attempt on this midterm is currently being sat.
+
+    Covers module 1 as well as module 2 on purpose: a student mid-module-1 has been promised
+    a 2-part paper and has module 2 still ahead of them, so flattening underneath them
+    rewrites the exam they are taking.
+    """
+    from .models import MidtermAttempt
+    from .state_machine import STATE_ACTIVE, STATE_MODULE_2_ACTIVE
+
+    return MidtermAttempt.objects.filter(
+        midterm=midterm, current_state__in=(STATE_ACTIVE, STATE_MODULE_2_ACTIVE), is_completed=False
+    ).exists()
+
+
+def _revert_module_2_into_module_1(module2, module1) -> None:
+    """Move module 2's rows back onto module 1, PRESERVING Question.id — the inverse of
+    ``_rehome_overflow_to_module2``.
+
+    The teardown used to just delete module 2 (cascading its Questions) and let the flatten
+    re-create them with FRESH ids, which silently de-referenced every saved answer to a
+    module-2 question: completed attempts kept their score but reviewed as all-omitted. Moving
+    the rows keeps ids stable, and appending them after module 1's keeps them in exactly the
+    order the following flatten expects (module 1's questions, then module 2's).
+    """
+    from exams.models import Question
+
+    if module2 is None or module1 is None:
+        return
+    base = Question.objects.filter(module_id=module1.id).count()
+    for j, q in enumerate(Question.objects.filter(module_id=module2.id).order_by("order", "id")):
+        q.module_id = module1.id
+        q.order = base + j
+        q.save(update_fields=["module_id", "order", "updated_at"], _plain_db_save=True)
 
 
 def _rehome_overflow_to_module2(module1, module2, n1: int) -> None:
@@ -316,12 +370,21 @@ def _sync_versions(midterm, practice_tests, *, two_module: bool = False, duratio
             _sync_module_questions_in_place(module, v1_live)
             _sync_module_questions_in_place(module2, _questions_for_legacy_order([pt], 2))
         else:
-            _sync_module_questions_in_place(module, _iter_live_questions([pt]))
-            if version.question_module_2_id:  # reverting 2->1: drop the stale second module
+            if version.question_module_2_id and not _has_live_two_module_attempts(midterm):
+                # Reverting 2->1: move module 2's rows back onto module 1 keeping Question.id
+                # (see _revert_module_2_into_module_1) BEFORE the flatten re-matches by
+                # position, then drop the emptied module.
+                _revert_module_2_into_module_1(version.question_module_2, module)
                 old = version.question_module_2
                 version.question_module_2 = None
                 version.save(update_fields=["question_module_2"])
                 old.delete()
+            elif version.question_module_2_id:
+                logger.warning(
+                    "midterm %s version %s: two-module revert deferred — live module-2 attempts exist",
+                    midterm.pk, version.pk,
+                )
+            _sync_module_questions_in_place(module, _iter_live_questions([pt]))
     # Drop versions whose legacy PracticeTest no longer exists.
     for v in list(midterm.versions.exclude(legacy_practice_test_id__in=keep_pt_ids)):
         v.delete()

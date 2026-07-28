@@ -38,12 +38,13 @@ from .state_machine import (
     STATE_SCORING,
 )
 
-# The two "a module is running" states — the strict timer, off-screen policing and autosave
-# all apply on either module of a two-module midterm.
-_ACTIVE_STATES = (STATE_ACTIVE, STATE_MODULE_2_ACTIVE)
 from .tasks import enqueue_midterm_scoring
 
 logger = logging.getLogger(__name__)
+
+# The two "a module is running" states — the strict timer, off-screen policing and autosave
+# all apply on either module of a two-module midterm.
+_ACTIVE_STATES = (STATE_ACTIVE, STATE_MODULE_2_ACTIVE)
 
 _REASON_DETAIL = {
     "midterm_unpublished": "This midterm is not available yet.",
@@ -67,6 +68,31 @@ def _expected_version(request):
         return int(str(raw).strip().strip('"'))
     except (TypeError, ValueError):
         return None
+
+
+def _target_module_id(request):
+    """The exams.Module id this submit was PREPARED for, when the client names one.
+
+    The runner always sends it (``examApiClient.submitModule``); a missing/garbled value
+    just means "don't module-target", preserving the old behaviour for any other caller.
+    """
+    raw = request.data.get("module_id")
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_background_save(request) -> bool:
+    """Whether this save is a fire-and-forget flush from a leaving/hidden tab.
+
+    Such a request proves the student is NOT looking at the exam, so it may persist answers
+    but must never advance module 1 -> module 2: doing so starts module 2's clock on a
+    closed tab and burns it before the student ever sees a question.
+    """
+    return bool(request.data.get("background"))
 
 
 class MidtermAttemptViewSet(viewsets.GenericViewSet):
@@ -282,13 +308,44 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         answers = request.data.get("answers") or {}
         flagged = request.data.get("flagged")
 
+        target_module_id = _target_module_id(request)
+
         def compute():
             with transaction.atomic():
                 locked = self._lock_queryset().select_for_update().get(pk=pk)
                 if locked.current_state in _ACTIVE_STATES:
-                    # Late/expired submit accepted: advances M1->M2, or finalizes on the last
-                    # module. Scoring is enqueued below ONLY once the whole paper is in.
-                    locked.submit(answers=answers, flagged=flagged)
+                    # Module-targeted submit (idempotency BY MODULE). A retried or racing
+                    # submit prepared for module 1 must NEVER finalize module 2 with module
+                    # 1's answers: the front-door timer check above ran before this lock, so
+                    # an autosave can advance M1->M2 in between and this request would then
+                    # end module 2 the instant it began — the pastpaper "Module 2 skip"
+                    # incident, exactly. If the module this payload was built for is no
+                    # longer live, the intended submit already landed: no-op successfully.
+                    live_module = locked.effective_module_for_order(locked.current_module_order)
+                    live_id = getattr(live_module, "id", None)
+                    if target_module_id is not None and live_id != target_module_id:
+                        logger.info(
+                            "[FORENSIC] midterm_submit_module_stale_target_noop attempt_id=%s "
+                            "target=%s current_state=%s live_module=%s",
+                            locked.pk, target_module_id, locked.current_state, live_id,
+                        )
+                        # Don't finalize — but don't throw the payload away either. This may
+                        # be the only copy of an answer the student gave to the module that
+                        # just closed (the racing autosave can lose that race). `autosave`
+                        # merges and never blanks, so banking it is safe and keeps the
+                        # no-op from costing marks.
+                        locked.autosave(answers=answers, flagged=flagged)
+                    else:
+                        # The submitted payload IS accepted, deliberately. The mock engine
+                        # drops a late payload to close a timer-bypass (suppress autosave,
+                        # keep typing past the deadline, then submit), but for midterms the
+                        # submit request is often the only carrier of the last answer a
+                        # student gave — the autosave debounce may not have flushed when the
+                        # clock ran out. Dropping it here silently costs honest students
+                        # marks, which this platform has already done to real students more
+                        # than once. Closing that bypass needs a bounded grace window, not a
+                        # blanket refusal; it is deliberately NOT bundled into this fix.
+                        locked.submit(answers=answers, flagged=flagged)
             refreshed = self.get_queryset().get(pk=pk)
             if refreshed.current_state == STATE_SCORING:
                 enqueue_midterm_scoring(attempt_id=refreshed.id, request=request)
@@ -305,6 +362,7 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         answers = request.data.get("answers") or {}
         flagged = request.data.get("flagged")
         expected = _expected_version(request)
+        background = _is_background_save(request)
 
         def compute():
             auto_submitted = False
@@ -315,7 +373,20 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
                     if expected is not None and int(locked.version_number or 0) != expected:
                         return self._conflict(locked)
                     timing = locked.get_timing()
-                    if timing and timing.is_expired:
+                    expired = bool(timing and timing.is_expired)
+                    if expired and background:
+                        # A background flush (pagehide / tab close) arriving AFTER the
+                        # deadline writes NOTHING. It must not advance — the student isn't
+                        # there to sit module 2, and starting it now would run its clock on a
+                        # closed tab. It must not autosave either: `autosave` has no expiry
+                        # check of its own, so banking a post-deadline payload here would let
+                        # any crafted client hold a module open forever simply by setting
+                        # `background` — an unlimited-time cheat, far worse than the tab-close
+                        # problem this flag exists to solve. Whatever was saved before the
+                        # deadline stands, and the attempt is closed by the student's next
+                        # real interaction or by `sweep_midterm_attempts`.
+                        pass
+                    elif expired:
                         # Current module's timer ran out: submit() advances M1->M2 (new timer)
                         # or finalizes on module 2. This is the server-driven auto-advance.
                         locked.submit(answers=answers, flagged=flagged)

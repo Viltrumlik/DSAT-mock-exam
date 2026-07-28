@@ -30,6 +30,9 @@ class AdminMidtermSerializer(serializers.ModelSerializer):
             "calculator_enabled",
             "scoring_scale",
             "duration_minutes",
+            # Module 2's own timer (null = single-module midterm). Without it on the wire a
+            # two-module midterm's second timer was invisible and unsettable here.
+            "duration_minutes_2",
             "question_limit",
             "is_published",
             "published_at",
@@ -81,4 +84,10 @@ class AdminMidtermSerializer(serializers.ModelSerializer):
     def validate_duration_minutes(self, value):
         if int(value) < 1:
             raise serializers.ValidationError("Duration must be at least 1 minute.")
+        return value
+
+    def validate_duration_minutes_2(self, value):
+        # Nullable: None means "single-module midterm", which is the default shape.
+        if value is not None and int(value) < 1:
+            raise serializers.ValidationError("Module 2 duration must be at least 1 minute.")
         return value

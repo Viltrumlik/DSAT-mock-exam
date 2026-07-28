@@ -65,15 +65,31 @@ def _resolve_exam(question_id: int) -> Optional[ResolvedTarget]:
     module = q.module
     module_label = f"Module {module.module_order}" if module and module.module_order else ""
     if module is not None:
-        # Midterm owns exactly one Module (reverse OneToOne). Query by id to avoid
-        # relying on the reverse-accessor DoesNotExist dance.
-        from midterms.models import Midterm
+        # A midterm owns ONE OR TWO Modules (reverse OneToOnes: question_module and, for a
+        # two-module midterm, question_module_2). Match either — keying on module 1 alone
+        # dropped every module-2 report to RESOURCE_UNKNOWN, so the Telegram alert named no
+        # midterm and staff could not find the question. Query by id to avoid relying on the
+        # reverse-accessor DoesNotExist dance.
+        from django.db.models import Q as _Q
+
+        from midterms.models import Midterm, MidtermVersion
 
         midterm = (
-            Midterm.objects.filter(question_module_id=module.id)
+            Midterm.objects.filter(_Q(question_module_id=module.id) | _Q(question_module_2_id=module.id))
             .only("id", "title", "subject")
             .first()
         )
+        if midterm is None:
+            # Versioned midterm: the served questions hang off a MidtermVersion's module(s),
+            # not the midterm's own (dormant) flat one — resolve through to the parent.
+            version = (
+                MidtermVersion.objects.filter(
+                    _Q(question_module_id=module.id) | _Q(question_module_2_id=module.id)
+                )
+                .select_related("midterm")
+                .first()
+            )
+            midterm = version.midterm if version is not None else None
         if midterm is not None:
             resource_type = QuestionErrorReport.RESOURCE_MIDTERM
             resource_id = midterm.id
