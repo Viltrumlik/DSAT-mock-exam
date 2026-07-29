@@ -16,6 +16,13 @@ export interface MoreMenuProps {
   pauseAllowed: boolean;
   paused: boolean;
   onTogglePause: () => void;
+  /**
+   * Whether leaving mid-exam and coming back is a thing this paper allows. False for a
+   * midterm: it is sat in ONE sitting, and leaving the screen is a proctoring offence that
+   * auto-submits after 3 seconds — offering "Save & Exit" there invites a student to end
+   * their own exam by the one route that looks safest.
+   */
+  saveExitAllowed: boolean;
   onSaveAndExit: () => void;
 }
 
@@ -69,19 +76,23 @@ export function MoreMenu(props: MoreMenuProps) {
           {item(<ZoomOut className="h-4 w-4" />, "Zoom out", props.onZoomOut)}
           {props.pauseAllowed && item(props.paused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />, props.paused ? "Resume" : "Pause", props.onTogglePause)}
           {item(<Keyboard className="h-4 w-4" />, "Keyboard shortcuts", props.onToggleHelp)}
-          <div className="my-1 border-t border-slate-100" />
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              props.onSaveAndExit();
-              setOpen(false);
-            }}
-            className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            <LogOut className="h-4 w-4" />
-            Save &amp; Exit
-          </button>
+          {props.saveExitAllowed && (
+            <>
+              <div className="my-1 border-t border-slate-100" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  props.onSaveAndExit();
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 px-4 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <LogOut className="h-4 w-4" />
+                Save &amp; Exit
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
