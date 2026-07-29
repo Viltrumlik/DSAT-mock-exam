@@ -152,43 +152,32 @@ class AttendanceApiTests(_ClassFixture):
         self.assertEqual(r.json()["updated"], 0)
 
 
-class AttendanceRankingIntegrationTests(_ClassFixture):
-    def test_attendance_off_by_default(self):
-        # graded homework only; default w_attendance=0 → attendance ignored
-        self._graded_homework(self.s1, 80)
-        s = self._session(0); self._mark(s, self.s1, P)
+class AttendanceIsNotOnTheLeaderboardTests(_ClassFixture):
+    """Attendance no longer feeds the Academic ranking.
+
+    It used to, via ``AcademicWeightConfig.w_attendance``. The board is now "assessment
+    points banked since the class opened", so being present is tracked and reported by the
+    attendance surfaces but does not add rank. Pinned in both directions: the weight column
+    still exists on the model, and setting it must NOT quietly bring the old behaviour back.
+    """
+
+    def test_attendance_does_not_contribute_by_default(self):
+        s = self._session(0); self._mark(s, self.s1, P)   # present for every session
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         snap = RankingSnapshot.objects.get(
             classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.s1)
-        self.assertNotIn("ATTENDANCE", snap.components["category_scores"])
-        self.assertAlmostEqual(float(snap.score), 80.0, delta=0.1)
+        self.assertEqual(float(snap.score), 0.0)
+        self.assertNotIn("category_scores", snap.components)
 
-    def test_attendance_weighted_worked_example(self):
-        # w_homework=0.35, w_attendance=0.15 → renormalize to 0.70 / 0.30
+    def test_weighting_attendance_still_does_not_contribute(self):
         cfg, _ = AcademicWeightConfig.objects.get_or_create(classroom=self.classroom)
         cfg.w_homework = 0.35; cfg.w_quiz = 0; cfg.w_classwork = 0
         cfg.w_participation = 0; cfg.w_attendance = 0.15
         cfg.save()
-        self._graded_homework(self.s1, 80)
-        s = self._session(0); self._mark(s, self.s1, P)   # attendance_score 100
+        s = self._session(0); self._mark(s, self.s1, P)   # attendance_score would be 100
 
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         snap = RankingSnapshot.objects.get(
             classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.s1)
-        cats = snap.components["category_scores"]
-        self.assertEqual(cats["ATTENDANCE"], 100.0)
-        self.assertEqual(cats["HOMEWORK"], 80.0)
-        # 0.70*80 + 0.30*100 = 86, completion 1.0
-        self.assertAlmostEqual(float(snap.score), 86.0, delta=0.1)
-
-    def _graded_homework(self, student, grade):
-        hw = Assignment.objects.create(
-            classroom=self.classroom, created_by=self.owner, title="HW",
-            category=Assignment.CATEGORY_HOMEWORK, max_score=100,
-            due_at=timezone.now() - timedelta(days=1),
-        )
-        sub = Submission.objects.create(
-            assignment=hw, student=student, status=Submission.STATUS_REVIEWED,
-            submitted_at=timezone.now() - timedelta(days=2),
-        )
-        SubmissionReview.objects.create(submission=sub, teacher=self.owner, grade=grade)
+        self.assertEqual(float(snap.score), 0.0)
+        self.assertEqual(snap.components["assessments_count"], 0)

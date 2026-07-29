@@ -25,8 +25,9 @@ def _u(email):
 class AnalyticsFixture(TestCase):
     def setUp(self):
         self.owner = _u("an_owner@t.com")
+        # level middle: only middle/senior classrooms rank on SAT.
         self.classroom = Classroom.objects.create(
-            name="An", subject=Classroom.SUBJECT_MATH,
+            name="An", subject=Classroom.SUBJECT_MATH, level="middle",
             lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
         )
         ClassroomMembership.objects.create(classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN)
@@ -35,10 +36,14 @@ class AnalyticsFixture(TestCase):
         for u in (self.s1, self.s2):
             ClassroomMembership.objects.create(classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT)
         self.section = PracticeTest.objects.create(subject="MATH", label="M", title="sec", collection_name="PP")
+        # The paper has to have been GIVEN to the class to rank on it.
+        Assignment.objects.create(classroom=self.classroom, created_by=self.owner, title="PP",
+                                  category=Assignment.CATEGORY_PAST_PAPER,
+                                  status=Assignment.STATUS_PUBLISHED, practice_test=self.section)
         now = timezone.now()
         for u, sc in ((self.s1, 700), (self.s2, 500)):
             TestAttempt.objects.create(student=u, practice_test=self.section, score=sc,
-                                       current_state="COMPLETED", completed_at=now)
+                                       is_completed=True, current_state="COMPLETED", completed_at=now)
         service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p1")
 
 

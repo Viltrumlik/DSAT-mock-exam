@@ -150,6 +150,8 @@ def sat_topic_accuracy(classroom, student_ids=None) -> list[dict]:
 # ── student analytics ─────────────────────────────────────────────────────────
 
 def _snap_series(classroom, kind, student_id) -> list[dict]:
+    """Score history, oldest first. Unscored snapshots are skipped — a student who is on the
+    board but has not sat a paper yet is a listed row, not a point on a trend line."""
     return [
         {
             "period_key": r["period_key"],
@@ -157,7 +159,9 @@ def _snap_series(classroom, kind, student_id) -> list[dict]:
             "rank": r["rank"],
             "computed_at": r["computed_at"].isoformat(),
         }
-        for r in RankingSnapshot.objects.filter(classroom=classroom, kind=kind, student_id=student_id)
+        for r in RankingSnapshot.objects.filter(
+            classroom=classroom, kind=kind, student_id=student_id, score__isnull=False
+        )
         .order_by("computed_at")
         .values("period_key", "score", "rank", "computed_at")
     ]
@@ -168,15 +172,11 @@ def student_analytics(classroom, student) -> dict:
     sat_series = _snap_series(classroom, RankingSnapshot.KIND_SAT, sid)
     academic_series = _snap_series(classroom, RankingSnapshot.KIND_ACADEMIC, sid)
 
-    # Best/Latest SAT from the most recent SAT snapshot's recorded components.
-    best = latest = None
-    if sat_series:
-        comp = (
-            RankingSnapshot.objects.filter(classroom=classroom, kind=RankingSnapshot.KIND_SAT, student_id=sid)
-            .order_by("-computed_at").values_list("components", flat=True).first()
-        ) or {}
-        best = comp.get("best")
-        latest = comp.get("latest")
+    # Best/Latest SAT straight off the snapshot history. A SAT score IS now the student's
+    # most recent assigned pastpaper, so "latest" is the newest snapshot and "best" is the
+    # highest one they have held — no longer components of a weighted formula.
+    best = max((p["score"] for p in sat_series), default=None)
+    latest = sat_series[-1]["score"] if sat_series else None
 
     attendance = attendance_service.student_detail(classroom, student)
 
@@ -239,8 +239,10 @@ def class_analytics(classroom) -> dict:
 
     sat_latest = _latest_snaps(classroom, RankingSnapshot.KIND_SAT)
     academic_latest = _latest_snaps(classroom, RankingSnapshot.KIND_ACADEMIC)
-    sat_scores = [float(s.score) for s in sat_latest]
-    academic_scores = [float(s.score) for s in academic_latest]
+    # `score` is NULL for a student who is on the board with no result yet — they must not
+    # drag a class average toward zero.
+    sat_scores = [float(s.score) for s in sat_latest if s.score is not None]
+    academic_scores = [float(s.score) for s in academic_latest if s.score is not None]
 
     # Improvement trends from real snapshot history (latest period vs previous period).
     def improvement(kind, latest_snaps):
@@ -253,10 +255,11 @@ def class_analytics(classroom) -> dict:
         if len(periods) >= 2:
             prev = {
                 r["student_id"]: float(r["score"])
-                for r in RankingSnapshot.objects.filter(classroom=classroom, kind=kind, period_key=periods[1])
-                .values("student_id", "score")
+                for r in RankingSnapshot.objects.filter(
+                    classroom=classroom, kind=kind, period_key=periods[1], score__isnull=False
+                ).values("student_id", "score")
             }
-            cur_avg = _avg([float(s.score) for s in latest_snaps])
+            cur_avg = _avg([float(s.score) for s in latest_snaps if s.score is not None])
             prev_avg = _avg(list(prev.values()))
             if cur_avg is not None and prev_avg is not None:
                 avg_delta = round(cur_avg - prev_avg, 1)

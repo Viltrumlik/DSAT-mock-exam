@@ -1,18 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { Trophy, GraduationCap, Crown, EyeOff, type LucideIcon } from "lucide-react";
+import { Trophy, GraduationCap, Crown, EyeOff, RefreshCw, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { EmptyState, LoadingState, ErrorState } from "../ui";
+import { Button, EmptyState, LoadingState, ErrorState } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
-import { useRankings } from "../rankingsHooks";
+import { useRankings, useRecomputeRankings } from "../rankingsHooks";
 import type { RankingKind, RankingRow } from "../rankingsApi";
 
 const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: string }> = {
-  SAT: { title: "SAT", icon: Trophy, desc: "Ranked by SAT performance — practice tests, past papers, and mock exams." },
-  ACADEMIC: { title: "Academic", icon: GraduationCap, desc: "Points earned across assignments, quizzes, and practice." },
+  SAT: { title: "SAT", icon: Trophy, desc: "Each student's most recent past paper, out of the ones this class was given." },
+  ACADEMIC: { title: "Academic", icon: GraduationCap, desc: "Assessment points earned since this class opened." },
 };
+
+// Foundation and junior classes sit past papers to build stamina, not to be placed against a
+// college-entrance scale, so they get no SAT board. An untagged class is excluded too: the
+// past-paper picker already filters by level, so it has nothing assigned and its board would
+// be empty anyway. The server enforces the same rule — this only keeps the tab off screen.
+const SAT_LEVELS = ["middle", "senior"];
+const ranksOnSat = (level?: string) => SAT_LEVELS.includes((level ?? "").trim().toLowerCase());
 
 function initials(name: string): string {
   const p = name.trim().split(/\s+/).filter(Boolean);
@@ -33,14 +40,19 @@ const AV: [string, string][] = [
 ];
 
 export function Rankings({ classroom }: { classroom: ClassroomWithRole }) {
-  const [kind, setKind] = useState<RankingKind>("SAT");
-  return <RankingBoard key={kind} classroom={classroom} kind={kind} setKind={setKind} />;
+  const satAllowed = ranksOnSat(classroom.level);
+  const [kind, setKind] = useState<RankingKind>(satAllowed ? "SAT" : "ACADEMIC");
+  return <RankingBoard key={kind} classroom={classroom} kind={kind} setKind={setKind} satAllowed={satAllowed} />;
 }
 
-function RankingBoard({ classroom, kind, setKind }: { classroom: ClassroomWithRole; kind: RankingKind; setKind: (k: RankingKind) => void }) {
+function RankingBoard({ classroom, kind, setKind, satAllowed }: {
+  classroom: ClassroomWithRole; kind: RankingKind; setKind: (k: RankingKind) => void; satAllowed: boolean;
+}) {
   const classId = Number(classroom.id);
   const caps = capabilitiesFor(classroom.my_role);
   const { data, isLoading, isError, refetch } = useRankings(classId, kind);
+  const recompute = useRecomputeRankings(classId);
+  const kinds: RankingKind[] = satAllowed ? ["SAT", "ACADEMIC"] : ["ACADEMIC"];
 
   const hideScores = data?.config.hide_score_values;
   const scoreOf = (row: RankingRow) => (row.is_me ? row.score : hideScores && !caps.isStaff ? null : row.score);
@@ -53,14 +65,24 @@ function RankingBoard({ classroom, kind, setKind }: { classroom: ClassroomWithRo
           <Trophy className="h-5 w-5 text-primary" />
           <h2 className="text-xl font-extrabold tracking-tight text-foreground">Class rankings</h2>
         </div>
-        <div className="flex gap-1 rounded-xl bg-surface-2 p-1">
-          {(["SAT", "ACADEMIC"] as RankingKind[]).map((k) => (
-            <button key={k} type="button" onClick={() => setKind(k)}
-              className={cn("rounded-lg px-3.5 py-1.5 text-sm font-bold transition-colors",
-                kind === k ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground")}>
-              {KIND_META[k].title}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {data?.can_recompute ? (
+            <Button variant="secondary" size="sm" icon={RefreshCw}
+              loading={recompute.isPending} onClick={() => recompute.mutate(undefined)}>
+              Recompute
+            </Button>
+          ) : null}
+          {kinds.length > 1 ? (
+            <div className="flex gap-1 rounded-xl bg-surface-2 p-1">
+              {kinds.map((k) => (
+                <button key={k} type="button" onClick={() => setKind(k)}
+                  className={cn("rounded-lg px-3.5 py-1.5 text-sm font-bold transition-colors",
+                    kind === k ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground")}>
+                  {KIND_META[k].title}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
       <p className="-mt-3 text-[13px] font-medium text-muted-foreground">{KIND_META[kind].desc}</p>
@@ -71,7 +93,11 @@ function RankingBoard({ classroom, kind, setKind }: { classroom: ClassroomWithRo
         <ErrorState onRetry={() => refetch()} />
       ) : data.rows.length === 0 ? (
         <EmptyState icon={Trophy} title="No rankings yet"
-          description={data.can_configure ? "Once students complete work, recompute to build the leaderboard." : "Your ranking will appear once there's enough data."} />
+          description={data.can_recompute
+            // Keyed on can_recompute, not can_configure: this sentence tells the reader to
+            // press a button, so only show it to someone who actually has that button.
+            ? "Once students complete work, recompute to build the leaderboard."
+            : "Your ranking will appear once there's enough data."} />
       ) : (
         <>
           {data.rows.length >= 3 && data.config.leaderboard_mode !== "ANONYMOUS" ? (
@@ -90,8 +116,12 @@ function RankingBoard({ classroom, kind, setKind }: { classroom: ClassroomWithRo
                   <span className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
                     {row.name}{row.is_me ? <span className="ml-1.5 text-xs font-bold text-primary">You</span> : null}
                   </span>
+                  {/* A missing score means one of two different things. "No result yet"
+                      reads as a dash; "hidden by your teacher" keeps the eye icon. */}
                   <span className="w-[84px] shrink-0 text-right text-[15px] font-extrabold tabular-nums text-foreground">
-                    {score != null ? fmt(score) : <EyeOff className="ml-auto h-3.5 w-3.5 text-muted-foreground" />}
+                    {score != null ? fmt(score)
+                      : row.has_result === false ? <span className="text-muted-foreground">—</span>
+                      : <EyeOff className="ml-auto h-3.5 w-3.5 text-muted-foreground" />}
                   </span>
                 </div>
               );

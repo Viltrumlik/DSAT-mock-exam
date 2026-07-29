@@ -1,8 +1,8 @@
-"""Ranking orchestration — gather inputs, compute, rank, persist snapshots.
+"""Ranking orchestration — gather inputs, rank, persist snapshots.
 
-SAT reads only TestAttempt (SAT). Academic reads only graded SubmissionReview /
-AssessmentResult (+ optional attendance). The two never share inputs (BUSINESS-ARCHITECTURE
-§3 invariant). Pure math lives in sat.py / academic.py; this module does the DB work.
+The two rules live in ranking/rules.py and are deliberately plain: SAT is a student's own
+latest assigned pastpaper, Academic is the assessment points they have banked since the
+class opened. This module only orders them and writes the snapshots.
 
 Snapshots are the history ledger: each recompute upserts a row per (classroom, kind,
 period_key, student). `previous_rank` comes from the latest snapshot of a *different*
@@ -12,205 +12,14 @@ no read-cache is persisted (no proven perf need — see §5).
 
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import datetime
-
 from django.db import transaction
 from django.utils import timezone
 
-from exams.models import MockExam, TestAttempt
+from ..models import ClassroomMembership
+from ..models_ranking import RankingSnapshot
+from . import rules
 
-from ..models import Assignment, ClassroomMembership, Submission
-from ..models_ranking import AcademicWeightConfig, RankingSnapshot
-from . import academic as academic_math
-from . import sat as sat_math
-from .sat import Event
-
-SECTION_MIN, SECTION_MAX = 200.0, 800.0
-COMPOSITE_MIN, COMPOSITE_MAX = 400.0, 1600.0
 ACADEMIC_TREND_EPS = 1.0  # academic points between snapshots for IMPROVING/DECLINING
-
-
-# ── eligibility helpers ───────────────────────────────────────────────────────
-
-def _attempt_is_sat_scaled(attempt: TestAttempt) -> bool:
-    pt = attempt.practice_test
-    if pt is None:
-        return False
-    if attempt.mock_exam_id or pt.mock_exam_id:
-        mock = attempt.mock_exam or pt.mock_exam
-        if mock is None:
-            return False
-        if mock.kind == MockExam.KIND_MIDTERM:
-            return getattr(mock, "midterm_scoring_scale", None) == MockExam.SCALE_800
-        return mock.kind == MockExam.KIND_MOCK_SAT
-    # Any non-mock section (standalone pastpaper or practice-test pack) is a
-    # SAT-scaled section score.
-    return pt.mock_exam_id is None
-
-
-def _parent_key(attempt: TestAttempt):
-    pt = attempt.practice_test
-    if attempt.mock_exam_id or pt.mock_exam_id:
-        return ("mock", attempt.mock_exam_id or pt.mock_exam_id)
-    if pt.practice_test_pack_id:
-        return ("ptp", pt.practice_test_pack_id)
-    # Standalone pastpaper section: it is its own parent.
-    return ("pt", pt.id)
-
-
-def _classroom_sat_mode(classroom):
-    """Return (subject_filter, lo, hi, composite?) for the class subject.
-
-    Subject-specific classes rank by the matching section (200–800). A future BOTH
-    subject would rank by the 400–1600 composite (composite=True).
-    """
-    subj = str(getattr(classroom, "subject", "") or "").upper()
-    if subj == "MATH":
-        return ("MATH", SECTION_MIN, SECTION_MAX, False)
-    if subj in ("ENGLISH", "READING_WRITING"):
-        return ("READING_WRITING", SECTION_MIN, SECTION_MAX, False)
-    # BOTH (not yet a stored choice) → full composite
-    return (None, COMPOSITE_MIN, COMPOSITE_MAX, True)
-
-
-def _build_sat_events(student_ids: list[int], classroom) -> dict[int, list[Event]]:
-    """Per-student eligible SAT events (section score, or composite for BOTH classes)."""
-    subject_filter, lo, hi, composite = _classroom_sat_mode(classroom)
-
-    qs = (
-        TestAttempt.objects.filter(
-            student_id__in=student_ids,
-            current_state="COMPLETED",
-            score__isnull=False,
-        )
-        .select_related("practice_test", "practice_test__mock_exam", "mock_exam")
-    )
-
-    # best score per (student, parent, subject)
-    best: dict[tuple, tuple[float, datetime]] = {}
-    for a in qs:
-        if not _attempt_is_sat_scaled(a):
-            continue
-        subj = a.practice_test.subject
-        if not composite and subj != subject_filter:
-            continue
-        score = max(SECTION_MIN, min(SECTION_MAX, float(a.score)))
-        when = a.completed_at or a.submitted_at
-        if when is None:
-            continue
-        k = (a.student_id, _parent_key(a), subj)
-        cur = best.get(k)
-        if cur is None or score > cur[0]:
-            best[k] = (score, when)
-
-    events: dict[int, list[Event]] = defaultdict(list)
-    if not composite:
-        for (student_id, _parent, _subj), (score, when) in best.items():
-            events[student_id].append(Event(score=score, completed_at=when))
-        return events
-
-    # composite: pair R&W + Math under the same parent
-    by_parent: dict[tuple, dict[str, tuple[float, datetime]]] = defaultdict(dict)
-    for (student_id, parent, subj), val in best.items():
-        by_parent[(student_id, parent)][subj] = val
-    for (student_id, _parent), sections in by_parent.items():
-        rw = sections.get("READING_WRITING")
-        ma = sections.get("MATH")
-        if rw and ma:
-            events[student_id].append(
-                Event(score=rw[0] + ma[0], completed_at=max(rw[1], ma[1]))
-            )
-    return events
-
-
-# ── academic gathering ────────────────────────────────────────────────────────
-
-def _build_academic_inputs(student_ids: list[int], classroom, now):
-    """Return per-student (category_percents, completion_ratio, missing/late counts)."""
-    # Grades count from PUBLISHED + ARCHIVED (archived keeps earned grades); DRAFT counts nowhere.
-    academic_assignments = list(
-        classroom.assignments.filter(category__in=Assignment.ACADEMIC_CATEGORIES)
-        .exclude(status=Assignment.STATUS_DRAFT)
-    )
-    assignment_by_id = {a.id: a for a in academic_assignments}
-    # "Assigned" (completion denominator) = PUBLISHED work currently expected (no due date,
-    # or past due). ARCHIVED work leaves the denominator so retiring work isn't punitive.
-    # NOTE: ``due_at`` is now DERIVED (classes.lesson_schedule.homework_due_at = the start
-    # of the classroom's next lesson), so homework sits OUT of the denominator until that
-    # lesson begins. It is null only for a classroom with no parseable schedule, which
-    # keeps the long-standing "no due date ⇒ expected now" behaviour for those rows.
-    assigned_ids = {
-        a.id
-        for a in academic_assignments
-        if a.status == Assignment.STATUS_PUBLISHED and (a.due_at is None or a.due_at <= now)
-    }
-
-    cat_percents: dict[int, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
-    completed: dict[int, set[int]] = defaultdict(set)
-    late: dict[int, int] = defaultdict(int)
-    assessment_graded_assignment_ids: set[int] = set()
-
-    # Assessment results (auto-graded quizzes/homework linked to a classes.Assignment).
-    try:
-        from assessments.models import AssessmentResult
-
-        ar_qs = (
-            AssessmentResult.objects.filter(
-                attempt__homework__classroom=classroom,
-                attempt__student_id__in=student_ids,
-            )
-            .select_related("attempt", "attempt__homework", "attempt__homework__assignment")
-        )
-        for r in ar_qs:
-            att = r.attempt
-            hw = att.homework
-            asg = getattr(hw, "assignment", None)
-            category = (
-                asg.category
-                if asg and asg.category in Assignment.ACADEMIC_CATEGORIES
-                else Assignment.CATEGORY_QUIZ
-            )
-            cat_percents[att.student_id][category].append(float(r.percent))
-            if asg is not None:
-                assessment_graded_assignment_ids.add(asg.id)
-                completed[att.student_id].add(asg.id)
-    except Exception:  # assessments app optional / linkage absent
-        pass
-
-    # Teacher-graded submissions (skip assignments already covered by assessment results).
-    sub_qs = (
-        Submission.objects.filter(
-            assignment__in=academic_assignments, student_id__in=student_ids
-        )
-        .select_related("review", "assignment")
-    )
-    for s in sub_qs:
-        asg = s.assignment
-        if s.status in (Submission.STATUS_SUBMITTED, Submission.STATUS_REVIEWED):
-            completed[s.student_id].add(asg.id)
-            if asg.due_at and s.submitted_at and s.submitted_at > asg.due_at:
-                late[s.student_id] += 1
-        if asg.id in assessment_graded_assignment_ids:
-            continue
-        review = getattr(s, "review", None)
-        if review is not None:
-            pct = review.normalized_percent()
-            if pct is not None:
-                cat_percents[s.student_id][asg.category].append(pct)
-
-    results = {}
-    n_assigned = len(assigned_ids)
-    for sid in student_ids:
-        done = len(completed[sid] & assigned_ids)
-        ratio = (done / n_assigned) if n_assigned else 1.0
-        results[sid] = {
-            "category_percents": {k: v for k, v in cat_percents[sid].items()},
-            "completion_ratio": ratio,
-            "missing_count": max(0, n_assigned - done),
-            "late_count": late[sid],
-        }
-    return results
 
 
 # ── ranking + persistence ─────────────────────────────────────────────────────
@@ -261,89 +70,111 @@ def recompute_classroom(classroom, *, kinds=("SAT", "ACADEMIC"), period_key=None
 
 
 def _recompute_sat(classroom, student_ids, period_key, now) -> int:
-    _, lo, hi, _ = _classroom_sat_mode(classroom)
-    events_by_student = _build_sat_events(student_ids, classroom)
+    """Rank on each student's own latest assigned pastpaper (see ranking/rules.py).
 
-    computed = []
-    for sid in student_ids:
-        res = sat_math.compute_sat(events_by_student.get(sid, []), now=now, lo=lo, hi=hi)
-        if res is not None:  # unranked students (no SAT events) are excluded
-            computed.append((sid, res))
+    Students with no pastpaper yet are still written, ranked last with ``score=None``, so the
+    teacher can see who has not sat one — an absent row looks identical to a missing student.
+    """
+    if not rules.classroom_ranks_on_sat(classroom):
+        # Level does not rank on SAT. Clear any board left over from before the level
+        # changed, so a hidden tab can never be un-hidden onto stale numbers.
+        RankingSnapshot.objects.filter(classroom=classroom, kind=RankingSnapshot.KIND_SAT).delete()
+        return 0
 
-    computed.sort(key=lambda t: (-t[1]["sat_score"], -t[1]["peak_ability"], -t[1]["latest"], t[0]))
-    scores = [c[1]["sat_score"] for c in computed]
+    pastpaper_ids = rules.assigned_pastpaper_ids(classroom)
+    latest = rules.latest_pastpaper_per_student(student_ids, pastpaper_ids)
+
+    scored = sorted(
+        ((sid, latest[sid]) for sid in student_ids if sid in latest),
+        key=lambda t: (-t[1]["score"], -t[1]["finished_at"].timestamp(), t[0]),
+    )
+    unscored = sorted(sid for sid in student_ids if sid not in latest)
+    scores = [row["score"] for _sid, row in scored]
     prev = _previous_ranks(classroom, RankingSnapshot.KIND_SAT, period_key)
 
-    for rank, (sid, res) in enumerate(computed, start=1):
+    for rank, (sid, row) in enumerate(scored, start=1):
         prev_rank = prev.get(sid)
         RankingSnapshot.objects.update_or_create(
             classroom=classroom, kind=RankingSnapshot.KIND_SAT, period_key=period_key, student_id=sid,
             defaults=dict(
                 rank=rank,
                 previous_rank=prev_rank,
-                score=res["sat_score"],
-                percentile=_percentile(res["sat_score"], scores),
-                trend=res["trend"],
-                confidence=res["confidence"],
-                components={**res, "rank_change": (prev_rank - rank) if prev_rank else None},
+                score=row["score"],
+                percentile=_percentile(row["score"], scores),
+                trend=None,
+                confidence=None,
+                components={
+                    "practice_test_id": row["practice_test_id"],
+                    "attempt_id": row["attempt_id"],
+                    "finished_at": row["finished_at"].isoformat(),
+                    "rank_change": (prev_rank - rank) if prev_rank else None,
+                },
                 computed_at=now,
             ),
         )
-    return len(computed)
+
+    # Everyone still waiting on their first pastpaper shares the rank after the last scored
+    # student — they are tied at "no result", not ordered among themselves.
+    unranked_rank = len(scored) + 1
+    for sid in unscored:
+        RankingSnapshot.objects.update_or_create(
+            classroom=classroom, kind=RankingSnapshot.KIND_SAT, period_key=period_key, student_id=sid,
+            defaults=dict(
+                rank=unranked_rank,
+                previous_rank=prev.get(sid),
+                score=None,
+                percentile=None,
+                trend=None,
+                confidence=None,
+                components={"no_result": True, "rank_change": None},
+                computed_at=now,
+            ),
+        )
+    return len(scored)
 
 
 def _recompute_academic(classroom, student_ids, period_key, now) -> int:
-    weights_cfg, _ = AcademicWeightConfig.objects.get_or_create(classroom=classroom)
-    weights = weights_cfg.category_weights()
-    missing_as_zero = weights_cfg.missing_as_zero
-    inputs = _build_academic_inputs(student_ids, classroom, now)
+    """Rank on assessment points banked since the class opened (see ranking/rules.py).
 
-    # Attendance integration (§4.1): only when the teacher has weighted it > 0.
-    if weights.get("ATTENDANCE", 0.0) > 0:
-        from ..attendance import attendance_scores_for
+    Every active student is written, including those on 0 — an academic board is the
+    teacher's roster view, and a student who has done nothing is exactly who they want to
+    see on it.
+    """
+    since = rules.classroom_opened_at(classroom, now=now)
+    totals = rules.assessment_points_per_student(classroom, student_ids, since=since, until=now)
 
-        att = attendance_scores_for(classroom, student_ids)
-        for sid in student_ids:
-            score = att.get(sid)
-            if score is not None:  # no counted sessions → category stays inactive for this student
-                inputs[sid]["category_percents"]["ATTENDANCE"] = [score]
-
-    computed = []
-    for sid in student_ids:
-        data = inputs[sid]
-        perf, perf_comp = academic_math.performance_score(data["category_percents"], weights)
-        # Nothing graded and nothing assigned → unranked (excluded).
-        if perf == 0.0 and not data["category_percents"] and data["missing_count"] == 0:
-            continue
-        scored = academic_math.academic_score(
-            perf, data["completion_ratio"], missing_as_zero=missing_as_zero
-        )
-        components = {
-            **scored,
-            **perf_comp,
-            "missing_count": data["missing_count"],
-            "late_count": data["late_count"],
-        }
-        computed.append((sid, scored["academic_score"], perf, data["completion_ratio"], components))
-
-    computed.sort(key=lambda t: (-t[1], -t[2], -t[3], t[0]))
-    scores = [c[1] for c in computed]
+    computed = sorted(
+        (
+            (sid, totals.get(sid, {"points": 0.0, "max_points": 0.0, "assessments_count": 0, "graded_count": 0}))
+            for sid in student_ids
+        ),
+        key=lambda t: (-t[1]["points"], -t[1]["assessments_count"], t[0]),
+    )
+    scores = [row["points"] for _sid, row in computed]
     prev = _previous_ranks(classroom, RankingSnapshot.KIND_ACADEMIC, period_key)
     prev_scores = _previous_scores(classroom, RankingSnapshot.KIND_ACADEMIC, period_key)
 
-    for rank, (sid, score, _perf, _ratio, components) in enumerate(computed, start=1):
+    for rank, (sid, row) in enumerate(computed, start=1):
         prev_rank = prev.get(sid)
-        trend = _academic_trend(prev_scores.get(sid), score)
+        trend = _academic_trend(prev_scores.get(sid), row["points"])
         RankingSnapshot.objects.update_or_create(
             classroom=classroom, kind=RankingSnapshot.KIND_ACADEMIC, period_key=period_key, student_id=sid,
             defaults=dict(
                 rank=rank,
                 previous_rank=prev_rank,
-                score=score,
-                percentile=_percentile(score, scores),
+                score=row["points"],
+                percentile=_percentile(row["points"], scores),
                 trend=trend,
                 confidence=None,
-                components={**components, "trend": trend, "rank_change": (prev_rank - rank) if prev_rank else None},
+                components={
+                    "points": row["points"],
+                    "max_points": row["max_points"],
+                    "assessments_count": row["assessments_count"],
+                    "graded_count": row["graded_count"],
+                    "since": since.isoformat(),
+                    "trend": trend,
+                    "rank_change": (prev_rank - rank) if prev_rank else None,
+                },
                 computed_at=now,
             ),
         )

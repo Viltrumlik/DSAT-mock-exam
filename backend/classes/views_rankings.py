@@ -19,7 +19,7 @@ from .capabilities import classroom_capabilities
 from .models import Classroom
 from .models_ranking import ClassroomRankingConfig, RankingSnapshot
 from .permissions import CanConfigureRanking, CanRecomputeRanking, IsClassMemberCap
-from .ranking import service
+from .ranking import rules, service
 
 _VALID_KINDS = {RankingSnapshot.KIND_SAT, RankingSnapshot.KIND_ACADEMIC}
 
@@ -68,6 +68,23 @@ class RankingsView(_ClassroomScopedView):
         caps = classroom_capabilities(request.user, classroom)
         cfg, _ = ClassroomRankingConfig.objects.get_or_create(classroom=classroom)
 
+        # Foundation and junior classes do not rank on SAT — they sit pastpapers to build
+        # stamina, not to be placed against a college-entrance scale. Enforced here as well
+        # as in the UI: the student site rewrites its own role client-side, so a gate that
+        # lived only in the frontend would be one edited request away from being bypassed.
+        sat_available = rules.classroom_ranks_on_sat(classroom)
+        if kind == RankingSnapshot.KIND_SAT and not sat_available:
+            return Response({
+                "kind": kind,
+                "period_key": None,
+                "config": {"leaderboard_mode": cfg.leaderboard_mode, "hide_score_values": cfg.hide_score_values},
+                "can_configure": caps.can_configure_ranking,
+                "can_recompute": caps.can_recompute_ranking,
+                "sat_available": False,
+                "my": None,
+                "rows": [],
+            })
+
         latest_period = (
             RankingSnapshot.objects.filter(classroom=classroom, kind=kind)
             .order_by("-computed_at")
@@ -95,7 +112,10 @@ class RankingsView(_ClassroomScopedView):
                 "rank": s.rank,
                 "is_me": is_me,
                 "name": _display_name(s.student) if show_name else f"Student #{s.rank}",
-                "score": float(s.score) if show_score else None,
+                # None means two different things and the UI needs both: hidden by config,
+                # or genuinely no result yet (a student who has not sat a pastpaper).
+                "score": float(s.score) if (show_score and s.score is not None) else None,
+                "has_result": s.score is not None,
                 "previous_rank": s.previous_rank,
                 "rank_change": (s.components or {}).get("rank_change"),
                 "trend": s.trend,
@@ -117,6 +137,7 @@ class RankingsView(_ClassroomScopedView):
             "config": {"leaderboard_mode": mode, "hide_score_values": cfg.hide_score_values},
             "can_configure": caps.can_configure_ranking,
             "can_recompute": caps.can_recompute_ranking,
+            "sat_available": sat_available,
             "my": my_row,
             "rows": rows,
         })
@@ -174,6 +195,7 @@ class RankingHistoryView(_ClassroomScopedView):
         rows = list(
             RankingSnapshot.objects.filter(classroom=classroom, kind=kind, student_id=target_id)
             .order_by("computed_at")
+            .filter(score__isnull=False)   # an unscored row is not a point on a history line
             .values("period_key", "rank", "score", "percentile", "trend", "computed_at")
         )
         history = [

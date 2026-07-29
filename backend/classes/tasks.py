@@ -45,3 +45,39 @@ def prune_homework_staged_uploads() -> dict:
     stats = prune_homework_staged_upload_records()
     logger.info("prune_homework_staged_uploads %s", stats)
     return stats
+
+
+@shared_task(name="classes.tasks.recompute_classroom_rankings")
+def recompute_classroom_rankings(classroom_id: int | None = None) -> dict:
+    """Rebuild the leaderboards. One classroom when given an id, otherwise every active one.
+
+    This task is why the leaderboard exists at all. Ranking snapshots are only ever written
+    by ``service.recompute_classroom``, whose sole caller was a POST endpoint that nothing in
+    the UI invoked — so in production the board had never been computed once, and every
+    classroom showed "No rankings yet" while telling the teacher to press a button that was
+    not on the screen.
+
+    Per-classroom failures are swallowed: one classroom with bad data must not stop the
+    sweep from ranking the other forty.
+    """
+    from .models import Classroom
+    from .ranking import service
+
+    qs = Classroom.objects.all()
+    if classroom_id is not None:
+        qs = qs.filter(pk=classroom_id)
+    else:
+        qs = qs.filter(is_active=True)
+
+    ranked = failed = 0
+    for classroom in qs.iterator():
+        try:
+            service.recompute_classroom(classroom)
+            ranked += 1
+        except Exception:
+            failed += 1
+            logger.exception("ranking recompute failed classroom=%s", classroom.pk)
+
+    stats = {"classrooms": ranked, "failed": failed}
+    logger.info("recompute_classroom_rankings %s", stats)
+    return stats

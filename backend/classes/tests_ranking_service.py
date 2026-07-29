@@ -29,8 +29,9 @@ def _student(email):
 class SATServiceTests(TestCase):
     def setUp(self):
         self.owner = _student("w_owner@t.com")
+        # `level` matters now: only middle/senior classes rank on SAT.
         self.classroom = Classroom.objects.create(
-            name="Math A", subject=Classroom.SUBJECT_MATH,
+            name="Math A", subject=Classroom.SUBJECT_MATH, level="middle",
             lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
         )
         ClassroomMembership.objects.create(
@@ -38,6 +39,12 @@ class SATServiceTests(TestCase):
         )
         self.section = PracticeTest.objects.create(
             subject="MATH", label="M", title="Math sec", collection_name="PP A"
+        )
+        # ...and the paper has to have been GIVEN to this class; an attempt on a pastpaper
+        # nobody assigned is a student's own practice and does not rank.
+        Assignment.objects.create(
+            classroom=self.classroom, title="PP A", category=Assignment.CATEGORY_PAST_PAPER,
+            status=Assignment.STATUS_PUBLISHED, practice_test=self.section, created_by=self.owner,
         )
         # three students with distinct Math section scores
         self.s700 = _student("w700@t.com")
@@ -51,7 +58,7 @@ class SATServiceTests(TestCase):
         for u, score in ((self.s700, 700), (self.s600, 600), (self.s500, 500)):
             TestAttempt.objects.create(
                 student=u, practice_test=self.section, score=score,
-                current_state="COMPLETED", completed_at=now,
+                is_completed=True, current_state="COMPLETED", completed_at=now,
             )
 
     def test_ranks_percentiles_and_history(self):
@@ -63,15 +70,16 @@ class SATServiceTests(TestCase):
         self.assertEqual(snaps[self.s700.id].rank, 1)
         self.assertEqual(snaps[self.s600.id].rank, 2)
         self.assertEqual(snaps[self.s500.id].rank, 3)
-        # single recent event → sat score ≈ section score
-        self.assertAlmostEqual(float(snaps[self.s700.id].score), 700.0, delta=1.0)
+        # The score IS the pastpaper score — no weighting, no decay.
+        self.assertEqual(float(snaps[self.s700.id].score), 700.0)
         # percentile: top→100, mid→50, low→0
         self.assertAlmostEqual(float(snaps[self.s700.id].percentile), 100.0, delta=0.1)
         self.assertAlmostEqual(float(snaps[self.s600.id].percentile), 50.0, delta=0.1)
         self.assertAlmostEqual(float(snaps[self.s500.id].percentile), 0.0, delta=0.1)
-        # display components present
+        # Components point at the paper behind the number, so a teacher can check it.
         comp = snaps[self.s700.id].components
-        for key in ("best", "latest", "recent_form", "peak_ability", "consistency", "confidence_ratio"):
+        self.assertEqual(comp["practice_test_id"], self.section.id)
+        for key in ("attempt_id", "finished_at"):
             self.assertIn(key, comp)
 
     def test_previous_rank_linked_across_periods(self):
@@ -86,6 +94,14 @@ class SATServiceTests(TestCase):
 
 
 class AcademicServiceTests(TestCase):
+    """Academic is the sum of assessment points banked since the class opened.
+
+    Note what is NO LONGER an input: teacher-graded submissions, category weights, the
+    completion factor and attendance. The rule the school asked for is "add up the scores of
+    the assessments the students solved" — everything else was removed rather than left
+    half-wired, so a number on the board can be reproduced by hand from the quiz results.
+    """
+
     def setUp(self):
         self.owner = _student("a_owner@t.com")
         self.classroom = Classroom.objects.create(
@@ -95,61 +111,70 @@ class AcademicServiceTests(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
         )
-        past = timezone.now() - timedelta(days=2)
-        self.hw1 = Assignment.objects.create(
-            classroom=self.classroom, created_by=self.owner, title="HW1",
-            category=Assignment.CATEGORY_HOMEWORK, max_score=100, due_at=past,
-        )
-        self.hw2 = Assignment.objects.create(
-            classroom=self.classroom, created_by=self.owner, title="HW2",
-            category=Assignment.CATEGORY_HOMEWORK, max_score=100, due_at=past,
-        )
-        self.full = _student("a_full@t.com")   # completes both, mean 90
-        self.partial = _student("a_partial@t.com")  # completes 1 of 2, grade 90
+        self.classroom.created_at = timezone.now() - timedelta(days=30)
+        self.classroom.save(update_fields=["created_at"])
+
+        self.full = _student("a_full@t.com")
+        self.partial = _student("a_partial@t.com")
         for u in (self.full, self.partial):
             ClassroomMembership.objects.create(
                 classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT
             )
-        self._grade(self.full, self.hw1, 100)
-        self._grade(self.full, self.hw2, 80)
-        self._grade(self.partial, self.hw1, 90)  # hw2 left missing
+        self.q1 = self._set("Quiz 1")
+        self.q2 = self._set("Quiz 2")
+        self._grade(self.full, self.q1, 100, 100)
+        self._grade(self.full, self.q2, 80, 100)     # 180 total
+        self._grade(self.partial, self.q1, 90, 100)  # 90, q2 not done
 
-    def _grade(self, student, assignment, grade):
-        sub = Submission.objects.create(
-            assignment=assignment, student=student, status=Submission.STATUS_REVIEWED,
+    def _set(self, title):
+        from assessments.models import AssessmentSet
+
+        return AssessmentSet.objects.create(title=title, created_by=self.owner)
+
+    def _grade(self, student, aset, points, max_points):
+        from assessments.models import AssessmentAttempt, AssessmentResult, HomeworkAssignment
+
+        hw = HomeworkAssignment.objects.filter(classroom=self.classroom, assessment_set=aset).first()
+        if hw is None:
+            assignment = Assignment.objects.create(
+                classroom=self.classroom, created_by=self.owner, title=aset.title,
+                category=Assignment.CATEGORY_QUIZ, status=Assignment.STATUS_PUBLISHED,
+            )
+            hw = HomeworkAssignment.objects.create(
+                classroom=self.classroom, assessment_set=aset, assignment=assignment,
+                assigned_by=self.owner,
+            )
+        attempt = AssessmentAttempt.objects.create(
+            homework=hw, student=student, status=AssessmentAttempt.STATUS_GRADED,
             submitted_at=timezone.now() - timedelta(days=1),
         )
-        SubmissionReview.objects.create(submission=sub, teacher=self.owner, grade=grade)
+        AssessmentResult.objects.create(
+            attempt=attempt, score_points=points, max_points=max_points,
+            percent=(points / max_points * 100) if max_points else 0,
+        )
 
-    def test_performance_times_completion(self):
+    def test_points_are_summed_and_ranked(self):
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         snaps = {s.student_id: s for s in RankingSnapshot.objects.filter(
             classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC, period_key="p1")}
 
-        # full: perf mean(100,80)=90, completion 2/2=1.0 → 90
         full = snaps[self.full.id]
-        self.assertAlmostEqual(float(full.score), 90.0, delta=0.1)
-        self.assertAlmostEqual(full.components["completion_factor"], 1.0, delta=0.001)
-
-        # partial: perf 90, completion 1/2=0.5 → factor 0.60 → 54
-        partial = snaps[self.partial.id]
-        self.assertAlmostEqual(partial.components["performance_score"], 90.0, delta=0.1)
-        self.assertAlmostEqual(partial.components["completion_factor"], 0.60, delta=0.001)
-        self.assertAlmostEqual(float(partial.score), 54.0, delta=0.1)
-        self.assertEqual(partial.components["missing_count"], 1)
-
-        # ranking: full (90) ahead of partial (54)
+        self.assertEqual(float(full.score), 180.0)   # 100 + 80
+        self.assertEqual(full.components["assessments_count"], 2)
         self.assertEqual(full.rank, 1)
+
+        partial = snaps[self.partial.id]
+        self.assertEqual(float(partial.score), 90.0)
+        self.assertEqual(partial.components["assessments_count"], 1)
         self.assertEqual(partial.rank, 2)
 
     def test_rank_change_on_improvement(self):
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
-        # partial completes HW2 with a top grade → perf mean(90,100)=95, completion 2/2 → 95
-        self._grade(self.partial, self.hw2, 100)
+        self._grade(self.partial, self.q2, 100, 100)  # 90 + 100 = 190, overtakes 180
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p2")
         partial = RankingSnapshot.objects.get(
             classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC, period_key="p2", student=self.partial)
-        self.assertEqual(partial.rank, 1)          # overtakes full (95 > 90)
+        self.assertEqual(partial.rank, 1)
         self.assertEqual(partial.previous_rank, 2)
         self.assertEqual(partial.components.get("rank_change"), 1)  # 2 → 1
         self.assertEqual(partial.trend, RankingSnapshot.TREND_IMPROVING)
@@ -161,7 +186,7 @@ class RankingsApiTests(TestCase):
 
         self.owner = _student("api_owner@t.com")
         self.classroom = Classroom.objects.create(
-            name="Math API", subject=Classroom.SUBJECT_MATH,
+            name="Math API", subject=Classroom.SUBJECT_MATH, level="middle",
             lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
         )
         ClassroomMembership.objects.create(
@@ -169,6 +194,10 @@ class RankingsApiTests(TestCase):
         )
         self.section = PracticeTest.objects.create(
             subject="MATH", label="M", title="sec", collection_name="PP"
+        )
+        Assignment.objects.create(
+            classroom=self.classroom, title="PP", category=Assignment.CATEGORY_PAST_PAPER,
+            status=Assignment.STATUS_PUBLISHED, practice_test=self.section, created_by=self.owner,
         )
         self.top = _student("api_top@t.com")
         self.low = _student("api_low@t.com")
@@ -178,7 +207,7 @@ class RankingsApiTests(TestCase):
             )
             TestAttempt.objects.create(
                 student=u, practice_test=self.section, score=sc,
-                current_state="COMPLETED", completed_at=timezone.now(),
+                is_completed=True, current_state="COMPLETED", completed_at=timezone.now(),
             )
         service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p1")
         self.cfg_model = ClassroomRankingConfig
