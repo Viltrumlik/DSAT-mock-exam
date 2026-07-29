@@ -107,12 +107,16 @@ class RankingSnapshot(models.Model):
 
     rank = models.PositiveIntegerField()
     previous_rank = models.PositiveIntegerField(null=True, blank=True)
-    score = models.DecimalField(max_digits=8, decimal_places=2)
+    # NULL = ranked but has no result yet — a student who has not sat one of the class's
+    # pastpapers still appears on the SAT board, listed last, so the teacher can see WHO is
+    # missing. Omitting the row instead would make "hasn't sat it" and "not in this class"
+    # look identical.
+    score = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     percentile = models.DecimalField(max_digits=5, decimal_places=1, null=True, blank=True)
     trend = models.CharField(max_length=10, choices=TREND_CHOICES, null=True, blank=True)
     confidence = models.CharField(max_length=8, choices=CONFIDENCE_CHOICES, null=True, blank=True)
-    # Full display payload: best/latest/recent_form/peak/consistency (SAT) or
-    # performance/completion/category_scores (Academic). See §3.1 / §3.2.
+    # Display payload: the pastpaper/attempt behind a SAT score, or the points/assessment
+    # count behind an Academic one.
     components = models.JSONField(default=dict, blank=True)
     computed_at = models.DateTimeField(db_index=True)
 

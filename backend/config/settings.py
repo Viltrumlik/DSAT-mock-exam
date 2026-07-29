@@ -390,6 +390,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "assessments.tasks.prune_security_alerts",
         "schedule": crontab(hour=4, minute=40),
     },
+    # The classroom leaderboards. Nothing computed them before this entry existed — the only
+    # writer was a POST endpoint with no button wired to it, so every board read "No rankings
+    # yet" permanently. 20 minutes keeps a pastpaper or quiz visible on the board within the
+    # same lesson without hammering the DB.
+    "classroom-recompute-rankings": {
+        "task": "classes.tasks.recompute_classroom_rankings",
+        "schedule": crontab(minute="*/20"),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.

@@ -8,7 +8,10 @@ export interface RankingRow {
   rank: number;
   is_me: boolean;
   name: string;
+  /** null means EITHER hidden by config OR no result yet — `has_result` tells them apart. */
   score: number | null;
+  /** False for a student who has not sat one of this class's pastpapers yet. */
+  has_result?: boolean;
   previous_rank: number | null;
   rank_change: number | null;
   trend: Trend | null;
@@ -23,6 +26,8 @@ export interface RankingResponse {
   config: { leaderboard_mode: LeaderboardMode; hide_score_values: boolean };
   can_configure: boolean;
   can_recompute: boolean;
+  /** False for foundation/junior/untagged classes, which do not rank on SAT. */
+  sat_available?: boolean;
   my: RankingRow | null;
   rows: RankingRow[];
 }

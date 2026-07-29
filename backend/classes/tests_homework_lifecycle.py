@@ -89,8 +89,24 @@ class LifecycleEndpointTests(HomeworkLifecycleFixture):
         a.refresh_from_db(); self.assertEqual(a.status, "PUBLISHED")
 
 
-class ArchivedRankingSemanticsTests(HomeworkLifecycleFixture):
-    def test_archived_grade_retained_but_off_completion_denominator(self):
+class HandGradedWorkOnTheLeaderboardTests(HomeworkLifecycleFixture):
+    """Academic counts assessment points AND work the teacher graded by hand.
+
+    The rule that matters is what happens to work that is handed in but NOT yet marked: it
+    contributes nothing at all, rather than a zero. A leaderboard that scored unmarked work
+    as 0 would punish students for their teacher's backlog and would reshuffle every rank the
+    moment marking started.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # The academic window opens when the CLASS does, and the base fixture builds its
+        # classroom "now" — so backdated submissions would fall outside it. Open the class a
+        # month ago, which is what a real one that has homework in it looks like.
+        self.classroom.created_at = timezone.now() - timedelta(days=30)
+        self.classroom.save(update_fields=["created_at"])
+
+    def test_hand_graded_homework_counts_toward_the_score(self):
         published = self._mk("Pub HW", Assignment.STATUS_PUBLISHED)
         archived = self._mk("Old HW", Assignment.STATUS_ARCHIVED)
         for a, grade in ((published, 80), (archived, 100)):
@@ -100,19 +116,30 @@ class ArchivedRankingSemanticsTests(HomeworkLifecycleFixture):
 
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         snap = RankingSnapshot.objects.get(classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student)
-        # Both grades count → HOMEWORK mean(80,100)=90; completion denominator = published only (1/1) → factor 1.0
-        self.assertAlmostEqual(snap.components["category_scores"]["HOMEWORK"], 90.0, delta=0.1)
-        self.assertAlmostEqual(snap.components["completion_factor"], 1.0, delta=0.001)
-        self.assertEqual(snap.components["missing_count"], 0)
-        self.assertAlmostEqual(float(snap.score), 90.0, delta=0.1)
+        # Archived work keeps the points it earned — retiring an assignment does not
+        # retroactively take a student's marks away.
+        self.assertEqual(float(snap.score), 180.0)
+        self.assertEqual(snap.components["graded_count"], 2)
 
-    def test_draft_excluded_from_academic(self):
-        self._mk("Draft HW", Assignment.STATUS_DRAFT)  # no submission; must not appear as missing
-        published = self._mk("Pub HW", Assignment.STATUS_PUBLISHED)
-        sub = Submission.objects.create(assignment=published, student=self.student, status=Submission.STATUS_REVIEWED,
+    def test_submitted_but_unmarked_work_contributes_nothing(self):
+        marked = self._mk("Marked", Assignment.STATUS_PUBLISHED)
+        unmarked = self._mk("Waiting on the teacher", Assignment.STATUS_PUBLISHED)
+        sub = Submission.objects.create(assignment=marked, student=self.student, status=Submission.STATUS_REVIEWED,
                                         submitted_at=timezone.now() - timedelta(days=1))
         SubmissionReview.objects.create(submission=sub, teacher=self.owner, grade=70)
+        Submission.objects.create(assignment=unmarked, student=self.student, status=Submission.STATUS_REVIEWED,
+                                  submitted_at=timezone.now() - timedelta(days=1))
+
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         snap = RankingSnapshot.objects.get(classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student)
-        self.assertEqual(snap.components["missing_count"], 0)  # draft not counted as assigned
-        self.assertAlmostEqual(snap.components["completion_factor"], 1.0, delta=0.001)
+        self.assertEqual(float(snap.score), 70.0)          # not 70 halved, not 35 — just 70
+        self.assertEqual(snap.components["graded_count"], 1)
+
+    def test_every_student_still_appears_on_a_board_with_nothing_graded(self):
+        # A roster view with nobody on it is indistinguishable from a broken board.
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        self.assertTrue(
+            RankingSnapshot.objects.filter(
+                classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student
+            ).exists()
+        )
