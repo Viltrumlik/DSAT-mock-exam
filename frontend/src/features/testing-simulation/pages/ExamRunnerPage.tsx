@@ -972,6 +972,11 @@ export function ExamRunnerPage() {
         pauseAllowed={pauseAllowed(attempt, mockFlow)}
         paused={paused}
         onTogglePause={handlePauseToggle}
+        // A midterm is ONE sitting: there is no pause, and leaving the screen is a
+        // proctoring offence that auto-submits after 3 seconds (see offscreenEnforced).
+        // Showing "Save & Exit" offered the student a friendly-looking button that ends
+        // their exam — the opposite of what it says.
+        saveExitAllowed={!isMidterm}
         onSaveAndExit={handleSaveAndExit}
         onReportProblem={currentQuestion ? () => setReportOpen(true) : undefined}
 

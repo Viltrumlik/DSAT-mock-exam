@@ -20,6 +20,7 @@ interface ExamHeaderProps {
   pauseAllowed: boolean;
   paused: boolean;
   onTogglePause: () => void;
+  saveExitAllowed: boolean;
   onSaveAndExit: () => void;
   onReportProblem?: () => void;
 }
@@ -53,6 +54,7 @@ export function ExamHeader({
   pauseAllowed,
   paused,
   onTogglePause,
+  saveExitAllowed,
   onSaveAndExit,
   onReportProblem,
 }: ExamHeaderProps) {
@@ -118,6 +120,7 @@ export function ExamHeader({
           pauseAllowed={pauseAllowed}
           paused={paused}
           onTogglePause={onTogglePause}
+          saveExitAllowed={saveExitAllowed}
           onSaveAndExit={onSaveAndExit}
         />
       </div>
