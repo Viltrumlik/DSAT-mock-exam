@@ -741,7 +741,26 @@ function MidtermRow({
                       <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
                       <span className="flex-1">
                         {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
-                        {mod.time_limit_minutes != null && <span className="ml-2 text-muted-foreground">{mod.time_limit_minutes} min</span>}
+                        {/*
+                          A midterm's module time comes from the EXAM's own settings, not from
+                          the authored Module row — that field still holds the SAT default (32)
+                          it was created with and the runtime never reads it. Showing it made
+                          this card contradict its own header ("40 + 40 min" above, "32 min"
+                          here) with neither number explaining the other.
+                        */}
+                        {(() => {
+                          const served =
+                            mod.module_order === 2
+                              ? exam.midterm_module_count >= 2
+                                ? exam.midterm_module2_minutes
+                                : null
+                              : exam.midterm_module1_minutes;
+                          return served != null ? (
+                            <span className="ml-2 text-muted-foreground">{served} min</span>
+                          ) : (
+                            <span className="ml-2 text-amber-600">not used — midterm is 1 module</span>
+                          );
+                        })()}
                       </span>
                       <span className="text-xs font-bold text-primary group-hover:underline">Edit questions →</span>
                       <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />

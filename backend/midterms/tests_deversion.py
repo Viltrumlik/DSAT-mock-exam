@@ -181,3 +181,37 @@ class ExistingVersionsSurviveTests(TestCase):
         exam.tests.order_by("id").last().delete()
         upsert_midterm_from_legacy(exam)
         self.assertEqual(mt.versions.count(), 0)  # nothing pointed at them
+
+
+class MirrorModuleClockTests(TestCase):
+    """A version's mirror module must follow the exam's configured minutes on EVERY sync.
+
+    It used to be set only at creation, so versions provisioned back when the sync summed
+    the two builder fields still carried the summed value (64 for a 32+32 paper) long after
+    the real durations became 40+40. Nothing was MIS-TIMED — the runtime reads
+    Midterm.duration_for_order — but every surface displaying this field quoted a number the
+    exam had not used for weeks, which is how the builder ended up showing "40 + 40 min" in
+    its header and "32 min" on the module rows underneath.
+    """
+
+    def test_version_module_times_follow_a_duration_change(self):
+        from midterms.sync import upsert_midterm_from_legacy
+
+        exam = _legacy(forms=2, n=3, two_module=True)
+        mt = Midterm.objects.create(
+            title="Clock", subject=Midterm.MATH, scoring_scale=Midterm.SCALE_100,
+            duration_minutes=30, legacy_mock_exam_id=exam.id, is_published=True,
+        )
+        # a version provisioned with a stale (summed) clock, as production had
+        stale1 = Module.objects.create(practice_test=None, module_order=1, time_limit_minutes=64)
+        stale2 = Module.objects.create(practice_test=None, module_order=2, time_limit_minutes=64)
+        MidtermVersion.objects.create(
+            midterm=mt, version_number=1, question_module=stale1, question_module_2=stale2,
+            legacy_practice_test_id=exam.tests.order_by("id").first().id,
+        )
+
+        upsert_midterm_from_legacy(exam)
+
+        stale1.refresh_from_db(); stale2.refresh_from_db()
+        self.assertEqual(stale1.time_limit_minutes, 30)  # midterm_module1_minutes
+        self.assertEqual(stale2.time_limit_minutes, 20)  # midterm_module2_minutes
