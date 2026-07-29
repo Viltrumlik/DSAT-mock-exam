@@ -1617,15 +1617,29 @@ class ExamsPrometheusMetricsView(APIView):
 
 # ── Admin CRUD Viewsets ───────────────────────────────────────────────────────
 
+
+def _ordered_tests_prefetch() -> Prefetch:
+    """Prefetch a MockExam's forms in a STABLE order.
+
+    ``PracticeTest`` has no ``Meta.ordering``, so a bare ``prefetch_related("tests")``
+    returns whatever the database feels like. The builder labels a midterm's forms
+    "Version A".."Version D" by their position in this list, while the runtime mirror
+    (``midterms.sync._sync_versions``) numbers them by ``id`` — so without an explicit
+    ORDER BY the builder's "Version B" is not necessarily the paper a student sitting
+    Version B receives, and an answer-key correction lands on the wrong form.
+    """
+    return Prefetch(
+        "tests",
+        queryset=PracticeTest.objects.order_by("id").prefetch_related("modules", "modules__questions"),
+    )
+
+
 class AdminMockExamViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, CanManageQuestions]
     serializer_class = AdminMockExamSerializer
 
     def get_queryset(self):
-        base = MockExam.objects.all().prefetch_related(
-            "tests__modules",
-            "tests__modules__questions",
-        )
+        base = MockExam.objects.all().prefetch_related(_ordered_tests_prefetch())
         if not can_manage_questions(self.request.user):
             return base.none()
         return base
@@ -1826,7 +1840,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                 upsert_midterm_from_legacy(exam, sync_questions=True)
             except Exception:
                 logger.exception("midterm mirror sync failed on publish exam_id=%s", exam.pk)
-        exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
+        exam = MockExam.objects.prefetch_related(_ordered_tests_prefetch()).get(pk=exam.pk)
         return Response(AdminMockExamSerializer(exam).data)
 
     @action(detail=True, methods=["post"])
@@ -1843,7 +1857,7 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                 unpublish_midterm_mirror(exam)
             except Exception:
                 logger.exception("midterm mirror unpublish failed exam_id=%s", exam.pk)
-        exam = MockExam.objects.prefetch_related("tests__modules__questions").get(pk=exam.pk)
+        exam = MockExam.objects.prefetch_related(_ordered_tests_prefetch()).get(pk=exam.pk)
         return Response(AdminMockExamSerializer(exam).data)
 
     @action(detail=True, methods=['post'])
