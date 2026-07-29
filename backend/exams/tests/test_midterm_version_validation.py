@@ -38,6 +38,12 @@ class MidtermVersionValidationTests(TestCase):
         return MockExam.objects.create(
             title="MT", kind=MockExam.KIND_MIDTERM, midterm_subject="MATH",
             midterm_module_count=module_count, is_published=False,
+            # A 2-module midterm must also be set to RUN as two timed modules, exactly as
+            # the builder now does — otherwise the runtime serves the whole paper inside
+            # module 1's time. These tests are about VERSION/module structure, so they
+            # author a valid exam and let
+            # tests_midterm_two_module_publish own the runtime-switch rule.
+            midterm_two_module_runtime=module_count >= 2,
         )
 
     def test_one_version_two_modules_is_valid(self):
