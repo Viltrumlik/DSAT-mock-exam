@@ -706,8 +706,22 @@ function MidtermRow({
         </div>
       )}
 
-      {/* Versions → each is a parallel copy with its own questions (max 4). */}
-      <div className="mt-4 space-y-3">
+      {/*
+        Versions → each is a parallel paper with its own questions and its own answer key
+        (max 4). How many you author decides what the seating plan can separate, so say so
+        here: authoring a second form is not a draft or a backup, it changes what half the
+        class sits.
+      */}
+      <p className="mt-4 text-xs text-muted-foreground">
+        {exam.tests.length < 2 ? (
+          <>One version — everyone sits the same paper. Add a second to let the seating plan give desk partners different questions.</>
+        ) : exam.tests.length < 4 ? (
+          <>{exam.tests.length} versions — enough to separate desk partners and the rows in front and behind. Four also separates diagonals.</>
+        ) : (
+          <>Four versions — the seating plan can separate every direction: partner, aisle, front, behind and diagonal.</>
+        )}
+      </p>
+      <div className="mt-3 space-y-3">
         {exam.tests.map((test, vIdx) => {
           const modules = test.modules ?? [];
           return (

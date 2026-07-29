@@ -1,13 +1,17 @@
-"""Midterm VERSIONING is retired: a teacher's test is ONE paper, edited in place.
+"""Midterm VERSIONING: two or more authored forms means two or more parallel papers.
 
-Two rules, and the second is the dangerous one:
-  1. No midterm ever BECOMES versioned. A second authored form is no longer mirrored into a
-     parallel MidtermVersion — only the first form is served.
-  2. A midterm that is ALREADY versioned keeps working. Its attempts pin a version and
-     resolve their questions through it, so the version rows must keep being fed and must
-     NOT be deleted while anything references them. Deleting one cascades its Questions
-     away, and attempt answers key on Question.id — that is silent, total answer loss for
-     everyone mid-sitting.
+Four rules, and the last three are all about the same danger — a version row is not just
+metadata. Deleting one cascades its Questions away while ``MidtermAttempt.version`` is
+SET_NULL, and attempt answers key on ``Question.id``. So a careless teardown is silent,
+total answer loss for everyone sitting that form.
+
+  1. A second authored form becomes a parallel MidtermVersion, automatically. No opt-in.
+  2. Creation is DEFERRED while a class is sitting the midterm — versioning a live room
+     hands the students who start next a different paper from the ones already writing.
+  3. A version is never deleted while an attempt or an assignment references it, no matter
+     which path the delete comes from: reducing the forms, or removing one in the builder.
+  4. The flat question_module is never touched once versions exist, so an attempt created
+     before the flip (version_id=NULL) keeps resolving the exact rows it was served.
 """
 
 from django.contrib.auth import get_user_model
@@ -45,22 +49,76 @@ def _legacy(*, forms=2, n=3, two_module=False, answer="a"):
     return exam
 
 
-class NoNewVersionsTests(TestCase):
-    def test_two_forms_no_longer_create_versions(self):
+def _add_form(exam, *, n=3, answer="b", two_module=False, reuse_last=False):
+    """Author one more form on an existing midterm — what "Add version" does in the builder.
+
+    ``reuse_last`` fills the empty PracticeTest that is already there instead of making a new
+    one, which is the second half of the add-then-author sequence.
+    """
+    pt = exam.tests.order_by("id").last() if reuse_last else PracticeTest.objects.create(
+        mock_exam=exam, subject="MATH", form_type="INTERNATIONAL", skip_default_modules=True
+    )
+    for order in ((1, 2) if two_module else (1,)):
+        mod = Module.objects.create(practice_test=pt, module_order=order, time_limit_minutes=30)
+        for i in range(n):
+            Question.objects.create(
+                module=mod, question_type="MATH", question_text=f"ADDM{order}Q{i}",
+                option_a="A", option_b="B", option_c="C", option_d="D",
+                correct_answers=answer, score=10, order=i,
+            )
+    return pt
+
+
+class VersionsAreCreatedTests(TestCase):
+    def test_two_forms_create_two_versions(self):
         mt = upsert_midterm_from_legacy(_legacy(forms=2, n=3))
-        self.assertEqual(mt.versions.count(), 0)
-        self.assertEqual(mt.questions().count(), 3)  # first form only, not 6
+        self.assertEqual(mt.versions.count(), 2)
+        for version in mt.versions.order_by("version_number"):
+            self.assertEqual(version.total_question_count(), 3)
+        self.assertEqual([v.label for v in mt.versions.order_by("version_number")],
+                         ["Version A", "Version B"])
 
-    def test_two_forms_two_module_serves_only_the_first_form(self):
+    def test_version_numbers_follow_the_authored_form_order(self):
+        # The builder labels forms A..D by their position in an id-ordered list; the mirror
+        # must number them the same way, or a teacher's answer-key fix lands on the form a
+        # different group of students is sitting.
+        exam = _legacy(forms=2, n=1)
+        mt = upsert_midterm_from_legacy(exam)
+        first_pt, second_pt = list(exam.tests.order_by("id"))
+        by_number = {v.version_number: v for v in mt.versions.all()}
+        self.assertEqual(by_number[1].legacy_practice_test_id, first_pt.id)
+        self.assertEqual(by_number[2].legacy_practice_test_id, second_pt.id)
+
+    def test_each_version_gets_both_modules(self):
         mt = upsert_midterm_from_legacy(_legacy(forms=2, n=3, two_module=True))
-        self.assertEqual(mt.versions.count(), 0)
-        self.assertEqual(mt.questions_for_order(1).count(), 3)
-        self.assertEqual(mt.questions_for_order(2).count(), 3)
-        self.assertEqual(mt.total_question_count(), 6)
+        self.assertEqual(mt.versions.count(), 2)
+        for version in mt.versions.order_by("version_number"):
+            self.assertEqual(version.questions_for_order(1).count(), 3)
+            self.assertEqual(version.questions_for_order(2).count(), 3)
+            self.assertEqual(version.total_question_count(), 6)
+            self.assertEqual(version.module_count(), 2)
 
-    def test_a_teacher_edit_changes_the_paper_in_place(self):
+    def test_each_version_keeps_its_own_answer_key(self):
+        exam = _legacy(forms=2, n=2)
+        # Give the second form a different key so a cross-wired mirror is visible.
+        Question.objects.filter(module__practice_test=exam.tests.order_by("id").last()).update(
+            correct_answers="c"
+        )
+        mt = upsert_midterm_from_legacy(exam)
+        keys = [
+            sorted({q.correct_answers for q in v.all_questions()})
+            for v in mt.versions.order_by("version_number")
+        ]
+        self.assertEqual(keys, [["a"], ["c"]])
+
+    def test_one_form_stays_unversioned(self):
+        mt = upsert_midterm_from_legacy(_legacy(forms=1, n=3))
+        self.assertEqual(mt.versions.count(), 0)
+        self.assertEqual(mt.questions().count(), 3)
+
+    def test_a_teacher_edit_changes_a_single_form_paper_in_place(self):
         """The user's requirement: edit the test, it changes where it already is."""
-        exam = _legacy(forms=2, n=3)
+        exam = _legacy(forms=1, n=3)
         mt = upsert_midterm_from_legacy(exam)
         ids_before = [q.id for q in mt.questions()]
 
@@ -76,6 +134,127 @@ class NoNewVersionsTests(TestCase):
         edited = mt.questions().order_by("order").first()
         self.assertEqual(edited.question_text, "EDITED")
         self.assertEqual(edited.correct_answers, "d")
+
+    def test_a_teacher_edit_changes_a_versioned_paper_in_place(self):
+        exam = _legacy(forms=2, n=3)
+        mt = upsert_midterm_from_legacy(exam)
+        version = mt.versions.order_by("version_number").first()
+        ids_before = [q.id for q in version.questions()]
+
+        first_form_q = Question.objects.filter(
+            module__practice_test=exam.tests.order_by("id").first()
+        ).order_by("order").first()
+        first_form_q.question_text = "EDITED"
+        first_form_q.correct_answers = "d"
+        first_form_q.save()
+
+        upsert_midterm_from_legacy(exam)
+        version.refresh_from_db()
+        self.assertEqual([q.id for q in version.questions()], ids_before)  # ids preserved
+        edited = version.questions().order_by("order").first()
+        self.assertEqual(edited.question_text, "EDITED")
+        self.assertEqual(edited.correct_answers, "d")
+
+
+class VersioningSafetyTests(TestCase):
+    """The guards that stop restoring versioning from hurting anyone mid-sitting."""
+
+    def setUp(self):
+        self.student = User.objects.create(username="safety-stud", email="safety@x.io")
+
+    def test_restoring_versioning_does_not_dereference_a_live_attempts_answers(self):
+        exam = _legacy(forms=1, n=3)
+        mt = upsert_midterm_from_legacy(exam)
+        att = MidtermAttempt.objects.create(midterm=mt, student=self.student)
+        att.start_attempt()
+        qids = [str(q.id) for q in att.effective_questions()]
+        att.autosave(answers={qids[0]: "a", qids[1]: "b"})
+        att.submit_final()  # finish, so the sitting no longer defers version creation
+
+        # A second form is authored -> the midterm becomes versioned.
+        _add_form(exam, n=3, answer="c")
+        mt = upsert_midterm_from_legacy(exam)
+        self.assertEqual(mt.versions.count(), 2)
+
+        att.refresh_from_db()
+        self.assertIsNone(att.version_id)  # still resolves through the flat module
+        still = {str(q.id) for q in att.effective_questions()}
+        self.assertEqual(set(qids), still)  # every Question.id survived
+        self.assertEqual(att.answers, {qids[0]: "a", qids[1]: "b"})
+
+    def test_a_live_sitting_defers_version_creation(self):
+        exam = _legacy(forms=1, n=3)
+        mt = upsert_midterm_from_legacy(exam)
+        att = MidtermAttempt.objects.create(midterm=mt, student=self.student)
+        att.start_attempt()  # the room is now occupied
+
+        _add_form(exam, n=3)
+        mt = upsert_midterm_from_legacy(exam)
+        # Versioning a live room would hand the next student to press Start a different
+        # paper from the person already writing.
+        self.assertEqual(mt.versions.count(), 0)
+        self.assertEqual(mt.questions().count(), 3)
+
+        att.submit_final()
+        mt = upsert_midterm_from_legacy(exam)
+        self.assertEqual(mt.versions.count(), 2)  # created once the room empties
+
+    def test_an_already_versioned_midterm_is_fed_even_mid_sitting(self):
+        # The deferral must not starve a midterm that is ALREADY versioned: its attempts
+        # resolve through their pinned version, so cutting the feed freezes their content.
+        exam = _legacy(forms=2, n=3)
+        mt = upsert_midterm_from_legacy(exam)
+        version = mt.versions.order_by("version_number").first()
+        att = MidtermAttempt.objects.create(midterm=mt, student=self.student, version=version)
+        att.start_attempt()
+
+        Question.objects.filter(
+            module__practice_test=exam.tests.order_by("id").first()
+        ).update(question_text="EDITED MID-SITTING")
+        upsert_midterm_from_legacy(exam)
+
+        version.refresh_from_db()
+        self.assertEqual(version.questions().count(), 3)
+        self.assertTrue(all(q.question_text == "EDITED MID-SITTING" for q in version.questions()))
+
+    def test_removing_a_form_does_not_cascade_a_live_versions_questions(self):
+        # "Remove" in the builder deletes the PracticeTest; the mirror then finds a version
+        # whose form is gone. That tail used to be a bare delete() — a two-click path to
+        # destroying the answers of whoever was sitting that form.
+        exam = _legacy(forms=2, n=3)
+        mt = upsert_midterm_from_legacy(exam)
+        version = mt.versions.order_by("version_number").last()
+        att = MidtermAttempt.objects.create(midterm=mt, student=self.student, version=version)
+        att.start_attempt()
+        qids = [str(q.id) for q in att.effective_questions()]
+        att.autosave(answers={qids[0]: "a"})
+
+        exam.tests.order_by("id").last().delete()
+        upsert_midterm_from_legacy(exam)
+
+        version.refresh_from_db()
+        att.refresh_from_db()
+        self.assertEqual(att.version_id, version.id)
+        self.assertEqual(version.questions().count(), 3)
+        self.assertEqual({str(q.id) for q in att.effective_questions()}, set(qids))
+        self.assertEqual(att.answers, {qids[0]: "a"})
+
+    def test_an_empty_added_form_does_not_become_a_version(self):
+        # "Add version" makes an EMPTY PracticeTest and resyncs immediately. Minting a
+        # version from it would put a blank paper into the assignable pool of a published
+        # midterm and seat a student on nothing.
+        exam = _legacy(forms=1, n=3)
+        upsert_midterm_from_legacy(exam)
+        PracticeTest.objects.create(
+            mock_exam=exam, subject="MATH", form_type="INTERNATIONAL", skip_default_modules=True
+        )
+        mt = upsert_midterm_from_legacy(exam)
+        self.assertEqual(mt.versions.count(), 0)
+
+        # ...and once it has questions, it does.
+        _add_form(exam, n=3, reuse_last=True)
+        mt = upsert_midterm_from_legacy(exam)
+        self.assertEqual(mt.versions.count(), 2)
 
 
 class ExistingVersionsSurviveTests(TestCase):

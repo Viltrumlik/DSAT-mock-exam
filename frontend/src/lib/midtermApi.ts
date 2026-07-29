@@ -187,12 +187,20 @@ export const midtermApi = {
     const r = await api.get(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`);
     return r.data as VersionAssignData;
   },
-  /** A fresh random even distribution across versions (NOT saved). */
-  async previewVersions(classroomId: number, midtermId: number): Promise<{ assignments: VersionAssignRow[]; versions: MidtermVersionBrief[] }> {
-    const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`, { action: "preview" });
+  /** A fresh shuffle of the class into the desk grid (NOT saved). */
+  async previewVersions(classroomId: number, midtermId: number, columns?: number): Promise<VersionPreviewData> {
+    const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`, {
+      action: "preview",
+      ...(columns ? { columns } : {}),
+    });
+    return r.data as VersionPreviewData;
+  },
+  /** Persist the seating chart: who sits where, and which paper that chair gets. */
+  async commitSeating(classroomId: number, midtermId: number, body: { columns: number; seats: SeatCommit[] }): Promise<VersionPreviewData & { detail: string }> {
+    const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`, { action: "commit", ...body });
     return r.data;
   },
-  /** Persist a { student_id: version_id } mapping. */
+  /** Persist a { student_id: version_id } mapping, with no seats. */
   async commitVersions(classroomId: number, midtermId: number, assignments: Record<number, number>): Promise<{ detail: string; assignments: VersionAssignRow[] }> {
     const r = await api.post(`/classes/${classroomId}/midterms-v2/${midtermId}/versions/`, { action: "commit", assignments });
     return r.data;
@@ -200,11 +208,53 @@ export const midtermApi = {
 };
 
 export interface MidtermVersionBrief { id: number; version_number: number; label: string }
-export interface VersionAssignRow { student_id: number; student_name: string; version_id: number; version_number: number; version_label: string }
-export interface VersionAssignData {
-  has_versions: boolean;
+export interface VersionAssignRow {
+  student_id: number;
+  student_name: string;
+  version_id: number;
+  version_number: number;
+  version_label: string;
+  /** 0-based desk row; null on rows saved before seating existed. */
+  seat_row?: number | null;
+  /** 0-based GLOBAL seat column across the row — desk 0 owns 0 and 1, desk 1 owns 2 and 3. */
+  seat_col?: number | null;
+  side?: number | null;
+  desk_number?: number | null;
+  /** The student already has an attempt — their paper is no longer ours to change. */
+  locked?: boolean;
+}
+/** One chair. `student_id` is null for an empty seat; the version still belongs to the chair. */
+export interface SeatOccupant {
+  side: number;
+  seat_col: number;
+  student_id: number | null;
+  student_name: string | null;
+  version_id: number | null;
+  version_number: number | null;
+  version_label: string | null;
+  locked: boolean;
+}
+export interface SeatingDesk { row: number; desk_col: number; desk_number: number; seats: SeatOccupant[] }
+export interface SeatingGrid {
+  columns: number;
+  rows: number;
+  desk_count: number;
+  seat_count: number;
+  student_count: number;
+  /** version_id (as a string key) -> how many students sit it. */
+  version_counts: Record<string, number>;
+  warnings: string[];
+  any_started: boolean;
+  desks: SeatingDesk[];
+}
+export interface SeatCommit { student_id: number; version_id: number; row: number; col: number }
+export interface VersionPreviewData {
   versions: MidtermVersionBrief[];
   assignments: VersionAssignRow[];
+  seating: SeatingGrid | null;
+}
+export interface VersionAssignData extends VersionPreviewData {
+  has_versions: boolean;
   unassigned_count: number;
 }
 

@@ -962,16 +962,26 @@ class MidtermAttemptEngineAudit(models.Model):
 class MidtermVersionAssignment(models.Model):
     """Which version of a midterm a student was given (classroom flavor).
 
-    Written by the teacher's random-assignment step and consumed at attempt creation to
-    pin ``MidtermAttempt.version``. Students never see this — the version is invisible to
+    Written by the teacher's seating step and consumed at attempt creation to pin
+    ``MidtermAttempt.version``. Students never see this — the version is invisible to
     them. Scoped per (midterm, classroom, student) so the same midterm can be assigned
     independently in different classrooms.
+
+    The seat is stored alongside the version because the two are one decision: the version
+    is a property of the CHAIR (see ``midterms.seating``), so a row that kept the version but
+    forgot the seat could not be re-checked, redrawn, or extended for a latecomer.
     """
 
     midterm = models.ForeignKey(Midterm, on_delete=models.CASCADE, related_name="version_assignments", db_index=True)
     classroom = models.ForeignKey("classes.Classroom", on_delete=models.CASCADE, related_name="+", db_index=True)
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+", db_index=True)
     version = models.ForeignKey(MidtermVersion, on_delete=models.CASCADE, related_name="assignments")
+    # 0-based desk row, and 0-based GLOBAL seat column across that row (desk 0 owns columns
+    # 0 and 1, desk 1 owns 2 and 3, ...). Desk and side derive: seat_col // 2 and seat_col % 2.
+    # Nullable: rows written before seating existed, and a legacy version-only commit, have
+    # no seat.
+    seat_row = models.PositiveSmallIntegerField(null=True, blank=True)
+    seat_col = models.PositiveSmallIntegerField(null=True, blank=True)
     assigned_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
     )
@@ -984,4 +994,25 @@ class MidtermVersionAssignment(models.Model):
             models.UniqueConstraint(
                 fields=["midterm", "classroom", "student"], name="uniq_midterm_version_assignment"
             ),
+            # One chair, one student. Partial so the unseated legacy rows are exempt.
+            models.UniqueConstraint(
+                fields=["midterm", "classroom", "seat_row", "seat_col"],
+                condition=models.Q(seat_row__isnull=False, seat_col__isnull=False),
+                name="uniq_midterm_classroom_seat",
+            ),
         ]
+
+    @property
+    def desk_col(self) -> int | None:
+        return None if self.seat_col is None else self.seat_col // 2
+
+    @property
+    def side(self) -> int | None:
+        """0 = left chair, 1 = right chair."""
+        return None if self.seat_col is None else self.seat_col % 2
+
+    def desk_number(self, columns: int) -> int | None:
+        """1-based desk number in reading order, for the label on the physical desk."""
+        if self.seat_row is None or self.seat_col is None:
+            return None
+        return self.seat_row * max(1, columns) + (self.seat_col // 2) + 1

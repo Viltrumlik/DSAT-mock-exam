@@ -134,9 +134,11 @@ class UpsertMidtermFromLegacyTests(TestCase):
 
     def test_adding_a_second_form_preserves_an_existing_attempt_questions(self):
         # Regression: adding a second authored form to a midterm that already has attempts
-        # must NOT disturb the questions those attempts resolve. Versioning is retired, so
-        # the second form is simply not served — but the guarantee that matters is the same
-        # one as before: the flat module's Question.ids are untouched, so nothing is orphaned.
+        # must NOT disturb the questions those attempts resolve. The second form now DOES
+        # become a parallel version — and the guarantee that makes that safe is that the
+        # versioned branch never touches the flat question_module, so an attempt created
+        # before the flip (version_id=NULL) keeps resolving the exact Question rows it was
+        # served. Break this and every pre-existing attempt's answers are de-referenced.
         exam, _mod = _legacy_midterm(n_questions=3)
         mt = upsert_midterm_from_legacy(exam)
         self.assertEqual(mt.questions().count(), 3)
@@ -160,10 +162,11 @@ class UpsertMidtermFromLegacyTests(TestCase):
             )
         mt2 = upsert_midterm_from_legacy(exam, sync_questions=True)
 
-        # No version is created (versioning retired)...
-        self.assertEqual(mt2.versions.count(), 0)
+        # The second form becomes a parallel version...
+        self.assertEqual(mt2.versions.count(), 2)
         # ...and the flat module is INTACT, so the existing attempt isn't orphaned.
         self.assertEqual(sorted(q.id for q in mt2.questions()), flat_ids_before)
+        self.assertIsNone(attempt.version_id)
         self.assertEqual(sorted(q.id for q in attempt.effective_questions()), flat_ids_before)
 
     def test_non_midterm_is_ignored(self):

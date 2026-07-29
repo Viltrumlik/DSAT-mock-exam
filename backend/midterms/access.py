@@ -13,6 +13,8 @@ Two flavors:
 
 from __future__ import annotations
 
+import logging
+
 from django.db.models import Q
 from django.utils import timezone
 
@@ -20,6 +22,8 @@ from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
 
 from .models import Midterm, MidtermAttempt
+
+logger = logging.getLogger(__name__)
 
 FLAVOR_CLASSROOM = "CLASSROOM"
 FLAVOR_STANDALONE = "STANDALONE"
@@ -202,15 +206,27 @@ def resolve_midterm_schedule(user, midterm):
 def resolve_version_for_student(user, midterm):
     """The MidtermVersion this student takes, or None when the midterm has no versions.
 
-    Uses the teacher's saved random assignment (classroom flavor); if versions exist but
-    none is assigned yet, auto-assigns one at random so no student is ever blocked (and
-    persists it for the classroom so a re-open is stable).
+    Order of preference:
+      1. The seat the teacher committed for them.
+      2. A free seat in that committed plan, if they were not in it when it was made —
+         a latecomer is a real person at a real desk, and drawing at random here would let
+         them match the neighbour the plan exists to separate.
+      3. A uniformly random version, when there is no plan at all.
+
+    Whatever happens, this must never block a student, so every failure falls through to (3).
     """
     from .models import MidtermVersion, MidtermVersionAssignment
+    from .seating import place_latecomer
 
     versions = list(MidtermVersion.objects.filter(midterm=midterm).order_by("version_number"))
     if not versions:
         return None
+    # Skip papers with no questions, and use the SAME list the teacher's seating plan was
+    # built from — the version a seat resolves to is an index into this list, so a version
+    # the two sides disagree about shifts every seat's paper by one. Never filter the list
+    # empty: a versioned midterm's flat module is unused, so no version means no exam.
+    answerable = [v for v in versions if v.total_question_count() > 0]
+    versions = answerable or versions
     grant = winning_grant(user, midterm)
     classroom_id = grant.classroom_id if grant else None
     if classroom_id:
@@ -221,6 +237,15 @@ def resolve_version_for_student(user, midterm):
         )
         if existing is not None:
             return existing.version
+        try:
+            seated = place_latecomer(midterm, classroom_id, user, versions)
+        except Exception:  # pragma: no cover - defensive; a seat is never worth a 500
+            logger.exception(
+                "midterm %s: seating a latecomer failed, falling back to random", midterm.pk
+            )
+            seated = None
+        if seated is not None:
+            return seated
     import secrets
 
     chosen = versions[secrets.randbelow(len(versions))]

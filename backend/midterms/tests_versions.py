@@ -93,9 +93,12 @@ class MidtermVersionTests(TestCase):
 
 
 class MidtermVersionSyncTests(TestCase):
-    def test_sync_no_longer_mirrors_two_practice_tests_into_versions(self):
-        """Versioning is RETIRED: a second authored form no longer becomes a parallel
-        version. The teacher's midterm is one paper, served and edited in place."""
+    def test_sync_mirrors_two_practice_tests_into_versions(self):
+        """Two authored forms become two parallel versions, each with its OWN answer key.
+
+        The keys differ here on purpose: a mirror that cross-wired the forms would still
+        produce two versions and still look right in every count, and would only surface as
+        half a class being graded against the wrong paper."""
         from exams.models import MockExam, PracticeTest
         from exams.models import Module as XModule, Question as XQuestion
         from midterms.sync import upsert_midterm_from_legacy
@@ -114,10 +117,15 @@ class MidtermVersionSyncTests(TestCase):
                     correct_answers=correct, is_math_input=False, score=10, order=i,
                 )
         midterm = upsert_midterm_from_legacy(mock)
-        self.assertEqual(midterm.versions.count(), 0)
-        # Only the FIRST form is served, on the midterm's own module.
-        self.assertEqual(midterm.questions().count(), 3)
-        self.assertTrue(all(q.correct_answers == "a" for q in midterm.questions()))
+        self.assertEqual(midterm.versions.count(), 2)
+        v1, v2 = midterm.versions.order_by("version_number")
+        self.assertEqual(v1.questions().count(), 3)
+        self.assertTrue(all(q.correct_answers == "a" for q in v1.questions()))
+        self.assertTrue(all(q.correct_answers == "b" for q in v2.questions()))
+        # The flat module is left alone once versions exist — it is what any attempt made
+        # before the flip still resolves through.
+        self.assertEqual(midterm.questions().count(), 0)
+        self.assertEqual(midterm.display_question_count(), 3)
 
 
 class VersionAssignmentApiTests(TestCase):
