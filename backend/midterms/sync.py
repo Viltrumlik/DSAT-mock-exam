@@ -396,12 +396,25 @@ def _sync_versions(midterm, practice_tests, *, two_module: bool = False, duratio
                 version.question_module = module
                 version.save(update_fields=["question_module"])
 
+        # Keep the mirror module's own clock in step, not just on create. It was only ever
+        # SET at creation, so versions provisioned back when the sync summed the two builder
+        # fields still carried the summed value (64 for a 32+32 paper) long after the real
+        # durations became 40+40. The runtime reads Midterm.duration_for_order, so nothing
+        # was mis-timed — but every surface that displays this field was quoting a number
+        # the exam had not used for weeks.
+        if module is not None and module.time_limit_minutes != duration:
+            module.time_limit_minutes = duration
+            module.save(update_fields=["time_limit_minutes"])
+
         if two_module:
             module2 = version.question_module_2
             if module2 is None:
                 module2 = Module.objects.create(practice_test=None, module_order=2, time_limit_minutes=dur2)
                 version.question_module_2 = module2
                 version.save(update_fields=["question_module_2"])
+            elif module2.time_limit_minutes != dur2:
+                module2.time_limit_minutes = dur2
+                module2.save(update_fields=["time_limit_minutes"])
             v1_live = _questions_for_legacy_order([pt], 1)
             # Preserve in-progress attempt answers on a single→two flip (see the non-versioned
             # branch): re-home this version's overflow rows into module 2 keeping Question.id.
