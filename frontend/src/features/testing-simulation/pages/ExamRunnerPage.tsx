@@ -872,6 +872,17 @@ export function ExamRunnerPage() {
           title={details.title || moduleLabel(attempt)}
           subjectLabel={subjLabel}
           minutes={startMinutes}
+          // The per-module split, so "80 min" can't be read as 80 CONTINUOUS minutes. A
+          // student who paces for one long sitting loses module 1 at its own buzzer and
+          // cannot go back to it.
+          moduleMinutes={
+            isMidterm && allModules.length > 1
+              ? allModules
+                  .slice()
+                  .sort((a, b) => (a.module_order ?? 0) - (b.module_order ?? 0))
+                  .map((m) => m.time_limit_minutes ?? 0)
+              : undefined
+          }
           questionCount={startQuestionCount}
           starting={starting}
           fullscreenSupported={tools.fullscreen.supported}

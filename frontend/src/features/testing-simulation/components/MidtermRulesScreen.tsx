@@ -32,6 +32,8 @@ interface MidtermRulesScreenProps {
   title: string;
   subjectLabel: string;
   minutes?: number;
+  /** Per-module minutes for a multi-module paper, in order (e.g. [40, 40]). */
+  moduleMinutes?: number[];
   questionCount?: number;
   starting: boolean;
   fullscreenSupported: boolean;
@@ -125,6 +127,7 @@ export function MidtermRulesScreen({
   title,
   subjectLabel,
   minutes,
+  moduleMinutes,
   questionCount,
   starting,
   fullscreenSupported,
@@ -161,6 +164,13 @@ export function MidtermRulesScreen({
               <Clock className="mx-auto h-5 w-5 text-slate-500" />
               <div className="mt-2 text-lg font-bold text-slate-900">{minutes ? `${minutes} min` : "—"}</div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Time</div>
+              {moduleMinutes && moduleMinutes.length > 1 && (
+                // Spell the split out: the total is NOT one continuous sitting. Each module
+                // ends at its own buzzer and cannot be returned to.
+                <div className="mt-1 text-[11px] font-medium text-slate-500">
+                  {moduleMinutes.join(" + ")} min
+                </div>
+              )}
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center">
               <ListChecks className="mx-auto h-5 w-5 text-slate-500" />
