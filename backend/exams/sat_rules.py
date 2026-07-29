@@ -282,6 +282,25 @@ def validate_mock_exam(exam: "MockExam") -> list[SatViolation]:
                             blocking=True,
                         )
                     )
+        # A midterm authored as TWO modules but not set to RUN as two is the exact shape of a
+        # production incident: every question is served in one flat module on module 1's
+        # timer, so students get the whole paper in half the time and module 2's minutes are
+        # silently discarded. It is only ever a mis-set switch — nobody authors two timed
+        # modules meaning "one long section" (that is what "1 module" is for) — so publishing
+        # it is blocked rather than warned about.
+        if need_mods >= 2 and not getattr(exam, "midterm_two_module_runtime", False):
+            violations.append(
+                SatViolation(
+                    code="MIDTERM_TWO_MODULE_RUNTIME_OFF",
+                    message=(
+                        "This midterm has 2 modules but is not set to run as two timed "
+                        "modules, so students would get every question inside module 1's "
+                        "time and module 2's minutes would be ignored. Turn on "
+                        "\"Run as two sequential timed modules\", or set it to 1 module."
+                    ),
+                    blocking=True,
+                )
+            )
         return violations
 
     # MOCK_SAT — full Digital SAT simulation: strict structural validation.
