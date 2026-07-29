@@ -240,6 +240,50 @@ def columns_from_seat_cols(seat_cols: Iterable[int]) -> int:
     return clamp_columns(max(cols) // SEATS_PER_DESK + 1)
 
 
+def place_latecomer(midterm, classroom_id, user, versions: Sequence) -> object | None:
+    """Seat a student who was not in the committed plan, and give them that seat's version.
+
+    Returns the ``MidtermVersion``, or None when there is no committed plan to extend — the
+    caller then keeps its own behaviour (a uniformly random draw).
+
+    Without this, a student who joined the class after the teacher committed the chart would
+    draw a version at random while sitting at a real desk the system knows nothing about,
+    and could land on the same paper as the person beside them. That is the exact failure
+    the seating plan exists to prevent, and it would happen silently.
+    """
+    from django.db import IntegrityError, transaction
+
+    from .models import MidtermVersionAssignment
+
+    if not versions:
+        return None
+
+    for _attempt in range(2):  # one retry: two latecomers can race for the same chair
+        try:
+            with transaction.atomic():
+                rows = list(
+                    MidtermVersionAssignment.objects.select_for_update()
+                    .filter(midterm=midterm, classroom_id=classroom_id, seat_row__isnull=False)
+                    .values_list("student_id", "seat_row", "seat_col")
+                )
+                if not rows:
+                    return None  # no plan to extend
+                occupied = {(row, col) for _sid, row, col in rows}
+                columns = columns_from_seat_cols(col for _sid, _row, col in rows)
+                seat_row, seat_col = next_free_seat(occupied, columns)
+                version = versions[version_index_for(seat_row, seat_col, len(versions)) % len(versions)]
+                assignment, _created = MidtermVersionAssignment.objects.get_or_create(
+                    midterm=midterm,
+                    classroom_id=classroom_id,
+                    student=user,
+                    defaults={"version": version, "seat_row": seat_row, "seat_col": seat_col},
+                )
+                return assignment.version
+        except IntegrityError:
+            continue  # the seat was taken under us — recompute against the new occupancy
+    return None
+
+
 def next_free_seat(occupied: set[tuple[int, int]], columns: int) -> tuple[int, int]:
     """The first unused ``(row, seat_col)`` in reading order, extending into a new row.
 

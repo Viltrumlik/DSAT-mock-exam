@@ -15,6 +15,7 @@ import io
 import zipfile
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.http import HttpResponse
 from rest_framework import status as http
 from rest_framework.response import Response
@@ -30,7 +31,18 @@ from midterms.certificate_service import (
     _latest_completed_attempts,
     issue_classroom_certificates,
 )
-from midterms.models import Midterm, MidtermVersion, MidtermVersionAssignment
+from midterms.models import Midterm, MidtermAttempt, MidtermVersion, MidtermVersionAssignment
+from midterms.seating import (
+    DEFAULT_COLUMNS,
+    SEATS_PER_DESK,
+    DeskSlot,
+    SeatingPlan,
+    SeatSlot,
+    build_seating_plan,
+    clamp_columns,
+    columns_from_seat_cols,
+    validate_plan,
+)
 
 from .capabilities import classroom_capabilities
 from .mail_midterm import notify_class_midterm_scheduled
@@ -98,10 +110,14 @@ def _version_brief(v: MidtermVersion) -> dict:
 
 def _assignment_map(midterm, classroom):
     """student_id -> MidtermVersion for this classroom+midterm (current saved assignments)."""
-    return {
-        a.student_id: a.version
-        for a in MidtermVersionAssignment.objects.filter(midterm=midterm, classroom=classroom).select_related("version")
-    }
+    return {a.student_id: a.version for a in _assignment_rows(midterm, classroom)}
+
+
+def _assignment_rows(midterm, classroom):
+    """The saved MidtermVersionAssignment rows, version preloaded."""
+    return list(
+        MidtermVersionAssignment.objects.filter(midterm=midterm, classroom=classroom).select_related("version")
+    )
 
 
 class ClassroomMidtermsV2ListView(_ClassroomScopedView):
@@ -332,7 +348,10 @@ class MidtermV2PanelView(_ClassroomScopedView):
             )
         }
 
-        assign_map = _assignment_map(midterm, classroom)
+        assignment_rows = _assignment_rows(midterm, classroom)
+        assign_map = {a.student_id: a.version for a in assignment_rows}
+        seat_map = {a.student_id: (a.seat_row, a.seat_col) for a in assignment_rows if a.seat_row is not None}
+        seat_columns = columns_from_seat_cols(col for _row, col in seat_map.values())
         students = []
         scores = []
         for sid in cohort:
@@ -341,6 +360,7 @@ class MidtermV2PanelView(_ClassroomScopedView):
             if score is not None:
                 scores.append(score)
             ver = assign_map.get(sid)
+            seat = seat_map.get(sid)
             students.append({
                 "student_id": sid,
                 "student_name": _display_name(users.get(sid)),
@@ -351,6 +371,10 @@ class MidtermV2PanelView(_ClassroomScopedView):
                 "certificate_code": codes.get(sid),
                 "version_number": ver.version_number if ver else None,
                 "version_label": (ver.label or f"Version {ver.version_number}") if ver else None,
+                "seat_row": seat[0] if seat else None,
+                "seat_col": seat[1] if seat else None,
+                "side": seat[1] % SEATS_PER_DESK if seat else None,
+                "desk_number": (seat[0] * seat_columns + seat[1] // SEATS_PER_DESK + 1) if seat else None,
             })
         students.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0), r["student_name"]))
 
@@ -458,34 +482,140 @@ class MidtermV2StartCodeView(_ClassroomScopedView):
 
 
 class AssignVersionsView(_ClassroomScopedView):
-    """Random version assignment for a versioned midterm.
+    """Seating + version assignment for a versioned midterm.
 
-    GET  → versions + current per-student assignments.
-    POST {action:"preview"}  → a fresh random EVEN distribution of the cohort across the
-         versions (NOT saved), so the teacher can re-random before committing.
-    POST {action:"commit", assignments:{student_id: version_id}} → persist the mapping.
+    The system decides who sits where AND which paper each chair gets, so that no student
+    can read a useful answer off a desk partner, an across-the-aisle neighbour, or the row
+    in front or behind (see ``midterms.seating``).
+
+    GET  → versions, per-student assignments, and the saved seating grid.
+    POST {action:"preview", columns} → a fresh shuffle of the cohort into the grid, NOT
+         saved, so the teacher can re-shuffle before committing.
+    POST {action:"commit", columns, seats:[{student_id, version_id, row, col}]} → persist.
+         Still accepts the older {assignments:{student_id: version_id}} shape, which writes
+         versions with no seats.
+
     Students never see any of this; the version is applied silently on their next start.
     """
 
     def _cohort_and_versions(self, classroom, midterm):
-        cohort = list(_classroom_cohort_ids(midterm, classroom))
-        versions = list(MidtermVersion.objects.filter(midterm=midterm).order_by("version_number"))
+        """The cohort in a STABLE order, and the versions a student can actually be given.
+
+        The cohort helper returns an unordered set, whose iteration order drifts as it
+        grows — sorting it puts a deterministic base under the explicit shuffle, so
+        "Re-shuffle" is the only thing that moves people.
+
+        Empty versions are filtered out: "Add version" in the builder makes a blank form,
+        and seating somebody on a paper with no questions is worse than not seating them.
+        """
+        cohort_ids = _classroom_cohort_ids(midterm, classroom)
+        users = {u.id: u for u in User.objects.filter(pk__in=cohort_ids)}
+        cohort = sorted(cohort_ids, key=lambda sid: (_display_name(users.get(sid)).casefold(), sid))
+        versions = [
+            v
+            for v in MidtermVersion.objects.filter(midterm=midterm).order_by("version_number")
+            if v.total_question_count() > 0
+        ]
         return cohort, versions
 
-    def _rows(self, mapping):
+    def _started_ids(self, midterm, classroom, cohort) -> set:
+        """Students who already have an attempt — their version is no longer ours to change."""
+        return set(
+            MidtermAttempt.objects.filter(midterm=midterm, student_id__in=cohort).values_list(
+                "student_id", flat=True
+            )
+        )
+
+    # ── serialisation ────────────────────────────────────────────────────────
+
+    def _rows(self, mapping, *, seats=None, started=(), columns=DEFAULT_COLUMNS):
+        """The flat per-student list. Keys are additive over the pre-seating shape."""
         users = {u.id: u for u in User.objects.filter(pk__in=mapping.keys())}
-        out = [
-            {
+        seats = seats or {}
+        out = []
+        for sid, ver in mapping.items():
+            seat = seats.get(sid)
+            row, col = (seat if seat else (None, None))
+            out.append({
                 "student_id": sid,
                 "student_name": _display_name(users.get(sid)),
                 "version_id": ver.id,
                 "version_number": ver.version_number,
                 "version_label": ver.label or f"Version {ver.version_number}",
-            }
-            for sid, ver in mapping.items()
-        ]
+                "seat_row": row,
+                "seat_col": col,
+                "side": None if col is None else col % SEATS_PER_DESK,
+                "desk_number": None if row is None else row * columns + col // SEATS_PER_DESK + 1,
+                "locked": sid in started,
+            })
         out.sort(key=lambda r: r["student_name"])
         return out
+
+    def _grid(self, *, placed, versions, columns, warnings, started, student_count):
+        """Render ``{(row, col): (student_id, version)}`` as the desk grid the teacher sees.
+
+        Built from whatever is placed rather than from the generator, so a grid read back
+        from the database and a grid just previewed serialise identically.
+        """
+        if not placed:
+            return None
+        users = {u.id: u for u in User.objects.filter(pk__in=[sid for sid, _ in placed.values()])}
+        rows = max(r for r, _ in placed) + 1
+        width = _grid_width(placed, columns)
+        desks = []
+        # EVERY position in the grid is emitted, so a chair left empty by a student who was
+        # removed from the class shows as a hole rather than sliding the rest of the row
+        # left. Only fully-empty desks trailing off the end are trimmed.
+        for row in range(rows):
+            for desk_col in range(width):
+                seats = []
+                for side in range(SEATS_PER_DESK):
+                    col = desk_col * SEATS_PER_DESK + side
+                    sid, ver = placed.get((row, col), (None, None))
+                    seats.append({
+                        "side": side,
+                        "seat_col": col,
+                        "student_id": sid,
+                        "student_name": _display_name(users.get(sid)) if sid else None,
+                        "version_id": ver.id if ver else None,
+                        "version_number": ver.version_number if ver else None,
+                        "version_label": (ver.label or f"Version {ver.version_number}") if ver else None,
+                        "locked": bool(sid) and sid in started,
+                    })
+                desks.append({
+                    "row": row,
+                    "desk_col": desk_col,
+                    "desk_number": row * width + desk_col + 1,
+                    "seats": seats,
+                })
+        while len(desks) > 1 and all(s["student_id"] is None for s in desks[-1]["seats"]):
+            desks.pop()
+        counts: dict[str, int] = {}
+        for _sid, ver in placed.values():
+            if ver is not None:
+                counts[str(ver.id)] = counts.get(str(ver.id), 0) + 1
+        return {
+            "columns": width,
+            "rows": rows,
+            "desk_count": len(desks),
+            "seat_count": len(desks) * SEATS_PER_DESK,
+            "student_count": student_count,
+            "version_counts": counts,
+            "warnings": list(warnings),
+            "any_started": bool(started),
+            "desks": desks,
+        }
+
+    def _saved_state(self, classroom, midterm, cohort, versions):
+        """Everything the GET (and a preview's default width) needs from persisted rows."""
+        rows = [a for a in _assignment_rows(midterm, classroom) if a.student_id in set(cohort)]
+        mapping = {a.student_id: a.version for a in rows}
+        seats = {a.student_id: (a.seat_row, a.seat_col) for a in rows if a.seat_row is not None}
+        columns = columns_from_seat_cols(col for _row, col in seats.values())
+        placed = {seats[sid]: (sid, mapping[sid]) for sid in seats}
+        return mapping, seats, columns, placed
+
+    # ── endpoints ────────────────────────────────────────────────────────────
 
     def get(self, request, classroom_pk, midterm_id):
         classroom = self.get_classroom()
@@ -496,13 +626,17 @@ class AssignVersionsView(_ClassroomScopedView):
         if midterm is None:
             return Response({"detail": "Midterm not found."}, status=http.HTTP_404_NOT_FOUND)
         cohort, versions = self._cohort_and_versions(classroom, midterm)
-        assign_map = _assignment_map(midterm, classroom)
-        mapping = {sid: assign_map[sid] for sid in cohort if sid in assign_map}
+        mapping, seats, columns, placed = self._saved_state(classroom, midterm, cohort, versions)
+        started = self._started_ids(midterm, classroom, cohort)
         return Response({
             "has_versions": bool(versions),
             "versions": [_version_brief(v) for v in versions],
-            "assignments": self._rows(mapping),
-            "unassigned_count": len([sid for sid in cohort if sid not in assign_map]),
+            "assignments": self._rows(mapping, seats=seats, started=started, columns=columns),
+            "unassigned_count": len([sid for sid in cohort if sid not in mapping]),
+            "seating": self._grid(
+                placed=placed, versions=versions, columns=columns, warnings=(),
+                started=started, student_count=len(placed),
+            ),
         })
 
     def post(self, request, classroom_pk, midterm_id):
@@ -519,41 +653,167 @@ class AssignVersionsView(_ClassroomScopedView):
         action = str(request.data.get("action") or "preview")
 
         if action == "preview":
-            import secrets
-
-            shuffled = list(cohort)
-            for i in range(len(shuffled) - 1, 0, -1):  # Fisher–Yates (secrets = unbiased)
-                j = secrets.randbelow(i + 1)
-                shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-            mapping = {sid: versions[idx % len(versions)] for idx, sid in enumerate(shuffled)}
-            return Response({"assignments": self._rows(mapping), "versions": [_version_brief(v) for v in versions]})
-
+            return self._preview(request, classroom, midterm, cohort, versions)
         if action == "commit":
-            raw = request.data.get("assignments") or {}
-            vmap = {v.id: v for v in versions}
-            cohort_set = set(cohort)
-            valid = {}
-            for sid_str, vid in raw.items():
+            return self._commit(request, classroom, midterm, cohort, versions)
+        return Response({"detail": "Unknown action."}, status=http.HTTP_400_BAD_REQUEST)
+
+    def _preview(self, request, classroom, midterm, cohort, versions):
+        started = self._started_ids(midterm, classroom, cohort)
+        if started:
+            # Re-shuffling a room where somebody is already writing would show the teacher a
+            # chart that contradicts the paper that student is holding.
+            return Response(
+                {"detail": "Some students have already started — the seating plan is fixed for this sitting."},
+                status=http.HTTP_409_CONFLICT,
+            )
+        if "columns" in request.data:
+            columns = clamp_columns(request.data.get("columns"))
+        else:
+            columns = self._saved_state(classroom, midterm, cohort, versions)[2]
+
+        plan = build_seating_plan(cohort, len(versions), columns=columns)
+        placed, seats, mapping = {}, {}, {}
+        for seat in plan.occupied_seats():
+            version = versions[seat.version_index]
+            placed[(seat.row, seat.seat_col)] = (seat.student_id, version)
+            seats[seat.student_id] = (seat.row, seat.seat_col)
+            mapping[seat.student_id] = version
+        return Response({
+            "versions": [_version_brief(v) for v in versions],
+            "assignments": self._rows(mapping, seats=seats, started=started, columns=plan.columns),
+            "seating": self._grid(
+                placed=placed, versions=versions, columns=plan.columns, warnings=plan.warnings,
+                started=started, student_count=plan.student_count,
+            ),
+        })
+
+    def _commit(self, request, classroom, midterm, cohort, versions):
+        vmap = {v.id: v for v in versions}
+        cohort_set = set(cohort)
+        started = self._started_ids(midterm, classroom, cohort)
+        raw_seats = request.data.get("seats")
+
+        valid: dict[int, MidtermVersion] = {}
+        seats: dict[int, tuple[int, int]] = {}
+        taken: set[tuple[int, int]] = set()
+
+        if isinstance(raw_seats, list):
+            columns = clamp_columns(request.data.get("columns"))
+            for entry in raw_seats:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    sid, vid = int(entry.get("student_id")), int(entry.get("version_id"))
+                    row, col = int(entry.get("row")), int(entry.get("col"))
+                except (TypeError, ValueError):
+                    continue
+                if sid not in cohort_set or vid not in vmap or row < 0 or col < 0:
+                    continue
+                if (row, col) in taken:
+                    # Reject rather than let the partial unique index turn this into a 500.
+                    return Response(
+                        {"detail": f"Two students were placed in the same seat (row {row + 1}, seat {col + 1})."},
+                        status=http.HTTP_400_BAD_REQUEST,
+                    )
+                taken.add((row, col))
+                valid[sid] = vmap[vid]
+                seats[sid] = (row, col)
+        else:
+            # Legacy shape: versions only, no seats.
+            columns = DEFAULT_COLUMNS
+            for sid_str, vid in (request.data.get("assignments") or {}).items():
                 try:
                     sid, vid = int(sid_str), int(vid)
                 except (TypeError, ValueError):
                     continue
                 if sid in cohort_set and vid in vmap:
                     valid[sid] = vmap[vid]
-            if not valid:
-                return Response({"detail": "No valid assignments to save."}, status=http.HTTP_400_BAD_REQUEST)
-            MidtermVersionAssignment.objects.filter(
-                midterm=midterm, classroom=classroom, student_id__in=list(valid.keys())
-            ).delete()
+
+        if not valid:
+            return Response({"detail": "No valid assignments to save."}, status=http.HTTP_400_BAD_REQUEST)
+
+        if seats:
+            problems = validate_plan(
+                _plan_from_seats(seats, {sid: ver.version_number for sid, ver in valid.items()}, columns),
+                len(versions),
+            )
+            if problems:
+                return Response(
+                    {"detail": "This seating plan puts the same version next to itself.",
+                     "violations": problems},
+                    status=http.HTTP_400_BAD_REQUEST,
+                )
+
+        # A student who has started is holding a paper; the seat may move, the version may not.
+        pinned: dict[int, set] = {}
+        for sid, vid in MidtermAttempt.objects.filter(
+            midterm=midterm, student_id__in=started, version_id__isnull=False
+        ).values_list("student_id", "version_id"):
+            pinned.setdefault(sid, set()).add(vid)
+        conflicted = [sid for sid, ver in valid.items() if pinned.get(sid, {ver.id}) != {ver.id}]
+        if conflicted:
+            users = {u.id: u for u in User.objects.filter(pk__in=conflicted)}
+            names = ", ".join(sorted(_display_name(users.get(sid)) for sid in conflicted))
+            return Response(
+                {"detail": f"Already started on a different version: {names}. Their paper cannot be changed."},
+                status=http.HTTP_409_CONFLICT,
+            )
+
+        with transaction.atomic():
+            # Wholesale, not student_id__in: a row left behind for a since-removed student
+            # would still hold a seat and collide with the new plan.
+            MidtermVersionAssignment.objects.filter(midterm=midterm, classroom=classroom).delete()
             MidtermVersionAssignment.objects.bulk_create([
                 MidtermVersionAssignment(
-                    midterm=midterm, classroom=classroom, student_id=sid, version=ver, assigned_by=request.user
+                    midterm=midterm, classroom=classroom, student_id=sid, version=ver,
+                    seat_row=seats.get(sid, (None, None))[0],
+                    seat_col=seats.get(sid, (None, None))[1],
+                    assigned_by=request.user,
                 )
                 for sid, ver in valid.items()
             ])
-            return Response({"detail": f"Assigned {len(valid)} student(s).", "assignments": self._rows(valid)})
 
-        return Response({"detail": "Unknown action."}, status=http.HTTP_400_BAD_REQUEST)
+        placed = {seats[sid]: (sid, valid[sid]) for sid in seats}
+        return Response({
+            "detail": f"Seated {len(valid)} student(s)." if seats else f"Assigned {len(valid)} student(s).",
+            "versions": [_version_brief(v) for v in versions],
+            "assignments": self._rows(valid, seats=seats, started=started, columns=columns),
+            "seating": self._grid(
+                placed=placed, versions=versions, columns=columns, warnings=(),
+                started=started, student_count=len(placed),
+            ),
+        })
+
+
+def _grid_width(placed: dict, columns: int) -> int:
+    """Desks per row. The stored seats win over a requested width, so a hand-written payload
+    cannot make the grid narrower than the seats it contains and shift desk numbers."""
+    if not placed:
+        return columns
+    return max(columns, max(col for _row, col in placed) // SEATS_PER_DESK + 1)
+
+
+def _plan_from_seats(seats: dict, version_numbers: dict, columns: int) -> SeatingPlan:
+    """Wrap a proposed ``{student: (row, col)}`` mapping so ``validate_plan`` can check it.
+
+    Version IDENTITY is what matters to the check, so the version number stands in for the
+    index — two seats collide exactly when they hold the same version.
+    """
+    desks = []
+    for sid, (row, col) in seats.items():
+        desk_col, side = divmod(col, SEATS_PER_DESK)
+        seat = SeatSlot(
+            row=row, desk_col=desk_col, side=side, seat_col=col,
+            student_id=sid, version_index=version_numbers[sid],
+        )
+        empty = SeatSlot(
+            row=row, desk_col=desk_col, side=1 - side, seat_col=desk_col * SEATS_PER_DESK + (1 - side),
+            student_id=None, version_index=-1,
+        )
+        left, right = (seat, empty) if side == 0 else (empty, seat)
+        desks.append(DeskSlot(row=row, desk_col=desk_col, number=len(desks) + 1, left=left, right=right))
+    return SeatingPlan(columns=columns, rows=0, desks=tuple(desks), warnings=())
 
 
 class IssueMidtermV2CertificatesView(_ClassroomScopedView):

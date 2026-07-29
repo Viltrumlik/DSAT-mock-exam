@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Award, Download, RefreshCw, Save, Clock, CheckCircle2, KeyRound, Shuffle } from "lucide-react";
+import { ArrowLeft, Award, Download, RefreshCw, Save, Clock, CheckCircle2, KeyRound, LayoutGrid } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { classesApi } from "@/lib/api";
@@ -31,6 +31,11 @@ interface PanelStudent {
   certificate_code: string | null;
   version_number: number | null;
   version_label: string | null;
+  /** Where they sit. Null until a seating plan is committed. */
+  seat_row: number | null;
+  seat_col: number | null;
+  side: number | null;
+  desk_number: number | null;
 }
 interface PanelData {
   midterm: { id: number; title: string; subject: string; scoring_scale: string; score_ceiling: number };
@@ -249,24 +254,31 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface-2/40 px-4 py-3">
                 <div>
                   <p className="text-sm font-bold text-foreground">This midterm has {data.versions.length} versions</p>
-                  <p className="text-xs text-muted-foreground">Randomly split the class across them — students never see their version.</p>
+                  <p className="text-xs text-muted-foreground">The system seats the class so no two neighbours get the same version — students never see which one they got.</p>
                 </div>
-                <Button variant="secondary" icon={Shuffle} onClick={() => setAssignVersionOpen(true)}>Assign versions</Button>
+                <Button variant="secondary" icon={LayoutGrid} onClick={() => setAssignVersionOpen(true)}>Seating &amp; versions</Button>
               </div>
             )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th>{data.has_versions && <th>Version</th>}<th>State</th><th>Score</th><th>Rank</th>{certificates_issued && <th>Certificate</th>}</tr></thead>
+                <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th>{data.has_versions && <><th>Version</th><th>Seat</th></>}<th>State</th><th>Score</th><th>Rank</th>{certificates_issued && <th>Certificate</th>}</tr></thead>
                 <tbody>
                   {students.map((s) => (
                     <tr key={s.student_id} className="border-t border-border">
                       <td className="py-1.5 font-medium text-foreground">{s.student_name}</td>
                       {data.has_versions && (
-                        <td className="text-muted-foreground">
-                          {s.version_label ? (
-                            <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{s.version_label}</span>
-                          ) : "—"}
-                        </td>
+                        <>
+                          <td className="text-muted-foreground">
+                            {s.version_label ? (
+                              <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{s.version_label}</span>
+                            ) : "—"}
+                          </td>
+                          <td className="text-xs text-muted-foreground">
+                            {s.desk_number != null && s.seat_row != null
+                              ? `Row ${s.seat_row + 1} · Desk ${s.desk_number} · ${s.side ? "right" : "left"}`
+                              : "—"}
+                          </td>
+                        </>
                       )}
                       <td className="text-muted-foreground">{s.state.replace(/_/g, " ")}</td>
                       <td className="text-foreground">{s.score != null ? `${s.score} / ${scale}` : "—"}</td>
