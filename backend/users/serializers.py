@@ -16,6 +16,7 @@ from access.services import (
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
 from users.activity import activity_count
+from users.photos import downscale_profile_image, profile_image_url
 from users.profile_completeness import is_profile_complete, missing_profile_fields
 from users.name_utils import (
     DUPLICATE_FULL_NAME_CODE,
@@ -206,7 +207,11 @@ class UserMeSerializer(serializers.ModelSerializer):
         ct = str(getattr(value, "content_type", "") or "").lower()
         if ct and not ct.startswith("image/"):
             raise serializers.ValidationError("Invalid profile image content type.")
-        return value
+        # Store a roster-sized copy, not the phone original. Photos are now rendered in
+        # 18-64px circles across dozens of surfaces, so a class of 200 would otherwise pull
+        # hundreds of megabytes of full-resolution JPEG to draw thumbnails — and keep every
+        # byte of it on a disk that has filled up before.
+        return downscale_profile_image(value)
 
     def validate_sat_exam_date(self, value):
         """Students may only set a date that exists in the admin-managed active list."""
@@ -236,13 +241,7 @@ class UserMeSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.URLField(allow_null=True, read_only=True))
     def get_profile_image_url(self, obj):
-        if not obj.profile_image:
-            return None
-        request = self.context.get("request")
-        url = obj.profile_image.url
-        if request:
-            return request.build_absolute_uri(url)
-        return url
+        return profile_image_url(obj, self.context.get("request"))
 
     @extend_schema_field(UserMeLastMockResultSerializer(allow_null=True, required=False, read_only=True))
     def get_last_mock_result(self, obj):
@@ -350,6 +349,18 @@ class UserSerializer(serializers.ModelSerializer):
     class_teacher_eligible = serializers.SerializerMethodField()
     bulk_assign_profile = serializers.SerializerMethodField()
     attempt_count = serializers.SerializerMethodField(read_only=True)
+    profile_image_url = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.URLField(allow_null=True, read_only=True))
+    def get_profile_image_url(self, obj) -> str | None:
+        """The user's photo, for every roster and picker built on this serializer.
+
+        ``/api/users/`` and ``/api/users/admin/list/`` are the same view, so this single
+        field feeds the /ops/users table, the access console's student picker and profile,
+        the classroom "add a student" search, and ``student_details`` on every exam attempt.
+        No extra queries: ``profile_image`` is a column on the row already being loaded.
+        """
+        return profile_image_url(obj, self.context.get("request"))
 
     @extend_schema_field(serializers.IntegerField(allow_null=False))
     def get_attempt_count(self, obj) -> int:
@@ -467,6 +478,7 @@ class UserSerializer(serializers.ModelSerializer):
             "email_released_at",
             "previous_email",
             "attempt_count",
+            "profile_image_url",
             "password",
         ]
         # ``is_active`` is exposed read-only for status display only. The "deactivate"

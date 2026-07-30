@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from django.core.validators import URLValidator
 
 from exams.models import MockExam, PracticeTest, PracticeTestPack
+from users.photos import profile_image_url
 
 from .submission_validation import validate_submission_grade
 
@@ -37,6 +38,7 @@ class ClassroomTeacherDetailsSerializer(serializers.Serializer):
     username = serializers.CharField(allow_null=True, required=False)
     first_name = serializers.CharField(allow_blank=True, required=False)
     last_name = serializers.CharField(allow_blank=True, required=False)
+    profile_image_url = serializers.URLField(allow_null=True, required=False)
 
 
 @extend_schema_serializer(component_name="AssignmentAssessmentHomeworkSet")
@@ -78,6 +80,7 @@ class AssignmentCreatedBySerializer(serializers.Serializer):
     username = serializers.CharField(allow_null=True, required=False)
     first_name = serializers.CharField(allow_blank=True, required=False)
     last_name = serializers.CharField(allow_blank=True, required=False)
+    profile_image_url = serializers.URLField(allow_null=True, required=False)
 
 
 class ClassroomSerializer(serializers.ModelSerializer):
@@ -129,6 +132,7 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "username": getattr(t, "username", None),
             "first_name": t.first_name,
             "last_name": t.last_name,
+            "profile_image_url": profile_image_url(t, self.context.get("request")),
         }
 
 
@@ -224,7 +228,10 @@ class ClassroomMembershipSerializer(serializers.ModelSerializer):
             "username": getattr(u, "username", None),
             "first_name": u.first_name,
             "last_name": u.last_name,
-            "profile_image_url": getattr(u, "profile_image", None).url if getattr(u, "profile_image", None) else None,
+            # Absolute, not the raw ``.url``: this roster is served to the student site and
+            # the teacher subdomain alike, and a relative /media/ path resolves only on
+            # whichever host serves the images.
+            "profile_image_url": profile_image_url(u, self.context.get("request")),
         }
 
 
@@ -251,6 +258,7 @@ class ClassPostSerializer(serializers.ModelSerializer):
             "username": getattr(u, "username", None),
             "first_name": u.first_name,
             "last_name": u.last_name,
+            "profile_image_url": profile_image_url(u, self.context.get("request")),
         }
 
 
@@ -518,6 +526,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "username": getattr(u, "username", None),
             "first_name": u.first_name,
             "last_name": u.last_name,
+            "profile_image_url": profile_image_url(u, self.context.get("request")),
         }
 
     @extend_schema_field(serializers.URLField(allow_null=True, read_only=True))
@@ -1118,6 +1127,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "username": getattr(u, "username", None),
             "first_name": u.first_name,
             "last_name": u.last_name,
+            "profile_image_url": profile_image_url(u, self.context.get("request")),
         }
 
     def get_review(self, obj):
@@ -1145,6 +1155,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
                 "email": t.email,
                 "first_name": t.first_name,
                 "last_name": t.last_name,
+                "profile_image_url": profile_image_url(t, self.context.get("request")),
             },
         }
 
@@ -1292,6 +1303,7 @@ class ClassCommentSerializer(serializers.ModelSerializer):
             "username": getattr(u, "username", None),
             "first_name": u.first_name,
             "last_name": u.last_name,
+            "profile_image_url": profile_image_url(u, self.context.get("request")),
         }
 
     def validate_content(self, value):
@@ -1331,12 +1343,13 @@ class ClassroomMaterialSerializer(serializers.ModelSerializer):
     file_name = serializers.SerializerMethodField()
     file_size = serializers.SerializerMethodField()
     teacher_name = serializers.SerializerMethodField()
+    teacher_profile_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ClassroomMaterial
         fields = [
             "id", "title", "description", "file_url", "file_name", "file_size",
-            "teacher_name", "created_at",
+            "teacher_name", "teacher_profile_image_url", "created_at",
         ]
         read_only_fields = fields
 
@@ -1366,4 +1379,8 @@ class ClassroomMaterialSerializer(serializers.ModelSerializer):
             return None
         full = f"{(u.first_name or '').strip()} {(u.last_name or '').strip()}".strip()
         return full or getattr(u, "email", None)
+
+    @extend_schema_field(serializers.URLField(allow_null=True, read_only=True))
+    def get_teacher_profile_image_url(self, obj) -> str | None:
+        return profile_image_url(obj.teacher, self.context.get("request")) if obj.teacher else None
 

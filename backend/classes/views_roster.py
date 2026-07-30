@@ -26,6 +26,7 @@ from .capabilities import classroom_capabilities, is_global_admin
 from .models import Classroom, ClassroomMembership
 from .serializers import ClassroomMembershipSerializer
 from .views_rankings import _ClassroomScopedView, _display_name
+from users.photos import profile_image_url
 
 User = get_user_model()
 
@@ -69,6 +70,7 @@ class MemberManageView(_ClassroomScopedView):
         return Response({
             "user_id": membership.user_id,
             "name": _display_name(membership.user),
+            "profile_image_url": profile_image_url(membership.user, request),
             "role": membership.role,
             "status": membership.status,
         })
@@ -155,6 +157,7 @@ class ClassroomRosterView(_ClassroomScopedView):
             {
                 "user_id": target.pk,
                 "name": _display_name(target),
+                "profile_image_url": profile_image_url(target, request),
                 "role": membership.role,
                 "status": membership.status,
                 "created": created,

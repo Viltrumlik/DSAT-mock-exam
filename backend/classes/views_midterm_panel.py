@@ -22,6 +22,8 @@ from rest_framework.views import APIView
 
 from exams.models import MockExam, TestAttempt
 
+from users.photos import profile_image_url
+
 from .capabilities import classroom_capabilities
 from .certificates_service import _assigned_cohort, _rank_by_student, certificate_codes_for
 from .mail_midterm import notify_class_midterm_scheduled
@@ -87,6 +89,7 @@ class MidtermPanelView(_ClassroomScopedView):
         )
         student_ids = [m.user_id for m in students]
         name_by_id = {m.user_id: _display_name(m.user) for m in students}
+        photo_by_id = {m.user_id: profile_image_url(m.user, request) for m in students}
 
         attempts = TestAttempt.objects.filter(mock_exam=mock, student_id__in=student_ids)
         by_student: dict[int, list] = {}
@@ -107,7 +110,7 @@ class MidtermPanelView(_ClassroomScopedView):
         for sid in student_ids:
             atts = sorted(by_student.get(sid, []), key=lambda x: x.created_at)
             if not atts:
-                rows.append({"student_id": sid, "student": name_by_id[sid], "state": "not_started",
+                rows.append({"student_id": sid, "student": name_by_id[sid], "student_profile_image_url": photo_by_id.get(sid), "state": "not_started",
                              "score": None, "rank": None, "attempt_date": None, "attempt_count": 0,
                              "certificate_code": codes.get(sid)})
                 continue
@@ -120,7 +123,7 @@ class MidtermPanelView(_ClassroomScopedView):
                     completed_scores.append(float(latest.score))
             ts = latest.completed_at or latest.started_at or latest.created_at
             rows.append({
-                "student_id": sid, "student": name_by_id[sid],
+                "student_id": sid, "student": name_by_id[sid], "student_profile_image_url": photo_by_id.get(sid),
                 "state": "completed" if done else "in_progress",
                 "score": latest.score if done else None,
                 "rank": provisional_rank.get(sid) if done else None,

@@ -44,6 +44,8 @@ from midterms.seating import (
     validate_plan,
 )
 
+from users.photos import profile_image_url
+
 from .capabilities import classroom_capabilities
 from .mail_midterm import notify_class_midterm_scheduled
 from .models_certificates import MidtermCertificate
@@ -364,6 +366,7 @@ class MidtermV2PanelView(_ClassroomScopedView):
             students.append({
                 "student_id": sid,
                 "student_name": _display_name(users.get(sid)),
+                "student_profile_image_url": profile_image_url(users.get(sid), request),
                 "state": att.current_state if att else "NOT_STARTED",
                 "submitted": bool(att),
                 "score": score,
@@ -539,6 +542,7 @@ class AssignVersionsView(_ClassroomScopedView):
             out.append({
                 "student_id": sid,
                 "student_name": _display_name(users.get(sid)),
+                "student_profile_image_url": profile_image_url(users.get(sid), getattr(self, "request", None)),
                 "version_id": ver.id,
                 "version_number": ver.version_number,
                 "version_label": ver.label or f"Version {ver.version_number}",
@@ -577,6 +581,9 @@ class AssignVersionsView(_ClassroomScopedView):
                         "seat_col": col,
                         "student_id": sid,
                         "student_name": _display_name(users.get(sid)) if sid else None,
+                        "student_profile_image_url": (
+                            profile_image_url(users.get(sid), getattr(self, "request", None)) if sid else None
+                        ),
                         "version_id": ver.id if ver else None,
                         "version_number": ver.version_number if ver else None,
                         "version_label": (ver.label or f"Version {ver.version_number}") if ver else None,

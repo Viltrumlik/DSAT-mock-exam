@@ -15,6 +15,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from users.photos import profile_image_url
+
 from .capabilities import classroom_capabilities
 from .models import Classroom
 from .models_ranking import ClassroomRankingConfig, RankingSnapshot
@@ -22,23 +24,6 @@ from .permissions import CanConfigureRanking, CanRecomputeRanking, IsClassMember
 from .ranking import rules, service
 
 _VALID_KINDS = {RankingSnapshot.KIND_SAT, RankingSnapshot.KIND_ACADEMIC}
-
-
-def _avatar_url(user, request) -> str | None:
-    """Absolute URL of the student's profile photo, or None when they have not set one.
-
-    Absolute because the leaderboard is served to the student site, the teacher subdomain and
-    the ops app, and a relative /media/ path only resolves on whichever host happens to serve
-    the images.
-    """
-    image = getattr(user, "profile_image", None)
-    if not image:
-        return None
-    try:
-        url = image.url
-    except ValueError:  # pragma: no cover - file field with no file
-        return None
-    return request.build_absolute_uri(url) if request else url
 
 
 def _display_name(user) -> str:
@@ -132,7 +117,7 @@ class RankingsView(_ClassroomScopedView):
                 # Gated on show_name, not on its own flag: a photo identifies a student far
                 # more directly than their name does, so an ANONYMOUS board that still showed
                 # faces would not be anonymous at all.
-                "avatar_url": _avatar_url(s.student, request) if show_name else None,
+                "profile_image_url": profile_image_url(s.student, request) if show_name else None,
                 # None means two different things and the UI needs both: hidden by config,
                 # or genuinely no result yet (a student who has not sat a pastpaper).
                 "score": float(s.score) if (show_score and s.score is not None) else None,

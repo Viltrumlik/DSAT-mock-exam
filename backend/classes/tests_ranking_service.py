@@ -241,10 +241,10 @@ class RankingsApiTests(TestCase):
 
         rows = self.client.get(self._url()).json()["rows"]
         top_row = next(r for r in rows if "api_top" in r["name"])
-        self.assertTrue(top_row["avatar_url"])
-        self.assertTrue(top_row["avatar_url"].startswith("http"))  # absolute, for the subdomains
+        self.assertTrue(top_row["profile_image_url"])
+        self.assertTrue(top_row["profile_image_url"].startswith("http"))  # absolute, for the subdomains
         # A student with no photo gets null, and the UI falls back to initials.
-        self.assertIsNone(next(r for r in rows if r["is_me"])["avatar_url"])
+        self.assertIsNone(next(r for r in rows if r["is_me"])["profile_image_url"])
 
     def test_anonymous_mode_hides_the_photo_too(self):
         """A face identifies a student more directly than a name does — if the avatar survived
@@ -262,7 +262,7 @@ class RankingsApiTests(TestCase):
         for row in rows:
             if not row["is_me"]:
                 self.assertTrue(row["name"].startswith("Student #"))
-                self.assertIsNone(row["avatar_url"], "anonymous board leaked a photo")
+                self.assertIsNone(row["profile_image_url"], "anonymous board leaked a photo")
 
     def test_staff_still_see_photos_on_an_anonymous_board(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
@@ -275,7 +275,7 @@ class RankingsApiTests(TestCase):
         self.client.force_authenticate(self.owner)  # teacher
 
         rows = self.client.get(self._url()).json()["rows"]
-        self.assertTrue(next(r for r in rows if "api_top" in r["name"])["avatar_url"])
+        self.assertTrue(next(r for r in rows if "api_top" in r["name"])["profile_image_url"])
 
     def test_anonymous_hides_other_names(self):
         cfg, _ = self.cfg_model.objects.get_or_create(classroom=self.classroom)

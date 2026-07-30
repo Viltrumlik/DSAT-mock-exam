@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from users.photos import profile_image_url
+
 from .models import (
     AssessmentQuestion,
     AssessmentAttempt,
@@ -57,13 +59,14 @@ def _image_map_for(question_ids):
     }
 
 
-def _serialize_feedback(fb) -> dict | None:
+def _serialize_feedback(fb, request=None) -> dict | None:
     """Serialize an AssessmentAttemptFeedback for student/teacher consumption."""
     if fb is None:
         return None
     return {
         "body": fb.body,
         "teacher_name": fb.teacher.get_full_name() or fb.teacher.email if fb.teacher else None,
+        "teacher_profile_image_url": profile_image_url(fb.teacher, request) if fb.teacher else None,
         "updated_at": fb.updated_at.isoformat(),
     }
 
