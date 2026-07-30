@@ -26,6 +26,37 @@ function initials(name: string): string {
   if (!p.length) return "?";
   return (p[0][0] + (p[1]?.[0] ?? "")).toUpperCase();
 }
+
+/** Profile photo, falling back to coloured initials.
+ *
+ * The fallback is not just for students who never uploaded one: a broken or expired media
+ * URL must degrade to initials rather than a broken-image icon, so `onError` swaps back. */
+function Avatar({
+  name, src, size, bg, color, ring,
+}: { name: string; src?: string | null; size: number; bg?: string; color?: string; ring?: string }) {
+  const [failed, setFailed] = useState(false);
+  const style: React.CSSProperties = { width: size, height: size, fontSize: Math.round(size * 0.36) };
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="shrink-0 rounded-full object-cover"
+        style={{ ...style, boxShadow: ring }}
+      />
+    );
+  }
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full font-extrabold"
+      style={{ ...style, background: bg, color, boxShadow: ring }}
+    >
+      {initials(name)}
+    </span>
+  );
+}
 function fmt(n: number | null): string {
   return n == null ? "—" : Math.round(n).toLocaleString("en-US");
 }
@@ -112,7 +143,7 @@ function RankingBoard({ classroom, kind, setKind, satAllowed }: {
                   className={cn("group flex items-center gap-3.5 rounded-2xl border px-4 py-3 transition-all hover:translate-x-[3px] hover:border-primary hover:shadow-[0_6px_16px_rgba(42,104,192,.12)]",
                     row.is_me ? "border-primary bg-primary/5" : "border-border bg-card")}>
                   <span className="w-[26px] shrink-0 text-center text-[15px] font-extrabold tabular-nums text-muted-foreground">{row.rank}</span>
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[14px] font-extrabold" style={{ background: abg, color: ac }}>{initials(row.name)}</span>
+                  <Avatar name={row.name} src={row.avatar_url} size={40} bg={abg} color={ac} />
                   <span className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
                     {row.name}{row.is_me ? <span className="ml-1.5 text-xs font-bold text-primary">You</span> : null}
                   </span>
@@ -161,9 +192,14 @@ function Podium({ rows, scoreOf }: { rows: RankingRow[]; scoreOf: (r: RankingRow
               border: r.is_me ? "2px solid var(--primary)" : m.border,
             }}>
             {first ? <Crown className="absolute -top-3 h-6 w-6" style={{ color: "#e3a008", fill: "#f5c542" }} /> : null}
-            <span className={cn("flex items-center justify-center rounded-full font-extrabold text-white shadow-md", first ? "h-16 w-16 text-lg" : "h-14 w-14 text-base")} style={{ background: m.av }}>
-              {initials(r.name)}
-            </span>
+            <Avatar
+              name={r.name}
+              src={r.avatar_url}
+              size={first ? 64 : 56}
+              bg={m.av}
+              color="#fff"
+              ring="0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)"
+            />
             <span className="z-10 -mt-3 flex h-6 w-6 items-center justify-center rounded-full text-xs font-extrabold text-white ring-2 ring-card" style={{ background: m.medal }}>{r.rank}</span>
             <div className="mt-2.5 max-w-full truncate text-[15px] font-extrabold text-foreground">
               {r.name}{r.is_me ? <span className="ml-1 text-xs text-primary">You</span> : null}
