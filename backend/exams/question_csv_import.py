@@ -43,6 +43,30 @@ def _norm_key(key: str) -> str:
     return (key or "").strip().lower().replace(" ", "_").replace("/", "_")
 
 
+def _bank_subject(platform_subject: str) -> str:
+    """Map a module's platform subject to the Question Bank subject the taxonomy is
+    scoped by. Reading & Writing modules both fold into the single ENGLISH bank subject."""
+    return "MATH" if str(platform_subject or "").strip().upper() == "MATH" else "ENGLISH"
+
+
+def _skill_index(platform_subject: str) -> dict[str, int]:
+    """{normalized skill name/code -> BankSkill id} for the module's subject.
+
+    Resolution is subject-scoped, so a MATH module only ever matches MATH skills — a
+    row that names an English skill in a Math module simply fails to resolve (reported
+    as a row error) instead of silently attaching a wrong-subject skill. Skill names are
+    unique within a subject, so a case/space-insensitive name match is unambiguous; the
+    stable ``code`` (e.g. "linear-functions") is also accepted."""
+    from questionbank.models import BankSkill
+
+    idx: dict[str, int] = {}
+    for s in BankSkill.objects.filter(domain__subject=_bank_subject(platform_subject)):
+        idx[_norm_key(s.name)] = s.id
+        if s.code:
+            idx[_norm_key(s.code)] = s.id
+    return idx
+
+
 def decode_csv(raw: bytes) -> str:
     """Decode CSV bytes, stripping Excel's UTF-8 BOM. Raises ValueError on bad encoding."""
     try:
@@ -121,6 +145,13 @@ def _row_to_payload(row: dict, default_type: str) -> dict:
         payload["correct_answer"] = correct.upper()
         for letter in ("a", "b", "c", "d"):
             payload[f"option_{letter}"] = row.get(f"option_{letter}") or ""
+
+    # Optional SAT-skill classification. Kept as the raw name here (no DB in this pure
+    # helper); import_questions_csv resolves it to a BankSkill id against the subject
+    # taxonomy and reports unknown names per-row. Blank = unclassified, always allowed.
+    skill_raw = (row.get("skill") or row.get("skill_name") or "").strip()
+    if skill_raw:
+        payload["_skill_raw"] = skill_raw
     return payload
 
 
@@ -148,9 +179,26 @@ def import_questions_csv(
     if not payloads:
         return [], {"detail": "The CSV has no question rows."}
 
+    skill_lookup = _skill_index(subject)
+
     validated = []
     errors = []
     for idx, payload in enumerate(payloads):
+        # Resolve the optional skill NAME -> BankSkill id against the subject taxonomy.
+        # An unknown name is a clear per-row error (never a silently-dropped skill).
+        skill_raw = payload.pop("_skill_raw", "")
+        if skill_raw:
+            skill_id = skill_lookup.get(_norm_key(skill_raw))
+            if skill_id is None:
+                errors.append({
+                    "row": idx + _FIRST_DATA_ROW,
+                    "errors": {"skill": [
+                        f"Unknown skill '{skill_raw}' for this subject. Use one of the exact "
+                        f"skill names for this module's subject (see the import help)."
+                    ]},
+                })
+                continue
+            payload["skill"] = skill_id
         # ``bulk_module`` lets validate() resolve the target module (and thus run the SAT
         # type check + content full_clean) without relying on view.kwargs, which do not
         # carry a test_pk for mock/midterm modules.

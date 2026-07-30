@@ -151,6 +151,86 @@ class ExamsCsvImportTests(TestCase):
         self.assertEqual(Question.objects.filter(module=mod).count(), 1)
 
 
+_HEADER_SKILL = _HEADER + ",skill"
+
+
+def _csv_skill(*rows: str) -> SimpleUploadedFile:
+    body = "\n".join([_HEADER_SKILL, *rows]).encode("utf-8")
+    return SimpleUploadedFile("questions.csv", body, content_type="text/csv")
+
+
+@override_settings(ALLOWED_HOSTS=list(_ALLOWED_HOSTS))
+class ExamsCsvSkillImportTests(TestCase):
+    """The optional `skill` column resolves a SAT-skill NAME to a BankSkill id,
+    subject-scoped, and reports unknown names per-row (never a silent drop)."""
+
+    def setUp(self):
+        from questionbank.models import BankDomain, BankSkill, Subject
+
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            email="csv-skill@example.com", password="pw",
+            role="super_admin", is_staff=True, is_superuser=True,
+        )
+        self.client.force_authenticate(self.admin)
+        self.pt = PracticeTest.objects.create(
+            subject="MATH", form_type="INTERNATIONAL", skip_default_modules=True,
+        )
+        self.mod = Module.objects.create(practice_test=self.pt, module_order=1, time_limit_minutes=35)
+
+        math_dom = BankDomain.objects.create(subject=Subject.MATH, name="Algebra", code="algebra", display_order=0)
+        self.skill_linear = BankSkill.objects.create(
+            domain=math_dom, name="Linear functions", code="linear-functions", display_order=0
+        )
+        eng_dom = BankDomain.objects.create(
+            subject=Subject.ENGLISH, name="Information and Ideas", code="information-and-ideas", display_order=0
+        )
+        self.skill_inferences = BankSkill.objects.create(
+            domain=eng_dom, name="Inferences", code="inferences", display_order=0
+        )
+
+    def _url(self):
+        return f"/api/exams/admin/tests/{self.pt.id}/modules/{self.mod.id}/questions/bulk-import/"
+
+    def _post(self, upload):
+        return self.client.post(self._url(), {"file": upload}, format="multipart", **_QHOST)
+
+    def test_skill_name_resolves_and_attaches(self):
+        r = self._post(_csv_skill('MATH,"Q",,,"1","2","3","4",A,,,Linear functions'))
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(Question.objects.get(module=self.mod).skill_id, self.skill_linear.id)
+
+    def test_skill_name_is_case_and_space_insensitive(self):
+        r = self._post(_csv_skill('MATH,"Q",,,"1","2","3","4",A,,,  linear FUNCTIONS '))
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(Question.objects.get(module=self.mod).skill_id, self.skill_linear.id)
+
+    def test_skill_code_also_resolves(self):
+        r = self._post(_csv_skill('MATH,"Q",,,"1","2","3","4",A,,,linear-functions'))
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(Question.objects.get(module=self.mod).skill_id, self.skill_linear.id)
+
+    def test_blank_skill_is_allowed_and_unclassified(self):
+        r = self._post(_csv_skill('MATH,"Q",,,"1","2","3","4",A,,,'))
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertIsNone(Question.objects.get(module=self.mod).skill_id)
+
+    def test_unknown_skill_is_row_error_imports_nothing(self):
+        r = self._post(_csv_skill('MATH,"Q",,,"1","2","3","4",A,,,Quadratic wizardry'))
+        self.assertEqual(r.status_code, 400, r.content)
+        body = r.json()
+        self.assertEqual(body["errors"][0]["row"], 2)
+        self.assertIn("skill", body["errors"][0]["errors"])
+        self.assertEqual(Question.objects.filter(module=self.mod).count(), 0)
+
+    def test_wrong_subject_skill_does_not_resolve(self):
+        # 'Inferences' is an ENGLISH skill; in a MATH module it must NOT resolve.
+        r = self._post(_csv_skill('MATH,"Q",,,"1","2","3","4",A,,,Inferences'))
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("skill", r.json()["errors"][0]["errors"])
+        self.assertEqual(Question.objects.filter(module=self.mod).count(), 0)
+
+
 @override_settings(ALLOWED_HOSTS=list(_ALLOWED_HOSTS))
 class MockCsvImportTests(TestCase):
     def setUp(self):
