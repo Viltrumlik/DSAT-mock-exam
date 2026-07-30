@@ -232,6 +232,51 @@ class RankingsApiTests(TestCase):
         self.assertIsNotNone(body["my"])
         self.assertTrue(body["my"]["is_me"])
 
+    def test_avatar_is_returned_for_students_who_have_one(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.top.profile_image = SimpleUploadedFile("t.jpg", b"\xff\xd8\xff", content_type="image/jpeg")
+        self.top.save(update_fields=["profile_image"])
+        self.client.force_authenticate(self.low)
+
+        rows = self.client.get(self._url()).json()["rows"]
+        top_row = next(r for r in rows if "api_top" in r["name"])
+        self.assertTrue(top_row["avatar_url"])
+        self.assertTrue(top_row["avatar_url"].startswith("http"))  # absolute, for the subdomains
+        # A student with no photo gets null, and the UI falls back to initials.
+        self.assertIsNone(next(r for r in rows if r["is_me"])["avatar_url"])
+
+    def test_anonymous_mode_hides_the_photo_too(self):
+        """A face identifies a student more directly than a name does — if the avatar survived
+        anonymisation the board would not be anonymous at all."""
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.top.profile_image = SimpleUploadedFile("t2.jpg", b"\xff\xd8\xff", content_type="image/jpeg")
+        self.top.save(update_fields=["profile_image"])
+        cfg, _ = self.cfg_model.objects.get_or_create(classroom=self.classroom)
+        cfg.leaderboard_mode = self.cfg_model.MODE_ANONYMOUS
+        cfg.save()
+        self.client.force_authenticate(self.low)
+
+        rows = self.client.get(self._url()).json()["rows"]
+        for row in rows:
+            if not row["is_me"]:
+                self.assertTrue(row["name"].startswith("Student #"))
+                self.assertIsNone(row["avatar_url"], "anonymous board leaked a photo")
+
+    def test_staff_still_see_photos_on_an_anonymous_board(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.top.profile_image = SimpleUploadedFile("t3.jpg", b"\xff\xd8\xff", content_type="image/jpeg")
+        self.top.save(update_fields=["profile_image"])
+        cfg, _ = self.cfg_model.objects.get_or_create(classroom=self.classroom)
+        cfg.leaderboard_mode = self.cfg_model.MODE_ANONYMOUS
+        cfg.save()
+        self.client.force_authenticate(self.owner)  # teacher
+
+        rows = self.client.get(self._url()).json()["rows"]
+        self.assertTrue(next(r for r in rows if "api_top" in r["name"])["avatar_url"])
+
     def test_anonymous_hides_other_names(self):
         cfg, _ = self.cfg_model.objects.get_or_create(classroom=self.classroom)
         cfg.leaderboard_mode = self.cfg_model.MODE_ANONYMOUS

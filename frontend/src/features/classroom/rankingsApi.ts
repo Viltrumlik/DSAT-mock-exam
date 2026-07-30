@@ -8,6 +8,9 @@ export interface RankingRow {
   rank: number;
   is_me: boolean;
   name: string;
+  /** Profile photo. Null when unset, and also when the board is anonymous — a face
+   *  identifies a student more directly than a name, so it hides with the name. */
+  avatar_url?: string | null;
   /** null means EITHER hidden by config OR no result yet — `has_result` tells them apart. */
   score: number | null;
   /** False for a student who has not sat one of this class's pastpapers yet. */
