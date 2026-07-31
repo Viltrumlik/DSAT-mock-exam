@@ -47,3 +47,8 @@ django-jazzmin==3.0.1
 # Async jobs / queue (realtime fan-out, reminders, cleanup)
 celery==5.5.3
 redis==6.2.0
+
+# Object storage (Cloudflare R2 via the S3 API) — see STORAGES in config/settings.py.
+# Inert unless R2_BUCKET is set, so installing these changes nothing on its own.
+django-storages==1.14.6
+boto3==1.43.61
