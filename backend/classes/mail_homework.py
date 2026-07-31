@@ -70,12 +70,25 @@ def _contents(assignment: Assignment) -> list[str]:
                 pass
         return n + len(packs)
 
+    # The lesson video leads the list for the same reason it sits on top of the homework
+    # page: a student who missed the lesson needs to watch it before anything else here
+    # makes sense. An uploaded file and a link are the same thing to the reader.
+    if assignment.video_file or assignment.video_url:
+        items.append("The lesson video to watch")
+
     try:
         assessments = assignment.assessment_homeworks.count()
     except Exception:  # pragma: no cover - defensive
         assessments = 0
     if assessments:
         items.append(f"{assessments} assessment{'s' if assessments != 1 else ''} to complete")
+
+    try:
+        vocab = assignment.vocab_homeworks.count()
+    except Exception:  # pragma: no cover - defensive
+        vocab = 0
+    if vocab:
+        items.append(f"{vocab} vocabulary set{'s' if vocab != 1 else ''} to study")
 
     practice = _count_practice()
     if practice:
