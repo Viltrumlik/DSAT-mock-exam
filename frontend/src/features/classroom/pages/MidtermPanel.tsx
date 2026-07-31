@@ -10,6 +10,7 @@ import { midtermApi } from "@/lib/midtermApi";
 import { downloadBlob } from "@/lib/download";
 import { Card, CardHeader, Button, Field, Input, Tabs, LoadingState, ErrorState, StatCard, ConfirmDialog } from "../ui";
 import { AssignVersionModal } from "./AssignVersionModal";
+import { Avatar } from "@/components/ui/Avatar";
 
 const fileSlug = (t: string) => (t || "").trim().replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "midterm";
 
@@ -24,6 +25,7 @@ const fromLocalInput = (v: string): string | null => (v ? new Date(v).toISOStrin
 interface PanelStudent {
   student_id: number;
   student_name: string;
+  student_profile_image_url?: string | null;
   state: string;
   submitted: boolean;
   score: number | null;
@@ -265,7 +267,12 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
                 <tbody>
                   {students.map((s) => (
                     <tr key={s.student_id} className="border-t border-border">
-                      <td className="py-1.5 font-medium text-foreground">{s.student_name}</td>
+                      <td className="py-1.5 font-medium text-foreground">
+                        <span className="flex items-center gap-2">
+                          <Avatar src={s.student_profile_image_url} name={s.student_name} size={24} />
+                          <span className="truncate">{s.student_name}</span>
+                        </span>
+                      </td>
                       {data.has_versions && (
                         <>
                           <td className="text-muted-foreground">

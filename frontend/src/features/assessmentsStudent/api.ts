@@ -52,6 +52,7 @@ export type PedagogicalReviewMeta = {
 export type TeacherFeedback = {
   body: string;
   teacher_name: string | null;
+  teacher_profile_image_url?: string | null;
   updated_at: string;
 };
 

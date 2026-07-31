@@ -13,6 +13,7 @@ import {
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { Button, Field, Select } from "../ui";
+import { Avatar } from "@/components/ui/Avatar";
 
 /**
  * "Seating & versions": the system decides who sits with whom AND which paper each chair
@@ -230,10 +231,15 @@ function Seat({ seat }: { seat: SeatOccupant }) {
       className={`rounded-xl border border-border bg-card p-2 ${seat.locked ? "opacity-70" : ""}`}
       title={seat.locked ? "Already started — this paper cannot be changed." : undefined}
     >
-      <p className="truncate text-sm font-medium text-foreground">
-        {seat.locked && <Lock className="mr-1 inline h-3 w-3 text-muted-foreground" aria-hidden />}
-        {seat.student_name}
-      </p>
+      <div className="flex items-center gap-2">
+        {/* The photo earns its place here more than anywhere else in the app: the teacher
+            is handing papers to faces in the room, not reading a list of names. */}
+        <Avatar src={seat.student_profile_image_url} name={seat.student_name || ""} size={26} />
+        <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {seat.locked && <Lock className="mr-1 inline h-3 w-3 text-muted-foreground" aria-hidden />}
+          {seat.student_name}
+        </p>
+      </div>
       <span className="mt-1 inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
         {seat.version_label || `Version ${seat.version_number}`}
       </span>

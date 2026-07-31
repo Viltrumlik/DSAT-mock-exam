@@ -244,7 +244,8 @@ export interface MidtermResult {
   students: { student_id: number; student: string; state: string; score: number | null; attempt_date: string | null; attempt_count: number }[];
 }
 export interface UnifiedRow {
-  student_id: number; student: string; content_name: string; type: string;
+  student_id: number; student: string; student_profile_image_url?: string | null;
+  content_name: string; type: string;
   score: number | null; status: string; submission_date: string | null;
 }
 export interface UnifiedResults {

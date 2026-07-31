@@ -10,7 +10,7 @@ import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 
 export type Cell = { assignmentId: number; status: "graded" | "submitted" | "missing"; grade: number | null };
-export type StudentRow = { id: number; name: string; cells: Cell[]; average: number | null; trendDelta: number | null; missing: number };
+export type StudentRow = { id: number; name: string; avatarUrl?: string | null; cells: Cell[]; average: number | null; trendDelta: number | null; missing: number };
 export type AssignmentCol = { id: number; title: string };
 export type GradebookModel = {
   assignments: AssignmentCol[];
@@ -75,7 +75,7 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
         classesApi.listAssignments(selectedClassId).catch(() => ({ items: [] })),
       ]);
       if (cancelled) return;
-      const members = (Array.isArray(peopleRes) ? peopleRes : (peopleRes as { members?: unknown[] }).members ?? (peopleRes as { items?: unknown[] }).items ?? []) as Array<{ role?: string; user?: { id: number; first_name?: string; last_name?: string; email?: string } }>;
+      const members = (Array.isArray(peopleRes) ? peopleRes : (peopleRes as { members?: unknown[] }).members ?? (peopleRes as { items?: unknown[] }).items ?? []) as Array<{ role?: string; user?: { id: number; first_name?: string; last_name?: string; email?: string; profile_image_url?: string | null } }>;
       const students = members.filter((m) => (m.role ?? "student").toLowerCase() === "student" && m.user).map((m) => m.user!);
       const assignments = (aRes.items as Array<{ id: number; title?: string; created_at?: string }>).slice(0, ASSIGNMENT_CAP);
 
@@ -105,7 +105,7 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
         const average = graded.length ? Math.round(graded.reduce((a, b) => a + b, 0) / graded.length) : null;
         const trendDelta = graded.length >= 2 ? graded[graded.length - 1] - graded[0] : null;
         const missing = cells.filter((c) => c.status === "missing").length;
-        return { id: u.id, name: [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.email || "Student", cells, average, trendDelta, missing };
+        return { id: u.id, name: [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.email || "Student", avatarUrl: u.profile_image_url ?? null, cells, average, trendDelta, missing };
       });
 
       const allAverages = studentRows.map((s) => s.average).filter((x): x is number => x != null);

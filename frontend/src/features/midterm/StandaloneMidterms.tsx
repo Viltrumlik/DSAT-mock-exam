@@ -8,6 +8,7 @@ import { StudentMultiSelect } from "@/components/access/StudentMultiSelect";
 import { midtermApi, subjectLabel } from "@/lib/midtermApi";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
+import { Avatar } from "@/components/ui/Avatar";
 
 /**
  * Standalone teacher "Midterms" area: a list of midterms; open one to grant access to
@@ -151,7 +152,12 @@ export function StandaloneMidtermDetail({ midtermId }: { midtermId: number }) {
               <tbody>
                 {students.map((s) => (
                   <tr key={s.student_id} className="border-t border-border">
-                    <td className="py-2.5 font-semibold text-foreground">{s.student_name}</td>
+                    <td className="py-2.5 font-semibold text-foreground">
+                      <span className="flex items-center gap-2">
+                        <Avatar src={s.student_profile_image_url} name={s.student_name} size={26} />
+                        <span className="truncate">{s.student_name}</span>
+                      </span>
+                    </td>
                     <td className="py-2.5 text-muted-foreground">{stateLabel[s.state] ?? s.state}</td>
                     <td className="py-2.5 text-right font-bold text-foreground">
                       {s.submitted ? `${s.score} / ${s.score_ceiling}` : "—"}

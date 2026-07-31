@@ -135,7 +135,7 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
               const hasDraft = !!readDraft(it.submission.id);
               return (
                 <button key={it.key} type="button" onClick={() => setSelectedKey(it.key)} className={cn("ds-ring flex items-center gap-3 rounded-xl border p-3 text-left transition-colors", active ? "border-primary/30 bg-primary-soft" : "border-border bg-card hover:bg-surface-2")}>
-                  <Avatar name={studentName(it.submission.student)} size={34} />
+                  <Avatar name={studentName(it.submission.student)} src={it.submission.student?.profile_image_url} size={34} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-foreground">{studentName(it.submission.student)}</p>
                     <p className="truncate text-[12px] text-muted-foreground">{it.assignmentTitle} · {it.className}</p>
@@ -152,7 +152,7 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
             <Card>
               <CardContent className="flex flex-col gap-5">
                 <div className="flex items-center gap-3 border-b border-border pb-4">
-                  <Avatar name={studentName(selected.submission.student)} size={44} />
+                  <Avatar name={studentName(selected.submission.student)} src={selected.submission.student?.profile_image_url} size={44} />
                   <div className="min-w-0 flex-1">
                     <p className="ds-h4 truncate">{studentName(selected.submission.student)}</p>
                     <p className="truncate text-[13px] text-muted-foreground">{selected.assignmentTitle} · {selected.className}</p>

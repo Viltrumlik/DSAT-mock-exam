@@ -18,7 +18,7 @@ export type Submission = {
   workflow_status: string;
   files?: GradeFile[];
   attempt?: { id?: number; score?: number | null; practice_test_title?: string | null } | null;
-  student?: { id: number; first_name?: string; last_name?: string; email?: string };
+  student?: { id: number; first_name?: string; last_name?: string; email?: string; profile_image_url?: string | null };
   review?: { grade?: number | string | null; feedback?: string | null } | null;
 };
 export type QueueItem = {

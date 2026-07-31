@@ -7,6 +7,7 @@ import api from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
+import { Avatar as UiAvatar } from "@/components/ui/Avatar";
 import { LoadingState, ErrorState, EmptyState, ConfirmDialog } from "../ui";
 import { useClassMembers } from "../hooks";
 import { classroomKeys } from "../queryKeys";
@@ -61,11 +62,6 @@ function avatarColor(key: string): string {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-function initials(u: Member["user"]): string {
-  const a = (u.first_name?.[0] || u.email?.[0] || "?").toUpperCase();
-  const b = (u.last_name?.[0] || "").toUpperCase();
-  return b ? `${a}${b}` : a;
-}
 function fullName(u: Member["user"]): string {
   return [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.username || u.email;
 }
@@ -80,10 +76,16 @@ function useMemberMutation(classId: number) {
 }
 
 function Avatar({ u, className }: { u: Member["user"]; className?: string }) {
+  // The photo when there is one, the deterministic pastel initials when there is not.
+  // The shared Avatar keeps the initials as its own onError fallback, so a dead media
+  // URL lands on the same circle rather than a broken-image icon.
   return (
-    <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-bold", avatarColor(u.email || String(u.id)), className)}>
-      {initials(u)}
-    </div>
+    <UiAvatar
+      src={u.profile_image_url}
+      name={fullName(u)}
+      size={40}
+      className={cn(u.profile_image_url ? "" : avatarColor(u.email || String(u.id)), "text-xs font-bold", className)}
+    />
   );
 }
 

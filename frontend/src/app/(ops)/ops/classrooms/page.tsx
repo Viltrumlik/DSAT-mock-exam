@@ -5,19 +5,20 @@ import { classesApi, examsAdminApi, type ClassroomMember } from "@/lib/api";
 import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
+import { Avatar } from "@/components/ui/Avatar";
 
 // ADMIN GOVERNANCE. Admins create classrooms and assign a teacher here, and may view all
 // classrooms, transfer ownership, and delete. Teachers do NOT create their own classrooms —
 // the create control lives only in this admin console. Operational, day-to-day management
 // (edit/assign content/materials) still lives in the Teacher Portal.
 
-type TeacherDetails = { id: number; email: string; first_name?: string; last_name?: string } | null;
+type TeacherDetails = { id: number; email: string; first_name?: string; last_name?: string; profile_image_url?: string | null } | null;
 type Row = {
   id: number; name: string; subject?: string; level?: string; members_count?: number; student_count?: number;
   teacher_details?: TeacherDetails;
 };
-type TeacherOpt = { id: number; email: string; name: string };
-type StudentOpt = { id: number; email: string; name: string };
+type TeacherOpt = { id: number; email: string; name: string; avatar?: string | null };
+type StudentOpt = { id: number; email: string; name: string; avatar?: string | null };
 
 function memberName(m: ClassroomMember): string {
   const u = m.user;
@@ -71,6 +72,7 @@ export default function OpsClassroomGovernancePage() {
         const toOpt = (x: Record<string, unknown>) => ({
           id: Number(x.id), email: String(x.email ?? ""),
           name: [x.first_name, x.last_name].filter(Boolean).join(" ").trim() || String(x.email ?? `#${x.id}`),
+          avatar: (x.profile_image_url as string | null) ?? null,
         });
         setTeachers(list.filter((x) => String(x.role).toLowerCase() === "teacher").map(toOpt));
         setStudents(list.filter((x) => String(x.role).toLowerCase() === "student").map(toOpt));
@@ -231,7 +233,7 @@ export default function OpsClassroomGovernancePage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                       <span>ID #{c.id}</span>
-                      <span className="inline-flex items-center gap-1"><UserCog className="h-3 w-3" /> {teacherName(c.teacher_details ?? null)}</span>
+                      <span className="inline-flex items-center gap-1.5">{c.teacher_details?.profile_image_url ? <Avatar src={c.teacher_details.profile_image_url} name={teacherName(c.teacher_details)} size={18} /> : <UserCog className="h-3 w-3" />} {teacherName(c.teacher_details ?? null)}</span>
                       {typeof (c.members_count ?? c.student_count) === "number" && <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{c.members_count ?? c.student_count}</span>}
                     </div>
                   </div>
@@ -362,9 +364,12 @@ export default function OpsClassroomGovernancePage() {
                       <div className="px-3 py-3 text-sm text-muted-foreground">No matching students.</div>
                     ) : candidates.map((s) => (
                       <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
-                          <p className="truncate text-xs text-muted-foreground">{s.email}</p>
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <Avatar src={s.avatar} name={s.name} size={32} />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{s.email}</p>
+                          </div>
                         </div>
                         <button disabled={busy} onClick={() => addStudent(s.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"><UserPlus className="h-3.5 w-3.5" /> Add</button>
                       </div>
@@ -387,9 +392,12 @@ export default function OpsClassroomGovernancePage() {
                   <div className="rounded-xl border border-border divide-y divide-border">
                     {activeStudents.map((m) => (
                       <div key={m.user.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-semibold text-foreground">{memberName(m)}</p>
-                          <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <Avatar src={m.user.profile_image_url} name={memberName(m)} size={32} />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">{memberName(m)}</p>
+                            <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
+                          </div>
                         </div>
                         <button disabled={busy} onClick={() => removeStudent(m.user.id, memberName(m))} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50 shrink-0"><UserMinus className="h-3.5 w-3.5" /> Remove</button>
                       </div>

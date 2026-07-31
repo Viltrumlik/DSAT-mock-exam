@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, ChevronRight, GraduationCap, Sparkles, Bot, User2, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { Avatar } from "@/components/ui/Avatar";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { Card, CardHeader, Button, Pill, Field, Input, Textarea, EmptyState, LoadingState, ErrorState, StatCard } from "../ui";
@@ -193,7 +194,10 @@ function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore }: {
   return (
     <div className="py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <span className="min-w-0 truncate text-sm text-foreground">{row.name}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          <Avatar src={row.profile_image_url} name={row.name} size={26} />
+          <span className="min-w-0 truncate text-sm text-foreground">{row.name}</span>
+        </span>
         <div className="flex shrink-0 items-center gap-2">
           {row.status === "GRADED" && row.grade != null && (
             <span className="text-sm font-semibold text-foreground">

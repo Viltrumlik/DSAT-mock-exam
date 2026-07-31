@@ -8,6 +8,9 @@ export type AvatarProps = {
   name?: string;
   size?: number;
   className?: string;
+  /** Merged over the sizing style. For callers with a bespoke fallback treatment —
+   *  the leaderboard podium's medal gradient, for one. */
+  style?: React.CSSProperties;
 };
 
 function initials(name?: string): string {
@@ -16,7 +19,7 @@ function initials(name?: string): string {
   return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
-export function Avatar({ src, name, size = 40, className }: AvatarProps) {
+export function Avatar({ src, name, size = 40, className, style }: AvatarProps) {
   const [failed, setFailed] = useState(false);
   const showImg = src && !failed;
   return (
@@ -25,7 +28,7 @@ export function Avatar({ src, name, size = 40, className }: AvatarProps) {
         "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary-soft font-semibold text-primary",
         className,
       )}
-      style={{ width: size, height: size, fontSize: Math.max(11, size * 0.36) }}
+      style={{ width: size, height: size, fontSize: Math.max(11, size * 0.36), ...style }}
     >
       {showImg ? (
         // eslint-disable-next-line @next/next/no-img-element

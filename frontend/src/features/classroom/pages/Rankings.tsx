@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Trophy, GraduationCap, Crown, EyeOff, RefreshCw, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { Avatar as UiAvatar } from "@/components/ui/Avatar";
 import { Button, EmptyState, LoadingState, ErrorState } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
@@ -21,42 +22,24 @@ const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: st
 const SAT_LEVELS = ["middle", "senior"];
 const ranksOnSat = (level?: string) => SAT_LEVELS.includes((level ?? "").trim().toLowerCase());
 
-function initials(name: string): string {
-  const p = name.trim().split(/\s+/).filter(Boolean);
-  if (!p.length) return "?";
-  return (p[0][0] + (p[1]?.[0] ?? "")).toUpperCase();
-}
-
-/** Profile photo, falling back to coloured initials.
- *
- * The fallback is not just for students who never uploaded one: a broken or expired media
- * URL must degrade to initials rather than a broken-image icon, so `onError` swaps back. */
+/** Photo when there is one, coloured initials when there is not — the shared Avatar
+ *  handles both, including degrading a dead media URL back to initials. The bg/color/ring
+ *  props here are the podium's gradient treatment, which the shared component leaves to
+ *  the caller. */
 function Avatar({
   name, src, size, bg, color, ring,
 }: { name: string; src?: string | null; size: number; bg?: string; color?: string; ring?: string }) {
-  const [failed, setFailed] = useState(false);
-  const style: React.CSSProperties = { width: size, height: size, fontSize: Math.round(size * 0.36) };
-  if (src && !failed) {
-    return (
-      <img
-        src={src}
-        alt=""
-        loading="lazy"
-        onError={() => setFailed(true)}
-        className="shrink-0 rounded-full object-cover"
-        style={{ ...style, boxShadow: ring }}
-      />
-    );
-  }
   return (
-    <span
-      className="flex shrink-0 items-center justify-center rounded-full font-extrabold"
-      style={{ ...style, background: bg, color, boxShadow: ring }}
-    >
-      {initials(name)}
-    </span>
+    <UiAvatar
+      src={src}
+      name={name}
+      size={size}
+      className="font-extrabold"
+      style={{ background: src ? undefined : bg, color, boxShadow: ring }}
+    />
   );
 }
+
 function fmt(n: number | null): string {
   return n == null ? "—" : Math.round(n).toLocaleString("en-US");
 }
@@ -143,7 +126,7 @@ function RankingBoard({ classroom, kind, setKind, satAllowed }: {
                   className={cn("group flex items-center gap-3.5 rounded-2xl border px-4 py-3 transition-all hover:translate-x-[3px] hover:border-primary hover:shadow-[0_6px_16px_rgba(42,104,192,.12)]",
                     row.is_me ? "border-primary bg-primary/5" : "border-border bg-card")}>
                   <span className="w-[26px] shrink-0 text-center text-[15px] font-extrabold tabular-nums text-muted-foreground">{row.rank}</span>
-                  <Avatar name={row.name} src={row.avatar_url} size={40} bg={abg} color={ac} />
+                  <Avatar name={row.name} src={row.profile_image_url} size={40} bg={abg} color={ac} />
                   <span className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
                     {row.name}{row.is_me ? <span className="ml-1.5 text-xs font-bold text-primary">You</span> : null}
                   </span>
@@ -194,7 +177,7 @@ function Podium({ rows, scoreOf }: { rows: RankingRow[]; scoreOf: (r: RankingRow
             {first ? <Crown className="absolute -top-3 h-6 w-6" style={{ color: "#e3a008", fill: "#f5c542" }} /> : null}
             <Avatar
               name={r.name}
-              src={r.avatar_url}
+              src={r.profile_image_url}
               size={first ? 64 : 56}
               bg={m.av}
               color="#fff"

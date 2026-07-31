@@ -27,6 +27,8 @@ export type ResourceAccessGrant = {
   user: number;
   user_email: string;
   user_name: string;
+  /** Absolute URL of the grantee's profile photo; null when they have not uploaded one. */
+  user_profile_image_url?: string | null;
   scope: GrantScope;
   subject: string | null;
   resource_type: string | null;

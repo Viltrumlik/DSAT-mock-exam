@@ -3,7 +3,7 @@
 import { Gauge, Users, AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
-  Card, CardContent, Badge, EmptyState, Skeleton,
+  Avatar, Card, CardContent, Badge, EmptyState, Skeleton,
   Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
 } from "@/components/ui";
 import { ChartCard, BarChart } from "@/components/ui/charts";
@@ -86,7 +86,7 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
                   {model.students.map((s) => (
                     <tr key={s.id}>
                       <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-semibold text-foreground">
-                        <span className="flex items-center gap-2"><span className="truncate">{s.name}</span>{s.missing > 0 ? <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-bold text-warning-foreground">{s.missing}!</span> : null}</span>
+                        <span className="flex items-center gap-2"><Avatar src={s.avatarUrl} name={s.name} size={24} /><span className="truncate">{s.name}</span>{s.missing > 0 ? <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-bold text-warning-foreground">{s.missing}!</span> : null}</span>
                       </td>
                       {s.cells.map((c) => (
                         <td key={c.assignmentId} className="px-1.5 py-1.5 text-center">

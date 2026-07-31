@@ -40,6 +40,8 @@ export interface GradebookOverview {
 export interface RosterRow {
   student_id: number;
   name: string;
+  /** Absolute URL of the profile photo; null when the student has not uploaded one. */
+  profile_image_url?: string | null;
   email: string;
   status: GradebookStatus;
   grade: string | null;

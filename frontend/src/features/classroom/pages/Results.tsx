@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Card, CardHeader, Field, Select, LoadingState } from "../ui";
 import { useUnifiedResults } from "../hooks";
 import type { ClassroomWithRole } from "../types";
+import { Avatar } from "@/components/ui/Avatar";
 
 const TYPE_OPTIONS = [
   { v: "all", label: "All" },
@@ -96,7 +97,12 @@ export function Results({ classroom }: { classroom: ClassroomWithRole }) {
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i} className="border-t border-border">
-                    <td className="py-2 font-medium text-foreground">{r.student}</td>
+                    <td className="py-2 font-medium text-foreground">
+                      <span className="flex items-center gap-2">
+                        <Avatar src={r.student_profile_image_url} name={r.student} size={24} />
+                        <span className="truncate">{r.student}</span>
+                      </span>
+                    </td>
                     <td className="text-foreground">{r.content_name}</td>
                     <td className="text-muted-foreground">{r.type}</td>
                     <td className="text-foreground">{r.score ?? "—"}</td>

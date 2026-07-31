@@ -296,7 +296,7 @@ export function GrantPanel({
                   ) : (
                     studentRows.map((u) => (
                       <div key={u.id} className={cn(accClass.card, "flex items-center gap-3 px-3.5 py-2.5")}>
-                        <Avatar name={studentLabel(u)} seed={u.id} size={32} />
+                        <Avatar name={studentLabel(u)} seed={u.id} size={32} src={u.profile_image_url} />
                         <span className="truncate text-sm font-bold text-foreground">{studentLabel(u)}</span>
                       </div>
                     ))
@@ -450,7 +450,7 @@ function SelectedRecipientsBar({
             key={u.id}
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--acc-chip-border)] bg-card py-1 pl-1 pr-2 text-[12px] font-semibold text-foreground"
           >
-            <Avatar name={studentLabel(u)} seed={u.id} size={18} />
+            <Avatar name={studentLabel(u)} seed={u.id} size={18} src={u.profile_image_url} />
             <span className="max-w-[130px] truncate">{studentLabel(u)}</span>
             {onRemove && (
               <button
