@@ -4,6 +4,7 @@
    pills, removable chips, the logo watermark, and the card / button class
    strings, so every access surface reads as one system. */
 
+import { useState } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import styles from "./access.module.css";
@@ -47,11 +48,27 @@ export function avatarColor(seed: string | number): string {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-export function Avatar({ name, seed, size = 40 }: { name: string; seed?: string | number; size?: number }) {
+/** The access console's square avatar — its own visual identity, so this stays a rounded-xl
+ *  tile rather than delegating to the round shared `ui/Avatar`.
+ *
+ *  `src` is the photo. It degrades back to the coloured initial on a load error, so a dead
+ *  media URL looks like an ordinary no-photo account instead of a broken image. */
+export function Avatar({
+  name,
+  seed,
+  size = 40,
+  src,
+}: {
+  name: string;
+  seed?: string | number;
+  size?: number;
+  src?: string | null;
+}) {
+  const [failed, setFailed] = useState(false);
   const initial = (name.trim()[0] || "?").toUpperCase();
   return (
     <span
-      className="inline-flex shrink-0 items-center justify-center rounded-xl font-bold text-white"
+      className="relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-xl font-bold text-white"
       style={{
         width: size,
         height: size,
@@ -60,7 +77,18 @@ export function Avatar({ name, seed, size = 40 }: { name: string; seed?: string 
       }}
       aria-hidden
     >
-      {initial}
+      {src && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          onError={() => setFailed(true)}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        initial
+      )}
     </span>
   );
 }

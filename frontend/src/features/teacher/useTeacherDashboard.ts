@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 
-type InterventionStudent = { student_id: number; first_name?: string; last_name?: string; email?: string };
+type InterventionStudent = { student_id: number; first_name?: string; last_name?: string; email?: string; profile_image_url?: string | null };
 type Interventions = {
   overdue_students: (InterventionStudent & { overdue_count: number; oldest_overdue_due_at?: string | null })[];
   inactive_students: (InterventionStudent & { days_inactive?: number | null })[];
@@ -20,7 +20,7 @@ type Interventions = {
 };
 type LeaderboardSummary = { assignment_id: number; title: string; created_at?: string | null; group_mean_score: number | null }[];
 
-export type AttentionItem = { id: string; name: string; reason: string; tone: "warning" | "danger" };
+export type AttentionItem = { id: string; name: string; avatarUrl?: string | null; reason: string; tone: "warning" | "danger" };
 export type MissingItem = { id: string; title: string; className: string; completion: number };
 export type UpcomingItem = { id: string; title: string; className: string; dueLabel: string; soon: boolean };
 export type ClassHealth = { id: number; name: string; students: number; avgScore: number | null; completion: number };
@@ -105,12 +105,12 @@ export function useTeacherDashboard(previewModel?: TeacherDashboardModel): Teach
         (iv?.low_score_students ?? []).forEach((s) => {
           const key = `${c.id}-${s.student_id}`;
           if (seenAttention.has(key)) return; seenAttention.add(key);
-          needsAttention.push({ id: key, name: fullName(s), reason: `Average ${s.avg_score_pct}% · ${cname}`, tone: "danger" });
+          needsAttention.push({ id: key, name: fullName(s), avatarUrl: s.profile_image_url ?? null, reason: `Average ${s.avg_score_pct}% · ${cname}`, tone: "danger" });
         });
         (iv?.overdue_students ?? []).forEach((s) => {
           const key = `${c.id}-${s.student_id}`;
           if (seenAttention.has(key)) return; seenAttention.add(key);
-          needsAttention.push({ id: key, name: fullName(s), reason: `${s.overdue_count} missing · ${cname}`, tone: "warning" });
+          needsAttention.push({ id: key, name: fullName(s), avatarUrl: s.profile_image_url ?? null, reason: `${s.overdue_count} missing · ${cname}`, tone: "warning" });
         });
 
         (iv?.completion_summary ?? []).forEach((a) => {

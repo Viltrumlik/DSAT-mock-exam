@@ -65,7 +65,7 @@ export function TeacherDashboard({ previewModel }: { previewModel?: TeacherDashb
               <div className="grid gap-2 sm:grid-cols-2">
                 {m.needsAttention.map((s) => (
                   <Link key={s.id} href="/teacher/students" className="ds-ring flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-border-strong hover:bg-surface-2">
-                    <Avatar name={s.name} size={34} />
+                    <Avatar name={s.name} src={s.avatarUrl} size={34} />
                     <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{s.name}</p><p className="truncate text-[12px] text-muted-foreground">{s.reason}</p></div>
                     <span className={cn("h-2 w-2 shrink-0 rounded-full", s.tone === "danger" ? "bg-warning" : "bg-info")} />
                   </Link>

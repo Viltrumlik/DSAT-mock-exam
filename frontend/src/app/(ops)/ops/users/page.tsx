@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useToast } from "@/components/ToastProvider";
+import { Avatar } from "@/components/ui/Avatar";
 
 type UserRecord = {
   id: number;
@@ -41,6 +42,8 @@ type UserRecord = {
   previous_email?: string | null;
   /** Graded/submitted rows this account holds. Also the delete blast radius. */
   attempt_count?: number;
+  /** Absolute URL of the profile photo; null when the account has not uploaded one. */
+  profile_image_url?: string | null;
   /** Students only: their classroom memberships (with status), for showing + removing
    *  a student from a class directly here. Populated by the admin user-list serializer. */
   bulk_assign_profile?: {
@@ -902,6 +905,13 @@ export default function OpsUsersPage() {
                         />
                       </td>
                       <td className="px-5 py-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar
+                            src={u.profile_image_url}
+                            name={fullName || u.username || u.email || `User ${u.id}`}
+                            size={36}
+                          />
+                          <div className="min-w-0">
                         <p className="font-bold text-foreground">
                           {fullName || u.username || u.email || `User ${u.id}`}
                         </p>
@@ -949,6 +959,8 @@ export default function OpsUsersPage() {
                             })}
                           </div>
                         )}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap hidden sm:table-cell">
                         <span className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", roleColor)}>

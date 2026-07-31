@@ -15,6 +15,8 @@ export type StudentRow = {
   first_name?: string;
   last_name?: string;
   role?: string;
+  /** Absolute URL of the profile photo; null when the account has not uploaded one. */
+  profile_image_url?: string | null;
 };
 
 function label(u: StudentRow): string {
@@ -179,7 +181,7 @@ export function StudentMultiSelect({
                   checked ? accClass.selectableOn : accClass.selectable,
                 )}
               >
-                <Avatar name={label(u)} seed={u.id} size={40} />
+                <Avatar name={label(u)} seed={u.id} size={40} src={u.profile_image_url} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-bold text-foreground">{label(u)}</span>
                   {u.email && <span className="block truncate text-xs text-muted-foreground">{u.email}</span>}

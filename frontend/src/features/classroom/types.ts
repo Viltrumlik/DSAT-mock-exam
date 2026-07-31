@@ -33,7 +33,15 @@ export type SubmissionStatus = "DRAFT" | "SUBMITTED" | "RETURNED" | "REVIEWED";
 
 export interface Member {
   id: number;
-  user: { id: number; email: string; first_name?: string; last_name?: string; username?: string };
+  user: {
+    id: number;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    username?: string;
+    /** Absolute URL of the profile photo; null when the student has not uploaded one. */
+    profile_image_url?: string | null;
+  };
   role: RawRole;
   joined_at?: string;
 }

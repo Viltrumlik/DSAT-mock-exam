@@ -36,6 +36,7 @@ export type ClassroomBrief = {
   subject: string;
   level: string;
   teacher_name: string;
+  teacher_profile_image_url?: string | null;
 };
 
 export type ClassroomListRow = ClassroomBrief & {
@@ -72,6 +73,7 @@ export type ClassroomDetail = { classroom: ClassroomBrief; midterms: ClassroomMi
 export type ReportRow = {
   student_id: number;
   student_name: string;
+  student_profile_image_url?: string | null;
   midterm_score: number | null;
   midterm_state: MidtermState;
   midterm_passed: boolean | null;

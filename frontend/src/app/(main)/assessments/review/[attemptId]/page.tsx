@@ -26,6 +26,7 @@ import { cn } from "@/lib/cn";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { AssessmentText } from "@/lib/assessmentText";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
+import { Avatar } from "@/components/ui/Avatar";
 import { Spinner } from "@/components/ui";
 import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 
@@ -109,9 +110,20 @@ function TeacherFeedbackCard({ feedback }: { feedback: TeacherFeedback }) {
   return (
     <div className="rounded-3xl border border-primary/20 bg-primary/5 p-6 shadow-sm">
       <div className="flex gap-3.5">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-card text-primary">
-          <MessageSquare className="h-4 w-4" />
-        </div>
+        {/* The teacher's face when they have one — feedback reads differently when it
+            comes from a person rather than a speech-bubble glyph. */}
+        {feedback.teacher_profile_image_url ? (
+          <Avatar
+            src={feedback.teacher_profile_image_url}
+            name={feedback.teacher_name ?? ""}
+            size={36}
+            className="rounded-xl"
+          />
+        ) : (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-card text-primary">
+            <MessageSquare className="h-4 w-4" />
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <p className="text-[11px] font-extrabold uppercase tracking-widest text-primary">

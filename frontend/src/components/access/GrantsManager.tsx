@@ -129,7 +129,7 @@ export function GrantsManager({ refreshKey = 0 }: { refreshKey?: number }) {
                 <tr key={g.id} className="border-b border-border last:border-b-0 hover:bg-surface-2/50">
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2.5">
-                      <Avatar name={g.user_name || g.user_email || `#${g.id}`} seed={g.user_email || g.id} size={32} />
+                      <Avatar name={g.user_name || g.user_email || `#${g.id}`} seed={g.user_email || g.id} size={32} src={g.user_profile_image_url} />
                       <div className="min-w-0">
                         <div className="truncate font-bold text-foreground">{g.user_name}</div>
                         <div className="truncate text-xs text-muted-foreground">{g.user_email}</div>

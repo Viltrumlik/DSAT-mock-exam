@@ -15,6 +15,8 @@ type UserRow = {
   first_name?: string;
   last_name?: string;
   role?: string;
+  /** Absolute URL of the profile photo; null when the account has not uploaded one. */
+  profile_image_url?: string | null;
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -139,7 +141,7 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
                   onClick={() => setActive(u)}
                   className={cn("flex w-full items-center gap-3 px-3.5 py-3 text-left", accClass.selectable)}
                 >
-                  <Avatar name={userLabel(u)} seed={u.id} size={40} />
+                  <Avatar name={userLabel(u)} seed={u.id} size={40} src={u.profile_image_url} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-bold text-foreground">{userLabel(u)}</span>
                     {u.email && <span className="block truncate text-xs text-muted-foreground">{u.email}</span>}
@@ -159,7 +161,7 @@ export function UserAccessProfile({ onChanged }: { onChanged?: () => void }) {
           {/* Active user header */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4">
             <div className="flex items-center gap-3">
-              <Avatar name={userLabel(active)} seed={active.id} size={44} />
+              <Avatar name={userLabel(active)} seed={active.id} size={44} src={active.profile_image_url} />
               <div>
                 <div className="text-base font-extrabold text-foreground">{userLabel(active)}</div>
                 <div className="text-xs text-muted-foreground">{active.email}</div>

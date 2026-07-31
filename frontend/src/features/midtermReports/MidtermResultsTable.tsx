@@ -4,6 +4,7 @@ import { CircleDashed, Users } from "lucide-react";
 import { StatusPill } from "./StatusPill";
 import { filterRows, finalPill, formatScore, isGraded, sittingPill } from "./status";
 import type { MidtermReport } from "./types";
+import { Avatar } from "@/components/ui/Avatar";
 
 /** A cell with nothing to say — a student who never had a retake to sit, or an unsat paper. */
 function Blank({ reason }: { reason: string }) {
@@ -104,7 +105,10 @@ export function MidtermResultsTable({
                       scope="row"
                       className="py-2.5 pr-3 text-left font-bold text-foreground"
                     >
-                      {row.student_name}
+                      <span className="flex items-center gap-2">
+                        <Avatar src={row.student_profile_image_url} name={row.student_name} size={24} />
+                        <span className="truncate">{row.student_name}</span>
+                      </span>
                     </th>
                     <td className="px-3 py-2.5 tabular-nums text-muted-foreground">
                       {row.midterm_score == null ? (

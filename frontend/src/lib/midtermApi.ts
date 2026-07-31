@@ -79,8 +79,10 @@ export interface OffscreenReport {
 export interface StandaloneResultRow {
   student_id: number;
   student_name: string;
+  student_profile_image_url?: string | null;
   instructor_id: number | null;
   instructor_name: string | null;
+  instructor_profile_image_url?: string | null;
   state: string;
   submitted: boolean;
   score: number | null;
@@ -229,6 +231,8 @@ export interface SeatOccupant {
   seat_col: number;
   student_id: number | null;
   student_name: string | null;
+  /** Absolute URL of the seated student's photo; null on an empty chair or no upload. */
+  student_profile_image_url?: string | null;
   version_id: number | null;
   version_number: number | null;
   version_label: string | null;
