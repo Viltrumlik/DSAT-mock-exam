@@ -1,5 +1,6 @@
 import axios, { type AxiosError, type AxiosResponse } from 'axios';
 import type { TelegramOIDCResult } from "@/types/telegramAuth";
+import type { VideoUploadTicket } from "@/lib/videoUpload";
 import { buildSanitizedAuthCorrelationHeaders } from "@/lib/auth/authCorrelation";
 import { evaluateAuthCircuitBreaker, noteTemporalStaleRejection } from "@/lib/auth/authCircuitBreaker";
 import {
@@ -1059,6 +1060,11 @@ export const classesApi = {
     },
     deleteAssignment: async (classId: number, assignmentId: number) => {
         await api.delete(`/classes/${classId}/assignments/${assignmentId}/`);
+    },
+    // Presigned R2 URL for a lesson-video upload (browser PUTs the file straight to R2).
+    videoUploadUrl: async (classId: number, filename: string): Promise<VideoUploadTicket> => {
+        const r = await api.post(`/classes/${classId}/assignments/video-upload-url/`, { filename });
+        return r.data as VideoUploadTicket;
     },
     submitAssignment: async (classId: number, assignmentId: number, payload: any, isFormData = true) => {
         const r = await axiosPostWith429Backoff(() =>

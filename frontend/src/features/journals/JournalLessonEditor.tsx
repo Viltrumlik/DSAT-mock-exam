@@ -31,6 +31,7 @@ import {
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import MultiLinkInput from "@/components/MultiLinkInput";
+import LessonVideoField from "@/components/LessonVideoField";
 import {
   ArrowLeft, BookOpen, Check, ClipboardList, Clock, GraduationCap, Inbox, Layers,
   Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
@@ -72,6 +73,9 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
   const [links, setLinks] = useState<string[]>([]);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoKey, setVideoKey] = useState<string | null>(null);
+  const [videoRemoved, setVideoRemoved] = useState(false);
   const [allowFileUpload, setAllowFileUpload] = useState(false);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
@@ -105,6 +109,9 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         setLinks(
           l.external_urls?.length ? l.external_urls : l.external_url ? [l.external_url] : [],
         );
+        setVideoUrl(l.video_file_url ? "" : l.video_url || "");
+        setVideoKey(null);
+        setVideoRemoved(false);
         setAllowFileUpload(l.allow_file_upload);
         if (l.practice_scope === "MATH" || l.practice_scope === "ENGLISH" || l.practice_scope === "BOTH") setPracticeScope(l.practice_scope);
         setSelectedAssessmentIds(new Set(l.assessments.map((a) => a.assessment_set_id)));
@@ -223,6 +230,9 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         title: title.trim(),
         instructions,
         external_urls: links.map((s) => s.trim()).filter(Boolean),
+        video_url: videoUrl.trim(),
+        ...(videoKey ? { video_key: videoKey } : {}),
+        ...(videoRemoved && !videoKey && !videoUrl.trim() ? { remove_video: true } : {}),
         allow_file_upload: allowFileUpload,
         practice_scope: practiceScope,
         assessment_set_ids: [...selectedAssessmentIds],
@@ -508,6 +518,21 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
 
               <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles.">
                 <MultiLinkInput value={links} onChange={setLinks} inputClassName={crInputClass} idPrefix="jl-url" />
+              </ClassroomField>
+
+              <ClassroomField label="Lesson video" hint="A student who missed the lesson can watch it. Upload the recording from your computer, or paste a YouTube/Vimeo/Loom/Drive link.">
+                <LessonVideoField
+                  url={videoUrl}
+                  onUrlChange={setVideoUrl}
+                  videoKey={videoKey}
+                  onVideoKeyChange={setVideoKey}
+                  removed={videoRemoved}
+                  onRemovedChange={setVideoRemoved}
+                  existingUrl={lesson?.video_file_url || lesson?.video_url || ""}
+                  requestUpload={(filename) => journalsApi.videoUploadUrl(filename)}
+                  inputClassName={crInputClass}
+                  idPrefix="jl-video"
+                />
               </ClassroomField>
 
               <ClassroomField label="Files" hint="PDF, Word, Excel, PowerPoint, text, or images — students can download these.">

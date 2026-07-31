@@ -30,6 +30,16 @@ from .views_rankings import _ClassroomScopedView
 logger = logging.getLogger(__name__)
 
 
+def _media_url(filefield):
+    """A file's URL (R2 signed URLs are already absolute), or None. Never raises."""
+    if not filefield:
+        return None
+    try:
+        return filefield.url
+    except ValueError:
+        return None
+
+
 def _flag(request, name: str) -> bool:
     """Read a boolean confirm flag from the body (multipart sends it as a string)."""
     return str(request.data.get(name, "")).strip().lower() in ("1", "true", "yes", "on")
@@ -110,6 +120,8 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
         "instructions": session.instructions,
         "external_url": session.external_url,
         "external_urls": list(session.external_urls or []),
+        "video_url": session.video_url,
+        "video_file_url": _media_url(session.video_file),
         "allow_file_upload": session.allow_file_upload,
         "practice_test_ids": session.practice_test_ids or [],
         "practice_test_pack_ids": session.practice_test_pack_ids or [],
@@ -159,6 +171,8 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                 "instructions": cw.new_topic_instructions,
                 "external_url": cw.new_topic_external_url,
                 "external_urls": list(cw.new_topic_external_urls or []),
+                "video_url": cw.new_topic_video_url,
+                "video_file_url": _media_url(cw.new_topic_video_file),
                 "minutes": cw.new_topic_minutes,
                 "items": _items(
                     by_block.get("NEW_TOPIC", []),

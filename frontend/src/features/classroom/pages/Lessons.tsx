@@ -21,6 +21,7 @@ import {
   Timer,
 } from "lucide-react";
 import { midtermApi } from "@/lib/midtermApi";
+import VideoPlayer from "@/components/VideoPlayer";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { Button, Card, CardHeader, ConfirmDialog, EmptyState, ErrorState, LoadingState, Pill, Tabs } from "../ui";
@@ -41,6 +42,17 @@ import type { ClassroomWithRole } from "../types";
 
 /** Read-only list of a lesson's external links (prefers the multi list, falls back to
  *  the legacy single link) so a teacher can see and share them with the class. */
+/** Compact lesson-video player for the teacher panel (so the teacher can preview/play the
+ *  recording they'll share with the class). Renders nothing when no video is set. */
+function LessonVideo({ url }: { url?: string }) {
+  if (!url) return null;
+  return (
+    <div className="mt-3 max-w-md">
+      <VideoPlayer url={url} />
+    </div>
+  );
+}
+
 function LessonLinks({ urls, single }: { urls?: string[]; single?: string }) {
   const list = urls?.length ? urls : single ? [single] : [];
   if (list.length === 0) return null;
@@ -217,6 +229,7 @@ function ClassworkPanel({
           </p>
         )}
         <LessonLinks urls={cw.new_topic.external_urls} single={cw.new_topic.external_url} />
+        <LessonVideo url={cw.new_topic.video_file_url || cw.new_topic.video_url} />
         {cw.new_topic.items.length > 0 ? (
           <ul className="mt-3 divide-y divide-border">
             {cw.new_topic.items.map((it) => (
@@ -332,6 +345,7 @@ function HomeworkPanel({
           <p className="mt-2 text-sm text-muted-foreground">No instructions written.</p>
         )}
         <LessonLinks urls={hw.external_urls} single={hw.external_url} />
+        <LessonVideo url={hw.video_file_url || hw.video_url} />
         <ConfirmDialog
           open={confirmUnapproved}
           title="Some content hasn't been approved yet"

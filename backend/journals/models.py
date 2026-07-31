@@ -177,6 +177,12 @@ class JournalLesson(models.Model):
     # ``external_url`` mirrors the first so has_content / release / clients keep working.
     external_url = models.URLField(blank=True, default="")
     external_urls = models.JSONField(default=list, blank=True)
+    # Optional lesson video (link or direct URL) — copied onto the released homework so a
+    # student who missed the lesson can watch it. See classes.Assignment.video_url.
+    video_url = models.URLField(max_length=500, blank=True, default="")
+    # Uploaded lesson video (R2, presigned direct upload). Aliased onto the released
+    # Assignment (the object key is shared, not re-copied — see delivery).
+    video_file = models.FileField(upload_to="journal_videos/", max_length=500, null=True, blank=True)
     attachment_file = models.FileField(upload_to="journal_files/", null=True, blank=True)
     allow_file_upload = models.BooleanField(default=False)
     practice_scope = models.CharField(
@@ -264,6 +270,10 @@ class JournalLesson(models.Model):
             # An external link alone is a valid deliverable — parity with the
             # classroom assignment model, where external_url counts as content.
             or (self.external_url or "").strip()
+            # A lesson video alone is valid content too — a student who missed the
+            # lesson can watch it.
+            or (self.video_url or "").strip()
+            or self.video_file
         )
 
     def homework_validation_reasons(self) -> list[str]:
@@ -361,6 +371,9 @@ class JournalClasswork(models.Model):
     # Several links on the new-topic block; singular field mirrors the first (see above).
     new_topic_external_url = models.URLField(blank=True, default="")
     new_topic_external_urls = models.JSONField(default=list, blank=True)
+    # Optional lesson video for the in-class plan (shown to the teacher in the panel).
+    new_topic_video_url = models.URLField(max_length=500, blank=True, default="")
+    new_topic_video_file = models.FileField(upload_to="journal_videos/", max_length=500, null=True, blank=True)
     new_topic_attachment_file = models.FileField(
         upload_to="journal_files/", null=True, blank=True
     )
@@ -416,6 +429,8 @@ class JournalClasswork(models.Model):
             or self.new_topic_practice_test_pack_ids
             or self.new_topic_attachment_file
             or (self.new_topic_external_url or "").strip()
+            or (self.new_topic_video_url or "").strip()
+            or self.new_topic_video_file
         )
 
     @property

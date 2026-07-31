@@ -52,6 +52,7 @@ from .views_midterm_v2 import (
     MidtermV2StartCodeView,
 )
 from .views_roster import MemberManageView, ClassroomRosterView
+from .views_media import AssignmentVideoUploadUrlView
 
 
 router = DefaultRouter()
@@ -129,6 +130,12 @@ urlpatterns = [
     path("<int:classroom_pk>/gradebook/", GradebookOverviewView.as_view(), name="gradebook-overview"),
     path("<int:classroom_pk>/gradebook/assignments/<int:assignment_id>/", GradebookAssignmentView.as_view(), name="gradebook-assignment"),
     path("submissions/", include(submissions_router.urls)),
+    # Presigned R2 upload URL for a homework lesson video (browser uploads direct to R2).
+    path(
+        "<int:classroom_pk>/assignments/video-upload-url/",
+        AssignmentVideoUploadUrlView.as_view(),
+        name="class-assignment-video-upload-url",
+    ),
     path("<int:classroom_pk>/posts/", include(posts_router.urls)),
     path("<int:classroom_pk>/assignments/", include(assignments_router.urls)),
     path("", include(router.urls)),

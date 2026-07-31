@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 
 from access.permissions import CanManageJournals
 from classes.link_utils import clean_external_urls, first_url, resolve_links
+from classes.media_uploads import presign_video_put
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import services, structure
@@ -61,6 +62,54 @@ def _links_lenient(list_raw, single_raw):
         return clean_external_urls(raw)
     except DjangoValidationError:
         return []
+
+
+def _video_lenient(raw):
+    """Best-effort single video-URL normalization for internal copy/import paths."""
+    from classes.link_utils import normalize_one
+
+    try:
+        return normalize_one(raw or "")
+    except DjangoValidationError:
+        return ""
+
+
+def apply_journal_video(obj, request, *, url_field, file_field):
+    """Set a session's lesson video from a save payload, one deterministic way.
+
+    Precedence: an uploaded file (``video_key``) wins, then explicit removal
+    (``remove_video``), then a link (``video_url``). A file and a link never coexist — the
+    one just set clears the other. Only acts when one of those keys is present; otherwise
+    leaves both fields untouched (partial-PATCH safe). Returns the changed field names.
+    Raises ``DjangoValidationError`` on an invalid link.
+    """
+    from classes.link_utils import normalize_one
+    from classes.media_uploads import resolve_video_key
+
+    truthy = {"1", "true", "yes", "on"}
+    changed: set[str] = set()
+    key = (request.data.get("video_key") or "").strip()
+    remove = str(request.data.get("remove_video", "")).strip().lower() in truthy
+    if key:
+        try:
+            setattr(obj, file_field, resolve_video_key(key))
+            setattr(obj, url_field, "")
+            changed |= {file_field, url_field}
+        except DjangoValidationError:
+            pass  # bad key: the client validated it; skip rather than fail the save
+    elif remove:
+        if getattr(obj, file_field):
+            setattr(obj, file_field, None)
+        setattr(obj, url_field, "")
+        changed |= {file_field, url_field}
+    elif "video_url" in request.data:
+        link = normalize_one(request.data.get("video_url") or "")
+        setattr(obj, url_field, link)
+        changed.add(url_field)
+        if link and getattr(obj, file_field):
+            setattr(obj, file_field, None)  # a link replaces an uploaded file
+            changed.add(file_field)
+    return changed
 
 
 def _parse_id_list(raw):
@@ -131,6 +180,21 @@ def _lesson_detail_response(lesson, request):
         .get(pk=lesson.pk)
     )
     return JournalLessonDetailSerializer(lesson, context={"request": request}).data
+
+
+# --------------------------------------------------------------------------- media
+
+class JournalVideoUploadUrlView(APIView):
+    """POST {filename} -> presigned R2 PUT URL for a lesson video (admins only)."""
+
+    permission_classes = JOURNAL_PERMS
+
+    def post(self, request):
+        try:
+            info = presign_video_put(request.data.get("filename") or "")
+        except DjangoValidationError as e:
+            return Response({"detail": "; ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(info)
 
 
 # --------------------------------------------------------------------------- journals
@@ -265,6 +329,7 @@ class JournalExportView(APIView):
                 "instructions": l.instructions,
                 "external_url": l.external_url,
                 "external_urls": list(l.external_urls or []),
+                "video_url": l.video_url,
                 "allow_file_upload": l.allow_file_upload,
                 "practice_scope": l.practice_scope,
                 "practice_test_ids": l.practice_test_ids or [],
@@ -289,6 +354,7 @@ class JournalExportView(APIView):
                     "new_topic_instructions": cw.new_topic_instructions,
                     "new_topic_external_url": cw.new_topic_external_url,
                     "new_topic_external_urls": list(cw.new_topic_external_urls or []),
+                    "new_topic_video_url": cw.new_topic_video_url,
                     "new_topic_practice_test_ids": cw.new_topic_practice_test_ids or [],
                     "new_topic_practice_test_pack_ids": cw.new_topic_practice_test_pack_ids or [],
                     "exercise_practice_test_ids": cw.exercise_practice_test_ids or [],
@@ -381,6 +447,7 @@ class JournalImportView(APIView):
                 row.get("external_urls"), row.get("external_url")
             )
             lesson.external_url = first_url(lesson.external_urls)
+            lesson.video_url = _video_lenient(row.get("video_url"))
             lesson.allow_file_upload = bool(row.get("allow_file_upload"))
             lesson.practice_scope = row.get("practice_scope") or JournalLesson.PRACTICE_SCOPE_BOTH
             lesson.practice_test_ids = row.get("practice_test_ids") or None
@@ -416,6 +483,7 @@ class JournalImportView(APIView):
                     cw_row.get("new_topic_external_url"),
                 )
                 cw.new_topic_external_url = first_url(cw.new_topic_external_urls)
+                cw.new_topic_video_url = _video_lenient(cw_row.get("new_topic_video_url"))
                 cw.new_topic_practice_test_ids = cw_row.get("new_topic_practice_test_ids") or None
                 cw.new_topic_practice_test_pack_ids = (
                     cw_row.get("new_topic_practice_test_pack_ids") or None
@@ -683,6 +751,7 @@ class LessonDetailView(APIView):
         "instructions",
         "external_url",
         "external_urls",
+        "video_url",
         "practice_scope",
         "assessment_set_ids",
         "practice_test_ids",
@@ -777,6 +846,18 @@ class LessonDetailView(APIView):
         if resolved is not None:
             lesson.external_urls, lesson.external_url = resolved
             lesson.save(update_fields=["external_urls", "external_url", "updated_at"])
+
+        try:
+            vchanged = apply_journal_video(
+                lesson, request, url_field="video_url", file_field="video_file"
+            )
+        except DjangoValidationError as e:
+            return Response(
+                {"detail": "; ".join(e.messages), "code": "invalid_video"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if vchanged:
+            lesson.save(update_fields=list(vchanged) + ["updated_at"])
 
         if "practice_test_ids" in request.data:
             lesson.practice_test_ids = _parse_id_list(request.data.get("practice_test_ids")) or None
@@ -903,6 +984,17 @@ class ClassworkDetailView(APIView):
             )
         if resolved is not None:
             cw.new_topic_external_urls, cw.new_topic_external_url = resolved
+
+        try:
+            apply_journal_video(
+                cw, request, url_field="new_topic_video_url", file_field="new_topic_video_file"
+            )
+        except DjangoValidationError as e:
+            return Response(
+                {"detail": "; ".join(e.messages), "code": "invalid_video"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Both fields are persisted by the cw.save() later in this handler.
 
         for field in self._ID_LIST_FIELDS:
             if field in request.data:
@@ -1075,6 +1167,7 @@ class LessonBulkView(APIView):
             lesson.instructions = ""
             lesson.external_url = ""
             lesson.external_urls = []
+            lesson.video_url = ""
             lesson.allow_file_upload = False
             lesson.practice_test_ids = None
             lesson.practice_test_pack_ids = None
@@ -1122,6 +1215,7 @@ class LessonBulkView(APIView):
             lesson.instructions = src.instructions
             lesson.external_urls = list(src.external_urls or [])
             lesson.external_url = src.external_url
+            lesson.video_url = src.video_url
             lesson.allow_file_upload = src.allow_file_upload
             lesson.practice_scope = src.practice_scope
             lesson.practice_test_ids = src.practice_test_ids

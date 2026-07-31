@@ -276,6 +276,10 @@ def release_homework(
         instructions=session.instructions,
         external_url=session.external_url,
         external_urls=list(session.external_urls or []),
+        video_url=session.video_url,
+        # Alias the same R2 object key (a 2GB video is never re-copied). Safe: Django never
+        # auto-deletes storage files, so the shared key stays valid for both rows.
+        video_file=(session.video_file.name or None) if session.video_file else None,
         allow_file_upload=session.allow_file_upload,
         practice_scope=session.practice_scope,
         practice_test_ids=session.practice_test_ids or None,

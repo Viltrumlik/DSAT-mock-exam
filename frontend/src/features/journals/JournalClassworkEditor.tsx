@@ -11,6 +11,7 @@ import {
   crTextareaClass,
 } from "@/components/classroom";
 import MultiLinkInput from "@/components/MultiLinkInput";
+import LessonVideoField from "@/components/LessonVideoField";
 import { cn } from "@/lib/cn";
 import {
   BookOpen,
@@ -70,6 +71,9 @@ export default function JournalClassworkEditor({
   const [topicTitle, setTopicTitle] = useState("");
   const [topicInstructions, setTopicInstructions] = useState("");
   const [topicLinks, setTopicLinks] = useState<string[]>([]);
+  const [topicVideoUrl, setTopicVideoUrl] = useState("");
+  const [topicVideoKey, setTopicVideoKey] = useState<string | null>(null);
+  const [topicVideoRemoved, setTopicVideoRemoved] = useState(false);
   const [topicFiles, setTopicFiles] = useState<File[]>([]);
   const [topicAssessmentIds, setTopicAssessmentIds] = useState<Set<number>>(new Set());
   const [topicTestIds, setTopicTestIds] = useState<Set<number>>(new Set());
@@ -105,6 +109,9 @@ export default function JournalClassworkEditor({
             ? [data.new_topic_external_url]
             : [],
       );
+      setTopicVideoUrl(data.new_topic_video_file_url ? "" : data.new_topic_video_url || "");
+      setTopicVideoKey(null);
+      setTopicVideoRemoved(false);
       setTopicAssessmentIds(new Set(data.new_topic_assessments.map((a) => a.assessment_set_id)));
       setTopicTestIds(new Set(data.new_topic_practice_test_ids || []));
       setExAssessmentIds(new Set(data.exercise_assessments.map((a) => a.assessment_set_id)));
@@ -130,6 +137,9 @@ export default function JournalClassworkEditor({
         new_topic_title: topicTitle.trim(),
         new_topic_instructions: topicInstructions,
         new_topic_external_urls: topicLinks.map((s) => s.trim()).filter(Boolean),
+        video_url: topicVideoUrl.trim(),
+        ...(topicVideoKey ? { video_key: topicVideoKey } : {}),
+        ...(topicVideoRemoved && !topicVideoKey && !topicVideoUrl.trim() ? { remove_video: true } : {}),
         revision_notes: revisionNotes,
         new_topic_assessment_set_ids: [...topicAssessmentIds],
         new_topic_practice_test_ids: [...topicTestIds],
@@ -315,6 +325,20 @@ export default function JournalClassworkEditor({
               inputClassName={crInputClass}
               placeholder="https://example.com/slides"
               idPrefix="cw-url"
+            />
+          </ClassroomField>
+          <ClassroomField label="Lesson video" hint="Upload the recording from your computer, or paste a YouTube/Vimeo/Loom/Drive link.">
+            <LessonVideoField
+              url={topicVideoUrl}
+              onUrlChange={setTopicVideoUrl}
+              videoKey={topicVideoKey}
+              onVideoKeyChange={setTopicVideoKey}
+              removed={topicVideoRemoved}
+              onRemovedChange={setTopicVideoRemoved}
+              existingUrl={cw?.new_topic_video_file_url || cw?.new_topic_video_url || ""}
+              requestUpload={(filename) => journalsApi.videoUploadUrl(filename)}
+              inputClassName={crInputClass}
+              idPrefix="cw-video"
             />
           </ClassroomField>
 

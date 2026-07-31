@@ -268,12 +268,15 @@ class AssignmentSerializer(serializers.ModelSerializer):
     created_by = serializers.SerializerMethodField()
     submissions_count = serializers.IntegerField(read_only=True)
     attachment_file_url = serializers.SerializerMethodField(read_only=True)
+    video_file_url = serializers.SerializerMethodField(read_only=True)
     attachment_urls = serializers.SerializerMethodField(read_only=True)
     external_url = serializers.CharField(required=False, allow_blank=True)
     # The full link list. Written through validate() from either `external_urls` (list /
     # JSON string) or the legacy singular `external_url`, kept mirrored so old and new
     # clients both work; represented read-only so there is no ambiguous multipart parsing.
     external_urls = serializers.JSONField(read_only=True)
+    # Optional lesson video — normalized (bare domain → https) in validate_video_url.
+    video_url = serializers.CharField(required=False, allow_blank=True, max_length=500)
     mock_exam = serializers.PrimaryKeyRelatedField(
         queryset=MockExam.objects.all(), required=False, allow_null=True
     )
@@ -340,6 +343,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "module",
             "external_url",
             "external_urls",
+            "video_url",
+            "video_file_url",
             "allow_file_upload",
             "attachment_file",
             "attachment_file_url",
@@ -538,6 +543,17 @@ class AssignmentSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(url)
         return url
+
+    def get_video_file_url(self, obj):
+        """Signed R2 URL for an uploaded lesson video (None when none uploaded)."""
+        if not obj.video_file:
+            return None
+        request = self.context.get("request")
+        try:
+            url = obj.video_file.url
+        except ValueError:
+            return None
+        return request.build_absolute_uri(url) if request else url
 
     @extend_schema_field(
         serializers.ListField(
@@ -1020,6 +1036,16 @@ class AssignmentSerializer(serializers.ModelSerializer):
         # Reuse DRF URL validator via URLField
         URLValidator()(normalized)
         return normalized
+
+    def validate_video_url(self, value):
+        """Normalize the lesson video URL (bare domain → https), '' when blank."""
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from .link_utils import normalize_one
+
+        try:
+            return normalize_one(value)
+        except DjangoValidationError:
+            raise serializers.ValidationError("Enter a valid video URL.")
 
     def validate(self, attrs):
         """Reconcile the multi-link list with the legacy singular field.

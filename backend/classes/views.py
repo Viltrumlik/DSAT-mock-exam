@@ -2186,7 +2186,44 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         except Exception:  # pragma: no cover - defensive
             logger.exception("homework notify failed on create for assignment %s", assignment.pk)
 
+        self._apply_video(request, assignment)
+
         return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
+
+    def _apply_video(self, request, assignment):
+        """Reconcile the lesson video after the serializer set ``video_url``.
+
+        Precedence: an uploaded file (``video_key``) wins and clears the link; explicit
+        removal (``remove_video``) clears both; otherwise a non-empty link the serializer
+        just saved clears any previously-uploaded file. A file and a link never coexist.
+        Best-effort — the file is already in R2, so a bad key is logged and skipped rather
+        than failing the save.
+        """
+        from .media_uploads import resolve_video_key
+
+        truthy = {"1", "true", "yes", "on"}
+        key = (request.data.get("video_key") or "").strip()
+        remove = str(request.data.get("remove_video", "")).strip().lower() in truthy
+        changed: set[str] = set()
+        if key:
+            try:
+                assignment.video_file = resolve_video_key(key)
+                assignment.video_url = ""
+                changed |= {"video_file", "video_url"}
+            except DjangoValidationError:
+                logger.warning(
+                    "rejected video_key=%s for assignment=%s", key, getattr(assignment, "pk", None)
+                )
+        elif remove:
+            if assignment.video_file:
+                assignment.video_file = None
+            assignment.video_url = ""
+            changed |= {"video_file", "video_url"}
+        elif assignment.video_url and assignment.video_file:
+            assignment.video_file = None  # a link (just saved) replaces an uploaded file
+            changed.add("video_file")
+        if changed:
+            assignment.save(update_fields=list(changed) + ["updated_at"])
 
     def update(self, request, *args, **kwargs):
         # Approval guard: an edit that would attach an unapproved assessment is
@@ -2255,6 +2292,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         # The teacher form always sends it on edit (empty list = detach everything).
         if "vocabulary_set_ids" in request.data:
             self._reconcile_vocab_homeworks(request, assignment)
+
+        self._apply_video(request, assignment)
 
         return Response(self.get_serializer(assignment).data)
 
