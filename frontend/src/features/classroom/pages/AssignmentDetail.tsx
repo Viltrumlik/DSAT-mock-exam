@@ -148,6 +148,24 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
     .map((l) => l.trim())
     .filter(Boolean);
 
+  const lessonVideo = assignment.video_file_url || assignment.video_url || "";
+
+  // Instructions block, reused by both the video-first and the standard hero layouts.
+  const instructionsBlock =
+    steps.length > 0 ? (
+      <div className="px-[34px] pb-[30px] pt-[22px]">
+        <h2 className="mb-4 text-base font-extrabold text-foreground">Instructions</h2>
+        <ol className="grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
+          {steps.map((line, i) => (
+            <li key={i} className="cr-rowin flex items-start gap-[15px]" style={{ animationDelay: `${i * 60}ms` }}>
+              <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-primary/10 text-sm font-extrabold text-primary">{i + 1}</span>
+              <span className="pt-1 text-[16px] font-medium text-foreground">{line}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    ) : null;
+
   function startUpload() { setUploadOpen(true); }
   function runAction() {
     if (action.mode === "upload") { setUploadOpen(true); return; }
@@ -158,62 +176,48 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
 
   return (
     <div className="mt-4 space-y-5" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
-      {/* HERO — badges/title/tiles on the left, and (when the teacher attached one) the
-          lesson video bound into the blue space on the right, with the instructions below:
-          one connected card. No video → the left content spans full width, as before. */}
-      <Card pad="none" className="cr-card overflow-hidden">
-        <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary-hover px-[34px] py-[30px] text-primary-foreground">
-          <div aria-hidden className="pointer-events-none absolute -bottom-12 -right-8 h-52 w-52 rounded-full bg-white/[0.06]" />
-          <div className="relative flex flex-col gap-7 lg:flex-row lg:items-center">
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold">{badgeLabel}</span>
-                <SubmissionStatusPill status={status} />
-              </div>
-              <h1 className="my-[14px] text-[34px] font-extrabold leading-none tracking-[-0.025em]">{assignment.title}</h1>
-              <div className="flex flex-wrap gap-x-[34px] gap-y-4">
-                {tiles.map((t, i) => (
-                  <div key={t.label} className="cr-pillin" style={{ animationDelay: `${i * 60}ms` }}>
-                    <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">{t.label}</div>
-                    {t.countdown ? (
-                      <div className="cr-daypop mt-[5px] inline-flex items-center gap-1.5 rounded-lg bg-white/[0.16] px-[11px] py-[3px] text-[15px] font-extrabold">
-                        <Clock className="h-3.5 w-3.5" aria-hidden /> {t.value}
-                      </div>
-                    ) : (
-                      <div className="mt-[3px] text-[17px] font-extrabold">{t.value}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
+      {lessonVideo ? (
+        /* VIDEO-FIRST — the lesson video is big and fills the top of the card; only the
+           title + deadline sit between it and the instructions (the meta tiles are dropped).
+           One connected card: video → title/deadline → instructions. */
+        <Card pad="none" className="cr-card overflow-hidden">
+          <VideoPlayer url={lessonVideo} />
+          <div className="flex flex-wrap items-center justify-between gap-3 px-[34px] pt-[24px]">
+            <h1 className="text-[30px] font-extrabold leading-tight tracking-[-0.025em] text-foreground">{assignment.title}</h1>
+            <div className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-[12px] py-[6px] text-[14px] font-extrabold text-primary">
+              <Clock className="h-4 w-4" aria-hidden /> {countdown(assignment.due_at)}
             </div>
-            {(assignment.video_file_url || assignment.video_url) && (
-              <div className="w-full shrink-0 lg:w-[44%] lg:max-w-[460px]">
-                <div className="overflow-hidden rounded-xl shadow-xl ring-1 ring-white/25">
-                  <VideoPlayer url={assignment.video_file_url || assignment.video_url || ""} />
+          </div>
+          {instructionsBlock}
+        </Card>
+      ) : (
+        /* No video → the standard blue hero (title + meta tiles), unchanged. */
+        <Card pad="none" className="cr-card overflow-hidden">
+          <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary-hover px-[34px] py-[30px] text-primary-foreground">
+            <div aria-hidden className="pointer-events-none absolute -bottom-12 -right-8 h-52 w-52 rounded-full bg-white/[0.06]" />
+            <div className="relative flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold">{badgeLabel}</span>
+              <SubmissionStatusPill status={status} />
+            </div>
+            <h1 className="relative my-[14px] text-[34px] font-extrabold leading-none tracking-[-0.025em]">{assignment.title}</h1>
+            <div className="relative flex flex-wrap gap-x-[34px] gap-y-4">
+              {tiles.map((t, i) => (
+                <div key={t.label} className="cr-pillin" style={{ animationDelay: `${i * 60}ms` }}>
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">{t.label}</div>
+                  {t.countdown ? (
+                    <div className="cr-daypop mt-[5px] inline-flex items-center gap-1.5 rounded-lg bg-white/[0.16] px-[11px] py-[3px] text-[15px] font-extrabold">
+                      <Clock className="h-3.5 w-3.5" aria-hidden /> {t.value}
+                    </div>
+                  ) : (
+                    <div className="mt-[3px] text-[17px] font-extrabold">{t.value}</div>
+                  )}
                 </div>
-                <p className="mt-2 flex items-center gap-1.5 text-[12.5px] font-semibold text-white/80">
-                  <Play className="h-3.5 w-3.5" aria-hidden /> Lesson recording
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* INSTRUCTIONS — numbered steps (2-column). */}
-        {steps.length > 0 && (
-          <div className="px-[34px] pb-[30px] pt-[26px]">
-            <h2 className="mb-4 text-base font-extrabold text-foreground">Instructions</h2>
-            <ol className="grid gap-x-10 gap-y-3.5 sm:grid-cols-2">
-              {steps.map((line, i) => (
-                <li key={i} className="cr-rowin flex items-start gap-[15px]" style={{ animationDelay: `${i * 60}ms` }}>
-                  <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-primary/10 text-sm font-extrabold text-primary">{i + 1}</span>
-                  <span className="pt-1 text-[16px] font-medium text-foreground">{line}</span>
-                </li>
               ))}
-            </ol>
+            </div>
           </div>
-        )}
-      </Card>
+          {instructionsBlock}
+        </Card>
+      )}
 
       {/* CONTENT LAUNCHER — one card per openable content (replaces the old "Next step"). */}
       {actions.length > 0 && (
