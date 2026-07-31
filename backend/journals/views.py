@@ -334,6 +334,7 @@ class JournalExportView(APIView):
                 "practice_scope": l.practice_scope,
                 "practice_test_ids": l.practice_test_ids or [],
                 "practice_test_pack_ids": l.practice_test_pack_ids or [],
+                "vocabulary_set_ids": l.vocabulary_set_ids or [],
                 "category": l.category,
                 "max_score": str(l.max_score) if l.max_score is not None else None,
                 "assessment_set_ids": list(
@@ -357,8 +358,10 @@ class JournalExportView(APIView):
                     "new_topic_video_url": cw.new_topic_video_url,
                     "new_topic_practice_test_ids": cw.new_topic_practice_test_ids or [],
                     "new_topic_practice_test_pack_ids": cw.new_topic_practice_test_pack_ids or [],
+                    "new_topic_vocabulary_set_ids": cw.new_topic_vocabulary_set_ids or [],
                     "exercise_practice_test_ids": cw.exercise_practice_test_ids or [],
                     "exercise_practice_test_pack_ids": cw.exercise_practice_test_pack_ids or [],
+                    "exercise_vocabulary_set_ids": cw.exercise_vocabulary_set_ids or [],
                     "revision_notes": cw.revision_notes,
                     "new_topic_assessment_set_ids": [
                         a.assessment_set_id
@@ -452,6 +455,7 @@ class JournalImportView(APIView):
             lesson.practice_scope = row.get("practice_scope") or JournalLesson.PRACTICE_SCOPE_BOTH
             lesson.practice_test_ids = row.get("practice_test_ids") or None
             lesson.practice_test_pack_ids = row.get("practice_test_pack_ids") or None
+            lesson.vocabulary_set_ids = row.get("vocabulary_set_ids") or None
             lesson.category = row.get("category") or JournalLesson.CATEGORY_HOMEWORK
             lesson.status = JournalLesson.STATUS_DRAFT
             lesson.save()
@@ -488,10 +492,12 @@ class JournalImportView(APIView):
                 cw.new_topic_practice_test_pack_ids = (
                     cw_row.get("new_topic_practice_test_pack_ids") or None
                 )
+                cw.new_topic_vocabulary_set_ids = cw_row.get("new_topic_vocabulary_set_ids") or None
                 cw.exercise_practice_test_ids = cw_row.get("exercise_practice_test_ids") or None
                 cw.exercise_practice_test_pack_ids = (
                     cw_row.get("exercise_practice_test_pack_ids") or None
                 )
+                cw.exercise_vocabulary_set_ids = cw_row.get("exercise_vocabulary_set_ids") or None
                 cw.revision_notes = cw_row.get("revision_notes") or ""
                 cw.save()
                 for key, block in (
@@ -617,6 +623,7 @@ class JournalContentOptionsView(APIView):
         attached_set_ids: set[int] = set()
         attached_pt_ids: set[int] = set()
         attached_pack_ids: set[int] = set()
+        attached_vocab_ids: set[int] = set()
         lesson_id = request.query_params.get("lesson")
         if lesson_id:
             lesson = JournalLesson.objects.filter(pk=lesson_id).first()
@@ -626,6 +633,7 @@ class JournalContentOptionsView(APIView):
                 )
                 attached_pt_ids = set(int(x) for x in (lesson.practice_test_ids or []))
                 attached_pack_ids = set(int(x) for x in (lesson.practice_test_pack_ids or []))
+                attached_vocab_ids = set(int(x) for x in (lesson.vocabulary_set_ids or []))
 
         # Past papers (subject only — PracticeTest has no level).
         from exams.views import PracticeTestViewSet
@@ -690,6 +698,36 @@ class JournalContentOptionsView(APIView):
             for p in PracticeTestPack.objects.filter(is_published=True).order_by("-created_at")
         ]
 
+        # Vocabulary sections + their bank sets. Deliberately NOT subject/level-filtered:
+        # vocabulary is general SAT prep, so any journal may assign any published section
+        # (mirrors classes.views.assignment_options).
+        from vocabulary.models import VocabSection, VocabSetItem
+
+        vocab_word_counts = dict(
+            VocabSetItem.objects.filter(vocab_set__section__is_published=True)
+            .values_list("vocab_set")
+            .order_by()
+            .annotate(n=Count("id"))
+            .values_list("vocab_set", "n")
+        )
+        vocabulary_sections = []
+        for section in VocabSection.objects.filter(is_published=True).prefetch_related("sets"):
+            vocabulary_sections.append(
+                {
+                    "id": section.id,
+                    "title": section.title,
+                    "sets": [
+                        {
+                            "id": vset.id,
+                            "title": vset.title,
+                            "word_count": vocab_word_counts.get(vset.id, 0),
+                            "already_assigned": vset.id in attached_vocab_ids,
+                        }
+                        for vset in section.sets.filter(owner__isnull=True)
+                    ],
+                }
+            )
+
         return Response(
             {
                 "subject": subject,
@@ -699,6 +737,7 @@ class JournalContentOptionsView(APIView):
                 "practice_tests": practice_tests,
                 "assessment_sets": assessment_sets,
                 "practice_test_packs": practice_test_packs,
+                "vocabulary_sections": vocabulary_sections,
             }
         )
 
@@ -865,6 +904,10 @@ class LessonDetailView(APIView):
             lesson.practice_test_pack_ids = (
                 _parse_id_list(request.data.get("practice_test_pack_ids")) or None
             )
+        if "vocabulary_set_ids" in request.data:
+            lesson.vocabulary_set_ids = (
+                _parse_id_list(request.data.get("vocabulary_set_ids")) or None
+            )
 
         files = request.FILES.getlist("attachment_file")
         replace = request.query_params.get("replace_attachments") in _TRUTHY
@@ -934,8 +977,10 @@ class ClassworkDetailView(APIView):
     _ID_LIST_FIELDS = (
         "new_topic_practice_test_ids",
         "new_topic_practice_test_pack_ids",
+        "new_topic_vocabulary_set_ids",
         "exercise_practice_test_ids",
         "exercise_practice_test_pack_ids",
+        "exercise_vocabulary_set_ids",
     )
 
     def _get_lesson(self, journal_pk, pk):
@@ -1171,6 +1216,7 @@ class LessonBulkView(APIView):
             lesson.allow_file_upload = False
             lesson.practice_test_ids = None
             lesson.practice_test_pack_ids = None
+            lesson.vocabulary_set_ids = None
             lesson.status = JournalLesson.STATUS_DRAFT
             lesson.published_at = None
             if lesson.attachment_file:
@@ -1220,6 +1266,7 @@ class LessonBulkView(APIView):
             lesson.practice_scope = src.practice_scope
             lesson.practice_test_ids = src.practice_test_ids
             lesson.practice_test_pack_ids = src.practice_test_pack_ids
+            lesson.vocabulary_set_ids = src.vocabulary_set_ids
             # due_after_days / deadline_time were dropped in 0002 — homework is due at
             # the start of the classroom's next lesson, derived at release time. Reading
             # them here raised AttributeError and failed every copied row.

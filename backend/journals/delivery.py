@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import os.path
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from .models import (
@@ -329,6 +329,13 @@ def release_homework(
                 f"{homework.assessment_set.title} was already given to this class"
             )
 
+    # Vocabulary bank sets on the brief → VocabHomework on the released assignment. Vocab
+    # uses its own gate (not the access engine); the student sees it on the Vocabulary
+    # page's Homework tab, grouped by this assignment.
+    for set_id in (session.vocabulary_set_ids or []):
+        if not _attach_vocab_set(classroom, assignment, set_id, actor):
+            skipped.append(f"vocabulary set #{set_id} no longer exists")
+
     delivery.assignment = assignment
     delivery.homework_released_at = timezone.now()
     delivery.released_by = actor
@@ -404,6 +411,12 @@ def plan_items(session: JournalLesson) -> set[tuple[str, str, int]]:
             out.add((block, RT_PRACTICE_TEST, int(pid)))
         for pid in pack_ids or []:
             out.add((block, RT_PRACTICE_TEST_PACK, int(pid)))
+    for block, vocab_ids in (
+        (ClassroomLessonGrant.BLOCK_NEW_TOPIC, cw.new_topic_vocabulary_set_ids),
+        (ClassroomLessonGrant.BLOCK_EXERCISES, cw.exercise_vocabulary_set_ids),
+    ):
+        for vid in vocab_ids or []:
+            out.add((block, RT_VOCABULARY_SET, int(vid)))
     return out
 
 
@@ -445,11 +458,13 @@ def _assert_resource_exists(resource_type: str, resource_id: int) -> None:
     from access.resources import RT_ASSESSMENT_SET, RT_PRACTICE_TEST, RT_PRACTICE_TEST_PACK
     from assessments.models import AssessmentSet
     from exams.models import PracticeTest, PracticeTestPack
+    from vocabulary.models import VocabSet
 
     model = {
         RT_ASSESSMENT_SET: AssessmentSet,
         RT_PRACTICE_TEST: PracticeTest,
         RT_PRACTICE_TEST_PACK: PracticeTestPack,
+        RT_VOCABULARY_SET: VocabSet,
     }.get(resource_type)
     if model is None:
         return
@@ -472,6 +487,29 @@ def _pack_scope(practice_scope: str | None) -> str | None:
     return {"ENGLISH": "reading", "MATH": "math"}.get(
         str(practice_scope or "").strip().upper()
     )
+
+
+# Vocabulary is not an access-engine resource type — it has its own gate (VocabHomework).
+# journals still records its in-class grants under this bare resource_type string so the
+# panel can show "Given" and stay idempotent, exactly like the engine-backed types.
+RT_VOCABULARY_SET = "vocabulary_set"
+
+
+def _attach_vocab_set(classroom, assignment, set_id, actor) -> bool:
+    """Give ``assignment`` a vocabulary bank set (idempotent). False if the set is gone."""
+    from vocabulary.models import VocabHomework, VocabSet
+
+    vset = VocabSet.objects.filter(pk=set_id, owner__isnull=True).first()
+    if vset is None:
+        return False
+    try:
+        with transaction.atomic():
+            VocabHomework.objects.create(
+                classroom=classroom, assignment=assignment, vocab_set=vset, assigned_by=actor
+            )
+    except IntegrityError:
+        pass  # uniq_vocab_hw_assignment_set — already attached
+    return True
 
 
 def _student_members(classroom):
@@ -497,7 +535,9 @@ def grant_resource(
     """
     from access.resources import RT_ASSESSMENT_SET, RT_PRACTICE_TEST, RT_PRACTICE_TEST_PACK
 
-    if resource_type not in (RT_ASSESSMENT_SET, RT_PRACTICE_TEST, RT_PRACTICE_TEST_PACK):
+    if resource_type not in (
+        RT_ASSESSMENT_SET, RT_PRACTICE_TEST, RT_PRACTICE_TEST_PACK, RT_VOCABULARY_SET,
+    ):
         raise DeliveryError("bad_resource_type", f"Cannot grant '{resource_type}' from a lesson.")
     # The item must be one the session actually declares — see plan_items().
     if (block, resource_type, int(resource_id)) not in plan_items(session):
@@ -538,6 +578,13 @@ def grant_resource(
         )
         if homework is None:
             raise DeliveryError("not_found", "That assessment set no longer exists.")
+    elif resource_type == RT_VOCABULARY_SET:
+        # Vocab in-class access = a VocabHomework on the lesson's classwork carrier
+        # assignment (its own gate; surfaces on the student's Vocabulary → Homework tab).
+        if not _attach_vocab_set(
+            classroom, _classwork_assignment(delivery, session, actor=actor), resource_id, actor
+        ):
+            raise DeliveryError("not_found", "That vocabulary set no longer exists.")
     else:
         from access.engine.assignment_service import AssignmentService
         from access.models import ResourceAccessGrant
