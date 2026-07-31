@@ -137,11 +137,15 @@ export type Classwork = {
   new_topic_video_file_url: string | null;
   new_topic_practice_test_ids: number[];
   new_topic_practice_test_pack_ids: number[];
+  new_topic_vocabulary_set_ids: number[];
+  new_topic_vocabulary: LessonVocab[];
   new_topic_assessments: LessonAssessment[];
   new_topic_attachment_urls: LessonAttachment[];
 
   exercise_practice_test_ids: number[];
   exercise_practice_test_pack_ids: number[];
+  exercise_vocabulary_set_ids: number[];
+  exercise_vocabulary: LessonVocab[];
   exercise_assessments: LessonAssessment[];
 
   revision_notes: string;
@@ -173,6 +177,8 @@ export type LessonDetail = {
   practice_scope: PracticeScope;
   practice_test_ids: number[];
   practice_test_pack_ids: number[];
+  vocabulary_set_ids: number[];
+  vocabulary: LessonVocab[];
   category: string;
   max_score: string | null;
   assessments: LessonAssessment[];
@@ -222,4 +228,11 @@ export type ContentOptions = {
     section_count: number;
     already_assigned?: boolean;
   }>;
+  vocabulary_sections: VocabSectionOpt[];
 };
+
+export type VocabSetOpt = { id: number; title: string; word_count: number; already_assigned?: boolean };
+export type VocabSectionOpt = { id: number; title: string; sets: VocabSetOpt[] };
+
+/** A vocabulary bank set attached to a lesson/classwork, for display. */
+export type LessonVocab = { id: number; title: string; section_title: string; word_count: number };
