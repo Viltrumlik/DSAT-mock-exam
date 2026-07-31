@@ -65,7 +65,14 @@ SAMPLES = [
             "classroom_name": "Senior G12 · English · Abdulahad N.",
             "instructions": "Read the passage twice before you start. Focus on transitions and "
             "command-of-evidence questions — those were the weakest last week.",
-            "contents": ["2 assessments to complete", "1 past paper", "1 file to download", "A file for you to hand in"],
+            "contents": [
+                "The lesson video to watch",
+                "2 assessments to complete",
+                "3 vocabulary sets to study",
+                "1 past paper",
+                "1 file to download",
+                "A file for you to hand in",
+            ],
             "has_due": True,
             "due_date": "Wednesday, 29 July 2026",
             "due_time": "18:00",

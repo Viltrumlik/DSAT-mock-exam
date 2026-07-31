@@ -104,6 +104,63 @@ class HomeworkEmailTests(TestCase):
 
         self.assertIn("No fixed deadline", _text_body(ctx))
 
+    # ── what's inside ────────────────────────────────────────────────────────
+    def test_the_lesson_video_is_listed_first(self):
+        """A student who missed the lesson needs the video before anything else."""
+        ctx = build_context(self._homework(video_url="https://youtu.be/abc123"))
+        self.assertEqual(ctx["contents"][0], "The lesson video to watch")
+
+    def test_an_uploaded_video_counts_the_same_as_a_link(self):
+        ctx = build_context(self._homework(video_file="homework_videos/lesson.mp4"))
+        self.assertIn("The lesson video to watch", ctx["contents"])
+
+    def test_vocabulary_sets_are_listed(self):
+        from vocabulary.models import VocabHomework, VocabSection, VocabSet
+
+        section = VocabSection.objects.create(title="College Panda", slug="college-panda")
+        hw = self._homework()
+        for i in range(2):
+            VocabHomework.objects.create(
+                classroom=self.classroom,
+                assignment=hw,
+                vocab_set=VocabSet.objects.create(section=section, title=f"Set {i + 1}"),
+            )
+        self.assertIn("2 vocabulary sets to study", build_context(hw)["contents"])
+
+    def test_one_vocabulary_set_is_singular(self):
+        from vocabulary.models import VocabHomework, VocabSection, VocabSet
+
+        section = VocabSection.objects.create(title="SAT Tashkent", slug="sat-tashkent")
+        hw = self._homework()
+        VocabHomework.objects.create(
+            classroom=self.classroom,
+            assignment=hw,
+            vocab_set=VocabSet.objects.create(section=section, title="Set 1"),
+        )
+        self.assertIn("1 vocabulary set to study", build_context(hw)["contents"])
+
+    def test_video_and_vocabulary_reach_both_bodies(self):
+        from vocabulary.models import VocabHomework, VocabSection, VocabSet
+
+        section = VocabSection.objects.create(title="650 Hard Words", slug="650-hard-words")
+        hw = self._homework(video_url="https://youtu.be/abc123")
+        VocabHomework.objects.create(
+            classroom=self.classroom,
+            assignment=hw,
+            vocab_set=VocabSet.objects.create(section=section, title="Set 1"),
+        )
+        notify_homework_assigned(hw)
+        text = mail.outbox[0].body
+        html = mail.outbox[0].alternatives[0][0]
+        for body in (text, html):
+            self.assertIn("The lesson video to watch", body)
+            self.assertIn("1 vocabulary set to study", body)
+
+    def test_a_homework_with_neither_lists_neither(self):
+        contents = build_context(self._homework())["contents"]
+        self.assertNotIn("The lesson video to watch", contents)
+        self.assertFalse([c for c in contents if "vocabulary" in c])
+
     def test_the_view_create_path_sends_one_email_per_student(self):
         from rest_framework.test import APIClient
 
