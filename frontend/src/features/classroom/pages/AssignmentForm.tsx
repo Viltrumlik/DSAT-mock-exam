@@ -23,6 +23,7 @@ import {
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import MultiLinkInput from "@/components/MultiLinkInput";
+import LessonVideoField from "@/components/LessonVideoField";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { formatApiErrorForToast } from "@/lib/apiError";
@@ -127,6 +128,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [newAsg, setNewAsg] = useState({ title: "", instructions: "" });
   // Several external links per homework (was a single string). Raw rows; trimmed on save.
   const [links, setLinks] = useState<string[]>([]);
+  // Optional lesson video: a link OR an uploaded file (videoKey = freshly uploaded R2 key).
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoKey, setVideoKey] = useState<string | null>(null);
+  const [videoRemoved, setVideoRemoved] = useState(false);
   // Whether students may upload a file as their submission (independent of any
   // attached pastpaper/assessment — both can coexist, so manual + auto grading).
   const [allowFileUpload, setAllowFileUpload] = useState(false);
@@ -260,6 +265,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const resetForm = () => {
     setNewAsg({ title: "", instructions: "" });
     setLinks([]);
+    setVideoUrl("");
+    setVideoKey(null);
+    setVideoRemoved(false);
     setAllowFileUpload(false);
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
@@ -336,6 +344,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       const single = String(editingAssignment.external_url ?? "").trim();
       setLinks(single ? [single] : []);
     }
+    // An uploaded video shows as "current video"; only a saved link goes into the input.
+    setVideoUrl(editingAssignment.video_file_url ? "" : String(editingAssignment.video_url ?? ""));
+    setVideoKey(null);
+    setVideoRemoved(false);
     // ── Assessments ── prefer the multi `assessment_homeworks` array; fall back to
     // the legacy single `assessment_homework`.
     const nextAssessmentIds = new Set<number>();
@@ -440,6 +452,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           instructions: newAsg.instructions,
           // Always send the full list (even empty) so the backend can add AND clear links.
           external_urls: links.map((s) => s.trim()).filter(Boolean),
+          video_url: videoUrl.trim(),
+          ...(videoKey ? { video_key: videoKey } : {}),
+          ...(videoRemoved && !videoKey && !videoUrl.trim() ? { remove_video: true } : {}),
           practice_test: null,
           practice_test_ids: testIds.length > 0 ? testIds : null,
           practice_test_pack_ids: packIds.length > 0 ? packIds : null,
@@ -468,6 +483,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       fd.append("instructions", newAsg.instructions);
       const cleanLinks = links.map((s) => s.trim()).filter(Boolean);
       if (cleanLinks.length > 0) fd.append("external_urls", JSON.stringify(cleanLinks));
+      if (videoKey) fd.append("video_key", videoKey);
+      else if (videoUrl.trim()) fd.append("video_url", videoUrl.trim());
 
       // A resource counts only if the teacher actually selected it.
       if (selectedTestIds.size > 0) {
@@ -1055,6 +1072,22 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
               {/* External links */}
               <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles.">
                 <MultiLinkInput value={links} onChange={setLinks} inputClassName={crInputClass} idPrefix="asg-url" />
+              </ClassroomField>
+
+              {/* Lesson video */}
+              <ClassroomField label="Lesson video" hint="A student who missed the lesson can watch it. Upload the recording from your computer, or paste a YouTube/Vimeo/Loom/Drive link.">
+                <LessonVideoField
+                  url={videoUrl}
+                  onUrlChange={setVideoUrl}
+                  videoKey={videoKey}
+                  onVideoKeyChange={setVideoKey}
+                  removed={videoRemoved}
+                  onRemovedChange={setVideoRemoved}
+                  existingUrl={String((editingAssignment?.video_file_url ?? editingAssignment?.video_url) ?? "")}
+                  requestUpload={(filename) => classesApi.videoUploadUrl(classId, filename)}
+                  inputClassName={crInputClass}
+                  idPrefix="asg-video"
+                />
               </ClassroomField>
 
               {/* Files */}

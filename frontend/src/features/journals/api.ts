@@ -2,6 +2,7 @@
 // @/lib/api) so auth cookies, CSRF and error handling are identical to the rest of the app.
 
 import api from "@/lib/api";
+import type { VideoUploadTicket } from "@/lib/videoUpload";
 
 import type {
   Classwork,
@@ -20,6 +21,10 @@ export const journalsApi = {
   list: async (params?: { subject?: string; status?: string }): Promise<ListEnvelope<JournalListItem>> => {
     const r = await api.get("/journals/", { params });
     return r.data;
+  },
+  videoUploadUrl: async (filename: string): Promise<VideoUploadTicket> => {
+    const r = await api.post("/journals/video-upload-url/", { filename });
+    return r.data as VideoUploadTicket;
   },
   create: async (subject: string, level: string): Promise<JournalDetail> => {
     const r = await api.post("/journals/", { subject, level });

@@ -8,6 +8,7 @@ import {
   FileText, ExternalLink, GraduationCap, X, Eye,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
+import VideoPlayer from "@/components/VideoPlayer";
 import { normalizeApiError } from "@/lib/apiError";
 import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui";
 import { useClassroom } from "../hooks";
@@ -157,6 +158,18 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
 
   return (
     <div className="mt-4 space-y-5" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
+      {/* LESSON VIDEO — big player on top when the teacher attached one (so a student who
+          missed the lesson watches first, then the tasks below). Prefers an uploaded file
+          over a link. No video → nothing renders and the layout is exactly as before. */}
+      {(assignment.video_file_url || assignment.video_url) && (
+        <Card pad="none" className="cr-card overflow-hidden">
+          <VideoPlayer url={assignment.video_file_url || assignment.video_url || ""} />
+          <div className="flex items-center gap-2 px-[22px] py-3 text-[13px] font-semibold text-muted-foreground">
+            <Play className="h-4 w-4 text-primary" aria-hidden /> Lesson recording
+          </div>
+        </Card>
+      )}
+
       {/* HERO — type badge, title, meta tiles. (1:1 with homework.design.png) */}
       <Card pad="none" className="cr-card overflow-hidden">
         <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary-hover px-[34px] py-[30px] text-primary-foreground">
