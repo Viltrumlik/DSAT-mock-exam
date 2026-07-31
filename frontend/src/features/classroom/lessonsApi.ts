@@ -8,7 +8,7 @@
 import api from "@/lib/api";
 
 export type LessonBlock = "HOMEWORK" | "NEW_TOPIC" | "EXERCISES" | "MIDTERM";
-export type LessonResourceType = "assessment_set" | "practice_test" | "practice_test_pack";
+export type LessonResourceType = "assessment_set" | "practice_test" | "practice_test_pack" | "vocabulary_set";
 
 export interface LessonGrant {
   id: number;
@@ -25,6 +25,7 @@ export interface LessonItem {
   block: LessonBlock;
   title?: string;
   question_count?: number | null;
+  word_count?: number;
   given: boolean;
 }
 
@@ -67,6 +68,7 @@ export interface LessonDetail extends LessonRow {
     practice_test_ids: number[];
     practice_test_pack_ids: number[];
     assessments: { resource_type: "assessment_set"; resource_id: number; title: string }[];
+    vocabulary: { resource_id: number; title: string; word_count: number }[];
     validation: string[];
   };
   classwork?: {

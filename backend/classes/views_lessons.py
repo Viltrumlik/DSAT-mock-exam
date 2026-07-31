@@ -30,6 +30,28 @@ from .views_rankings import _ClassroomScopedView
 logger = logging.getLogger(__name__)
 
 
+def _vocab_rows(ids):
+    """[{resource_id, title, word_count}] for vocabulary bank-set ids, in stored order."""
+    ids = [int(x) for x in (ids or [])]
+    if not ids:
+        return []
+    from django.db.models import Count
+    from vocabulary.models import VocabSet, VocabSetItem
+
+    counts = dict(
+        VocabSetItem.objects.filter(vocab_set_id__in=ids)
+        .values_list("vocab_set")
+        .order_by()
+        .annotate(n=Count("id"))
+        .values_list("vocab_set", "n")
+    )
+    by_id = {
+        s.id: {"resource_id": s.id, "title": s.title, "word_count": counts.get(s.id, 0)}
+        for s in VocabSet.objects.filter(pk__in=ids)
+    }
+    return [by_id[i] for i in ids if i in by_id]
+
+
 def _media_url(filefield):
     """A file's URL (R2 signed URLs are already absolute), or None. Never raises."""
     if not filefield:
@@ -126,12 +148,13 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
         "practice_test_ids": session.practice_test_ids or [],
         "practice_test_pack_ids": session.practice_test_pack_ids or [],
         "assessments": [_assessment_payload(l) for l in session.assessments.all()],
+        "vocabulary": _vocab_rows(session.vocabulary_set_ids),
         "validation": session.homework_validation_reasons(),
     }
 
     cw = getattr(session, "classwork", None)
     if cw is not None:
-        def _items(block_assessments, practice_ids, pack_ids, block):
+        def _items(block_assessments, practice_ids, pack_ids, vocab_ids, block):
             items = []
             for link in block_assessments:
                 item = _assessment_payload(link)
@@ -156,6 +179,17 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                         "given": (block, "practice_test_pack", pid) in granted,
                     }
                 )
+            for row in _vocab_rows(vocab_ids):
+                items.append(
+                    {
+                        "resource_type": "vocabulary_set",
+                        "resource_id": row["resource_id"],
+                        "title": row["title"],
+                        "word_count": row["word_count"],
+                        "block": block,
+                        "given": (block, "vocabulary_set", row["resource_id"]) in granted,
+                    }
+                )
             return items
 
         by_block = {"NEW_TOPIC": [], "EXERCISES": []}
@@ -178,6 +212,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                     by_block.get("NEW_TOPIC", []),
                     cw.new_topic_practice_test_ids,
                     cw.new_topic_practice_test_pack_ids,
+                    cw.new_topic_vocabulary_set_ids,
                     "NEW_TOPIC",
                 ),
             },
@@ -187,6 +222,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                     by_block.get("EXERCISES", []),
                     cw.exercise_practice_test_ids,
                     cw.exercise_practice_test_pack_ids,
+                    cw.exercise_vocabulary_set_ids,
                     "EXERCISES",
                 ),
             },

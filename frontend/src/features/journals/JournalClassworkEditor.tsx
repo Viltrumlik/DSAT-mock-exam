@@ -12,6 +12,7 @@ import {
 } from "@/components/classroom";
 import MultiLinkInput from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
+import VocabPicker from "@/features/journals/VocabPicker";
 import { cn } from "@/lib/cn";
 import {
   BookOpen,
@@ -24,6 +25,7 @@ import {
   Loader2,
   Paperclip,
   RefreshCw,
+  Search,
   Sparkles,
   Upload,
   X,
@@ -80,6 +82,7 @@ export default function JournalClassworkEditor({
   // Exercises
   const [exAssessmentIds, setExAssessmentIds] = useState<Set<number>>(new Set());
   const [exTestIds, setExTestIds] = useState<Set<number>>(new Set());
+  const [exVocabIds, setExVocabIds] = useState<Set<number>>(new Set());
   // Revision
   const [revisionNotes, setRevisionNotes] = useState("");
 
@@ -116,6 +119,7 @@ export default function JournalClassworkEditor({
       setTopicTestIds(new Set(data.new_topic_practice_test_ids || []));
       setExAssessmentIds(new Set(data.exercise_assessments.map((a) => a.assessment_set_id)));
       setExTestIds(new Set(data.exercise_practice_test_ids || []));
+      setExVocabIds(new Set(data.exercise_vocabulary_set_ids || []));
       setRevisionNotes(data.revision_notes || "");
     } catch {
       setError("Could not load the classwork plan.");
@@ -145,6 +149,7 @@ export default function JournalClassworkEditor({
         new_topic_practice_test_ids: [...topicTestIds],
         exercise_assessment_set_ids: [...exAssessmentIds],
         exercise_practice_test_ids: [...exTestIds],
+        exercise_vocabulary_set_ids: [...exVocabIds],
       };
       let saved = await journalsApi.saveClasswork(journalId, lessonId, body);
       if (topicFiles.length > 0) {
@@ -465,6 +470,16 @@ export default function JournalClassworkEditor({
             onToggle={(id) => toggle(setExTestIds, id)}
             emptyText="No past papers for this subject."
           />
+          <div>
+            <p className="mb-2 text-[13px] font-bold text-foreground">Vocabulary</p>
+            <VocabPicker
+              sections={options?.vocabulary_sections ?? []}
+              selectedIds={exVocabIds}
+              onToggle={(id) => toggle(setExVocabIds, id)}
+              inputClassName={crInputClass}
+              idPrefix="cw-ex-vocab"
+            />
+          </div>
         </div>
       </BlockCard>
 
@@ -618,6 +633,13 @@ function PickList({
   onToggle: (id: number) => void;
   emptyText: string;
 }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q
+    ? items.filter(
+        (it) => it.label.toLowerCase().includes(q) || (it.meta || "").toLowerCase().includes(q),
+      )
+    : items;
   return (
     <div>
       <div className="mb-1.5 flex items-center gap-2">
@@ -626,13 +648,29 @@ function PickList({
           {selected.size} selected
         </span>
       </div>
+      {/* Search appears once the list is long enough to be worth filtering. */}
+      {items.length > 5 && (
+        <div className="relative mb-1.5">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={`Search ${title.toLowerCase()}…`}
+            className="w-full rounded-lg border border-border bg-card py-1.5 pl-8 pr-3 text-[12.5px] text-foreground outline-none focus:border-primary"
+          />
+        </div>
+      )}
       {items.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border px-3 py-3 text-[12.5px] text-muted-foreground">
           {emptyText}
         </p>
+      ) : shown.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-[12.5px] text-muted-foreground">
+          No matches for “{query}”.
+        </p>
       ) : (
         <ul className="flex max-h-56 flex-col gap-1 overflow-y-auto pr-1">
-          {items.map((it) => {
+          {shown.map((it) => {
             const on = selected.has(it.id);
             return (
               <li key={it.id}>

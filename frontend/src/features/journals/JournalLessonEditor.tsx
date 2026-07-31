@@ -32,13 +32,14 @@ import {
 import { SegmentedControl } from "@/components/SegmentedControl";
 import MultiLinkInput from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
+import VocabPicker from "@/features/journals/VocabPicker";
 import {
-  ArrowLeft, BookOpen, Check, ClipboardList, Clock, GraduationCap, Inbox, Layers,
+  ArrowLeft, BookOpen, Check, ClipboardList, Clock, GraduationCap, Inbox, Languages, Layers,
   Loader2, Paperclip, Search, SlidersHorizontal, Upload, X,
 } from "lucide-react";
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
-type TabKey = "pastpapers" | "assessments" | "submission";
+type TabKey = "pastpapers" | "assessments" | "vocabulary" | "submission";
 
 // No deadline helpers here: homework is due at the start of the class's next lesson,
 // derived server-side when the session is released to a classroom.
@@ -65,7 +66,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
 
   const [journal, setJournal] = useState<JournalDetail | null>(null);
   const [lesson, setLesson] = useState<LessonDetail | null>(null);
-  const [options, setOptions] = useState<ContentOptions>({ subject: "", level: "", practice_tests: [], assessment_sets: [], practice_test_packs: [] });
+  const [options, setOptions] = useState<ContentOptions>({ subject: "", level: "", practice_tests: [], assessment_sets: [], practice_test_packs: [], vocabulary_sections: [] });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -79,6 +80,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   const [allowFileUpload, setAllowFileUpload] = useState(false);
   const [practiceScope, setPracticeScope] = useState<PracticeScope>("BOTH");
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
+  const [selectedVocabIds, setSelectedVocabIds] = useState<Set<number>>(new Set());
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
   const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
   const [files, setFiles] = useState<File[]>([]);
@@ -116,6 +118,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         if (l.practice_scope === "MATH" || l.practice_scope === "ENGLISH" || l.practice_scope === "BOTH") setPracticeScope(l.practice_scope);
         setSelectedAssessmentIds(new Set(l.assessments.map((a) => a.assessment_set_id)));
         setSelectedTestIds(new Set(l.practice_test_ids || []));
+        setSelectedVocabIds(new Set(l.vocabulary_set_ids || []));
         setSelectedPackIds(new Set(l.practice_test_pack_ids || []));
         if (l.lesson_type === "HOMEWORK") {
           const opts = await journalsApi.contentOptions(j.subject, j.level, lessonId);
@@ -216,6 +219,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   const hasInstructions = instructions.trim().length > 0;
   const hasContent =
     cartItems.length > 0 ||
+    selectedVocabIds.size > 0 ||
     allowFileUpload ||
     files.length > 0 ||
     links.some((s) => s.trim().length > 0) ||
@@ -236,6 +240,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         allow_file_upload: allowFileUpload,
         practice_scope: practiceScope,
         assessment_set_ids: [...selectedAssessmentIds],
+        vocabulary_set_ids: [...selectedVocabIds],
         practice_test_ids: [...selectedTestIds],
         practice_test_pack_ids: [...selectedPackIds],
       };
@@ -315,6 +320,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   const TABS: { key: TabKey; label: string; icon: typeof BookOpen }[] = [
     ...(showPastpapers ? [{ key: "pastpapers" as const, label: "Pastpapers", icon: BookOpen }] : []),
     { key: "assessments", label: "Assessments", icon: ClipboardList },
+    { key: "vocabulary", label: "Vocabulary", icon: Languages },
     { key: "submission", label: "Submission", icon: SlidersHorizontal },
   ];
 
@@ -499,6 +505,26 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                 </>
               )}
               <p className="text-[12.5px] font-medium text-muted-foreground/80">Only {journal.level_label} {domainSubject} sets are shown — content is scoped to this journal&apos;s level.</p>
+            </div>
+          )}
+
+          {activeTab === "vocabulary" && (
+            <div className={panelCls} role="tabpanel">
+              <VocabPicker
+                sections={options.vocabulary_sections}
+                selectedIds={selectedVocabIds}
+                onToggle={(id) =>
+                  setSelectedVocabIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  })
+                }
+                inputClassName={crInputClass}
+                idPrefix="jl-vocab"
+              />
+              <p className="text-[12.5px] font-medium text-muted-foreground/80">Students study these word sets on the Vocabulary page. Vocabulary is shared across all levels.</p>
             </div>
           )}
 

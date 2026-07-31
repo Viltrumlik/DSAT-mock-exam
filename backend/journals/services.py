@@ -255,6 +255,7 @@ def duplicate_journal(
         lesson.practice_scope = src.practice_scope
         lesson.practice_test_ids = src.practice_test_ids
         lesson.practice_test_pack_ids = src.practice_test_pack_ids
+        lesson.vocabulary_set_ids = src.vocabulary_set_ids
         lesson.category = src.category
         lesson.max_score = src.max_score
         lesson.save()
@@ -281,8 +282,10 @@ def duplicate_journal(
                 "new_topic_video_file",
                 "new_topic_practice_test_ids",
                 "new_topic_practice_test_pack_ids",
+                "new_topic_vocabulary_set_ids",
                 "exercise_practice_test_ids",
                 "exercise_practice_test_pack_ids",
+                "exercise_vocabulary_set_ids",
                 "revision_notes",
             ):
                 setattr(cw, f, getattr(src_cw, f))

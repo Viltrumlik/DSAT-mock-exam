@@ -190,6 +190,9 @@ class JournalLesson(models.Model):
     )
     practice_test_ids = models.JSONField(null=True, blank=True)
     practice_test_pack_ids = models.JSONField(null=True, blank=True)
+    # Vocabulary bank sets (vocabulary.VocabSet ids, owner__isnull=True) assigned with this
+    # homework. Live id-list (like practice_test_ids); expanded to VocabHomework at release.
+    vocabulary_set_ids = models.JSONField(null=True, blank=True)
     category = models.CharField(max_length=20, default=CATEGORY_HOMEWORK)
     max_score = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
 
@@ -254,6 +257,7 @@ class JournalLesson(models.Model):
         n = self._assessment_count() + self._extra_attachment_count()
         n += len(self.practice_test_ids or [])
         n += len(self.practice_test_pack_ids or [])
+        n += len(self.vocabulary_set_ids or [])
         if self.attachment_file:
             n += 1
         return n
@@ -265,6 +269,7 @@ class JournalLesson(models.Model):
             or self._extra_attachment_count()
             or self.practice_test_ids
             or self.practice_test_pack_ids
+            or self.vocabulary_set_ids
             or self.attachment_file
             or self.allow_file_upload
             # An external link alone is a valid deliverable — parity with the
@@ -379,10 +384,12 @@ class JournalClasswork(models.Model):
     )
     new_topic_practice_test_ids = models.JSONField(null=True, blank=True)
     new_topic_practice_test_pack_ids = models.JSONField(null=True, blank=True)
+    new_topic_vocabulary_set_ids = models.JSONField(null=True, blank=True)
 
     # --- Exercises (in-class practice) ---
     exercise_practice_test_ids = models.JSONField(null=True, blank=True)
     exercise_practice_test_pack_ids = models.JSONField(null=True, blank=True)
+    exercise_vocabulary_set_ids = models.JSONField(null=True, blank=True)
 
     # --- Revision ---
     revision_notes = models.TextField(blank=True, default="")
@@ -427,6 +434,7 @@ class JournalClasswork(models.Model):
             self._assessments_for(self.BLOCK_NEW_TOPIC)
             or self.new_topic_practice_test_ids
             or self.new_topic_practice_test_pack_ids
+            or self.new_topic_vocabulary_set_ids
             or self.new_topic_attachment_file
             or (self.new_topic_external_url or "").strip()
             or (self.new_topic_video_url or "").strip()

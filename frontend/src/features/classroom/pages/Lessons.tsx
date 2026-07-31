@@ -85,6 +85,10 @@ function formatDate(iso: string | null): string {
 }
 
 function itemLabel(item: LessonItem): string {
+  if (item.resource_type === "vocabulary_set") {
+    const words = item.word_count != null ? ` · ${item.word_count} words` : "";
+    return `${item.title || `Vocabulary #${item.resource_id}`}${words}`;
+  }
   if (item.title) return item.title;
   if (item.resource_type === "practice_test") return `Past paper #${item.resource_id}`;
   if (item.resource_type === "practice_test_pack") return `Pack #${item.resource_id}`;
@@ -385,6 +389,24 @@ function HomeworkPanel({
           <p className="mt-2 text-sm text-muted-foreground">
             {hw.practice_test_ids.length + hw.practice_test_pack_ids.length} item(s) attached.
           </p>
+        </Card>
+      )}
+
+      {hw.vocabulary.length > 0 && (
+        <Card>
+          <CardHeader
+            title="Vocabulary in this homework"
+            description="Students study these word sets on the Vocabulary page when the homework is given."
+          />
+          <ul className="mt-2 divide-y divide-border">
+            {hw.vocabulary.map((v) => (
+              <li key={v.resource_id} className="flex items-center gap-3 py-2.5">
+                <BookOpen className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-sm">{v.title}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{v.word_count} words</span>
+              </li>
+            ))}
+          </ul>
         </Card>
       )}
     </div>

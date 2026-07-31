@@ -53,6 +53,33 @@ def compute_progress(lessons) -> dict:
     }
 
 
+def _vocab_rows(ids):
+    """Display rows for a list of vocabulary bank-set ids, preserving stored order."""
+    ids = [int(x) for x in (ids or [])]
+    if not ids:
+        return []
+    from django.db.models import Count
+    from vocabulary.models import VocabSet, VocabSetItem
+
+    counts = dict(
+        VocabSetItem.objects.filter(vocab_set_id__in=ids)
+        .values_list("vocab_set")
+        .order_by()
+        .annotate(n=Count("id"))
+        .values_list("vocab_set", "n")
+    )
+    by_id = {
+        s.id: {
+            "id": s.id,
+            "title": s.title,
+            "section_title": getattr(s.section, "title", "") or "",
+            "word_count": counts.get(s.id, 0),
+        }
+        for s in VocabSet.objects.filter(pk__in=ids).select_related("section")
+    }
+    return [by_id[i] for i in ids if i in by_id]
+
+
 def _assessment_rows(links):
     return [
         {
@@ -222,11 +249,15 @@ class JournalClassworkSerializer(serializers.Serializer):
     new_topic_video_file_url = serializers.SerializerMethodField()
     new_topic_practice_test_ids = serializers.SerializerMethodField()
     new_topic_practice_test_pack_ids = serializers.SerializerMethodField()
+    new_topic_vocabulary_set_ids = serializers.SerializerMethodField()
+    new_topic_vocabulary = serializers.SerializerMethodField()
     new_topic_assessments = serializers.SerializerMethodField()
     new_topic_attachment_urls = serializers.SerializerMethodField()
 
     exercise_practice_test_ids = serializers.SerializerMethodField()
     exercise_practice_test_pack_ids = serializers.SerializerMethodField()
+    exercise_vocabulary_set_ids = serializers.SerializerMethodField()
+    exercise_vocabulary = serializers.SerializerMethodField()
     exercise_assessments = serializers.SerializerMethodField()
 
     revision_notes = serializers.CharField()
@@ -257,6 +288,18 @@ class JournalClassworkSerializer(serializers.Serializer):
 
     def get_exercise_practice_test_pack_ids(self, obj):
         return obj.exercise_practice_test_pack_ids or []
+
+    def get_new_topic_vocabulary_set_ids(self, obj):
+        return [int(x) for x in (obj.new_topic_vocabulary_set_ids or [])]
+
+    def get_new_topic_vocabulary(self, obj):
+        return _vocab_rows(obj.new_topic_vocabulary_set_ids)
+
+    def get_exercise_vocabulary_set_ids(self, obj):
+        return [int(x) for x in (obj.exercise_vocabulary_set_ids or [])]
+
+    def get_exercise_vocabulary(self, obj):
+        return _vocab_rows(obj.exercise_vocabulary_set_ids)
 
     def get_new_topic_assessments(self, obj):
         return _assessment_rows(
@@ -294,6 +337,7 @@ class JournalClassworkSerializer(serializers.Serializer):
             "assessments": self.get_exercise_assessments(obj),
             "practice_test_ids": obj.exercise_practice_test_ids or [],
             "practice_test_pack_ids": obj.exercise_practice_test_pack_ids or [],
+            "vocabulary": _vocab_rows(obj.exercise_vocabulary_set_ids),
         }
 
     def get_homework_review(self, obj):
@@ -339,6 +383,7 @@ class JournalClassworkSerializer(serializers.Serializer):
             "assessments": _assessment_rows(prev.assessments.all()),
             "practice_test_ids": prev.practice_test_ids or [],
             "practice_test_pack_ids": prev.practice_test_pack_ids or [],
+            "vocabulary": _vocab_rows(prev.vocabulary_set_ids),
             "attachment_urls": attachments,
             "allow_file_upload": prev.allow_file_upload,
         }
@@ -386,6 +431,8 @@ class JournalLessonDetailSerializer(serializers.Serializer):
     practice_scope = serializers.CharField()
     practice_test_ids = serializers.SerializerMethodField()
     practice_test_pack_ids = serializers.SerializerMethodField()
+    vocabulary_set_ids = serializers.SerializerMethodField()
+    vocabulary = serializers.SerializerMethodField()
     category = serializers.CharField()
     max_score = serializers.DecimalField(max_digits=7, decimal_places=2, allow_null=True)
     assessments = serializers.SerializerMethodField()
@@ -418,6 +465,12 @@ class JournalLessonDetailSerializer(serializers.Serializer):
 
     def get_practice_test_pack_ids(self, obj):
         return obj.practice_test_pack_ids or []
+
+    def get_vocabulary_set_ids(self, obj):
+        return [int(x) for x in (obj.vocabulary_set_ids or [])]
+
+    def get_vocabulary(self, obj):
+        return _vocab_rows(obj.vocabulary_set_ids)
 
     def get_assessments(self, obj):
         return _assessment_rows(obj.assessments.all())
