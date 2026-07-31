@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import re
 
-from drf_spectacular.utils import extend_schema_serializer
+from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 from rest_framework import serializers
+from users.photos import profile_image_url
 
 from .models import (
     AssessmentSet,
@@ -314,6 +315,7 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
     # so the fields must stay null unless the requesting view is a trusted admin one.
     created_by_email = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    created_by_profile_image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = AssessmentSet
@@ -331,6 +333,7 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
             "updated_at",
             "created_by_email",
             "created_by_name",
+            "created_by_profile_image_url",
             "questions",
         ]
         read_only_fields = ["review_status"]
@@ -349,6 +352,15 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
         u = obj.created_by
         full = (u.get_full_name() or "").strip() if hasattr(u, "get_full_name") else ""
         return full or (getattr(u, "username", None) or getattr(u, "email", None))
+
+    @extend_schema_field(serializers.URLField(allow_null=True, read_only=True))
+    def get_created_by_profile_image_url(self, obj) -> str | None:
+        # Behind the same gate as the name and email. This serializer is nested on
+        # student-facing homework payloads, and leaking the author's identity is exactly
+        # what expose_creator exists to prevent — a face leaks it harder than a name.
+        if not self._expose_creator() or obj.created_by_id is None:
+            return None
+        return profile_image_url(obj.created_by, self.context.get("request"))
 
 
 @extend_schema_serializer(component_name="AssessmentSetRunner")

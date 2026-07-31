@@ -34,6 +34,7 @@ from access.services import (
 
 from exams.models import PracticeTest, TestAttempt
 from users.permissions import IsAuthenticatedAndNotFrozen
+from users.photos import profile_image_url
 
 from .submission_validation import validate_submission_upload
 
@@ -140,13 +141,14 @@ class StreamPagination(PageNumberPagination):
     max_page_size = 50
 
 
-def _actor_brief(user):
+def _actor_brief(user, request=None):
     return {
         "id": user.id,
         "email": user.email,
         "username": getattr(user, "username", None),
         "first_name": user.first_name or "",
         "last_name": user.last_name or "",
+        "profile_image_url": profile_image_url(user, request),
     }
 
 
@@ -161,13 +163,13 @@ def _build_stream_payload(items: list, request):
     subs = {
         s.id: s
         for s in Submission.objects.filter(pk__in=sub_ids)
-        .select_related("student", "assignment", "attempt", "attempt__practice_test", "review")
+        .select_related("student", "assignment", "attempt", "attempt__practice_test", "review", "review__teacher")
         .prefetch_related("files")
     }
 
     out = []
     for it in items:
-        actor = _actor_brief(it.actor)
+        actor = _actor_brief(it.actor, request)
         row = {
             "id": it.id,
             "type": it.stream_type,
@@ -685,7 +687,16 @@ class ClassroomViewSet(ModelViewSet):
         user = request.user
         if not (getattr(user, "is_superuser", False) or normalized_role(user) in (acc_const.ROLE_SUPER_ADMIN, acc_const.ROLE_ADMIN)):
             raise PermissionDenied(detail="You do not have permission to view the classroom directory.")
-        qs = Classroom.objects.annotate(members_count=Count("memberships")).distinct().order_by("-created_at")
+        # select_related("teacher"): get_teacher_details dereferences obj.teacher on every
+        # row, so without this the directory runs one extra query per classroom — already
+        # true for the teacher's name, and adding their photo would make it look like the
+        # photo caused it.
+        qs = (
+            Classroom.objects.select_related("teacher")
+            .annotate(members_count=Count("memberships"))
+            .distinct()
+            .order_by("-created_at")
+        )
         page = self.paginate_queryset(qs)
         if page is not None:
             ser = ClassroomSerializer(page, many=True, context={"request": request})
@@ -1146,6 +1157,7 @@ class ClassroomViewSet(ModelViewSet):
                     "first_name": mem.user.first_name or "",
                     "last_name": mem.user.last_name or "",
                     "email": mem.user.email or "",
+                    "profile_image_url": profile_image_url(mem.user, request),
                     "average_review_grade": round(avg_g, 2) if avg_g is not None else None,
                     "graded_submission_count": cnt,
                     "classwork_turn_in_count": turn_in,
@@ -1212,6 +1224,7 @@ class ClassroomViewSet(ModelViewSet):
                     "last_name": u.last_name or "",
                     "username": getattr(u, "username", None) or "",
                     "email": u.email or "",
+                    "profile_image_url": profile_image_url(u, request),
                     "latest_practice": latest_practice,
                     "practice_average": practice_average,
                     "practice_completed_count": len(scores_list),
@@ -1256,6 +1269,10 @@ class ClassroomViewSet(ModelViewSet):
                     continue
                 if hide_names:
                     r["first_name"] = r["last_name"] = r["username"] = r["email"] = ""
+                    # The photo hides with the name, always. A face identifies a student
+                    # far more directly than a name does, so blanking the name while
+                    # serving the portrait would not anonymise the board at all.
+                    r["profile_image_url"] = None
                 if hide_scores:
                     r["practice_average"] = None
                     r["average_review_grade"] = None
@@ -1266,6 +1283,7 @@ class ClassroomViewSet(ModelViewSet):
                     continue
                 if hide_names:
                     r["first_name"] = r["last_name"] = r["email"] = ""
+                    r["profile_image_url"] = None
                 if hide_scores:
                     r["average_review_grade"] = None
 
@@ -1446,6 +1464,7 @@ class ClassroomViewSet(ModelViewSet):
                         "email": u.email,
                         "first_name": u.first_name,
                         "last_name": u.last_name,
+                        "profile_image_url": profile_image_url(u, request),
                         "overdue_count": sum(
                             1 for oa in overdue_assignments
                             if sid not in submitted_set.get(oa.id, set())
@@ -1472,6 +1491,7 @@ class ClassroomViewSet(ModelViewSet):
                     "email": u.email,
                     "first_name": u.first_name,
                     "last_name": u.last_name,
+                    "profile_image_url": profile_image_url(u, request),
                     "last_activity_at": last.isoformat() if last else None,
                     "days_inactive": (
                         (now - last).days if last else None
@@ -1490,6 +1510,7 @@ class ClassroomViewSet(ModelViewSet):
                     "email": u.email,
                     "first_name": u.first_name,
                     "last_name": u.last_name,
+                    "profile_image_url": profile_image_url(u, request),
                     "avg_score_pct": round(avg, 1),
                 })
         low_score_students.sort(key=lambda x: x["avg_score_pct"])
@@ -3069,7 +3090,10 @@ class ClassCommentListCreateView(APIView):
         qs = ClassComment.objects.filter(classroom=classroom, target_type=tt, target_id=tid).select_related(
             "author", "parent"
         )
-        return Response(ClassCommentSerializer(qs, many=True).data)
+        # context={"request": ...} is load-bearing, not boilerplate: without it the author's
+        # profile_image_url degrades to a relative /media/ path with no error, which then
+        # renders as initials — indistinguishable from "no photo uploaded".
+        return Response(ClassCommentSerializer(qs, many=True, context={"request": request}).data)
 
     def post(self, request, classroom_pk):
         classroom = get_object_or_404(Classroom, pk=classroom_pk)

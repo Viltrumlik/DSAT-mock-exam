@@ -500,7 +500,58 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # WhiteNoise compression & caching
+# NOTE: this setting is inert on Django 5.1+, which removed STATICFILES_STORAGE in favour
+# of STORAGES["staticfiles"]. It is left here only so the intent stays visible; the
+# compressed-manifest backend is NOT active today. Wiring it up is a separate change —
+# ManifestStaticFilesStorage hard-fails on any asset it cannot resolve — so nothing below
+# switches it on silently.
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# ─── Object storage: Cloudflare R2 (opt-in) ───────────────────────────────────
+# With R2_BUCKET unset the app keeps writing to MEDIA_ROOT on local disk exactly as
+# before, so this block is inert until a bucket is configured.
+#
+# ORDER MATTERS: copy the existing shared/media tree into the bucket BEFORE setting
+# R2_BUCKET. The database stores bare relative keys ("question_images/foo.png") which
+# simply mean "wherever the default storage is" — flipping the backend first would 404
+# every file already uploaded, while changing no rows.
+#
+# The bucket is PRIVATE. querystring_auth signs every ``.url`` with an expiring token,
+# so question images and student submissions stop being readable by anyone who guesses
+# a path — which is how they are served today, straight off nginx with no auth.
+#
+# The TTL is an hour on purpose, not seconds: the signed URL has to stay byte-identical
+# long enough for the browser and Cloudflare's cache to reuse it. Re-signing per request
+# would make every exam page re-download all of its figures.
+R2_BUCKET = os.getenv('R2_BUCKET', '').strip()
+
+if R2_BUCKET:
+    STORAGES = {
+        'default': {
+            'BACKEND': 'storages.backends.s3.S3Storage',
+            'OPTIONS': {
+                'bucket_name': R2_BUCKET,
+                'endpoint_url': os.getenv('R2_ENDPOINT_URL', '').strip(),
+                'access_key': os.getenv('R2_ACCESS_KEY_ID', '').strip(),
+                'secret_key': os.getenv('R2_SECRET_ACCESS_KEY', '').strip(),
+                # R2 has no regions, but boto3 still requires a non-empty value.
+                'region_name': 'auto',
+                'signature_version': 's3v4',
+                # R2 does not implement ACLs; sending one makes every upload fail.
+                'default_acl': None,
+                'querystring_auth': True,
+                'querystring_expire': int(os.getenv('R2_URL_TTL_SECONDS', '3600')),
+                # Match FileSystemStorage: never silently overwrite someone else's upload.
+                'file_overwrite': False,
+            },
+        },
+        # Left at the framework default, i.e. what is actually running today (see the
+        # STATICFILES_STORAGE note above). Static files keep being served by nginx from
+        # staticfiles/ and are untouched by the move to R2.
+        'staticfiles': {
+            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+        },
+    }
 
 
 # ─── Auth & JWT ───────────────────────────────────────────────────────────────

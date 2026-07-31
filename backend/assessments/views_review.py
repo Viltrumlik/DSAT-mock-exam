@@ -21,6 +21,8 @@ from .serializers import (
     ResultSerializer,
     ApiAssessmentDetailSerializer,
 )
+from users.photos import profile_image_url
+
 from .helpers import (
     _img_url,
     _serialize_feedback,
@@ -144,7 +146,7 @@ class AttemptPedagogicalReviewView(APIView):
                 "result": result_data,
                 "questions": questions_out,
                 "snapshot_pinned": False,
-                "teacher_feedback": _serialize_feedback(fb),
+                "teacher_feedback": _serialize_feedback(fb, request),
             }
         )
 
@@ -208,6 +210,9 @@ class AttemptTeacherFeedbackView(APIView):
                     "body": fb.body,
                     "updated_at": fb.updated_at.isoformat(),
                     "teacher_name": fb.teacher.get_full_name() if fb and fb.teacher else None,
+                    "teacher_profile_image_url": (
+                        profile_image_url(fb.teacher, request) if fb and fb.teacher else None
+                    ),
                 }
                 if fb
                 else None,
@@ -243,6 +248,7 @@ class AttemptTeacherFeedbackView(APIView):
                     "body": fb.body,
                     "updated_at": fb.updated_at.isoformat(),
                     "teacher_name": request.user.get_full_name() or request.user.email,
+                    "teacher_profile_image_url": profile_image_url(request.user, request),
                 },
             },
             status=status.HTTP_200_OK,
@@ -318,7 +324,7 @@ class TeacherSubmissionQueueView(APIView):
                 "homework__assignment",
                 "result",
             )
-            .prefetch_related("teacher_feedback")
+            .prefetch_related("teacher_feedback__teacher")
         )
 
         if teacher_classroom_ids is not None:
@@ -350,6 +356,7 @@ class TeacherSubmissionQueueView(APIView):
                 {
                     "attempt_id": att.pk,
                     "student_name": student.get_full_name() or student.email,
+                    "student_profile_image_url": profile_image_url(student, request),
                     "student_email": student.email,
                     "submitted_at": att.submitted_at.isoformat() if att.submitted_at else None,
                     "status": att.status,

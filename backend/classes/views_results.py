@@ -18,6 +18,8 @@ from rest_framework.response import Response
 from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM
 
+from users.photos import profile_image_url
+
 from .capabilities import classroom_capabilities
 from .models import Assignment, ClassroomMembership, Submission
 from .views_rankings import _ClassroomScopedView, _display_name
@@ -55,6 +57,7 @@ class ClassroomMidtermResultsView(_ClassroomScopedView):
         students = _active_students(classroom)
         student_ids = [m.user_id for m in students]
         name_by_id = {m.user_id: _display_name(m.user) for m in students}
+        photo_by_id = {m.user_id: profile_image_url(m.user, request) for m in students}
 
         # Midterms assigned to THIS classroom (grant persists past the post-result access revoke).
         midterm_ids = list(
@@ -78,7 +81,7 @@ class ClassroomMidtermResultsView(_ClassroomScopedView):
             for sid in student_ids:
                 atts = sorted(by_student.get(sid, []), key=lambda x: x.created_at)
                 if not atts:
-                    rows.append({"student_id": sid, "student": name_by_id[sid], "state": "not_started",
+                    rows.append({"student_id": sid, "student": name_by_id[sid], "student_profile_image_url": photo_by_id.get(sid), "state": "not_started",
                                  "score": None, "attempt_date": None, "attempt_count": 0})
                     continue
                 started += 1
@@ -90,7 +93,7 @@ class ClassroomMidtermResultsView(_ClassroomScopedView):
                     if latest.score is not None:
                         completed_scores.append(float(latest.score))
                 rows.append({
-                    "student_id": sid, "student": name_by_id[sid], "state": state,
+                    "student_id": sid, "student": name_by_id[sid], "student_profile_image_url": photo_by_id.get(sid), "state": state,
                     "score": latest.score if done else None,
                     "attempt_date": (latest.completed_at or latest.started_at or latest.created_at).isoformat() if (latest.completed_at or latest.started_at or latest.created_at) else None,
                     "attempt_count": len(atts),
@@ -130,6 +133,7 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
             except (TypeError, ValueError):
                 pass
         name_by_id = {m.user_id: _display_name(m.user) for m in students}
+        photo_by_id = {m.user_id: profile_image_url(m.user, request) for m in students}
         rows = []
 
         # --- Assessments (AssessmentAttempt + AssessmentResult) ---
@@ -141,7 +145,7 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
             for a in qs:
                 res = getattr(a, "result", None)
                 rows.append({
-                    "student_id": a.student_id, "student": name_by_id.get(a.student_id, str(a.student_id)),
+                    "student_id": a.student_id, "student": name_by_id.get(a.student_id, str(a.student_id)), "student_profile_image_url": photo_by_id.get(a.student_id),
                     "content_name": a.homework.assessment_set.title if a.homework.assessment_set else "Assessment",
                     "type": "Assessment",
                     "score": (float(res.percent) if res is not None else None),
@@ -157,7 +161,7 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
             titles = {m.id: (m.title or f"Midterm #{m.id}") for m in MockExam.objects.filter(pk__in=midterm_ids)}
             for a in TestAttempt.objects.filter(mock_exam_id__in=midterm_ids, student_id__in=student_ids):
                 rows.append({
-                    "student_id": a.student_id, "student": name_by_id.get(a.student_id, str(a.student_id)),
+                    "student_id": a.student_id, "student": name_by_id.get(a.student_id, str(a.student_id)), "student_profile_image_url": photo_by_id.get(a.student_id),
                     "content_name": titles.get(a.mock_exam_id, "Midterm"), "type": "Midterm",
                     "score": a.score if a.is_completed else None,
                     "status": "completed" if a.is_completed else "in_progress",
@@ -176,7 +180,7 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
                     continue
                 review = getattr(s, "review", None)
                 rows.append({
-                    "student_id": s.student_id, "student": name_by_id.get(s.student_id, str(s.student_id)),
+                    "student_id": s.student_id, "student": name_by_id.get(s.student_id, str(s.student_id)), "student_profile_image_url": photo_by_id.get(s.student_id),
                     "content_name": a.title, "type": "Past Paper",
                     "score": (float(review.grade) if (review and review.grade is not None) else None),
                     "status": s.status,

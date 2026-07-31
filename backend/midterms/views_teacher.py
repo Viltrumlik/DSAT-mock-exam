@@ -26,6 +26,7 @@ from access.resources import RT_MIDTERM_V2
 from access.services import normalized_role
 
 from .models import Midterm, MidtermAttempt
+from users.photos import profile_image_url
 
 User = get_user_model()
 
@@ -102,6 +103,7 @@ class MidtermStudentsView(APIView):
                 "last_name": u.last_name,
                 "username": u.username,
                 "email": u.email,
+                "profile_image_url": profile_image_url(u, request),
                 "role": "student",
             }
             for u in qs[:1000]
@@ -196,8 +198,12 @@ class MidtermStandaloneResultsView(APIView):
                 {
                     "student_id": student.id,
                     "student_name": _display_name(student),
+                    "student_profile_image_url": profile_image_url(student, request),
                     "instructor_id": g.granted_by_id,
                     "instructor_name": _display_name(g.granted_by) if g.granted_by_id else None,
+                    "instructor_profile_image_url": (
+                        profile_image_url(g.granted_by, request) if g.granted_by_id else None
+                    ),
                     "state": att.current_state if att else "NOT_STARTED",
                     "submitted": bool(att and att.is_completed),
                     "score": att.score if (att and att.is_completed) else None,

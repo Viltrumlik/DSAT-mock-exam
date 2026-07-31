@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from . import resources
 from .models import AccessGrantEvent, ResourceAccessGrant
+from users.photos import profile_image_url
 
 
 def _user_label(user) -> str:
@@ -20,6 +21,7 @@ def _user_label(user) -> str:
 class ResourceAccessGrantSerializer(serializers.ModelSerializer):
     user_email = serializers.SerializerMethodField()
     user_name = serializers.SerializerMethodField()
+    user_profile_image_url = serializers.SerializerMethodField()
     granted_by_email = serializers.SerializerMethodField()
     classroom_name = serializers.SerializerMethodField()
     is_effective = serializers.SerializerMethodField()
@@ -28,7 +30,7 @@ class ResourceAccessGrantSerializer(serializers.ModelSerializer):
     class Meta:
         model = ResourceAccessGrant
         fields = (
-            "id", "user", "user_email", "user_name", "scope", "subject",
+            "id", "user", "user_email", "user_name", "user_profile_image_url", "scope", "subject",
             "resource_type", "resource_id", "resource_label", "classroom", "classroom_name",
             "source", "status", "is_effective", "granted_by", "granted_by_email",
             "expires_at", "created_at", "updated_at",
@@ -37,6 +39,9 @@ class ResourceAccessGrantSerializer(serializers.ModelSerializer):
 
     def get_user_email(self, obj):
         return getattr(obj.user, "email", "") or getattr(obj.user, "username", "")
+
+    def get_user_profile_image_url(self, obj):
+        return profile_image_url(obj.user, self.context.get("request")) if obj.user else None
 
     def get_user_name(self, obj):
         return _user_label(obj.user)

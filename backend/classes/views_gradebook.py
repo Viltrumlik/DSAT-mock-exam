@@ -16,6 +16,8 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status as http
 from rest_framework.response import Response
 
+from users.photos import profile_image_url
+
 from .capabilities import classroom_capabilities
 from .models import Assignment, ClassroomMembership, Submission
 from .views_rankings import _ClassroomScopedView, _display_name
@@ -165,6 +167,7 @@ class GradebookAssignmentView(_ClassroomScopedView):
                 "student_id": m.user_id,
                 "name": _display_name(m.user),
                 "email": m.user.email,
+                "profile_image_url": profile_image_url(m.user, request),
                 **cell,
             })
         counts = _counts(cells)
