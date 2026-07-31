@@ -314,6 +314,14 @@ class Assignment(models.Model):
     # classes.link_utils.resolve_links — the two are always written together.
     external_url = models.URLField(blank=True)
     external_urls = models.JSONField(default=list, blank=True)
+    # Optional lesson video (YouTube/Vimeo/Loom/Drive link or a direct video URL). Lets a
+    # student who missed the lesson watch it; rendered as a big player on the homework page.
+    video_url = models.URLField(max_length=500, blank=True, default="")
+    # A lesson video UPLOADED from the teacher's computer. Stored in R2; the browser uploads
+    # straight to R2 via a presigned URL (video_key on save just records the object key), so
+    # a 2GB file never streams through nginx or the app worker. Display prefers this over the
+    # link. See classes.media_uploads.
+    video_file = models.FileField(upload_to="homework_videos/", max_length=500, null=True, blank=True)
     attachment_file = models.FileField(upload_to="homework_files/", null=True, blank=True)
     # Whether students may upload a file as their submission. Independent of any
     # attached auto-graded content — a homework can have BOTH (a pastpaper/assessment

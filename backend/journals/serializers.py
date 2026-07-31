@@ -218,6 +218,8 @@ class JournalClassworkSerializer(serializers.Serializer):
     new_topic_instructions = serializers.CharField()
     new_topic_external_url = serializers.CharField()
     new_topic_external_urls = serializers.SerializerMethodField()
+    new_topic_video_url = serializers.CharField()
+    new_topic_video_file_url = serializers.SerializerMethodField()
     new_topic_practice_test_ids = serializers.SerializerMethodField()
     new_topic_practice_test_pack_ids = serializers.SerializerMethodField()
     new_topic_assessments = serializers.SerializerMethodField()
@@ -240,6 +242,9 @@ class JournalClassworkSerializer(serializers.Serializer):
 
     def get_new_topic_external_urls(self, obj):
         return list(obj.new_topic_external_urls or [])
+
+    def get_new_topic_video_file_url(self, obj):
+        return _abs_url(self.context.get("request"), obj.new_topic_video_file)
 
     def get_new_topic_practice_test_ids(self, obj):
         return obj.new_topic_practice_test_ids or []
@@ -329,6 +334,8 @@ class JournalClassworkSerializer(serializers.Serializer):
             "instructions": prev.instructions,
             "external_url": prev.external_url,
             "external_urls": list(prev.external_urls or []),
+            "video_url": prev.video_url,
+            "video_file_url": _abs_url(request, prev.video_file),
             "assessments": _assessment_rows(prev.assessments.all()),
             "practice_test_ids": prev.practice_test_ids or [],
             "practice_test_pack_ids": prev.practice_test_pack_ids or [],
@@ -373,6 +380,8 @@ class JournalLessonDetailSerializer(serializers.Serializer):
     instructions = serializers.CharField()
     external_url = serializers.CharField()
     external_urls = serializers.SerializerMethodField()
+    video_url = serializers.CharField()
+    video_file_url = serializers.SerializerMethodField()
     allow_file_upload = serializers.BooleanField()
     practice_scope = serializers.CharField()
     practice_test_ids = serializers.SerializerMethodField()
@@ -400,6 +409,9 @@ class JournalLessonDetailSerializer(serializers.Serializer):
 
     def get_external_urls(self, obj):
         return list(obj.external_urls or [])
+
+    def get_video_file_url(self, obj):
+        return _abs_url(self.context.get("request"), obj.video_file)
 
     def get_practice_test_ids(self, obj):
         return obj.practice_test_ids or []

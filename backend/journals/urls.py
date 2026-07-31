@@ -18,6 +18,7 @@ from .views import (
     JournalPublishView,
     JournalSessionCreateView,
     JournalUnarchiveView,
+    JournalVideoUploadUrlView,
     LessonBulkView,
     LessonDetailView,
     LessonListView,
@@ -32,6 +33,7 @@ urlpatterns = [
     path("", JournalListCreateView.as_view(), name="journal-list"),
     path("content-options/", JournalContentOptionsView.as_view(), name="content-options"),
     path("midterm-options/", JournalMidtermOptionsView.as_view(), name="midterm-options"),
+    path("video-upload-url/", JournalVideoUploadUrlView.as_view(), name="video-upload-url"),
     path("import/", JournalImportView.as_view(), name="journal-import"),
     # Journal detail + lifecycle.
     path("<int:pk>/", JournalDetailView.as_view(), name="journal-detail"),

@@ -117,6 +117,17 @@ def resolve_links(data, *, list_key: str = "external_urls", single_key: str = "e
     return cleaned, first_url(cleaned)
 
 
+def resolve_video(data, *, key: str = "video_url"):
+    """Return the normalized video URL from a payload, or ``None`` if the key is absent.
+
+    A present-but-blank value returns ``""`` (clears the video). Raises
+    ``DjangoValidationError`` on an invalid URL. Single value — a lesson has one video.
+    """
+    if not _has_key(data, key):
+        return None
+    return normalize_one(_get(data, key) or "")
+
+
 def _has_key(data, key) -> bool:
     try:
         return key in data

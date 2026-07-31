@@ -627,6 +627,12 @@ if not DEBUG:
 CLASSROOM_SUBMISSION_MAX_FILE_BYTES = int(
     os.getenv("CLASSROOM_SUBMISSION_MAX_FILE_BYTES", str(50 * 1024 * 1024))
 )
+
+# Max size for an uploaded lesson video (browser uploads direct to R2; see
+# classes.media_uploads). Default 2 GB. Enforced client-side and re-checked on save.
+HOMEWORK_VIDEO_MAX_BYTES = int(
+    os.getenv("HOMEWORK_VIDEO_MAX_BYTES", str(2 * 1024 * 1024 * 1024))
+)
 CLASSROOM_SUBMISSION_ALLOWED_FILE_EXTENSIONS = frozenset(
     x.strip().lower()
     for x in os.getenv(
