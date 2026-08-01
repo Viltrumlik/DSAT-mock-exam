@@ -29,6 +29,30 @@ logger = logging.getLogger(__name__)
 _REASON_DETAIL = {"mock_unpublished": "This mock is not available yet."}
 
 
+def _expected_version(request):
+    """The attempt version the client believes it is writing on top of, if it named one."""
+    raw = request.data.get("expected_version_number")
+    if raw is None:
+        raw = request.headers.get("If-Match")
+    if raw is None:
+        return None
+    try:
+        return int(str(raw).strip().strip('"'))
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_background_save(request) -> bool:
+    """Whether this save is a fire-and-forget flush from a leaving/hidden tab.
+
+    ``examApiClient.saveAttemptKeepalive`` sets it on pagehide/close. Such a request proves
+    the student is NOT looking at the exam, so it may persist answers but must never advance
+    the attempt — opening the next module would start its 32/35-minute clock on a closed tab
+    and burn it before the student ever sees a question. Same rule the midterm runs.
+    """
+    return bool(request.data.get("background"))
+
+
 class MockAttemptViewSet(viewsets.GenericViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = MockAttemptSerializer
@@ -39,6 +63,16 @@ class MockAttemptViewSet(viewsets.GenericViewSet):
 
     def _snapshot(self, attempt):
         return Response(MockAttemptSerializer(attempt).data)
+
+    def _conflict(self, attempt):
+        return Response(
+            {
+                "error": "Version conflict.",
+                "detail": "Attempt was updated elsewhere; refresh required.",
+                "attempt": MockAttemptSerializer(attempt).data,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
 
     def _active(self, mock):
         return (
@@ -138,19 +172,41 @@ class MockAttemptViewSet(viewsets.GenericViewSet):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
         answers = request.data.get("answers") or {}
         flagged = request.data.get("flagged")
+        expected = _expected_version(request)
+        background = _is_background_save(request)
 
         def compute():
             auto_submitted = False
             with transaction.atomic():
                 locked = self.get_queryset().select_for_update().get(pk=pk)
+                # A stale duplicate tab must not re-assert answers the live tab has moved
+                # past: answer the drift with a hard 409 carrying the canonical attempt.
+                if expected is not None and int(locked.version_number or 0) != expected:
+                    return self._conflict(locked)
                 timing = locked.get_timing()
-                if timing and timing.is_expired:
-                    locked.submit_module(answers=answers, flagged=flagged)  # deadline passed -> advance
+                expired = bool(timing and timing.is_expired)
+                if expired and background:
+                    # A keepalive flush that arrives AFTER the deadline writes NOTHING. It
+                    # must not advance (module 2's clock would run on a closed tab) and it
+                    # must not autosave either — `autosave` has no expiry check of its own,
+                    # so banking a post-deadline payload here would let any crafted client
+                    # hold a module open forever just by setting `background`. Whatever was
+                    # saved before the bell stands; `sweep_mock_attempts` closes the attempt.
+                    pass
+                elif expired:
+                    # Deadline passed: close the module WITHOUT accepting the late payload.
+                    # submit_module (the endpoint) already refuses late answers; accepting
+                    # them here would just move the timer bypass one endpoint sideways.
+                    locked.submit_module(answers=None, flagged=None)
                     auto_submitted = True
                 else:
                     locked.autosave(answers=answers, flagged=flagged)
             resp = self._after_submit_snapshot(request, pk)
-            if auto_submitted:
+            # Only the LAST module reaching SCORING means "the paper is over". An E1->E2 or
+            # M1->M2 auto-advance is not the end of the mock, and the snapshot's own
+            # is_expired is already correct for the fresh module — forcing the flag there
+            # would tell the runner the exam had ended halfway through it.
+            if auto_submitted and self.get_queryset().get(pk=pk).current_state in (STATE_SCORING, STATE_COMPLETED):
                 resp.data["is_expired"] = True
             return resp
 

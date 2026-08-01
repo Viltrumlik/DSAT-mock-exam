@@ -179,13 +179,15 @@ export function ExamRunnerPage() {
       /* sessionStorage unavailable — keep in-memory */
     }
   }, [attemptId]);
-  // A midterm the server has already taken past NOT_STARTED is a RESUME: the student read
-  // the rules and cleared the access code to get here (`start` 403s until the code is
-  // verified), so sending them back through both is a bug — `welcomeAck` lives in
+  // A midterm or full mock the server has already taken past NOT_STARTED is a RESUME, and
+  // its clock is ALREADY RUNNING. Re-showing the welcome/Start screen there is a bug:
+  // a midterm student read the rules and cleared the access code to get here (`start` 403s
+  // until the code is verified), and a mock student would sit reading "this module is 32
+  // minutes" while those minutes drain. `welcomeAck` can't cover it — it lives in
   // sessionStorage and is empty in a new tab or after a browser restart, while `?welcome=1`
   // is still sitting in the URL they resumed from.
-  const midtermResumed =
-    isMidterm && attempt != null && attempt.current_state !== ATTEMPT_STATE.NOT_STARTED;
+  const resumedAttempt =
+    (isMidterm || isMockSrc) && attempt != null && attempt.current_state !== ATTEMPT_STATE.NOT_STARTED;
   // Show the welcome/Start screen for a fresh pastpaper (?welcome=1) AND, as a
   // safety net, for ANY non-mock attempt the backend is still holding in
   // NOT_STARTED — so an entry path that dropped the welcome param can't strand
@@ -193,7 +195,7 @@ export function ExamRunnerPage() {
   const showWelcome =
     !mockFlow &&
     !welcomeAck &&
-    !midtermResumed &&
+    !resumedAttempt &&
     (welcomeParam || attempt?.current_state === ATTEMPT_STATE.NOT_STARTED);
   // SPR directions panel collapse state — persisted for the tab session so it is
   // remembered while navigating between Student-Produced Response questions.

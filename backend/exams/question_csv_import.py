@@ -201,8 +201,11 @@ def import_questions_csv(
             payload["skill"] = skill_id
         # ``bulk_module`` lets validate() resolve the target module (and thus run the SAT
         # type check + content full_clean) without relying on view.kwargs, which do not
-        # carry a test_pk for mock/midterm modules.
-        ser = AdminQuestionSerializer(data=payload, context={"bulk_module": module})
+        # carry a test_pk for mock/midterm modules. ``sat_subject`` carries the section
+        # subject for those same modules, which have no practice_test to read it from.
+        ser = AdminQuestionSerializer(
+            data=payload, context={"bulk_module": module, "sat_subject": subject}
+        )
         if ser.is_valid():
             validated.append(ser)
         else:

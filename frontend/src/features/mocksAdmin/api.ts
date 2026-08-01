@@ -21,6 +21,8 @@ export type AdminMockModule = {
   module_order: number;
   time_limit_minutes: number;
   question_count: number;
+  /** Official Digital SAT count for this subject (27 R&W / 22 Math) — also the editor's cap. */
+  question_target: number | null;
 };
 
 /** A section groups the two modules for one subject. */
@@ -43,6 +45,8 @@ export type AdminMock = {
   question_count: number;
   publish_ready: boolean;
   publish_block_reason: string;
+  /** Non-blocking SAT-shape gaps, e.g. "Math module 1 has 14 of 22 questions." */
+  publish_warnings: string[];
 };
 
 /** DRF may return a bare array or a paginated `{ results: [...] }` object. */

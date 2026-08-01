@@ -398,6 +398,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "classes.tasks.recompute_classroom_rankings",
         "schedule": crontab(minute="*/20"),
     },
+    # Full mocks never pause, so an attempt whose student closed the tab mid-module sits
+    # ACTIVE with a dead clock forever — never scored, and blocking that student from ever
+    # starting the mock again (uniq_active_mock_attempt_per_student). The reaper existed
+    # from day one but nothing was scheduled to call it.
+    "mocks-sweep-attempts": {
+        "task": "mocks.tasks.sweep_mock_attempts_task",
+        "schedule": crontab(minute="*/20"),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.

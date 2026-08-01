@@ -204,6 +204,20 @@ export default function FullMockOverviewPage() {
             {mock.publish_block_reason}
           </div>
         )}
+
+        {/* Short of the official SAT shape. Publishing is still allowed (the scorer is
+            proportional), but a "full mock" that hands out 12 Reading questions instead of
+            27 should say so out loud rather than look finished. */}
+        {(mock.publish_warnings?.length ?? 0) > 0 && (
+          <div className="mt-3 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <p className="font-bold text-foreground">Shorter than a real SAT</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {mock.publish_warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
 
       {/* Modules — each opens the shared question editor */}
@@ -229,7 +243,10 @@ export default function FullMockOverviewPage() {
                     <p className="text-xs font-extrabold text-foreground">Module {m.module_order}</p>
                     <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
                       <Clock className="h-2.5 w-2.5" />
-                      {m.time_limit_minutes} min · {m.question_count} question{m.question_count !== 1 ? "s" : ""}
+                      {m.time_limit_minutes} min ·{" "}
+                      {m.question_target
+                        ? `${m.question_count} / ${m.question_target} questions`
+                        : `${m.question_count} question${m.question_count !== 1 ? "s" : ""}`}
                     </p>
                   </div>
                   <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-primary">

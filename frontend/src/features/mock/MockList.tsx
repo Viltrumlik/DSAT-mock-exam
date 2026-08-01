@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, ArrowRight, Coffee } from "lucide-react";
@@ -20,7 +21,11 @@ function Row({ m }: { m: MockRow }) {
     setBusy(true);
     try {
       const attemptId = await mockApi.createAttempt(m.mock_id);
-      router.push(`/exam/${attemptId}?src=mock&welcome=1`);
+      // `welcome=1` only on a FRESH sitting. A resume drops straight back into the module
+      // the server is holding — its clock has been running since the student left, so a
+      // "click Start when you're ready" screen would just burn their remaining time.
+      const qs = m.in_progress ? "?src=mock" : "?src=mock&welcome=1";
+      router.push(`/exam/${attemptId}${qs}`);
     } catch (e) {
       pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
       setBusy(false);
@@ -44,6 +49,18 @@ function Row({ m }: { m: MockRow }) {
           <span className="text-[20px] font-extrabold" style={{ color: C.navy }}>{m.total_score}</span>
           <span className="text-[12px] font-semibold text-slate-400"> /1600</span>
         </div>
+      )}
+      {/* A finished sitting needs a way back to its score. The only button used to be
+          "Retake", so the single click available to a student who had just completed a
+          mock started a NEW attempt and buried the result they were looking for. */}
+      {m.result_attempt_id != null && (
+        <Link
+          href={`/mock-exam/result/${m.result_attempt_id}`}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-[14px] py-[10px] text-sm font-bold transition hover:bg-slate-50"
+          style={{ borderColor: C.border, color: C.navy }}
+        >
+          View result
+        </Link>
       )}
       <button onClick={enter} disabled={busy} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60" style={{ background: C.blue }}>
         {busy ? "…" : label} <ArrowRight className="h-4 w-4" />

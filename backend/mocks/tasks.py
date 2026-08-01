@@ -31,6 +31,19 @@ def score_mock_attempt_async(self, attempt_id: int, trace_id: str | None = None)
     return {"status": "ok", "attempt_id": attempt_id}
 
 
+@shared_task
+def sweep_mock_attempts_task(grace_minutes: int = 30) -> dict:
+    """Beat entry for the stranded-attempt reaper (see mocks.reaper).
+
+    Without a scheduled run the reaper existed but nothing ever called it, so a student who
+    closed the tab mid-mock was locked out of that mock forever by the active-attempt
+    uniqueness constraint. Registered in ``CELERY_BEAT_SCHEDULE`` as ``mocks-sweep-attempts``.
+    """
+    from .reaper import sweep_stranded_mock_attempts
+
+    return sweep_stranded_mock_attempts(grace_minutes=int(grace_minutes))
+
+
 def enqueue_mock_scoring(*, attempt_id: int, request=None) -> None:
     trace_id = getattr(request, "trace_id", None) if request is not None else None
     broker = str(getattr(settings, "CELERY_BROKER_URL", "") or "").strip()

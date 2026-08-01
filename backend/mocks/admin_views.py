@@ -75,27 +75,50 @@ class AdminMockModuleQuestionViewSet(viewsets.ModelViewSet):
     serializer_class = AdminQuestionSerializer
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
-    def _module(self) -> Module:
-        mock_pk = self.kwargs["mock_pk"]
+    def _section(self):
+        """The MockSection owning the URL's module — resolved once per request."""
+        cached = getattr(self, "_section_cache", False)
+        if cached is not False:
+            return cached
         module_pk = self.kwargs["module_pk"]
-        section = MockSection.objects.filter(
-            mock_id=mock_pk
-        ).filter(Q(module1_id=module_pk) | Q(module2_id=module_pk)).first()
+        section = (
+            MockSection.objects.filter(mock_id=self.kwargs["mock_pk"])
+            .filter(Q(module1_id=module_pk) | Q(module2_id=module_pk))
+            .first()
+        )
+        self._section_cache = section
+        return section
+
+    def _module(self) -> Module:
+        section = self._section()
         if section is None:
             raise DRFValidationError({"detail": "Module does not belong to this mock."})
-        return section.module1 if section.module1_id == int(module_pk) else section.module2
+        module_pk = int(self.kwargs["module_pk"])
+        return section.module1 if section.module1_id == module_pk else section.module2
 
     def _subject(self) -> str:
-        mock_pk = self.kwargs["mock_pk"]
-        module_pk = self.kwargs["module_pk"]
-        section = MockSection.objects.filter(
-            mock_id=mock_pk
-        ).filter(Q(module1_id=module_pk) | Q(module2_id=module_pk)).first()
+        section = self._section()
         return section.subject if section else READING_WRITING
 
     def get_queryset(self):
         module_pk = self.kwargs.get("module_pk")
         return Question.objects.filter(module_id=module_pk).order_by("order", "id")
+
+    def get_serializer_context(self):
+        """Hand the target module and its section subject to AdminQuestionSerializer.
+
+        Both are needed because a mock module has no ``practice_test``: without the module
+        the serializer's SAT block never runs at all (its fallback lookup wants a
+        ``test_pk`` this route doesn't have), and without the subject the question-type
+        check has nothing to compare against. Between them, every mock question — created,
+        patched or CSV-imported — is now held to "Math questions live in the Math section".
+        """
+        ctx = super().get_serializer_context()
+        section = self._section()
+        if section is not None:
+            ctx["bulk_module"] = self._module()
+            ctx["sat_subject"] = section.subject
+        return ctx
 
     def create(self, request, *args, **kwargs):
         module = self._module()
