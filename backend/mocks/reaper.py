@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import logging
 
+from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from .models import MockAttempt
 from .state_machine import (
@@ -28,6 +30,15 @@ from .state_machine import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_GRACE_MINUTES = 30
+# How long a PAUSED attempt may sit frozen before it is treated as abandoned. A paused
+# clock never expires, so without this leash one closed tab would hold the student's only
+# active-attempt slot for that mock forever. Long enough that a student who leaves
+# overnight still gets their exam back.
+DEFAULT_PAUSED_LEASH_HOURS = 72
+
+
+def _paused_leash_hours() -> int:
+    return int(getattr(settings, "MOCK_PAUSED_ATTEMPT_LEASH_HOURS", DEFAULT_PAUSED_LEASH_HOURS) or 0)
 
 
 def is_stranded(att, grace_seconds: int) -> bool:
@@ -36,6 +47,14 @@ def is_stranded(att, grace_seconds: int) -> bool:
         return True  # stuck before scoring finished — finish it
     if state == STATE_NOT_STARTED:
         return False  # student never began; not force-started here
+    if att.pause_started_at is not None:
+        # Frozen: the deadline cannot pass, so expiry says nothing. Reap only once the
+        # freeze itself has outlived the leash — anything shorter would punish a student
+        # who lost power mid-module, which is precisely who the pause exists for.
+        leash = _paused_leash_hours()
+        if leash <= 0:
+            return False
+        return (timezone.now() - att.pause_started_at) >= timezone.timedelta(hours=leash)
     timing = att.get_break_timing() if state == STATE_BREAK else att.get_timing()
     if not timing or not timing.is_expired:
         return False

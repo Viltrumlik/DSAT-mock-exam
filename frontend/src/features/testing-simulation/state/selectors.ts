@@ -54,11 +54,28 @@ export function moduleLabel(attempt: Attempt | null): string {
   return `Section ${section}, Module ${order}: ${subject}`;
 }
 
-/** Whether this attempt allows manual pause (pastpapers yes, mocks no). */
+/** Whether this attempt offers a manual Pause button (pastpapers yes, mocks and midterms no). */
 export function pauseAllowed(attempt: Attempt | null, mockFlow: boolean): boolean {
-  // Pastpapers pause; midterms and full mocks are strictly timed (no pause).
+  // Pastpapers pause on demand; midterms and full mocks are strictly timed — a student
+  // sitting a mock can never CHOOSE to stop the clock.
   const kind = attempt?.practice_test_details?.mock_kind;
   return !mockFlow && kind !== "MIDTERM" && kind !== "MOCK";
+}
+
+/**
+ * Whether the clock freezes when the student LEAVES the exam (tab hidden, page closed,
+ * navigated away) and starts again when they come back.
+ *
+ * Deliberately wider than `pauseAllowed`: a full mock has no Pause button, but losing
+ * power or closing a laptop must not burn a 32/35-minute module the student cannot see —
+ * so it auto-pauses on leave and auto-resumes on return, with no control to abuse.
+ * Midterms are excluded: they are proctored sittings where leaving is the thing being
+ * policed (see the off-screen rule), so their clock keeps running by design.
+ */
+export function autoPauseOnLeave(attempt: Attempt | null, mockFlow: boolean): boolean {
+  if (mockFlow) return false;
+  const kind = attempt?.practice_test_details?.mock_kind;
+  return kind !== "MIDTERM";
 }
 
 /**
