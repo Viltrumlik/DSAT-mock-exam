@@ -212,6 +212,28 @@ class MockAttemptViewSet(viewsets.GenericViewSet):
 
         return consume_idempotency_key(attempt=attempt, endpoint="save_attempt", key=idempotency_key_from_request(request), compute=compute)
 
+    @action(detail=True, methods=["post"])
+    def pause(self, request, pk=None):
+        """Freeze the active module's clock because the student left the exam.
+
+        A full mock has no pause BUTTON — this is only ever fired by the runner's
+        leave handlers (tab hidden, page hide, navigate away). Without it a dropped
+        connection or a closed laptop burns a 32/35-minute module the student cannot
+        see. The break is not pausable and this no-ops there.
+        """
+        get_object_or_404(self.get_queryset(), pk=pk)  # ownership / 404 guard
+        with transaction.atomic():
+            self.get_queryset().select_for_update().get(pk=pk).pause()
+        return self._snapshot(self.get_queryset().get(pk=pk))
+
+    @action(detail=True, methods=["post"], url_path="resume_pause")
+    def resume_pause(self, request, pk=None):
+        """Bank the time the student was away and start the clock again. Idempotent."""
+        get_object_or_404(self.get_queryset(), pk=pk)  # ownership / 404 guard
+        with transaction.atomic():
+            self.get_queryset().select_for_update().get(pk=pk).resume_pause()
+        return self._snapshot(self.get_queryset().get(pk=pk))
+
     @action(detail=True, methods=["post"], url_path="end_break")
     def end_break(self, request, pk=None):
         """Proceed from the break to Math (student clicks Start Math, or the timer elapsed)."""

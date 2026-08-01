@@ -94,7 +94,10 @@ class MockAttemptSerializer(serializers.Serializer):
             "current_module_flagged_questions": flagged,
             "is_completed": bool(attempt.is_completed),
             "is_expired": is_expired,
-            "is_paused": False,
+            # Frozen because the student left the exam — never because they asked. The
+            # runner reads this on load so a student returning on another device picks up
+            # a stopped clock rather than one that has been running without them.
+            "is_paused": bool(attempt.pause_started_at) and is_active,
             "can_submit": bool(is_active and not is_expired),
             "can_resume": state in _RESUMABLE,
             "results_ready": bool(attempt.is_completed),

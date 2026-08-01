@@ -160,6 +160,15 @@ class MockAttempt(TimestampedModel):
     flagged = models.JSONField(default=dict, blank=True)
     # First-seen anchor per active phase (incl BREAK), written `or now`, never rewound.
     phase_started_at = models.JSONField(default=dict, blank=True)
+    # A mock offers NO pause button. But if the student's tab dies — power cut, dropped
+    # connection, a misclick — the wall clock would keep burning a module they cannot see,
+    # so leaving freezes it and returning starts it again. {state: seconds} banked per
+    # phase, mirroring phase_started_at; ``pause_started_at`` is the open window (at most
+    # one, since a student is only ever in one phase). The BREAK is deliberately NOT
+    # pausable: it is time away from the screen by definition, and freezing it would let a
+    # student stretch a 10-minute break into an afternoon.
+    paused_seconds = models.JSONField(default=dict, blank=True)
+    pause_started_at = models.DateTimeField(null=True, blank=True)
 
     current_state = models.CharField(max_length=24, choices=STATE_CHOICES, default=STATE_NOT_STARTED, db_index=True)
     version_number = models.PositiveIntegerField(default=0, db_index=True)
@@ -220,6 +229,55 @@ class MockAttempt(TimestampedModel):
             fl[str(module_id)] = list(incoming)
         return fl
 
+    # ── pause bookkeeping ─────────────────────────────────────────────────────
+    def _bank_pause(self, state, now):
+        """Close the open pause window into ``state``'s banked total.
+
+        Every phase transition MUST call this for the phase it is LEAVING. A pause
+        carried across a boundary is the bug that bit pastpapers: ``pause_started_at``
+        stayed set through module 2's start, so module 2 opened already frozen and its
+        timer never moved.
+        """
+        banked = dict(self.paused_seconds or {})
+        if self.pause_started_at:
+            spent = max(0, int((now - self.pause_started_at).total_seconds()))
+            banked[state] = int(banked.get(state, 0) or 0) + spent
+        return banked
+
+    def pause(self) -> bool:
+        """Freeze the active module's clock. Idempotent; never applies to the break."""
+        state = self.current_state
+        if state not in _NEXT_SUBMIT:
+            return False  # not on a timed module (break / scoring / completed)
+        if self.pause_started_at is not None:
+            return False  # already frozen
+        ts = timezone.now()
+        n = MockAttempt.objects.filter(pk=self.pk, current_state=state, pause_started_at__isnull=True).update(
+            pause_started_at=ts, updated_at=ts
+        )
+        if n == 0:
+            self.refresh_from_db()
+            return False
+        self.pause_started_at = ts
+        return True
+
+    def resume_pause(self) -> bool:
+        """Bank the open pause window and start the clock again. Idempotent."""
+        if self.pause_started_at is None:
+            return False
+        ts = timezone.now()
+        state = self.current_state
+        banked = self._bank_pause(state, ts)
+        n = MockAttempt.objects.filter(pk=self.pk, pause_started_at__isnull=False).update(
+            paused_seconds=banked, pause_started_at=None, updated_at=ts
+        )
+        if n == 0:
+            self.refresh_from_db()
+            return False
+        self.paused_seconds = banked
+        self.pause_started_at = None
+        return True
+
     # ── transitions (caller holds a select_for_update lock) ────────────────────
     def start_attempt(self) -> bool:
         """NOT_STARTED -> ENGLISH_M1. Idempotent once already past NOT_STARTED."""
@@ -259,6 +317,10 @@ class MockAttempt(TimestampedModel):
         updates = {
             "module_answers": merged, "flagged": merged_fl, "current_state": to_state,
             "phase_started_at": anchor, "version_number": v0 + 1, "updated_at": ts,
+            # The module being left owns whatever pause was open; the next one starts
+            # running. Carrying pause_started_at across the boundary would open module 2
+            # already frozen.
+            "paused_seconds": self._bank_pause(state, ts), "pause_started_at": None,
         }
         if to_state == STATE_SCORING:
             updates["scoring_started_at"] = ts
@@ -280,7 +342,13 @@ class MockAttempt(TimestampedModel):
         anchor[STATE_MATH_M1] = anchor.get(STATE_MATH_M1) or ts.isoformat()
         n = conditional_mock_attempt_update(
             pk=int(self.pk), expect_state=STATE_BREAK, expect_version=v0,
-            updates={"current_state": STATE_MATH_M1, "phase_started_at": anchor, "version_number": v0 + 1, "updated_at": ts},
+            updates={
+                "current_state": STATE_MATH_M1, "phase_started_at": anchor,
+                "version_number": v0 + 1, "updated_at": ts,
+                # Math starts running. The break is never pausable, so there should be no
+                # open window here — clearing it is belt-and-braces against a stale one.
+                "pause_started_at": None,
+            },
         )
         if n == 0:
             self.refresh_from_db()
@@ -325,6 +393,7 @@ class MockAttempt(TimestampedModel):
                 "english_score": int(result["english_score"]), "math_score": int(result["math_score"]),
                 "total_score": int(result["total_score"]), "current_state": STATE_COMPLETED,
                 "is_completed": True, "completed_at": ts, "version_number": v0 + 1, "updated_at": ts,
+                "pause_started_at": None,  # the paper is over; nothing left to freeze
             },
         )
         if n == 0:
