@@ -15,6 +15,8 @@ export interface MockRow {
   in_progress: boolean;
   submitted: boolean;
   total_score: number | null;
+  /** The last FINISHED sitting — where "View result" points, even during a retake. */
+  result_attempt_id: number | null;
 }
 
 export interface MockResult {

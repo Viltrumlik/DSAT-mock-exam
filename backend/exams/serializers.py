@@ -760,7 +760,12 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
                 q_type = attrs.get("question_type")
                 if self.instance is not None and q_type is None:
                     q_type = self.instance.question_type
-                subject = getattr(pt, "subject", None)
+                # A full-mock module has NO practice_test (a MockSection owns it directly), so
+                # the subject can't be read off ``pt`` — the caller supplies it as
+                # ``sat_subject``. Without this the check silently no-opped for every mock
+                # module and a Math question could be authored into the Reading & Writing
+                # section, where the runner renders it with no calculator.
+                subject = getattr(pt, "subject", None) or self.context.get("sat_subject")
                 if q_type and subject and not is_question_type_allowed(q_type, subject):
                     allowed = allowed_question_types_for_subject(subject)
                     subj_label = (

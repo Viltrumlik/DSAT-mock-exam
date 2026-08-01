@@ -13,6 +13,8 @@ import logging
 
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 from .engine_db_guard import TransitionConflict, conditional_mock_attempt_update
@@ -125,13 +127,23 @@ class MockSection(TimestampedModel):
     def modules(self):
         return [m for m in (self.module1, self.module2) if m is not None]
 
-    def delete(self, *args, **kwargs):
-        m1, m2 = self.module1, self.module2
-        out = super().delete(*args, **kwargs)
-        for m in (m1, m2):
-            if m is not None:
-                m.delete()
-        return out
+
+@receiver(post_delete, sender=MockSection)
+def _delete_section_modules(sender, instance, **kwargs):
+    """A section OWNS its two ``exams.Module`` rows, so they die with it.
+
+    This is a signal rather than a ``MockSection.delete()`` override because the override
+    never ran on the path that matters: deleting a Mock cascades through Django's collector,
+    which issues bulk deletes and skips model ``delete()`` entirely. Every deleted mock was
+    therefore leaving four orphan Modules — and every Question on them — behind forever,
+    unreachable from any UI. ``post_delete`` fires for cascades too, so both paths converge
+    here. The rows are already gone by now, so the module FKs' PROTECT can't fire.
+    """
+    from exams.models import Module
+
+    ids = [i for i in (instance.module1_id, instance.module2_id) if i is not None]
+    if ids:
+        Module.objects.filter(pk__in=ids).delete()
 
 
 class MockAttempt(TimestampedModel):
