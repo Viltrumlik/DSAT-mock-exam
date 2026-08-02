@@ -403,7 +403,7 @@ function MidtermModal({
               <p className="mt-1 text-[11px] text-muted-foreground">
                 {subjectCandidates.length === 0
                   ? "No published midterms in this subject yet — publish one first."
-                  : "Only students who FAILED the selected midterm will get access to this retake. Students who passed are never granted it."}
+                  : "Students who did not clear the selected midterm get this retake — that includes anyone who was ABSENT from it. Students who passed are never granted it."}
               </p>
             </div>
           )}

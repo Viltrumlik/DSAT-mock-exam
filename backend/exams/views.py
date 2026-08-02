@@ -138,7 +138,7 @@ def _legacy_retake_block(user, mock_exam):
     if ok:
         return None
     detail = {
-        "retake_no_result": "The retake is only for students who sat the original midterm.",
+        # Absence is no longer a refusal — see midterms.access.retake_eligibility.
         "retake_already_passed": "You passed this midterm, so there is no retake to sit.",
     }.get(reason, "You are not eligible for this retake.")
     return Response({"code": reason, "message": detail}, status=status.HTTP_403_FORBIDDEN)

@@ -200,10 +200,12 @@ def _grant_to_classroom(classroom, midterm, actor):
     """Grant ``midterm`` to the classroom. Returns ``(engine_result, retake_summary|None)``.
 
     A retake is a SECOND CHANCE, not a second sitting — the builder promises "students who
-    passed are never granted it" — so a retake is granted only to the roster members who
-    actually failed its parent, never to the whole room. Everything else (an ordinary
-    midterm, a pre-midterm, a retake with no parent recorded) is the unchanged whole-class
-    assignment.
+    passed are never granted it" — so a retake goes to the roster members who did not clear
+    its parent, never to the whole room. That is failers AND ABSENTEES: missing the sitting
+    is the strongest possible reason to be owed a second chance, and the only students left
+    out are the ones who already passed and the ones who were never in the parent's cohort.
+    Everything else (an ordinary midterm, a pre-midterm, a retake with no parent recorded)
+    is the unchanged whole-class assignment.
     """
     from midterms.access import retake_eligible_students
 
@@ -220,7 +222,8 @@ def _grant_to_classroom(classroom, midterm, actor):
     roster = set(_classroom_student_ids(classroom))
     eligible = roster & set(retake_eligible_students(midterm).values_list("pk", flat=True))
     # The two reasons a roster member is skipped read very differently to a teacher: one
-    # cleared the parent, the other never sat it (so there is no verdict to retake).
+    # cleared the parent, the other was never in the parent's cohort (joined the class after
+    # it, so there is nothing to retake). Being ABSENT is no longer a reason to be skipped.
     passed = roster & set(
         MidtermOutcome.objects.filter(midterm_id=midterm.retake_of_id, passed=True).values_list(
             "student_id", flat=True
@@ -241,18 +244,23 @@ def _grant_to_classroom(classroom, midterm, actor):
     summary = {
         "granted": len(eligible),
         "skipped_passed": len(passed),
-        "skipped_no_result": len(roster) - len(eligible) - len(passed),
+        # Was "skipped_no_result", which conflated two very different students. Absentees now
+        # get the retake, so the only ones left here are students who were never given the
+        # parent at all — a newcomer to the class.
+        "skipped_not_in_cohort": len(roster) - len(eligible) - len(passed),
     }
     return result, summary
 
 
 def _retake_detail(summary: dict) -> str:
     """Plain-English assignment outcome for the teacher's toast."""
-    parts = [f"Retake granted to {summary['granted']} student(s)."]
+    parts = [f"Retake granted to {summary['granted']} student(s), including anyone who was absent."]
     if summary["skipped_passed"]:
         parts.append(f"{summary['skipped_passed']} skipped — already passed the original midterm.")
-    if summary["skipped_no_result"]:
-        parts.append(f"{summary['skipped_no_result']} skipped — no result on the original midterm.")
+    if summary["skipped_not_in_cohort"]:
+        parts.append(
+            f"{summary['skipped_not_in_cohort']} skipped — never assigned the original midterm."
+        )
     return " ".join(parts)
 
 
