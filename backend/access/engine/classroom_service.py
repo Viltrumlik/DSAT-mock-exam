@@ -124,7 +124,7 @@ class ClassroomAccessService:
         """
         try:
             from access.resources import RT_MIDTERM_V2
-            from midterms.access import retake_eligibility
+            from midterms.access import retake_grant_eligibility
             from midterms.models import Midterm
 
             if resource_type != RT_MIDTERM_V2:
@@ -132,7 +132,9 @@ class ClassroomAccessService:
             midterm = Midterm.objects.filter(pk=resource_id).only("id", "midterm_type", "retake_of_id").first()
             if midterm is None or midterm.midterm_type != Midterm.TYPE_RETAKE:
                 return True
-            ok, _reason = retake_eligibility(user, midterm)
+            # The GRANT rule, not the start gate: a student joining today was not absent from
+            # the parent, they were not there at all, so they must not inherit its retake.
+            ok, _reason = retake_grant_eligibility(user, midterm)
             return ok
         except Exception:  # pragma: no cover - defensive; start gate is the backstop
             return True

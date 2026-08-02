@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, ArrowRight, Download, Lock } from "lucide-react";
@@ -38,6 +39,24 @@ const fmtDuration = (min: number) => (!min ? null : min >= 60 ? `${Math.floor(mi
 
 function Badge({ text, bg, color }: { text: string; bg: string; color: string }) {
   return <span className="rounded-md px-2.5 py-0.5 text-[11px] font-bold" style={{ background: bg, color }}>{text}</span>;
+}
+
+/**
+ * The way back to a sat midterm's result — score, class rank, certificate and the per-skill
+ * error report. The page existed from the start but nothing ever linked to it: the only two
+ * references in the whole app were the exam runner's own post-submit redirect, so a student
+ * who navigated away could never find their result again without typing the URL.
+ */
+function ResultLink({ attemptId, label = "View result" }: { attemptId: number; label?: string }) {
+  return (
+    <Link
+      href={`/midterm/result/${attemptId}`}
+      className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-4 py-2 text-sm font-bold transition hover:bg-slate-50"
+      style={{ borderColor: C.border, color: C.navy }}
+    >
+      {label} <ArrowRight className="h-3.5 w-3.5" />
+    </Link>
+  );
 }
 
 function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "scheduled" | "past" | "missed"; onUnlock: () => void }) {
@@ -147,12 +166,18 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
               <span className="text-[20px] font-extrabold" style={{ color: C.navy }}>{m.score ?? "—"}</span>
               <span className="text-[12px] font-semibold text-slate-400"> /{m.score_ceiling}</span>
             </div>
+            {m.attempt_id != null && <ResultLink attemptId={m.attempt_id} />}
             {m.certificate?.available && (
               <button onClick={download} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-bold transition hover:bg-slate-50 disabled:opacity-60" style={{ borderColor: C.border, color: C.navy }}>
                 <Download className="h-4 w-4" /> {busy ? "…" : "Download"}
               </button>
             )}
           </div>
+        ) : m.attempt_id != null ? (
+          // Not released yet — but the result page has a purpose-built waiting state, and it
+          // is the only place the score, the class rank and the error report will ever
+          // appear. Sending the student there beats a dead label they cannot act on.
+          <ResultLink attemptId={m.attempt_id} label="Awaiting results" />
         ) : (
           <span className="shrink-0 rounded-xl border px-[18px] py-[11px] text-sm font-semibold" style={{ borderColor: C.border, color: "#94a3b8" }}>Awaiting results</span>
         )}

@@ -301,7 +301,16 @@ class RetakeClassroomAssignTests(TestCase):
         MidtermOutcome.objects.create(
             midterm=self.parent, student=self.passer, score=90, pass_mark=60, passed=True
         )
-        # self.absentee has no verdict at all — nothing to retake.
+        # self.absentee has no verdict at all — they did not turn up. Their ONLY trace is the
+        # grant for the parent, which is why the parent has to be assigned here: this mirrors
+        # the real sequence (assign the midterm, hold it, some students don't come).
+        for s in (self.failer, self.passer, self.absentee):
+            ResourceAccessGrant.objects.create(
+                user=s, classroom=self.room, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+                resource_type=RT_MIDTERM_V2, resource_id=self.parent.id,
+                source=ResourceAccessGrant.SOURCE_CLASSROOM,
+                status=ResourceAccessGrant.STATUS_ACTIVE,
+            )
         self.tc = APIClient(); self.tc.force_authenticate(self.teacher)
 
     def _assign_retake(self):
@@ -322,15 +331,25 @@ class RetakeClassroomAssignTests(TestCase):
             ).values_list("user_id", flat=True)
         )
 
-    def test_only_failers_are_granted_the_retake(self):
+    def test_everyone_who_did_not_pass_is_granted_the_retake(self):
+        """Failers AND absentees — only the passer is left out."""
         r = self._assign_retake()
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(self._granted_ids(self.retake), {self.failer.id})
+        self.assertEqual(self._granted_ids(self.retake), {self.failer.id, self.absentee.id})
         body = r.json()
-        self.assertEqual(body["retake"], {"granted": 1, "skipped_passed": 1, "skipped_no_result": 1})
+        self.assertEqual(
+            body["retake"], {"granted": 2, "skipped_passed": 1, "skipped_not_in_cohort": 0}
+        )
         self.assertIn("already passed", body["detail"])
 
-    def test_a_student_who_passed_cannot_enter_the_retake(self):
+    def test_a_student_who_joined_after_the_parent_is_not_granted_the_retake(self):
+        newcomer = User.objects.create(username="late", email="late@x.io")
+        enroll(self.room, newcomer)  # no grant for the parent — was never asked to sit it
+        r = self._assign_retake()
+        self.assertNotIn(newcomer.id, self._granted_ids(self.retake))
+        self.assertEqual(r.json()["retake"]["skipped_not_in_cohort"], 1)
+
+    def test_a_student_who_passed_cannot_enter_the_retake_but_an_absentee_can(self):
         self._assign_retake()
         sched = MidtermSchedule.objects.get(classroom=self.room, midterm=self.retake)
         sched.generate_access_code()
@@ -341,6 +360,11 @@ class RetakeClassroomAssignTests(TestCase):
         self.assertEqual(r.status_code, 403, r.content)
 
         c = APIClient(); c.force_authenticate(self.failer)
+        r = c.post("/api/midterms/attempts/", {"midterm": self.retake.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+
+        # The whole point of the change: the student who missed the original sitting.
+        c = APIClient(); c.force_authenticate(self.absentee)
         r = c.post("/api/midterms/attempts/", {"midterm": self.retake.id}, format="json")
         self.assertEqual(r.status_code, 201, r.content)
 
@@ -369,9 +393,13 @@ class RetakeClassroomAssignTests(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(len(self._granted_ids(orphan)), 3)
 
-    def test_only_failers_are_emailed_about_a_retake(self):
+    def test_the_retake_email_reaches_the_absentee_too(self):
         from classes.mail_midterm import _recipients
 
         self._assign_retake()
         sched = MidtermSchedule.objects.get(classroom=self.room, midterm=self.retake)
-        self.assertEqual([u.id for u in _recipients(sched)], [self.failer.id])
+        # The passer is still not summoned; the student who missed the sitting now is —
+        # previously they were never even told the retake existed.
+        self.assertEqual(
+            set(u.id for u in _recipients(sched)), {self.failer.id, self.absentee.id}
+        )

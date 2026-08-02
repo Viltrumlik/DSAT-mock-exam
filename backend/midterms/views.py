@@ -61,7 +61,9 @@ _REASON_DETAIL = {
     "midterm_not_open": "This midterm has not opened yet.",
     "midterm_closed": "This midterm's deadline has passed.",
     "midterm_no_code": "This midterm hasn't started yet. Wait for your teacher to start it and share the access code.",
-    "retake_no_result": "The retake is only for students who sat the original midterm.",
+    # NB: there is no "retake_no_result" refusal any more — missing the original sitting is a
+    # reason to be OWED the retake, not to be refused it (midterms.access.retake_eligibility).
+    "retake_not_in_cohort": "This retake belongs to a midterm you were not assigned.",
     "retake_already_passed": "You passed this midterm, so there is no retake to sit.",
 }
 

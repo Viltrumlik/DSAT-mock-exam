@@ -98,14 +98,22 @@ def has_completed_attempt(user, midterm) -> bool:
 
 
 def retake_eligibility(user, midterm) -> tuple[bool, str]:
-    """Whether ``user`` may sit ``midterm`` given the retake rules.
+    """Whether ``user`` may SIT ``midterm`` given the retake rules — the start gate.
 
     Returns ``(ok, reason)``. Always ``(True, "ok")`` for anything that is not a retake, and
     for a retake with no parent recorded (an authoring mistake must not lock everyone out —
     it degrades to an ordinary midterm).
 
-    For a real retake the rule is: the student must have a recorded FAIL on the parent.
-    A pass, or no verdict at all (never sat it), both refuse.
+    The rule is "did not pass the parent", NOT "recorded a fail on the parent". Those differ
+    for exactly one cohort and it is the one the retake matters most to: a student who was
+    ABSENT. No attempt means no ``MidtermOutcome`` row (it is only ever written by
+    ``MidtermAttempt.complete()``), so the old rule refused the very students who had not
+    yet had their one chance — a student who scored 1/40 sat the retake while a student who
+    was ill that morning was told "the retake is only for students who sat the original".
+
+    This is the gate for a student who ALREADY HOLDS A GRANT, so it does not need to ask who
+    was supposed to sit the parent — the grant is that answer. Deciding who to hand a grant
+    to in the first place is ``retake_grant_eligibility`` / ``retake_eligible_students``.
     """
     from .models import Midterm, MidtermOutcome
 
@@ -114,18 +122,77 @@ def retake_eligibility(user, midterm) -> tuple[bool, str]:
     outcome = MidtermOutcome.objects.filter(
         midterm_id=midterm.retake_of_id, student=user
     ).only("passed").first()
-    if outcome is None:
-        return False, "retake_no_result"
-    if outcome.passed:
+    if outcome is not None and outcome.passed:
         return False, "retake_already_passed"
     return True, "ok"
 
 
+def parent_midterm_cohort_ids(parent_id) -> set[int]:
+    """User ids that were supposed to sit ``parent_id`` — the roll call, not the results.
+
+    An absentee is invisible in every attempt-shaped table, so the only record that they
+    were expected is the grant they were given. The cohort is therefore every user who was
+    granted the parent, plus (belt and braces) everyone who has a verdict on it — a student
+    whose grant was later revoked or expired still sat it.
+
+    Grant STATUS is deliberately not filtered: this is history — "who was summoned" — not an
+    access check, the same reading ``admin_report`` takes of the same question.
+    """
+    if not parent_id:
+        return set()
+    from .models import Midterm, MidtermOutcome
+
+    ids: set[int] = set(
+        MidtermOutcome.objects.filter(midterm_id=parent_id).values_list("student_id", flat=True)
+    )
+    # A grant's resource_id may still be a legacy MockExam id during the cutover, so accept
+    # both id spaces for the same parent.
+    resource_ids = {int(parent_id)}
+    legacy_id = Midterm.objects.filter(pk=parent_id).values_list("legacy_mock_exam_id", flat=True).first()
+    if legacy_id:
+        resource_ids.add(int(legacy_id))
+    ids |= set(
+        ResourceAccessGrant.objects.filter(
+            scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            resource_type=RT_MIDTERM_V2,
+            resource_id__in=resource_ids,
+        ).values_list("user_id", flat=True)
+    )
+    return {int(i) for i in ids if i is not None}
+
+
+def retake_grant_eligibility(user, midterm) -> tuple[bool, str]:
+    """Whether ``user`` should be HANDED a grant for ``midterm`` — the assignment rule.
+
+    Stricter than ``retake_eligibility`` on purpose. The start gate can assume a grant
+    already exists, but this decides whether to create one, so it must also establish that
+    the student was part of the parent's cohort at all. Otherwise enrolling any new student
+    into a class that once held a retake would hand them a second chance at a midterm they
+    were never given a first chance at.
+    """
+    from .models import Midterm
+
+    if midterm.midterm_type != Midterm.TYPE_RETAKE or not midterm.retake_of_id:
+        return True, "ok"
+    ok, reason = retake_eligibility(user, midterm)
+    if not ok:
+        return False, reason
+    uid = int(getattr(user, "pk", user))
+    if uid not in parent_midterm_cohort_ids(midterm.retake_of_id):
+        return False, "retake_not_in_cohort"
+    return True, "ok"
+
+
 def retake_eligible_students(midterm):
-    """The users a retake may be granted to: everyone who FAILED its parent midterm.
+    """The users a retake may be granted to: the parent's cohort minus everyone who passed.
+
+    That is failers AND absentees. An absentee has no ``MidtermOutcome`` row at all, so a
+    cohort derived from the outcome table alone (as this used to be) silently dropped every
+    student who missed the sitting — the exact people a retake exists for.
 
     Returns an empty queryset for a non-retake or a parentless retake, so a caller can
-    always iterate the result without branching.
+    always iterate the result without branching. Callers that have a roster intersect this
+    with it, which keeps the answer scoped to their own classroom.
     """
     from django.contrib.auth import get_user_model
 
@@ -134,10 +201,15 @@ def retake_eligible_students(midterm):
     User = get_user_model()
     if midterm.midterm_type != Midterm.TYPE_RETAKE or not midterm.retake_of_id:
         return User.objects.none()
-    failer_ids = MidtermOutcome.objects.filter(
-        midterm_id=midterm.retake_of_id, passed=False
-    ).values_list("student_id", flat=True)
-    return User.objects.filter(pk__in=failer_ids)
+    cohort = parent_midterm_cohort_ids(midterm.retake_of_id)
+    if not cohort:
+        return User.objects.none()
+    passer_ids = set(
+        MidtermOutcome.objects.filter(
+            midterm_id=midterm.retake_of_id, passed=True
+        ).values_list("student_id", flat=True)
+    )
+    return User.objects.filter(pk__in=(cohort - passer_ids))
 
 
 def can_start_midterm(user, midterm) -> tuple[bool, str]:

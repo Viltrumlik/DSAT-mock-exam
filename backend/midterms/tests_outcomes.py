@@ -10,8 +10,10 @@ from __future__ import annotations
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from access.models import ResourceAccessGrant
+from access.resources import RT_MIDTERM_V2
 from exams.models import Module, Question
-from midterms.access import retake_eligibility, retake_eligible_students
+from midterms.access import retake_eligibility, retake_eligible_students, retake_grant_eligibility
 from midterms.models import Midterm, MidtermAttempt, MidtermOutcome, MidtermQuestionResult
 from midterms.outcomes import (
     DEFAULT_PASS_FRACTION,
@@ -262,10 +264,11 @@ class RetakeGateTests(TestCase):
         self.assertFalse(ok)
         self.assertEqual(reason, "retake_already_passed")
 
-    def test_student_who_never_sat_the_parent_is_refused(self):
-        ok, reason = retake_eligibility(self.absentee, self.retake)
-        self.assertFalse(ok)
-        self.assertEqual(reason, "retake_no_result")
+    def test_student_who_was_absent_from_the_parent_may_sit_the_retake(self):
+        # The gate is "did not pass", not "recorded a fail". An absentee has no outcome row
+        # at all (it is only written by complete()), and refusing them locked out precisely
+        # the students who had not yet had their one chance.
+        self.assertEqual(retake_eligibility(self.absentee, self.retake), (True, "ok"))
 
     def test_ordinary_midterm_is_unaffected(self):
         self.assertEqual(retake_eligibility(self.passer, self.parent), (True, "ok"))
@@ -275,9 +278,47 @@ class RetakeGateTests(TestCase):
         orphan = _midterm(mtype=Midterm.TYPE_RETAKE, parent=None)
         self.assertEqual(retake_eligibility(self.absentee, orphan), (True, "ok"))
 
-    def test_eligible_students_lists_exactly_the_failers(self):
+    def test_eligible_students_lists_the_failers(self):
         ids = set(retake_eligible_students(self.retake).values_list("pk", flat=True))
         self.assertEqual(ids, {self.failer.pk})
+
+    def test_eligible_students_includes_an_absentee_who_was_granted_the_parent(self):
+        # The absentee's only trace is the grant they were given — no attempt, no outcome.
+        ResourceAccessGrant.objects.create(
+            user=self.absentee, resource_type=RT_MIDTERM_V2, resource_id=self.parent.id,
+            scope=ResourceAccessGrant.SCOPE_RESOURCE, source=ResourceAccessGrant.SOURCE_CLASSROOM,
+            status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        ids = set(retake_eligible_students(self.retake).values_list("pk", flat=True))
+        self.assertEqual(ids, {self.failer.pk, self.absentee.pk})
+
+    def test_a_passer_stays_out_even_holding_a_parent_grant(self):
+        ResourceAccessGrant.objects.create(
+            user=self.passer, resource_type=RT_MIDTERM_V2, resource_id=self.parent.id,
+            scope=ResourceAccessGrant.SCOPE_RESOURCE, source=ResourceAccessGrant.SOURCE_CLASSROOM,
+            status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        ids = set(retake_eligible_students(self.retake).values_list("pk", flat=True))
+        self.assertNotIn(self.passer.pk, ids)
+
+    def test_a_student_never_given_the_parent_is_not_in_the_cohort(self):
+        # Nothing links them to the parent — not a grant, not an attempt. They joined later.
+        newcomer = User.objects.create_user(username="n", email="n@example.com", password="x", role="student")
+        ids = set(retake_eligible_students(self.retake).values_list("pk", flat=True))
+        self.assertNotIn(newcomer.pk, ids)
+        # ...and the GRANT rule refuses them, even though the START gate would not.
+        self.assertEqual(retake_eligibility(newcomer, self.retake), (True, "ok"))
+        ok, reason = retake_grant_eligibility(newcomer, self.retake)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "retake_not_in_cohort")
+
+    def test_grant_eligibility_admits_an_absentee_from_the_cohort(self):
+        ResourceAccessGrant.objects.create(
+            user=self.absentee, resource_type=RT_MIDTERM_V2, resource_id=self.parent.id,
+            scope=ResourceAccessGrant.SCOPE_RESOURCE, source=ResourceAccessGrant.SOURCE_CLASSROOM,
+            status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        self.assertEqual(retake_grant_eligibility(self.absentee, self.retake), (True, "ok"))
 
     def test_eligible_students_is_empty_for_a_non_retake(self):
         self.assertEqual(retake_eligible_students(self.parent).count(), 0)

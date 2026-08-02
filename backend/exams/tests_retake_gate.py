@@ -73,10 +73,10 @@ class LegacyRetakeGateTests(TestCase):
         self._record_outcome(score=41, passed=False)
         self.assertIsNone(_midterm_start_guard(self.student, self.legacy_retake))
 
-    def test_never_sat_the_parent_cannot_start_the_legacy_retake(self):
-        resp = _midterm_start_guard(self.student, self.legacy_retake)
-        self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.data["code"], "retake_no_result")
+    def test_absent_from_the_parent_MAY_start_the_legacy_retake(self):
+        # Missing the sitting is the strongest reason to be owed a second chance. This used to
+        # 403 with "retake_no_result", which locked out exactly the cohort the retake is for.
+        self.assertIsNone(_midterm_start_guard(self.student, self.legacy_retake))
 
     def test_ordinary_midterm_is_untouched(self):
         self.assertIsNone(_midterm_start_guard(self.student, self.legacy_parent))
