@@ -28,6 +28,22 @@ export interface MockResult {
   score_ceiling: number;
 }
 
+/** A place in an invigilated sitting, as the student sees it. Never carries the code. */
+export interface MockSessionPlace {
+  session_id: number;
+  mock_id: number;
+  title: string;
+  session_date: string;
+  /** OPEN | STARTED | ENDED */
+  status: string;
+  /** PENDING | APPROVED | REJECTED */
+  my_status: string;
+  requested_at: string | null;
+  /** Non-null the instant the room starts — this is what the waiting room watches for. */
+  attempt_id: number | null;
+  started_at: string | null;
+}
+
 export const mockApi = {
   async myMocks(): Promise<MockRow[]> {
     const r = await api.get("/mocks/mine/");
@@ -46,5 +62,17 @@ export const mockApi = {
   async getResults(attemptId: number): Promise<MockResult> {
     const r = await api.get(`/mocks/attempts/${attemptId}/results/`);
     return r.data as MockResult;
+  },
+
+  // ── invigilated sittings ──
+  /** Type the code the teacher read out; join the approval queue. */
+  async joinSession(code: string): Promise<MockSessionPlace> {
+    const r = await api.post("/mocks/sessions/join/", { code });
+    return r.data as MockSessionPlace;
+  },
+  /** Every sitting this student has a place in. The waiting room polls this. */
+  async mySessions(): Promise<MockSessionPlace[]> {
+    const r = await api.get("/mocks/sessions/mine/");
+    return r.data?.results ?? [];
   },
 };

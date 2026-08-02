@@ -13,6 +13,7 @@ import {
   Table2,
   School,
   Timer,
+  CirclePlay,
   FolderOpen,
   Database,
   GraduationCap,
@@ -93,6 +94,8 @@ export const teacherNav: NavSection[] = [
       { href: "/teacher/classrooms", label: "Classrooms", icon: School },
       { href: "/teacher/assessments", label: "Assessments", icon: ClipboardCheck },
       { href: "/teacher/midterms", label: "Midterms", icon: Timer },
+      // Run an invigilated full mock: let students in with the admin's code, press Start.
+      { href: "/teacher/mock-sessions", label: "Mock sittings", icon: CirclePlay, isNew: true },
       { href: "/teacher/materials", label: "Materials", icon: FolderOpen },
       { href: "/teacher/students", label: "Students", icon: Users },
     ],

@@ -129,6 +129,26 @@ export function createExamApi(base: string) {
       }
     },
 
+    /**
+     * Report that the student left the exam window. Returns what it cost them.
+     *
+     * The client never decides the consequence — it says "they left" and the server answers
+     * with the tally, the grace and whether the paper has just been taken in. Same contract
+     * on both proctored backends (`/midterms/…/offscreen/`, `/mocks/…/offscreen/`), which is
+     * why it belongs on the shared factory rather than on one exam's own client.
+     */
+    async reportOffscreen(
+      attemptId: number,
+      idempotencyKey: string,
+    ): Promise<{ violations?: number; limit?: number; grace_seconds?: number; terminated?: boolean; attempt?: unknown }> {
+      const r = await api.post(
+        `${base}/${attemptId}/offscreen/`,
+        {},
+        { headers: idemHeaders(idempotencyKey) },
+      );
+      return r.data ?? {};
+    },
+
     /** Persist in-progress answers without advancing state (autosave). */
     async saveAttempt(
       attemptId: number,

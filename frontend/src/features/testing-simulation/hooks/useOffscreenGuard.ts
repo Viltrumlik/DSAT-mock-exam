@@ -1,7 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { midtermApi } from "@/lib/midtermApi";
 import {
   MIDTERM_OFFSCREEN_GRACE_SECONDS,
   MIDTERM_OFFSCREEN_VIOLATION_LIMIT,
@@ -13,7 +12,8 @@ import { selfFullscreenSettling } from "../tools/fullscreenIntent";
 import { type Attempt, InvalidAttemptPayloadError, parseAttempt } from "../types";
 
 /**
- * Client half of the midterm off-screen rule (server half: midterms/views.offscreen).
+ * Client half of the off-screen rule (server half: midterms/views.offscreen and
+ * mocks/views.offscreen — the two speak the identical contract).
  *
  * The browser's ONLY job is to notice the student left and to say so; the server owns the
  * count, the grace and the forfeit, because a tally kept here is wiped by a refresh or a
@@ -46,14 +46,29 @@ const CONFIRM_MS = 250;
  */
 const ARM_MS = 800;
 
+/** What the offence endpoint answers, on either backend. */
+export interface OffscreenReport {
+  violations?: number;
+  limit?: number;
+  grace_seconds?: number;
+  terminated?: boolean;
+  attempt?: unknown;
+}
+
 interface UseOffscreenGuardArgs {
   attemptId: number;
   /** Live snapshot — the server's offence count is read from it (a refresh can't reset it). */
   attempt: Attempt | null;
-  /** True only while the student is genuinely sitting an active midterm. */
+  /** True only while the student is genuinely sitting an active PROCTORED paper. */
   enabled: boolean;
   /** Adopt the snapshot the offence endpoint returns, so the runner state stays truthful. */
   applyAttempt: (next: Attempt) => void;
+  /**
+   * Where to report an absence. Injected rather than imported so the same guard polices a
+   * midterm and an invigilated full mock — the rule is identical, only the backend differs,
+   * and hardcoding one of them is what kept this hook midterm-only.
+   */
+  report: (attemptId: number, idempotencyKey: string) => Promise<OffscreenReport>;
 }
 
 export interface OffscreenGuard {
@@ -81,7 +96,7 @@ function randomSegment(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-/** The proctoring block the midterm serializer adds to every attempt snapshot. */
+/** The proctoring block both serializers add to every attempt snapshot. */
 interface OffscreenSnapshot {
   offscreen_violations?: number;
   offscreen_limit?: number;
@@ -94,6 +109,7 @@ export function useOffscreenGuard({
   attempt,
   enabled,
   applyAttempt,
+  report: reportOffscreen,
 }: UseOffscreenGuardArgs): OffscreenGuard {
   const [violations, setViolations] = useState(0);
   const [limit, setLimit] = useState(MIDTERM_OFFSCREEN_VIOLATION_LIMIT);
@@ -112,6 +128,12 @@ export function useOffscreenGuard({
   useEffect(() => {
     applyRef.current = applyAttempt;
   }, [applyAttempt]);
+  // Held in a ref so a caller passing an inline arrow does not re-arm the whole guard on
+  // every render — re-arming mid-absence would drop the countdown the student is watching.
+  const reportRef = useRef(reportOffscreen);
+  useEffect(() => {
+    reportRef.current = reportOffscreen;
+  }, [reportOffscreen]);
 
   // Absence bookkeeping: `awayRef` collapses every event of one absence into a single
   // offence, `eventKeyRef` keeps that offence idempotent, and `sawFullscreenRef` means
@@ -228,7 +250,7 @@ export function useOffscreenGuard({
       eventKeyRef.current = key;
       const absence = absenceRef.current;
       try {
-        const res = await midtermApi.reportOffscreen(attemptId, key);
+        const res = await reportRef.current(attemptId, key);
         reportFailedRef.current = false;
         if (typeof res.limit === "number" && res.limit > 0) {
           limitRef.current = res.limit;

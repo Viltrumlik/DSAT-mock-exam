@@ -16,6 +16,7 @@ import {
   CalendarClock,
   NotebookText,
   Timer,
+  CirclePlay,
 } from "lucide-react";
 
 /**
@@ -53,6 +54,14 @@ const OPS_NAV = [
     href: "/ops/midterms",
     label: "Midterms",
     icon: Timer,
+    exact: false,
+  },
+  // Invigilated full-mock sittings: mint the sitting + its code here, then a teacher runs
+  // the room on the day (lets students in, presses Start).
+  {
+    href: "/ops/mock-sessions",
+    label: "Mock sittings",
+    icon: CirclePlay,
     exact: false,
   },
   // Operational assignment management + midterm authoring moved out of the admin panel

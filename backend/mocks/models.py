@@ -146,6 +146,143 @@ def _delete_section_modules(sender, instance, **kwargs):
         Module.objects.filter(pk__in=ids).delete()
 
 
+class MockSession(TimestampedModel):
+    """One invigilated sitting of a Mock: a code, an approved room, and a single Start.
+
+    A mock is visible to every student the moment it is published, but seeing it is not the
+    same as being allowed to sit it. A session is the sitting itself:
+
+        admin creates it for a day and hands out the 6-digit code
+        -> student types the code and REQUESTS a place
+        -> teacher approves the request
+        -> teacher presses Start and the paper opens for the whole room at once
+
+    Separate from the practice path on purpose. A solo attempt (``MockAttempt.session`` is
+    NULL) stays exactly as it was — open, unproctored, sat whenever the student likes — so
+    adding invigilation did not take practice away.
+    """
+
+    STATUS_OPEN = "OPEN"          # accepting join requests
+    STATUS_STARTED = "STARTED"    # the paper is open for the approved room
+    STATUS_ENDED = "ENDED"
+    STATUS_CANCELLED = "CANCELLED"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Open for requests"),
+        (STATUS_STARTED, "Started"),
+        (STATUS_ENDED, "Ended"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    mock = models.ForeignKey(Mock, on_delete=models.CASCADE, related_name="sessions", db_index=True)
+    title = models.CharField(max_length=255, blank=True, default="")
+    # "A session for one day": the code is only good on this date, so yesterday's code
+    # cannot walk into today's sitting.
+    session_date = models.DateField(db_index=True)
+
+    access_code = models.CharField(max_length=6, blank=True, default="", db_index=True)
+    access_code_set_at = models.DateTimeField(null=True, blank=True)
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)
+    # The admin owns the session; the teaching team runs it (approve + Start).
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    classroom = models.ForeignKey(
+        "classes.Classroom", on_delete=models.SET_NULL, null=True, blank=True, related_name="mock_sessions",
+        help_text="Which room runs it. Blank = any teacher on the platform may run it.",
+    )
+
+    started_at = models.DateTimeField(null=True, blank=True)
+    started_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "mocks_session"
+        ordering = ["-session_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["access_code", "session_date"]),
+            models.Index(fields=["status", "session_date"]),
+        ]
+
+    def __str__(self):
+        return f"MockSession #{self.pk} ({self.mock_id}, {self.session_date}, {self.status})"
+
+    @property
+    def display_title(self) -> str:
+        return self.title or (self.mock.title if self.mock_id else "Mock session")
+
+    def generate_access_code(self, now=None) -> str:
+        """Set (or rotate) the 6-digit code. Does NOT save — the caller does."""
+        import secrets
+
+        self.access_code = f"{secrets.randbelow(1_000_000):06d}"
+        self.access_code_set_at = now or timezone.now()
+        return self.access_code
+
+    def code_matches(self, code) -> bool:
+        return bool(self.access_code) and str(code or "").strip() == self.access_code
+
+    def accepts_requests(self, today=None) -> bool:
+        """Whether a student may still ask for a place.
+
+        Requests close when the room starts — a latecomer joining a running sitting would
+        get a clock that had already been running without them.
+        """
+        today = today or timezone.localdate()
+        return self.status == self.STATUS_OPEN and self.session_date == today
+
+    @property
+    def is_running(self) -> bool:
+        return self.status == self.STATUS_STARTED
+
+
+class MockSessionParticipant(TimestampedModel):
+    """One student's place in a session: requested, decided, and (once started) their paper.
+
+    The approval queue is the first of its kind in this codebase — classroom join codes let
+    a student in instantly and resource grants have no pending state — so the shape is
+    deliberately plain: one row per (session, student), a status, and who decided it.
+    """
+
+    STATUS_PENDING = "PENDING"
+    STATUS_APPROVED = "APPROVED"
+    STATUS_REJECTED = "REJECTED"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Waiting for approval"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+    ]
+
+    session = models.ForeignKey(MockSession, on_delete=models.CASCADE, related_name="participants")
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mock_session_places"
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+
+    requested_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    # Written when the room starts. One paper per place.
+    attempt = models.ForeignKey(
+        "mocks.MockAttempt", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        db_table = "mocks_session_participant"
+        ordering = ["requested_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["session", "student"], name="uniq_mock_session_place"),
+        ]
+        indexes = [models.Index(fields=["session", "status"])]
+
+    def __str__(self):
+        return f"MockSessionParticipant(session={self.session_id}, student={self.student_id}, {self.status})"
+
+
 class MockAttempt(TimestampedModel):
     """One student's run through a full mock — 4 modules + break, one object."""
 
@@ -155,24 +292,25 @@ class MockAttempt(TimestampedModel):
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mock_attempts", db_index=True
     )
+    # NULL = solo practice, sat whenever the student likes and not invigilated. Set = an
+    # invigilated sitting, which is what turns the off-screen rule on (``is_proctored``).
+    session = models.ForeignKey(
+        MockSession, on_delete=models.CASCADE, null=True, blank=True, related_name="attempts", db_index=True
+    )
     # {str(module_id): {str(question_id): answer}} across all 4 modules.
     module_answers = models.JSONField(default=dict, blank=True)
     flagged = models.JSONField(default=dict, blank=True)
     # First-seen anchor per active phase (incl BREAK), written `or now`, never rewound.
     phase_started_at = models.JSONField(default=dict, blank=True)
-    # A mock offers NO pause button. But if the student's tab dies — power cut, dropped
-    # connection, a misclick — the wall clock would keep burning a module they cannot see,
-    # so leaving freezes it and returning starts it again. {state: seconds} banked per
-    # phase, mirroring phase_started_at; ``pause_started_at`` is the open window (at most
-    # one, since a student is only ever in one phase). The BREAK is deliberately NOT
-    # pausable: it is time away from the screen by definition, and freezing it would let a
-    # student stretch a 10-minute break into an afternoon.
-    paused_seconds = models.JSONField(default=dict, blank=True)
-    pause_started_at = models.DateTimeField(null=True, blank=True)
-
     current_state = models.CharField(max_length=24, choices=STATE_CHOICES, default=STATE_NOT_STARTED, db_index=True)
     version_number = models.PositiveIntegerField(default=0, db_index=True)
     is_completed = models.BooleanField(default=False, db_index=True)
+
+    # ── proctoring (mirrors midterms.MidtermAttempt) ──────────────────────────
+    # The count lives HERE and not in the browser: a client-side tally is cleared by a
+    # refresh or a new tab, which is exactly what a student gaming the rule would do.
+    offscreen_violations = models.PositiveSmallIntegerField(default=0)
+    terminated_reason = models.CharField(max_length=32, blank=True, default="")
 
     english_score = models.IntegerField(null=True, blank=True)
     math_score = models.IntegerField(null=True, blank=True)
@@ -185,16 +323,45 @@ class MockAttempt(TimestampedModel):
     class Meta:
         db_table = "mocks_attempt"
         constraints = [
+            # SOLO practice: one live attempt per (student, mock). Scoped to session IS NULL
+            # because the old unqualified constraint was keyed to the MOCK rather than the
+            # sitting — so a student's stranded practice attempt would silently re-open as a
+            # "resume" when they walked into an invigilated session of the same mock.
             models.UniqueConstraint(
                 fields=["student", "mock"],
-                condition=models.Q(is_completed=False) & ~models.Q(current_state=STATE_ABANDONED),
-                name="uniq_active_mock_attempt_per_student",
+                condition=(
+                    models.Q(is_completed=False)
+                    & models.Q(session__isnull=True)
+                    & ~models.Q(current_state=STATE_ABANDONED)
+                ),
+                name="uniq_active_solo_mock_attempt",
+            ),
+            # A session seats a student exactly once, running or finished — re-entering a
+            # sitting must reopen the SAME paper, never a fresh one.
+            models.UniqueConstraint(
+                fields=["student", "session"],
+                condition=models.Q(session__isnull=False),
+                name="uniq_mock_attempt_per_session",
             ),
         ]
-        indexes = [models.Index(fields=["mock", "student"]), models.Index(fields=["current_state"])]
+        indexes = [
+            models.Index(fields=["mock", "student"]),
+            models.Index(fields=["current_state"]),
+            models.Index(fields=["session", "current_state"]),
+        ]
 
     def __str__(self):
         return f"MockAttempt #{self.pk} (mock={self.mock_id}, student={self.student_id}, {self.current_state})"
+
+    @property
+    def is_proctored(self) -> bool:
+        """Whether this sitting is invigilated — fullscreen enforced, off-screen policed.
+
+        Being in a session IS the invigilation: someone created it, approved this student
+        into it and pressed Start. Solo practice is not policed, so a student revising on
+        their own can look up a formula without forfeiting a paper nobody is watching.
+        """
+        return self.session_id is not None
 
     def grade(self) -> dict:
         """Pure score computation (no DB write)."""
@@ -229,62 +396,18 @@ class MockAttempt(TimestampedModel):
             fl[str(module_id)] = list(incoming)
         return fl
 
-    # ── pause bookkeeping ─────────────────────────────────────────────────────
-    def _bank_pause(self, state, now):
-        """Close the open pause window into ``state``'s banked total.
-
-        Every phase transition MUST call this for the phase it is LEAVING. A pause
-        carried across a boundary is the bug that bit pastpapers: ``pause_started_at``
-        stayed set through module 2's start, so module 2 opened already frozen and its
-        timer never moved.
-        """
-        banked = dict(self.paused_seconds or {})
-        if self.pause_started_at:
-            spent = max(0, int((now - self.pause_started_at).total_seconds()))
-            banked[state] = int(banked.get(state, 0) or 0) + spent
-        return banked
-
-    def pause(self) -> bool:
-        """Freeze the active module's clock. Idempotent; never applies to the break."""
-        state = self.current_state
-        if state not in _NEXT_SUBMIT:
-            return False  # not on a timed module (break / scoring / completed)
-        if self.pause_started_at is not None:
-            return False  # already frozen
-        ts = timezone.now()
-        n = MockAttempt.objects.filter(pk=self.pk, current_state=state, pause_started_at__isnull=True).update(
-            pause_started_at=ts, updated_at=ts
-        )
-        if n == 0:
-            self.refresh_from_db()
-            return False
-        self.pause_started_at = ts
-        return True
-
-    def resume_pause(self) -> bool:
-        """Bank the open pause window and start the clock again. Idempotent."""
-        if self.pause_started_at is None:
-            return False
-        ts = timezone.now()
-        state = self.current_state
-        banked = self._bank_pause(state, ts)
-        n = MockAttempt.objects.filter(pk=self.pk, pause_started_at__isnull=False).update(
-            paused_seconds=banked, pause_started_at=None, updated_at=ts
-        )
-        if n == 0:
-            self.refresh_from_db()
-            return False
-        self.paused_seconds = banked
-        self.pause_started_at = None
-        return True
-
     # ── transitions (caller holds a select_for_update lock) ────────────────────
-    def start_attempt(self) -> bool:
-        """NOT_STARTED -> ENGLISH_M1. Idempotent once already past NOT_STARTED."""
+    def start_attempt(self, *, at=None) -> bool:
+        """NOT_STARTED -> ENGLISH_M1. Idempotent once already past NOT_STARTED.
+
+        ``at`` pins the clock's zero. A session start passes ONE timestamp for the whole
+        room, so thirty students get thirty identical deadlines rather than deadlines
+        smeared across however long the loop took to write thirty rows.
+        """
         if self.current_state != STATE_NOT_STARTED:
             return False
         v0 = int(self.version_number or 0)
-        ts = timezone.now()
+        ts = at or timezone.now()
         anchor = dict(self.phase_started_at or {})
         anchor[STATE_ENGLISH_M1] = anchor.get(STATE_ENGLISH_M1) or ts.isoformat()
         n = conditional_mock_attempt_update(
@@ -317,10 +440,6 @@ class MockAttempt(TimestampedModel):
         updates = {
             "module_answers": merged, "flagged": merged_fl, "current_state": to_state,
             "phase_started_at": anchor, "version_number": v0 + 1, "updated_at": ts,
-            # The module being left owns whatever pause was open; the next one starts
-            # running. Carrying pause_started_at across the boundary would open module 2
-            # already frozen.
-            "paused_seconds": self._bank_pause(state, ts), "pause_started_at": None,
         }
         if to_state == STATE_SCORING:
             updates["scoring_started_at"] = ts
@@ -329,6 +448,39 @@ class MockAttempt(TimestampedModel):
         if n == 0:
             self.refresh_from_db()
             return False  # someone else advanced us — idempotent
+        self.refresh_from_db()
+        return True
+
+    def submit_final(self) -> bool:
+        """End the WHOLE sitting now, from wherever it is — the forfeit edge.
+
+        The linear chain has no way out of English module 1: a student caught by the
+        off-screen rule on question 3 would otherwise have to be walked through three more
+        modules and a break to reach a score. This jumps straight to SCORING, keeping every
+        answer already banked. Whatever was never reached grades as omitted, which is the
+        honest reading of a paper that was taken in early — the same thing
+        ``MidtermAttempt.submit_final`` does, and the same thing the reaper's drain
+        produces for an abandoned sitting.
+
+        Deliberately bypasses ``assert_transition_allowed``: this is not a step along the
+        chain, it is the chain being cut, and every legal edge is still enforced everywhere
+        else. Idempotent — returns False once the paper is already in.
+        """
+        state = self.current_state
+        if state in (STATE_SCORING, STATE_COMPLETED, STATE_ABANDONED):
+            return False
+        v0 = int(self.version_number or 0)
+        ts = timezone.now()
+        n = conditional_mock_attempt_update(
+            pk=int(self.pk), expect_state=state, expect_version=v0,
+            updates={
+                "current_state": STATE_SCORING, "scoring_started_at": ts, "submitted_at": ts,
+                "version_number": v0 + 1, "updated_at": ts,
+            },
+        )
+        if n == 0:
+            self.refresh_from_db()
+            return False
         self.refresh_from_db()
         return True
 
@@ -345,9 +497,6 @@ class MockAttempt(TimestampedModel):
             updates={
                 "current_state": STATE_MATH_M1, "phase_started_at": anchor,
                 "version_number": v0 + 1, "updated_at": ts,
-                # Math starts running. The break is never pausable, so there should be no
-                # open window here — clearing it is belt-and-braces against a stale one.
-                "pause_started_at": None,
             },
         )
         if n == 0:
@@ -393,7 +542,6 @@ class MockAttempt(TimestampedModel):
                 "english_score": int(result["english_score"]), "math_score": int(result["math_score"]),
                 "total_score": int(result["total_score"]), "current_state": STATE_COMPLETED,
                 "is_completed": True, "completed_at": ts, "version_number": v0 + 1, "updated_at": ts,
-                "pause_started_at": None,  # the paper is over; nothing left to freeze
             },
         )
         if n == 0:

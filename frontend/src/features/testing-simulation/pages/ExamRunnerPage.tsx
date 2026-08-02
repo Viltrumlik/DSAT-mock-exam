@@ -18,7 +18,7 @@ import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attempt
 import {
   calculatorAllowed,
   isMath,
-  autoPauseOnLeave,
+  isProctored,
   isMidtermAttempt,
   moduleLabel,
   pauseAllowed,
@@ -130,6 +130,12 @@ export function ExamRunnerPage() {
   // without the param. The param answers "before the attempt loads"; the attempt answers
   // "what this paper actually is"; every midterm rule below reads this one value.
   const isMidterm = isMidtermSrc || isMidtermAttempt(attempt);
+
+  // THE invigilation predicate, and the only one. Every midterm is proctored; a full mock is
+  // proctored exactly when it is being sat in a session, which the SERVER decides and
+  // publishes on the attempt — so a copied link cannot drop the rule the way a query param
+  // could. Solo practice is never proctored.
+  const proctored = isProctored(attempt);
 
   // ── SAT-experience tools (isolated from the engine) ─────────────────────────
   const tools = useExamTools({
@@ -353,11 +359,13 @@ export function ExamRunnerPage() {
   const fsSupported = tools.fullscreen.supported;
   const fsEnforced =
     !mockFlow &&
-    // Midterms are policed by the off-screen rule instead (below): leaving fullscreen is
-    // one of the ways it detects a student leaving, and it has its own overlay, its own
-    // countdown and a far harsher consequence. Running both would stack two modals over
-    // each other and race two countdowns to two different endings.
-    !isMidterm &&
+    // A PROCTORED paper is policed by the off-screen rule instead (below): leaving
+    // fullscreen is one of the ways it detects a student leaving, and it has its own
+    // overlay, its own countdown and a far harsher consequence. Running both would stack
+    // two modals over each other and race two countdowns to two different endings. This
+    // covers midterms AND an invigilated mock session — the earlier `!isMidterm` let a
+    // session mock stack both.
+    !proctored &&
     !showWelcome &&
     !multiTab.blocked &&
     transitionTo === null &&
@@ -410,13 +418,16 @@ export function ExamRunnerPage() {
     return () => clearInterval(iv);
   }, [showFsWarning]);
 
-  // ── Off-screen rule (midterms only) ─────────────────────────────────────────
+  // ── Off-screen rule (any invigilated paper) ─────────────────────────────────
   // Enforced only while the student is genuinely sitting the paper: never over the rules /
   // code / transition screens, never from a blocked duplicate tab, and never before the
   // module is on screen — every one of those is a place the runner itself moves focus or
   // fullscreen around, and an offence costs a third of the student's allowance.
+  //
+  // `proctored` comes off the ATTEMPT, so a midterm and a mock sat in a session are policed
+  // identically and neither can be un-policed by editing the URL.
   const offscreenEnforced =
-    isMidterm &&
+    proctored &&
     !showWelcome &&
     !multiTab.blocked &&
     transitionTo === null &&
@@ -429,18 +440,22 @@ export function ExamRunnerPage() {
     attempt,
     enabled: offscreenEnforced,
     applyAttempt,
+    // The rule is one rule; only the backend differs. `engineApi` is already the right one.
+    report: engineApi.reportOffscreen,
   });
-  const goToMidtermResult = useCallback(
-    () => router.push(`/midterm/result/${attemptId}`),
-    [router, attemptId],
+  // A forfeited paper still has a result to show, and it is not the same page for both
+  // exams — a mock's lives under /mock-exam.
+  const goToTerminalResult = useCallback(
+    () => router.push(isMockSrc ? `/mock-exam/result/${attemptId}` : `/midterm/result/${attemptId}`),
+    [router, attemptId, isMockSrc],
   );
   // Hold the terminal screen long enough to be read, then move on. The button on it does
   // the same thing immediately; the completion-routing effect stands down while it shows.
   useEffect(() => {
     if (!offscreen.terminated) return;
-    const t = setTimeout(goToMidtermResult, 6000);
+    const t = setTimeout(goToTerminalResult, 6000);
     return () => clearTimeout(t);
-  }, [offscreen.terminated, goToMidtermResult]);
+  }, [offscreen.terminated, goToTerminalResult]);
 
   // Keyboard shortcuts (pure input → existing handlers; no engine coupling).
   useKeyboardShortcuts({
@@ -487,11 +502,8 @@ export function ExamRunnerPage() {
   const { secondsLeft, ready: timerReady } = useModuleTimer({
     attempt,
     clock,
-    // A blocked duplicate tab must not run the countdown or auto-submit. `autoPauseOnLeave`
-    // (not `pauseAllowed`) is the right gate: a mock has no Pause button but DOES freeze
-    // when the student leaves, and the local countdown has to freeze with it or it would
-    // race ahead of the server clock and auto-submit a module that still has time on it.
-    paused: (paused && autoPauseOnLeave(attempt, mockFlow)) || multiTab.blocked,
+    // A blocked duplicate tab must not run the countdown or auto-submit.
+    paused: (paused && pauseAllowed(attempt, mockFlow)) || multiTab.blocked,
     onExpire,
   });
 
@@ -568,7 +580,7 @@ export function ExamRunnerPage() {
   const syncedPauseRef = useRef<number | null>(null);
   useEffect(() => {
     if (!attempt) return;
-    if (!autoPauseOnLeave(attempt, mockFlow)) {
+    if (!pauseAllowed(attempt, mockFlow)) {
       setPaused(false);
       return;
     }
@@ -576,50 +588,6 @@ export function ExamRunnerPage() {
     syncedPauseRef.current = attempt.id;
     setPaused(Boolean(attempt.is_paused));
   }, [attempt, mockFlow]);
-
-  // ── Auto-resume a mock the moment the student is back ────────────────────────
-  // A pastpaper shows a Resume button; a mock has no pause UI at all, so returning has to
-  // start the clock by itself — otherwise the student sits on a frozen timer with nothing
-  // to click. Runs on load (they reopened the tab) and on becoming visible again.
-  const resumingRef = useRef(false);
-  const pausedRef = useRef(false);
-  pausedRef.current = paused;
-  const autoResume = useCallback(async () => {
-    const live = attemptRef.current;
-    if (!live) return;
-    if (pauseAllowed(live, mockFlow)) return; // pastpaper: the student presses Resume
-    if (!autoPauseOnLeave(live, mockFlow)) return;
-    if (multiTab.blocked) return; // a blocked duplicate tab does not drive the clock
-    // `is_paused` comes from the last snapshot, and the leave-pause was fire-and-forget —
-    // the client never saw a response for it. So trust the LOCAL flag too, or the student
-    // would sit frozen until the next 10-second poll happened to reveal the pause. The
-    // endpoint is idempotent, so an unnecessary call is a harmless no-op.
-    if (!live.is_paused && !pausedRef.current) return;
-    if (resumingRef.current) return;
-    resumingRef.current = true;
-    try {
-      applyAttempt(await engineApi.resumePause(attemptId));
-      setPaused(false);
-    } catch {
-      /* the poll reconciles; the clock stays frozen until it succeeds, which is the safe way to fail */
-    } finally {
-      resumingRef.current = false;
-    }
-  }, [mockFlow, attemptId, applyAttempt, engineApi, multiTab.blocked]);
-
-  useEffect(() => {
-    if (!attempt?.is_paused && !paused) return;
-    if (document.visibilityState === "hidden") return; // still away — stay frozen
-    void autoResume();
-  }, [attempt?.is_paused, paused, autoResume]);
-
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void autoResume();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [autoResume]);
 
   // ── Module transition overlay: show briefly when the module order increases ──
   const prevOrderRef = useRef(0);
@@ -722,9 +690,7 @@ export function ExamRunnerPage() {
   const handleSaveAndExit = useCallback(async () => {
     setExiting(true);
     try {
-      // Freeze on an explicit exit too, for everything that auto-pauses. This is also the
-      // off-fullscreen kick, so a mock student booted out of fullscreen keeps their time.
-      if (attemptRef.current && autoPauseOnLeave(attemptRef.current, mockFlow)) {
+      if (attemptRef.current && pauseAllowed(attemptRef.current, mockFlow)) {
         try {
           applyAttempt(await engineApi.pause(attemptId));
         } catch {
@@ -807,7 +773,9 @@ export function ExamRunnerPage() {
     // offers no Pause button, but a student whose laptop dies mid-module must not come
     // back to a module that expired without them. Midterms are excluded: leaving is the
     // thing their off-screen rule polices, so their clock keeps running.
-    if (!autoPauseOnLeave(attempt, mockFlow)) return;
+    // Pause is PASTPAPER-ONLY. A full mock is strictly timed everywhere — solo or
+    // invigilated — so leaving never buys time; in a session it is policed instead.
+    if (!pauseAllowed(attempt, mockFlow)) return;
     // A blocked duplicate tab does not own the attempt: pausing from it would freeze the
     // clock of the tab the student is actually sitting the exam in.
     if (multiTab.blocked) return;
@@ -846,7 +814,7 @@ export function ExamRunnerPage() {
   // The off-screen rule forfeited the sitting. The SERVER already submitted the paper —
   // this screen only explains it before the redirect (see the terminal-screen effect).
   if (offscreen.terminated) {
-    return <OffscreenTerminatedScreen onContinue={goToMidtermResult} />;
+    return <OffscreenTerminatedScreen onContinue={goToTerminalResult} />;
   }
 
   if (error) {

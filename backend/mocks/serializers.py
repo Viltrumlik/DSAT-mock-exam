@@ -13,6 +13,8 @@ from rest_framework import serializers
 
 from exams.serializers import QuestionSerializer
 
+from .proctoring import GRACE_SECONDS as OFFSCREEN_GRACE_SECONDS
+from .proctoring import VIOLATION_LIMIT as OFFSCREEN_VIOLATION_LIMIT
 from .state_machine import (
     ACTIVE_MODULE,
     STATE_BREAK,
@@ -94,10 +96,9 @@ class MockAttemptSerializer(serializers.Serializer):
             "current_module_flagged_questions": flagged,
             "is_completed": bool(attempt.is_completed),
             "is_expired": is_expired,
-            # Frozen because the student left the exam — never because they asked. The
-            # runner reads this on load so a student returning on another device picks up
-            # a stopped clock rather than one that has been running without them.
-            "is_paused": bool(attempt.pause_started_at) and is_active,
+            # A full mock never pauses — the clock cannot be stopped by anyone, and leaving
+            # is policed by the off-screen rule rather than forgiven by a freeze.
+            "is_paused": False,
             "can_submit": bool(is_active and not is_expired),
             "can_resume": state in _RESUMABLE,
             "results_ready": bool(attempt.is_completed),
@@ -107,4 +108,17 @@ class MockAttemptSerializer(serializers.Serializer):
             "is_on_break": on_break,
             "break_remaining_seconds": break_remaining,
             "mock_phase": state,
+            # ── proctoring ──
+            # `proctored` travels with the ATTEMPT, not the URL: a copied link, a resumed
+            # session or an admin preview can lose a query param, and the rule must not be
+            # droppable that way. The runner renders the warning and the countdown, so it
+            # needs the tally and the limits — but it never DECIDES them (the server owns
+            # the count; see MockAttemptViewSet.offscreen). Sent on every snapshot so a
+            # refresh or a second tab picks up the true count instead of starting at zero.
+            "proctored": bool(attempt.is_proctored),
+            "session_id": attempt.session_id,
+            "offscreen_violations": int(attempt.offscreen_violations or 0),
+            "offscreen_limit": OFFSCREEN_VIOLATION_LIMIT,
+            "offscreen_grace_seconds": OFFSCREEN_GRACE_SECONDS,
+            "terminated_reason": attempt.terminated_reason or "",
         }
