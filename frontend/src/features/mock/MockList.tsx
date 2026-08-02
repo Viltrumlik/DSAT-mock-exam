@@ -8,6 +8,7 @@ import { FileText, ArrowRight, Coffee } from "lucide-react";
 import { mockApi, type MockRow } from "@/lib/mockApi";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
+import MockSessionPanel from "./MockSessionPanel";
 
 /** Student full-mock list — 4-module SAT simulations (2 English + 2 Math + a 10-min break). */
 
@@ -81,7 +82,14 @@ export default function MockList() {
         A full timed SAT simulation: 2 Reading &amp; Writing modules, a 10-minute break, then 2 Math modules — scored out of 1600.
       </p>
 
-      <div className="mt-8 space-y-3">
+      {/* Two ways to sit the same paper. An invigilated sitting is run by a teacher with a
+          code; practice below is the student's own, whenever they like. */}
+      <div className="mt-6">
+        <MockSessionPanel />
+      </div>
+
+      <p className="mt-8 text-[12px] font-extrabold tracking-[0.16em] text-slate-400">PRACTISE ON YOUR OWN</p>
+      <div className="mt-3 space-y-3">
         {isLoading ? (
           <p className="text-sm text-slate-500">Loading…</p>
         ) : mocks.length === 0 ? (

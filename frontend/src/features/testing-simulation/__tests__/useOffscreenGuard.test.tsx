@@ -19,13 +19,10 @@ import {
 } from "../tools/fullscreenIntent";
 import type { Attempt } from "../types";
 
-vi.mock("@/lib/midtermApi", () => ({
-  midtermApi: { reportOffscreen: vi.fn() },
-}));
-import { midtermApi } from "@/lib/midtermApi";
-
 const ATTEMPT_ID = 501;
-const report = midtermApi.reportOffscreen as unknown as ReturnType<typeof vi.fn>;
+// The reporter is INJECTED now (the same guard polices a midterm and an invigilated mock),
+// so the test supplies it directly instead of mocking one exam's client module.
+const report = vi.fn();
 
 /** Minimal midterm snapshot carrying the proctoring block the serializer sends. */
 function makeAttempt(over: Record<string, unknown> = {}): Attempt {
@@ -137,6 +134,7 @@ describe("useOffscreenGuard — report exactly what the student did", () => {
       attempt: makeAttempt(over),
       enabled: true,
       applyAttempt: () => {},
+      report,
     });
   }
 

@@ -48,6 +48,39 @@ class CanManageJournals(BasePermission):
         return is_global_scope_staff(request.user)
 
 
+class CanCreateMockSessions(BasePermission):
+    """Mint an invigilated mock sitting and its access code — ADMIN only.
+
+    Deliberately narrower than ``CanRunMockSessions``: an admin decides that a sitting
+    happens and owns the code; a teacher runs the room on the day. Teachers are excluded
+    here for the same reason they are excluded from journals — scheduling a whole-school
+    exam is not a classroom decision.
+    """
+
+    def has_permission(self, request, view):
+        return is_global_scope_staff(request.user)
+
+    def has_object_permission(self, request, view, obj):
+        return is_global_scope_staff(request.user)
+
+
+class CanRunMockSessions(BasePermission):
+    """Approve join requests, press Start, close the room — teacher OR admin.
+
+    The teacher is the person actually standing in front of the students, so they hold the
+    controls that have to be used at the moment the exam runs.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if is_global_scope_staff(user):
+            return True
+        return normalized_role(user) == constants.ROLE_TEACHER
+
+    def has_object_permission(self, request, view, obj):
+        return self.has_permission(request, view)
+
+
 class HasLMSPermission(BasePermission):
     """Set ``permission_codename`` on the view or subclass."""
 

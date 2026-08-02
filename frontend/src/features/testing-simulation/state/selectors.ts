@@ -63,19 +63,18 @@ export function pauseAllowed(attempt: Attempt | null, mockFlow: boolean): boolea
 }
 
 /**
- * Whether the clock freezes when the student LEAVES the exam (tab hidden, page closed,
- * navigated away) and starts again when they come back.
+ * Whether this sitting is INVIGILATED — fullscreen enforced and leaving the screen policed
+ * by the off-screen rule.
  *
- * Deliberately wider than `pauseAllowed`: a full mock has no Pause button, but losing
- * power or closing a laptop must not burn a 32/35-minute module the student cannot see —
- * so it auto-pauses on leave and auto-resumes on return, with no control to abuse.
- * Midterms are excluded: they are proctored sittings where leaving is the thing being
- * policed (see the off-screen rule), so their clock keeps running by design.
+ * Read off the ATTEMPT, never off the URL. `?src=midterm` / `?src=mock` say which backend
+ * to talk to, not what the paper is, and a copied link or a resumed session can lose a
+ * query param — a rule that can be dropped by editing the address bar is not a rule. The
+ * server publishes `proctored` on every snapshot; midterms are proctored by definition, a
+ * mock is proctored exactly when it is sat in a session, and solo practice never is.
  */
-export function autoPauseOnLeave(attempt: Attempt | null, mockFlow: boolean): boolean {
-  if (mockFlow) return false;
-  const kind = attempt?.practice_test_details?.mock_kind;
-  return kind !== "MIDTERM";
+export function isProctored(attempt: Attempt | null): boolean {
+  if (attempt?.practice_test_details?.mock_kind === "MIDTERM") return true;
+  return Boolean((attempt as unknown as { proctored?: boolean } | null)?.proctored);
 }
 
 /**

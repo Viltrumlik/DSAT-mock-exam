@@ -1,7 +1,10 @@
 """Student-facing full-mock attempt runner endpoints.
 
-Reuses the exam-runner contract (status/start/submit_module/save_attempt) plus a mock-specific
-end_break action. One MockAttempt spans 4 modules + a server-authoritative break; no pause.
+Reuses the exam-runner contract (status/start/submit_module/save_attempt) plus two
+mock-specific actions: end_break, and offscreen for a proctored sitting. One MockAttempt
+spans 4 modules + a server-authoritative break. There is NO pause anywhere: the clock never
+stops, and a student who leaves is policed by the off-screen rule rather than forgiven by a
+freeze.
 """
 
 from __future__ import annotations
@@ -20,11 +23,27 @@ from config.reliability import idempotency_key_from_request
 from .access import can_start_mock
 from .idempotency import consume_idempotency_key
 from .models import Mock, MockAttempt
+from .proctoring import (
+    GRACE_SECONDS as OFFSCREEN_GRACE_SECONDS,
+    TERMINATION_OFFSCREEN,
+    VIOLATION_LIMIT as OFFSCREEN_VIOLATION_LIMIT,
+)
 from .serializers import MockAttemptSerializer
-from .state_machine import STATE_ABANDONED, STATE_BREAK, STATE_COMPLETED, STATE_SCORING
+from .state_machine import (
+    ACTIVE_MODULE,
+    STATE_ABANDONED,
+    STATE_BREAK,
+    STATE_COMPLETED,
+    STATE_SCORING,
+)
 from .tasks import enqueue_mock_scoring
 
 logger = logging.getLogger(__name__)
+
+# The four states a student is actually sitting a timed module in — the only ones the
+# off-screen rule polices. The BREAK is deliberately excluded: it is time away from the
+# screen by definition, so charging an offence for it would forfeit every student.
+_SUBMITTABLE_STATES = frozenset(ACTIVE_MODULE)
 
 _REASON_DETAIL = {"mock_unpublished": "This mock is not available yet."}
 
@@ -212,27 +231,71 @@ class MockAttemptViewSet(viewsets.GenericViewSet):
 
         return consume_idempotency_key(attempt=attempt, endpoint="save_attempt", key=idempotency_key_from_request(request), compute=compute)
 
-    @action(detail=True, methods=["post"])
-    def pause(self, request, pk=None):
-        """Freeze the active module's clock because the student left the exam.
+    @action(detail=True, methods=["post"], url_path="offscreen")
+    def offscreen(self, request, pk=None):
+        """Report that the student left the exam window; return what it cost them.
 
-        A full mock has no pause BUTTON — this is only ever fired by the runner's
-        leave handlers (tab hidden, page hide, navigate away). Without it a dropped
-        connection or a closed laptop burns a 32/35-minute module the student cannot
-        see. The break is not pausable and this no-ops there.
+        The offence count lives HERE, not in the browser, because a client-side tally is
+        cleared by a refresh or a new tab — precisely what a student gaming the rule would
+        do. The browser reports the event; the server decides the consequence:
+
+            offence 1 and 2  -> ``grace_seconds`` to return, else the client submits
+            offence 3        -> no grace; the attempt is terminated immediately here
+
+        Only a PROCTORED sitting is policed. A solo practice mock reports nothing (the
+        runner never mounts the guard), and this no-ops for it anyway, so a crafted client
+        cannot burn strikes on a paper nobody is invigilating.
+
+        Idempotent per browser event via the standard idempotency key, so a retried report
+        cannot burn two of the student's three chances.
         """
-        get_object_or_404(self.get_queryset(), pk=pk)  # ownership / 404 guard
-        with transaction.atomic():
-            self.get_queryset().select_for_update().get(pk=pk).pause()
-        return self._snapshot(self.get_queryset().get(pk=pk))
+        attempt = get_object_or_404(self.get_queryset(), pk=pk)
 
-    @action(detail=True, methods=["post"], url_path="resume_pause")
-    def resume_pause(self, request, pk=None):
-        """Bank the time the student was away and start the clock again. Idempotent."""
-        get_object_or_404(self.get_queryset(), pk=pk)  # ownership / 404 guard
-        with transaction.atomic():
-            self.get_queryset().select_for_update().get(pk=pk).resume_pause()
-        return self._snapshot(self.get_queryset().get(pk=pk))
+        def _tally(att, *, terminated=False, graced=True):
+            return Response({
+                "violations": int(att.offscreen_violations or 0),
+                # 0 once the allowance is spent — the client stops offering a countdown.
+                "grace_seconds": OFFSCREEN_GRACE_SECONDS if graced and not terminated else 0,
+                "terminated": bool(terminated or att.terminated_reason),
+                "limit": OFFSCREEN_VIOLATION_LIMIT,
+            })
+
+        if not attempt.is_proctored or attempt.current_state not in _SUBMITTABLE_STATES:
+            # Nothing to police once the paper is in, or on an unproctored sitting. Report
+            # the tally so a late event from a closing tab is a harmless no-op, not an error.
+            return _tally(attempt, graced=False)
+
+        def compute():
+            terminated = False
+            with transaction.atomic():
+                locked = self.get_queryset().select_for_update().get(pk=pk)
+                if locked.current_state not in _SUBMITTABLE_STATES:
+                    count = int(locked.offscreen_violations or 0)
+                else:
+                    count = int(locked.offscreen_violations or 0) + 1
+                    MockAttempt.objects.filter(pk=locked.pk).update(offscreen_violations=count)
+                    locked.offscreen_violations = count
+                    if count >= OFFSCREEN_VIOLATION_LIMIT:
+                        # Third strike ends the WHOLE sitting immediately, from whichever of
+                        # the four modules they are on — never an advance to the next one.
+                        # submit_final cuts straight to SCORING; what was never reached
+                        # grades as omitted.
+                        locked.submit_final()
+                        MockAttempt.objects.filter(pk=locked.pk).update(
+                            terminated_reason=TERMINATION_OFFSCREEN
+                        )
+                        terminated = True
+            refreshed = self.get_queryset().get(pk=pk)
+            if terminated and refreshed.current_state == STATE_SCORING:
+                enqueue_mock_scoring(attempt_id=refreshed.id, request=request)
+                refreshed.refresh_from_db()
+            resp = _tally(refreshed, terminated=terminated)
+            resp.data["attempt"] = MockAttemptSerializer(refreshed).data
+            return resp
+
+        return consume_idempotency_key(
+            attempt=attempt, endpoint="offscreen", key=idempotency_key_from_request(request), compute=compute
+        )
 
     @action(detail=True, methods=["post"], url_path="end_break")
     def end_break(self, request, pk=None):
