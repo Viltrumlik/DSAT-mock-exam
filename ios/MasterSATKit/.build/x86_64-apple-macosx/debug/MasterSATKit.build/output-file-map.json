@@ -6,90 +6,112 @@
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIConfig.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIConfig.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIConfig.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIConfig~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIConfig.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIConfig.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIConfig.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIError.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIError.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIError.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIError~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIError.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIError.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIError.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/Endpoint.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Endpoint.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Endpoint.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Endpoint~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Endpoint.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Endpoint.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Endpoint.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/JSONCoding.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/JSONCoding.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/JSONCoding.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/JSONCoding~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/JSONCoding.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/JSONCoding.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/JSONCoding.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/KeychainTokenStorage.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/KeychainTokenStorage.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/KeychainTokenStorage.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/KeychainTokenStorage~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/KeychainTokenStorage.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/KeychainTokenStorage.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/KeychainTokenStorage.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/TokenStorage.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/TokenStorage.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/TokenStorage.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/TokenStorage~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/TokenStorage.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/TokenStorage.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/TokenStorage.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/AnswerMerge.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AnswerMerge.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AnswerMerge.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AnswerMerge~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AnswerMerge.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AnswerMerge.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AnswerMerge.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/AttemptMerge.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AttemptMerge.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AttemptMerge.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AttemptMerge~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AttemptMerge.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AttemptMerge.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AttemptMerge.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/AutosavePolicy.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AutosavePolicy.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AutosavePolicy.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AutosavePolicy~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AutosavePolicy.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AutosavePolicy.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AutosavePolicy.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/DraftStore.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/DraftStore.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/DraftStore.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/DraftStore~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/DraftStore.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/DraftStore.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/DraftStore.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamAPI.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamClock.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.dia"
+  },
+  "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift": {
+    "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.d",
+    "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.swift.o",
+    "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner~partial.swiftmodule",
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.dia"
   },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.dia"
   }
 }

@@ -22,7 +22,7 @@
   ],
   "swiftCommands" : {
     "C.MasterSATKit-x86_64-apple-macosx15.0-debug.module" : {
-      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "fileList" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/sources",
       "importPath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules",
       "inputs" : [
@@ -80,6 +80,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift"
         },
         {
@@ -88,7 +92,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
           "kind" : "file",
@@ -112,13 +116,16 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/DraftStore.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.swift.o",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.swift.o"
       ],
       "otherArguments" : [
         "-target",
         "x86_64-apple-macosx14.0",
+        "-incremental",
         "-enable-batch-mode",
+        "-serialize-diagnostics",
         "-index-store-path",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/index/store",
         "-Onone",
@@ -126,24 +133,41 @@
         "-j16",
         "-DSWIFT_PACKAGE",
         "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
         "-module-cache-path",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/ModuleCache",
         "-parseable-output",
         "-parse-as-library",
         "-emit-objc-header",
         "-emit-objc-header-path",
-        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/MasterSATKit-Swift.h",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/include/MasterSATKit-Swift.h",
         "-swift-version",
         "6",
-        "-F",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
         "-sdk",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
         "-g",
         "-Xcc",
         "-isysroot",
         "-Xcc",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
         "-Xcc",
         "-fPIC",
         "-Xcc",
@@ -207,6 +231,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swift.o"
         },
         {
@@ -233,6 +261,7 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/DraftStore.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamAPI.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamClock.swift",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift"
       ],
@@ -240,7 +269,7 @@
       "wholeModuleOptimization" : false
     },
     "C.MasterSATKitPackageTests-x86_64-apple-macosx15.0-debug.module" : {
-      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "fileList" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/sources",
       "importPath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules",
       "inputs" : [
@@ -250,7 +279,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
           "kind" : "file",
@@ -270,7 +299,9 @@
       "otherArguments" : [
         "-target",
         "x86_64-apple-macosx14.0",
+        "-incremental",
         "-enable-batch-mode",
+        "-serialize-diagnostics",
         "-index-store-path",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/index/store",
         "-Onone",
@@ -280,22 +311,39 @@
         "-j16",
         "-DSWIFT_PACKAGE",
         "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
         "-module-cache-path",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/ModuleCache",
         "-parseable-output",
         "-parse-as-library",
         "-emit-objc-header",
         "-emit-objc-header-path",
-        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/MasterSATKitPackageTests-Swift.h",
-        "-F",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/include/MasterSATKitPackageTests-Swift.h",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
         "-sdk",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
         "-g",
         "-Xcc",
         "-isysroot",
         "-Xcc",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
         "-Xcc",
         "-fPIC",
         "-Xcc",
@@ -322,7 +370,7 @@
       "wholeModuleOptimization" : false
     },
     "C.MasterSATKitTests-x86_64-apple-macosx15.0-debug.module" : {
-      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "fileList" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/sources",
       "importPath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules",
       "inputs" : [
@@ -348,11 +396,15 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/ExamRunnerTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/StubURLProtocol.swift"
         },
         {
           "kind" : "file",
-          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
           "kind" : "file",
@@ -372,12 +424,15 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptFixtures.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptMergeTests.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AutosavePolicyTests.swift.o",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/ExamRunnerTests.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/StubURLProtocol.swift.o"
       ],
       "otherArguments" : [
         "-target",
         "x86_64-apple-macosx14.0",
+        "-incremental",
         "-enable-batch-mode",
+        "-serialize-diagnostics",
         "-index-store-path",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/index/store",
         "-Onone",
@@ -387,21 +442,38 @@
         "-j16",
         "-DSWIFT_PACKAGE",
         "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
         "-module-cache-path",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/ModuleCache",
         "-parseable-output",
         "-parse-as-library",
         "-swift-version",
         "6",
-        "-F",
-        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
         "-sdk",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
         "-g",
         "-Xcc",
         "-isysroot",
         "-Xcc",
-        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
         "-Xcc",
         "-fPIC",
         "-Xcc",
@@ -433,6 +505,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/ExamRunnerTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/StubURLProtocol.swift.o"
         },
         {
@@ -447,6 +523,7 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptFixtures.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptMergeTests.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AutosavePolicyTests.swift",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/ExamRunnerTests.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/StubURLProtocol.swift"
       ],
       "tempsPath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build",
@@ -458,12 +535,11 @@
   },
   "swiftTargetScanArgs" : {
     "MasterSATKit" : [
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "-module-name",
       "MasterSATKit",
       "-package-name",
       "mastersatkit",
-      "-incremental",
       "-c",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIConfig.swift",
@@ -478,13 +554,16 @@
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/DraftStore.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamAPI.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamClock.swift",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift",
       "-I",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules",
       "-target",
       "x86_64-apple-macosx14.0",
+      "-incremental",
       "-enable-batch-mode",
+      "-serialize-diagnostics",
       "-index-store-path",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/index/store",
       "-Onone",
@@ -492,24 +571,41 @@
       "-j16",
       "-DSWIFT_PACKAGE",
       "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
       "-module-cache-path",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/ModuleCache",
       "-parseable-output",
       "-parse-as-library",
       "-emit-objc-header",
       "-emit-objc-header-path",
-      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/MasterSATKit-Swift.h",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/include/MasterSATKit-Swift.h",
       "-swift-version",
       "6",
-      "-F",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
       "-sdk",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
       "-g",
       "-Xcc",
       "-isysroot",
       "-Xcc",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
       "-Xcc",
       "-fPIC",
       "-Xcc",
@@ -517,22 +613,23 @@
       "-package-name",
       "mastersatkit",
       "-driver-use-frontend-path",
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ],
     "MasterSATKitPackageTests" : [
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "-module-name",
       "MasterSATKitPackageTests",
       "-package-name",
       "mastersatkit",
-      "-incremental",
       "-c",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.derived/runner.swift",
       "-I",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules",
       "-target",
       "x86_64-apple-macosx14.0",
+      "-incremental",
       "-enable-batch-mode",
+      "-serialize-diagnostics",
       "-index-store-path",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/index/store",
       "-Onone",
@@ -542,22 +639,39 @@
       "-j16",
       "-DSWIFT_PACKAGE",
       "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
       "-module-cache-path",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/ModuleCache",
       "-parseable-output",
       "-parse-as-library",
       "-emit-objc-header",
       "-emit-objc-header-path",
-      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/MasterSATKitPackageTests-Swift.h",
-      "-F",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/include/MasterSATKitPackageTests-Swift.h",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
       "-sdk",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
       "-g",
       "-Xcc",
       "-isysroot",
       "-Xcc",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
       "-Xcc",
       "-fPIC",
       "-Xcc",
@@ -565,27 +679,29 @@
       "-package-name",
       "mastersatkit",
       "-driver-use-frontend-path",
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ],
     "MasterSATKitTests" : [
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
       "-module-name",
       "MasterSATKitTests",
       "-package-name",
       "mastersatkit",
-      "-incremental",
       "-c",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/APIClientTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AnswerMergeTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptFixtures.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptMergeTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AutosavePolicyTests.swift",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/ExamRunnerTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/StubURLProtocol.swift",
       "-I",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules",
       "-target",
       "x86_64-apple-macosx14.0",
+      "-incremental",
       "-enable-batch-mode",
+      "-serialize-diagnostics",
       "-index-store-path",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/index/store",
       "-Onone",
@@ -595,21 +711,38 @@
       "-j16",
       "-DSWIFT_PACKAGE",
       "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
       "-module-cache-path",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/ModuleCache",
       "-parseable-output",
       "-parse-as-library",
       "-swift-version",
       "6",
-      "-F",
-      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
       "-sdk",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
       "-g",
       "-Xcc",
       "-isysroot",
       "-Xcc",
-      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
       "-Xcc",
       "-fPIC",
       "-Xcc",
@@ -617,7 +750,7 @@
       "-package-name",
       "mastersatkit",
       "-driver-use-frontend-path",
-      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
     ]
   },
   "targetDependencyMap" : {
@@ -649,7 +782,9 @@
     }
   },
   "traitConfiguration" : {
-    "enableAllTraits" : false
+    "default" : {
+
+    }
   },
   "writeCommands" : {
     "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/sources" : {
@@ -710,6 +845,10 @@
         {
           "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamClock.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift"
         },
         {
           "kind" : "file",
@@ -789,6 +928,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swift.o"
         },
         {
@@ -829,6 +972,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/ExamRunnerTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/StubURLProtocol.swift.o"
         }
       ],
@@ -863,12 +1010,16 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/ExamRunnerTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/StubURLProtocol.swift"
         }
       ],
       "outputFilePath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/sources"
     },
-    "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt" : {
+    "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
       "alwaysOutOfDate" : true,
       "inputs" : [
         {
@@ -877,10 +1028,10 @@
         },
         {
           "kind" : "file",
-          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
         }
       ],
-      "outputFilePath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+      "outputFilePath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
     }
   }
 }

@@ -11,5 +11,6 @@
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/DraftStore.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamAPI.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamClock.swift
+/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift

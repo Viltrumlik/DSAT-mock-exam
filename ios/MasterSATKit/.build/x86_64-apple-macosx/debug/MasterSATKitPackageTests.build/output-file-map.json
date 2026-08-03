@@ -6,6 +6,7 @@
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/runner.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/runner.swift.o",
     "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/runner~partial.swiftmodule",
-    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/runner.swiftdeps"
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/runner.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitPackageTests.build/runner.dia"
   }
 }

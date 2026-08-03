@@ -9,6 +9,7 @@
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Endpoint.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamAPI.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.swift.o
+/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/JSONCoding.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/KeychainTokenStorage.swift.o
@@ -19,4 +20,5 @@
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptFixtures.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptMergeTests.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AutosavePolicyTests.swift.o
+/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/ExamRunnerTests.swift.o
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/StubURLProtocol.swift.o
