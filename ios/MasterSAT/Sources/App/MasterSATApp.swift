@@ -20,21 +20,21 @@ struct MasterSATApp: App {
 /// backend by constructing this with a different `APIConfig`.
 @MainActor
 @Observable
-public final class Session {
-    public enum Phase: Equatable {
+final class Session {
+    enum Phase: Equatable {
         case launching
         case signedOut(message: String?)
         case signedIn(CurrentUser)
     }
 
-    public private(set) var phase: Phase = .launching
-    public private(set) var isWorking = false
+    private(set) var phase: Phase = .launching
+    private(set) var isWorking = false
 
     let client: APIClient
     let auth: AuthService
     let student: StudentAPI
 
-    public init(config: APIConfig = .production(appVersion: Bundle.main.appVersion)) {
+    init(config: APIConfig = .production(appVersion: Bundle.main.appVersion)) {
         let storage = KeychainTokenStorage()
         // `onSignOut` fires from deep inside a refresh that the server rejected — often
         // while a screen is mid-request — so it only records the fact. The UI reacts on
@@ -51,7 +51,7 @@ public final class Session {
     }
 
     /// Resume a stored session on launch.
-    public func restore() async {
+    func restore() async {
         guard await auth.isSignedIn() else {
             phase = .signedOut(message: nil)
             return
@@ -67,7 +67,7 @@ public final class Session {
         }
     }
 
-    public func signIn(email: String, password: String) async {
+    func signIn(email: String, password: String) async {
         isWorking = true
         defer { isWorking = false }
         do {
@@ -80,7 +80,7 @@ public final class Session {
         }
     }
 
-    public func signOut() async {
+    func signOut() async {
         await auth.signOut()
         phase = .signedOut(message: nil)
     }
