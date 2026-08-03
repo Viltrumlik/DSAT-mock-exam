@@ -1,3 +1,4 @@
+/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Auth/AuthService.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIConfig.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIError.swift
@@ -14,3 +15,5 @@
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift
 /Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift
+/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Student.swift
+/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift

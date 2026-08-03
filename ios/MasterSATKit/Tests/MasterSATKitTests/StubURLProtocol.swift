@@ -1,59 +1,98 @@
 import Foundation
 
-/// Intercepts URLSession traffic so the client can be driven against scripted responses.
-final class StubURLProtocol: URLProtocol {
+struct StubResponse: @unchecked Sendable {
+    var status: Int
+    var body: Data
+    var headers: [String: String]
 
-    struct Stub: @unchecked Sendable {
-        var status: Int
-        var body: Data
-        var headers: [String: String]
-
-        init(status: Int = 200, body: Data = Data("{}".utf8), headers: [String: String] = [:]) {
-            self.status = status
-            self.body = body
-            self.headers = headers
-        }
-
-        static func json(_ object: Any, status: Int = 200) -> Stub {
-            Stub(status: status, body: try! JSONSerialization.data(withJSONObject: object))
-        }
+    init(status: Int = 200, body: Data = Data("{}".utf8), headers: [String: String] = [:]) {
+        self.status = status
+        self.body = body
+        self.headers = headers
     }
 
-    /// Handler consulted for every request. Set it before each test.
-    nonisolated(unsafe) static var handler: (@Sendable (URLRequest) -> Stub)?
-    /// Every request that reached the network, in order — the assertion surface for
-    /// "was this actually sent once, with the right headers?".
-    nonisolated(unsafe) private(set) static var recorded: [URLRequest] = []
-    private static let lock = NSLock()
+    static func json(_ object: Any, status: Int = 200) -> StubResponse {
+        StubResponse(status: status, body: try! JSONSerialization.data(withJSONObject: object))
+    }
+}
 
-    static func reset() {
+/// One scripted backend, isolated to one test.
+///
+/// `URLProtocol` subclasses are registered process-wide and instantiated by the loading
+/// system, so a handler stored as a static would be shared by every test in the target and
+/// tests running in parallel would answer each other's requests. Each server therefore
+/// tags its session with an id header and looks itself up from that, which keeps suites
+/// independent without forcing the whole target to run serially.
+final class StubServer: @unchecked Sendable {
+    static let idHeader = "X-Stub-Server"
+
+    let id = UUID().uuidString
+    private let lock = NSLock()
+    private var _handler: @Sendable (URLRequest) -> StubResponse
+    private var _requests: [URLRequest] = []
+
+    init(handler: @escaping @Sendable (URLRequest) -> StubResponse = { _ in .json([:]) }) {
+        _handler = handler
+        StubRegistry.register(self)
+    }
+
+    deinit {
+        StubRegistry.unregister(id)
+    }
+
+    var handler: @Sendable (URLRequest) -> StubResponse {
+        get { lock.lock(); defer { lock.unlock() }; return _handler }
+        set { lock.lock(); defer { lock.unlock() }; _handler = newValue }
+    }
+
+    /// Every request that reached the network, in order.
+    var requests: [URLRequest] {
         lock.lock(); defer { lock.unlock() }
-        recorded = []
-        handler = nil
+        return _requests
     }
 
-    static func record(_ request: URLRequest) {
+    func record(_ request: URLRequest) {
         lock.lock(); defer { lock.unlock() }
-        recorded.append(request)
+        _requests.append(request)
     }
 
-    static var requests: [URLRequest] {
-        lock.lock(); defer { lock.unlock() }
-        return recorded
-    }
-
-    /// A session wired to this protocol and nothing else.
-    static func session() -> URLSession {
+    /// A session that routes only to this server.
+    func session() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
+        configuration.httpAdditionalHeaders = [StubServer.idHeader: id]
         return URLSession(configuration: configuration)
     }
+}
+
+private enum StubRegistry {
+    nonisolated(unsafe) private static var servers: [String: StubServer] = [:]
+    private static let lock = NSLock()
+
+    static func register(_ server: StubServer) {
+        lock.lock(); defer { lock.unlock() }
+        servers[server.id] = server
+    }
+
+    static func unregister(_ id: String) {
+        lock.lock(); defer { lock.unlock() }
+        servers[id] = nil
+    }
+
+    static func server(for id: String?) -> StubServer? {
+        guard let id else { return nil }
+        lock.lock(); defer { lock.unlock() }
+        return servers[id]
+    }
+}
+
+final class StubURLProtocol: URLProtocol {
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        // URLProtocol strips the body into `httpBodyStream`; re-read it so assertions can
+        // URLProtocol moves the body into `httpBodyStream`; read it back so assertions can
         // inspect what was actually sent.
         var recorded = request
         if recorded.httpBody == nil, let stream = request.httpBodyStream {
@@ -70,9 +109,11 @@ final class StubURLProtocol: URLProtocol {
             stream.close()
             recorded.httpBody = data
         }
-        Self.record(recorded)
 
-        let stub = Self.handler?(recorded) ?? Stub()
+        let server = StubRegistry.server(for: request.value(forHTTPHeaderField: StubServer.idHeader))
+        server?.record(recorded)
+        let stub = server?.handler(recorded) ?? StubResponse(status: 500, body: Data("{}".utf8))
+
         let response = HTTPURLResponse(
             url: request.url!,
             statusCode: stub.status,

@@ -28,6 +28,10 @@
       "inputs" : [
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Auth/AuthService.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift"
         },
         {
@@ -92,6 +96,14 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Student.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
         },
         {
@@ -103,6 +115,7 @@
       "moduleName" : "MasterSATKit",
       "moduleOutputPath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules/MasterSATKit.swiftmodule",
       "objects" : [
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AuthService.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIConfig.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIError.swift.o",
@@ -118,7 +131,9 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamClock.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/ExamRunner.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/IdempotencyKeys.swift.o",
-        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.swift.o"
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Attempt.swift.o",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Student.swift.o",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/StudentAPI.swift.o"
       ],
       "otherArguments" : [
         "-target",
@@ -177,6 +192,10 @@
       ],
       "outputFileMapPath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/output-file-map.json",
       "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AuthService.swift.o"
+        },
         {
           "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/APIClient.swift.o"
@@ -243,11 +262,20 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Student.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/StudentAPI.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules/MasterSATKit.swiftmodule"
         }
       ],
       "prepareForIndexing" : false,
       "sources" : [
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Auth/AuthService.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIConfig.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIError.swift",
@@ -263,7 +291,9 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamClock.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift",
-        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift"
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Student.swift",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift"
       ],
       "tempsPath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build",
       "wholeModuleOptimization" : false
@@ -392,6 +422,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AuthAndStudentTests.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AutosavePolicyTests.swift"
         },
         {
@@ -423,6 +457,7 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AnswerMergeTests.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptFixtures.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptMergeTests.swift.o",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AutosavePolicyTests.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/ExamRunnerTests.swift.o",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/StubURLProtocol.swift.o"
@@ -501,6 +536,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AutosavePolicyTests.swift.o"
         },
         {
@@ -522,6 +561,7 @@
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AnswerMergeTests.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptFixtures.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptMergeTests.swift",
+        "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AuthAndStudentTests.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AutosavePolicyTests.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/ExamRunnerTests.swift",
         "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/StubURLProtocol.swift"
@@ -541,6 +581,7 @@
       "-package-name",
       "mastersatkit",
       "-c",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Auth/AuthService.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIConfig.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIError.swift",
@@ -557,6 +598,8 @@
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/ExamRunner.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Exam/IdempotencyKeys.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Student.swift",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift",
       "-I",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/Modules",
       "-target",
@@ -692,6 +735,7 @@
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AnswerMergeTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptFixtures.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptMergeTests.swift",
+      "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AuthAndStudentTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AutosavePolicyTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/ExamRunnerTests.swift",
       "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/StubURLProtocol.swift",
@@ -796,6 +840,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Auth/AuthService.swift"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift"
         },
         {
@@ -857,6 +905,14 @@
         {
           "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Attempt.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Models/Student.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift"
         }
       ],
       "outputFilePath" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/sources"
@@ -908,6 +964,10 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AuthService.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/AutosavePolicy.swift.o"
         },
         {
@@ -944,6 +1004,14 @@
         },
         {
           "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/Student.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/StudentAPI.swift.o"
+        },
+        {
+          "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKit.build/TokenStorage.swift.o"
         },
         {
@@ -965,6 +1033,10 @@
         {
           "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptMergeTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests.swift.o"
         },
         {
           "kind" : "file",
@@ -1003,6 +1075,10 @@
         {
           "kind" : "file",
           "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AttemptMergeTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AuthAndStudentTests.swift"
         },
         {
           "kind" : "file",

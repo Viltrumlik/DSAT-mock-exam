@@ -30,6 +30,13 @@
     "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptMergeTests.swiftdeps",
     "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AttemptMergeTests.dia"
   },
+  "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AuthAndStudentTests.swift": {
+    "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests.d",
+    "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests.swift.o",
+    "swiftmodule": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests.swiftdeps",
+    "diagnostics": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AuthAndStudentTests.dia"
+  },
   "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/Tests/MasterSATKitTests/AutosavePolicyTests.swift": {
     "dependencies": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AutosavePolicyTests.d",
     "object": "/Users/macbook/Projects/DSAT-mock-exam/ios/MasterSATKit/.build/x86_64-apple-macosx/debug/MasterSATKitTests.build/AutosavePolicyTests.swift.o",

@@ -2,14 +2,12 @@ import Foundation
 import Testing
 @testable import MasterSATKit
 
-@Suite(.serialized) @MainActor
+@MainActor
 struct ExamRunnerTests {
 
     let config = APIConfig(baseURL: URL(string: "https://mastersat.uz")!, clientIdentifier: "ios/test")
 
-    init() {
-        StubURLProtocol.reset()
-    }
+    let server = StubServer()
 
     private func makeRunner(
         attemptId: Int = 5,
@@ -19,7 +17,7 @@ struct ExamRunnerTests {
         let client = APIClient(
             config: config,
             storage: InMemoryTokenStorage(TokenPair(access: "a", refresh: "r")),
-            session: StubURLProtocol.session()
+            session: server.session()
         )
         return ExamRunner(
             attemptId: attemptId,
@@ -98,19 +96,19 @@ struct ExamRunnerTests {
     @Test("A discrete answer reaches the server without waiting")
     func discreteAnswerIsSavedImmediately() async throws {
         let saved = AttemptFixtures.data(AttemptFixtures.json(version: 4))
-        StubURLProtocol.handler = { _ in .init(status: 200, body: saved) }
+        server.handler = { _ in .init(status: 200, body: saved) }
         let runner = makeRunner()
         runner.apply(AttemptFixtures.attempt())
 
         runner.selectAnswer(questionId: 100, value: "A")
 
         let sent = await waitUntil {
-            StubURLProtocol.requests.contains { $0.url?.absoluteString.contains("save_attempt") == true }
+            server.requests.contains { $0.url?.absoluteString.contains("save_attempt") == true }
         }
         #expect(sent)
 
         let request = try #require(
-            StubURLProtocol.requests.first { $0.url?.absoluteString.contains("save_attempt") == true }
+            server.requests.first { $0.url?.absoluteString.contains("save_attempt") == true }
         )
         let body = try #require(request.httpBody)
         let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
@@ -131,7 +129,7 @@ struct ExamRunnerTests {
 
         // Offline sends nothing, but the work must survive the app being killed.
         #expect(drafts.read(attemptId: 5, moduleId: 10)?.answers == ["100": "D"])
-        #expect(StubURLProtocol.requests.isEmpty)
+        #expect(server.requests.isEmpty)
     }
 
     @Test("A version conflict adopts the server's attempt instead of retrying blind")
@@ -142,7 +140,7 @@ struct ExamRunnerTests {
             "error": "Version conflict.",
             "attempt": AttemptFixtures.json(version: 77),
         ])
-        StubURLProtocol.handler = { request in
+        server.handler = { request in
             request.url?.absoluteString.contains("save_attempt") == true
                 ? .init(status: 409, body: conflict)
                 : .json([:])
@@ -160,7 +158,7 @@ struct ExamRunnerTests {
 
     @Test("A leaving flush is marked background and pins no version")
     func leavingFlushIsBackgroundAndUnversioned() async throws {
-        StubURLProtocol.handler = { _ in .json([:]) }
+        server.handler = { _ in .json([:]) }
         let runner = makeRunner()
         runner.apply(AttemptFixtures.attempt())
         runner.selectAnswer(questionId: 100, value: "A")
@@ -168,7 +166,7 @@ struct ExamRunnerTests {
         await runner.flushOnLeaving()
 
         let request = try #require(
-            StubURLProtocol.requests.last { $0.url?.absoluteString.contains("save_attempt") == true }
+            server.requests.last { $0.url?.absoluteString.contains("save_attempt") == true }
         )
         let body = try #require(request.httpBody)
         let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
@@ -187,7 +185,7 @@ struct ExamRunnerTests {
         let advanced = AttemptFixtures.data(AttemptFixtures.json(
             state: "MODULE_2_ACTIVE", version: 4, moduleId: 11, moduleOrder: 2
         ))
-        StubURLProtocol.handler = { _ in .init(status: 200, body: advanced) }
+        server.handler = { _ in .init(status: 200, body: advanced) }
         let drafts = InMemoryDraftStore()
         let runner = makeRunner(drafts: drafts)
         runner.apply(AttemptFixtures.attempt())
@@ -196,7 +194,7 @@ struct ExamRunnerTests {
         await runner.submitModule()
 
         let request = try #require(
-            StubURLProtocol.requests.last { $0.url?.absoluteString.contains("submit_module") == true }
+            server.requests.last { $0.url?.absoluteString.contains("submit_module") == true }
         )
         let body = try #require(request.httpBody)
         let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
@@ -210,7 +208,7 @@ struct ExamRunnerTests {
 
     @Test("Submitting twice sends one request")
     func doubleSubmitIsIgnored() async {
-        StubURLProtocol.handler = { _ in .json(AttemptFixtures.json()) }
+        server.handler = { _ in .json(AttemptFixtures.json()) }
         let runner = makeRunner()
         runner.apply(AttemptFixtures.attempt())
 
@@ -218,7 +216,7 @@ struct ExamRunnerTests {
         async let second: Void = runner.submitModule()
         _ = await (first, second)
 
-        let submits = StubURLProtocol.requests.filter { $0.url?.absoluteString.contains("submit_module") == true }
+        let submits = server.requests.filter { $0.url?.absoluteString.contains("submit_module") == true }
         #expect(submits.count == 1)
     }
 
@@ -226,7 +224,7 @@ struct ExamRunnerTests {
 
     @Test("An unproctored sitting reports nothing when the app leaves the foreground")
     func unproctoredSittingReportsNothing() async {
-        StubURLProtocol.handler = { _ in .json([:]) }
+        server.handler = { _ in .json([:]) }
         let runner = makeRunner()
         runner.apply(AttemptFixtures.attempt())
 
@@ -234,12 +232,12 @@ struct ExamRunnerTests {
 
         // A solo practice mock is not invigilated; a crafted client must not be able to
         // burn strikes on a paper nobody is watching.
-        #expect(StubURLProtocol.requests.isEmpty)
+        #expect(server.requests.isEmpty)
     }
 
     @Test("A proctored sitting adopts the server's tally")
     func proctoredSittingAdoptsTally() async throws {
-        StubURLProtocol.handler = { _ in
+        server.handler = { _ in
             .json(["violations": 2, "limit": 3, "grace_seconds": 30, "terminated": false])
         }
         let runner = makeRunner()
