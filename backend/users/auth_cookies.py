@@ -15,6 +15,43 @@ REFRESH_MAX_AGE = timedelta(weeks=1)
 # "Don't remember me" is deliberately short-lived — a shared/lab machine.
 REFRESH_MAX_AGE_SESSION_ONLY = timedelta(days=1)
 
+# Header the native apps (iOS today, Android later) set on every request. The VALUE is
+# informational — "ios/1.0.0" — and nothing authorizes off it.
+NATIVE_CLIENT_HEADER = "X-MasterSAT-Client"
+
+
+def is_native_client(request) -> bool:
+    """
+    True for a client that authenticates with ``Authorization: Bearer`` alone.
+
+    Two conditions, BOTH required:
+      * it declares itself with ``X-MasterSAT-Client``, and
+      * it carries no auth cookie.
+
+    The second is the load-bearing one. CSRF is an attack on *ambient* credentials: it
+    exists because a browser attaches cookies to a cross-site request all by itself. A
+    request with no auth cookie has nothing ambient to forge with, so there is no CSRF to
+    prevent. If an auth cookie IS present the request is a browser's — whatever the header
+    claims — and it stays under full CSRF enforcement.
+
+    The header is not decoration either: a browser cannot send a custom header cross-site
+    without a CORS preflight, and ``CORS_ALLOW_ALL_ORIGINS`` is False in production with a
+    fixed ``CORS_ALLOWED_ORIGINS`` allowlist. An attacker's page fails the preflight, so
+    the request is never sent. Requiring it keeps the exemption narrow: only a caller that
+    deliberately opts in gets it, never a stray cookie-less browser fetch.
+    """
+    try:
+        declared = bool(str(request.headers.get(NATIVE_CLIENT_HEADER) or "").strip())
+    except Exception:
+        return False
+    if not declared:
+        return False
+    try:
+        cookies = request.COOKIES or {}
+    except Exception:
+        cookies = {}
+    return not (cookies.get(ACCESS_COOKIE) or cookies.get(REFRESH_COOKIE))
+
 
 def cookie_domain_for_request(request) -> str | None:
     """
