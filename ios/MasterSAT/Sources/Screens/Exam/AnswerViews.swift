@@ -6,8 +6,8 @@ struct ChoiceListView: View {
     let question: ExamQuestion
     let selected: String?
     let eliminated: Set<String>
-    let onSelect: (String) -> Void
-    let onEliminate: (String) -> Void
+    let onSelect: @MainActor (String) -> Void
+    let onEliminate: @MainActor (String) -> Void
 
     var body: some View {
         VStack(spacing: 10) {
@@ -32,8 +32,8 @@ struct ChoiceRow: View {
     let option: QuestionOption
     let isSelected: Bool
     let isEliminated: Bool
-    let onSelect: () -> Void
-    let onEliminate: () -> Void
+    let onSelect: @MainActor () -> Void
+    let onEliminate: @MainActor () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -97,7 +97,7 @@ struct ChoiceRow: View {
 /// Student-produced response (grid-in): the answer is typed, not chosen.
 struct SprInputView: View {
     let value: String
-    let onChange: (String) -> Void
+    let onChange: @MainActor (String) -> Void
 
     @State private var text: String = ""
     @FocusState private var isFocused: Bool
@@ -137,7 +137,7 @@ struct SprInputView: View {
 /// are. This is the "Check your work" surface.
 struct QuestionNavigatorView: View {
     @Bindable var runner: ExamRunner
-    let onSelect: (Int) -> Void
+    let onSelect: @MainActor (Int) -> Void
 
     private let columns = [GridItem(.adaptive(minimum: 52), spacing: 12)]
 

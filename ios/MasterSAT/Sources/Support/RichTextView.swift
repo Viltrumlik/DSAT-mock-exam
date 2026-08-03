@@ -43,23 +43,29 @@ struct RichTextView: UIViewRepresentable {
         Coordinator(onHeight: { contentHeight = $0 })
     }
 
+    @MainActor
     final class Coordinator: NSObject, WKNavigationDelegate {
         var renderedHTML: String?
-        private let onHeight: (CGFloat) -> Void
+        private let onHeight: @MainActor (CGFloat) -> Void
 
-        init(onHeight: @escaping (CGFloat) -> Void) {
+        init(onHeight: @escaping @MainActor (CGFloat) -> Void) {
             self.onHeight = onHeight
         }
 
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Measuring needs JavaScript, which the page itself is not allowed to run —
+            // `evaluateJavaScript` is the host asking, not the content executing.
             webView.evaluateJavaScript("document.documentElement.scrollHeight") { value, _ in
-                if let height = value as? CGFloat { self.onHeight(height) }
+                guard let height = value as? CGFloat else { return }
+                // WebKit delivers its callbacks on the main thread; say so explicitly
+                // rather than hopping and re-rendering a frame later.
+                MainActor.assumeIsolated { self.onHeight(height) }
             }
         }
 
         /// Only the initial in-memory load is allowed. A link inside authored content must
         /// never take a student out of an exam.
-        func webView(
+        nonisolated func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
@@ -79,7 +85,6 @@ struct RichTextView: UIViewRepresentable {
           :root { color-scheme: light dark; }
           body {
             margin: 0;
-            font: -apple-system-body;
             font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
             font-size: 17px;
             line-height: 1.55;
@@ -100,13 +105,35 @@ struct RichTextView: UIViewRepresentable {
     }
 }
 
-/// Convenience wrapper that owns the measured height.
+/// Authored content, rendered the cheapest way that is still faithful.
+///
+/// Most answer choices are a plain sentence. Spinning up a `WKWebView` for each of them
+/// would mean four web views per question, torn down and rebuilt on every navigation —
+/// expensive, and visibly slower to appear than the question around it. So plain strings
+/// take a native `Text` and only real markup pays for the web view.
 struct RichText: View {
     let html: String
     @State private var height: CGFloat = 40
 
     var body: some View {
-        RichTextView(html: html, contentHeight: $height)
-            .frame(height: height)
+        if html.containsMarkup {
+            RichTextView(html: html, contentHeight: $height)
+                .frame(height: height)
+        } else {
+            Text(html)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+extension String {
+    /// Whether this needs a real HTML renderer.
+    ///
+    /// Deliberately eager: a false positive costs one web view, while a false negative
+    /// shows a student raw `<sup>` tags or an unrendered formula in the middle of an exam.
+    var containsMarkup: Bool {
+        contains("<") || contains("&")
     }
 }

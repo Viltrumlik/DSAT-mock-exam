@@ -40,7 +40,23 @@ cd ios/MasterSAT && xcodegen generate && open MasterSAT.xcodeproj
 ```
 
 Xcode itself is required to build and run: install it from the App Store, then
-`sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+xcodebuild -version
+```
+
+### First build
+
+Signing is the usual first stop: select the MasterSAT target → Signing & Capabilities →
+pick a team. `uz.mastersat.app` may already be taken on another account, in which case
+change `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` and regenerate.
+
+If the view layer fights Swift 6's strict concurrency in ways that are not worth solving
+mid-build, drop **the app target only** to `SWIFT_VERSION: "5.0"` in `project.yml` and
+regenerate. `MasterSATKit` stays on 6.0 — it is clean there and it is the half that
+matters. Do not silence concurrency errors in the kit.
 
 ## Verification status
 

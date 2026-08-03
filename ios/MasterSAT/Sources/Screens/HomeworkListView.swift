@@ -43,6 +43,7 @@ struct HomeworkListView: View {
         }
     }
 
+    @MainActor
     private func load() async {
         isLoading = assignments.isEmpty
         loadError = nil

@@ -8,7 +8,7 @@ import MasterSATKit
 struct ExamContainerView: View {
     let attemptId: Int
     let backend: ExamBackend
-    let onClose: () -> Void
+    let onClose: @MainActor () -> Void
 
     @Environment(Session.self) private var session
     @Environment(\.scenePhase) private var scenePhase
@@ -92,6 +92,7 @@ struct ExamContainerView: View {
         }
     }
 
+    @MainActor
     private func bootstrap() async {
         let runner = ExamRunner(
             attemptId: attemptId,
@@ -126,7 +127,7 @@ struct ExamScoringView: View {
 struct ExamEndedView: View {
     let title: String
     let message: String
-    let onClose: () -> Void
+    let onClose: @MainActor () -> Void
 
     var body: some View {
         VStack(spacing: 16) {

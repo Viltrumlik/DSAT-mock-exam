@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import MasterSATKit
 
 /// The exam itself: one question at a time, a server-anchored clock, and a navigator.
@@ -8,7 +9,7 @@ import MasterSATKit
 /// mid-exam.
 struct ExamRunnerView: View {
     @Bindable var runner: ExamRunner
-    let onClose: () -> Void
+    let onClose: @MainActor () -> Void
 
     @State private var isShowingNavigator = false
     @State private var isConfirmingSubmit = false
@@ -143,7 +144,7 @@ struct ExamRunnerView: View {
 
 struct ExamHeaderView: View {
     @Bindable var runner: ExamRunner
-    let onExit: () -> Void
+    let onExit: @MainActor () -> Void
 
     /// Ticks the displayed countdown. The value itself always comes from the clock, which
     /// is anchored to the server — this only decides how often to re-read it.
@@ -194,10 +195,10 @@ struct ExamFooterView: View {
     let canGoBack: Bool
     let isLast: Bool
     let isSubmitting: Bool
-    let onPrevious: () -> Void
-    let onNext: () -> Void
-    let onOpenNavigator: () -> Void
-    let onFinish: () -> Void
+    let onPrevious: @MainActor () -> Void
+    let onNext: @MainActor () -> Void
+    let onOpenNavigator: @MainActor () -> Void
+    let onFinish: @MainActor () -> Void
 
     var body: some View {
         HStack(spacing: 12) {

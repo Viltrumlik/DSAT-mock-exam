@@ -54,6 +54,7 @@ struct ExamsListView: View {
         }
     }
 
+    @MainActor
     private func start(_ mock: MockListing) {
         startingMockId = mock.mockId
         Task {
@@ -71,6 +72,7 @@ struct ExamsListView: View {
         }
     }
 
+    @MainActor
     private func load() async {
         isLoading = mocks.isEmpty
         loadError = nil
@@ -100,8 +102,8 @@ enum ExamRoute: Identifiable, Hashable {
 struct MockRow: View {
     let mock: MockListing
     let isStarting: Bool
-    let onStart: () -> Void
-    let onViewResult: () -> Void
+    let onStart: @MainActor () -> Void
+    let onViewResult: @MainActor () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

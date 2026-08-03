@@ -1,11 +1,12 @@
 import SwiftUI
+import Combine
 import MasterSATKit
 
 /// Shown before the clock starts. The last screen where a student can still walk away.
 struct ExamWelcomeView: View {
     let attempt: Attempt
     @Bindable var runner: ExamRunner
-    let onClose: () -> Void
+    let onClose: @MainActor () -> Void
 
     @State private var isStarting = false
 
@@ -166,7 +167,7 @@ struct ExamBreakView: View {
 
 struct MockResultsView: View {
     let attemptId: Int
-    let onClose: () -> Void
+    let onClose: @MainActor () -> Void
 
     @Environment(Session.self) private var session
     @State private var results: MockResults?
@@ -213,6 +214,7 @@ struct MockResultsView: View {
         }
     }
 
+    @MainActor
     private func load() async {
         loadError = nil
         do {

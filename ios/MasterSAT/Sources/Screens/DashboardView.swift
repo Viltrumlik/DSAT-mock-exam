@@ -86,14 +86,21 @@ struct DashboardView: View {
         }
     }
 
+    // Explicitly main-actor: it touches `session`, which is @MainActor, and a plain async
+    // method on a View is not isolated to anything.
+    @MainActor
     private func load() async {
         isLoading = events.isEmpty && assignments.isEmpty
         loadError = nil
         let start = Date()
         let end = Calendar.current.date(byAdding: .day, value: 30, to: start) ?? start
+        // Read the API surface out of `session` HERE, on the main actor. Referring to
+        // `session.student` inside an `async let` would reach a main-actor property from
+        // the child task instead.
+        let student = session.student
         do {
-            async let schedule = session.student.schedule(from: start, to: end)
-            async let homework = session.student.assignments()
+            async let schedule = student.schedule(from: start, to: end)
+            async let homework = student.assignments()
             events = try await schedule
             assignments = try await homework
         } catch let error as APIError {
@@ -147,7 +154,8 @@ struct ScheduleRow: View {
 
 struct RetryNotice: View {
     let message: String
-    let retry: () async -> Void
+    /// Main-actor on purpose: every caller passes a closure that touches view state.
+    let retry: @MainActor () async -> Void
 
     var body: some View {
         VStack(spacing: 12) {
