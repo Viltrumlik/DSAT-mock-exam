@@ -33,31 +33,50 @@ class StagedUpload:
     upload_token: str
 
 
-class _HashingReader:
-    """Wraps an upload file; updates SHA-256 as storage reads chunks."""
+_HASH_CHUNK = 1024 * 1024
 
-    __slots__ = ("_f", "_h")
 
-    def __init__(self, wrapped):
-        self._f = wrapped
-        self._h = hashlib.sha256()
+def _rewind(uf) -> None:
+    if hasattr(uf, "seek"):
+        try:
+            uf.seek(0)
+        except Exception:
+            pass
 
-    def read(self, size=-1):
-        data = self._f.read(size)
-        if data:
-            self._h.update(data)
-        return data
 
-    def seek(self, pos, whence=0):
-        if pos == 0 and whence == 0:
-            self._h = hashlib.sha256()
-        return self._f.seek(pos, whence)
+def sha256_of_upload(uf) -> str:
+    """SHA-256 of an upload, read in chunks and rewound afterwards.
 
-    def tell(self):
-        return self._f.tell()
+    Deliberately a SEPARATE pass rather than a file-like wrapper that hashes as storage
+    reads it. That wrapper is what broke every homework submission on R2: Django wraps
+    whatever it is handed in ``File``, whose ``closed`` delegates to the wrapped object, and
+    the S3 backend probes ``is_seekable(content)`` before uploading — so a wrapper missing
+    ``closed`` raised AttributeError and the POST 500'd.
 
-    def hexdigest(self) -> str:
-        return self._h.hexdigest()
+    Adding ``closed``/``seekable`` to the wrapper would have silenced that, but left a worse
+    bug behind: boto3's transfer manager chooses its upload strategy by probing for ``seek``
+    and ``tell``, and for a seekable stream a multipart upload issues CONCURRENT ranged
+    reads. A hash accumulated inside the reader would then be computed over interleaved,
+    partly-repeated bytes — silently wrong, and only on the large files nobody re-checks.
+    Handing storage the real ``UploadedFile`` removes that whole class of problem.
+
+    The cost is one extra pass. ``chunks()`` streams it, so the module's promise of no
+    full-file RAM buffer still holds.
+    """
+    h = hashlib.sha256()
+    _rewind(uf)
+    chunks = getattr(uf, "chunks", None)
+    if callable(chunks):
+        for chunk in chunks(_HASH_CHUNK):
+            h.update(chunk)
+    else:  # a plain file object — read it the long way
+        while True:
+            chunk = uf.read(_HASH_CHUNK)
+            if not chunk:
+                break
+            h.update(chunk)
+    _rewind(uf)
+    return h.hexdigest()
 
 
 def _sanitize_ext(safe_basename: str) -> str:
@@ -93,11 +112,7 @@ def stream_upload_to_storage(
     """
     Stream ``uf`` to default storage. ``upload_token`` is **required** (min 8 characters).
     """
-    if hasattr(uf, "seek"):
-        try:
-            uf.seek(0)
-        except Exception:
-            pass
+    _rewind(uf)
 
     raw_name = getattr(uf, "name", None) or "upload"
     safe = os.path.basename(str(raw_name)) or "upload"
@@ -110,14 +125,16 @@ def stream_upload_to_storage(
     except Exception:
         pass
 
-    reader = _HashingReader(uf)
-    path = default_storage.save(key, reader)
+    # Hash FIRST, then hand storage the upload itself. See sha256_of_upload for why this is
+    # two passes rather than a hashing wrapper.
+    digest = sha256_of_upload(uf)
+    path = default_storage.save(key, uf)
     guessed = getattr(uf, "content_type", None) or mimetypes.guess_type(safe)[0] or ""
     return StagedUpload(
         storage_path=path,
         file_name=safe[:255],
         file_type=(guessed or "")[:120],
-        content_sha256=reader.hexdigest(),
+        content_sha256=digest,
         upload_token=token,
     )
 
