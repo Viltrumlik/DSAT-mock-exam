@@ -1,34 +1,49 @@
 # MasterSAT for iOS
 
-Native SwiftUI student app for the MasterSAT platform, including a full native exam runner.
+Native SwiftUI student app for the MasterSAT platform.
 
 ```
 ios/
-  MasterSATKit/     Swift package — API client + exam engine. Builds and tests WITHOUT Xcode.
+  MasterSATKit/     Swift package — API client, models, runners. Builds and tests WITHOUT Xcode.
   MasterSAT/        SwiftUI app target. Needs Xcode.
 ```
 
+## What the app is for
+
+It deliberately does **not** host the timed sittings. Mocks, invigilated sittings, midterms,
+past papers, practice packs and the question bank are three-hour papers sat on a laptop
+under exam conditions, and a phone is the wrong instrument for them.
+
+What it does host is the daily loop: what was set, working through it, and learning words.
+
+| Tab | Holds |
+| --- | --- |
+| **Home** | Today, homework due, and midterm results |
+| **Learn** | Classroom, Homework, Assessments |
+| **Words** | Assigned sets, the whole word bank, the student's own sets |
+| **Profile** | Account, target score, sign out |
+
+Midterm **results** still land here even though the paper was not sat here — a score is
+worth checking anywhere. An unreleased one says so rather than showing a blank, because a
+blank reads as a zero.
+
 ## Why the split
 
-Everything correctness-critical — the API client, the attempt state, the autosave timing,
-draft recovery, snapshot merging, the clock — lives in `MasterSATKit`, a plain Swift
-package with no UI. That package builds and runs its tests with the command-line toolchain
-alone:
+Everything correctness-critical — the API client, the token pair, answer sequencing, the
+vocabulary game rules — lives in `MasterSATKit`, a plain Swift package with no UI. It
+builds and runs its tests with the command-line toolchain alone:
 
 ```bash
 cd ios/MasterSATKit && swift test
 ```
 
-73 tests, ~1.5s. This is the part of the app that must never regress, so it is also the
+90 tests, well under a second. This is the part that must never regress, so it is also the
 part that stays verifiable from a terminal, in CI, with no simulator.
 
 `MasterSAT` is the SwiftUI layer on top. It needs Xcode, because an iOS `.app` cannot be
 produced by SwiftPM.
 
 ## Opening the project
-
-Xcode is not currently installed on this machine (only Command Line Tools), so the app
-target has **never been compiled** — see *Verification status* below.
 
 The project is described by `MasterSAT/project.yml` (XcodeGen) rather than a checked-in
 `.xcodeproj`, which keeps the file reviewable and avoids merge conflicts in a generated
@@ -39,59 +54,9 @@ brew install xcodegen
 cd ios/MasterSAT && xcodegen generate && open MasterSAT.xcodeproj
 ```
 
-Xcode itself is required to build and run: install it from the App Store, then
-
-```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-sudo xcodebuild -license accept
-xcodebuild -version
-```
-
-### First build
-
 Signing is the usual first stop: select the MasterSAT target → Signing & Capabilities →
 pick a team. `uz.mastersat.app` may already be taken on another account, in which case
 change `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` and regenerate.
-
-If the view layer fights Swift 6's strict concurrency in ways that are not worth solving
-mid-build, drop **the app target only** to `SWIFT_VERSION: "5.0"` in `project.yml` and
-regenerate. `MasterSATKit` stays on 6.0 — it is clean there and it is the half that
-matters. Do not silence concurrency errors in the kit.
-
-## Verification status
-
-| Component | Status |
-| --- | --- |
-| `MasterSATKit` — build + tests | ✅ 166 tests passing |
-| Backend (`mocks` + native auth) | ✅ 90 Django tests passing |
-| `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
-| Sign in → dashboard → exams → runner | ✅ driven end to end against a local backend |
-| Classroom (roster, materials, leaderboard) | ✅ driven on the simulator |
-| Assessment runner → submit → grade → review | ✅ driven on the simulator (100%, 3/3) |
-| Question bank → answer → explanation | ✅ driven on the simulator |
-| Progress (chart, subject split, gap to target) | ✅ driven on the simulator |
-| Vocabulary browse + custom-set builder | ✅ browse and search driven; save verified against the API |
-
-Two pre-existing failures in `users.tests.test_role_escalation_and_scoping` were confirmed
-present on a clean tree and are unrelated to this work.
-
-## The app's information architecture
-
-The web sidebar gives a student ten routes. Ten tabs is not an option on a phone, and
-burying nine of them under "More" is worse than grouping, so the app has five tabs and
-follows the sidebar's own grouping:
-
-| Tab | Holds |
-| --- | --- |
-| **Home** | Dashboard — today, homework, what is coming up |
-| **Learn** | Classroom, Homework, Assessments, Vocabulary (the sidebar's "Learn") |
-| **Practice** | Mocks, Midterms, Invigilated sitting, Past papers, Practice tests, Question bank (the sidebar's "Simulation", plus Midterm and Question Bank) |
-| **Progress** | Score history, subject split, what has been sat, certificates |
-| **Profile** | Account, target score, sign out |
-
-Every student-facing route on the web has a home here. The staff-only classroom tabs
-(Lessons, Results, Grading, Settings) are absent, because a student cannot open them on
-the web either.
 
 ### Running against a local backend
 
@@ -133,65 +98,20 @@ That required three backend changes (`backend/users/auth_cookies.py`,
 `/api/auth/logout/` now also accepts the refresh token in the body, so signing out on a
 phone actually revokes that session.
 
-## Deliberate decisions
+One more, added later: `/api/classes/my-assignments/` hand-rolls its payload for batching
+rather than going through `AssignmentSerializer`, and never populated `vocab_homeworks` —
+so a homework whose entire content was a word set arrived looking empty. It is now batched
+in alongside the assessments, in its own `try` block so an assessments failure cannot take
+vocabulary down with it.
 
-**Question content renders in a `WKWebView`.** Questions are authored once, as HTML with
-embedded math. Porting a math renderer to Swift would be a second implementation of *how a
-question looks*, and the first time the two disagreed a student would be sitting a
-different exam on their phone than on their laptop. So the content is rendered by the same
-engine the web runner uses — with JavaScript disabled, no navigation, no network — and
-everything around it is native: timer, navigation, answer state, autosave, submission.
+## The assessment runner
 
-**No fullscreen lock.** iOS gives an app no way to stop the student leaving it. The web
-runner leans on browser fullscreen; the platform's real equivalent is Guided Access, which
-only the student can turn on. The pre-exam screen asks for it on invigilated sittings
-rather than pretending the app can enforce it.
+This is the app's only runner, and it is not a cut-down exam engine — an assessment is a
+different object. There is no clock and there are no modules: it is a set of questions
+saved **one answer at a time** through `/assessments/attempts/answer/`.
 
-**The clock keeps running while the phone sleeps.** `ExamClock` reads
-`mach_continuous_time()`, not `systemUptime` — the latter stops during sleep and would
-hand a student free time by locking their screen. It re-anchors on every server snapshot,
-so local drift can never exceed one poll interval.
-
-**Leaving the foreground flushes and reports.** Backgrounding is the phone's version of
-closing the tab, and iOS can kill a backgrounded app without warning. On `.background` the
-runner stands the autosave down, pushes a `background: true` save, and — on a proctored
-sitting — reports the off-screen event. The server owns the violation count, because a
-tally kept on the device resets with the app.
-
-## What the runner ports, and why each rule exists
-
-From `frontend/src/features/testing-simulation`, faithfully, comments included:
-
-- **Autosave delay table.** A discrete choice sends at 0ms; grid-in typing coalesces for
-  400ms but is never held past 1.2s from the first unsent keystroke; flags and bulk
-  rehydration take the 1.5s debounce; a 300ms floor stops rapid tapping becoming a request
-  storm. A flat debounce once meant an answer chosen in a module's last second existed only
-  in the submit payload.
-- **Payload signature as JSON.** With a separator that can occur in the data,
-  `{"3":"12"} + flagged[5]` and `{"3":"125"} + flagged[]` sign identically — so a changed
-  answer reads as "already sent" and is dropped in silence.
-- **Draft merge by recency.** The server wins on conflicts only when strictly newer; the
-  draft always fills gaps. The rule this replaced — "server wins if it has anything" —
-  discarded exactly the answers the draft exists to save.
-- **Forward-only snapshots.** Lower version, or a module-order regression while active, is
-  refused, so a slow response cannot rewind the exam.
-- **409 adoption.** A conflict adopts the canonical attempt and re-arms, instead of
-  retrying a version it has already lost.
-- **`module_id` on submit.** The server no-ops a submit aimed at a module the attempt has
-  left. It is the only thing between a retried request and a skipped section.
-- **Single-flight token refresh.** Three requests meeting a 401 together produce one
-  refresh; rotation revokes the token it spends, so a second caller would present a dead
-  one and sign the student out mid-exam.
-
-## The second runner
-
-Assessments are **not** a variant of the exam runner, and they have their own
-(`MasterSATKit/Assessment/`). The two are different objects: a pastpaper/mock/midterm is a
-timed paper of modules submitted as a block, while an assessment is a set of questions
-saved one answer at a time, with no clock and no modules. Sharing one runner would make
-every rule in either conditional on which kind it was.
-
-What the assessment runner does share is the discipline about saving:
+What it borrows from the web runner is the discipline about saving, and the chrome a
+student actually reaches for on a long set:
 
 - **`client_seq` per question.** The server keeps the highest sequence it has seen, so an
   answer that overtakes its own replacement on the wire is dropped rather than winning.
@@ -200,25 +120,77 @@ What the assessment runner does share is the discipline about saving:
 - **Submit flushes first.** A submit that races an unsent answer grades work the server
   never saw.
 - **Failed writes are named, not hidden.** A question whose write failed is remembered,
-  retried on the next flush, and said out loud — a student who loses signal mid-quiz
-  deserves to know what has not landed.
+  retried on the next flush, and said out loud.
+- **Question map** — every question at a glance, answered / flagged / blank, tap to jump.
+- **Zoom, 70%–150%.** Applied as a bigger root font inside the rendered document, not a
+  SwiftUI `scaleEffect`: scaling would blur the text and leave the frame the wrong size,
+  while a bigger font reflows, exactly as the web's CSS `zoom` does.
+- **Desmos** on maths sets — see below.
 
-## Not built yet
+`question_order` is per *attempt*: two students can be served the same set in different
+orders, and the answers were recorded against theirs. Never sort by `order` instead.
 
-Scoped out so far, in rough priority order:
+## Deliberate decisions
 
-- **Vocabulary Matching and Speed modes.** The platform defines four study modes; the app
-  ships Flashcards and Test. The other two are built around a pointer and a wide screen —
-  a phone version would be a different game, not the same one, so they are left to the web
-  rather than shipped as a worse imitation.
+**Question content renders in a `WKWebView`.** Questions are authored once, as HTML with
+embedded math. Porting a math renderer to Swift would be a second implementation of *how a
+question looks*, and the first time the two disagreed a student would be answering a
+different question on their phone than on their laptop. So the content is rendered by the
+same engine the web uses — with JavaScript disabled, no navigation, no network — and
+everything around it is native.
+
+**Desmos is the real Desmos.** There is no version of "write our own graphing calculator"
+that a student should trust in a maths assessment, so the calculator is `calculator.js`
+from Desmos in a `WKWebView`, with the same options and the same key the web runner uses.
+It is a separate view type from the content renderer *on purpose*: that one runs no
+JavaScript and reaches no network, and must not quietly become a general-purpose browser
+because one screen needed one. Offered on maths sets only — the rule the platform applies
+everywhere else. Desmos measures its container once at mount, so the page runs a
+`ResizeObserver`; without it the calculator mounts at zero height inside an animating
+sheet and stays blank.
+
+**Vocabulary runs in a focus shell.** No tab bar, no status bar, no home indicator, the
+screen kept awake, one thing on screen at a time, and type sized for a phone held at arm's
+length. All four study modes ship. The pure rules — round chunking, distractor picking,
+pair matching — are in the kit and tested; a distractor is never a word that *means* the
+same thing, because that is a second correct answer rather than a wrong one.
+
+**Leaving the foreground flushes.** Backgrounding is the phone's version of closing the
+tab, and iOS can kill a backgrounded app without warning. A half-finished vocabulary run
+flushes as `partial: true` so 20 of 25 cards still count; an assessment writes every
+pending answer before it goes.
+
+## Verification status
+
+| Component | Status |
+| --- | --- |
+| `MasterSATKit` — build + tests | ✅ 90 tests |
+| Backend (`classes`) | ✅ 307 tests |
+| `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
+| Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
+| Classroom (roster, materials, leaderboard) | ✅ driven on the simulator |
+| Vocabulary — Flashcards, Matching, Speed | ✅ driven on the simulator |
+| Desmos — graphing and scientific | ✅ driven on the simulator |
+| Vocabulary custom-set builder | ✅ search driven; save verified against the API |
+
+Two pre-existing failures in `users.tests.test_role_escalation_and_scoping` were confirmed
+present on a clean tree and are unrelated to this work.
+
+## Not built
+
+- The question map is built and the build is clean, but it was never opened on a device —
+  the simulator bridge went unreliable at the end of that session.
 - Editing an existing custom vocabulary set. They can be built and deleted, not renamed.
-- Question-bank filtering by domain and skill. The taxonomy endpoint is wired up in the
-  kit; the UI filters on subject and difficulty only.
-- Per-question review for **pastpapers and mocks**. Assessments have it; the exam engine's
-  own review endpoint is not surfaced yet.
 - Push notifications. There is no push transport server-side yet; this needs APNs plus a
   sender, not just client work.
 - Offline reading of already-fetched homework.
 
 Homework photos are uploaded as the picker returns them, EXIF and all. Stripping location
 metadata before it reaches a school server would be a sensible next step.
+
+## Removed, and where to find it
+
+The full SAT exam engine — `ExamRunner`, `ExamClock` (`mach_continuous_time()`, so locking
+the phone could not buy a student time), the autosave delay table, draft recovery, snapshot
+merging, 409 adoption — was ported, tested, and then deleted along with the sittings it
+served. It is in the history: `git show b64b3973 -- ios/MasterSATKit/Sources/MasterSATKit/Exam/`.

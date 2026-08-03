@@ -73,24 +73,19 @@ import Testing
 
     // MARK: - Error mapping
 
-    @Test("A 409 carries the canonical attempt back")
-    func versionConflictCarriesAttempt() async throws {
-        // save_attempt answers a stale expected_version with a hard 409 that writes
-        // nothing and sends back the authoritative attempt. Surfacing it typed is what
-        // lets the autosave adopt it instead of retrying into another 409.
-        // Encoded up front: a [String: Any] cannot cross into the @Sendable handler.
-        let conflictBody = AttemptFixtures.data([
-            "error": "Version conflict.",
-            "attempt": AttemptFixtures.json(version: 42),
-        ])
-        server.handler = { _ in .init(status: 409, body: conflictBody) }
+    @Test("A 409 is typed, and keeps the server's wording")
+    func conflictIsTyped() async throws {
+        // A conflict is not retryable — something else wrote first, and sending the same
+        // body again would lose to it again.
+        server.handler = { _ in .json(["detail": "This was answered on another device."], status: 409) }
         let (client, _) = makeClient()
 
         do {
-            _ = try await client.send(.post("/mocks/attempts/5/save_attempt/"), as: Attempt.self)
-            Issue.record("expected a versionConflict")
-        } catch APIError.versionConflict(let attempt) {
-            #expect(attempt?.versionNumber == 42)
+            _ = try await client.send(.post("/assessments/attempts/answer/"))
+            Issue.record("expected a conflict")
+        } catch APIError.conflict(let detail) {
+            #expect(detail == "This was answered on another device.")
+            #expect(APIError.conflict(detail: detail).isRetryable == false)
         }
     }
 
@@ -112,7 +107,7 @@ import Testing
         #expect(APIError.http(status: 503, detail: "").isRetryable)
         #expect(APIError.transport(underlying: "offline").isRetryable)
         #expect(APIError.forbidden(detail: "", reason: nil).isRetryable == false)
-        #expect(APIError.versionConflict(attempt: nil).isRetryable == false)
+        #expect(APIError.conflict(detail: "").isRetryable == false)
     }
 
     // MARK: - Refresh

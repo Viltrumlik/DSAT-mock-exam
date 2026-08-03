@@ -3,11 +3,11 @@ import Foundation
 /// The single door to the backend.
 ///
 /// An actor because the token pair is shared mutable state that many screens touch at once
-/// — during an exam the autosave, the status poll and a submit can all be in flight
-/// together. That is also why the refresh is *single-flight*: three requests meeting a
-/// 401 at the same moment must produce one refresh, not three. Three would be worse than
-/// wasteful: rotation revokes the token it spends, so the second and third would present
-/// an already-revoked refresh and get the student signed out mid-exam.
+/// — mid-quiz an answer write, a submit and a reload can all be in flight together. That
+/// is also why the refresh is *single-flight*: three requests meeting a 401 at the same
+/// moment must produce one refresh, not three. Three would be worse than wasteful:
+/// rotation revokes the token it spends, so the second and third would present an
+/// already-revoked refresh and sign the student out mid-quiz.
 public actor APIClient {
     public let config: APIConfig
     private let storage: TokenStorage
@@ -107,8 +107,8 @@ public actor APIClient {
             guard let tokens = storage.load() else { throw APIError.notAuthenticated }
             request.setValue("Bearer \(tokens.access)", forHTTPHeaderField: "Authorization")
         }
-        // Never let the URL loading system serve an exam snapshot from cache: a stale
-        // `remaining_seconds` is a wrong clock, and a stale `version_number` is a 409 loop.
+        // Never let the URL loading system serve a stale snapshot from cache: an
+        // attempt read from cache is an attempt whose answers are already out of date.
         request.cachePolicy = .reloadIgnoringLocalCacheData
         return request
     }
@@ -121,11 +121,7 @@ public actor APIClient {
         case 403:
             return .forbidden(detail: detail, reason: Self.reason(from: data))
         case 409:
-            // save_attempt answers a stale `expected_version_number` with a hard 409 that
-            // writes nothing and carries the canonical attempt. Surfacing it typed is what
-            // lets the autosave adopt the snapshot instead of retrying into another 409.
-            let conflict = try? JSONCoding.decoder.decode(VersionConflictBody.self, from: data)
-            return .versionConflict(attempt: conflict?.attempt)
+            return .conflict(detail: detail)
         default:
             return .http(status: status, detail: detail)
         }
@@ -229,8 +225,4 @@ private struct RefreshRequest: Encodable, Sendable {
 private struct RefreshResponse: Decodable, Sendable {
     let access: String?
     let refresh: String?
-}
-
-private struct VersionConflictBody: Decodable, Sendable {
-    let attempt: Attempt?
 }

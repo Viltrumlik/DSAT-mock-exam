@@ -3,7 +3,7 @@ import Foundation
 /// Everything a request can fail with, in the shape callers actually branch on.
 public enum APIError: Error, Sendable {
     /// Transport failure — no HTTP response at all. The caller is offline or the request
-    /// timed out; the exam runner treats this as "keep the local draft and retry".
+    /// timed out; a runner treats this as "keep the local answer and retry".
     case transport(underlying: String)
 
     /// 401. The access token was rejected and a refresh either failed or was not possible.
@@ -18,16 +18,15 @@ public enum APIError: Error, Sendable {
     /// "this closed an hour ago" is not.
     case forbidden(detail: String, reason: String?)
 
-    /// 409 from `save_attempt`. Carries the canonical attempt the server sent back so the
-    /// runner can adopt it instead of retrying blind against a version it already lost.
-    case versionConflict(attempt: Attempt?)
+    /// 409. Something else wrote first — another device, or the same one twice.
+    case conflict(detail: String)
 
     /// Any other non-2xx, with whatever `detail` the API supplied.
     case http(status: Int, detail: String)
 
     /// The response decoded to something that violates the wire contract. Loud on purpose:
-    /// silently tolerating a malformed attempt is how a runner ends up showing a blank
-    /// module instead of an error.
+    /// silently tolerating a malformed payload is how a runner ends up showing a blank
+    /// question instead of an error.
     case decoding(context: String, underlying: String)
 
     /// Signed out locally — there is no token to send and no refresh to attempt.
@@ -43,8 +42,8 @@ extension APIError: LocalizedError {
             return "Your session has expired. Please sign in again."
         case .forbidden(let detail, _):
             return detail.isEmpty ? "You do not have access to this." : detail
-        case .versionConflict:
-            return "This attempt was updated on another device."
+        case .conflict(let detail):
+            return detail.isEmpty ? "This was updated somewhere else." : detail
         case .http(let status, let detail):
             return detail.isEmpty ? "Request failed (\(status))." : detail
         case .decoding(let context, let underlying):
@@ -54,15 +53,15 @@ extension APIError: LocalizedError {
         }
     }
 
-    /// Whether retrying the identical request could plausibly succeed. Drives the
-    /// autosave's backoff — a 403 or a decoding failure must not be retried forever.
+    /// Whether retrying the identical request could plausibly succeed. A 403 or a
+    /// decoding failure must not be retried forever.
     public var isRetryable: Bool {
         switch self {
         case .transport:
             return true
         case .http(let status, _):
             return status >= 500 || status == 429
-        case .unauthorized, .forbidden, .versionConflict, .decoding, .notAuthenticated:
+        case .unauthorized, .forbidden, .conflict, .decoding, .notAuthenticated:
             return false
         }
     }

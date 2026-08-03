@@ -16,9 +16,16 @@ struct AssessmentRunnerView: View {
     @State private var runner: AssessmentRunner?
     @State private var showSubmitConfirmation = false
     @State private var showMap = false
+    @State private var showCalculator = false
     @State private var didSubmit = false
     /// Text scale. Matches the web's 70%–150% range and its 10-point steps.
     @AppStorage("assessmentZoom") private var zoom: Double = 1.0
+
+    /// Desmos is offered on maths assessments only — the same rule the platform applies
+    /// everywhere else. A calculator on a grammar set is not a tool, it is a distraction.
+    private var offersCalculator: Bool {
+        (runner?.bundle?.set?.subject ?? "").uppercased().contains("MATH")
+    }
 
     var body: some View {
         Group {
@@ -120,6 +127,13 @@ struct AssessmentRunnerView: View {
             }
             .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showCalculator) {
+            CalculatorPanel { showCalculator = false }
+                // Resizable rather than full-screen: a graph is only useful next to the
+                // question it belongs to, and Desmos needs real height to be usable.
+                .presentationDetents([.medium, .large])
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+        }
     }
 
     /// Title on the left, zoom on the right — the web's runner header, at phone width.
@@ -137,6 +151,16 @@ struct AssessmentRunnerView: View {
             .foregroundStyle(Theme.accent)
 
             Spacer(minLength: 0)
+
+            if offersCalculator {
+                Button { showCalculator = true } label: {
+                    Image(systemName: "function")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(showCalculator ? Theme.accent : Theme.textSecondary)
+                        .frame(width: 34, height: 30)
+                }
+                .buttonStyle(.plain)
+            }
 
             HStack(spacing: 2) {
                 zoomButton("textformat.size.smaller", enabled: zoom > 0.7) {
