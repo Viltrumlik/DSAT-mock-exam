@@ -88,32 +88,48 @@ struct HomeworkDetailView: View {
 
     // MARK: - Header
 
+    /// The site's assignment hero, then the instructions under it.
+    ///
+    /// The instructions are deliberately NOT inside the gradient: they are authored HTML in
+    /// the platform's own type, and a coloured panel behind them would fight every heading
+    /// and list a teacher writes.
     private var headerCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(assignment.title).font(.system(size: 20, weight: .bold))
+        VStack(alignment: .leading, spacing: 14) {
+            HeroHeader(
+                eyebrow: assignment.classroomName?.isEmpty == false ? assignment.classroomName! : "Homework",
+                eyebrowIcon: "checklist",
+                title: assignment.title,
+                tiles: heroTiles
+            )
 
             HStack(spacing: 8) {
                 let status = submission?.workflowStatus ?? assignment.workflowStatus
                 Chip(text: StatusLabel.homework(status), tone: StatusLabel.tone(status))
-                if let due = assignment.dueAt, let date = JSONCoding.parseServerDate(due) {
+                if let due = DueLabel.text(assignment.dueAt) {
                     // A passed deadline reads as an invitation to catch up, never as an
                     // accusation.
-                    Chip(
-                        text: assignment.isOverdue
-                            ? "Catch up · \(date.formatted(date: .abbreviated, time: .omitted))"
-                            : "Due \(date.formatted(date: .abbreviated, time: .shortened))",
-                        icon: "calendar",
-                        tone: assignment.isOverdue ? .warning : .neutral
-                    )
+                    Chip(text: due.text, icon: "calendar", tone: due.late ? .warning : .neutral)
                 }
             }
 
             if let instructions = assignment.instructions, !instructions.isEmpty {
-                Divider().padding(.vertical, 2)
-                RichText(html: instructions)
+                RichText(html: instructions).cardStyle()
             }
         }
-        .cardStyle()
+    }
+
+    private var heroTiles: [HeroTile] {
+        var tiles: [HeroTile] = []
+        if !assignment.assessmentHomeworks.isEmpty {
+            tiles.append(HeroTile("Quizzes", icon: "square.and.pencil", value: assignment.assessmentHomeworks.count))
+        }
+        if !assignment.vocabHomeworks.isEmpty {
+            tiles.append(HeroTile("Word sets", icon: "character.book.closed", value: assignment.vocabHomeworks.count))
+        }
+        if let due = DueLabel.text(assignment.dueAt) {
+            tiles.append(HeroTile("Deadline", icon: "calendar", value: due.text))
+        }
+        return tiles
     }
 
     private func returnNote(_ note: String) -> some View {

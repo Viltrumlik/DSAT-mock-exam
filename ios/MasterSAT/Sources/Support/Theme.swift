@@ -14,10 +14,26 @@ enum Theme {
         ? UIColor(red: 0.294, green: 0.361, blue: 0.902, alpha: 0.18)
         : UIColor(red: 0.165, green: 0.408, blue: 0.753, alpha: 0.10) })
 
+    /// `--dz-indigo-deep` — the countdown panel's own background. It is NOT `accentHover`:
+    /// the web darkens it in dark mode (`#1f4f96`) where the hover blue lightens, because a
+    /// panel that fills a card has to sit behind white text either way.
+    static let accentDeep = dynamic(light: 0x21539e, dark: 0x1f4f96)
+
     static let success = dynamic(light: 0x059669, dark: 0x34d399)
     static let warning = dynamic(light: 0xd97706, dark: 0xfbbf24)
     static let danger = dynamic(light: 0xdc2626, dark: 0xf87171)
     static let info = dynamic(light: 0x0284c7, dark: 0x38bdf8)
+
+    /// `--dz-amber`. A shade brighter than `warning`, and deliberately so: on the calendar
+    /// and the assessments board it is a *category* (a test, work in flight), not a caution.
+    static let amber = dynamic(light: 0xf59e0b, dark: 0xfbbf24)
+    static let amberSoft = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(hex: 0xfbbf24).withAlphaComponent(0.15)
+        : UIColor(hex: 0xf59e0b).withAlphaComponent(0.13) })
+
+    /// The board colours a card by its subject — maths blue, English purple — so a student
+    /// can tell two pieces of work apart before reading either title.
+    static let subjectEnglish = dynamic(light: 0x6d4ec7, dark: 0x9f86e8)
 
     static let successSoft = soft(success)
     static let warningSoft = soft(warning)

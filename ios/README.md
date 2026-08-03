@@ -18,14 +18,44 @@ What it does host is the daily loop: what was set, working through it, and learn
 
 | Tab | Holds |
 | --- | --- |
-| **Home** | Today, homework due, and midterm results |
+| **Home** | Target scores, SAT countdown, lesson calendar, homework, midterm results |
 | **Learn** | Classroom, Homework, Assessments |
-| **Words** | Assigned sets, the whole word bank, the student's own sets |
+| **Words** | The word bank, the student's own sets, assigned sets |
 | **Profile** | Account, target score, sign out |
 
 Midterm **results** still land here even though the paper was not sat here — a score is
 worth checking anywhere. An unreleased one says so rather than showing a blank, because a
 blank reads as a zero.
+
+## The design is the site's, not an interpretation of it
+
+Every student page on the web is written in one of two idioms, and both are reproduced in
+`Sources/Support/PageChrome.swift` rather than re-invented:
+
+- **The board** (`/`, `/assessments`) — a very large flat headline over cards on a tinted
+  panel. Used where the page is a *workspace*.
+- **The hero** (`/vocabulary`, homework detail, classroom) — a gradient panel carrying an
+  eyebrow pill, the title, a sentence of orientation and a row of live totals. Used where
+  the page is a *place you have arrived at*.
+
+Home is the site's dashboard in the same order it uses below 1080px: welcome line and goal
+control → target scores → SAT countdown → lesson calendar → next lesson → the chosen day.
+The calendar's colour precedence (highlight beats a test, a test beats a class, a class
+beats today) is copied deliberately; reordering it silently hides a day's real state.
+
+`/assessments` is three columns on the web. Three columns do not fit a phone, so the
+columns become tabs and their counts move onto the tab bar — the same information, the same
+order, one column at a time. The card anatomy is unchanged: subject-coloured top edge, icon
+tile, solid subject badge, title, class · subject, a body per state, one full-width action.
+
+Two rules that cost time to learn:
+
+- A SwiftUI **`.overlay` is hit-testable**. The decorative circles on the countdown and the
+  hero cover most of their card, and the exam-date picker underneath simply stopped opening
+  until they were marked `allowsHitTesting(false)`.
+- **Only a tab root may hide its navigation bar.** On a pushed screen that bar carries the
+  only Back button there is. Pushed pages keep the bar with an empty title so their own
+  headline is not duplicated.
 
 ## Why the split
 
@@ -168,7 +198,10 @@ pending answer before it goes.
 | Backend (`classes`) | ✅ 307 tests |
 | `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
-| Classroom (roster, materials, leaderboard) | ✅ driven on the simulator |
+| Home — goal sliders, exam-date picker, ticking countdown, calendar | ✅ driven on the simulator |
+| Assessments board — tabs, counts, card states | ✅ driven on the simulator |
+| Classroom (hero, tabs, roster, materials, leaderboard) | ✅ driven on the simulator |
+| Vocabulary hub — hero totals, three tabs, section cards | ✅ driven on the simulator |
 | Vocabulary — Flashcards, Matching, Speed | ✅ driven on the simulator |
 | Desmos — graphing and scientific | ✅ driven on the simulator |
 | Vocabulary custom-set builder | ✅ search driven; save verified against the API |

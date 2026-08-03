@@ -22,25 +22,22 @@ struct ClassesListView: View {
                 list
             }
         }
-        .navigationTitle("Classroom")
+        .background(Theme.background)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
     }
 
     private var list: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 18) {
+                PageTitle("Classroom")
+
                 if classrooms.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "person.3")
-                            .font(.system(size: 30)).foregroundStyle(Theme.textLabel)
-                        Text("You are not in a class yet").font(.system(size: 16, weight: .bold))
-                        Text("Ask your teacher for the join code.")
-                            .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .cardStyle()
+                    DashedEmpty(
+                        title: "You are not in a class yet",
+                        hint: "Ask your teacher for the join code."
+                    )
                 } else {
                     VStack(spacing: 10) {
                         ForEach(classrooms) { room in
@@ -54,8 +51,8 @@ struct ClassesListView: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Overline("Join a class")
+                VStack(alignment: .leading, spacing: 12) {
+                    CardHeading(icon: "person.badge.plus", title: "Join a class", subtitle: "With the code from your teacher")
                     HStack(spacing: 10) {
                         TextField("Join code", text: $joinCode)
                             .textInputAutocapitalization(.characters)
@@ -79,17 +76,18 @@ struct ClassesListView: View {
                         .disabled(joinCode.trimmingCharacters(in: .whitespaces).isEmpty || isJoining)
                     }
                     if let joinError {
-                        Text(joinError).font(.system(size: 12)).foregroundStyle(Theme.danger)
+                        Text(joinError).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.danger)
                     } else if let joinedName {
                         Text("You joined \(joinedName).")
-                            .font(.system(size: 12)).foregroundStyle(Theme.success)
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.success)
                     } else {
                         // The code is the only way back into a class you were removed from,
                         // so it is worth saying where it comes from.
                         Text("Your teacher can give you the code for the class.")
-                            .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                            .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.textSecondary)
                     }
                 }
+                .cardStyle(padding: 18)
             }
             .padding(16)
         }
@@ -195,92 +193,109 @@ struct ClassroomDetailView: View {
     @State private var isLoading = true
     @State private var loadError: String?
 
-    var body: some View {
-        VStack(spacing: 0) {
-            Picker("Section", selection: $tab) {
-                ForEach(Tab.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+    private var tabs: [PillTabs<Tab>.Item] {
+        [
+            .init(tab: .overview, title: "Overview", icon: "square.grid.2x2"),
+            .init(tab: .work, title: "Work", icon: "checklist", count: assignments.isEmpty ? nil : assignments.count),
+            .init(tab: .materials, title: "Materials", icon: "folder", count: materials.isEmpty ? nil : materials.count),
+            .init(tab: .people, title: "People", icon: "person.2", count: people.isEmpty ? nil : people.count),
+        ]
+    }
 
-            if isLoading {
-                Spacer(); ProgressView(); Spacer()
-            } else if let loadError {
-                Spacer(); RetryNotice(message: loadError) { await load() }; Spacer()
-            } else {
-                switch tab {
-                case .overview: overview
-                case .work: work
-                case .materials: materialList
-                case .people: peopleList
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HeroHeader(
+                    eyebrow: (classroom.subject?.isEmpty == false ? classroom.subject! : "Class").humanisedSubject,
+                    eyebrowIcon: "person.3.fill",
+                    title: classroom.name,
+                    blurb: classroom.teacherName.flatMap { $0.isEmpty ? nil : "With \($0)" },
+                    tiles: heroTiles
+                )
+
+                PillTabs(items: tabs, selection: $tab)
+
+                if isLoading {
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                } else if let loadError {
+                    RetryNotice(message: loadError) { await load() }
+                } else {
+                    switch tab {
+                    case .overview: overview
+                    case .work: work
+                    case .materials: materialList
+                    case .people: peopleList
+                    }
                 }
             }
+            .padding(16)
         }
-        .navigationTitle(classroom.name)
+        .background(Theme.background)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: tab) { await load() }
+    }
+
+    private var heroTiles: [HeroTile] {
+        var tiles: [HeroTile] = []
+        if let members = classroom.membersCount { tiles.append(HeroTile("Students", icon: "person.2", value: members)) }
+        if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
+            tiles.append(HeroTile("Meets", icon: "calendar", value: schedule))
+        }
+        return tiles
     }
 
     // MARK: - Overview
 
     @ViewBuilder
     private var overview: some View {
-        List {
-            Section("Class") {
-                if let teacher = classroom.teacherName, !teacher.isEmpty {
-                    LabeledContent("Teacher", value: teacher)
-                }
-                if let subject = classroom.subject, !subject.isEmpty {
-                    LabeledContent("Subject", value: subject.humanisedSubject)
-                }
-                if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
-                    LabeledContent("Schedule", value: schedule)
-                }
-                if let room = classroom.roomNumber, !room.isEmpty {
-                    LabeledContent("Room", value: room)
-                }
-                if let members = classroom.membersCount {
-                    LabeledContent("Members", value: ScoreText.string(members))
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            if let teacher = classroom.teacherName, !teacher.isEmpty {
+                DetailRow(label: "Teacher", value: teacher)
             }
-
-            Section {
-                Picker("Board", selection: $boardKind) {
-                    ForEach(RankingKind.allCases, id: \.self) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: boardKind) { _, _ in Task { await loadBoard() } }
-
-                if let board {
-                    if board.isHidden {
-                        Text("Your teacher keeps this board private.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else if boardKind == .sat && !board.satAvailable {
-                        // Foundation and junior classes do not rank on SAT at all. Saying
-                        // so beats an empty list that reads as "nobody has scored".
-                        Text("This class does not rank on SAT scores.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else if board.rows.isEmpty {
-                        Text("No results on this board yet.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(board.rows) { row in
-                            RankingRowView(row: row, hideScores: board.hideScoreValues)
-                        }
-                    }
-                } else {
-                    ProgressView().frame(maxWidth: .infinity)
-                }
-            } header: {
-                Text("Leaderboard")
+            if let subject = classroom.subject, !subject.isEmpty {
+                Divider(); DetailRow(label: "Subject", value: subject.humanisedSubject)
+            }
+            if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
+                Divider(); DetailRow(label: "Schedule", value: schedule)
+            }
+            if let room = classroom.roomNumber, !room.isEmpty {
+                Divider(); DetailRow(label: "Room", value: room)
+            }
+            if let members = classroom.membersCount {
+                Divider(); DetailRow(label: "Members", value: ScoreText.string(members))
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Theme.background)
+        .cardStyle(padding: 16)
+
+        VStack(alignment: .leading, spacing: 14) {
+            CardHeading(icon: "trophy.fill", title: "Leaderboard", subtitle: "How the class is doing", tone: Theme.amber)
+
+            Picker("Board", selection: $boardKind) {
+                ForEach(RankingKind.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: boardKind) { _, _ in Task { await loadBoard() } }
+
+            if let board {
+                if board.isHidden {
+                    DashedEmpty(title: "Your teacher keeps this board private.")
+                } else if boardKind == .sat && !board.satAvailable {
+                    // Foundation and junior classes do not rank on SAT at all. Saying so
+                    // beats an empty list that reads as "nobody has scored".
+                    DashedEmpty(title: "This class does not rank on SAT scores.")
+                } else if board.rows.isEmpty {
+                    DashedEmpty(title: "No results on this board yet.")
+                } else {
+                    ForEach(board.rows) { row in
+                        RankingRowView(row: row, hideScores: board.hideScoreValues)
+                    }
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
+            }
+        }
+        .cardStyle(padding: 18)
     }
 
     // MARK: - Work
@@ -288,26 +303,16 @@ struct ClassroomDetailView: View {
     @ViewBuilder
     private var work: some View {
         if assignments.isEmpty {
-            ContentUnavailableView(
-                "Nothing set yet",
-                systemImage: "checklist",
-                description: Text("Homework for this class will appear here.")
-            )
+            DashedEmpty(title: "Nothing set yet", hint: "Homework for this class appears here.")
         } else {
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(assignments) { assignment in
-                        NavigationLink {
-                            HomeworkDetailView(assignment: assignment)
-                        } label: {
-                            HomeworkRow(assignment: assignment).cardStyle()
-                        }
-                        .buttonStyle(.plain)
-                    }
+            ForEach(assignments) { assignment in
+                NavigationLink {
+                    HomeworkDetailView(assignment: assignment)
+                } label: {
+                    HomeworkRow(assignment: assignment).cardStyle()
                 }
-                .padding(16)
+                .buttonStyle(.plain)
             }
-            .background(Theme.background)
         }
     }
 
@@ -316,19 +321,9 @@ struct ClassroomDetailView: View {
     @ViewBuilder
     private var materialList: some View {
         if materials.isEmpty {
-            ContentUnavailableView(
-                "No materials yet",
-                systemImage: "folder",
-                description: Text("Files your teacher shares will appear here.")
-            )
+            DashedEmpty(title: "No materials yet", hint: "Files your teacher shares appear here.")
         } else {
-            ScrollView {
-                VStack(spacing: 10) {
-                    ForEach(materials) { MaterialRow(material: $0) }
-                }
-                .padding(16)
-            }
-            .background(Theme.background)
+            ForEach(materials) { MaterialRow(material: $0) }
         }
     }
 
@@ -336,26 +331,23 @@ struct ClassroomDetailView: View {
 
     @ViewBuilder
     private var peopleList: some View {
-        ScrollView {
-            let staff = people.filter(\.isStaff)
-            let students = people.filter { !$0.isStaff }
-            VStack(alignment: .leading, spacing: 20) {
-                if !staff.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Overline("Teachers")
-                        ForEach(staff) { PersonRow(person: $0) }
-                    }
-                }
-                if !students.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Overline("Students · \(students.count)")
-                        ForEach(students) { PersonRow(person: $0) }
-                    }
-                }
+        let staff = people.filter(\.isStaff)
+        let students = people.filter { !$0.isStaff }
+        if !staff.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                DotHeading(title: "Teachers", count: staff.count)
+                ForEach(staff) { PersonRow(person: $0) }
             }
-            .padding(16)
         }
-        .background(Theme.background)
+        if !students.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                DotHeading(title: "Students", count: students.count, tone: Theme.info)
+                ForEach(students) { PersonRow(person: $0) }
+            }
+        }
+        if people.isEmpty {
+            DashedEmpty(title: "Nobody listed yet")
+        }
     }
 
     // MARK: - Loading
@@ -407,34 +399,40 @@ struct RankingRowView: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(ScoreText.string(row.rank))
-                .font(.subheadline.bold().monospacedDigit())
+                .font(.system(size: 13, weight: .heavy).monospacedDigit())
                 .frame(width: 28, alignment: .trailing)
-                .foregroundStyle(row.isMe ? Theme.accent : .secondary)
+                .foregroundStyle(row.isMe ? Theme.accent : Theme.textSecondary)
 
             Text(row.name)
-                .font(.subheadline)
-                .fontWeight(row.isMe ? .bold : .regular)
+                .font(.system(size: 14, weight: row.isMe ? .heavy : .semibold))
                 .lineLimit(1)
 
             Spacer()
 
             if let change = row.rankChange, change != 0 {
                 Image(systemName: change > 0 ? "arrow.up" : "arrow.down")
-                    .font(.caption2)
-                    .foregroundStyle(change > 0 ? .green : .secondary)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(change > 0 ? Theme.success : Theme.textLabel)
             }
 
             if hideScores {
                 EmptyView()
             } else if let score = row.score {
                 Text(ScoreText.string(score))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
             } else if !row.hasResult {
                 // Not "0" and not blank: they simply have not sat one yet.
-                Text("—").font(.subheadline).foregroundStyle(.tertiary)
+                Text("—").font(.system(size: 14)).foregroundStyle(Theme.textLabel)
             }
         }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(row.isMe ? Theme.accentSoft : Theme.background)
+        )
     }
 }
 

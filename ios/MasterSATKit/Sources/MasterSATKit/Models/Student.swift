@@ -70,6 +70,28 @@ public struct CurrentUser: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// A SAT date an admin has published, from `/api/users/exam-dates/`.
+///
+/// Students choose from this list rather than typing a date — the countdown is only
+/// meaningful against a sitting that actually exists. The server already drops past dates.
+public struct ExamDateOption: Decodable, Sendable, Equatable, Identifiable {
+    public let id: Int
+    public let examDate: String
+    public let label: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, label
+        case examDate = "exam_date"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        examDate = (try? c.decode(String.self, forKey: .examDate)) ?? ""
+        label = (try? c.decodeIfPresent(String.self, forKey: .label)) as? String ?? ""
+    }
+}
+
 /// One item on the student's calendar, from `/api/classes/my-schedule/`.
 public struct ScheduleEvent: Decodable, Sendable, Equatable, Identifiable {
     public enum Kind: String, Decodable, Sendable {

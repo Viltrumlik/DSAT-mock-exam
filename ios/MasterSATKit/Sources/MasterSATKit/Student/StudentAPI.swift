@@ -12,6 +12,37 @@ public struct StudentAPI: Sendable {
         try await client.send(.get("/users/me/"), as: CurrentUser.self)
     }
 
+    /// Upcoming SAT dates a student may pick from. Past dates never appear.
+    public func examDates() async throws -> [ExamDateOption] {
+        try await client.send(.get("/users/exam-dates/"), as: ListOrResults<ExamDateOption>.self).items
+    }
+
+    /// Patch the fields a student owns on their own profile.
+    ///
+    /// Every parameter is a double optional on purpose: `nil` means "leave this alone",
+    /// `.some(nil)` means "clear it". Clearing the exam date is a real action — a student
+    /// who un-picks a sitting has to be able to say so — and a single optional could not
+    /// tell that apart from an untouched field.
+    @discardableResult
+    public func updateProfile(
+        targetEnglish: Int? = nil,
+        targetMath: Int? = nil,
+        satExamDate: String?? = nil
+    ) async throws -> CurrentUser {
+        var body: [String: JSONValue] = [:]
+        if let targetEnglish { body["target_english"] = .number(Double(targetEnglish)) }
+        if let targetMath { body["target_math"] = .number(Double(targetMath)) }
+        // The total is stored as the sum, exactly as the web writes it — two clients must
+        // not disagree about what `target_score` means.
+        if let targetEnglish, let targetMath {
+            body["target_score"] = .number(Double(targetEnglish + targetMath))
+        }
+        if let satExamDate {
+            body["sat_exam_date"] = satExamDate.map(JSONValue.string) ?? .null
+        }
+        return try await client.send(try .patch("/users/me/", json: body), as: CurrentUser.self)
+    }
+
     /// Every assignment across every classroom the student is in — one request, not one
     /// per classroom.
     public func assignments() async throws -> [AssignmentListing] {

@@ -1,66 +1,10 @@
 import SwiftUI
 import MasterSATKit
 
-/// The whole published word bank, not just what was assigned.
+/// One section of the published bank and the sets inside it.
 ///
-/// A student who wants to get ahead should not have to wait for a teacher to set a set.
-struct VocabBrowseView: View {
-    @Environment(Session.self) private var session
-    @State private var sections: [VocabSection] = []
-    @State private var isLoading = true
-    @State private var loadError: String?
-
-    var body: some View {
-        Group {
-            if isLoading && sections.isEmpty {
-                ProgressView()
-            } else if let loadError {
-                RetryNotice(message: loadError) { await load() }
-            } else if sections.isEmpty {
-                ContentUnavailableView(
-                    "The bank is empty",
-                    systemImage: "books.vertical",
-                    description: Text("Word sections will appear here once they are published.")
-                )
-            } else {
-                List(sections) { section in
-                    NavigationLink {
-                        VocabSectionView(sectionId: section.id, title: section.title)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(section.title).font(.subheadline.weight(.medium))
-                            Text("\(section.setCount) sets · \(section.wordCount) words")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            ProgressBar(progress: section.progress)
-                        }
-                        .padding(.vertical, 4)
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .refreshable { await load() }
-            }
-        }
-        .navigationTitle("Word bank")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
-    }
-
-    @MainActor
-    private func load() async {
-        isLoading = sections.isEmpty
-        loadError = nil
-        do {
-            sections = try await session.student.vocabularySections()
-        } catch let error as APIError {
-            loadError = error.errorDescription
-        } catch {
-            loadError = error.localizedDescription
-        }
-        isLoading = false
-    }
-}
-
+/// The bank is browsable whether or not a teacher has assigned anything — a student who
+/// wants to get ahead should not have to wait to be given permission.
 struct VocabSectionView: View {
     let sectionId: Int
     let title: String
@@ -72,39 +16,15 @@ struct VocabSectionView: View {
     var body: some View {
         Group {
             if let detail {
-                List {
-                    Section {
-                        VStack(alignment: .leading, spacing: 8) {
-                            if let description = detail.description, !description.isEmpty {
-                                Text(description).font(.subheadline)
-                            }
-                            Text("\(detail.progress.mastered) of \(detail.wordCount) words mastered")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            ProgressBar(progress: detail.progress)
-                        }
-                        .padding(.vertical, 4)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        hero(detail)
+                        masteryCard(detail)
+                        setList(detail)
                     }
-                    Section("Sets") {
-                        ForEach(detail.sets) { set in
-                            NavigationLink {
-                                VocabSetView(setId: set.id, title: set.title)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: set.completed ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(set.completed ? .green : .secondary)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(set.title).font(.subheadline.weight(.medium))
-                                        Text("\(set.wordCount) words").font(.caption).foregroundStyle(.secondary)
-                                        ProgressBar(progress: set.progress)
-                                    }
-                                }
-                                .padding(.vertical, 2)
-                            }
-                        }
-                    }
+                    .padding(16)
                 }
-                .listStyle(.insetGrouped)
+                .background(Theme.background)
             } else if let loadError {
                 RetryNotice(message: loadError) { await load() }
             } else {
@@ -114,6 +34,45 @@ struct VocabSectionView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+    }
+
+    private func hero(_ detail: VocabSectionDetail) -> some View {
+        let blurb = detail.description?.isEmpty == false ? detail.description : nil
+        return HeroHeader(
+            eyebrow: "Word bank",
+            eyebrowIcon: "books.vertical.fill",
+            title: title,
+            blurb: blurb,
+            tiles: [
+                HeroTile("Words", icon: "textformat", value: detail.wordCount),
+                HeroTile("Mastered", icon: "checkmark.circle", value: detail.progress.mastered),
+            ]
+        )
+    }
+
+    private func masteryCard(_ detail: VocabSectionDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("\(ScoreText.string(detail.progress.mastered)) of \(ScoreText.string(detail.wordCount)) words mastered")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+            MasteryBar(progress: detail.progress)
+            MasteryLegend(progress: detail.progress)
+        }
+        .cardStyle(padding: 18)
+    }
+
+    private func setList(_ detail: VocabSectionDetail) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DotHeading(title: "Sets", count: detail.sets.count)
+            ForEach(detail.sets) { set in
+                NavigationLink {
+                    VocabSetView(setId: set.id, title: set.title)
+                } label: {
+                    SectionSetCard(set: set)
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     @MainActor
@@ -129,118 +88,33 @@ struct VocabSectionView: View {
     }
 }
 
-/// The three buckets as one bar.
-struct ProgressBar: View {
-    let progress: VocabProgress
+struct SectionSetCard: View {
+    let set: VocabSectionDetail.SetRow
 
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 1) {
-                segment(progress.mastered, .green, geometry.size.width)
-                segment(progress.learning, .orange, geometry.size.width)
-                Rectangle().fill(Color(.tertiarySystemFill))
-            }
-        }
-        .frame(height: 6)
-        .clipShape(Capsule())
-    }
-
-    private func segment(_ count: Int, _ colour: Color, _ width: CGFloat) -> some View {
-        // Guarded: a set with no words at all would otherwise divide by zero and the bar
-        // would come out NaN-wide, which SwiftUI draws as nothing at all.
-        let fraction = progress.total > 0 ? CGFloat(count) / CGFloat(progress.total) : 0
-        return Rectangle().fill(colour).frame(width: max(0, width * fraction))
-    }
-}
-
-/// The student's own sets.
-struct MySetsView: View {
-    @Environment(Session.self) private var session
-    @State private var sets: [VocabMySet] = []
-    @State private var isLoading = true
-    @State private var loadError: String?
-    @State private var isBuilding = false
-
-    var body: some View {
-        Group {
-            if isLoading && sets.isEmpty {
-                ProgressView()
-            } else if let loadError {
-                RetryNotice(message: loadError) { await load() }
-            } else if sets.isEmpty {
-                ContentUnavailableView {
-                    Label("No sets of your own yet", systemImage: "folder.badge.person.crop")
-                } description: {
-                    Text("Build one from words you want to work on.")
-                } actions: {
-                    Button("Build a set") { isBuilding = true }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.accent)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: set.completed ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(set.completed ? Theme.success : Theme.textLabel)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(set.title)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    Text("\(ScoreText.string(set.wordCount)) words")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
                 }
-            } else {
-                List {
-                    ForEach(sets) { set in
-                        NavigationLink {
-                            VocabSetView(setId: set.id, title: set.title)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: set.completed ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(set.completed ? .green : .secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(set.title).font(.subheadline.weight(.medium))
-                                    Text("\(set.wordCount) words").font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    .onDelete { offsets in
-                        Task { await delete(offsets) }
-                    }
-                }
-                .listStyle(.insetGrouped)
-                .refreshable { await load() }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textLabel)
             }
+            MasteryBar(progress: set.progress, height: 6)
         }
-        .navigationTitle("My sets")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { isBuilding = true } label: { Image(systemName: "plus") }
-            }
-        }
-        .sheet(isPresented: $isBuilding) {
-            CustomSetBuilderView { isBuilding = false; Task { await load() } }
-        }
-        .task { await load() }
-    }
-
-    @MainActor
-    private func delete(_ offsets: IndexSet) async {
-        for index in offsets {
-            let set = sets[index]
-            do {
-                try await session.student.deleteVocabularySet(id: set.id)
-            } catch let error as APIError {
-                loadError = error.errorDescription
-            } catch {
-                loadError = error.localizedDescription
-            }
-        }
-        await load()
-    }
-
-    @MainActor
-    private func load() async {
-        isLoading = sets.isEmpty
-        loadError = nil
-        do {
-            sets = try await session.student.myVocabularySets()
-        } catch let error as APIError {
-            loadError = error.errorDescription
-        } catch {
-            loadError = error.localizedDescription
-        }
-        isLoading = false
+        .cardStyle(padding: 14)
+        .contentShape(Rectangle())
     }
 }
 
