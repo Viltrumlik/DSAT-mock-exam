@@ -37,6 +37,38 @@ public struct AuthService: Sendable {
         return pair
     }
 
+    /// Create an account on the public registration endpoint.
+    ///
+    /// It answers with the new user, not a token pair, so signing in afterwards is a
+    /// second call — the same two steps the web's register page takes. Refusals arrive as
+    /// `APIError.validation`: an address already in use, a username under three characters,
+    /// or `duplicate_full_name`, which means someone of that name is already enrolled and
+    /// only staff can add a second.
+    @discardableResult
+    public func register(
+        firstName: String,
+        lastName: String,
+        username: String,
+        email: String,
+        password: String
+    ) async throws -> RegisteredAccount {
+        let endpoint = try Endpoint.post(
+            "/users/register/",
+            json: RegisterRequest(
+                firstName: firstName,
+                lastName: lastName,
+                username: username,
+                email: email,
+                password: password
+            )
+        )
+        var unauthenticated = endpoint
+        // Without this the client demands a token it cannot have — signing up is the one
+        // thing you do precisely because you have no account yet.
+        unauthenticated.isUnauthenticated = true
+        return try await client.send(unauthenticated, as: RegisteredAccount.self)
+    }
+
     /// Sign out here and revoke the session server-side.
     ///
     /// The local tokens are cleared even if the network call fails — a student tapping
@@ -54,6 +86,37 @@ public struct AuthService: Sendable {
 
     public func isSignedIn() async -> Bool {
         await client.isAuthenticated
+    }
+}
+
+/// What registration hands back — enough to confirm the account exists and to greet the
+/// person by the name the server stored, which is whitespace-normalised and may differ from
+/// what they typed.
+public struct RegisteredAccount: Decodable, Sendable {
+    public let id: Int
+    public let email: String?
+    public let username: String?
+    public let firstName: String?
+    public let lastName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, email, username
+        case firstName = "first_name"
+        case lastName = "last_name"
+    }
+}
+
+private struct RegisterRequest: Encodable, Sendable {
+    let firstName: String
+    let lastName: String
+    let username: String
+    let email: String
+    let password: String
+
+    enum CodingKeys: String, CodingKey {
+        case username, email, password
+        case firstName = "first_name"
+        case lastName = "last_name"
     }
 }
 

@@ -9,7 +9,7 @@ struct RootView: View {
         case .launching:
             ProgressView().controlSize(.large)
         case .signedOut(let message):
-            SignInView(message: message)
+            AuthView(notice: message)
         case .signedIn(let user):
             RootTabView(user: user)
         }
@@ -165,86 +165,3 @@ struct HubCard<Destination: View>: View {
     }
 }
 
-struct SignInView: View {
-    let message: String?
-
-    @Environment(Session.self) private var session
-    @State private var email = ""
-    @State private var password = ""
-    @FocusState private var focus: Field?
-
-    private enum Field { case email, password }
-
-    private var canSubmit: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && !session.isWorking
-    }
-
-    var body: some View {
-        VStack(spacing: 26) {
-            Spacer()
-
-            VStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Theme.accentSoft)
-                    .frame(width: 72, height: 72)
-                    .overlay(
-                        Image(systemName: "graduationcap.fill")
-                            .font(.system(size: 32, weight: .semibold))
-                            .foregroundStyle(Theme.accent)
-                    )
-                Text("MasterSAT").font(.system(size: 30, weight: .bold))
-                Text("Sign in to continue")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.textSecondary)
-            }
-
-            VStack(spacing: 12) {
-                TextField("Email", text: $email)
-                    .textContentType(.username)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .focused($focus, equals: .email)
-                    .submitLabel(.next)
-                    .onSubmit { focus = .password }
-
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                    .focused($focus, equals: .password)
-                    .submitLabel(.go)
-                    .onSubmit { if canSubmit { submit() } }
-            }
-            .textFieldStyle(.roundedBorder)
-
-            if let message {
-                // The server's own wording, unedited — a teacher signing in here is told
-                // to use the teacher portal, and a generic "sign-in failed" would strand
-                // them.
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.danger)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Button(action: submit) {
-                if session.isWorking {
-                    ProgressView().tint(.white).frame(maxWidth: .infinity)
-                } else {
-                    Text("Sign in").frame(maxWidth: .infinity)
-                }
-            }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
-            .disabled(!canSubmit)
-
-            Spacer()
-        }
-        .padding(24)
-        .background(Theme.background)
-    }
-
-    private func submit() {
-        focus = nil
-        Task { await session.signIn(email: email.trimmingCharacters(in: .whitespaces), password: password) }
-    }
-}

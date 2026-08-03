@@ -48,11 +48,36 @@ columns become tabs and their counts move onto the tab bar — the same informat
 order, one column at a time. The card anatomy is unchanged: subject-coloured top edge, icon
 tile, solid subject badge, title, class · subject, a body per state, one full-width action.
 
-Two rules that cost time to learn:
+Sign in and register are the site's own `/login` and `/register`, kept in
+`Sources/Screens/Auth/`. The web puts a brand panel beside the form and hides it below
+`lg`; a phone has no "beside", so the panel becomes the header band — gradient, drifting
+shapes, mark, headline and the three promises. On iPad the width is regular and the
+two-column split comes back exactly as the site draws it. On a phone the promises come off
+the *register* band, because five fields and a pitch do not both fit above the fold.
+
+Google and Telegram are deliberately absent. Both are browser flows that end by setting a
+cookie on the site, and a native client holds tokens instead — so the buttons would look
+like a way in and be a dead end. Email and password reach the same accounts.
+
+The logo is the site's own `frontend/public/images/logo.png`, not a redraw.
+`scripts`-free and reproducible: the shield is scaled into `Assets.xcassets` as `AppIcon`
+(white on `#2a68c0`) and as a **template** `BrandMark`, so it takes white on the panel and
+brand blue on a card — the same thing the web does with `brightness(0) invert(1)`.
+`ASSETCATALOG_COMPILER_APPICON_NAME` has to be set in `project.yml`: with
+`GENERATE_INFOPLIST_FILE: NO` nothing else names the icon, and the home screen shows the
+blank default tile no matter what the catalogue holds.
+
+Rules that cost time to learn:
 
 - A SwiftUI **`.overlay` is hit-testable**. The decorative circles on the countdown and the
   hero cover most of their card, and the exam-date picker underneath simply stopped opening
   until they were marked `allowsHitTesting(false)`.
+- **A plain-string placeholder is a `LocalizedStringKey`.** SwiftUI parses it as markdown,
+  finds an address in `name@example.com`, and draws the hint as a blue tappable link inside
+  an empty field. `prompt: Text(verbatim:)` is the fix.
+- **A band drawn under the status bar scrolls under the clock too.** White lockup, white
+  time, one on top of the other. The strip behind the status bar is held at the band's own
+  colour so whatever passes under it is simply hidden.
 - **Only a tab root may hide its navigation bar.** On a pushed screen that bar carries the
   only Back button there is. Pushed pages keep the bar with an empty title so their own
   headline is not duplicated.
@@ -67,7 +92,7 @@ builds and runs its tests with the command-line toolchain alone:
 cd ios/MasterSATKit && swift test
 ```
 
-109 tests, well under a second. This is the part that must never regress, so it is also the
+114 tests, well under a second. This is the part that must never regress, so it is also the
 part that stays verifiable from a terminal, in CI, with no simulator.
 
 `MasterSAT` is the SwiftUI layer on top. It needs Xcode, because an iOS `.app` cannot be
@@ -238,10 +263,14 @@ pending answer before it goes.
 
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build + tests | ✅ 109 tests |
+| `MasterSATKit` — build + tests | ✅ 114 tests |
 | Backend (`classes`) | ✅ 307 tests |
-| `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
+| `MasterSAT` app target — build | ✅ builds for iPhone and iPad simulators (Xcode 26.3) |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
+| Sign in — wrong password, reveal toggle, submit from the keyboard | ✅ driven on the simulator |
+| Register — an account created, auto-signed-in, and the duplicate-name refusal | ✅ driven against a local backend |
+| Auth two-column layout | ✅ driven on an iPad simulator |
+| App icon on the home screen | ✅ checked on the simulator |
 | Home — goal sliders, exam-date picker, ticking countdown, calendar | ✅ driven on the simulator |
 | Assessments board — tabs, counts, card states | ✅ driven on the simulator |
 | Classroom (hero, tabs, roster, materials, leaderboard) | ✅ driven on the simulator |

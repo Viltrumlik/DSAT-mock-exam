@@ -15,6 +15,9 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      # The app icon and the brand mark, both generated from the site's own
+      # frontend/public/images/logo.png — see ios/README.md.
+      - path: Resources/Assets.xcassets
       # KaTeX, vendored. `type: folder` keeps the directory structure intact in the
       # bundle — katex.min.css asks for `fonts/KaTeX_Main-Regular.woff2` by relative
       # path, and a flattened resource copy would break every glyph.
@@ -34,3 +37,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Resources/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
+        # Without this the home screen shows the blank default tile no matter what the
+        # catalogue contains — the icon is chosen by build setting, and GENERATE_INFOPLIST_FILE
+        # is off, so nothing else fills it in.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

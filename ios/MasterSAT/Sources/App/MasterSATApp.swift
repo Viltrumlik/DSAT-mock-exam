@@ -92,16 +92,52 @@ final class Session {
         }
     }
 
-    func signIn(email: String, password: String) async {
+    /// Sign in, and let the failure reach the form.
+    ///
+    /// It throws rather than writing the message into `phase`: a mistyped password is the
+    /// form's business, and routing it through `signedOut(message:)` used to overwrite the
+    /// session-expired notice with it — and, worse, showed "Your session has expired" to
+    /// someone who had simply typed the wrong password.
+    func signIn(email: String, password: String) async throws {
         isWorking = true
         defer { isWorking = false }
+        try await auth.signIn(email: email, password: password)
+        phase = .signedIn(try await identify())
+    }
+
+    /// Create the account and sign straight into it — the two steps the web's register
+    /// page takes, since registration answers with a user rather than a token pair.
+    func register(
+        firstName: String,
+        lastName: String,
+        username: String,
+        email: String,
+        password: String
+    ) async throws {
+        isWorking = true
+        defer { isWorking = false }
+        try await auth.register(
+            firstName: firstName,
+            lastName: lastName,
+            username: username,
+            email: email,
+            password: password
+        )
+        try await auth.signIn(email: email, password: password)
+        phase = .signedIn(try await identify())
+    }
+
+    /// Load the identity that the rest of the app is built from.
+    ///
+    /// If this fails the tokens are dropped, because the alternative is worse: a device
+    /// holding a live session while the screen still says "sign in", which then greets the
+    /// student with an error they cannot clear by trying again.
+    private func identify() async throws -> CurrentUser {
         do {
-            try await auth.signIn(email: email, password: password)
-            phase = .signedIn(try await student.me())
-        } catch let error as APIError {
-            phase = .signedOut(message: error.errorDescription)
+            return try await student.me()
         } catch {
-            phase = .signedOut(message: error.localizedDescription)
+            await client.signOutLocally()
+            throw error
         }
     }
 

@@ -21,6 +21,16 @@ public enum APIError: Error, Sendable {
     /// 409. Something else wrote first — another device, or the same one twice.
     case conflict(detail: String)
 
+    /// 400 carrying DRF's field-error map: `{"email": ["user with this email already
+    /// exists."]}`. Distinguished from `http` because that shape has no `detail` key at
+    /// all, so a caller reading only `detail` shows "Request failed (400)." to a student
+    /// whose real problem is one sentence long and entirely fixable.
+    ///
+    /// `code` is the serializer's machine-readable branch where it sends one — registration
+    /// refuses a duplicate full name with `duplicate_full_name`, and the screen turns that
+    /// into a link to sign in rather than a dead end.
+    case validation(detail: String, code: String?, fields: [String: [String]])
+
     /// Any other non-2xx, with whatever `detail` the API supplied.
     case http(status: Int, detail: String)
 
@@ -44,6 +54,8 @@ extension APIError: LocalizedError {
             return detail.isEmpty ? "You do not have access to this." : detail
         case .conflict(let detail):
             return detail.isEmpty ? "This was updated somewhere else." : detail
+        case .validation(let detail, _, _):
+            return detail.isEmpty ? "Please check the details you entered." : detail
         case .http(let status, let detail):
             return detail.isEmpty ? "Request failed (\(status))." : detail
         case .decoding(let context, let underlying):
@@ -61,7 +73,7 @@ extension APIError: LocalizedError {
             return true
         case .http(let status, _):
             return status >= 500 || status == 429
-        case .unauthorized, .forbidden, .conflict, .decoding, .notAuthenticated:
+        case .unauthorized, .forbidden, .conflict, .validation, .decoding, .notAuthenticated:
             return false
         }
     }

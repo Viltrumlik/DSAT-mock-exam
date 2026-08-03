@@ -82,6 +82,118 @@ import Testing
         // server WHICH session ended — otherwise a signed-out phone keeps a live session.
         #expect(json["refresh"] as? String == "R")
     }
+
+    // MARK: - Registration
+
+    @Test("Registering posts snake_case names without a bearer header")
+    func registerPostsTheSitesPayload() async throws {
+        server.handler = { _ in .json(["id": 41, "email": "s@example.com", "username": "sam", "first_name": "Sam", "last_name": "Turner"]) }
+        let (client, storage) = makeClient()
+
+        let account = try await AuthService(client: client).register(
+            firstName: "Sam", lastName: "Turner", username: "sam",
+            email: "s@example.com", password: "pw123456"
+        )
+
+        #expect(account.id == 41)
+        #expect(account.firstName == "Sam")
+        let request = try #require(server.requests.first)
+        // absoluteString, not `path`: `URL.path` drops the trailing slash, and the slash is
+        // the difference between a POST and Django's APPEND_SLASH redirect turning it into
+        // a GET that never creates anything.
+        #expect(request.url?.absoluteString == "https://mastersat.uz/api/users/register/")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        let body = try #require(request.httpBody)
+        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(json["first_name"] as? String == "Sam")
+        #expect(json["last_name"] as? String == "Turner")
+        #expect(json["username"] as? String == "sam")
+        // Registration hands back a user, never a token pair — the app signs in afterwards.
+        #expect(storage.load() == nil)
+    }
+
+    @Test("A taken address arrives as a sentence, not \"Request failed (400)\"")
+    func takenAddressIsReadable() async throws {
+        server.handler = { _ in .json(["email": ["user with this email already exists."]], status: 400) }
+        let (client, _) = makeClient()
+
+        do {
+            try await AuthService(client: client).register(
+                firstName: "Sam", lastName: "Turner", username: "sam",
+                email: "taken@example.com", password: "pw123456"
+            )
+            Issue.record("expected a validation error")
+        } catch APIError.validation(let detail, let code, let fields) {
+            #expect(detail == "user with this email already exists.")
+            #expect(code == nil)
+            #expect(fields["email"]?.count == 1)
+        }
+    }
+
+    @Test("duplicate_full_name reaches the screen as a code it can branch on")
+    func duplicateFullNameCarriesItsCode() async throws {
+        // The serializer raises the code inside the error map, so it arrives as a
+        // single-element array. Reading only the string form silently loses the branch
+        // that offers "sign in instead" rather than a dead end.
+        server.handler = { _ in
+            .json([
+                "full_name": ["Someone with this name is already registered."],
+                "code": ["duplicate_full_name"],
+            ], status: 400)
+        }
+        let (client, _) = makeClient()
+
+        do {
+            try await AuthService(client: client).register(
+                firstName: "Sam", lastName: "Turner", username: "sam2",
+                email: "sam2@example.com", password: "pw123456"
+            )
+            Issue.record("expected a validation error")
+        } catch APIError.validation(let detail, let code, _) {
+            #expect(code == "duplicate_full_name")
+            #expect(detail == "Someone with this name is already registered.")
+        }
+    }
+
+    @Test("A 400 that is not a field map stays an http error")
+    func plainDetail400IsNotValidation() async throws {
+        server.handler = { _ in .json(["detail": "Malformed request."], status: 400) }
+        let (client, _) = makeClient()
+
+        do {
+            try await AuthService(client: client).register(
+                firstName: "Sam", lastName: "Turner", username: "sam",
+                email: "s@example.com", password: "pw"
+            )
+            Issue.record("expected an http error")
+        } catch APIError.http(let status, let detail) {
+            #expect(status == 400)
+            #expect(detail == "Malformed request.")
+        }
+    }
+
+    @Test("With several problems, the first one named is the one worth fixing first")
+    func messageOrderIsDeterministic() async throws {
+        server.handler = { _ in
+            .json([
+                "password": ["This password is too common."],
+                "username": ["Username must be at least 3 characters."],
+                "zzz_unknown": ["Something else."],
+            ], status: 400)
+        }
+        let (client, _) = makeClient()
+
+        do {
+            try await AuthService(client: client).register(
+                firstName: "Sam", lastName: "Turner", username: "s",
+                email: "s@example.com", password: "1234"
+            )
+            Issue.record("expected a validation error")
+        } catch APIError.validation(let detail, _, let fields) {
+            #expect(detail == "Username must be at least 3 characters.")
+            #expect(fields.count == 3)
+        }
+    }
 }
 
 @Suite struct StudentAPITests {

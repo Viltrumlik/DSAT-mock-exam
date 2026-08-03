@@ -122,6 +122,16 @@ public actor APIClient {
             return .forbidden(detail: detail, reason: Self.reason(from: data))
         case 409:
             return .conflict(detail: detail)
+        case 400:
+            // A serializer refusal, not a malformed request. Only the field-map shape
+            // qualifies — a plain `{"detail": …}` 400 already reads well as `.http`.
+            let fields = Self.fieldErrors(from: data)
+            guard !fields.isEmpty else { return .http(status: status, detail: detail) }
+            return .validation(
+                detail: detail.isEmpty ? Self.message(from: fields) : detail,
+                code: Self.reason(from: data),
+                fields: fields
+            )
         default:
             return .http(status: status, detail: detail)
         }
@@ -129,9 +139,53 @@ public actor APIClient {
 
     /// The server's machine-readable code, where it sends one. Views branch on this
     /// rather than on the human sentence, which is written for people and may change.
+    ///
+    /// A serializer raises its code inside the error map, so `code` arrives as a
+    /// single-element array (`{"code": ["duplicate_full_name"]}`) rather than a string.
+    /// Reading only the string form is how that branch silently never fires.
     private static func reason(from data: Data) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return (object["reason"] as? String) ?? (object["code"] as? String) ?? (object["error"] as? String)
+        for key in ["reason", "code", "error"] {
+            if let value = object[key] as? String, !value.isEmpty { return value }
+            if let list = object[key] as? [Any],
+               let first = list.compactMap({ $0 as? String }).first, !first.isEmpty {
+                return first
+            }
+        }
+        return nil
+    }
+
+    /// DRF's serializer errors: `{"email": ["…"], "username": ["…"]}`.
+    ///
+    /// Array values only. Every other 400 shape — a bare `detail` string, a nested object —
+    /// is left to `detail(from:)`, so this never claims to be a field error when it isn't.
+    private static func fieldErrors(from data: Data) -> [String: [String]] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [:] }
+        var out: [String: [String]] = [:]
+        for (key, value) in object {
+            guard let list = value as? [Any] else { continue }
+            let messages = list.compactMap { $0 as? String }.filter { !$0.isEmpty }
+            if !messages.isEmpty { out[key] = messages }
+        }
+        return out
+    }
+
+    /// One sentence to show, chosen the way the web's register page chooses it.
+    ///
+    /// The preferred order is not cosmetic: a form that reports the *last* problem sends a
+    /// student round in circles. `code` is skipped because it is a branch, not a sentence,
+    /// and the fallback is sorted so the same failure never produces two different messages
+    /// — Swift's dictionary order is not stable between runs.
+    private static func message(from fields: [String: [String]]) -> String {
+        let preferred = ["full_name", "detail", "non_field_errors", "email", "username",
+                         "first_name", "last_name", "password"]
+        for key in preferred {
+            if let first = fields[key]?.first { return first }
+        }
+        for key in fields.keys.sorted() where key != "code" {
+            if let first = fields[key]?.first { return first }
+        }
+        return ""
     }
 
     private static func detail(from data: Data) -> String {
