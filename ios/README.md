@@ -67,7 +67,7 @@ builds and runs its tests with the command-line toolchain alone:
 cd ios/MasterSATKit && swift test
 ```
 
-101 tests, well under a second. This is the part that must never regress, so it is also the
+109 tests, well under a second. This is the part that must never regress, so it is also the
 part that stays verifiable from a terminal, in CI, with no simulator.
 
 `MasterSAT` is the SwiftUI layer on top. It needs Xcode, because an iOS `.app` cannot be
@@ -209,9 +209,25 @@ sheet and stays blank.
 
 **Vocabulary runs in a focus shell.** No tab bar, no status bar, no home indicator, the
 screen kept awake, one thing on screen at a time, and type sized for a phone held at arm's
-length. All four study modes ship. The pure rules — round chunking, distractor picking,
-pair matching — are in the kit and tested; a distractor is never a word that *means* the
-same thing, because that is a second correct answer rather than a wrong one.
+length. All four study modes ship, each with the site's own rules:
+
+- **Flashcards** flip, and the missed pile comes back as the *next round* — with a
+  checkpoint between rounds showing what stuck and what did not — rather than being
+  slipped back into one endless queue.
+- **Matching** deals six pairs a round, and the clock runs across the whole set, so the
+  score is how fast and how cleanly, not how many.
+- **Speed** is sixty seconds and two options, with the clock repeated on the prompt card:
+  under time pressure a student's eyes are on the word, not on the header.
+- **Test** cycles multiple choice → true/false → spelling, one question per word, and
+  **shows no feedback until the end**. That is the design: the review screen is where the
+  learning happens, and a green flash after every answer turns a test into a drill.
+
+The pure rules — round chunking, distractor picking, pair matching, the question cycle,
+letter masking, the spelling comparison — are in the kit and tested. A distractor is never
+a word that *means* the same thing, because that is a second correct answer rather than a
+wrong one.
+
+All four end on one screen: a gradient hero, three stats, and the same two ways out.
 
 **Leaving the foreground flushes.** Backgrounding is the phone's version of closing the
 tab, and iOS can kill a backgrounded app without warning. A half-finished vocabulary run
@@ -222,7 +238,7 @@ pending answer before it goes.
 
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build + tests | ✅ 101 tests |
+| `MasterSATKit` — build + tests | ✅ 109 tests |
 | Backend (`classes`) | ✅ 307 tests |
 | `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
@@ -230,7 +246,7 @@ pending answer before it goes.
 | Assessments board — tabs, counts, card states | ✅ driven on the simulator |
 | Classroom (hero, tabs, roster, materials, leaderboard) | ✅ driven on the simulator |
 | Vocabulary hub — hero totals, three tabs, section cards | ✅ driven on the simulator |
-| Vocabulary — Flashcards, Matching, Speed | ✅ driven on the simulator |
+| Vocabulary — all four modes and the outcome screen | ✅ driven on the simulator |
 | Desmos — graphing and scientific | ✅ driven on the simulator |
 | Runner + review — LaTeX, **bold**, *italic*, `<sup>`/`<sub>` | ✅ driven on the simulator |
 | Answer selection and cross-out | ✅ driven; the choice was checked in the database |

@@ -152,4 +152,125 @@ public enum VocabGames {
             )
         }
     }
+
+    // MARK: - Spelling
+
+    /// Which letter of `word` is given away. `nil` when there is no letter to reveal.
+    public static func revealIndex(
+        in word: String,
+        rng: Rng = { Double.random(in: 0..<1) }
+    ) -> Int? {
+        let letters = Array(word).enumerated().filter { $0.element.isLetter }.map(\.offset)
+        guard !letters.isEmpty else { return nil }
+        return letters[min(letters.count - 1, Int(rng() * Double(letters.count)))]
+    }
+
+    /// The word as blanks with one position filled in.
+    ///
+    /// Non-letters — spaces, hyphens, apostrophes — stay visible. They are structure, not
+    /// the answer, and hiding them would turn spelling into guessing at the shape too.
+    public static func maskWord(_ word: String, revealing index: Int?) -> [String] {
+        Array(word).enumerated().map { offset, character in
+            offset == index || !character.isLetter ? String(character) : "_"
+        }
+    }
+
+    /// Trimmed and case-insensitive — the platform's comparison rule, in one place.
+    public static func spellingIsCorrect(_ input: String, _ word: String) -> Bool {
+        let target = normalise(word)
+        return !target.isEmpty && normalise(input) == target
+    }
+
+    // MARK: - Test
+
+    /// A test walks every word once, cycling through the three kinds in this order.
+    ///
+    /// The cycle is the point: one word gets recognised from four candidates, the next is
+    /// judged against a claim, the next has to be produced from memory. Three difficulties
+    /// of the same knowledge, and a student cannot coast on one of them.
+    public enum TestQuestionKind: String, Sendable, CaseIterable {
+        case mcq, trueFalse, spelling
+    }
+
+    public static let testKindCycle: [TestQuestionKind] = [.mcq, .trueFalse, .spelling]
+    /// Options on a multiple-choice test question.
+    public static let testOptionCount = 4
+
+    public struct TestQuestion: Sendable, Equatable, Identifiable {
+        public let id: Int
+        public let kind: TestQuestionKind
+        public let wordId: Int
+        public let word: String
+        public let definition: String
+        /// MCQ only: the candidate WORDS, one of them right.
+        public let options: [String]
+        public let answerIndex: Int
+        /// True/False only: the definition the statement claims belongs to `word`.
+        public let shownDefinition: String
+        public let isGenuine: Bool
+        /// Spelling only: which letter is given away.
+        public let revealIndex: Int?
+    }
+
+    public static func buildTestQuestions(
+        for words: [VocabWord],
+        pool: [VocabWord],
+        rng: Rng = { Double.random(in: 0..<1) }
+    ) -> [TestQuestion] {
+        shuffle(words, rng: rng).enumerated().map { position, w in
+            let kind = testKindCycle[position % testKindCycle.count]
+            switch kind {
+            case .mcq:
+                let decoys = pickDistractors(from: pool, excluding: w, count: testOptionCount - 1, rng: rng)
+                let options = shuffle([w.word] + decoys.map(\.word), rng: rng)
+                return TestQuestion(
+                    id: position,
+                    kind: .mcq,
+                    wordId: w.id,
+                    word: w.word,
+                    definition: w.definition,
+                    options: options,
+                    answerIndex: options.firstIndex(of: w.word) ?? 0,
+                    shownDefinition: w.definition,
+                    isGenuine: true,
+                    revealIndex: nil
+                )
+            case .trueFalse:
+                let wantsGenuine = rng() < 0.5
+                let decoy = wantsGenuine ? nil : pickDistractors(from: pool, excluding: w, count: 1, rng: rng).first
+                // No usable decoy — a tiny set — falls back to a genuine pairing rather
+                // than claiming a word means itself and calling that false.
+                return TestQuestion(
+                    id: position,
+                    kind: .trueFalse,
+                    wordId: w.id,
+                    word: w.word,
+                    definition: w.definition,
+                    options: [],
+                    answerIndex: 0,
+                    shownDefinition: decoy?.definition ?? w.definition,
+                    isGenuine: decoy == nil,
+                    revealIndex: nil
+                )
+            case .spelling:
+                return TestQuestion(
+                    id: position,
+                    kind: .spelling,
+                    wordId: w.id,
+                    word: w.word,
+                    definition: w.definition,
+                    options: [],
+                    answerIndex: 0,
+                    shownDefinition: w.definition,
+                    isGenuine: true,
+                    revealIndex: revealIndex(in: w.word, rng: rng)
+                )
+            }
+        }
+    }
+
+    /// Accuracy as a whole percentage. Nothing answered is 0, never a division by zero.
+    public static func accuracyPercent(correct: Int, of total: Int) -> Int {
+        total <= 0 ? 0 : Int((Double(correct) / Double(total) * 100).rounded())
+    }
 }

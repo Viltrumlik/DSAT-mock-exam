@@ -9,7 +9,7 @@ struct MatchingView: View {
     @Bindable var runner: VocabStudyRunner
     let set: VocabSetDetail
     let onExit: @MainActor () -> Void
-    let onFinish: @MainActor () -> Void
+    let onFinish: @MainActor (StudyOutcome) -> Void
 
     @State private var rounds: [[VocabWord]] = []
     @State private var roundIndex = 0
@@ -53,7 +53,7 @@ struct MatchingView: View {
                             roundIndex += 1
                         } else {
                             ticker?.cancel()
-                            onFinish()
+                            finish()
                         }
                     }
                 )
@@ -77,6 +77,25 @@ struct MatchingView: View {
         }
         .onDisappear { ticker?.cancel() }
     }
+
+    /// The score is "how fast and how cleanly", not "how many" — every pair gets found
+    /// eventually, so counting them would be counting to the same number every time.
+    @MainActor
+    private func finish() {
+        let cleanFirstTry = set.words.count - missed.count
+        onFinish(StudyOutcome(
+            title: "All pairs matched",
+            description: "\(ScoreText.string(set.words.count)) word\(set.words.count == 1 ? "" : "s") across \(ScoreText.string(rounds.count)) round\(rounds.count == 1 ? "" : "s").",
+            stats: [
+                ModeStat(label: "Total time", value: formatClock(elapsed)),
+                ModeStat(label: "Mistakes", value: ScoreText.string(mistakes), tone: mistakes == 0 ? .success : .danger),
+                ModeStat(
+                    label: "Clean first try",
+                    value: "\(ScoreText.string(cleanFirstTry))/\(ScoreText.string(set.words.count))"
+                ),
+            ]
+        ))
+    }
 }
 
 private struct MatchingRound: View {
@@ -92,6 +111,7 @@ private struct MatchingRound: View {
     @State private var isLocked = false
 
     private var remaining: Int { (cards.count - matched.count) / 2 }
+    private var total: Int { cards.count / 2 }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -101,7 +121,7 @@ private struct MatchingRound: View {
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 StudyPill(
-                    text: "\(remaining) left",
+                    text: "\(remaining) of \(total) pair\(total == 1 ? "" : "s") left",
                     tone: remaining == 0 ? Theme.success : Theme.info
                 )
             }

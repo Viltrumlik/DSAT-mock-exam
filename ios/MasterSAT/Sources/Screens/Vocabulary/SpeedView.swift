@@ -9,7 +9,7 @@ struct SpeedView: View {
     @Bindable var runner: VocabStudyRunner
     let set: VocabSetDetail
     let onExit: @MainActor () -> Void
-    let onFinish: @MainActor () -> Void
+    let onFinish: @MainActor (StudyOutcome) -> Void
 
     private enum Phase { case leadIn, playing }
 
@@ -19,6 +19,8 @@ struct SpeedView: View {
     @State private var index = 0
     @State private var secondsLeft = VocabGames.speedRoundSeconds
     @State private var clock: Task<Void, Never>?
+    @State private var answered = 0
+    @State private var correct = 0
 
     private var isUrgent: Bool { secondsLeft <= 10 }
 
@@ -26,16 +28,16 @@ struct SpeedView: View {
         StudyShell(
             title: "Speed",
             subtitle: set.title,
-            tone: Theme.warning,
+            tone: Theme.amber,
             progress: prompts.isEmpty ? 0 : Double(index) / Double(prompts.count),
             trailing: AnyView(
                 HStack(spacing: 6) {
                     if phase == .playing {
-                        StudyPill(text: "\(index + 1)/\(prompts.count)", icon: "bolt.fill", tone: Theme.warning)
+                        StudyPill(text: "\(index + 1)/\(prompts.count)", icon: "bolt.fill", tone: Theme.amber)
                         StudyPill(
                             text: formatClock(secondsLeft),
                             icon: "timer",
-                            tone: isUrgent ? Theme.danger : Theme.warning
+                            tone: isUrgent ? Theme.danger : Theme.amber
                         )
                     }
                 }
@@ -56,11 +58,11 @@ struct SpeedView: View {
             Spacer()
             Overline("Get ready")
             ZStack {
-                Circle().fill(Theme.warningSoft).frame(width: 220, height: 220)
+                Circle().fill(Theme.amberSoft).frame(width: 220, height: 220)
                 Text("\(max(1, tick))")
                     .font(.system(size: 108, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(Theme.warning)
+                    .foregroundStyle(Theme.amber)
                     // Re-mounted per tick so the pop replays 3 → 2 → 1.
                     .id(tick)
                     .transition(.scale.combined(with: .opacity))
@@ -91,13 +93,22 @@ struct SpeedView: View {
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.5)
                         .lineLimit(2)
+                    // The clock repeats here on purpose: under time pressure a student's
+                    // eyes are on the word, not on the header strip.
+                    StudyPill(
+                        text: formatClock(secondsLeft),
+                        icon: "timer",
+                        tone: isUrgent ? Theme.danger : Theme.amber
+                    )
+                    .scaleEffect(isUrgent ? 1.06 : 1)
+                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isUrgent)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
                 .padding(.horizontal, 18)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
-                        .fill(isUrgent ? Theme.dangerSoft : Theme.warningSoft)
+                        .fill(isUrgent ? Theme.dangerSoft : Theme.amberSoft)
                 )
                 .id(index)
                 .transition(.scale(scale: 0.96).combined(with: .opacity))
@@ -151,6 +162,8 @@ struct SpeedView: View {
         // Reported the instant it is picked: a sixty-second round is one a student
         // abandons mid-way, and the answers up to that point still count.
         runner.record(wordId: prompt.wordId, correct: option.isCorrect)
+        answered += 1
+        if option.isCorrect { correct += 1 }
         if index + 1 < prompts.count {
             index += 1
         } else {
@@ -184,6 +197,18 @@ struct SpeedView: View {
     @MainActor
     private func end() {
         clock?.cancel()
-        onFinish()
+        let ranOut = answered < prompts.count
+        onFinish(StudyOutcome(
+            title: ranOut ? "Time!" : "Round cleared",
+            description: ranOut
+                ? "You got through \(ScoreText.string(answered)) of \(ScoreText.string(prompts.count)) words before the clock ran out."
+                : "All \(ScoreText.string(prompts.count)) words answered with \(formatClock(secondsLeft)) to spare.",
+            stats: [
+                ModeStat(label: "Correct", value: ScoreText.string(correct), tone: .success),
+                ModeStat(label: "Accuracy", value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: correct, of: answered)))%"),
+                ModeStat(label: "Answered", value: "\(ScoreText.string(answered))/\(ScoreText.string(prompts.count))"),
+            ],
+            restartLabel: "Race again"
+        ))
     }
 }

@@ -102,3 +102,93 @@ private func pinned() -> Double { 0 }
         #expect(out.sorted() == input)
     }
 }
+
+/// The test mode's own rules. It is the only mode that asks a student to *produce* a word
+/// rather than recognise one, so its question builder and its spelling comparison are worth
+/// pinning down.
+@Suite("Test mode")
+struct VocabTestQuestionTests {
+
+    private var deck: [VocabWord] {
+        [
+            word(1, "candid", "truthful and straightforward"),
+            word(2, "obscure", "not discovered or known about"),
+            word(3, "prudent", "acting with care for the future"),
+            word(4, "lucid", "expressed clearly"),
+            word(5, "tenuous", "very weak or slight"),
+            word(6, "verbose", "using more words than needed"),
+        ]
+    }
+
+    @Test("Every word is asked once, cycling through the three kinds")
+    func cyclesKinds() {
+        let questions = VocabGames.buildTestQuestions(for: deck, pool: deck, rng: pinned)
+
+        #expect(questions.count == deck.count)
+        #expect(Set(questions.map(\.wordId)) == Set(deck.map(\.id)))
+        #expect(questions.map(\.kind) == [.mcq, .trueFalse, .spelling, .mcq, .trueFalse, .spelling])
+    }
+
+    @Test("A multiple-choice question offers WORDS, and one of them is right")
+    func mcqOffersWords() throws {
+        let questions = VocabGames.buildTestQuestions(for: deck, pool: deck, rng: pinned)
+        let mcq = try #require(questions.first { $0.kind == .mcq })
+
+        // The definition is the prompt; the options are candidate words. Offering
+        // definitions here would make it the same question Speed already asks.
+        #expect(mcq.options.count == VocabGames.testOptionCount)
+        #expect(mcq.options[mcq.answerIndex] == mcq.word)
+        #expect(Set(mcq.options).count == mcq.options.count)
+    }
+
+    @Test("A true/false question never claims a word means itself and calls it false")
+    func trueFalseIsConsistent() throws {
+        let questions = VocabGames.buildTestQuestions(for: deck, pool: deck, rng: pinned)
+        let statement = try #require(questions.first { $0.kind == .trueFalse })
+
+        if statement.isGenuine {
+            #expect(statement.shownDefinition == statement.definition)
+        } else {
+            #expect(statement.shownDefinition != statement.definition)
+        }
+    }
+
+    @Test("A one-word set still produces a true/false question")
+    func trueFalseSurvivesATinySet() {
+        // No decoy exists, so the claim has to be a genuine one rather than nothing.
+        let single = [word(1, "candid", "truthful and straightforward")]
+        let questions = VocabGames.buildTestQuestions(for: single, pool: single, rng: pinned)
+
+        #expect(questions.count == 1)
+        #expect(questions[0].kind == .mcq)
+    }
+
+    @Test("Spelling reveals one letter and blanks the rest")
+    func maskingKeepsStructure() {
+        // Spaces and hyphens stay: they are structure, not the answer.
+        #expect(VocabGames.maskWord("well-known", revealing: 0) == ["w", "_", "_", "_", "-", "_", "_", "_", "_", "_"])
+        #expect(VocabGames.maskWord("ad hoc", revealing: nil).joined() == "__ ___")
+    }
+
+    @Test("A word with no letters has nothing to reveal")
+    func nothingToReveal() {
+        #expect(VocabGames.revealIndex(in: "—", rng: pinned) == nil)
+        #expect(VocabGames.revealIndex(in: "candid", rng: pinned) == 0)
+    }
+
+    @Test("Spelling is compared trimmed and case-insensitively")
+    func spellingComparison() {
+        #expect(VocabGames.spellingIsCorrect("  Candid ", "candid"))
+        #expect(VocabGames.spellingIsCorrect("CANDID", "candid"))
+        #expect(!VocabGames.spellingIsCorrect("candor", "candid"))
+        // An empty target must never grade an empty answer as right.
+        #expect(!VocabGames.spellingIsCorrect("", ""))
+    }
+
+    @Test("Accuracy never divides by zero")
+    func accuracy() {
+        #expect(VocabGames.accuracyPercent(correct: 0, of: 0) == 0)
+        #expect(VocabGames.accuracyPercent(correct: 3, of: 4) == 75)
+        #expect(VocabGames.accuracyPercent(correct: 1, of: 3) == 33)
+    }
+}
