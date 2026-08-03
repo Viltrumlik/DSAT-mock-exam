@@ -33,6 +33,9 @@ final class Session {
     let client: APIClient
     let auth: AuthService
     let student: StudentAPI
+    let classrooms: ClassroomAPI
+    let assessments: AssessmentAPI
+    let practice: PracticeAPI
 
     /// Where a debug build talks to, if it was told.
     ///
@@ -62,6 +65,9 @@ final class Session {
         client = APIClient(config: config, storage: storage, onSignOut: { signOutSignal.fire() })
         auth = AuthService(client: client)
         student = StudentAPI(client: client)
+        classrooms = ClassroomAPI(client: client)
+        assessments = AssessmentAPI(client: client)
+        practice = PracticeAPI(client: client)
         signOutSignal.onFire = { [weak self] in
             Task { @MainActor in
                 self?.phase = .signedOut(message: "Your session has expired. Please sign in again.")

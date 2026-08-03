@@ -14,40 +14,39 @@ struct HomeworkListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView()
-                } else if let loadError {
-                    RetryNotice(message: loadError) { await load() }
-                } else if assignments.isEmpty {
-                    ContentUnavailableView(
-                        "Nothing assigned yet",
-                        systemImage: "checklist",
-                        description: Text("New homework from your teacher will appear here.")
-                    )
-                } else {
-                    List {
-                        ForEach(grouped, id: \.0) { classroom, items in
-                            Section(classroom) {
-                                ForEach(items) { assignment in
-                                    NavigationLink(value: assignment) {
-                                        HomeworkRow(assignment: assignment)
-                                    }
+        Group {
+            if isLoading {
+                ProgressView()
+            } else if let loadError {
+                RetryNotice(message: loadError) { await load() }
+            } else if assignments.isEmpty {
+                ContentUnavailableView(
+                    "Nothing assigned yet",
+                    systemImage: "checklist",
+                    description: Text("New homework from your teacher will appear here.")
+                )
+            } else {
+                List {
+                    ForEach(grouped, id: \.0) { classroom, items in
+                        Section(classroom) {
+                            ForEach(items) { assignment in
+                                NavigationLink(value: assignment) {
+                                    HomeworkRow(assignment: assignment)
                                 }
                             }
                         }
                     }
-                    .listStyle(.insetGrouped)
-                    .navigationDestination(for: AssignmentListing.self) { assignment in
-                        HomeworkDetailView(assignment: assignment)
-                    }
                 }
+                .listStyle(.insetGrouped)
+                .navigationDestination(for: AssignmentListing.self) { assignment in
+                    HomeworkDetailView(assignment: assignment)
+                }
+                .refreshable { await load() }
             }
-            .navigationTitle("Homework")
-            .refreshable { await load() }
-            .task { await load() }
         }
+        .navigationTitle("Homework")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
     }
 
     @MainActor

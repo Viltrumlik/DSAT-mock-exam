@@ -62,13 +62,36 @@ matters. Do not silence concurrency errors in the kit.
 
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build + tests | ✅ 79 tests passing |
+| `MasterSATKit` — build + tests | ✅ 166 tests passing |
 | Backend (`mocks` + native auth) | ✅ 90 Django tests passing |
 | `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
 | Sign in → dashboard → exams → runner | ✅ driven end to end against a local backend |
+| Classroom (roster, materials, leaderboard) | ✅ driven on the simulator |
+| Assessment runner → submit → grade → review | ✅ driven on the simulator (100%, 3/3) |
+| Question bank → answer → explanation | ✅ driven on the simulator |
+| Progress (chart, subject split, gap to target) | ✅ driven on the simulator |
+| Vocabulary browse + custom-set builder | ✅ browse and search driven; save verified against the API |
 
 Two pre-existing failures in `users.tests.test_role_escalation_and_scoping` were confirmed
 present on a clean tree and are unrelated to this work.
+
+## The app's information architecture
+
+The web sidebar gives a student ten routes. Ten tabs is not an option on a phone, and
+burying nine of them under "More" is worse than grouping, so the app has five tabs and
+follows the sidebar's own grouping:
+
+| Tab | Holds |
+| --- | --- |
+| **Home** | Dashboard — today, homework, what is coming up |
+| **Learn** | Classroom, Homework, Assessments, Vocabulary (the sidebar's "Learn") |
+| **Practice** | Mocks, Midterms, Invigilated sitting, Past papers, Practice tests, Question bank (the sidebar's "Simulation", plus Midterm and Question Bank) |
+| **Progress** | Score history, subject split, what has been sat, certificates |
+| **Profile** | Account, target score, sign out |
+
+Every student-facing route on the web has a home here. The staff-only classroom tabs
+(Lessons, Results, Grading, Settings) are absent, because a student cannot open them on
+the web either.
 
 ### Running against a local backend
 
@@ -160,6 +183,26 @@ From `frontend/src/features/testing-simulation`, faithfully, comments included:
   refresh; rotation revokes the token it spends, so a second caller would present a dead
   one and sign the student out mid-exam.
 
+## The second runner
+
+Assessments are **not** a variant of the exam runner, and they have their own
+(`MasterSATKit/Assessment/`). The two are different objects: a pastpaper/mock/midterm is a
+timed paper of modules submitted as a block, while an assessment is a set of questions
+saved one answer at a time, with no clock and no modules. Sharing one runner would make
+every rule in either conditional on which kind it was.
+
+What the assessment runner does share is the discipline about saving:
+
+- **`client_seq` per question.** The server keeps the highest sequence it has seen, so an
+  answer that overtakes its own replacement on the wire is dropped rather than winning.
+- **Typing coalesces, choices do not.** A tapped choice is a complete thought and goes at
+  once; a grid-in would otherwise cost one request per keystroke.
+- **Submit flushes first.** A submit that races an unsent answer grades work the server
+  never saw.
+- **Failed writes are named, not hidden.** A question whose write failed is remembered,
+  retried on the next flush, and said out loud — a student who loses signal mid-quiz
+  deserves to know what has not landed.
+
 ## Not built yet
 
 Scoped out so far, in rough priority order:
@@ -168,8 +211,11 @@ Scoped out so far, in rough priority order:
   ships Flashcards and Test. The other two are built around a pointer and a wide screen —
   a phone version would be a different game, not the same one, so they are left to the web
   rather than shipped as a worse imitation.
-- Review Center / per-question review after scoring.
-- The student's own custom vocabulary sets (`/vocabulary/my-sets/`).
+- Editing an existing custom vocabulary set. They can be built and deleted, not renamed.
+- Question-bank filtering by domain and skill. The taxonomy endpoint is wired up in the
+  kit; the UI filters on subject and difficulty only.
+- Per-question review for **pastpapers and mocks**. Assessments have it; the exam engine's
+  own review endpoint is not surfaced yet.
 - Push notifications. There is no push transport server-side yet; this needs APNs plus a
   sender, not just client work.
 - Offline reading of already-fetched homework.

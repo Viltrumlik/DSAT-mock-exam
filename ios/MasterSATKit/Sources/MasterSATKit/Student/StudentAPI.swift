@@ -85,6 +85,51 @@ public struct StudentAPI: Sendable {
         try await client.send(.get("/vocabulary/sets/\(id)/"), as: VocabSetDetail.self)
     }
 
+    /// The whole published word bank, section by section.
+    public func vocabularySections() async throws -> [VocabSection] {
+        try await client.send(.get("/vocabulary/sections/"), as: ListOrResults<VocabSection>.self).items
+    }
+
+    public func vocabularySection(id: Int) async throws -> VocabSectionDetail {
+        try await client.send(.get("/vocabulary/sections/\(id)/"), as: VocabSectionDetail.self)
+    }
+
+    /// Sets the student built themselves.
+    public func myVocabularySets() async throws -> [VocabMySet] {
+        try await client.send(.get("/vocabulary/my-sets/"), as: ListOrResults<VocabMySet>.self).items
+    }
+
+    /// Search the bank for words to put in a set.
+    public func searchVocabularyWords(_ query: String, sectionId: Int? = nil, limit: Int = 50) async throws -> [VocabWord] {
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        if !query.isEmpty { items.append(.init(name: "q", value: query)) }
+        if let sectionId { items.append(.init(name: "section", value: String(sectionId))) }
+        return try await client.send(.get("/vocabulary/words/", query: items), as: ListOrResults<VocabWord>.self).items
+    }
+
+    /// Create one of the student's own sets. `wordIds` is the membership *and* the order.
+    @discardableResult
+    public func createVocabularySet(title: String, wordIds: [Int]) async throws -> VocabMySet {
+        try await client.send(
+            try .post("/vocabulary/my-sets/", json: CustomSetRequest(title: title, wordIds: wordIds)),
+            as: VocabMySet.self
+        )
+    }
+
+    /// Rename a set or replace its words. `wordIds` REPLACES membership — sending a
+    /// shorter list removes the rest, which is the endpoint's contract, not a bug here.
+    @discardableResult
+    public func updateVocabularySet(id: Int, title: String, wordIds: [Int]) async throws -> VocabMySet {
+        try await client.send(
+            try .patch("/vocabulary/my-sets/\(id)/", json: CustomSetRequest(title: title, wordIds: wordIds)),
+            as: VocabMySet.self
+        )
+    }
+
+    public func deleteVocabularySet(id: Int) async throws {
+        _ = try await client.send(.delete("/vocabulary/my-sets/\(id)/"))
+    }
+
     public func startVocabularySession(setId: Int, mode: VocabStudyMode) async throws -> VocabSession {
         try await client.send(
             try .post("/vocabulary/sessions/", json: SessionStartRequest(setId: setId, mode: mode.rawValue)),
@@ -167,6 +212,16 @@ public struct StudentAPI: Sendable {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+}
+
+private struct CustomSetRequest: Encodable, Sendable {
+    let title: String
+    let wordIds: [Int]
+
+    private enum CodingKeys: String, CodingKey {
+        case title
+        case wordIds = "word_ids"
+    }
 }
 
 private struct SessionStartRequest: Encodable, Sendable {

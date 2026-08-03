@@ -24,6 +24,12 @@ struct HomeworkDetailView: View {
     @State private var isUploading = false
     @State private var actionError: String?
 
+    // Opening attached content
+    @State private var startingKey: String?
+    @State private var assessmentAttemptId: Int?
+    @State private var reviewAttemptId: Int?
+    @State private var examRoute: ExamRoute?
+
     private var classroomId: Int? { assignment.classroomId }
 
     var body: some View {
@@ -74,6 +80,8 @@ struct HomeworkDetailView: View {
                 }
             }
 
+            contentSections
+
             if let files = submission?.files, !files.isEmpty {
                 Section("Handed in") {
                     ForEach(files) { file in
@@ -104,34 +112,55 @@ struct HomeworkDetailView: View {
                 }
             }
 
-            Section {
-                PhotosPicker(selection: $photoSelections, matching: .images) {
-                    Label("Add photos", systemImage: "camera")
-                }
-                Button {
-                    isImportingFile = true
-                } label: {
-                    Label("Add a file", systemImage: "doc.badge.plus")
-                }
-
-                Button(action: submit) {
-                    if isUploading {
-                        HStack { ProgressView().controlSize(.small); Text("Sending…") }
-                    } else {
-                        Label(submission?.hasBeenSubmitted == true ? "Send again" : "Hand in", systemImage: "paperplane")
-                            .fontWeight(.semibold)
+            if !assignment.locksFileUpload {
+                Section {
+                    PhotosPicker(selection: $photoSelections, matching: .images) {
+                        Label("Add photos", systemImage: "camera")
                     }
-                }
-                .disabled(isUploading || (staged.isEmpty && submission?.files.isEmpty != false))
-            } footer: {
-                if let actionError {
-                    Text(actionError).foregroundStyle(.red)
-                } else if staged.isEmpty && submission?.files.isEmpty != false {
-                    Text("Add a photo of your work, or a file, then hand it in.")
+                    Button {
+                        isImportingFile = true
+                    } label: {
+                        Label("Add a file", systemImage: "doc.badge.plus")
+                    }
+
+                    Button(action: submit) {
+                        if isUploading {
+                            HStack { ProgressView().controlSize(.small); Text("Sending…") }
+                        } else {
+                            Label(
+                                submission?.hasBeenSubmitted == true ? "Send again" : "Hand in",
+                                systemImage: "paperplane"
+                            )
+                            .fontWeight(.semibold)
+                        }
+                    }
+                    .disabled(isUploading || (staged.isEmpty && submission?.files.isEmpty != false))
+                } header: {
+                    Text("Hand in")
+                } footer: {
+                    if let actionError {
+                        Text(actionError).foregroundStyle(.red)
+                    } else if staged.isEmpty && submission?.files.isEmpty != false {
+                        Text("Add a photo of your work, or a file, then hand it in.")
+                    }
                 }
             }
         }
         .listStyle(.insetGrouped)
+        .navigationDestination(item: $reviewAttemptId) { id in
+            AssessmentReviewView(attemptId: id)
+        }
+        .fullScreenCover(item: $assessmentAttemptId) { id in
+            AssessmentRunnerView(attemptId: id) {
+                assessmentAttemptId = nil
+                Task { await load() }
+            }
+        }
+        .fullScreenCover(item: $examRoute) { route in
+            if case .runner(let attemptId, let backend) = route {
+                ExamContainerView(attemptId: attemptId, backend: backend) { examRoute = nil }
+            }
+        }
         .onChange(of: photoSelections) { _, items in
             Task { await stagePhotos(items) }
         }
@@ -141,6 +170,210 @@ struct HomeworkDetailView: View {
             allowsMultipleSelection: true
         ) { result in
             Task { await stageFiles(result) }
+        }
+    }
+
+    // MARK: - Attached content
+
+    /// Everything the teacher bundled into this homework, each openable from here.
+    ///
+    /// A homework is not one thing: it can carry several assessments, several vocabulary
+    /// sets, past-paper sections, a mock, files and links, all at once. The web launcher
+    /// shows them all; anything left out here would simply be unreachable on a phone.
+    @ViewBuilder
+    private var contentSections: some View {
+        if !assignment.assessmentHomeworks.isEmpty {
+            Section("Assessments") {
+                ForEach(assignment.assessmentHomeworks) { link in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(link.title).font(.subheadline.weight(.medium))
+                            Text(contentSubtitle(link)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if link.progress?.isCompleted == true, let attemptId = link.progress?.attemptId {
+                            Button("Review") { reviewAttemptId = attemptId }
+                                .buttonStyle(.bordered)
+                        } else {
+                            Button {
+                                openAssessment(link)
+                            } label: {
+                                if startingKey == "quiz.\(link.homeworkId)" {
+                                    ProgressView().controlSize(.small)
+                                } else {
+                                    Text(link.progress?.isInProgress == true ? "Continue" : "Start").bold()
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Theme.accent)
+                            .disabled(startingKey != nil)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+
+        if !assignment.vocabHomeworks.isEmpty {
+            Section("Vocabulary") {
+                ForEach(assignment.vocabHomeworks) { link in
+                    NavigationLink {
+                        VocabSetView(setId: link.setId, title: link.setTitle)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: link.state == "completed" ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(link.state == "completed" ? .green : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(link.setTitle).font(.subheadline.weight(.medium))
+                                // Sets are numbered per section, so "Set 1" collides
+                                // constantly — the section is what tells them apart.
+                                Text([link.sectionTitle, "\(link.wordCount) words"]
+                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !assignment.practiceBundleTests.isEmpty {
+            Section("Papers") {
+                ForEach(assignment.practiceBundleTests) { test in
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(test.name).font(.subheadline.weight(.medium))
+                            Text(test.subject.humanisedSubject).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button {
+                            openPastpaper(test)
+                        } label: {
+                            if startingKey == "paper.\(test.id)" {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Text(test.state == "in_progress" ? "Resume" : "Start").bold()
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.accent)
+                        .disabled(startingKey != nil)
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+
+        if let mockId = assignment.mockExamId {
+            Section("Mock exam") {
+                HStack {
+                    Text("Full mock").font(.subheadline.weight(.medium))
+                    Spacer()
+                    Button {
+                        openMock(mockId)
+                    } label: {
+                        if startingKey == "mock.\(mockId)" {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Start").bold()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.accent)
+                    .disabled(startingKey != nil)
+                }
+            }
+        }
+
+        if !assignment.attachments.isEmpty || !assignment.externalURLs.isEmpty || hasVideo {
+            Section("Materials") {
+                ForEach(assignment.attachments) { file in
+                    if let url = URL(string: file.url) {
+                        Link(destination: url) {
+                            Label(file.fileName, systemImage: "doc")
+                        }
+                    }
+                }
+                ForEach(assignment.externalURLs, id: \.self) { raw in
+                    if let url = URL(string: raw) {
+                        Link(destination: url) {
+                            Label(url.host ?? raw, systemImage: "link")
+                        }
+                    }
+                }
+                if let raw = assignment.videoURL ?? assignment.videoFileURL,
+                   !raw.isEmpty, let url = URL(string: raw) {
+                    Link(destination: url) {
+                        Label("Lesson video", systemImage: "play.rectangle")
+                    }
+                }
+            }
+        }
+    }
+
+    private var hasVideo: Bool {
+        (assignment.videoURL?.isEmpty == false) || (assignment.videoFileURL?.isEmpty == false)
+    }
+
+    private func contentSubtitle(_ link: AssessmentHomeworkLink) -> String {
+        var parts: [String] = []
+        if link.questionCount > 0 { parts.append("\(link.questionCount) questions") }
+        if let progress = link.progress {
+            if progress.isCompleted, let percent = progress.percent {
+                parts.append("\(ScoreText.string(percent))%")
+            } else if progress.isInProgress, let answered = progress.answeredCount {
+                parts.append("\(answered) answered")
+            }
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    @MainActor
+    private func openAssessment(_ link: AssessmentHomeworkLink) {
+        startingKey = "quiz.\(link.homeworkId)"
+        Task {
+            defer { startingKey = nil }
+            do {
+                let attempt = try await session.assessments.start(homeworkId: link.homeworkId)
+                assessmentAttemptId = attempt.id
+            } catch let error as APIError {
+                actionError = error.errorDescription
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func openPastpaper(_ test: PracticeBundleTest) {
+        startingKey = "paper.\(test.id)"
+        Task {
+            defer { startingKey = nil }
+            do {
+                let attempt = try await session.student.startPastpaperAttempt(practiceTestId: test.id)
+                examRoute = .runner(attemptId: attempt.id, backend: .exams)
+            } catch let error as APIError {
+                actionError = error.errorDescription
+            } catch {
+                actionError = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func openMock(_ mockId: Int) {
+        startingKey = "mock.\(mockId)"
+        Task {
+            defer { startingKey = nil }
+            do {
+                let attempt = try await session.student.startMockAttempt(mockId: mockId)
+                examRoute = .runner(attemptId: attempt.id, backend: .mocks)
+            } catch let error as APIError {
+                actionError = error.errorDescription
+            } catch {
+                actionError = error.localizedDescription
+            }
         }
     }
 

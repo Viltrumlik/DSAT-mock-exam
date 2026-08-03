@@ -79,6 +79,14 @@ public struct Endpoint: Sendable {
         Endpoint(path: path, method: .post, body: Data("{}".utf8), idempotencyKey: idempotencyKey)
     }
 
+    public static func patch(_ path: String, json: some Encodable & Sendable) throws -> Endpoint {
+        Endpoint(path: path, method: .patch, body: try JSONCoding.encoder.encode(json))
+    }
+
+    public static func delete(_ path: String) -> Endpoint {
+        Endpoint(path: path, method: .delete)
+    }
+
     func url(relativeTo base: URL) throws -> URL {
         // Every route on this platform is namespaced under /api; keeping the prefix here
         // rather than in each path means an endpoint string matches the Django urlconf

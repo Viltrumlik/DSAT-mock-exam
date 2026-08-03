@@ -153,14 +153,16 @@ public struct ScheduleEvent: Decodable, Sendable, Equatable, Identifiable {
 
 /// One homework, from `/api/classes/my-assignments/`.
 ///
-/// The server's assignment payload is large — every content kind it can bundle appears on
-/// it. This decodes what a list and a detail header need; opening a piece of content goes
-/// through its own endpoint anyway.
+/// A homework is a bundle: it can carry assessments, vocabulary sets, past-paper sections,
+/// a mock, a practice pack, files and links — several of each, all at once. Everything the
+/// launcher needs to open a piece of content is on this one payload, so opening something
+/// never costs a round trip first.
 public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     public let id: Int
     public let title: String
     public let instructions: String?
     public let dueAt: String?
+    public let assignedAt: String?
     public let subject: String?
     public let contentType: String?
     public let itemCount: Int?
@@ -170,19 +172,54 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     /// recompute this — the rule lives with the grading pipeline, not here.
     public let workflowStatus: String?
 
+    // Content
+    public let assessmentHomeworks: [AssessmentHomeworkLink]
+    public let vocabHomeworks: [VocabHomeworkLink]
+    public let practiceBundleTests: [PracticeBundleTest]
+    public let mockExamId: Int?
+    public let practiceTestPackId: Int?
+    public let attachments: [AssignmentAttachment]
+    public let externalURLs: [String]
+    public let videoURL: String?
+    public let videoFileURL: String?
+    /// True when the teacher wants work handed in through the attached content, not as a
+    /// file. The upload UI hides rather than failing at submit time.
+    public let locksFileUpload: Bool
+
     public var isOverdue: Bool {
         guard let dueAt, let due = JSONCoding.parseServerDate(dueAt) else { return false }
         return due < Date()
     }
 
+    /// True when nothing is attached but the homework itself — the student is expected to
+    /// hand something in.
+    public var expectsFileUpload: Bool {
+        !locksFileUpload
+            && assessmentHomeworks.isEmpty
+            && vocabHomeworks.isEmpty
+            && practiceBundleTests.isEmpty
+            && mockExamId == nil
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, title, instructions, subject
         case dueAt = "due_at"
+        case assignedAt = "assigned_at"
         case contentType = "content_type"
         case itemCount = "item_count"
         case classroomId = "classroom_id"
         case classroomName = "classroom_name"
         case workflowStatus = "workflow_status"
+        case assessmentHomeworks = "assessment_homeworks"
+        case vocabHomeworks = "vocab_homeworks"
+        case practiceBundleTests = "practice_bundle_tests"
+        case mockExam = "mock_exam"
+        case practiceTestPack = "practice_test_pack"
+        case attachmentURLs = "attachment_urls"
+        case externalURLs = "external_urls"
+        case videoURL = "video_url"
+        case videoFileURL = "video_file_url"
+        case locksFileUpload = "locks_file_upload"
     }
 
     public init(from decoder: Decoder) throws {
@@ -191,12 +228,28 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
         title = (try? c.decode(String.self, forKey: .title)) ?? ""
         instructions = try? c.decodeIfPresent(String.self, forKey: .instructions)
         dueAt = try? c.decodeIfPresent(String.self, forKey: .dueAt)
+        assignedAt = try? c.decodeIfPresent(String.self, forKey: .assignedAt)
         subject = try? c.decodeIfPresent(String.self, forKey: .subject)
         contentType = try? c.decodeIfPresent(String.self, forKey: .contentType)
         itemCount = try? c.decodeIfPresent(Int.self, forKey: .itemCount)
         classroomId = try? c.decodeIfPresent(Int.self, forKey: .classroomId)
         classroomName = try? c.decodeIfPresent(String.self, forKey: .classroomName)
         workflowStatus = try? c.decodeIfPresent(String.self, forKey: .workflowStatus)
+
+        assessmentHomeworks = (try? c.decodeIfPresent([AssessmentHomeworkLink].self, forKey: .assessmentHomeworks))
+            as? [AssessmentHomeworkLink] ?? []
+        vocabHomeworks = (try? c.decodeIfPresent([VocabHomeworkLink].self, forKey: .vocabHomeworks))
+            as? [VocabHomeworkLink] ?? []
+        practiceBundleTests = (try? c.decodeIfPresent([PracticeBundleTest].self, forKey: .practiceBundleTests))
+            as? [PracticeBundleTest] ?? []
+        mockExamId = try? c.decodeIfPresent(Int.self, forKey: .mockExam)
+        practiceTestPackId = try? c.decodeIfPresent(Int.self, forKey: .practiceTestPack)
+        attachments = (try? c.decodeIfPresent([AssignmentAttachment].self, forKey: .attachmentURLs))
+            as? [AssignmentAttachment] ?? []
+        externalURLs = (try? c.decodeIfPresent([String].self, forKey: .externalURLs)) as? [String] ?? []
+        videoURL = try? c.decodeIfPresent(String.self, forKey: .videoURL)
+        videoFileURL = try? c.decodeIfPresent(String.self, forKey: .videoFileURL)
+        locksFileUpload = (try? c.decodeIfPresent(Bool.self, forKey: .locksFileUpload)) as? Bool ?? false
     }
 }
 
@@ -333,6 +386,9 @@ public struct PastpaperAttemptSummary: Decodable, Sendable, Equatable, Identifia
     public let isCompleted: Bool
     public let isPaused: Bool
     public let score: Double?
+    public let submittedAt: String?
+    public let title: String?
+    public let subject: String?
 
     public var inProgress: Bool {
         !isCompleted && currentState != "ABANDONED" && currentState != "NOT_STARTED"
@@ -344,7 +400,11 @@ public struct PastpaperAttemptSummary: Decodable, Sendable, Equatable, Identifia
         case currentState = "current_state"
         case isCompleted = "is_completed"
         case isPaused = "is_paused"
+        case submittedAt = "submitted_at"
+        case details = "practice_test_details"
     }
+
+    private enum DetailKeys: String, CodingKey { case title, subject }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -354,6 +414,36 @@ public struct PastpaperAttemptSummary: Decodable, Sendable, Equatable, Identifia
         isCompleted = (try? c.decodeIfPresent(Bool.self, forKey: .isCompleted)) as? Bool ?? false
         isPaused = (try? c.decodeIfPresent(Bool.self, forKey: .isPaused)) as? Bool ?? false
         score = try? c.decodeIfPresent(Double.self, forKey: .score)
+        submittedAt = try? c.decodeIfPresent(String.self, forKey: .submittedAt)
+        if let d = try? c.nestedContainer(keyedBy: DetailKeys.self, forKey: .details) {
+            title = (try? d.decodeIfPresent(String.self, forKey: .title)) ?? nil
+            subject = (try? d.decodeIfPresent(String.self, forKey: .subject)) ?? nil
+        } else {
+            title = nil
+            subject = nil
+        }
+    }
+
+    public init(
+        id: Int,
+        practiceTest: Int? = nil,
+        currentState: String = "COMPLETED",
+        isCompleted: Bool = true,
+        isPaused: Bool = false,
+        score: Double? = nil,
+        submittedAt: String? = nil,
+        title: String? = nil,
+        subject: String? = nil
+    ) {
+        self.id = id
+        self.practiceTest = practiceTest
+        self.currentState = currentState
+        self.isCompleted = isCompleted
+        self.isPaused = isPaused
+        self.score = score
+        self.submittedAt = submittedAt
+        self.title = title
+        self.subject = subject
     }
 }
 

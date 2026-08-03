@@ -20,10 +20,15 @@ public struct VocabWord: Decodable, Sendable, Equatable, Identifiable {
     public let example: String?
     public let synonyms: [String]
     public let status: VocabWordStatus
+    /// Which section this row belongs to. Only the bank search sends it — and it has to
+    /// be shown there, because the same word exists as a separate row in every section
+    /// that teaches it, so a search for "abate" returns three identical-looking results.
+    public let sectionTitle: String?
 
     private enum CodingKeys: String, CodingKey {
         case id, word, definition, example, synonyms, status
         case partOfSpeech = "part_of_speech"
+        case sectionTitle = "section_title"
     }
 
     public init(from decoder: Decoder) throws {
@@ -35,6 +40,7 @@ public struct VocabWord: Decodable, Sendable, Equatable, Identifiable {
         example = try? c.decodeIfPresent(String.self, forKey: .example)
         synonyms = (try? c.decodeIfPresent([String].self, forKey: .synonyms)) as? [String] ?? []
         status = (try? c.decodeIfPresent(VocabWordStatus.self, forKey: .status)) as? VocabWordStatus ?? .new
+        sectionTitle = try? c.decodeIfPresent(String.self, forKey: .sectionTitle)
     }
 
     public init(
@@ -44,7 +50,8 @@ public struct VocabWord: Decodable, Sendable, Equatable, Identifiable {
         partOfSpeech: String? = nil,
         example: String? = nil,
         synonyms: [String] = [],
-        status: VocabWordStatus = .new
+        status: VocabWordStatus = .new,
+        sectionTitle: String? = nil
     ) {
         self.id = id
         self.word = word
@@ -53,6 +60,7 @@ public struct VocabWord: Decodable, Sendable, Equatable, Identifiable {
         self.example = example
         self.synonyms = synonyms
         self.status = status
+        self.sectionTitle = sectionTitle
     }
 }
 

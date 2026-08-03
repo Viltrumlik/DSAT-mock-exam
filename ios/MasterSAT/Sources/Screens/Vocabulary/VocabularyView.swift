@@ -50,20 +50,35 @@ struct VocabularyView: View {
     @State private var isLoading = true
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if isLoading {
-                    ProgressView()
-                } else if let loadError {
-                    RetryNotice(message: loadError) { await load() }
-                } else if groups.isEmpty {
-                    ContentUnavailableView(
-                        "No word sets yet",
-                        systemImage: "character.book.closed",
-                        description: Text("Vocabulary your teacher assigns will appear here.")
-                    )
-                } else {
-                    List {
+        Group {
+            if isLoading {
+                ProgressView()
+            } else if let loadError {
+                RetryNotice(message: loadError) { await load() }
+            } else {
+                List {
+                    Section {
+                        NavigationLink {
+                            VocabBrowseView()
+                        } label: {
+                            Label("Browse the word bank", systemImage: "books.vertical")
+                        }
+                        NavigationLink {
+                            MySetsView()
+                        } label: {
+                            Label("My own sets", systemImage: "folder.badge.person.crop")
+                        }
+                    }
+
+                    if groups.isEmpty {
+                        Section {
+                            ContentUnavailableView(
+                                "Nothing assigned yet",
+                                systemImage: "character.book.closed",
+                                description: Text("Vocabulary your teacher assigns will appear here.")
+                            )
+                        }
+                    } else {
                         ForEach(groups) { group in
                             Section {
                                 ForEach(group.sets) { set in
@@ -80,16 +95,17 @@ struct VocabularyView: View {
                             }
                         }
                     }
-                    .listStyle(.insetGrouped)
                 }
+                .listStyle(.insetGrouped)
+                .refreshable { await load() }
             }
-            .navigationTitle("Words")
-            .navigationDestination(for: VocabSetSummary.self) { set in
-                VocabSetView(setId: set.id, title: set.title)
-            }
-            .refreshable { await load() }
-            .task { await load() }
         }
+        .navigationTitle("Vocabulary")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(for: VocabSetSummary.self) { set in
+            VocabSetView(setId: set.id, title: set.title)
+        }
+        .task { await load() }
     }
 
     @MainActor
