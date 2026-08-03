@@ -119,7 +119,7 @@ public actor APIClient {
         case 401:
             return .unauthorized
         case 403:
-            return .forbidden(detail: detail)
+            return .forbidden(detail: detail, reason: Self.reason(from: data))
         case 409:
             // save_attempt answers a stale `expected_version_number` with a hard 409 that
             // writes nothing and carries the canonical attempt. Surfacing it typed is what
@@ -129,6 +129,13 @@ public actor APIClient {
         default:
             return .http(status: status, detail: detail)
         }
+    }
+
+    /// The server's machine-readable code, where it sends one. Views branch on this
+    /// rather than on the human sentence, which is written for people and may change.
+    private static func reason(from data: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return (object["reason"] as? String) ?? (object["code"] as? String) ?? (object["error"] as? String)
     }
 
     private static func detail(from data: Data) -> String {

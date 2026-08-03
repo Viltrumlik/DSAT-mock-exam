@@ -23,22 +23,45 @@ struct ExamWelcomeView: View {
         details.totalTimeMinutes ?? details.modules.reduce(0) { $0 + $1.timeLimitMinutes }
     }
 
+    /// What this paper is, in one line — built from whatever the backend actually sends.
+    ///
+    /// The three exam types describe themselves differently: a mock reports its whole
+    /// shape, a midterm reports a question count, a past paper reports its modules. Show
+    /// only the parts that are really there rather than printing a confident "0".
+    private var shapeSummary: String {
+        var parts: [String] = []
+        if moduleCount > 0 { parts.append("\(moduleCount) module\(moduleCount == 1 ? "" : "s")") }
+        if let questions = details.totalQuestionCount, questions > 0 {
+            parts.append("\(questions) questions")
+        }
+        if totalMinutes > 0 { parts.append("\(totalMinutes) minutes") }
+        return parts.isEmpty ? "" : parts.joined(separator: " · ")
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(details.title).font(.title2.bold())
-                    Text("\(moduleCount) modules · \(totalMinutes) minutes")
+                    Text(shapeSummary)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
                 VStack(alignment: .leading, spacing: 14) {
-                    rule("timer", "The clock does not stop", "Once you start, it runs until the module ends — even if you close the app.")
+                    if runner.backend.supportsPause {
+                        // A past paper is practice. Promising an unstoppable clock here
+                        // would be both wrong and needlessly frightening.
+                        rule("pause.circle", "You can stop any time", "Leaving pauses the clock. Pick it up again whenever you like.")
+                    } else {
+                        rule("timer", "The clock does not stop", "Once you start, it runs until the module ends — even if you close the app.")
+                    }
                     rule("square.and.arrow.down", "Your answers save themselves", "Every answer is sent as you give it. You can lose signal and still be fine.")
                     rule("arrow.uturn.backward.circle", "Modules are one-way", "When you submit a module you cannot go back to it.")
 
-                    if attempt.isProctored {
+                    // Asked of the BACKEND, not of the attempt: `proctored` is a mock-only
+                    // field, and every midterm is invigilated without publishing one.
+                    if runner.backend.policesOffscreen {
                         rule(
                             "eye",
                             "This sitting is invigilated",

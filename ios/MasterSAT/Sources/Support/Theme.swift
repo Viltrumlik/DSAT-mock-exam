@@ -34,6 +34,19 @@ extension View {
     }
 }
 
+extension String {
+    /// A subject as a person writes it: `READING_WRITING` → `Reading Writing`.
+    ///
+    /// The API's casing differs per app (`READING_WRITING`, `Reading_Writing`, `MATH`), so
+    /// normalise rather than trusting any one of them.
+    var humanisedSubject: String {
+        replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+            .joined(separator: " ")
+    }
+}
+
 /// SAT scores, written the way a score is written.
 ///
 /// `Text("\(score)")` interpolates into a `LocalizedStringKey` and formats the number for

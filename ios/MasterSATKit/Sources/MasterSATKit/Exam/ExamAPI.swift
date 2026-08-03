@@ -27,6 +27,35 @@ public enum ExamBackend: String, Sendable, CaseIterable {
 
     /// Only the full mock has a break phase between the English and Math sections.
     public var hasBreak: Bool { self == .mocks }
+
+    /// Whether leaving the exam is a reportable event on this backend.
+    ///
+    /// Pastpapers have no `offscreen` endpoint at all — reporting there is a 404. The other
+    /// two do, and the CLIENT does not decide whether it counts: a midterm is policed
+    /// unconditionally (it publishes no `proctored` flag, because every midterm is
+    /// invigilated), and an unproctored mock answers with a harmless tally that burns
+    /// nothing. Gating this on the attempt's `proctored` flag silently disabled the rule
+    /// for every midterm, since that flag is a mock-only field.
+    public var policesOffscreen: Bool {
+        switch self {
+        case .exams: return false
+        case .midterms, .mocks: return true
+        }
+    }
+
+    /// Midterms may require a teacher's access code before the clock starts.
+    public var mayRequireAccessCode: Bool { self == .midterms }
+}
+
+/// Answer to "may this attempt begin?" on a code-gated midterm.
+public struct AccessCodeCheck: Decodable, Sendable, Equatable {
+    public let ok: Bool
+    public let requiresCode: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case requiresCode = "requires_code"
+    }
 }
 
 /// What the server says an off-screen event cost the student.
@@ -154,14 +183,14 @@ public struct ExamAPI: Sendable {
 
     public func pause(attemptId: Int) async throws -> Attempt {
         guard backend.supportsPause else {
-            throw APIError.forbidden(detail: "This exam cannot be paused.")
+            throw APIError.forbidden(detail: "This exam cannot be paused.", reason: "pause_unsupported")
         }
         return try await client.send(.post("\(base)/\(attemptId)/pause/"), as: Attempt.self)
     }
 
     public func resumeFromPause(attemptId: Int) async throws -> Attempt {
         guard backend.supportsPause else {
-            throw APIError.forbidden(detail: "This exam cannot be paused.")
+            throw APIError.forbidden(detail: "This exam cannot be paused.", reason: "pause_unsupported")
         }
         return try await client.send(.post("\(base)/\(attemptId)/resume_pause/"), as: Attempt.self)
     }
@@ -178,6 +207,21 @@ public struct ExamAPI: Sendable {
 
     public func mockResults(attemptId: Int) async throws -> MockResults {
         try await client.send(.get("\(base)/\(attemptId)/results/"), as: MockResults.self)
+    }
+
+    // MARK: - Midterm-only
+
+    /// Check the classroom access code before the clock starts.
+    ///
+    /// A no-op success when the sitting is not code-gated, so the caller can ask without
+    /// first knowing. A wrong code is a 403 with the server's own wording — never guessed
+    /// at here, because "wrong code" and "the teacher hasn't started the room yet" are
+    /// different problems for the student standing in it.
+    public func verifyAccessCode(attemptId: Int, code: String) async throws -> AccessCodeCheck {
+        try await client.send(
+            try .post("\(base)/\(attemptId)/verify_code/", json: AccessCodeRequest(code: code)),
+            as: AccessCodeCheck.self
+        )
     }
 
     // MARK: - Proctoring
@@ -208,6 +252,10 @@ private struct SavePayload: Encodable, Sendable {
         case answers, flagged, background
         case expectedVersionNumber = "expected_version_number"
     }
+}
+
+private struct AccessCodeRequest: Encodable, Sendable {
+    let code: String
 }
 
 private struct SubmitPayload: Encodable, Sendable {

@@ -11,7 +11,12 @@ public enum APIError: Error, Sendable {
 
     /// 403. Distinguished from `unauthorized` because retrying or refreshing never helps —
     /// it is the frozen-account gate, the console boundary, or a results-not-ready guard.
-    case forbidden(detail: String)
+    ///
+    /// `reason` is the server's machine-readable code where it sends one. It matters
+    /// because two 403s can mean very different things to the student in front of the
+    /// screen: "enter the code your teacher just read out" is a step they can take, while
+    /// "this closed an hour ago" is not.
+    case forbidden(detail: String, reason: String?)
 
     /// 409 from `save_attempt`. Carries the canonical attempt the server sent back so the
     /// runner can adopt it instead of retrying blind against a version it already lost.
@@ -36,7 +41,7 @@ extension APIError: LocalizedError {
             return "Network error: \(underlying)"
         case .unauthorized:
             return "Your session has expired. Please sign in again."
-        case .forbidden(let detail):
+        case .forbidden(let detail, _):
             return detail.isEmpty ? "You do not have access to this." : detail
         case .versionConflict:
             return "This attempt was updated on another device."

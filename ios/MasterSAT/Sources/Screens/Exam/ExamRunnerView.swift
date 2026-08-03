@@ -171,7 +171,7 @@ struct ExamHeaderView: View {
                         .foregroundStyle(remaining <= Theme.timerUrgentThreshold ? Theme.timerUrgent : .primary)
                         .contentTransition(.numericText())
                 }
-                Text(runner.attempt?.practiceTestDetails.subject.replacingOccurrences(of: "_", with: " ").capitalized ?? "")
+                Text(runner.attempt?.practiceTestDetails.subject.humanisedSubject ?? "")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

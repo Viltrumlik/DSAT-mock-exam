@@ -200,10 +200,186 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// A certificate the student has earned. Only ever present once results are visible.
+public struct CertificateInfo: Decodable, Sendable, Equatable {
+    public let available: Bool
+    public let code: String
+    public let downloadURL: String?
+    public let rank: Int?
+    public let cohortSize: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case available, code, rank
+        case downloadURL = "download_url"
+        case cohortSize = "cohort_size"
+    }
+}
+
+/// One midterm, from `/api/midterms/mine/`.
+///
+/// The three "you cannot start yet" states are deliberately distinct, because they need
+/// different words in front of a student: the window has not opened, the teacher has not
+/// released the room's code yet, or the window has closed.
+public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
+    public let midtermId: Int
+    public let title: String
+    public let subject: String
+    public let durationMinutes: Int?
+    public let questionCount: Int?
+    public let scoreCeiling: Double?
+    /// "classroom" or "standalone". Classroom results are publish-gated.
+    public let flavor: String?
+    public let attemptId: Int?
+    public let state: String
+    public let submitted: Bool
+    public let isOpen: Bool
+    public let isBeforeStart: Bool
+    /// Inside the window, but the teacher has not generated the room's access code yet.
+    public let awaitingCode: Bool
+    public let availableAt: String?
+    public let deadline: String?
+    public let resultsVisible: Bool
+    public let score: Double?
+    public let certificate: CertificateInfo?
+
+    public var id: Int { midtermId }
+
+    public var inProgress: Bool { attemptId != nil && !submitted && state != "NOT_STARTED" }
+
+    /// Why the student cannot begin, in their own terms. Nil when they can.
+    public var blockedReason: String? {
+        if submitted { return nil }
+        if isBeforeStart { return "Opens later" }
+        if awaitingCode { return "Waiting for your teacher to start it" }
+        if !isOpen { return "Closed" }
+        return nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title, subject, flavor, state, submitted, score, certificate, deadline
+        case midtermId = "midterm_id"
+        case durationMinutes = "duration_minutes"
+        case questionCount = "question_count"
+        case scoreCeiling = "score_ceiling"
+        case attemptId = "attempt_id"
+        case isOpen = "is_open"
+        case isBeforeStart = "is_before_start"
+        case awaitingCode = "awaiting_code"
+        case availableAt = "available_at"
+        case resultsVisible = "results_visible"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        midtermId = try c.decode(Int.self, forKey: .midtermId)
+        title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        subject = (try? c.decodeIfPresent(String.self, forKey: .subject)) as? String ?? ""
+        durationMinutes = try? c.decodeIfPresent(Int.self, forKey: .durationMinutes)
+        questionCount = try? c.decodeIfPresent(Int.self, forKey: .questionCount)
+        scoreCeiling = try? c.decodeIfPresent(Double.self, forKey: .scoreCeiling)
+        flavor = try? c.decodeIfPresent(String.self, forKey: .flavor)
+        attemptId = try? c.decodeIfPresent(Int.self, forKey: .attemptId)
+        state = (try? c.decodeIfPresent(String.self, forKey: .state)) as? String ?? "NOT_STARTED"
+        submitted = (try? c.decodeIfPresent(Bool.self, forKey: .submitted)) as? Bool ?? false
+        isOpen = (try? c.decodeIfPresent(Bool.self, forKey: .isOpen)) as? Bool ?? true
+        isBeforeStart = (try? c.decodeIfPresent(Bool.self, forKey: .isBeforeStart)) as? Bool ?? false
+        awaitingCode = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingCode)) as? Bool ?? false
+        availableAt = try? c.decodeIfPresent(String.self, forKey: .availableAt)
+        deadline = try? c.decodeIfPresent(String.self, forKey: .deadline)
+        resultsVisible = (try? c.decodeIfPresent(Bool.self, forKey: .resultsVisible)) as? Bool ?? false
+        score = try? c.decodeIfPresent(Double.self, forKey: .score)
+        certificate = try? c.decodeIfPresent(CertificateInfo.self, forKey: .certificate)
+    }
+}
+
+/// One past paper / practice test, from `/api/exams/`.
+public struct PastpaperListing: Decodable, Sendable, Equatable, Identifiable {
+    public let id: Int
+    public let title: String
+    public let subject: String
+    public let label: String?
+    public let collectionName: String?
+    public let practiceDate: String?
+    public let modules: [ModuleSummary]
+
+    public var totalMinutes: Int { modules.reduce(0) { $0 + $1.timeLimitMinutes } }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, subject, label, modules
+        case collectionName = "collection_name"
+        case practiceDate = "practice_date"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        subject = (try? c.decodeIfPresent(String.self, forKey: .subject)) as? String ?? ""
+        label = try? c.decodeIfPresent(String.self, forKey: .label)
+        collectionName = try? c.decodeIfPresent(String.self, forKey: .collectionName)
+        practiceDate = try? c.decodeIfPresent(String.self, forKey: .practiceDate)
+        modules = (try? c.decodeIfPresent([ModuleSummary].self, forKey: .modules)) as? [ModuleSummary] ?? []
+    }
+}
+
+/// Just enough of a pastpaper attempt to label its row.
+///
+/// Deliberately lean: `/api/exams/attempts/` returns the full runner payload for every
+/// attempt — questions included — and a list screen has no use for any of that.
+public struct PastpaperAttemptSummary: Decodable, Sendable, Equatable, Identifiable {
+    public let id: Int
+    public let practiceTest: Int?
+    public let currentState: String
+    public let isCompleted: Bool
+    public let isPaused: Bool
+    public let score: Double?
+
+    public var inProgress: Bool {
+        !isCompleted && currentState != "ABANDONED" && currentState != "NOT_STARTED"
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, score
+        case practiceTest = "practice_test"
+        case currentState = "current_state"
+        case isCompleted = "is_completed"
+        case isPaused = "is_paused"
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        practiceTest = try? c.decodeIfPresent(Int.self, forKey: .practiceTest)
+        currentState = (try? c.decodeIfPresent(String.self, forKey: .currentState)) as? String ?? "NOT_STARTED"
+        isCompleted = (try? c.decodeIfPresent(Bool.self, forKey: .isCompleted)) as? Bool ?? false
+        isPaused = (try? c.decodeIfPresent(Bool.self, forKey: .isPaused)) as? Bool ?? false
+        score = try? c.decodeIfPresent(Double.self, forKey: .score)
+    }
+}
+
 // MARK: - Envelopes
 
 struct ResultsEnvelope<T: Decodable & Sendable>: Decodable, Sendable {
     let results: [T]
+}
+
+/// A bare JSON array, or a `{"results": [...]}` envelope.
+///
+/// These endpoints return plain arrays because DRF pagination is not configured. Accepting
+/// both shapes means switching pagination on later is a server-side decision, not a
+/// coordinated app release.
+struct ListOrResults<T: Decodable & Sendable>: Decodable, Sendable {
+    let items: [T]
+
+    init(from decoder: Decoder) throws {
+        if let array = try? decoder.singleValueContainer().decode([T].self) {
+            items = array
+            return
+        }
+        items = try decoder.container(keyedBy: Key.self).decode([T].self, forKey: .results)
+    }
+
+    private enum Key: String, CodingKey { case results }
 }
 
 struct ItemsEnvelope<T: Decodable & Sendable>: Decodable, Sendable {

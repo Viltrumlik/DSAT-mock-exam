@@ -222,17 +222,22 @@ struct ExamRunnerTests {
 
     // MARK: - Proctoring
 
-    @Test("An unproctored sitting reports nothing when the app leaves the foreground")
-    func unproctoredSittingReportsNothing() async {
-        server.handler = { _ in .json([:]) }
+    @Test("An unproctored sitting reports, and the server charges nothing for it")
+    func unproctoredSittingCostsNothing() async {
+        // The client does NOT decide whether leaving counts. It says "they left"; the
+        // server answers with the tally. An earlier version gated this on the attempt's
+        // `proctored` flag, which is a mock-only field — so the rule was silently off for
+        // every midterm, where it is never optional.
+        server.handler = { _ in
+            .json(["violations": 0, "limit": 3, "grace_seconds": 0, "terminated": false])
+        }
         let runner = makeRunner()
-        runner.apply(AttemptFixtures.attempt())
+        runner.apply(AttemptFixtures.attempt(AttemptFixtures.json(proctored: false)))
 
         await runner.reportOffscreen()
 
-        // A solo practice mock is not invigilated; a crafted client must not be able to
-        // burn strikes on a paper nobody is watching.
-        #expect(server.requests.isEmpty)
+        #expect(runner.offscreen?.violations == 0, "a solo practice mock burns no strikes")
+        #expect(runner.offscreen?.terminated == false)
     }
 
     @Test("A proctored sitting adopts the server's tally")

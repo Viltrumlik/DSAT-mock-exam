@@ -32,19 +32,13 @@ struct ExamContainerView: View {
             guard let runner else { return }
             switch phase {
             case .active:
-                runner.isEnabled = true
+                Task { await runner.handleReturningToForeground() }
             case .inactive, .background:
                 // Leaving the foreground is the phone's version of closing the tab, and it
                 // is the moment work is most likely to be lost: iOS can kill a backgrounded
-                // app without warning. Stand the autosave down and push what we have.
-                runner.isEnabled = false
-                Task {
-                    await runner.flushOnLeaving()
-                    // On an invigilated sitting, leaving is also the reportable event. The
-                    // server owns the tally — a count kept here would reset with the app,
-                    // which is exactly what a student gaming the rule would do.
-                    await runner.reportOffscreen()
-                }
+                // app without warning. What that MEANS differs per exam type — a past paper
+                // pauses, a timed sitting is reported — so the runner owns the decision.
+                Task { await runner.handleLeavingForeground() }
             @unknown default:
                 break
             }
@@ -60,11 +54,30 @@ struct ExamContainerView: View {
         if let attempt = runner.attempt {
             switch attempt.currentState {
             case .notStarted:
-                ExamWelcomeView(attempt: attempt, runner: runner, onClose: onClose)
+                if runner.needsAccessCode {
+                    // A gated midterm. The clock has not started and must not until the
+                    // code is accepted.
+                    AccessCodeView(runner: runner, onClose: onClose)
+                } else {
+                    ExamWelcomeView(attempt: attempt, runner: runner, onClose: onClose)
+                }
             case .scoring:
                 ExamScoringView()
             case .completed:
-                MockResultsView(attemptId: attemptId, onClose: onClose)
+                if backend == .mocks {
+                    MockResultsView(attemptId: attemptId, onClose: onClose)
+                } else {
+                    // A midterm's score is publish-gated and a past paper's review lives
+                    // elsewhere, so neither has a score to show here. Say the paper is in
+                    // and where the result will appear, rather than inventing a screen.
+                    ExamEndedView(
+                        title: "Your paper is in",
+                        message: backend == .midterms
+                            ? "Your score appears under Midterms once your teacher releases it."
+                            : "You can see how you did from the Exams list.",
+                        onClose: onClose
+                    )
+                }
             case .abandoned:
                 ExamEndedView(
                     title: "This sitting is closed",
@@ -84,6 +97,10 @@ struct ExamContainerView: View {
                     // "Active but no questions" is an error, not an empty exam. Never show
                     // a blank page a student could sit through and fail.
                     RetryNotice(message: "This module did not load.") { await runner.loadStatus() }
+                } else if attempt.isPaused {
+                    // Past papers only. The clock is genuinely stopped, so say so plainly
+                    // rather than showing a frozen timer that looks broken.
+                    ExamPausedView(runner: runner, onClose: onClose)
                 } else {
                     ExamRunnerView(runner: runner, onClose: onClose)
                 }

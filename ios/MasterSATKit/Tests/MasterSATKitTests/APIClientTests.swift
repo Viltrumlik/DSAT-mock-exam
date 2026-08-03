@@ -102,7 +102,7 @@ import Testing
         do {
             _ = try await client.send(.get("/mocks/attempts/5/results/"))
             Issue.record("expected a forbidden")
-        } catch APIError.forbidden(let detail) {
+        } catch APIError.forbidden(let detail, _) {
             #expect(detail == "This mock is not available yet.")
         }
     }
@@ -111,7 +111,7 @@ import Testing
     func retryabilityIsCorrect() {
         #expect(APIError.http(status: 503, detail: "").isRetryable)
         #expect(APIError.transport(underlying: "offline").isRetryable)
-        #expect(APIError.forbidden(detail: "").isRetryable == false)
+        #expect(APIError.forbidden(detail: "", reason: nil).isRetryable == false)
         #expect(APIError.versionConflict(attempt: nil).isRetryable == false)
     }
 

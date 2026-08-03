@@ -53,7 +53,7 @@ import Testing
         do {
             try await AuthService(client: client).signIn(email: "t@example.com", password: "pw")
             Issue.record("expected a forbidden")
-        } catch APIError.forbidden(let received) {
+        } catch APIError.forbidden(let received, _) {
             #expect(received == detail)
         }
     }

@@ -26,6 +26,10 @@ public final class ExamRunner {
     public private(set) var lastError: APIError?
     /// Server's off-screen tally on a proctored sitting.
     public private(set) var offscreen: OffscreenTally?
+    /// The sitting is gated behind a code the teacher reads out. Not an error state.
+    public private(set) var needsAccessCode = false
+    /// The server's wording for why the code is needed.
+    public private(set) var accessCodeMessage: String?
 
     /// The module the in-memory answers belong to. Autosave refuses to write when this
     /// disagrees with the live module — `save_attempt` REPLACES the module's answer map,
@@ -60,6 +64,10 @@ public final class ExamRunner {
     /// down completely.
     public var isEnabled: Bool = true
     public var isOnline: Bool = true
+
+    /// Whether the app is currently the thing on screen. Guards the leave/return handlers
+    /// against iOS's two-step `.inactive` → `.background` transition.
+    private var isInForeground = true
 
     public init(
         attemptId: Int,
@@ -108,12 +116,43 @@ public final class ExamRunner {
     public func start() async {
         do {
             apply(try await api.start(attemptId: attemptId))
+            needsAccessCode = false
+        } catch APIError.forbidden(let detail, let reason) where reason == Self.codeRequiredReason {
+            // Not a failure — a step. The teacher reads out a code when the room is ready,
+            // and the student types it in. Surfacing this as a generic 403 would leave them
+            // staring at "you do not have access" with the code in their hand.
+            needsAccessCode = true
+            lastError = nil
+            accessCodeMessage = detail
         } catch let error as APIError {
             lastError = error
         } catch {
             lastError = .transport(underlying: error.localizedDescription)
         }
     }
+
+    /// Hand the teacher's access code to the server and, if it takes, begin.
+    ///
+    /// Returns whether the exam started. A wrong code leaves `lastError` set with the
+    /// server's wording and the student still on the code screen.
+    @discardableResult
+    public func submitAccessCode(_ code: String) async -> Bool {
+        lastError = nil
+        do {
+            _ = try await api.verifyAccessCode(attemptId: attemptId, code: code)
+        } catch let error as APIError {
+            lastError = error
+            return false
+        } catch {
+            lastError = .transport(underlying: error.localizedDescription)
+            return false
+        }
+        await start()
+        return !needsAccessCode && lastError == nil
+    }
+
+    /// The server's own code for "the room is gated and you have not passed the gate".
+    private static let codeRequiredReason = "code_required"
 
     /// Proceed from the mock's break into Math.
     public func endBreak() async {
@@ -351,6 +390,54 @@ public final class ExamRunner {
         )
     }
 
+    /// Everything that must happen when the app stops being the thing on screen.
+    ///
+    /// The three exam types answer this differently, and the difference is the whole
+    /// design: a pastpaper is untimed practice and its clock STOPS; a mock or midterm is a
+    /// sitting whose clock cannot stop, so leaving is reported instead of forgiven.
+    public func handleLeavingForeground() async {
+        // ONE leave, one report. iOS moves through `.inactive` before `.background`, so a
+        // single tap of the home button calls this twice — and each off-screen report
+        // carries a fresh idempotency key, so the server would count two violations. On a
+        // three-strike sitting that is two thirds of a student's allowance for one leave.
+        guard isInForeground else { return }
+        isInForeground = false
+
+        isEnabled = false
+        await flushOnLeaving()
+
+        if backend.supportsPause {
+            // Pastpapers only. Pausing a mock would hand a student unlimited time.
+            _ = try? await api.pause(attemptId: attemptId)
+            await loadStatus()
+        } else {
+            await reportOffscreen()
+        }
+    }
+
+    /// Coming back to the foreground. A paused pastpaper has to be un-paused explicitly,
+    /// or its clock stays stopped and the student sits looking at a frozen timer.
+    public func handleReturningToForeground() async {
+        guard !isInForeground else { return }
+        isInForeground = true
+        isEnabled = true
+        await resume()
+    }
+
+    /// Continue a paused past paper, because the student asked to.
+    ///
+    /// Separate from the lifecycle handler on purpose: that one is guarded against iOS's
+    /// repeated phase changes, and folding a deliberate button press into it made
+    /// "Continue" a no-op — the app was already foregrounded by the time it was tapped.
+    public func resume() async {
+        if backend.supportsPause, attempt?.isPaused == true,
+           let resumed = try? await api.resumeFromPause(attemptId: attemptId) {
+            apply(resumed)
+            return
+        }
+        await loadStatus()
+    }
+
     private func textInputQuestionIds() -> Set<String> {
         Set(questions.filter(\.isMathInput).map { String($0.id) })
     }
@@ -398,7 +485,11 @@ public final class ExamRunner {
     /// because a local count is cleared by relaunching the app, which is exactly what a
     /// student gaming the rule would do.
     public func reportOffscreen(eventId: UUID = UUID()) async {
-        guard attempt?.isProctored == true else { return }
+        // Gated on the BACKEND, not on the attempt's `proctored` flag. That flag is a
+        // mock-only field, so keying off it disabled the rule for every midterm — and
+        // midterms are policed unconditionally. The server decides what an event costs;
+        // an unproctored mock answers with a tally that burns nothing.
+        guard backend.policesOffscreen, attempt?.isActive == true else { return }
         do {
             let tally = try await api.reportOffscreen(
                 attemptId: attemptId,
