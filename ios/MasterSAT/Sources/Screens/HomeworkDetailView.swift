@@ -113,7 +113,7 @@ struct HomeworkDetailView: View {
             }
 
             if let instructions = assignment.instructions, !instructions.isEmpty {
-                RichText(html: instructions).cardStyle()
+                RichText(text: instructions).cardStyle()
             }
         }
     }

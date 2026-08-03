@@ -67,7 +67,7 @@ builds and runs its tests with the command-line toolchain alone:
 cd ios/MasterSATKit && swift test
 ```
 
-90 tests, well under a second. This is the part that must never regress, so it is also the
+101 tests, well under a second. This is the part that must never regress, so it is also the
 part that stays verifiable from a terminal, in CI, with no simulator.
 
 `MasterSAT` is the SwiftUI layer on top. It needs Xcode, because an iOS `.app` cannot be
@@ -152,6 +152,9 @@ student actually reaches for on a long set:
 - **Failed writes are named, not hidden.** A question whose write failed is remembered,
   retried on the next flush, and said out loud.
 - **Question map** — every question at a glance, answered / flagged / blank, tap to jump.
+- **The cross-out tool.** Eliminating a choice also clears it if it was the current answer —
+  leaving a selection under a struck-through option would submit the very thing the student
+  just ruled out. It is scratch work and stays on the device, as it does on the web.
 - **Zoom, 70%–150%.** Applied as a bigger root font inside the rendered document, not a
   SwiftUI `scaleEffect`: scaling would blur the text and leave the frame the wrong size,
   while a bigger font reflows, exactly as the web's CSS `zoom` does.
@@ -162,12 +165,37 @@ orders, and the answers were recorded against theirs. Never sort by `order` inst
 
 ## Deliberate decisions
 
-**Question content renders in a `WKWebView`.** Questions are authored once, as HTML with
-embedded math. Porting a math renderer to Swift would be a second implementation of *how a
-question looks*, and the first time the two disagreed a student would be answering a
-different question on their phone than on their laptop. So the content is rendered by the
-same engine the web uses — with JavaScript disabled, no navigation, no network — and
-everything around it is native.
+**Question content renders in a `WKWebView`, with the same KaTeX the web uses.** Authored
+SAT content is a narrow dialect, not HTML: LaTeX between `\( \)`, `\[ \]`, `$ … $` or
+`$$ … $$`; `**bold**` and `*italic*`; and a frozen allowlist of eight inline tags. The rules
+are `frontend/src/components/MATH_TEXT_BOUNDARIES.md`, and the app follows them exactly —
+`ContentText` in the kit is a line-for-line port of the web's `prepareRichText`, tested, and
+KaTeX 0.17.0 (the version `frontend/package.json` pins) is vendored into `Resources/katex`
+and served from the bundle. Nothing is fetched.
+
+Porting a maths renderer to Swift would be a second implementation of *how a question
+looks*, and the first time the two disagreed a student would answer a different question on
+their phone than on their laptop.
+
+JavaScript is enabled in that web view, which an earlier version refused. That refusal was
+what made maths silently fail: KaTeX *is* JavaScript. The safety it stood in for now comes
+from somewhere stronger — the sanitiser runs first, and its allowlist has no `<img>`, no
+`<a>`, no `<iframe>` and no `<script>`. After that pass the document contains nothing that
+could reach the network even if it wanted to.
+
+Four things about that view cost real time to find, all of them silent:
+
+- **`loadFileURL` never fired a single navigation callback.** No finish, no failure, not
+  even a policy decision — just a blank card. Loading the document from memory works;
+  KaTeX's assets come from a `WKURLSchemeHandler` reading one directory in the bundle.
+- **A web view resolves `prefers-color-scheme` on its own.** It disagreed with the app and
+  rendered white text on a white card, so every question containing any markup came up
+  empty while plain-text questions beside it looked fine. The ink colour is passed in now.
+- **A `UIView` inside a SwiftUI `Button` eats the touch.** An answer choice whose text
+  happened to contain maths could not be selected at all. The content view is
+  `isUserInteractionEnabled = false`; it is read, never touched.
+- **`callAsyncJavaScript` wraps the body in an async function**, so it must `return`. An
+  IIFE resolves to `undefined` and the measured height never arrives.
 
 **Desmos is the real Desmos.** There is no version of "write our own graphing calculator"
 that a student should trust in a maths assessment, so the calculator is `calculator.js`
@@ -194,7 +222,7 @@ pending answer before it goes.
 
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build + tests | ✅ 90 tests |
+| `MasterSATKit` — build + tests | ✅ 101 tests |
 | Backend (`classes`) | ✅ 307 tests |
 | `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
@@ -204,6 +232,8 @@ pending answer before it goes.
 | Vocabulary hub — hero totals, three tabs, section cards | ✅ driven on the simulator |
 | Vocabulary — Flashcards, Matching, Speed | ✅ driven on the simulator |
 | Desmos — graphing and scientific | ✅ driven on the simulator |
+| Runner + review — LaTeX, **bold**, *italic*, `<sup>`/`<sub>` | ✅ driven on the simulator |
+| Answer selection and cross-out | ✅ driven; the choice was checked in the database |
 | Vocabulary custom-set builder | ✅ search driven; save verified against the API |
 
 Two pre-existing failures in `users.tests.test_role_escalation_and_scoping` were confirmed

@@ -15,6 +15,11 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      # KaTeX, vendored. `type: folder` keeps the directory structure intact in the
+      # bundle — katex.min.css asks for `fonts/KaTeX_Main-Regular.woff2` by relative
+      # path, and a flattened resource copy would break every glyph.
+      - path: Resources/katex
+        type: folder
     dependencies:
       - package: MasterSATKit
     # No `info:` key on purpose. That key tells XcodeGen to GENERATE a plist at the given
