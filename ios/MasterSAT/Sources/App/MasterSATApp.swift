@@ -35,7 +35,7 @@ final class Session {
     let student: StudentAPI
     let classrooms: ClassroomAPI
     let assessments: AssessmentAPI
-    let practice: PracticeAPI
+    let results: ResultsAPI
 
     /// Where a debug build talks to, if it was told.
     ///
@@ -67,7 +67,7 @@ final class Session {
         student = StudentAPI(client: client)
         classrooms = ClassroomAPI(client: client)
         assessments = AssessmentAPI(client: client)
-        practice = PracticeAPI(client: client)
+        results = ResultsAPI(client: client)
         signOutSignal.onFire = { [weak self] in
             Task { @MainActor in
                 self?.phase = .signedOut(message: "Your session has expired. Please sign in again.")

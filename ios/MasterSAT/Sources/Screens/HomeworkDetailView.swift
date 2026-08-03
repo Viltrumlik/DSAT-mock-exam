@@ -1,12 +1,14 @@
 import SwiftUI
 import PhotosUI
+import AVKit
 import UniformTypeIdentifiers
 import MasterSATKit
 
-/// One homework: what was asked, what has been handed in, and how to hand more in.
+/// One homework: what was asked, what to do, and how to hand it in.
 ///
-/// On a phone the dominant case is "photograph the work I did on paper", so the photo
-/// picker leads and the file browser sits behind it.
+/// The order is the order a student works in — watch the lesson, do the tasks, then hand
+/// something in. The upload box used to lead; it now sits last, because on most homework
+/// the work IS the attached quiz or word set, not a photo.
 struct HomeworkDetailView: View {
     let assignment: AssignmentListing
 
@@ -28,7 +30,6 @@ struct HomeworkDetailView: View {
     @State private var startingKey: String?
     @State private var assessmentAttemptId: Int?
     @State private var reviewAttemptId: Int?
-    @State private var examRoute: ExamRoute?
 
     private var classroomId: Int? { assignment.classroomId }
 
@@ -46,107 +47,10 @@ struct HomeworkDetailView: View {
                 content
             }
         }
+        .background(Theme.background)
         .navigationTitle("Homework")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-    }
-
-    private var content: some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(assignment.title).font(.headline)
-                    if let instructions = assignment.instructions, !instructions.isEmpty {
-                        RichText(html: instructions)
-                    }
-                    HStack(spacing: 8) {
-                        Text(StatusLabel.homework(submission?.workflowStatus ?? assignment.workflowStatus))
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(StatusLabel.color(submission?.workflowStatus ?? assignment.workflowStatus))
-                        if let due = assignment.dueAt, let date = JSONCoding.parseServerDate(due) {
-                            Text("· Due \(date.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.caption)
-                                .foregroundStyle(assignment.isOverdue ? .orange : .secondary)
-                        }
-                    }
-                }
-                .padding(.vertical, 4)
-            }
-
-            if let note = submission?.returnNote, !note.isEmpty {
-                Section("From your teacher") {
-                    // A returned homework is an invitation to revise, so the note leads.
-                    Text(note).font(.subheadline)
-                }
-            }
-
-            contentSections
-
-            if let files = submission?.files, !files.isEmpty {
-                Section("Handed in") {
-                    ForEach(files) { file in
-                        SubmittedFileRow(file: file) { await remove(file) }
-                    }
-                }
-            }
-
-            if !staged.isEmpty {
-                Section("Ready to send") {
-                    ForEach(Array(staged.enumerated()), id: \.element.token) { index, file in
-                        HStack(spacing: 10) {
-                            Image(systemName: "doc").foregroundStyle(Theme.accent)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(file.filename).font(.subheadline)
-                                Text(ByteCountFormatter.string(fromByteCount: Int64(file.data.count), countStyle: .file))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button {
-                                staged.remove(at: index)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-
-            if !assignment.locksFileUpload {
-                Section {
-                    PhotosPicker(selection: $photoSelections, matching: .images) {
-                        Label("Add photos", systemImage: "camera")
-                    }
-                    Button {
-                        isImportingFile = true
-                    } label: {
-                        Label("Add a file", systemImage: "doc.badge.plus")
-                    }
-
-                    Button(action: submit) {
-                        if isUploading {
-                            HStack { ProgressView().controlSize(.small); Text("Sending…") }
-                        } else {
-                            Label(
-                                submission?.hasBeenSubmitted == true ? "Send again" : "Hand in",
-                                systemImage: "paperplane"
-                            )
-                            .fontWeight(.semibold)
-                        }
-                    }
-                    .disabled(isUploading || (staged.isEmpty && submission?.files.isEmpty != false))
-                } header: {
-                    Text("Hand in")
-                } footer: {
-                    if let actionError {
-                        Text(actionError).foregroundStyle(.red)
-                    } else if staged.isEmpty && submission?.files.isEmpty != false {
-                        Text("Add a photo of your work, or a file, then hand it in.")
-                    }
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
         .navigationDestination(item: $reviewAttemptId) { id in
             AssessmentReviewView(attemptId: id)
         }
@@ -156,10 +60,19 @@ struct HomeworkDetailView: View {
                 Task { await load() }
             }
         }
-        .fullScreenCover(item: $examRoute) { route in
-            if case .runner(let attemptId, let backend) = route {
-                ExamContainerView(attemptId: attemptId, backend: backend) { examRoute = nil }
+    }
+
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                headerCard
+                if let note = submission?.returnNote, !note.isEmpty { returnNote(note) }
+                lessonVideo
+                taskSection
+                materialsSection
+                handInSection
             }
+            .padding(16)
         }
         .onChange(of: photoSelections) { _, items in
             Task { await stagePhotos(items) }
@@ -173,150 +86,159 @@ struct HomeworkDetailView: View {
         }
     }
 
-    // MARK: - Attached content
+    // MARK: - Header
 
-    /// Everything the teacher bundled into this homework, each openable from here.
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(assignment.title).font(.system(size: 20, weight: .bold))
+
+            HStack(spacing: 8) {
+                let status = submission?.workflowStatus ?? assignment.workflowStatus
+                Chip(text: StatusLabel.homework(status), tone: StatusLabel.tone(status))
+                if let due = assignment.dueAt, let date = JSONCoding.parseServerDate(due) {
+                    // A passed deadline reads as an invitation to catch up, never as an
+                    // accusation.
+                    Chip(
+                        text: assignment.isOverdue
+                            ? "Catch up · \(date.formatted(date: .abbreviated, time: .omitted))"
+                            : "Due \(date.formatted(date: .abbreviated, time: .shortened))",
+                        icon: "calendar",
+                        tone: assignment.isOverdue ? .warning : .neutral
+                    )
+                }
+            }
+
+            if let instructions = assignment.instructions, !instructions.isEmpty {
+                Divider().padding(.vertical, 2)
+                RichText(html: instructions)
+            }
+        }
+        .cardStyle()
+    }
+
+    private func returnNote(_ note: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("From your teacher", systemImage: "text.bubble.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.warning)
+            // A returned homework is an invitation to revise, so the note leads.
+            Text(note).font(.system(size: 15))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.warningSoft)
+        )
+    }
+
+    // MARK: - Lesson video
+
+    /// The teacher's lesson video, prominent.
     ///
-    /// A homework is not one thing: it can carry several assessments, several vocabulary
-    /// sets, past-paper sections, a mock, files and links, all at once. The web launcher
-    /// shows them all; anything left out here would simply be unreachable on a phone.
+    /// An uploaded file plays right here — it is the lesson, and making a student leave the
+    /// app to watch it is how a lesson goes unwatched. A YouTube or Drive link cannot be
+    /// played inline without embedding their player, so it gets a real card that says where
+    /// it goes rather than a bare blue link.
     @ViewBuilder
-    private var contentSections: some View {
-        if !assignment.assessmentHomeworks.isEmpty {
-            Section("Assessments") {
-                ForEach(assignment.assessmentHomeworks) { link in
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(link.title).font(.subheadline.weight(.medium))
-                            Text(contentSubtitle(link)).font(.caption).foregroundStyle(.secondary)
+    private var lessonVideo: some View {
+        if let raw = assignment.videoFileURL, !raw.isEmpty, let url = URL(string: raw) {
+            VStack(alignment: .leading, spacing: 8) {
+                Overline("Lesson")
+                VideoPlayer(player: AVPlayer(url: url))
+                    .frame(height: 210)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+            }
+        } else if let raw = assignment.videoURL, !raw.isEmpty, let url = URL(string: raw) {
+            VStack(alignment: .leading, spacing: 8) {
+                Overline("Lesson")
+                Link(destination: url) {
+                    HStack(spacing: 14) {
+                        RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                            .fill(Theme.danger.opacity(0.12))
+                            .frame(width: 54, height: 54)
+                            .overlay(
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(Theme.danger)
+                            )
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Watch the lesson video")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(.primary)
+                            Text(url.host ?? raw)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
                         }
-                        Spacer()
-                        if link.progress?.isCompleted == true, let attemptId = link.progress?.attemptId {
-                            Button("Review") { reviewAttemptId = attemptId }
-                                .buttonStyle(.bordered)
-                        } else {
-                            Button {
-                                openAssessment(link)
-                            } label: {
-                                if startingKey == "quiz.\(link.homeworkId)" {
-                                    ProgressView().controlSize(.small)
-                                } else {
-                                    Text(link.progress?.isInProgress == true ? "Continue" : "Start").bold()
-                                }
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Theme.accent)
-                            .disabled(startingKey != nil)
-                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Theme.textLabel)
                     }
-                    .padding(.vertical, 2)
+                    .cardStyle()
                 }
             }
         }
+    }
 
-        if !assignment.vocabHomeworks.isEmpty {
-            Section("Vocabulary") {
+    // MARK: - Tasks
+
+    /// Everything the teacher bundled into this homework, as tasks to work through.
+    ///
+    /// A homework is not one thing: it can carry several assessments and several
+    /// vocabulary sets at once. They share one list because to a student they are one list
+    /// — "what do I have to do" — rather than two kinds of object.
+    @ViewBuilder
+    private var taskSection: some View {
+        let hasTasks = !assignment.assessmentHomeworks.isEmpty || !assignment.vocabHomeworks.isEmpty
+        if hasTasks {
+            VStack(alignment: .leading, spacing: 10) {
+                Overline("What to do")
+
+                ForEach(assignment.assessmentHomeworks) { link in
+                    TaskRow(
+                        title: link.title,
+                        subtitle: assessmentSubtitle(link),
+                        icon: "square.and.pencil",
+                        tone: Theme.success,
+                        state: link.progress?.isCompleted == true
+                            ? .done(label: (link.progress?.missedCount ?? 0) > 0 ? "Review" : "Review answers")
+                            : .todo(label: link.progress?.isInProgress == true ? "Continue" : "Start"),
+                        isBusy: startingKey == "quiz.\(link.homeworkId)"
+                    ) {
+                        if link.progress?.isCompleted == true, let attemptId = link.progress?.attemptId {
+                            reviewAttemptId = attemptId
+                        } else {
+                            openAssessment(link)
+                        }
+                    }
+                }
+
                 ForEach(assignment.vocabHomeworks) { link in
                     NavigationLink {
                         VocabSetView(setId: link.setId, title: link.setTitle)
                     } label: {
-                        HStack(spacing: 12) {
-                            Image(systemName: link.state == "completed" ? "checkmark.circle.fill" : "circle")
-                                .foregroundStyle(link.state == "completed" ? .green : .secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(link.setTitle).font(.subheadline.weight(.medium))
-                                // Sets are numbered per section, so "Set 1" collides
-                                // constantly — the section is what tells them apart.
-                                Text([link.sectionTitle, "\(link.wordCount) words"]
-                                    .filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        TaskRowLabel(
+                            title: link.setTitle,
+                            // Sets are numbered per section, so "Set 1" collides
+                            // constantly — the section is what tells them apart.
+                            subtitle: [link.sectionTitle, "\(link.wordCount) words"]
+                                .filter { !$0.isEmpty }.joined(separator: " · "),
+                            icon: "character.book.closed.fill",
+                            tone: Theme.accent,
+                            state: link.state == "completed"
+                                ? .done(label: "Practise again")
+                                : .todo(label: link.state == "in_progress" ? "Continue" : "Study"),
+                            isBusy: false
+                        )
                     }
-                }
-            }
-        }
-
-        if !assignment.practiceBundleTests.isEmpty {
-            Section("Papers") {
-                ForEach(assignment.practiceBundleTests) { test in
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(test.name).font(.subheadline.weight(.medium))
-                            Text(test.subject.humanisedSubject).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button {
-                            openPastpaper(test)
-                        } label: {
-                            if startingKey == "paper.\(test.id)" {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Text(test.state == "in_progress" ? "Resume" : "Start").bold()
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Theme.accent)
-                        .disabled(startingKey != nil)
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-        }
-
-        if let mockId = assignment.mockExamId {
-            Section("Mock exam") {
-                HStack {
-                    Text("Full mock").font(.subheadline.weight(.medium))
-                    Spacer()
-                    Button {
-                        openMock(mockId)
-                    } label: {
-                        if startingKey == "mock.\(mockId)" {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Start").bold()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-                    .disabled(startingKey != nil)
-                }
-            }
-        }
-
-        if !assignment.attachments.isEmpty || !assignment.externalURLs.isEmpty || hasVideo {
-            Section("Materials") {
-                ForEach(assignment.attachments) { file in
-                    if let url = URL(string: file.url) {
-                        Link(destination: url) {
-                            Label(file.fileName, systemImage: "doc")
-                        }
-                    }
-                }
-                ForEach(assignment.externalURLs, id: \.self) { raw in
-                    if let url = URL(string: raw) {
-                        Link(destination: url) {
-                            Label(url.host ?? raw, systemImage: "link")
-                        }
-                    }
-                }
-                if let raw = assignment.videoURL ?? assignment.videoFileURL,
-                   !raw.isEmpty, let url = URL(string: raw) {
-                    Link(destination: url) {
-                        Label("Lesson video", systemImage: "play.rectangle")
-                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
     }
 
-    private var hasVideo: Bool {
-        (assignment.videoURL?.isEmpty == false) || (assignment.videoFileURL?.isEmpty == false)
-    }
-
-    private func contentSubtitle(_ link: AssessmentHomeworkLink) -> String {
+    private func assessmentSubtitle(_ link: AssessmentHomeworkLink) -> String {
         var parts: [String] = []
         if link.questionCount > 0 { parts.append("\(link.questionCount) questions") }
         if let progress = link.progress {
@@ -329,46 +251,129 @@ struct HomeworkDetailView: View {
         return parts.joined(separator: " · ")
     }
 
+    // MARK: - Materials
+
+    @ViewBuilder
+    private var materialsSection: some View {
+        if !assignment.attachments.isEmpty || !assignment.externalURLs.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Overline("Materials")
+                ForEach(assignment.attachments) { file in
+                    if let url = URL(string: file.url) {
+                        Link(destination: url) {
+                            materialRow(file.fileName, icon: "doc.fill")
+                        }
+                    }
+                }
+                ForEach(assignment.externalURLs, id: \.self) { raw in
+                    if let url = URL(string: raw) {
+                        Link(destination: url) {
+                            materialRow(url.host ?? raw, icon: "link")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func materialRow(_ label: String, icon: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon).font(.system(size: 15)).foregroundStyle(Theme.accent).frame(width: 22)
+            Text(label).font(.system(size: 14, weight: .medium)).foregroundStyle(.primary).lineLimit(1)
+            Spacer()
+            Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(Theme.textLabel)
+        }
+        .cardStyle(padding: 13)
+    }
+
+    // MARK: - Handing in
+
+    @ViewBuilder
+    private var handInSection: some View {
+        if !assignment.locksFileUpload {
+            VStack(alignment: .leading, spacing: 10) {
+                Overline("Hand in")
+
+                if let files = submission?.files, !files.isEmpty {
+                    ForEach(files) { file in
+                        SubmittedFileRow(file: file) { await remove(file) }
+                    }
+                }
+
+                ForEach(Array(staged.enumerated()), id: \.element.token) { index, file in
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.badge.plus").foregroundStyle(Theme.accent)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(file.filename).font(.system(size: 14, weight: .medium))
+                            Text(ByteCountFormatter.string(fromByteCount: Int64(file.data.count), countStyle: .file))
+                                .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer()
+                        Button {
+                            staged.remove(at: index)
+                        } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textLabel)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .cardStyle(padding: 13)
+                }
+
+                HStack(spacing: 10) {
+                    PhotosPicker(selection: $photoSelections, matching: .images) {
+                        Label("Photo", systemImage: "camera.fill").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+
+                    Button { isImportingFile = true } label: {
+                        Label("File", systemImage: "doc.badge.plus").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                }
+
+                Button(action: submit) {
+                    if isUploading {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(.white)
+                            Text("Sending…")
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        Label(
+                            submission?.hasBeenSubmitted == true ? "Send again" : "Hand in",
+                            systemImage: "paperplane.fill"
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                .disabled(isUploading || (staged.isEmpty && submission?.files.isEmpty != false))
+
+                if let actionError {
+                    Text(actionError).font(.system(size: 13)).foregroundStyle(Theme.danger)
+                } else if staged.isEmpty && submission?.files.isEmpty != false {
+                    Text("Add a photo of your work, or a file, then hand it in.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+        } else if let actionError {
+            Text(actionError).font(.system(size: 13)).foregroundStyle(Theme.danger)
+        }
+    }
+
+    // MARK: - Opening content
+
     @MainActor
     private func openAssessment(_ link: AssessmentHomeworkLink) {
         startingKey = "quiz.\(link.homeworkId)"
         Task {
             defer { startingKey = nil }
             do {
+                // Resumes the live attempt rather than opening a second one, so tapping
+                // Continue twice cannot restart a half-finished quiz from scratch.
                 let attempt = try await session.assessments.start(homeworkId: link.homeworkId)
                 assessmentAttemptId = attempt.id
-            } catch let error as APIError {
-                actionError = error.errorDescription
-            } catch {
-                actionError = error.localizedDescription
-            }
-        }
-    }
-
-    @MainActor
-    private func openPastpaper(_ test: PracticeBundleTest) {
-        startingKey = "paper.\(test.id)"
-        Task {
-            defer { startingKey = nil }
-            do {
-                let attempt = try await session.student.startPastpaperAttempt(practiceTestId: test.id)
-                examRoute = .runner(attemptId: attempt.id, backend: .exams)
-            } catch let error as APIError {
-                actionError = error.errorDescription
-            } catch {
-                actionError = error.localizedDescription
-            }
-        }
-    }
-
-    @MainActor
-    private func openMock(_ mockId: Int) {
-        startingKey = "mock.\(mockId)"
-        Task {
-            defer { startingKey = nil }
-            do {
-                let attempt = try await session.student.startMockAttempt(mockId: mockId)
-                examRoute = .runner(attemptId: attempt.id, backend: .mocks)
             } catch let error as APIError {
                 actionError = error.errorDescription
             } catch {
@@ -494,6 +499,85 @@ struct HomeworkDetailView: View {
     }
 }
 
+/// One thing to do, with the state it is in.
+enum TaskState {
+    case todo(label: String)
+    case done(label: String)
+}
+
+struct TaskRow: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let tone: Color
+    let state: TaskState
+    let isBusy: Bool
+    let onTap: @MainActor () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            TaskRowLabel(title: title, subtitle: subtitle, icon: icon, tone: tone, state: state, isBusy: isBusy)
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+    }
+}
+
+struct TaskRowLabel: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let tone: Color
+    let state: TaskState
+    let isBusy: Bool
+
+    private var isDone: Bool {
+        if case .done = state { return true }
+        return false
+    }
+
+    private var actionLabel: String {
+        switch state {
+        case .todo(let label), .done(let label): return label
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                .fill(tone.opacity(0.12))
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Image(systemName: isDone ? "checkmark" : icon)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(isDone ? Theme.success : tone)
+                )
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                if !subtitle.isEmpty {
+                    Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                }
+            }
+            Spacer(minLength: 0)
+            if isBusy {
+                ProgressView()
+            } else {
+                Text(actionLabel)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(isDone ? Theme.textSecondary : .white)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(isDone ? Theme.surface2 : tone))
+            }
+        }
+        .cardStyle(padding: 13)
+        .contentShape(Rectangle())
+    }
+}
+
 struct SubmittedFileRow: View {
     let file: SubmissionFile
     let onRemove: @MainActor () async -> Void
@@ -502,16 +586,16 @@ struct SubmittedFileRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "paperclip").foregroundStyle(.secondary)
+            Image(systemName: "paperclip").foregroundStyle(Theme.textSecondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(file.displayName).font(.subheadline)
+                Text(file.displayName).font(.system(size: 14, weight: .medium))
                 if let type = file.fileType, !type.isEmpty {
-                    Text(type).font(.caption).foregroundStyle(.secondary)
+                    Text(type).font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
                 }
             }
             Spacer()
             if isRemoving {
-                ProgressView().controlSize(.small)
+                ProgressView()
             } else {
                 Button {
                     isRemoving = true
@@ -520,10 +604,11 @@ struct SubmittedFileRow: View {
                         isRemoving = false
                     }
                 } label: {
-                    Image(systemName: "trash").foregroundStyle(.red)
+                    Image(systemName: "trash").foregroundStyle(Theme.danger)
                 }
                 .buttonStyle(.plain)
             }
         }
+        .cardStyle(padding: 13)
     }
 }

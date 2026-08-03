@@ -28,61 +28,72 @@ struct ClassesListView: View {
     }
 
     private var list: some View {
-        List {
-            if classrooms.isEmpty {
-                Section {
-                    ContentUnavailableView(
-                        "You are not in a class yet",
-                        systemImage: "person.3",
-                        description: Text("Ask your teacher for the join code.")
-                    )
-                }
-            } else {
-                Section {
-                    ForEach(classrooms) { room in
-                        NavigationLink {
-                            ClassroomDetailView(classroom: room)
-                        } label: {
-                            ClassroomRow(classroom: room)
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if classrooms.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "person.3")
+                            .font(.system(size: 30)).foregroundStyle(Theme.textLabel)
+                        Text("You are not in a class yet").font(.system(size: 16, weight: .bold))
+                        Text("Ask your teacher for the join code.")
+                            .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
                     }
-                }
-            }
-
-            Section {
-                HStack(spacing: 10) {
-                    TextField("Join code", text: $joinCode)
-                        .textInputAutocapitalization(.characters)
-                        .autocorrectionDisabled()
-                        .textFieldStyle(.roundedBorder)
-                        .submitLabel(.join)
-                        .onSubmit { join() }
-                    Button(action: join) {
-                        if isJoining {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Join").bold()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-                    .disabled(joinCode.trimmingCharacters(in: .whitespaces).isEmpty || isJoining)
-                }
-            } header: {
-                Text("Join a class")
-            } footer: {
-                if let joinError {
-                    Text(joinError).foregroundStyle(.red)
-                } else if let joinedName {
-                    Text("You joined \(joinedName).").foregroundStyle(.green)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+                    .cardStyle()
                 } else {
-                    // The code is the only way back into a class you were removed from,
-                    // so it is worth saying where it comes from.
-                    Text("Your teacher can give you the code for the class.")
+                    VStack(spacing: 10) {
+                        ForEach(classrooms) { room in
+                            NavigationLink {
+                                ClassroomDetailView(classroom: room)
+                            } label: {
+                                ClassroomRow(classroom: room)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Overline("Join a class")
+                    HStack(spacing: 10) {
+                        TextField("Join code", text: $joinCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .font(.system(size: 15, weight: .semibold))
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                                    .fill(Theme.card)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                                    .stroke(Theme.separator, lineWidth: 1)
+                            )
+                            .submitLabel(.join)
+                            .onSubmit { join() }
+                        Button(action: join) {
+                            if isJoining { ProgressView().tint(.white) } else { Text("Join") }
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(joinCode.trimmingCharacters(in: .whitespaces).isEmpty || isJoining)
+                    }
+                    if let joinError {
+                        Text(joinError).font(.system(size: 12)).foregroundStyle(Theme.danger)
+                    } else if let joinedName {
+                        Text("You joined \(joinedName).")
+                            .font(.system(size: 12)).foregroundStyle(Theme.success)
+                    } else {
+                        // The code is the only way back into a class you were removed from,
+                        // so it is worth saying where it comes from.
+                        Text("Your teacher can give you the code for the class.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                    }
                 }
             }
+            .padding(16)
         }
-        .listStyle(.insetGrouped)
+        .background(Theme.background)
         .refreshable { await load() }
     }
 
@@ -125,23 +136,33 @@ struct ClassroomRow: View {
     let classroom: Classroom
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(classroom.name).font(.subheadline.weight(.medium))
-            HStack(spacing: 6) {
-                if let subject = classroom.subject, !subject.isEmpty {
-                    Text(subject.humanisedSubject).font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 13) {
+            Avatar(url: classroom.teacherPhotoURL, name: classroom.teacherName ?? classroom.name, size: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(classroom.name)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 6) {
+                    if let subject = classroom.subject, !subject.isEmpty {
+                        Text(subject.humanisedSubject)
+                            .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                    }
+                    if let teacher = classroom.teacherName, !teacher.isEmpty {
+                        Text("· \(teacher)")
+                            .font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    }
                 }
-                if let teacher = classroom.teacherName, !teacher.isEmpty {
-                    Text("· \(teacher)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
+                    Label(schedule, systemImage: "calendar")
+                        .font(.system(size: 11)).foregroundStyle(Theme.textLabel)
                 }
             }
-            if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
-                Label(schedule, systemImage: "calendar")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textLabel)
         }
-        .padding(.vertical, 4)
+        .cardStyle(padding: 14)
     }
 }
 
@@ -258,7 +279,8 @@ struct ClassroomDetailView: View {
                 Text("Leaderboard")
             }
         }
-        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(Theme.background)
     }
 
     // MARK: - Work
@@ -272,14 +294,20 @@ struct ClassroomDetailView: View {
                 description: Text("Homework for this class will appear here.")
             )
         } else {
-            List(assignments) { assignment in
-                NavigationLink {
-                    HomeworkDetailView(assignment: assignment)
-                } label: {
-                    HomeworkRow(assignment: assignment)
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(assignments) { assignment in
+                        NavigationLink {
+                            HomeworkDetailView(assignment: assignment)
+                        } label: {
+                            HomeworkRow(assignment: assignment).cardStyle()
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
+                .padding(16)
             }
-            .listStyle(.insetGrouped)
+            .background(Theme.background)
         }
     }
 
@@ -294,10 +322,13 @@ struct ClassroomDetailView: View {
                 description: Text("Files your teacher shares will appear here.")
             )
         } else {
-            List(materials) { material in
-                MaterialRow(material: material)
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(materials) { MaterialRow(material: $0) }
+                }
+                .padding(16)
             }
-            .listStyle(.insetGrouped)
+            .background(Theme.background)
         }
     }
 
@@ -305,17 +336,26 @@ struct ClassroomDetailView: View {
 
     @ViewBuilder
     private var peopleList: some View {
-        List {
+        ScrollView {
             let staff = people.filter(\.isStaff)
             let students = people.filter { !$0.isStaff }
-            if !staff.isEmpty {
-                Section("Teachers") { ForEach(staff) { PersonRow(person: $0) } }
+            VStack(alignment: .leading, spacing: 20) {
+                if !staff.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Overline("Teachers")
+                        ForEach(staff) { PersonRow(person: $0) }
+                    }
+                }
+                if !students.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Overline("Students · \(students.count)")
+                        ForEach(students) { PersonRow(person: $0) }
+                    }
+                }
             }
-            if !students.isEmpty {
-                Section("Students · \(students.count)") { ForEach(students) { PersonRow(person: $0) } }
-            }
+            .padding(16)
         }
-        .listStyle(.insetGrouped)
+        .background(Theme.background)
     }
 
     // MARK: - Loading
@@ -409,7 +449,7 @@ struct PersonRow: View {
                 Text(person.roleLabel).font(.caption).foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .cardStyle(padding: 13)
     }
 }
 
@@ -443,7 +483,7 @@ struct MaterialRow: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .cardStyle(padding: 14)
     }
 }
 

@@ -14,6 +14,11 @@ import WebKit
 /// web view is a text renderer here: no navigation, no scrolling of its own, no network.
 struct RichTextView: UIViewRepresentable {
     let html: String
+    /// The runner's zoom. Applied inside the document rather than as a SwiftUI
+    /// `scaleEffect`: scaling the view would blur the text and leave the frame the wrong
+    /// size, while a bigger root font reflows properly, exactly as the web's CSS `zoom`
+    /// does.
+    var scale: Double = 1.0
     /// Reported back so the surrounding SwiftUI layout can size the view to its content.
     @Binding var contentHeight: CGFloat
 
@@ -34,9 +39,10 @@ struct RichTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        guard context.coordinator.renderedHTML != html else { return }
-        context.coordinator.renderedHTML = html
-        webView.loadHTMLString(Self.document(for: html), baseURL: nil)
+        let rendered = "\(scale)|\(html)"
+        guard context.coordinator.renderedHTML != rendered else { return }
+        context.coordinator.renderedHTML = rendered
+        webView.loadHTMLString(Self.document(for: html, scale: scale), baseURL: nil)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -76,7 +82,7 @@ struct RichTextView: UIViewRepresentable {
 
     /// Wraps authored HTML in a shell that matches the app's typography and follows the
     /// system light/dark setting.
-    private static func document(for body: String) -> String {
+    private static func document(for body: String, scale: Double) -> String {
         """
         <!doctype html>
         <html><head>
@@ -86,7 +92,7 @@ struct RichTextView: UIViewRepresentable {
           body {
             margin: 0;
             font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
-            font-size: 17px;
+            font-size: \(Int((17 * scale).rounded()))px;
             line-height: 1.55;
             color: #000;
             background: transparent;
@@ -113,15 +119,16 @@ struct RichTextView: UIViewRepresentable {
 /// take a native `Text` and only real markup pays for the web view.
 struct RichText: View {
     let html: String
+    var scale: Double = 1.0
     @State private var height: CGFloat = 40
 
     var body: some View {
         if html.containsMarkup {
-            RichTextView(html: html, contentHeight: $height)
+            RichTextView(html: html, scale: scale, contentHeight: $height)
                 .frame(height: height)
         } else {
             Text(html)
-                .font(.body)
+                .font(.system(size: 17 * scale))
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -135,5 +142,21 @@ extension String {
     /// shows a student raw `<sup>` tags or an unrendered formula in the middle of an exam.
     var containsMarkup: Bool {
         contains("<") || contains("&")
+    }
+
+    /// A one-line preview of authored HTML.
+    ///
+    /// List rows cannot afford a web view each, and a row that shows `<p>` tags looks
+    /// broken — so tags come out and entities are decoded for the preview only. The full
+    /// question is still rendered properly when it is opened.
+    var strippedHTML: String {
+        replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

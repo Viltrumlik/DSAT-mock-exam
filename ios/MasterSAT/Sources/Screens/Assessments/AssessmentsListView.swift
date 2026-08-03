@@ -48,15 +48,18 @@ struct AssessmentsListView: View {
                     description: Text("Quizzes your teacher assigns will appear here.")
                 )
             } else {
-                List {
-                    section("To do", todo, hint: "New work from your teachers shows up here.")
-                    section("In progress", inProgress, hint: "Anything you've started appears here.")
-                    section("Completed", done, hint: "Finished work lands here.")
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        section("In progress", inProgress, tone: Theme.warning)
+                        section("To do", todo, tone: Theme.accent)
+                        section("Completed", done, tone: Theme.success)
+                    }
+                    .padding(16)
                 }
-                .listStyle(.insetGrouped)
                 .refreshable { await load() }
             }
         }
+        .background(Theme.background)
         .navigationTitle("Assessments")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -72,11 +75,16 @@ struct AssessmentsListView: View {
     }
 
     @ViewBuilder
-    private func section(_ title: String, _ rows: [Entry], hint: String) -> some View {
-        Section {
-            if rows.isEmpty {
-                Text(hint).font(.caption).foregroundStyle(.secondary)
-            } else {
+    private func section(_ title: String, _ rows: [Entry], tone: Color) -> some View {
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Circle().fill(tone).frame(width: 8, height: 8)
+                    Overline(title)
+                    Text("\(rows.count)")
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Theme.textLabel)
+                }
                 ForEach(rows) { entry in
                     AssessmentCard(
                         entry: entry,
@@ -88,8 +96,6 @@ struct AssessmentsListView: View {
                     )
                 }
             }
-        } header: {
-            Text(title)
         }
     }
 
@@ -134,78 +140,95 @@ struct AssessmentCard: View {
 
     private var progress: AssessmentProgress? { entry.link.progress }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(entry.title).font(.subheadline.weight(.medium))
+    private var subjectTone: Color {
+        entry.subject.uppercased().contains("MATH") ? Theme.accent : Theme.info
+    }
 
-            HStack(spacing: 6) {
-                if !entry.subject.isEmpty {
-                    Text(entry.subject.humanisedSubject).font(.caption).foregroundStyle(.secondary)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .fill(subjectTone.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: entry.subject.uppercased().contains("MATH")
+                              ? "function" : "text.book.closed.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(subjectTone)
+                    )
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(entry.title).font(.system(size: 16, weight: .bold))
+                    HStack(spacing: 6) {
+                        if !entry.subject.isEmpty {
+                            Text(entry.subject.humanisedSubject)
+                                .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                        }
+                        if entry.link.questionCount > 0 {
+                            Text("· \(entry.link.questionCount) questions")
+                                .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                    if let classroom = entry.assignment.classroomName, !classroom.isEmpty {
+                        Text(classroom).font(.system(size: 11)).foregroundStyle(Theme.textLabel).lineLimit(1)
+                    }
                 }
-                if entry.link.questionCount > 0 {
-                    Text("· \(entry.link.questionCount) questions").font(.caption).foregroundStyle(.secondary)
-                }
-                if let classroom = entry.assignment.classroomName, !classroom.isEmpty {
-                    Text("· \(classroom)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
+                Spacer(minLength: 0)
             }
 
             if let due = entry.assignment.dueAt, let date = JSONCoding.parseServerDate(due) {
                 // A passed deadline reads as an invitation to catch up, never as a failure.
-                Text(
-                    entry.assignment.isOverdue
+                Chip(
+                    text: entry.assignment.isOverdue
                         ? "Catch up · \(date.formatted(date: .abbreviated, time: .omitted))"
-                        : "Due \(date.formatted(date: .abbreviated, time: .shortened))"
+                        : "Due \(date.formatted(date: .abbreviated, time: .shortened))",
+                    icon: "calendar",
+                    tone: entry.assignment.isOverdue ? .warning : .neutral
                 )
-                .font(.caption)
-                .foregroundStyle(entry.assignment.isOverdue ? .orange : .secondary)
             }
 
             if let progress, progress.isCompleted {
                 completedFooter(progress)
             } else {
-                HStack(spacing: 10) {
-                    Button(action: onOpen) {
-                        if isStarting {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text(progress?.isInProgress == true ? "Continue" : "Start").bold()
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-                    .disabled(isStarting)
-
-                    if let progress, progress.isInProgress,
-                       let answered = progress.answeredCount, let total = progress.totalQuestions, total > 0 {
+                if let progress, progress.isInProgress,
+                   let answered = progress.answeredCount, let total = progress.totalQuestions, total > 0 {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Bar(fraction: Double(answered) / Double(total), tone: Theme.warning)
                         Text("\(answered) of \(total) answered")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
                     }
                 }
+                Button(action: onOpen) {
+                    if isStarting {
+                        ProgressView().tint(.white).frame(maxWidth: .infinity)
+                    } else {
+                        Text(progress?.isInProgress == true ? "Continue" : "Start").frame(maxWidth: .infinity)
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                .disabled(isStarting)
             }
         }
-        .padding(.vertical, 4)
+        .cardStyle()
     }
 
     @ViewBuilder
     private func completedFooter(_ progress: AssessmentProgress) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if progress.graded == true, let percent = progress.percent {
-                HStack(spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("\(ScoreText.string(percent))%")
-                        .font(.title3.bold().monospacedDigit())
-                        .foregroundStyle(Theme.accent)
+                        .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+                        .foregroundStyle(Theme.success)
                     if let correct = progress.correctCount, let total = progress.totalQuestions {
-                        Text("\(correct) / \(total) correct").font(.caption).foregroundStyle(.secondary)
+                        Text("\(correct) / \(total) correct")
+                            .font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
                     }
                 }
+                Bar(fraction: Double(percent) / 100, tone: Theme.success)
             } else {
                 // Submitted but not yet graded. Naming that beats an absent score, which
                 // reads as a zero.
-                Label("Handed in · waiting to be marked", systemImage: "checkmark.circle")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Theme.accent)
+                Chip(text: "Handed in · waiting to be marked", icon: "checkmark.circle", tone: .accent)
             }
 
             if progress.attemptId != nil {
@@ -216,9 +239,9 @@ struct AssessmentCard: View {
                             : "Review answers",
                         systemImage: "text.magnifyingglass"
                     )
-                    .font(.caption.weight(.medium))
+                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle(fullWidth: true))
             }
         }
     }

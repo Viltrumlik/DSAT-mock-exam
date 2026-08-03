@@ -1,13 +1,14 @@
 import SwiftUI
 import MasterSATKit
 
-/// What is happening today, and what is due next.
+/// What is happening today, what is due next, and how the last midterm went.
 struct DashboardView: View {
     let user: CurrentUser
 
     @Environment(Session.self) private var session
     @State private var events: [ScheduleEvent] = []
     @State private var assignments: [AssignmentListing] = []
+    @State private var midterms: [MidtermListing] = []
     @State private var loadError: String?
     @State private var isLoading = true
 
@@ -29,10 +30,16 @@ struct DashboardView: View {
             .map { $0 }
     }
 
+    /// Midterms the student has actually sat. Papers are sat elsewhere; only the result
+    /// comes back to the phone.
+    private var results: [MidtermListing] {
+        midterms.filter(\.submitted)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 22) {
                     greeting
 
                     if isLoading {
@@ -40,49 +47,103 @@ struct DashboardView: View {
                     } else if let loadError {
                         RetryNotice(message: loadError) { await load() }
                     } else {
-                        section("Today", events: today, emptyText: "No classes today.")
                         if !dueSoon.isEmpty { dueSection }
+                        section("Today", events: today, emptyText: "No classes today.")
+                        if !results.isEmpty { resultsSection }
                         section("Coming up", events: upcoming, emptyText: "Nothing scheduled yet.")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(Theme.background)
             .navigationTitle("Home")
             .refreshable { await load() }
-            .task { await load() }
+            .onAppear { Task { await load() } }
         }
     }
 
     private var greeting: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("Salom, \(user.firstName ?? user.displayName)")
-                .font(.title2.bold())
+                .font(.system(size: 26, weight: .bold))
             if let target = user.targetScore {
-                Text("Target " + ScoreText.string(target)).font(.subheadline).foregroundStyle(.secondary)
+                Chip(text: "Target \(ScoreText.string(target))", icon: "target", tone: .accent)
             }
         }
     }
 
     private func section(_ title: String, events: [ScheduleEvent], emptyText: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.headline)
+            Overline(title)
             if events.isEmpty {
-                Text(emptyText).font(.subheadline).foregroundStyle(.secondary).cardStyle()
+                Text(emptyText)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.textSecondary)
+                    .cardStyle()
             } else {
-                ForEach(events) { event in
-                    ScheduleRow(event: event)
-                }
+                ForEach(events) { ScheduleRow(event: $0) }
             }
         }
     }
 
     private var dueSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Homework").font(.headline)
+            Overline("Homework")
             ForEach(dueSoon) { assignment in
-                HomeworkRow(assignment: assignment)
+                NavigationLink {
+                    HomeworkDetailView(assignment: assignment)
+                } label: {
+                    HomeworkRow(assignment: assignment).cardStyle()
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// Midterm scores.
+    ///
+    /// A classroom midterm is scored the moment it is submitted but stays sealed until the
+    /// teacher publishes it, so an absent score is named rather than left blank — a blank
+    /// reads as a zero.
+    private var resultsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Overline("Your results")
+            ForEach(results) { midterm in
+                NavigationLink {
+                    MidtermResultView(attemptId: midterm.attemptId ?? 0, title: midterm.title)
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(midterm.title)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(.primary)
+                            if !midterm.subject.isEmpty {
+                                Text(midterm.subject.humanisedSubject)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                        }
+                        Spacer()
+                        if midterm.resultsVisible, let score = midterm.score {
+                            VStack(alignment: .trailing, spacing: 0) {
+                                Text(ScoreText.string(score))
+                                    .font(.system(size: 22, weight: .bold).monospacedDigit())
+                                    .foregroundStyle(Theme.accent)
+                                if let ceiling = midterm.scoreCeiling {
+                                    Text("of \(ScoreText.string(ceiling))")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
+                            }
+                        } else {
+                            Chip(text: "Not released", icon: "hourglass", tone: .warning)
+                        }
+                    }
+                    .cardStyle()
+                }
+                .buttonStyle(.plain)
+                .disabled(midterm.attemptId == nil)
             }
         }
     }
@@ -102,8 +163,10 @@ struct DashboardView: View {
         do {
             async let schedule = student.schedule(from: start, to: end)
             async let homework = student.assignments()
+            async let papers = student.midterms()
             events = try await schedule
             assignments = try await homework
+            midterms = try await papers
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {
@@ -125,7 +188,7 @@ struct ScheduleRow: View {
 
     private var icon: String {
         switch event.type {
-        case .classMeeting: return "person.2"
+        case .classMeeting: return "person.2.fill"
         case .mock: return "doc.text.fill"
         case .midterm: return "flag.checkered"
         case .assignment: return "checklist"
@@ -135,18 +198,25 @@ struct ScheduleRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .foregroundStyle(Theme.accent)
-                .frame(width: 28)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Theme.accentSoft)
+                .frame(width: 38, height: 38)
+                .overlay(
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.accent)
+                )
             VStack(alignment: .leading, spacing: 2) {
-                Text(event.title).font(.subheadline.weight(.medium))
+                Text(event.title).font(.system(size: 15, weight: .semibold))
                 if !event.sub.isEmpty {
-                    Text(event.sub).font(.caption).foregroundStyle(.secondary)
+                    Text(event.sub).font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
                 }
             }
             Spacer()
             if !event.time.isEmpty {
-                Text(event.time).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(event.time)
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
         .cardStyle()
@@ -159,15 +229,111 @@ struct RetryNotice: View {
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 26))
+                .foregroundStyle(Theme.warning)
             Text(message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { Task { await retry() } }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle())
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
+        .padding(.vertical, 28)
+    }
+}
+
+/// A midterm result. Reachable from Home once the paper has been sat.
+struct MidtermResultView: View {
+    let attemptId: Int
+    let title: String
+
+    @Environment(Session.self) private var session
+    @State private var result: MidtermResult?
+    @State private var loadError: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                if let result {
+                    if result.released, let score = result.totalScore {
+                        VStack(spacing: 6) {
+                            Overline("Your score")
+                            Text(ScoreText.string(score))
+                                .font(.system(size: 64, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.accent)
+                            if let ceiling = result.scoreCeiling {
+                                Text("out of \(ScoreText.string(ceiling))")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            if let subject = result.subject, !subject.isEmpty {
+                                Chip(text: subject.humanisedSubject, tone: .accent)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .cardStyle(padding: 28)
+                    } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: "hourglass")
+                                .font(.system(size: 34))
+                                .foregroundStyle(Theme.warning)
+                            Text("Not released yet").font(.system(size: 17, weight: .bold))
+                            // Scored on submit, sealed until the teacher publishes.
+                            // Saying so stops an absent score reading as a bad one.
+                            Text("Your teacher will publish the results for this midterm.")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Theme.textSecondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .cardStyle(padding: 28)
+                    }
+
+                    if let cert = result.certificate, cert.available {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Certificate", systemImage: "rosette")
+                                .font(.system(size: 15, weight: .bold))
+                            if let rank = cert.rank, let cohort = cert.cohortSize {
+                                Text("Ranked \(ScoreText.string(rank)) of \(ScoreText.string(cohort))")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            if let raw = cert.downloadURL, let url = URL(string: raw) {
+                                Link(destination: url) {
+                                    Label("Open certificate", systemImage: "arrow.up.right.square")
+                                        .font(.system(size: 14, weight: .semibold))
+                                }
+                            }
+                        }
+                        .cardStyle()
+                    }
+                } else if let loadError {
+                    RetryNotice(message: loadError) { await load() }
+                } else {
+                    ProgressView().padding(.vertical, 60)
+                }
+            }
+            .padding(16)
+        }
+        .background(Theme.background)
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        loadError = nil
+        do {
+            result = try await session.results.midtermResult(attemptId: attemptId)
+        } catch let error as APIError {
+            loadError = error.errorDescription
+        } catch {
+            loadError = error.localizedDescription
+        }
     }
 }

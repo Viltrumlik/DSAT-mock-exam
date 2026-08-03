@@ -1,7 +1,7 @@
 import SwiftUI
 import MasterSATKit
 
-/// A study run: flashcards or a multiple-choice test over one set.
+/// A study run in any of the four modes.
 struct VocabStudyView: View {
     let mode: StudyMode
     let set: VocabSetDetail
@@ -10,16 +10,25 @@ struct VocabStudyView: View {
     @Environment(Session.self) private var session
     @Environment(\.scenePhase) private var scenePhase
     @State private var runner: VocabStudyRunner?
+    /// Matching and Speed decide for themselves when a run is over — they do not walk a
+    /// queue, so `isComplete` on the runner means nothing to them.
+    @State private var gameFinished = false
 
     var body: some View {
         Group {
             if let runner {
-                if runner.isComplete || runner.isFinished {
-                    VocabSummaryView(runner: runner, setTitle: set.title, onClose: onClose)
+                if gameFinished || runner.isComplete || runner.isFinished {
+                    VocabSummaryView(runner: runner, setTitle: set.title, mode: mode, onClose: onClose)
                 } else {
                     switch mode {
-                    case .flashcard: FlashcardView(runner: runner, onExit: exit)
-                    case .test: VocabTestView(runner: runner, allWords: set.words, onExit: exit)
+                    case .flashcard:
+                        FlashcardView(runner: runner, setTitle: set.title, onExit: exit)
+                    case .test:
+                        VocabTestView(runner: runner, setTitle: set.title, allWords: set.words, onExit: exit)
+                    case .matching:
+                        MatchingView(runner: runner, set: set, onExit: exit, onFinish: { gameFinished = true })
+                    case .speed:
+                        SpeedView(runner: runner, set: set, onExit: exit, onFinish: { gameFinished = true })
                     }
                 }
             } else {
@@ -39,8 +48,12 @@ struct VocabStudyView: View {
     @MainActor
     private func begin() async {
         guard runner == nil else { return }
-        let words = mode == .flashcard ? set.words.shuffled() : set.words.shuffled()
-        let runner = VocabStudyRunner(mode: mode.kitMode, words: words, setId: set.id, api: session.student)
+        let runner = VocabStudyRunner(
+            mode: mode.kitMode,
+            words: set.words.shuffled(),
+            setId: set.id,
+            api: session.student
+        )
         self.runner = runner
         await runner.begin()
     }
@@ -57,88 +70,102 @@ struct VocabStudyView: View {
 /// See the word, try to recall it, turn it over.
 struct FlashcardView: View {
     @Bindable var runner: VocabStudyRunner
+    let setTitle: String
     let onExit: @MainActor () -> Void
 
     @State private var isRevealed = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            StudyHeader(
-                title: "\(min(runner.answeredCount + 1, runner.words.count)) of \(runner.words.count)",
-                progress: runner.progress,
-                onExit: onExit
-            )
+        StudyShell(
+            title: "Flashcards",
+            subtitle: setTitle,
+            tone: Theme.accent,
+            progress: runner.progress,
+            trailing: AnyView(
+                StudyPill(
+                    text: "\(min(runner.answeredCount + 1, runner.words.count))/\(runner.words.count)",
+                    tone: Theme.accent
+                )
+            ),
+            onExit: onExit
+        ) {
+            VStack(spacing: 0) {
+                Spacer()
 
-            Spacer()
+                if let word = runner.currentWord {
+                    VStack(spacing: 18) {
+                        Text(word.word)
+                            // The card is one word on an otherwise empty screen. It can
+                            // afford to be big, and being big is the point.
+                            .font(.system(size: 44, weight: .bold, design: .rounded))
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.5)
 
-            if let word = runner.currentWord {
-                VStack(spacing: 16) {
-                    Text(word.word)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .multilineTextAlignment(.center)
-
-                    if isRevealed {
-                        VStack(spacing: 10) {
-                            Text(word.definition)
-                                .font(.title3)
-                                .multilineTextAlignment(.center)
-                            if let example = word.example, !example.isEmpty {
-                                Text(example)
-                                    .font(.subheadline.italic())
-                                    .foregroundStyle(.secondary)
+                        if isRevealed {
+                            VStack(spacing: 12) {
+                                Text(word.definition)
+                                    .font(.system(size: 21, weight: .medium))
                                     .multilineTextAlignment(.center)
+                                if let example = word.example, !example.isEmpty {
+                                    Text(example)
+                                        .font(.system(size: 16).italic())
+                                        .foregroundStyle(Theme.textSecondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                if !word.synonyms.isEmpty {
+                                    Text(word.synonyms.joined(separator: " · "))
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Theme.textLabel)
+                                }
                             }
-                            if !word.synonyms.isEmpty {
-                                Text(word.synonyms.joined(separator: " · "))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                            .transition(.opacity)
+                        } else {
+                            Text("Tap to see the meaning")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Theme.textLabel)
                         }
-                        .transition(.opacity)
-                    } else {
-                        Text("Tap to see the meaning")
-                            .font(.footnote)
-                            .foregroundStyle(.tertiary)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(30)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
+                            .fill(Theme.card)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
+                            .stroke(Theme.separator, lineWidth: 1)
+                    )
+                    .padding(.horizontal, 18)
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { isRevealed = true } }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(28)
-                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .padding(.horizontal, 20)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { isRevealed = true } }
-            }
 
-            Spacer()
+                Spacer()
 
-            if isRevealed {
-                HStack(spacing: 12) {
-                    Button {
-                        // Missed: record it AND put it back in the queue. Seeing it once
-                        // more is the whole point of a flashcard run.
-                        runner.requeueCurrentWord()
-                        advance(correct: false)
-                    } label: {
-                        Label("Still learning", systemImage: "arrow.counterclockwise")
-                            .frame(maxWidth: .infinity)
+                if isRevealed {
+                    HStack(spacing: 12) {
+                        Button {
+                            // Missed: record it AND put it back in the queue. Seeing it
+                            // once more is the whole point of a flashcard run.
+                            runner.requeueCurrentWord()
+                            advance(correct: false)
+                        } label: {
+                            Label("Still learning", systemImage: "arrow.counterclockwise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryButtonStyle(tone: Theme.warning, fullWidth: true))
+
+                        Button {
+                            advance(correct: true)
+                        } label: {
+                            Label("Got it", systemImage: "checkmark").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryButtonStyle(tone: Theme.success, fullWidth: true))
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .tint(.orange)
-
-                    Button {
-                        advance(correct: true)
-                    } label: {
-                        Label("Got it", systemImage: "checkmark")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .tint(.green)
+                    .padding(18)
+                } else {
+                    Color.clear.frame(height: 84)
                 }
-                .padding(20)
-            } else {
-                Color.clear.frame(height: 84)
             }
         }
     }
@@ -152,6 +179,7 @@ struct FlashcardView: View {
 /// Multiple choice: pick the definition.
 struct VocabTestView: View {
     @Bindable var runner: VocabStudyRunner
+    let setTitle: String
     let allWords: [VocabWord]
     let onExit: @MainActor () -> Void
 
@@ -159,26 +187,38 @@ struct VocabTestView: View {
     @State private var chosenId: Int?
 
     var body: some View {
-        VStack(spacing: 0) {
-            StudyHeader(
-                title: "\(min(runner.answeredCount + 1, runner.words.count)) of \(runner.words.count)",
-                progress: runner.progress,
-                onExit: onExit
-            )
-
+        StudyShell(
+            title: "Test",
+            subtitle: setTitle,
+            tone: Theme.success,
+            progress: runner.progress,
+            trailing: AnyView(
+                StudyPill(
+                    text: "\(min(runner.answeredCount + 1, runner.words.count))/\(runner.words.count)",
+                    tone: Theme.success
+                )
+            ),
+            onExit: onExit
+        ) {
             if let word = runner.currentWord {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
+                    VStack(spacing: 20) {
                         Text(word.word)
-                            .font(.system(size: 30, weight: .bold, design: .rounded))
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 20)
+                            .font(.system(size: 38, weight: .bold, design: .rounded))
+                            .multilineTextAlignment(.center)
+                            .minimumScaleFactor(0.5)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 26)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
+                                    .fill(Theme.successSoft)
+                            )
 
                         ForEach(options) { option in
                             optionRow(option, correctId: word.id)
                         }
                     }
-                    .padding(20)
+                    .padding(18)
                 }
                 // A fresh set of choices per word, and no answer carried over.
                 .id(word.id)
@@ -206,20 +246,25 @@ struct VocabTestView: View {
         } label: {
             HStack(alignment: .top, spacing: 10) {
                 Text(option.definition)
-                    .font(.subheadline)
+                    .font(.system(size: 18, weight: .medium))
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if showsVerdict && isCorrect {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.success)
                 } else if showsVerdict && isChosen {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.danger)
                 }
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                     .fill(background(isChosen: isChosen, isCorrect: isCorrect, showsVerdict: showsVerdict))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.separator, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }
@@ -227,94 +272,81 @@ struct VocabTestView: View {
     }
 
     private func background(isChosen: Bool, isCorrect: Bool, showsVerdict: Bool) -> Color {
-        guard showsVerdict else { return Color(.secondarySystemBackground) }
-        if isCorrect { return .green.opacity(0.15) }
-        if isChosen { return .red.opacity(0.12) }
-        return Color(.secondarySystemBackground)
+        guard showsVerdict else { return Theme.card }
+        if isCorrect { return Theme.successSoft }
+        if isChosen { return Theme.dangerSoft }
+        return Theme.card
     }
 
     /// The right definition plus three plausible wrong ones, in random order.
+    ///
+    /// Uses the same distractor rule as the games: never a word that means the same
+    /// thing, because that is a second correct answer rather than a wrong one.
     private func makeOptions(for word: VocabWord) {
-        let distractors = allWords
-            .filter { $0.id != word.id && !$0.definition.isEmpty }
-            .shuffled()
-            .prefix(3)
+        let distractors = VocabGames.pickDistractors(from: allWords, excluding: word, count: 3)
         options = ([word] + distractors).shuffled()
         chosenId = nil
-    }
-}
-
-struct StudyHeader: View {
-    let title: String
-    let progress: Double
-    let onExit: @MainActor () -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Button(action: onExit) {
-                    Image(systemName: "xmark").font(.subheadline.weight(.semibold))
-                }
-                .tint(.secondary)
-                Spacer()
-                Text(title).font(.subheadline.weight(.medium).monospacedDigit())
-                Spacer()
-                Image(systemName: "xmark").font(.subheadline).opacity(0)
-            }
-            ProgressView(value: progress).tint(Theme.accent)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Theme.examChrome)
     }
 }
 
 struct VocabSummaryView: View {
     @Bindable var runner: VocabStudyRunner
     let setTitle: String
+    let mode: StudyMode
     let onClose: @MainActor () -> Void
 
     @State private var isSaving = true
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 22) {
             Spacer()
 
-            Image(systemName: runner.summary?.setCompleted == true ? "checkmark.seal.fill" : "sparkles")
-                .font(.system(size: 44))
-                .foregroundStyle(Theme.accent)
+            ZStack {
+                Circle().fill(mode.tone.opacity(0.12)).frame(width: 96, height: 96)
+                Image(systemName: runner.summary?.setCompleted == true ? "checkmark.seal.fill" : "sparkles")
+                    .font(.system(size: 40))
+                    .foregroundStyle(mode.tone)
+            }
 
-            Text(setTitle).font(.title3.bold()).multilineTextAlignment(.center)
+            VStack(spacing: 4) {
+                Text(mode.title).font(.system(size: 15, weight: .bold)).foregroundStyle(mode.tone)
+                Text(setTitle)
+                    .font(.system(size: 22, weight: .bold))
+                    .multilineTextAlignment(.center)
+            }
 
             if isSaving {
                 ProgressView()
             } else {
                 Text("\(runner.correctCount) of \(runner.answeredCount) right")
-                    .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+                    .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
 
                 // No "you failed" anywhere: a study run is practice, and the number is
                 // information, not a verdict.
                 Text(runner.summary?.setCompleted == true
                      ? "Set complete. Come back tomorrow to keep it."
                      : "Progress saved. Every pass moves these words along.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
             if let error = runner.lastError?.errorDescription {
-                Text(error).font(.footnote).foregroundStyle(.orange).multilineTextAlignment(.center)
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.warning)
+                    .multilineTextAlignment(.center)
             }
 
             Button("Done", action: onClose)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(Theme.accent)
+                .buttonStyle(PrimaryButtonStyle(tone: mode.tone, fullWidth: true))
                 .disabled(isSaving)
 
             Spacer()
         }
         .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.examBackground)
         .task {
             // The finishing call — this is what marks the set complete.
             await runner.flush(isPartial: false)

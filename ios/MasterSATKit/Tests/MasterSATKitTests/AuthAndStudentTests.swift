@@ -98,33 +98,6 @@ import Testing
         ))
     }
 
-    @Test("The mock list keeps the resume attempt and the result attempt apart")
-    func mockListingSeparatesAttempts() async throws {
-        // Conflating them made a freshly-earned score vanish the moment a student started
-        // a retake.
-        server.handler = { _ in
-            .json(["results": [[
-                "mock_id": 3,
-                "title": "Full Mock 3",
-                "break_minutes": 10,
-                "module_count": 4,
-                "attempt_id": 91,
-                "state": "ENGLISH_M1_ACTIVE",
-                "in_progress": true,
-                "submitted": true,
-                "total_score": 1340,
-                "result_attempt_id": 80,
-            ]]])
-        }
-
-        let mocks = try await makeAPI().mocks()
-
-        let mock = try #require(mocks.first)
-        #expect(mock.attemptId == 91, "Resume reopens the live attempt")
-        #expect(mock.resultAttemptId == 80, "View result points at the last finished sitting")
-        #expect(mock.totalScore == 1340)
-    }
-
     @Test("Schedule events decode and get stable ids")
     func scheduleEventsDecode() async throws {
         server.handler = { _ in
@@ -182,16 +155,4 @@ import Testing
         #expect(user.isFrozen == false)
     }
 
-    @Test("Starting a mock attempt names the mock")
-    func startMockAttemptNamesTheMock() async throws {
-        let attempt = AttemptFixtures.data(AttemptFixtures.json())
-        server.handler = { _ in .init(status: 201, body: attempt) }
-
-        _ = try await makeAPI().startMockAttempt(mockId: 3)
-
-        let request = try #require(server.requests.first)
-        let body = try #require(request.httpBody)
-        let json = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
-        #expect(json["mock"] as? Int == 3)
-    }
 }

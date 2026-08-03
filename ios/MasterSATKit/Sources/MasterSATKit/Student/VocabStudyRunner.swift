@@ -58,10 +58,19 @@ public final class VocabStudyRunner {
 
     public func answer(correct: Bool) {
         guard let word = currentWord else { return }
-        pending.append(VocabResult(wordId: word.id, correct: correct))
+        record(wordId: word.id, correct: correct)
+        index += 1
+    }
+
+    /// Record one word's outcome without moving a cursor.
+    ///
+    /// Matching and Speed do not walk a queue — a pair is graded the moment it is found,
+    /// and a speed prompt the moment it is tapped — so they report by word id and drive
+    /// their own idea of "finished".
+    public func record(wordId: Int, correct: Bool) {
+        pending.append(VocabResult(wordId: wordId, correct: correct))
         answeredCount += 1
         if correct { correctCount += 1 }
-        index += 1
     }
 
     /// Flashcards loop: a word the student missed comes back at the end of the queue.

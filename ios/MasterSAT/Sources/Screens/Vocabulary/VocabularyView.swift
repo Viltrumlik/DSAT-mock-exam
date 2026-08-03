@@ -1,48 +1,7 @@
 import SwiftUI
 import MasterSATKit
 
-/// Which study modes the app offers.
-///
-/// The platform defines four. Two of them — Matching (a drag-to-pair grid) and Speed (a
-/// timed grid) — are built around a pointer and a wide screen; a phone-sized version would
-/// be a different game, not the same one, so they are left to the web for now rather than
-/// shipped as a worse imitation. Flashcards and Test are the learning loop: meet the word,
-/// then check you have it.
-enum StudyMode: String, CaseIterable, Identifiable {
-    case flashcard
-    case test
-
-    var id: String { rawValue }
-
-    var kitMode: VocabStudyMode {
-        switch self {
-        case .flashcard: return .flashcard
-        case .test: return .test
-        }
-    }
-
-    var title: String {
-        switch self {
-        case .flashcard: return "Flashcards"
-        case .test: return "Test"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .flashcard: return "See the word, recall the meaning. Missed words come back."
-        case .test: return "Pick the right definition. One pass, then a score."
-        }
-    }
-
-    var icon: String {
-        switch self {
-        case .flashcard: return "rectangle.on.rectangle"
-        case .test: return "checkmark.circle"
-        }
-    }
-}
-
+/// The words tab: what was assigned, the whole bank, and the student's own lists.
 struct VocabularyView: View {
     @Environment(Session.self) private var session
     @State private var groups: [VocabHomeworkGroup] = []
@@ -50,62 +9,67 @@ struct VocabularyView: View {
     @State private var isLoading = true
 
     var body: some View {
-        Group {
-            if isLoading {
-                ProgressView()
-            } else if let loadError {
-                RetryNotice(message: loadError) { await load() }
-            } else {
-                List {
-                    Section {
-                        NavigationLink {
-                            VocabBrowseView()
-                        } label: {
-                            Label("Browse the word bank", systemImage: "books.vertical")
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 12) {
+                        NavigationLink { VocabBrowseView() } label: {
+                            VocabShortcut(title: "Word bank", icon: "books.vertical.fill", tone: Theme.accent)
                         }
-                        NavigationLink {
-                            MySetsView()
-                        } label: {
-                            Label("My own sets", systemImage: "folder.badge.person.crop")
+                        .buttonStyle(.plain)
+                        NavigationLink { MySetsView() } label: {
+                            VocabShortcut(title: "My sets", icon: "folder.fill.badge.person.crop", tone: Theme.info)
                         }
+                        .buttonStyle(.plain)
                     }
 
-                    if groups.isEmpty {
-                        Section {
-                            ContentUnavailableView(
-                                "Nothing assigned yet",
-                                systemImage: "character.book.closed",
-                                description: Text("Vocabulary your teacher assigns will appear here.")
-                            )
+                    if isLoading {
+                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                    } else if let loadError {
+                        RetryNotice(message: loadError) { await load() }
+                    } else if groups.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "character.book.closed")
+                                .font(.system(size: 30))
+                                .foregroundStyle(Theme.textLabel)
+                            Text("Nothing assigned yet").font(.system(size: 16, weight: .bold))
+                            Text("Vocabulary your teacher sets will appear here — the word bank above is open to you meanwhile.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Theme.textSecondary)
+                                .multilineTextAlignment(.center)
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                        .cardStyle()
                     } else {
                         ForEach(groups) { group in
-                            Section {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Overline(group.assignmentTitle)
+                                if let due = group.dueAt, let date = JSONCoding.parseServerDate(due) {
+                                    Text("Due \(date.formatted(date: .abbreviated, time: .shortened))")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(Theme.textSecondary)
+                                }
                                 ForEach(group.sets) { set in
                                     NavigationLink(value: set) {
                                         VocabSetRow(set: set)
                                     }
-                                }
-                            } header: {
-                                Text(group.assignmentTitle)
-                            } footer: {
-                                if let due = group.dueAt, let date = JSONCoding.parseServerDate(due) {
-                                    Text("Due \(date.formatted(date: .abbreviated, time: .shortened))")
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
                     }
                 }
-                .listStyle(.insetGrouped)
-                .refreshable { await load() }
+                .padding(16)
             }
+            .background(Theme.background)
+            .navigationTitle("Words")
+            .navigationDestination(for: VocabSetSummary.self) { set in
+                VocabSetView(setId: set.id, title: set.title)
+            }
+            .refreshable { await load() }
+            .onAppear { Task { await load() } }
         }
-        .navigationTitle("Vocabulary")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(for: VocabSetSummary.self) { set in
-            VocabSetView(setId: set.id, title: set.title)
-        }
-        .task { await load() }
     }
 
     @MainActor
@@ -120,6 +84,26 @@ struct VocabularyView: View {
             loadError = error.localizedDescription
         }
         isLoading = false
+    }
+}
+
+struct VocabShortcut: View {
+    let title: String
+    let icon: String
+    let tone: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(tone)
+            Text(title).font(.system(size: 15, weight: .bold)).foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(tone.opacity(0.10))
+        )
     }
 }
 
@@ -140,16 +124,21 @@ struct VocabSetRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: set.completed ? "checkmark.circle.fill" : "circle")
-                .foregroundStyle(set.completed ? .green : .secondary)
+                .font(.system(size: 20))
+                .foregroundStyle(set.completed ? Theme.success : Theme.textLabel)
             VStack(alignment: .leading, spacing: 2) {
-                Text(set.title).font(.subheadline.weight(.medium))
+                Text(set.title).font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary)
                 // The section is what tells two sets apart: the bank names them "Set 1",
                 // "Set 2" per section, so titles collide across sections routinely and a
                 // student would see the same row twice with no way to choose.
-                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
             }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textLabel)
         }
-        .padding(.vertical, 2)
+        .cardStyle(padding: 14)
     }
 }
 
@@ -169,44 +158,27 @@ struct VocabSetView: View {
     var body: some View {
         Group {
             if let detail {
-                List {
-                    Section {
-                        HStack(spacing: 20) {
-                            progressPill("Mastered", mastered, .green)
-                            progressPill("Learning", learning, .orange)
-                            progressPill("New", detail.words.count - mastered - learning, .secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                    }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        progressCard(detail)
 
-                    Section("Study") {
-                        ForEach(StudyMode.allCases) { mode in
-                            Button { studying = mode } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: mode.icon)
-                                        .foregroundStyle(Theme.accent)
-                                        .frame(width: 26)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(mode.title).font(.subheadline.weight(.medium))
-                                        Text(mode.subtitle).font(.caption).foregroundStyle(.secondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Overline("Study")
+                            ForEach(StudyMode.allCases) { mode in
+                                ModeCard(mode: mode, isEnabled: detail.words.count >= mode.minimumWords) {
+                                    studying = mode
                                 }
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
-                            // A test over one word is a formality, not a check.
-                            .disabled(detail.words.count < (mode == .test ? 4 : 1))
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Overline("\(detail.words.count) words")
+                            ForEach(detail.words) { WordRow(word: $0) }
                         }
                     }
-
-                    Section("\(detail.words.count) words") {
-                        ForEach(detail.words) { WordRow(word: $0) }
-                    }
+                    .padding(16)
                 }
-                .listStyle(.insetGrouped)
+                .background(Theme.background)
             } else if let loadError {
                 RetryNotice(message: loadError) { await load() }
             } else {
@@ -227,11 +199,29 @@ struct VocabSetView: View {
         }
     }
 
-    private func progressPill(_ label: String, _ count: Int, _ colour: Color) -> some View {
-        VStack(spacing: 2) {
-            Text("\(count)").font(.title3.bold().monospacedDigit()).foregroundStyle(colour)
-            Text(label).font(.caption2).foregroundStyle(.secondary)
+    private func progressCard(_ detail: VocabSetDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 0) {
+                pill("Mastered", mastered, Theme.success)
+                pill("Learning", learning, Theme.warning)
+                pill("New", detail.words.count - mastered - learning, Theme.textSecondary)
+            }
+            Bar(
+                fraction: detail.words.isEmpty ? 0 : Double(mastered) / Double(detail.words.count),
+                tone: Theme.success
+            )
         }
+        .cardStyle()
+    }
+
+    private func pill(_ label: String, _ count: Int, _ colour: Color) -> some View {
+        VStack(spacing: 2) {
+            Text("\(count)")
+                .font(.system(size: 24, weight: .bold, design: .rounded).monospacedDigit())
+                .foregroundStyle(colour)
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     @MainActor
@@ -247,30 +237,71 @@ struct VocabSetView: View {
     }
 }
 
+struct ModeCard: View {
+    let mode: StudyMode
+    let isEnabled: Bool
+    let onTap: @MainActor () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 14) {
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .fill(mode.tone.opacity(0.12))
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: mode.icon)
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(mode.tone)
+                    )
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(mode.title).font(.system(size: 16, weight: .bold)).foregroundStyle(.primary)
+                    Text(isEnabled
+                         ? mode.subtitle
+                         // Named as a fact about the set, not a refusal.
+                         : "Needs at least \(mode.minimumWords) words.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textLabel)
+            }
+            .cardStyle(padding: 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
 struct WordRow: View {
     let word: VocabWord
 
     private var statusColour: Color {
         switch word.status {
-        case .mastered: return .green
-        case .learning: return .orange
-        case .new: return .secondary
+        case .mastered: return Theme.success
+        case .learning: return Theme.warning
+        case .new: return Theme.textLabel
         }
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Circle().fill(statusColour).frame(width: 8, height: 8).padding(.top, 6)
+            Circle().fill(statusColour).frame(width: 8, height: 8).padding(.top, 7)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(word.word).font(.subheadline.weight(.semibold))
+                    Text(word.word).font(.system(size: 15, weight: .bold))
                     if let part = word.partOfSpeech, !part.isEmpty {
-                        Text(part).font(.caption2.italic()).foregroundStyle(.secondary)
+                        Text(part).font(.system(size: 11).italic()).foregroundStyle(Theme.textLabel)
                     }
                 }
-                Text(word.definition).font(.caption).foregroundStyle(.secondary)
+                Text(word.definition).font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
             }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 2)
+        .cardStyle(padding: 12)
     }
 }

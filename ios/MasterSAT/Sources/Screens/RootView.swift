@@ -16,11 +16,13 @@ struct RootView: View {
     }
 }
 
-/// Five tabs, grouped the way the web sidebar groups them.
+/// Four tabs.
 ///
-/// The web has ten student routes. Ten tabs is not an option on a phone, and burying nine
-/// of them behind a "More" list is worse than a shallow grouping, so Learn and Practice
-/// are hubs — the same split the sidebar already makes between "Learn" and "Simulation".
+/// The app deliberately does not host the timed sittings — mocks, midterms, past papers,
+/// practice packs and the question bank are sat on a laptop, under exam conditions, and a
+/// phone is the wrong instrument for a three-hour paper. What the phone IS good for is the
+/// daily loop: what was set, working through it, and learning words. Midterm *results*
+/// still land here, on Home, because a score is worth checking anywhere.
 struct RootTabView: View {
     let user: CurrentUser
 
@@ -30,10 +32,8 @@ struct RootTabView: View {
                 .tabItem { Label("Home", systemImage: "house") }
             LearnHubView()
                 .tabItem { Label("Learn", systemImage: "graduationcap") }
-            PracticeHubView()
-                .tabItem { Label("Practice", systemImage: "play.rectangle") }
-            ProgressHubView(user: user)
-                .tabItem { Label("Progress", systemImage: "chart.line.uptrend.xyaxis") }
+            VocabularyView()
+                .tabItem { Label("Words", systemImage: "character.book.closed") }
             ProfileView(user: user)
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
         }
@@ -41,100 +41,47 @@ struct RootTabView: View {
     }
 }
 
-/// Classwork: the class itself, what was set, and the words to learn.
+/// Classwork: the class itself, what was set, and the quizzes inside it.
 struct LearnHubView: View {
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HubRow(
+            ScrollView {
+                VStack(spacing: 12) {
+                    HubCard(
                         title: "Classroom",
-                        subtitle: "Your classes, classmates and shared files",
-                        icon: "person.3",
+                        subtitle: "Your class, classmates and shared files",
+                        icon: "person.3.fill",
+                        tone: Theme.accent,
                         destination: ClassesListView()
                     )
-                    HubRow(
+                    HubCard(
                         title: "Homework",
                         subtitle: "Everything your teachers have set",
                         icon: "checklist",
+                        tone: Theme.info,
                         destination: HomeworkListView()
                     )
-                    HubRow(
+                    HubCard(
                         title: "Assessments",
                         subtitle: "Quizzes to work through",
                         icon: "square.and.pencil",
+                        tone: Theme.success,
                         destination: AssessmentsListView()
                     )
-                    HubRow(
-                        title: "Vocabulary",
-                        subtitle: "Word sets and your own lists",
-                        icon: "character.book.closed",
-                        destination: VocabularyView()
-                    )
                 }
+                .padding(16)
             }
-            .listStyle(.insetGrouped)
+            .background(Theme.background)
             .navigationTitle("Learn")
         }
     }
 }
 
-/// Everything a student can sit under their own steam.
-struct PracticeHubView: View {
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Full sittings") {
-                    HubRow(
-                        title: "Mock exams",
-                        subtitle: "A full test day, scored out of 1600",
-                        icon: "doc.text",
-                        destination: MocksScreen()
-                    )
-                    HubRow(
-                        title: "Midterms",
-                        subtitle: "Scheduled class papers",
-                        icon: "flag.checkered",
-                        destination: MidtermsScreen()
-                    )
-                    HubRow(
-                        title: "Invigilated sitting",
-                        subtitle: "Join with the code your teacher reads out",
-                        icon: "person.badge.key",
-                        destination: SittingsView()
-                    )
-                }
-                Section("Practice") {
-                    HubRow(
-                        title: "Past papers",
-                        subtitle: "Practice papers you can pause",
-                        icon: "tray.full",
-                        destination: PastpapersScreen()
-                    )
-                    HubRow(
-                        title: "Practice tests",
-                        subtitle: "Curated sets of sections",
-                        icon: "flask",
-                        destination: PracticePacksView()
-                    )
-                    HubRow(
-                        title: "Question bank",
-                        subtitle: "Single questions, by skill",
-                        icon: "square.stack.3d.up",
-                        destination: QuestionBankView()
-                    )
-                }
-            }
-            .listStyle(.insetGrouped)
-            .navigationTitle("Practice")
-        }
-    }
-}
-
-struct HubRow<Destination: View>: View {
+struct HubCard<Destination: View>: View {
     let title: String
     let subtitle: String
     let icon: String
+    let tone: Color
     let destination: Destination
 
     var body: some View {
@@ -142,17 +89,26 @@ struct HubRow<Destination: View>: View {
             destination
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 17))
-                    .foregroundStyle(Theme.accent)
-                    .frame(width: 28)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.body.weight(.medium))
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .fill(tone.opacity(0.12))
+                    .frame(width: 46, height: 46)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(tone)
+                    )
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.system(size: 16, weight: .bold)).foregroundStyle(.primary)
+                    Text(subtitle).font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
                 }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textLabel)
             }
-            .padding(.vertical, 4)
+            .cardStyle()
         }
+        .buttonStyle(.plain)
     }
 }
 
@@ -171,15 +127,22 @@ struct SignInView: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 26) {
             Spacer()
 
-            VStack(spacing: 8) {
-                Image(systemName: "graduationcap.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(Theme.accent)
-                Text("MasterSAT").font(.largeTitle.bold())
-                Text("Sign in to continue").foregroundStyle(.secondary)
+            VStack(spacing: 10) {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Theme.accentSoft)
+                    .frame(width: 72, height: 72)
+                    .overlay(
+                        Image(systemName: "graduationcap.fill")
+                            .font(.system(size: 32, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                    )
+                Text("MasterSAT").font(.system(size: 30, weight: .bold))
+                Text("Sign in to continue")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             VStack(spacing: 12) {
@@ -206,7 +169,7 @@ struct SignInView: View {
                 // them.
                 Text(message)
                     .font(.footnote)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.danger)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -215,17 +178,16 @@ struct SignInView: View {
                 if session.isWorking {
                     ProgressView().tint(.white).frame(maxWidth: .infinity)
                 } else {
-                    Text("Sign in").bold().frame(maxWidth: .infinity)
+                    Text("Sign in").frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .tint(Theme.accent)
+            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(!canSubmit)
 
             Spacer()
         }
         .padding(24)
+        .background(Theme.background)
     }
 
     private func submit() {

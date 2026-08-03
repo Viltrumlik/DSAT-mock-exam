@@ -3,9 +3,10 @@ import MasterSATKit
 
 /// Working through one assessment.
 ///
-/// Deliberately unlike the exam runner: no clock, no fullscreen plea, no off-screen
-/// reporting. An assessment is homework — a student is allowed to put it down, look
-/// something up, and come back. What it shares is the discipline about saving.
+/// Deliberately unlike the exam runner: no clock, no off-screen reporting. An assessment
+/// is homework — a student is allowed to put it down, look something up, and come back.
+/// What it borrows from the web runner is the chrome: zoom, a flag, and a question map,
+/// because those are the three things a student reaches for on a long set.
 struct AssessmentRunnerView: View {
     let attemptId: Int
     let onClose: @MainActor () -> Void
@@ -14,61 +15,36 @@ struct AssessmentRunnerView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var runner: AssessmentRunner?
     @State private var showSubmitConfirmation = false
+    @State private var showMap = false
     @State private var didSubmit = false
+    /// Text scale. Matches the web's 70%–150% range and its 10-point steps.
+    @AppStorage("assessmentZoom") private var zoom: Double = 1.0
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let runner {
-                    if runner.isLoading {
-                        ProgressView()
-                    } else if didSubmit {
-                        AssessmentSubmittedView(attemptId: attemptId, onClose: onClose)
-                    } else if let question = runner.currentQuestion {
-                        questionBody(runner, question)
-                    } else if let error = runner.lastError {
-                        RetryNotice(message: error.errorDescription ?? "Could not load this assessment.") {
-                            await runner.load()
-                        }
-                    } else {
-                        ContentUnavailableView(
-                            "Nothing to answer",
-                            systemImage: "questionmark.circle",
-                            description: Text("This assessment has no questions yet.")
-                        )
+        Group {
+            if let runner {
+                if runner.isLoading {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if didSubmit {
+                    AssessmentSubmittedView(onClose: onClose)
+                } else if let question = runner.currentQuestion {
+                    body(runner, question)
+                } else if let error = runner.lastError {
+                    RetryNotice(message: error.errorDescription ?? "Could not load this assessment.") {
+                        await runner.load()
                     }
                 } else {
-                    ProgressView()
+                    ContentUnavailableView(
+                        "Nothing to answer",
+                        systemImage: "questionmark.circle",
+                        description: Text("This assessment has no questions yet.")
+                    )
                 }
-            }
-            .navigationTitle(runner?.bundle?.set?.title ?? "Assessment")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    // Gone once it is handed in: there is nothing left to save, and
-                    // "Save and exit" over a submitted paper reads like the work is
-                    // still open.
-                    if !didSubmit {
-                        Button("Save and exit") {
-                            Task {
-                                // Never leave without writing. iOS can kill a backgrounded
-                                // app outright, so "we'll send it later" is not a promise
-                                // the app can keep.
-                                await runner?.flush()
-                                onClose()
-                            }
-                        }
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if let runner, !didSubmit {
-                        Text("\(runner.answeredCount)/\(runner.questions.count)")
-                            .font(.subheadline.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .background(Theme.examBackground)
         .task {
             if runner == nil {
                 let created = AssessmentRunner(attemptId: attemptId, api: session.assessments)
@@ -100,28 +76,22 @@ struct AssessmentRunnerView: View {
         }
     }
 
+    // MARK: - Layout
+
     @ViewBuilder
-    private func questionBody(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
+    private func body(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
         VStack(spacing: 0) {
+            header(runner)
+            Divider()
+
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Text("Question \(runner.currentIndex + 1) of \(runner.questions.count)")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            runner.toggleFlag(question.id)
-                        } label: {
-                            Image(systemName: runner.flagged.contains(question.id) ? "flag.fill" : "flag")
-                                .foregroundStyle(runner.flagged.contains(question.id) ? Theme.flagged : .secondary)
-                        }
-                    }
+                VStack(alignment: .leading, spacing: 18) {
+                    questionHeader(runner, question)
 
                     if let stimulus = question.questionPrompt, !stimulus.isEmpty {
-                        RichText(html: stimulus)
+                        RichText(html: stimulus, scale: zoom)
                     }
-                    RichText(html: question.prompt)
+                    RichText(html: question.prompt, scale: zoom)
 
                     if let image = question.questionImage, !image.isEmpty, let url = URL(string: image) {
                         AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { ProgressView() }
@@ -134,14 +104,92 @@ struct AssessmentRunnerView: View {
                         // Say it rather than showing a silent tick. A student who loses
                         // signal mid-quiz deserves to know what has not landed.
                         Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.warning)
                     }
                 }
-                .padding(16)
+                .padding(18)
             }
 
-            navigationBar(runner)
+            footer(runner)
+        }
+        .sheet(isPresented: $showMap) {
+            QuestionMapSheet(runner: runner) { index in
+                runner.go(to: index)
+                showMap = false
+            }
+            .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// Title on the left, zoom on the right — the web's runner header, at phone width.
+    private func header(_ runner: AssessmentRunner) -> some View {
+        HStack(spacing: 12) {
+            Button("Save and exit") {
+                Task {
+                    // Never leave without writing. iOS can kill a backgrounded app
+                    // outright, so "we'll send it later" is not a promise the app can keep.
+                    await runner.flush()
+                    onClose()
+                }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.accent)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 2) {
+                zoomButton("textformat.size.smaller", enabled: zoom > 0.7) {
+                    zoom = max(0.7, (zoom - 0.1).rounded(toPlaces: 2))
+                }
+                Text("\(Int(zoom * 100))%")
+                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 40)
+                zoomButton("textformat.size.larger", enabled: zoom < 1.5) {
+                    zoom = min(1.5, (zoom + 0.1).rounded(toPlaces: 2))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Theme.examChrome)
+    }
+
+    private func zoomButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .semibold))
+                .frame(width: 34, height: 30)
+        }
+        .disabled(!enabled)
+        .foregroundStyle(enabled ? Theme.textSecondary : Theme.textLabel.opacity(0.5))
+    }
+
+    private func questionHeader(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
+        HStack {
+            Text("Question \(runner.currentIndex + 1) of \(runner.questions.count)")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.textLabel)
+                .tracking(0.6)
+            Spacer()
+            Button {
+                runner.toggleFlag(question.id)
+            } label: {
+                let isFlagged = runner.flagged.contains(question.id)
+                HStack(spacing: 5) {
+                    Image(systemName: isFlagged ? "flag.fill" : "flag")
+                        .font(.system(size: 12, weight: .bold))
+                    Text(isFlagged ? "Flagged" : "Flag")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(isFlagged ? Theme.flagged : Theme.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(isFlagged ? Theme.flagged.opacity(0.14) : Theme.surface2))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -154,7 +202,8 @@ struct AssessmentRunnerView: View {
                     AssessmentChoiceRow(
                         choice: choice,
                         imageURL: question.optionImages[choice.id],
-                        isSelected: runner.answers[question.id] == .string(choice.id)
+                        isSelected: runner.answers[question.id] == .string(choice.id),
+                        scale: zoom
                     ) {
                         // Tapping the chosen answer again clears it — a student who
                         // changes their mind to "no answer" must be able to say so.
@@ -166,16 +215,26 @@ struct AssessmentRunnerView: View {
         case .boolean:
             HStack(spacing: 10) {
                 ForEach([true, false], id: \.self) { value in
+                    let chosen = runner.answers[question.id] == .bool(value)
                     Button {
                         runner.setAnswer(.bool(value), for: question.id)
                     } label: {
                         Text(value ? "True" : "False")
-                            .font(.subheadline.weight(.semibold))
+                            .font(.system(size: 16 * zoom, weight: .bold))
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 16)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                                    .fill(chosen ? Theme.accentSoft : Theme.card)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                                    .stroke(chosen ? Theme.accent : Theme.separator, lineWidth: chosen ? 2 : 1)
+                            )
+                            .foregroundStyle(chosen ? Theme.accent : Color.primary)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.bordered)
-                    .tint(runner.answers[question.id] == .bool(value) ? Theme.accent : .secondary)
+                    .buttonStyle(.plain)
                 }
             }
         case .numeric, .shortText, .unknown:
@@ -189,48 +248,79 @@ struct AssessmentRunnerView: View {
                     set: { runner.setAnswer($0.isEmpty ? .null : .string($0), for: question.id, immediate: false) }
                 )
             )
-            .textFieldStyle(.roundedBorder)
+            .font(.system(size: 18 * zoom, weight: .medium))
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.card)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.separator, lineWidth: 1)
+            )
             .keyboardType(question.questionType == .numeric ? .numbersAndPunctuation : .default)
             .autocorrectionDisabled(question.questionType == .numeric)
         }
     }
 
-    private func navigationBar(_ runner: AssessmentRunner) -> some View {
-        HStack(spacing: 12) {
+    /// Previous · question map · next — the web's bottom bar.
+    private func footer(_ runner: AssessmentRunner) -> some View {
+        HStack(spacing: 10) {
             Button {
                 runner.previous()
             } label: {
-                Label("Back", systemImage: "chevron.left")
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(width: 46, height: 44)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(SecondaryButtonStyle())
             .disabled(runner.currentIndex == 0)
+            .opacity(runner.currentIndex == 0 ? 0.4 : 1)
 
-            Spacer()
+            Button {
+                showMap = true
+            } label: {
+                HStack(spacing: 6) {
+                    Text("\(runner.currentIndex + 1) / \(runner.questions.count)")
+                        .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    Image(systemName: "chevron.up").font(.system(size: 10, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                        .fill(Color.primary.opacity(0.85))
+                )
+            }
+            .buttonStyle(.plain)
 
             if runner.currentIndex == runner.questions.count - 1 {
                 Button {
                     showSubmitConfirmation = true
                 } label: {
                     if runner.isSubmitting {
-                        ProgressView().tint(.white)
+                        ProgressView().tint(.white).frame(maxWidth: .infinity)
                     } else {
-                        Text("Hand in").bold()
+                        Text("Hand in").frame(maxWidth: .infinity)
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.accent)
+                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
                 .disabled(runner.isSubmitting)
             } else {
                 Button {
                     runner.next()
                 } label: {
-                    Label("Next", systemImage: "chevron.right")
+                    HStack(spacing: 6) {
+                        Text("Next")
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.accent)
+                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(Theme.examChrome)
     }
 
@@ -243,22 +333,94 @@ struct AssessmentRunnerView: View {
     }
 }
 
+/// The question map: every question at a glance, answered / flagged / blank.
+struct QuestionMapSheet: View {
+    let runner: AssessmentRunner
+    let onJump: @MainActor (Int) -> Void
+
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 5)
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(Array(runner.questions.enumerated()), id: \.element.id) { index, question in
+                            let isAnswered = runner.answers[question.id].map { !$0.isEmpty } ?? false
+                            let isFlagged = runner.flagged.contains(question.id)
+                            let isCurrent = index == runner.currentIndex
+
+                            Button { onJump(index) } label: {
+                                ZStack(alignment: .topTrailing) {
+                                    Text("\(index + 1)")
+                                        .font(.system(size: 15, weight: .bold).monospacedDigit())
+                                        .foregroundStyle(isCurrent ? .white : (isAnswered ? Theme.success : Color.primary))
+                                        .frame(maxWidth: .infinity, minHeight: 48)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                                                .fill(isCurrent ? Theme.accent : (isAnswered ? Theme.successSoft : Theme.surface2))
+                                        )
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                                                .stroke(isCurrent ? Theme.accent : Theme.separator, lineWidth: 1)
+                                        )
+                                    if isFlagged {
+                                        Image(systemName: "flag.fill")
+                                            .font(.system(size: 9))
+                                            .foregroundStyle(Theme.flagged)
+                                            .padding(5)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    HStack(spacing: 14) {
+                        legend("Current", Theme.accent)
+                        legend("Answered", Theme.successSoft)
+                        legend("Blank", Theme.surface2)
+                        HStack(spacing: 5) {
+                            Image(systemName: "flag.fill").font(.system(size: 9)).foregroundStyle(Theme.flagged)
+                            Text("Flagged").font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .background(Theme.background)
+            .navigationTitle("Question navigation")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func legend(_ label: String, _ colour: Color) -> some View {
+        HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 3).fill(colour).frame(width: 11, height: 11)
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+        }
+    }
+}
+
 struct AssessmentChoiceRow: View {
     let choice: AssessmentChoice
     let imageURL: String?
     let isSelected: Bool
+    var scale: Double = 1.0
     let onTap: @MainActor () -> Void
 
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top, spacing: 12) {
                 Text(choice.id)
-                    .font(.subheadline.bold())
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(isSelected ? Theme.accent : Color(.tertiarySystemFill)))
+                    .font(.system(size: 15 * scale, weight: .bold))
+                    .frame(width: 32 * scale, height: 32 * scale)
+                    .background(Circle().fill(isSelected ? Theme.accent : Theme.surface2))
                     .foregroundStyle(isSelected ? .white : Color.primary)
                 VStack(alignment: .leading, spacing: 6) {
-                    RichText(html: choice.text)
+                    RichText(html: choice.text, scale: scale)
                     if let imageURL, !imageURL.isEmpty, let url = URL(string: imageURL) {
                         AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { EmptyView() }
                             .frame(maxHeight: 160)
@@ -266,12 +428,18 @@ struct AssessmentChoiceRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(isSelected ? Theme.accent : Color(.separator), lineWidth: isSelected ? 2 : 1)
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .fill(isSelected ? Theme.accentSoft : Theme.card)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(isSelected ? Theme.accent : Theme.separator, lineWidth: isSelected ? 2 : 1)
+            )
+            // A button's label is only hit-testable where it DRAWS, so without this only
+            // the glyphs themselves respond to a tap.
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -279,24 +447,34 @@ struct AssessmentChoiceRow: View {
 }
 
 struct AssessmentSubmittedView: View {
-    let attemptId: Int
     let onClose: @MainActor () -> Void
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 56))
-                .foregroundStyle(.green)
-            Text("Handed in").font(.title2.bold())
+            ZStack {
+                Circle().fill(Theme.successSoft).frame(width: 96, height: 96)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 40, weight: .bold))
+                    .foregroundStyle(Theme.success)
+            }
+            Text("Handed in").font(.system(size: 24, weight: .bold))
             Text("Your teacher will see it. Marking may take a little while.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Done") { onClose() }
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.accent)
-                .controlSize(.large)
+                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                .padding(.horizontal, 40)
         }
         .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+extension Double {
+    /// Keeps the zoom readout off floating-point dust like 0.7999999999.
+    func rounded(toPlaces places: Int) -> Double {
+        let divisor = pow(10.0, Double(places))
+        return (self * divisor).rounded() / divisor
     }
 }

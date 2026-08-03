@@ -140,3 +140,71 @@ class HomeworkMetadataTests(TestCase):
         self.assertEqual(item["contents"][0]["kind"], "PASTPAPER")
         self.assertEqual(item["contents"][0]["title"], "March 2026 Int. B")
         self.assertIsNotNone(item["assigned_at"])
+
+
+class MyAssignmentsVocabularyTests(TestCase):
+    """`/my-assignments/` must carry the vocabulary attached to a homework.
+
+    It hand-rolls its payload for batching rather than going through
+    AssignmentSerializer, and it used to omit `vocab_homeworks` entirely — so a
+    homework whose whole content was a word set looked EMPTY to any client that
+    trusts this endpoint, which is what the phone does.
+    """
+
+    def setUp(self):
+        self.owner = User.objects.create_user("vocab_owner@t.com", "secret123")
+        self.classroom = Classroom.objects.create(
+            name="Vocab class", subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
+        )
+        self.student = User.objects.create_user("vocab_student@t.com", "secret123")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self.client = APIClient()
+
+    def _my_assignments(self):
+        self.client.force_authenticate(self.student)
+        return self.client.get("/api/classes/my-assignments/").json()["items"]
+
+    def test_attached_vocabulary_sets_reach_the_student(self):
+        from vocabulary.models import (
+            VocabHomework, VocabSection, VocabSet, VocabSetItem, VocabWord,
+        )
+
+        section = VocabSection.objects.create(title="650 Hard Words", slug="hard-650", is_published=True)
+        vset = VocabSet.objects.create(section=section, title="Set 1", order=1)
+        for i in range(3):
+            word = VocabWord.objects.create(section=section, word=f"w{i}", definition=f"d{i}")
+            VocabSetItem.objects.create(vocab_set=vset, word=word, order=i)
+
+        assignment = Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="Week 4 — Vocabulary",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+        )
+        VocabHomework.objects.create(assignment=assignment, vocab_set=vset, classroom=self.classroom)
+
+        row = next(i for i in self._my_assignments() if i["id"] == assignment.id)
+
+        self.assertEqual(len(row["vocab_homeworks"]), 1)
+        link = row["vocab_homeworks"][0]
+        self.assertEqual(link["set_id"], vset.id)
+        self.assertEqual(link["word_count"], 3)
+        # The section is what tells two sets apart — the bank numbers them per section,
+        # so "Set 1" collides constantly.
+        self.assertEqual(link["section_title"], "650 Hard Words")
+        self.assertEqual(link["state"], "not_started")
+
+    def test_a_homework_with_no_vocabulary_reports_an_empty_list(self):
+        # Not null: a client that treats null as "field missing" would be right to.
+        assignment = Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title="Plain homework",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+        )
+
+        row = next(i for i in self._my_assignments() if i["id"] == assignment.id)
+
+        self.assertEqual(row["vocab_homeworks"], [])
