@@ -34,8 +34,27 @@ final class Session {
     let auth: AuthService
     let student: StudentAPI
 
-    init(config: APIConfig = .production(appVersion: Bundle.main.appVersion)) {
-        let storage = KeychainTokenStorage()
+    /// Where a debug build talks to, if it was told.
+    ///
+    /// iOS turns `-apiBaseURL http://localhost:8000` on the launch command into a
+    /// UserDefaults key, so a local backend needs no code change and no scheme edit —
+    /// just `xcrun simctl launch … -apiBaseURL …`. Compiled out of release builds
+    /// entirely: a shipped app must not be pointable at another host.
+    static func defaultConfig() -> APIConfig {
+        let version = Bundle.main.appVersion
+        #if DEBUG
+        if let raw = UserDefaults.standard.string(forKey: "apiBaseURL"), let url = URL(string: raw) {
+            return APIConfig(baseURL: url, clientIdentifier: "ios/\(version)")
+        }
+        #endif
+        return .production(appVersion: version)
+    }
+
+    init(config: APIConfig = Session.defaultConfig()) {
+        // Write-through: the live pair is held in memory and mirrored to the Keychain. If
+        // the Keychain refuses a write, the session keeps working for this launch instead
+        // of collapsing into "please sign in" on the very next request.
+        let storage = WriteThroughTokenStorage.keychain()
         // `onSignOut` fires from deep inside a refresh that the server rejected — often
         // while a screen is mid-request — so it only records the fact. The UI reacts on
         // the main actor.

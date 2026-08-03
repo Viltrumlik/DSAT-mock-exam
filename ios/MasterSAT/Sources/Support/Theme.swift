@@ -24,9 +24,26 @@ extension View {
     func cardStyle() -> some View {
         self
             .padding(16)
+            // Cards must claim the full width. A `ScrollView` sizes itself to its content,
+            // so cards that only take the width of their own text drag the whole
+            // navigation area in with them — which is how the dashboard ended up in a
+            // narrow centre column with its title clipped to a single letter.
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(.secondarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
+}
+
+/// SAT scores, written the way a score is written.
+///
+/// `Text("\(score)")` interpolates into a `LocalizedStringKey` and formats the number for
+/// the current locale — so 1450 renders as "1,450", or "1 450" in Uzbek. A section or
+/// total score is an identifier, not a quantity; it never carries a thousands separator.
+enum ScoreText {
+    static func string(_ value: Int) -> String { String(value) }
+    static func string(_ value: Double) -> String { String(Int(value.rounded())) }
+    static func string(_ value: Int?) -> String { value.map(String.init) ?? "—" }
+    static func string(_ value: Double?) -> String { value.map { String(Int($0.rounded())) } ?? "—" }
 }
 
 /// Status wording shown to students.

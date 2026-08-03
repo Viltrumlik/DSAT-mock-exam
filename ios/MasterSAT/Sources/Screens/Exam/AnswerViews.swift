@@ -62,6 +62,12 @@ struct ChoiceRow: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                // Without this the button is only hit-testable where it actually draws —
+                // the letter and the glyphs of the option text. The rest of the row, which
+                // is most of it, silently ignored taps. A student tapping the obvious big
+                // target and getting nothing is the worst possible failure here: they
+                // assume they answered.
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 

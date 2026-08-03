@@ -154,7 +154,13 @@ public struct PracticeTestDetails: Codable, Sendable, Equatable {
     /// Server-decided Desmos gate. The client must not decide this for itself.
     public let calculatorEnabled: Bool?
     public let totalQuestionCount: Int?
+    /// The ACTIVE section's modules. Empty before the exam starts — there is no active
+    /// section yet — so never count these to describe the paper.
     public let modules: [ModuleSummary]
+    /// The whole paper, in every state. This is what a pre-exam screen must describe.
+    public let totalModuleCount: Int?
+    public let totalTimeMinutes: Int?
+    public let breakMinutes: Int?
 
     public init(
         id: Int,
@@ -165,7 +171,10 @@ public struct PracticeTestDetails: Codable, Sendable, Equatable {
         level: String? = nil,
         calculatorEnabled: Bool? = nil,
         totalQuestionCount: Int? = nil,
-        modules: [ModuleSummary] = []
+        modules: [ModuleSummary] = [],
+        totalModuleCount: Int? = nil,
+        totalTimeMinutes: Int? = nil,
+        breakMinutes: Int? = nil
     ) {
         self.id = id
         self.subject = subject
@@ -176,6 +185,9 @@ public struct PracticeTestDetails: Codable, Sendable, Equatable {
         self.calculatorEnabled = calculatorEnabled
         self.totalQuestionCount = totalQuestionCount
         self.modules = modules
+        self.totalModuleCount = totalModuleCount
+        self.totalTimeMinutes = totalTimeMinutes
+        self.breakMinutes = breakMinutes
     }
 
     public var isMath: Bool { subject.uppercased() == "MATH" }
@@ -186,6 +198,9 @@ public struct PracticeTestDetails: Codable, Sendable, Equatable {
         case mockKind = "mock_kind"
         case calculatorEnabled = "calculator_enabled"
         case totalQuestionCount = "total_question_count"
+        case totalModuleCount = "total_module_count"
+        case totalTimeMinutes = "total_time_minutes"
+        case breakMinutes = "break_minutes"
     }
 }
 

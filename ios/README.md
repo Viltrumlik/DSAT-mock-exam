@@ -60,19 +60,34 @@ matters. Do not silence concurrency errors in the kit.
 
 ## Verification status
 
-Be precise about this, because "it compiles" and "it is written" are different claims.
-
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build | ✅ `swift build` clean |
-| `MasterSATKit` — tests | ✅ 73 tests passing |
-| Backend native-auth change | ✅ 10 Django tests passing |
-| `MasterSAT` app target — syntax | ✅ `swiftc -parse` clean on all files |
-| `MasterSAT` app target — type check / build | ❌ **not run** — requires Xcode |
-| On-device / simulator run | ❌ **not run** — requires Xcode |
+| `MasterSATKit` — build + tests | ✅ 79 tests passing |
+| Backend (`mocks` + native auth) | ✅ 90 Django tests passing |
+| `MasterSAT` app target — build | ✅ builds for the simulator (Xcode 26.3) |
+| Sign in → dashboard → exams → runner | ✅ driven end to end against a local backend |
 
-Expect to fix ordinary compile errors on the first build of the app target. The kit it
-depends on is exercised by tests; the view layer is not.
+Two pre-existing failures in `users.tests.test_role_escalation_and_scoping` were confirmed
+present on a clean tree and are unrelated to this work.
+
+### Running against a local backend
+
+```bash
+cd backend && python3 manage.py migrate && python3 manage.py runserver 0.0.0.0:8000
+```
+
+```bash
+xcrun simctl launch booted uz.mastersat.app -apiBaseURL "http://localhost:8000"
+```
+
+`-apiBaseURL` lands in `UserDefaults`, which `Session.defaultConfig()` reads — in DEBUG
+builds only, so a shipped app can never be pointed at another host. ATS permits this via
+`NSAllowsLocalNetworking`, which covers localhost and `.local` without relaxing anything on
+the internet.
+
+Build with signing enabled. `CODE_SIGNING_ALLOWED=NO` produces an unsigned bundle with no
+entitlements, and the Keychain then refuses every write — the app signs in and is
+immediately signed out again.
 
 ## Backend contract
 

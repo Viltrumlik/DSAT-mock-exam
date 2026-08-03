@@ -47,6 +47,11 @@
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>
 		<false/>
+		<!-- Permits plain HTTP to localhost and .local only, so a debug build can talk to
+		     a dev server. It does NOT relax ATS for anything on the internet — that is the
+		     whole reason to use this key instead of an arbitrary-loads exception. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
 	</dict>
 </dict>
 </plist>

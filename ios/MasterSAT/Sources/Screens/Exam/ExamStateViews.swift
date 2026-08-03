@@ -12,8 +12,15 @@ struct ExamWelcomeView: View {
 
     private var details: PracticeTestDetails { attempt.practiceTestDetails }
 
+    /// From the whole-paper fields, never from `modules` — that list holds the ACTIVE
+    /// section only and is empty on the screen shown before the exam starts, which is
+    /// exactly this one. Counting it advertised a 0-module, 0-minute exam.
+    private var moduleCount: Int {
+        details.totalModuleCount ?? details.modules.count
+    }
+
     private var totalMinutes: Int {
-        details.modules.reduce(0) { $0 + $1.timeLimitMinutes }
+        details.totalTimeMinutes ?? details.modules.reduce(0) { $0 + $1.timeLimitMinutes }
     }
 
     var body: some View {
@@ -21,7 +28,7 @@ struct ExamWelcomeView: View {
             VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(details.title).font(.title2.bold())
-                    Text("\(details.modules.count) modules · \(totalMinutes) minutes")
+                    Text("\(moduleCount) modules · \(totalMinutes) minutes")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -179,10 +186,10 @@ struct MockResultsView: View {
                 Text(results.title ?? "Your result").font(.title3.bold())
 
                 VStack(spacing: 4) {
-                    Text(results.totalScore.map { String(Int($0)) } ?? "—")
+                    Text(ScoreText.string(results.totalScore))
                         .font(.system(size: 68, weight: .bold, design: .rounded).monospacedDigit())
                         .foregroundStyle(Theme.accent)
-                    Text("out of \(Int(results.scoreCeiling ?? 1600))")
+                    Text("out of " + ScoreText.string(results.scoreCeiling ?? 1600))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -208,7 +215,7 @@ struct MockResultsView: View {
 
     private func sectionScore(_ title: String, _ value: Double?) -> some View {
         VStack(spacing: 2) {
-            Text(value.map { String(Int($0)) } ?? "—")
+            Text(ScoreText.string(value))
                 .font(.title2.bold().monospacedDigit())
             Text(title).font(.caption).foregroundStyle(.secondary)
         }

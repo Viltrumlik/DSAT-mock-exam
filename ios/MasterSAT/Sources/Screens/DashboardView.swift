@@ -45,6 +45,7 @@ struct DashboardView: View {
                         section("Coming up", events: upcoming, emptyText: "Nothing scheduled yet.")
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
             }
             .background(Color(.systemGroupedBackground))
@@ -59,7 +60,7 @@ struct DashboardView: View {
             Text("Salom, \(user.firstName ?? user.displayName)")
                 .font(.title2.bold())
             if let target = user.targetScore {
-                Text("Target \(target)").font(.subheadline).foregroundStyle(.secondary)
+                Text("Target " + ScoreText.string(target)).font(.subheadline).foregroundStyle(.secondary)
             }
         }
     }

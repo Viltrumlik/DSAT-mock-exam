@@ -135,7 +135,7 @@ struct MockRow: View {
                 Spacer()
 
                 if let score = mock.totalScore {
-                    Text("\(Int(score))")
+                    Text(ScoreText.string(score))
                         .font(.title3.bold().monospacedDigit())
                         .foregroundStyle(Theme.accent)
                 }
@@ -166,9 +166,9 @@ struct ProfileView: View {
                 }
 
                 Section("Goals") {
-                    LabeledContent("Target score", value: user.targetScore.map(String.init) ?? "—")
-                    LabeledContent("Reading & Writing", value: user.targetEnglish.map(String.init) ?? "—")
-                    LabeledContent("Math", value: user.targetMath.map(String.init) ?? "—")
+                    LabeledContent("Target score", value: ScoreText.string(user.targetScore))
+                    LabeledContent("Reading & Writing", value: ScoreText.string(user.targetEnglish))
+                    LabeledContent("Math", value: ScoreText.string(user.targetMath))
                     LabeledContent("SAT date", value: user.satExamDate ?? "—")
                 }
 

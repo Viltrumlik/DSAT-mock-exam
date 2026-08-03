@@ -20,9 +20,14 @@ struct ExamContainerView: View {
             if let runner {
                 content(runner)
             } else {
-                ProgressView().task { await bootstrap() }
+                ProgressView()
             }
         }
+        // Attached to the container, NOT to the ProgressView above. A `.task` dies with the
+        // view it is attached to, and `bootstrap` assigns `runner` — which swaps that very
+        // branch out mid-await and cancels the status request that was still in flight. The
+        // exam then opened straight into "Network error: cancelled".
+        .task { await bootstrap() }
         .onChange(of: scenePhase) { _, phase in
             guard let runner else { return }
             switch phase {
@@ -94,6 +99,9 @@ struct ExamContainerView: View {
 
     @MainActor
     private func bootstrap() async {
+        // `.task` can re-run if the view is re-identified; opening a second runner for the
+        // same attempt would give it two autosave loops racing each other.
+        guard runner == nil else { return }
         let runner = ExamRunner(
             attemptId: attemptId,
             api: ExamAPI(client: session.client, backend: backend),
