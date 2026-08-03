@@ -21,6 +21,8 @@ public struct Endpoint: Sendable {
     public var idempotencyKey: String?
     /// Skip the Authorization header entirely (login, refresh).
     public var isUnauthenticated: Bool
+    /// Overrides the default `application/json` when the body is not JSON.
+    public var contentType: String?
 
     public init(
         path: String,
@@ -28,7 +30,8 @@ public struct Endpoint: Sendable {
         query: [URLQueryItem] = [],
         body: Data? = nil,
         idempotencyKey: String? = nil,
-        isUnauthenticated: Bool = false
+        isUnauthenticated: Bool = false,
+        contentType: String? = nil
     ) {
         self.path = path
         self.method = method
@@ -36,6 +39,22 @@ public struct Endpoint: Sendable {
         self.body = body
         self.idempotencyKey = idempotencyKey
         self.isUnauthenticated = isUnauthenticated
+        self.contentType = contentType
+    }
+
+    /// POST a `multipart/form-data` body — file uploads.
+    public static func upload(
+        _ path: String,
+        form: MultipartForm,
+        idempotencyKey: String? = nil
+    ) -> Endpoint {
+        Endpoint(
+            path: path,
+            method: .post,
+            body: form.encoded(),
+            idempotencyKey: idempotencyKey,
+            contentType: form.contentType
+        )
     }
 
     public static func get(_ path: String, query: [URLQueryItem] = []) -> Endpoint {

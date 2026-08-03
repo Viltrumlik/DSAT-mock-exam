@@ -73,6 +73,93 @@ public struct StudentAPI: Sendable {
         )
     }
 
+    // MARK: - Vocabulary
+
+    /// Vocabulary sets assigned as homework, grouped by the assignment that carries them.
+    public func vocabularyHomework() async throws -> [VocabHomeworkGroup] {
+        try await client.send(.get("/vocabulary/homework/"), as: ListOrResults<VocabHomeworkGroup>.self).items
+    }
+
+    /// One set with its words in study order, each tagged with the student's progress.
+    public func vocabularySet(id: Int) async throws -> VocabSetDetail {
+        try await client.send(.get("/vocabulary/sets/\(id)/"), as: VocabSetDetail.self)
+    }
+
+    public func startVocabularySession(setId: Int, mode: VocabStudyMode) async throws -> VocabSession {
+        try await client.send(
+            try .post("/vocabulary/sessions/", json: SessionStartRequest(setId: setId, mode: mode.rawValue)),
+            as: VocabSession.self
+        )
+    }
+
+    /// Bank a run's answers.
+    ///
+    /// `isPartial` records the answers without completing the set — the flush a mode fires
+    /// when the student walks away mid-run, so 20 of 25 cards still count for something.
+    /// Safe to call twice: a finished session returns its existing summary rather than
+    /// applying progress again, which matters because leaving the app is a normal way to
+    /// end a run.
+    @discardableResult
+    public func finishVocabularySession(
+        id: Int,
+        results: [VocabResult],
+        durationMs: Int,
+        isPartial: Bool
+    ) async throws -> VocabSessionSummary {
+        try await client.send(
+            try .post(
+                "/vocabulary/sessions/\(id)/finish/",
+                json: SessionFinishRequest(results: results, durationMs: durationMs, partial: isPartial)
+            ),
+            as: VocabSessionSummary.self
+        )
+    }
+
+    // MARK: - Homework submission
+
+    public func mySubmission(classroomId: Int, assignmentId: Int) async throws -> Submission {
+        try await client.send(
+            .get("/classes/\(classroomId)/assignments/\(assignmentId)/my-submission/"),
+            as: Submission.self
+        )
+    }
+
+    /// Attach files to a submission, and optionally hand it in.
+    ///
+    /// `expectedRevision` is the revision last read. The server refuses a write built on a
+    /// stale one, which is what stops a phone that was offline from overwriting a
+    /// teacher's return. Each file carries its own token so a retry after a timeout
+    /// re-uploads nothing.
+    @discardableResult
+    public func submitHomework(
+        classroomId: Int,
+        assignmentId: Int,
+        files: [MultipartForm.File] = [],
+        removeFileIds: [Int] = [],
+        expectedRevision: Int?,
+        markAsSubmitted: Bool = true
+    ) async throws -> Submission {
+        var form = MultipartForm()
+        for file in files { form.add(file: file) }
+        if !files.isEmpty {
+            let tokens = files.map(\.token)
+            let encoded = (try? JSONSerialization.data(withJSONObject: tokens)).flatMap {
+                String(data: $0, encoding: .utf8)
+            }
+            if let encoded { form.add("file_tokens", encoded) }
+        }
+        if !removeFileIds.isEmpty {
+            form.add("remove_file_ids", removeFileIds.map(String.init).joined(separator: ","))
+        }
+        if let expectedRevision { form.add("expected_revision", expectedRevision) }
+        form.add("submit", markAsSubmitted ? "true" : "false")
+
+        return try await client.send(
+            .upload("/classes/\(classroomId)/assignments/\(assignmentId)/submit/", form: form),
+            as: Submission.self
+        )
+    }
+
     nonisolated(unsafe) private static let day: DateFormatter = {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
@@ -80,4 +167,25 @@ public struct StudentAPI: Sendable {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+}
+
+private struct SessionStartRequest: Encodable, Sendable {
+    let setId: Int
+    let mode: String
+
+    private enum CodingKeys: String, CodingKey {
+        case mode
+        case setId = "set_id"
+    }
+}
+
+private struct SessionFinishRequest: Encodable, Sendable {
+    let results: [VocabResult]
+    let durationMs: Int
+    let partial: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case results, partial
+        case durationMs = "duration_ms"
+    }
 }

@@ -98,7 +98,7 @@ public actor APIClient {
 
         if let body = endpoint.body {
             request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(endpoint.contentType ?? "application/json", forHTTPHeaderField: "Content-Type")
         }
         if let key = endpoint.idempotencyKey {
             request.setValue(key, forHTTPHeaderField: "Idempotency-Key")

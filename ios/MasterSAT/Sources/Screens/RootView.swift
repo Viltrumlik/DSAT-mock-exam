@@ -27,6 +27,8 @@ struct RootTabView: View {
                 .tabItem { Label("Homework", systemImage: "checklist") }
             ExamsListView()
                 .tabItem { Label("Exams", systemImage: "doc.text") }
+            VocabularyView()
+                .tabItem { Label("Words", systemImage: "character.book.closed") }
             ProfileView(user: user)
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
         }

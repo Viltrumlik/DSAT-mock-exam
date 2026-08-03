@@ -162,14 +162,17 @@ From `frontend/src/features/testing-simulation`, faithfully, comments included:
 
 ## Not built yet
 
-Scoped out of this pass, in rough priority order:
+Scoped out so far, in rough priority order:
 
-- Midterm and pastpaper runners. The engine already speaks all three backends
-  (`ExamBackend.midterms` / `.exams`); only the entry points and the midterm's start-code
-  and rules screens are missing.
-- Homework **submission** (file upload) — the list and status are read-only today.
-- Vocabulary study modes.
+- **Vocabulary Matching and Speed modes.** The platform defines four study modes; the app
+  ships Flashcards and Test. The other two are built around a pointer and a wide screen —
+  a phone version would be a different game, not the same one, so they are left to the web
+  rather than shipped as a worse imitation.
 - Review Center / per-question review after scoring.
+- The student's own custom vocabulary sets (`/vocabulary/my-sets/`).
 - Push notifications. There is no push transport server-side yet; this needs APNs plus a
   sender, not just client work.
 - Offline reading of already-fetched homework.
+
+Homework photos are uploaded as the picker returns them, EXIF and all. Stripping location
+metadata before it reaches a school server would be a sensible next step.

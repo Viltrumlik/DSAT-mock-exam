@@ -30,11 +30,18 @@ struct HomeworkListView: View {
                     List {
                         ForEach(grouped, id: \.0) { classroom, items in
                             Section(classroom) {
-                                ForEach(items) { HomeworkRow(assignment: $0) }
+                                ForEach(items) { assignment in
+                                    NavigationLink(value: assignment) {
+                                        HomeworkRow(assignment: assignment)
+                                    }
+                                }
                             }
                         }
                     }
                     .listStyle(.insetGrouped)
+                    .navigationDestination(for: AssignmentListing.self) { assignment in
+                        HomeworkDetailView(assignment: assignment)
+                    }
                 }
             }
             .navigationTitle("Homework")
@@ -89,4 +96,11 @@ struct HomeworkRow: View {
         }
         .padding(.vertical, 2)
     }
+}
+
+
+/// Navigation needs identity; the server id is it.
+extension AssignmentListing: @retroactive Hashable {
+    public static func == (lhs: AssignmentListing, rhs: AssignmentListing) -> Bool { lhs.id == rhs.id }
+    public func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
