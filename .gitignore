@@ -43,3 +43,9 @@ graphify-out/
 test-results/
 email_previews/
 .proto/
+
+# iOS
+ios/**/.build/
+ios/**/*.xcodeproj
+ios/**/xcuserdata/
+ios/**/.swiftpm/

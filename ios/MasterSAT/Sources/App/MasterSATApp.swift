@@ -1,0 +1,106 @@
+import SwiftUI
+import MasterSATKit
+
+@main
+struct MasterSATApp: App {
+    @State private var session = Session()
+
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .environment(session)
+                .task { await session.restore() }
+        }
+    }
+}
+
+/// Signed-in state and the API surfaces that depend on it.
+///
+/// One composition root rather than singletons: the whole app can be pointed at a stub
+/// backend by constructing this with a different `APIConfig`.
+@MainActor
+@Observable
+public final class Session {
+    public enum Phase: Equatable {
+        case launching
+        case signedOut(message: String?)
+        case signedIn(CurrentUser)
+    }
+
+    public private(set) var phase: Phase = .launching
+    public private(set) var isWorking = false
+
+    let client: APIClient
+    let auth: AuthService
+    let student: StudentAPI
+
+    public init(config: APIConfig = .production(appVersion: Bundle.main.appVersion)) {
+        let storage = KeychainTokenStorage()
+        // `onSignOut` fires from deep inside a refresh that the server rejected — often
+        // while a screen is mid-request — so it only records the fact. The UI reacts on
+        // the main actor.
+        let signOutSignal = SignOutSignal()
+        client = APIClient(config: config, storage: storage, onSignOut: { signOutSignal.fire() })
+        auth = AuthService(client: client)
+        student = StudentAPI(client: client)
+        signOutSignal.onFire = { [weak self] in
+            Task { @MainActor in
+                self?.phase = .signedOut(message: "Your session has expired. Please sign in again.")
+            }
+        }
+    }
+
+    /// Resume a stored session on launch.
+    public func restore() async {
+        guard await auth.isSignedIn() else {
+            phase = .signedOut(message: nil)
+            return
+        }
+        do {
+            phase = .signedIn(try await student.me())
+        } catch APIError.unauthorized, APIError.notAuthenticated {
+            phase = .signedOut(message: nil)
+        } catch {
+            // Offline on launch is not signed out — the tokens are still good. Let the
+            // student in and let each screen show its own failure to load.
+            phase = .signedOut(message: nil)
+        }
+    }
+
+    public func signIn(email: String, password: String) async {
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await auth.signIn(email: email, password: password)
+            phase = .signedIn(try await student.me())
+        } catch let error as APIError {
+            phase = .signedOut(message: error.errorDescription)
+        } catch {
+            phase = .signedOut(message: error.localizedDescription)
+        }
+    }
+
+    public func signOut() async {
+        await auth.signOut()
+        phase = .signedOut(message: nil)
+    }
+}
+
+/// Bridges the client's non-isolated sign-out callback onto the main actor.
+final class SignOutSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (() -> Void)?
+
+    var onFire: (() -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return handler }
+        set { lock.lock(); defer { lock.unlock() }; handler = newValue }
+    }
+
+    func fire() { onFire?() }
+}
+
+extension Bundle {
+    var appVersion: String {
+        (infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0.0"
+    }
+}
