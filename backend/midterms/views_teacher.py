@@ -225,6 +225,34 @@ class MidtermResitView(APIView):
             row["attempts"] = counts.get(sid, 1)
         return Response({"results": list(rows.values()), "midterm_id": midterm.id})
 
+    @staticmethod
+    def _ensure_access(student, midterm, *, actor) -> bool:
+        """Give the student a standalone grant if they have lost access. Returns True if issued.
+
+        A re-sit is worthless without access, and the students who most need one are exactly
+        the ones who have lost it: a student who repeated the month has usually MOVED GROUP,
+        and their old classroom's grant went with the old class. Granting the permission and
+        leaving them on "You do not have access to this midterm" would be a trap.
+
+        Standalone (classroom=None) on purpose — it is one student sitting out of band, not a
+        member of the new group's cohort, and a standalone grant carries no schedule window to
+        be shut out by.
+        """
+        from .access import winning_grant
+
+        if winning_grant(student, midterm) is not None:
+            return False
+        AssignmentService.assign_resource(
+            student,
+            RT_MIDTERM_V2,
+            midterm.id,
+            actor=actor,
+            source=ResourceAccessGrant.SOURCE_MANUAL,
+            classroom=None,
+            note="re-sit: restoring access to sit it again",
+        )
+        return True
+
     def post(self, request, pk=None):
         midterm = get_object_or_404(Midterm, pk=pk)
         try:
@@ -235,7 +263,7 @@ class MidtermResitView(APIView):
             return Response({"detail": "user_ids is required."}, status=400)
         reason = str(request.data.get("reason") or "").strip()[:255]
 
-        granted, skipped = [], []
+        granted, skipped, access_restored = [], [], []
         for student in User.objects.filter(pk__in=user_ids):
             if not MidtermAttempt.objects.filter(
                 midterm=midterm, student=student, is_completed=True
@@ -250,11 +278,20 @@ class MidtermResitView(APIView):
                 consumed_at=None,
                 defaults={"granted_by": request.user, "reason": reason},
             )
+            if created and self._ensure_access(student, midterm, actor=request.user):
+                access_restored.append(student.id)
             (granted if created else skipped).append(
                 student.id if created else {"student_id": student.id, "reason": "already_open"}
             )
         return Response(
-            {"granted": granted, "skipped": skipped, "midterm_id": midterm.id},
+            {
+                "granted": granted,
+                "skipped": skipped,
+                # Students who had lost their access to the midterm and were re-granted it so
+                # the permission they were just given actually opens the door.
+                "access_restored": access_restored,
+                "midterm_id": midterm.id,
+            },
             status=status.HTTP_201_CREATED if granted else status.HTTP_200_OK,
         )
 

@@ -19,7 +19,12 @@ from rest_framework.test import APIClient
 
 from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
-from midterms.access import can_start_midterm, latest_completed_attempt, open_resit
+from midterms.access import (
+    can_start_midterm,
+    latest_completed_attempt,
+    open_resit,
+    winning_grant,
+)
 from midterms.models import Midterm, MidtermAttempt, MidtermOutcome, MidtermResit
 from midterms.tests_api import make_published_midterm
 
@@ -529,3 +534,130 @@ class ResitEndpointTests(TestCase):
         MidtermResit.objects.create(midterm=self.midterm, student=self.student)
         r = self._client(self.teacher).get(self.url)
         self.assertTrue(r.json()["results"][0]["can_resit_now"])
+
+
+class ResitAcrossClassroomsTests(TestCase):
+    """The students who most need a re-sit are the ones who MOVED, or never had a class.
+
+    A student who repeated a month has usually changed group. Their old classroom's grant is
+    what governs them (winning_grant puts a classroom grant ahead of a standalone one), and
+    that classroom's sitting closed weeks ago — so the permission opened nothing. A student
+    with no classroom at all had no grant to be governed by in the first place.
+    """
+
+    def setUp(self):
+        from classes.models import Classroom, ClassroomMembership
+        from classes.models_schedule import MidtermSchedule
+
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.teacher = User.objects.create(username="t", email="t@x.io", role="teacher")
+        self.old_room = Classroom.objects.create(
+            name="G12 (last term)", subject="MATH",
+            lesson_days=Classroom.DAYS_ODD, created_by=self.teacher,
+        )
+        self.student = User.objects.create(username="s", email="s@x.io")
+        ClassroomMembership.objects.create(
+            classroom=self.old_room, user=self.student, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self.classroom_grant = ResourceAccessGrant.objects.create(
+            user=self.student, classroom=self.old_room, resource_type=RT_MIDTERM_V2,
+            resource_id=self.midterm.id, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            source=ResourceAccessGrant.SOURCE_CLASSROOM,
+            status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        # The sitting happened last month and its window shut.
+        past = timezone.now() - timezone.timedelta(days=30)
+        MidtermSchedule.objects.create(
+            classroom=self.old_room, midterm=self.midterm,
+            starts_at=past, deadline=past + timezone.timedelta(hours=2),
+            access_code="123456",
+        )
+        _completed(self.midterm, self.student, 40, when=past)
+
+    def test_without_a_resit_the_closed_window_still_refuses(self):
+        ok, reason = can_start_midterm(self.student, self.midterm)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "midterm_completed")
+
+    def test_a_resit_gets_past_the_old_classrooms_closed_window(self):
+        """The window governs the CLASS's scheduled sitting; a re-sit is out of band."""
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+        ok, reason = can_start_midterm(self.student, self.midterm)
+        self.assertTrue(ok, f"still blocked: {reason}")
+
+    def test_a_resit_gets_past_a_missing_access_code_too(self):
+        from classes.models_schedule import MidtermSchedule
+
+        MidtermSchedule.objects.filter(classroom=self.old_room, midterm=self.midterm).update(
+            access_code="", starts_at=timezone.now() - timezone.timedelta(hours=1), deadline=None
+        )
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+        ok, reason = can_start_midterm(self.student, self.midterm)
+        self.assertTrue(ok, f"still blocked: {reason}")
+
+    def test_the_window_still_binds_every_OTHER_student(self):
+        """Exempting the re-sitter must not open the closed sitting for the whole class."""
+        classmate = User.objects.create(username="c", email="c@x.io")
+        ResourceAccessGrant.objects.create(
+            user=classmate, classroom=self.old_room, resource_type=RT_MIDTERM_V2,
+            resource_id=self.midterm.id, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            source=ResourceAccessGrant.SOURCE_CLASSROOM,
+            status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+        ok, reason = can_start_midterm(classmate, self.midterm)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "midterm_closed")
+
+    def test_a_student_with_no_access_left_is_re_granted_it(self):
+        """Granting a re-sit to someone whose access is gone must not leave them at the door."""
+        from access.engine.assignment_service import AssignmentService
+
+        AssignmentService.revoke_resource(
+            self.student, RT_MIDTERM_V2, self.midterm.id, actor=self.teacher, note="moved group"
+        )
+        self.assertIsNone(winning_grant(self.student, self.midterm))
+
+        c = APIClient()
+        c.force_authenticate(self.teacher)
+        r = c.post(
+            f"/api/midterms/teacher/midterms/{self.midterm.id}/resit/",
+            {"user_ids": [self.student.id], "reason": "repeated the month, new group"},
+            format="json",
+        )
+
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["access_restored"], [self.student.id])
+        grant = winning_grant(self.student, self.midterm)
+        self.assertIsNotNone(grant)
+        self.assertIsNone(grant.classroom_id, "an out-of-band sitting is standalone")
+        ok, reason = can_start_midterm(self.student, self.midterm)
+        self.assertTrue(ok, f"still blocked: {reason}")
+
+    def test_a_student_who_still_has_access_is_not_re_granted(self):
+        c = APIClient()
+        c.force_authenticate(self.teacher)
+        r = c.post(
+            f"/api/midterms/teacher/midterms/{self.midterm.id}/resit/",
+            {"user_ids": [self.student.id]}, format="json",
+        )
+        self.assertEqual(r.json()["access_restored"], [])
+        self.assertEqual(winning_grant(self.student, self.midterm).pk, self.classroom_grant.pk)
+
+    def test_a_classroomless_student_can_be_given_the_whole_thing_in_one_click(self):
+        """No classroom, no grant, an old completed attempt — the plain 'moved school' case."""
+        from access.engine.assignment_service import AssignmentService
+
+        loner = User.objects.create(username="l", email="l@x.io")
+        _completed(self.midterm, loner, 35)
+        self.assertIsNone(winning_grant(loner, self.midterm))
+
+        c = APIClient()
+        c.force_authenticate(self.teacher)
+        c.post(
+            f"/api/midterms/teacher/midterms/{self.midterm.id}/resit/",
+            {"user_ids": [loner.id]}, format="json",
+        )
+
+        ok, reason = can_start_midterm(loner, self.midterm)
+        self.assertTrue(ok, f"still blocked: {reason}")
