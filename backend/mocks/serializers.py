@@ -74,6 +74,13 @@ class MockAttemptSerializer(serializers.Serializer):
         elif state in (STATE_MATH_M1, STATE_MATH_M2):
             subject = "MATH"
 
+        # The WHOLE paper, in every state. ``modules`` above is the ACTIVE section's only,
+        # so before the exam starts it is empty — and a pre-exam screen that counts it
+        # advertises a 0-module, 0-minute exam. Additive fields rather than a redefinition
+        # of ``modules``: the web runner reads that one while a module is running and must
+        # keep seeing the active section there.
+        all_modules = list(mock.english_modules()) + list(mock.math_modules())
+
         return {
             "id": attempt.id,
             "current_state": WIRE_STATE.get(state, state),
@@ -85,6 +92,9 @@ class MockAttemptSerializer(serializers.Serializer):
                 "mock_exam_id": None,
                 "mock_kind": "MOCK",
                 "modules": section_modules,
+                "total_module_count": len(all_modules),
+                "total_time_minutes": sum(int(m.time_limit_minutes or 0) for m in all_modules),
+                "break_minutes": int(getattr(mock, "break_minutes", 0) or 0),
             },
             "current_module": current_module_id,
             "current_module_details": module_payload,

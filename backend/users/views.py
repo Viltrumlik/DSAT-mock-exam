@@ -82,7 +82,7 @@ from .telegram_oidc import (
 from .phone_utils import normalize_phone
 from .telegram_bot_info import telegram_bot_username_for_token
 from .authentication import CookieOrHeaderJWTAuthentication
-from .auth_cookies import clear_auth_cookies, set_access_cookie, set_auth_cookies, REFRESH_COOKIE
+from .auth_cookies import clear_auth_cookies, is_native_client, set_access_cookie, set_auth_cookies, REFRESH_COOKIE
 from .auth_correlation_controls import escalate_on_telemetry_anomaly
 from .client_auth_telemetry import score_telemetry_anomalies, validate_client_auth_telemetry_body
 from .security_metrics import incr as security_metric_incr
@@ -360,8 +360,13 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
 
     def post(self, request, *args, **kwargs):
         t0 = monotonic()
+        # A native app has no cookie jar we want to use: it stores the pair in the Keychain
+        # and sends `Authorization: Bearer`. Give it the tokens and set NO cookie at all —
+        # that is also what makes the CSRF exemption safe, since a login that plants no
+        # cookie cannot be used to log a browser into an attacker's account.
+        native = is_native_client(request)
         # Legacy clients may still read JSON tokens; keep compatibility via opt-in.
-        include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
+        include_tokens = native or str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
         remember_me = str(request.data.get("remember_me") or "1").lower() in ("1", "true", "yes")
         serializer = self.get_serializer(data=request.data)
         try:
@@ -430,7 +435,11 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
 
         resp = Response(data, status=status.HTTP_200_OK)
         if access and refresh:
-            set_auth_cookies(response=resp, request=request, access=access, refresh=refresh, remember_me=remember_me)
+            if not native:
+                set_auth_cookies(response=resp, request=request, access=access, refresh=refresh, remember_me=remember_me)
+            # The session row is recorded for BOTH client kinds — it is what /api/auth/sessions/
+            # lists and what revoke kills, and a phone is exactly the device a student most
+            # needs to be able to sign out remotely.
             try:
                 user = getattr(serializer, "user", None)
                 jti = _jti_of_refresh(refresh)
@@ -465,7 +474,8 @@ class CookieTokenRefreshView(TokenRefreshView):
                 {"detail": "Token refresh temporarily unavailable (drill)."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        include_tokens = str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
+        native = is_native_client(request)
+        include_tokens = native or str(request.query_params.get("include_tokens") or "").lower() in ("1", "true", "yes")
 
         refresh_cookie = request.COOKIES.get(REFRESH_COOKIE) if hasattr(request, "COOKIES") else None
         refresh_body = (request.data or {}).get("refresh") if hasattr(request, "data") else None
@@ -565,8 +575,18 @@ class CookieTokenRefreshView(TokenRefreshView):
         observe_refresh_rotation(user_id=int(s.user_id), ip=ip, request=request)
         security_metric_incr("refresh_rotations", 1)
 
-        resp = Response({"access": new_access} if include_tokens else {}, status=status.HTTP_200_OK)
-        set_auth_cookies(response=resp, request=request, access=new_access, refresh=new_refresh_s, remember_me=True)
+        body = {}
+        if include_tokens:
+            body["access"] = new_access
+        if native:
+            # Rotation revoked the refresh the app just spent, so the NEW one has to travel
+            # back or the app is locked out at the next renewal — it has no cookie jar to
+            # pick it up from. A browser deliberately still gets refresh via HttpOnly cookie
+            # only: keeping it out of JS reach is the entire point of the cookie transport.
+            body["refresh"] = new_refresh_s
+        resp = Response(body, status=status.HTTP_200_OK)
+        if not native:
+            set_auth_cookies(response=resp, request=request, access=new_access, refresh=new_refresh_s, remember_me=True)
         return resp
 
 
@@ -579,6 +599,15 @@ class CookieLogoutView(APIView):
 
     def post(self, request):
         refresh = request.COOKIES.get(REFRESH_COOKIE) if hasattr(request, "COOKIES") else None
+        if not refresh:
+            # A native app holds the token itself, so "log out" can only mean the one it
+            # sends here. Without this the app could clear its Keychain but leave the
+            # session alive server-side — a signed-out phone that still appears under
+            # /api/auth/sessions/ and whose refresh token keeps working.
+            try:
+                refresh = (request.data or {}).get("refresh")
+            except Exception:
+                refresh = None
         if refresh:
             try:
                 _revoke_refresh(str(refresh))

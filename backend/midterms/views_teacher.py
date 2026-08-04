@@ -25,7 +25,7 @@ from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
 from access.services import normalized_role
 
-from .models import Midterm, MidtermAttempt
+from .models import Midterm, MidtermAttempt, MidtermResit
 from users.photos import profile_image_url
 
 User = get_user_model()
@@ -173,6 +173,105 @@ class MidtermRevokeView(APIView):
         return Response({"revoked": revoked, "midterm_id": midterm.id})
 
 
+class MidtermResitView(APIView):
+    """Let named students sit a midterm they have already completed, once each.
+
+    GET    /midterms/teacher/midterms/<pk>/resit/  — who has sat it, and who may sit it again
+    POST   .../resit/  {user_ids:[...], reason?}   — grant a re-sit
+    DELETE .../resit/  {user_ids:[...]}            — withdraw an UNSPENT grant
+
+    A midterm is once-only, which is right: nobody should be able to re-run a paper until the
+    score suits them. The exception this endpoint exists for is a student who FAILED a month,
+    REPEATED that month, and now has to sit that month's paper again. That is not a RETAKE
+    (a separate midterm object); it is the same paper, sat again, on somebody's authority.
+    """
+
+    permission_classes = [IsTeacherOrStaff]
+
+    def _user_ids(self, request):
+        raw = request.data.get("user_ids") or (
+            [request.data["user_id"]] if request.data.get("user_id") else []
+        )
+        return [int(x) for x in raw]
+
+    def get(self, request, pk=None):
+        midterm = get_object_or_404(Midterm, pk=pk)
+        sat = (
+            MidtermAttempt.objects.filter(midterm=midterm, is_completed=True)
+            .select_related("student")
+            .order_by("student_id", "-completed_at", "-id")
+        )
+        open_ids = set(
+            MidtermResit.objects.filter(midterm=midterm, consumed_at__isnull=True).values_list(
+                "student_id", flat=True
+            )
+        )
+        # One row per student, carrying their LATEST sitting — that is the one that counts.
+        rows: dict[int, dict] = {}
+        for att in sat:
+            if att.student_id in rows:
+                continue  # ordering above already put the newest first
+            rows[att.student_id] = {
+                "student_id": att.student_id,
+                "student_name": _display_name(att.student),
+                "score": att.score,
+                "attempts": 0,
+                "can_resit_now": att.student_id in open_ids,
+            }
+        counts: dict[int, int] = {}
+        for sid in sat.values_list("student_id", flat=True):
+            counts[sid] = counts.get(sid, 0) + 1
+        for sid, row in rows.items():
+            row["attempts"] = counts.get(sid, 1)
+        return Response({"results": list(rows.values()), "midterm_id": midterm.id})
+
+    def post(self, request, pk=None):
+        midterm = get_object_or_404(Midterm, pk=pk)
+        try:
+            user_ids = self._user_ids(request)
+        except (TypeError, ValueError):
+            return Response({"detail": "user_ids must be integers."}, status=400)
+        if not user_ids:
+            return Response({"detail": "user_ids is required."}, status=400)
+        reason = str(request.data.get("reason") or "").strip()[:255]
+
+        granted, skipped = [], []
+        for student in User.objects.filter(pk__in=user_ids):
+            if not MidtermAttempt.objects.filter(
+                midterm=midterm, student=student, is_completed=True
+            ).exists():
+                # Nothing to re-sit — they can already start it. Saying so is kinder than
+                # banking a grant that will never be spent and will block the next one.
+                skipped.append({"student_id": student.id, "reason": "has_not_sat_it"})
+                continue
+            _resit, created = MidtermResit.objects.get_or_create(
+                midterm=midterm,
+                student=student,
+                consumed_at=None,
+                defaults={"granted_by": request.user, "reason": reason},
+            )
+            (granted if created else skipped).append(
+                student.id if created else {"student_id": student.id, "reason": "already_open"}
+            )
+        return Response(
+            {"granted": granted, "skipped": skipped, "midterm_id": midterm.id},
+            status=status.HTTP_201_CREATED if granted else status.HTTP_200_OK,
+        )
+
+    def delete(self, request, pk=None):
+        midterm = get_object_or_404(Midterm, pk=pk)
+        try:
+            user_ids = self._user_ids(request)
+        except (TypeError, ValueError):
+            return Response({"detail": "user_ids must be integers."}, status=400)
+        # Only UNSPENT grants can be withdrawn — once the student has opened the paper, taking
+        # the permission back would not un-sit it.
+        withdrawn = MidtermResit.objects.filter(
+            midterm=midterm, student_id__in=user_ids, consumed_at__isnull=True
+        ).delete()[0]
+        return Response({"withdrawn": withdrawn, "midterm_id": midterm.id})
+
+
 class MidtermStandaloneResultsView(APIView):
     """GET /midterms/teacher/midterms/<pk>/results/ — grantees + attempt status + frozen score.
 
@@ -185,11 +284,22 @@ class MidtermStandaloneResultsView(APIView):
     def get(self, request, pk=None):
         midterm = get_object_or_404(Midterm, pk=pk)
         grants = _standalone_grants(midterm.id).select_related("user", "granted_by")
-        # Latest attempt per student for this midterm.
+        # Latest attempt per student for this midterm. Ascending order + overwrite means the
+        # NEWEST wins, which matters once a re-sit gives a student two of them.
         attempts = {
             a.student_id: a
             for a in MidtermAttempt.objects.filter(midterm=midterm).order_by("created_at")
         }
+        sittings: dict[int, int] = {}
+        for sid in MidtermAttempt.objects.filter(midterm=midterm, is_completed=True).values_list(
+            "student_id", flat=True
+        ):
+            sittings[sid] = sittings.get(sid, 0) + 1
+        resit_open = set(
+            MidtermResit.objects.filter(midterm=midterm, consumed_at__isnull=True).values_list(
+                "student_id", flat=True
+            )
+        )
         rows = []
         for g in grants:
             student = g.user
@@ -208,6 +318,10 @@ class MidtermStandaloneResultsView(APIView):
                     "submitted": bool(att and att.is_completed),
                     "score": att.score if (att and att.is_completed) else None,
                     "score_ceiling": midterm.score_ceiling,
+                    # How many times they have finished it, and whether they are currently
+                    # allowed to sit it again (see MidtermResit).
+                    "sittings": sittings.get(student.id, 0),
+                    "resit_open": student.id in resit_open,
                 }
             )
         rows.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0), r["student_name"]))

@@ -23,6 +23,7 @@ from config.reliability import idempotency_key_from_request
 
 from .access import (
     can_start_midterm,
+    consume_resit,
     midterm_results_state,
     resolve_midterm_schedule,
     resolve_version_for_student,
@@ -237,6 +238,10 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
             if attempt is None:
                 raise
             return Response(MidtermAttemptSerializer(attempt).data, status=status.HTTP_200_OK)
+        # A re-sit grant is SPENT here, not when it was issued: the student has now actually
+        # opened the paper. Marking it at grant time would burn it on a student who never
+        # turned up, and leaving it open would let them sit the same midterm forever.
+        consume_resit(request.user, midterm, attempt)
         return Response(MidtermAttemptSerializer(attempt).data, status=status.HTTP_201_CREATED)
 
     def retrieve(self, request, pk=None):

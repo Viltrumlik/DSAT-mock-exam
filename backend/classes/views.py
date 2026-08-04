@@ -368,6 +368,59 @@ class ClassroomViewSet(ModelViewSet):
         # Per-HOMEWORK attempt state — a homework (Assignment) can bundle several
         # assessments, so progress is keyed by homework_id (each carries its own
         # workflow_status + score) and grouped by assignment for the payload.
+        # Vocabulary links, batched. Without this the endpoint reported no vocabulary at
+        # all, so a homework whose entire content was a word set looked EMPTY to any
+        # client that trusts this payload — which is what the phone does.
+        vocab_by_assignment: dict[int, list] = {}   # assignment_id → [vocab payload]
+        try:
+            from django.db.models import Count as _Count
+            from vocabulary.models import VocabHomework, VocabSetItem, VocabStudySession
+
+            assignment_ids = [a.id for a in assignments]
+            vocab_rows = [
+                v for v in VocabHomework.objects.filter(assignment_id__in=assignment_ids)
+                .select_related("vocab_set__section")
+                if v.vocab_set_id
+            ]
+            if vocab_rows:
+                vocab_set_ids = [v.vocab_set_id for v in vocab_rows]
+                # order_by() is load-bearing: VocabSetItem has a default ordering, and
+                # Django folds ordering columns into the GROUP BY, which would split the
+                # counts per (vocab_set, order) pair.
+                word_counts = dict(
+                    VocabSetItem.objects.filter(vocab_set_id__in=vocab_set_ids)
+                    .values_list("vocab_set")
+                    .order_by()
+                    .annotate(n=_Count("id"))
+                )
+                sessions = VocabStudySession.objects.filter(user=user, vocab_set_id__in=vocab_set_ids)
+                done_ids = set(
+                    sessions.filter(completed_at__isnull=False).values_list("vocab_set_id", flat=True)
+                )
+                open_ids = set(
+                    sessions.filter(completed_at__isnull=True).values_list("vocab_set_id", flat=True)
+                )
+                for v in vocab_rows:
+                    vset = v.vocab_set
+                    # A set is complete once ANY study mode has been finished on it —
+                    # the platform-wide completion rule.
+                    if vset.id in done_ids:
+                        state = "completed"
+                    elif vset.id in open_ids:
+                        state = "in_progress"
+                    else:
+                        state = "not_started"
+                    vocab_by_assignment.setdefault(v.assignment_id, []).append({
+                        "id": v.id,
+                        "set_id": vset.id,
+                        "set_title": vset.title,
+                        "section_title": getattr(getattr(vset, "section", None), "title", "") or "",
+                        "word_count": word_counts.get(vset.id, 0),
+                        "state": state,
+                    })
+        except Exception:
+            logger.exception("my_assignments: vocabulary hydration failed user_id=%s", user.pk)
+
         hw_progress_by_id: dict[int, dict] = {}   # homework_id → progress payload
         hws_by_assignment: dict[int, list] = {}   # assignment_id → [HomeworkAssignment]
         try:
@@ -568,6 +621,7 @@ class ClassroomViewSet(ModelViewSet):
                 # Full per-assessment list (a bundle can hold several) — the board
                 # renders one card per entry keyed by homework_id.
                 "assessment_homeworks": assessment_homeworks,
+                "vocab_homeworks": vocab_by_assignment.get(a.id, []),
                 "assessment_progress": first_progress,
                 # attempt_id is present only when workflow_status == "in_progress".
                 "attempt_id": first_attempt_id,

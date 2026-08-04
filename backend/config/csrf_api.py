@@ -9,6 +9,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from users.auth_cookies import is_native_client
+
 
 def _is_same_site_origin(request) -> bool:
     """
@@ -53,6 +55,15 @@ class APICSRFEnforceMiddleware:
             if path.startswith("/api/auth/client-telemetry/"):
                 if not _is_same_site_origin(request):
                     return JsonResponse({"detail": "Bad origin."}, status=403)
+                return self.get_response(request)
+
+            # A native client (iOS/Android) holds its tokens itself and sends them in an
+            # Authorization header, so it has no ambient credential to forge and no CSRF to
+            # prevent. `is_native_client` only says yes when the request also carries NO
+            # auth cookie, so this can never relax a browser's request. Without the
+            # exemption the apps cannot log in at all: the rule below fires on every
+            # /api/auth/ POST, and a native client has no csrftoken cookie to pair with.
+            if is_native_client(request):
                 return self.get_response(request)
 
             # Always require CSRF for auth endpoints, even before cookies exist.

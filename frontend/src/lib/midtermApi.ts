@@ -87,6 +87,10 @@ export interface StandaloneResultRow {
   submitted: boolean;
   score: number | null;
   score_ceiling: number;
+  /** How many times they have FINISHED it — more than one means they have already re-sat. */
+  sittings: number;
+  /** They are currently allowed to sit it again (an unspent MidtermResit). */
+  resit_open: boolean;
 }
 
 export const midtermApi = {
@@ -141,6 +145,28 @@ export const midtermApi = {
     });
     return r.data;
   },
+  /**
+   * Let named students sit a midterm they have ALREADY completed, once each.
+   *
+   * A midterm is once-only by default. This is the exception for a student who failed a
+   * month, repeated it, and has to sit that month's paper again — the same paper, not the
+   * separate RETAKE midterm.
+   */
+  async allowResit(midtermId: number, userIds: number[], reason?: string) {
+    const r = await api.post(`/midterms/teacher/midterms/${midtermId}/resit/`, {
+      user_ids: userIds,
+      ...(reason ? { reason } : {}),
+    });
+    return r.data as { granted: number[]; skipped: unknown[] };
+  },
+  /** Withdraw an UNSPENT permission. Once they have opened the paper it cannot be taken back. */
+  async withdrawResit(midtermId: number, userIds: number[]) {
+    const r = await api.delete(`/midterms/teacher/midterms/${midtermId}/resit/`, {
+      data: { user_ids: userIds },
+    });
+    return r.data as { withdrawn: number };
+  },
+
   async revoke(midtermId: number, userIds: number[]) {
     const r = await api.post(`/midterms/teacher/midterms/${midtermId}/revoke/`, { user_ids: userIds });
     return r.data;
