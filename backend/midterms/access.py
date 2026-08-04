@@ -292,7 +292,15 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
         return False, reason
     # Classroom flavor respects the scheduled access window AND requires the teacher to
     # have started it (generated the 6-digit code). Standalone has no schedule/code.
-    if grant.classroom_id:
+    #
+    # A RE-SIT is exempt from both. The window and the code govern the class's SCHEDULED
+    # sitting; a re-sit is by definition out of band — one named student, granted by a named
+    # member of staff, long after that window shut. Without this exemption the feature only
+    # works for a student who is still in the same classroom AND whose teacher happens to
+    # re-open the whole class's window: a student who repeated the month into a DIFFERENT
+    # group is held behind their old group's closed timetable, and no standalone grant can
+    # rescue them because winning_grant puts the classroom grant first.
+    if grant.classroom_id and open_resit(user, midterm) is None:
         try:
             from classes.models_schedule import MidtermSchedule
 
