@@ -58,6 +58,30 @@ struct ProfileView: View {
                     }
                     .cardStyle(padding: 16)
 
+                    NavigationLink {
+                        NotificationSettingsView()
+                    } label: {
+                        HStack(spacing: 13) {
+                            IconTile(systemName: "bell.badge", tone: Theme.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Notifications")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(.primary)
+                                Text("Reminders for homework, midterms and scores")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .multilineTextAlignment(.leading)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Theme.textLabel)
+                        }
+                        .cardStyle()
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
                     Button("Sign out") { isConfirmingSignOut = true }
                         .buttonStyle(PrimaryButtonStyle(tone: Theme.danger, fullWidth: true))
                 }

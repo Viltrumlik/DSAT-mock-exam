@@ -50,6 +50,7 @@ struct LearnHubView: View {
     @Environment(Session.self) private var session
     @State private var assignments: [AssignmentListing] = []
     @State private var classroomCount: Int?
+    @State private var midtermResults: Int?
 
     private var openHomework: Int {
         assignments.filter { ($0.workflowStatus ?? "").lowercased() != "graded" }.count
@@ -92,6 +93,16 @@ struct LearnHubView: View {
                         count: openAssessments,
                         destination: AssessmentsListView()
                     )
+                    // Papers are sat in the centre, so this card carries no badge for work
+                    // waiting — it counts what has come back: scores and skill reports.
+                    HubCard(
+                        title: "Midterms",
+                        subtitle: "When the next one is, and how the last went",
+                        icon: "calendar.badge.clock",
+                        tone: Theme.amber,
+                        count: midtermResults,
+                        destination: MidtermsView()
+                    )
                 }
                 .padding(16)
             }
@@ -110,6 +121,7 @@ struct LearnHubView: View {
         // better outcome than a hub that refuses to draw.
         assignments = (try? await session.student.assignments()) ?? []
         classroomCount = (try? await session.classrooms.classrooms())?.count
+        midtermResults = (try? await session.student.midterms())?.filter(\.submitted).count
     }
 }
 

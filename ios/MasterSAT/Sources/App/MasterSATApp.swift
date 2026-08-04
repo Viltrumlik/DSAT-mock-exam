@@ -36,6 +36,9 @@ final class Session {
     let classrooms: ClassroomAPI
     let assessments: AssessmentAPI
     let results: ResultsAPI
+    /// Reminders on the device. Lives here because it is app-wide state with a lifetime
+    /// tied to the signed-in student — signing out has to wipe it.
+    let notifications = NotificationService()
 
     /// Where a debug build talks to, if it was told.
     ///
@@ -143,6 +146,9 @@ final class Session {
 
     func signOut() async {
         await auth.signOut()
+        // Before the phase flips, so nothing scheduled for this student survives to
+        // interrupt whoever signs in next on the same phone.
+        notifications.clearEverything()
         phase = .signedOut(message: nil)
     }
 }

@@ -92,7 +92,7 @@ builds and runs its tests with the command-line toolchain alone:
 cd ios/MasterSATKit && swift test
 ```
 
-114 tests, well under a second. This is the part that must never regress, so it is also the
+124 tests, well under a second. This is the part that must never regress, so it is also the
 part that stays verifiable from a terminal, in CI, with no simulator.
 
 `MasterSAT` is the SwiftUI layer on top. It needs Xcode, because an iOS `.app` cannot be
@@ -259,13 +259,75 @@ tab, and iOS can kill a backgrounded app without warning. A half-finished vocabu
 flushes as `partial: true` so 20 of 25 cards still count; an assessment writes every
 pending answer before it goes.
 
+## Reminders are local, not push
+
+There is no push transport on this platform: the backend has no device-token store and no
+APNs sender. So the app schedules **local notifications** against dates it has already
+fetched — a homework's due date, a midterm's opening time — which covers the two things
+worth interrupting a student for, works offline, and costs no infrastructure.
+
+The rule lives in the kit (`ReminderPlan`) and is tested, because "which reminders" is
+logic, not UI. Three that took thinking:
+
+- **iOS keeps only the 64 soonest pending notifications** and silently drops the rest, so
+  the plan sorts and caps itself. Losing the far-future ones is the right outcome — but
+  only if we choose them rather than letting the system pick.
+- **Ids carry no timestamp.** Rescheduling runs on every load of Home; an id built from
+  `now` would stack a fresh copy of the same reminder each time until a student had forty.
+- **The whole schedule is rebuilt, not appended to.** A homework handed in, a due date
+  moved, a midterm cancelled all have to *remove* a reminder, and absence from the new plan
+  is the only signal there is.
+
+What this cannot do is tell a student something they could not have known when the app was
+last open. A published score is the case in point: `announceResults` fires the moment the
+app next runs and notices. Real push would fix that, and it is a server project before it
+is a client one.
+
+The permission ask is a soft prompt on Home first, and only once there is something real to
+be reminded about. iOS asks exactly once per install and a refusal is permanent — spending
+that single chance on a student who has just signed in is how an app ends up with
+notifications it can never turn on.
+
+## Midterms
+
+Papers are sat in the centre, on a laptop, under supervision — the app has no Start button
+and should not. What the phone is good for is the three things around the paper, so those
+are the three things the section has: **when** the next one opens (a ticking countdown),
+**what you scored** once the teacher publishes it, and **which skills cost you the marks**.
+
+The error report is the same payload the centre's own report uses, built from results frozen
+at scoring time. Two rules it inherits and the UI keeps: a skill answered perfectly does not
+appear (it is not an error, and listing it would bury the three that matter), and untagged
+questions are disclosed separately rather than folded into a skill — quietly under-reporting
+a skill's question count points revision at the wrong thing.
+
+The report sits behind the same publication gate as the score and carries strictly more, so
+a sealed one answers 403 with a sentence to show. That failure is held apart from the
+review's: a sealed report must not blank a score the student is allowed to see.
+
+## Talking to production
+
+`APIConfig.production` is `https://mastersat.uz`, and the `-apiBaseURL` override is compiled
+out of release builds entirely — a shipped app cannot be pointed at another host.
+
+**Signing in against production does not work yet, and the fix is a backend deploy.** Live
+`/api/auth/login/` answers `{"detail": "Bad origin."}` without an `Origin` header and
+`{"detail": "CSRF failed."}` with one. Both are the browser CSRF pairing a cookie-less
+native client cannot satisfy. The bypass — `users.auth_cookies.is_native_client`, which
+requires `X-MasterSAT-Client` *and* the absence of an auth cookie — is on this branch and
+**not on `main`**. Until PR #110's backend half merges and deploys, the app reaches
+production and is refused by it.
+
 ## Verification status
 
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build + tests | ✅ 114 tests |
+| `MasterSATKit` — build + tests | ✅ 124 tests |
 | Backend (`classes`) | ✅ 307 tests |
-| `MasterSAT` app target — build | ✅ builds for iPhone and iPad simulators (Xcode 26.3) |
+| `MasterSAT` app target — build | ✅ Debug and Release, iPhone and iPad simulators (Xcode 26.3) |
+| Notifications — permission ask, 4 reminders scheduled, banner delivered | ✅ driven on the simulator |
+| Midterms — countdown, upcoming states, score, per-skill report | ✅ driven against a local backend |
+| Points at production | ✅ reached `mastersat.uz`; refused by it — see above |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
 | Sign in — wrong password, reveal toggle, submit from the keyboard | ✅ driven on the simulator |
 | Register — an account created, auto-signed-in, and the duplicate-name refusal | ✅ driven against a local backend |
