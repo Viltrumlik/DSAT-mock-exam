@@ -139,6 +139,41 @@ def _classroom_cohort_ids(midterm: Midterm, classroom) -> set[int]:
     return granted & active_members
 
 
+def students_still_to_sit(midterm: Midterm, student_ids) -> set:
+    """Who the room is still waiting on — never just "has no completed attempt".
+
+    A student who FAILED and has been granted a re-sit already has a completed attempt, so a
+    naive check calls them finished. Publishing then freezes their rank and certificate from
+    the sitting they are about to replace, and flips ``results_released`` so they are shown
+    that failed score — and nothing recomputes afterwards, because certificates are only ever
+    issued by an explicit teacher publish.
+
+    Still to sit, then, is any of: never finished it, holding an unspent re-sit, or currently
+    part-way through one.
+    """
+    from .models import MidtermAttempt, MidtermResit
+
+    ids = set(student_ids)
+    if not ids:
+        return set()
+    finished = set(
+        MidtermAttempt.objects.filter(
+            midterm=midterm, student_id__in=ids, is_completed=True
+        ).values_list("student_id", flat=True)
+    )
+    owed_a_resit = set(
+        MidtermResit.objects.filter(
+            midterm=midterm, student_id__in=ids, consumed_at__isnull=True
+        ).values_list("student_id", flat=True)
+    )
+    mid_sitting = set(
+        MidtermAttempt.objects.filter(midterm=midterm, student_id__in=ids, is_completed=False)
+        .exclude(current_state=MidtermAttempt.STATE_ABANDONED)
+        .values_list("student_id", flat=True)
+    )
+    return (ids - finished) | (ids & (owed_a_resit | mid_sitting))
+
+
 def _latest_completed_attempts(midterm: Midterm, student_ids):
     latest = {}
     qs = MidtermAttempt.objects.filter(
@@ -177,7 +212,7 @@ def issue_classroom_certificates(midterm: Midterm, classroom, actor, *, force=Fa
     if not cohort:
         return {"ok": False, "reason": "no_students"}
     latest = _latest_completed_attempts(midterm, cohort)
-    remaining = len(cohort - set(latest.keys()))
+    remaining = len(students_still_to_sit(midterm, cohort))
     if remaining and not force:
         return {"ok": False, "reason": "not_all_finished", "remaining": remaining}
 

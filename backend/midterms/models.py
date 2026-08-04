@@ -911,6 +911,24 @@ class MidtermOutcome(models.Model):
         midterm = attempt.midterm
         if not midterm.is_graded or attempt.score is None:
             return None
+
+        # NEVER walk backwards. A (midterm, student) pair can hold more than one completed
+        # attempt since re-sits exist, and this row is the single source of truth for the
+        # admin report, the retake gate and the certificate. Handing it a SUPERSEDED sitting —
+        # a stale caller, a re-score of the old paper, a backfill in the wrong order — would
+        # silently un-do the re-sit: the verdict flips back to the failing score and the frozen
+        # pass mark reverts to the old term's. Until now that was prevented only by callers
+        # happening to arrive in the right order.
+        existing = cls.objects.filter(
+            midterm_id=midterm.pk, student_id=attempt.student_id
+        ).first()
+        if existing is not None and existing.attempt_id and existing.attempt_id != attempt.pk:
+            prior = MidtermAttempt.objects.filter(pk=existing.attempt_id).only(
+                "pk", "completed_at"
+            ).first()
+            if prior is not None and not _is_later_sitting(attempt, prior):
+                return existing
+
         mark = midterm.effective_pass_mark
         outcome, _created = cls.objects.update_or_create(
             midterm_id=midterm.pk,
@@ -924,6 +942,20 @@ class MidtermOutcome(models.Model):
             },
         )
         return outcome
+
+
+def _is_later_sitting(attempt, other) -> bool:
+    """Whether ``attempt`` is the more recent of two sittings.
+
+    Ordered on ``completed_at`` with the pk as a tiebreak, matching
+    ``midterms.access.latest_completed_attempt`` — the two must agree or the verdict and the
+    reports would disagree about which sitting counts. Falls back to the pk alone when either
+    row never recorded a completion time.
+    """
+    a, b = attempt.completed_at, other.completed_at
+    if a is not None and b is not None:
+        return (a, attempt.pk) > (b, other.pk)
+    return attempt.pk > other.pk
 
 
 class MidtermResit(TimestampedModel):

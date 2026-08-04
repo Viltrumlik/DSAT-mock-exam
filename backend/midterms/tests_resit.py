@@ -238,6 +238,55 @@ class SupersedesEverywhereTests(TestCase):
         self.assertTrue(picked.is_completed)
 
 
+class VerdictNeverWalksBackwardsTests(TestCase):
+    """record_for must refuse a SUPERSEDED sitting, whoever hands it over.
+
+    The whole "the re-sit replaces the old mark" design rests on this one row. Before, it was
+    held only by callers happening to arrive in the right order — anything re-scoring the old
+    paper would silently flip the student back to failed.
+    """
+
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.midterm.pass_mark = 60
+        self.midterm.save(update_fields=["pass_mark"])
+        self.student = User.objects.create(username="s", email="s@x.io")
+        now = timezone.now()
+        self.old = _completed(self.midterm, self.student, 40, when=now - timezone.timedelta(days=30))
+        self.new = _completed(self.midterm, self.student, 82, when=now)
+
+    def test_re_recording_the_old_sitting_is_refused(self):
+        MidtermOutcome.record_for(self.old)
+
+        outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
+        self.assertEqual(outcome.attempt_id, self.new.pk, "the superseded sitting won")
+        self.assertEqual(outcome.score, 82)
+        self.assertTrue(outcome.passed)
+
+    def test_re_recording_the_current_sitting_still_refreshes_it(self):
+        MidtermAttempt.objects.filter(pk=self.new.pk).update(score=91)
+        self.new.refresh_from_db()
+
+        MidtermOutcome.record_for(self.new)
+
+        self.assertEqual(
+            MidtermOutcome.objects.get(midterm=self.midterm, student=self.student).score, 91
+        )
+
+    def test_a_newer_sitting_still_supersedes(self):
+        newest = _completed(self.midterm, self.student, 95)
+        outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
+        self.assertEqual(outcome.attempt_id, newest.pk)
+        self.assertEqual(outcome.score, 95)
+
+    def test_a_first_verdict_is_never_blocked(self):
+        fresh = User.objects.create(username="f", email="f@x.io")
+        att = _completed(self.midterm, fresh, 70)
+        self.assertEqual(
+            MidtermOutcome.objects.get(midterm=self.midterm, student=fresh).attempt_id, att.pk
+        )
+
+
 class BackfillPicksTheLatestSittingTests(TestCase):
     """backfill_midterm_outcomes walked attempts oldest-first and skipped a pair it had
     already written — so on a re-sat midterm it would have recorded the OLD failing verdict
@@ -289,6 +338,119 @@ class BackfillPicksTheLatestSittingTests(TestCase):
         call_command("backfill_midterm_outcomes", "--skip-questions")
         outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
         self.assertEqual(outcome.attempt_id, only.pk)
+
+    def test_rejudge_does_not_walk_back_down_the_history(self):
+        """--rejudge bypasses the exists guard, so without a per-run guard the newest-first
+        ordering would leave the OLDEST sitting as the verdict — worse than before."""
+        from django.core.management import call_command
+
+        now = timezone.now()
+        self._bare_attempt(40, now - timezone.timedelta(days=30))
+        newer = self._bare_attempt(82, now)
+
+        call_command("backfill_midterm_outcomes", "--skip-questions", "--rejudge")
+
+        outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
+        self.assertEqual(outcome.attempt_id, newer.pk)
+        self.assertEqual(outcome.score, 82)
+
+    def test_rejudge_still_refreshes_a_stale_verdict(self):
+        """The point of --rejudge: re-apply today's pass mark to an existing verdict."""
+        from django.core.management import call_command
+
+        att = self._bare_attempt(65, timezone.now())
+        MidtermOutcome.objects.create(
+            midterm=self.midterm, student=self.student, attempt=att,
+            score=65, pass_mark=90, scoring_scale=Midterm.SCALE_100, passed=False,
+        )
+
+        call_command("backfill_midterm_outcomes", "--skip-questions", "--rejudge")
+
+        outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
+        self.assertEqual(outcome.pass_mark, 60)
+        self.assertTrue(outcome.passed)
+
+
+class PublishWaitsForTheResitTests(TestCase):
+    """A student owed a re-sit is not "finished", however many papers they have already handed in.
+
+    Publishing freezes rank + certificate and flips results_released. Doing that while a
+    re-sit is outstanding shows the student the mark they are about to replace, and nothing
+    recomputes later — certificates are only ever issued by an explicit teacher publish.
+    """
+
+    def setUp(self):
+        from classes.models import Classroom, ClassroomMembership
+
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.midterm.pass_mark = 60
+        self.midterm.save(update_fields=["pass_mark"])
+        self.teacher = User.objects.create(username="t", email="t@x.io", role="teacher")
+        self.room = Classroom.objects.create(
+            name="G12", subject="MATH", lesson_days=Classroom.DAYS_ODD, created_by=self.teacher
+        )
+        self.passed = User.objects.create(username="p", email="p@x.io")
+        self.failed = User.objects.create(username="f", email="f@x.io")
+        for u in (self.passed, self.failed):
+            ClassroomMembership.objects.create(
+                classroom=self.room, user=u, role=ClassroomMembership.ROLE_STUDENT
+            )
+            ResourceAccessGrant.objects.create(
+                user=u, classroom=self.room, resource_type=RT_MIDTERM_V2,
+                resource_id=self.midterm.id, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+                source=ResourceAccessGrant.SOURCE_CLASSROOM,
+                status=ResourceAccessGrant.STATUS_ACTIVE,
+            )
+        _completed(self.midterm, self.passed, 85)
+        _completed(self.midterm, self.failed, 40)
+
+    def _still_to_sit(self):
+        from midterms.certificate_service import students_still_to_sit
+
+        return students_still_to_sit(self.midterm, {self.passed.id, self.failed.id})
+
+    def test_everyone_finished_means_nobody_outstanding(self):
+        self.assertEqual(self._still_to_sit(), set())
+
+    def test_an_unspent_resit_keeps_the_room_open(self):
+        MidtermResit.objects.create(midterm=self.midterm, student=self.failed)
+        self.assertEqual(self._still_to_sit(), {self.failed.id})
+
+    def test_a_resit_in_progress_keeps_the_room_open(self):
+        MidtermResit.objects.create(
+            midterm=self.midterm, student=self.failed, consumed_at=timezone.now()
+        )
+        MidtermAttempt.objects.create(
+            midterm=self.midterm, student=self.failed, is_completed=False,
+            current_state=MidtermAttempt.STATE_NOT_STARTED,
+        )
+        self.assertEqual(self._still_to_sit(), {self.failed.id})
+
+    def test_once_the_resit_is_handed_in_the_room_closes(self):
+        MidtermResit.objects.create(
+            midterm=self.midterm, student=self.failed, consumed_at=timezone.now()
+        )
+        _completed(self.midterm, self.failed, 74)
+        self.assertEqual(self._still_to_sit(), set())
+
+    def test_publishing_is_refused_while_a_resit_is_outstanding(self):
+        from midterms.certificate_service import issue_classroom_certificates
+
+        MidtermResit.objects.create(midterm=self.midterm, student=self.failed)
+        result = issue_classroom_certificates(self.midterm, self.room, actor=self.teacher)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "not_all_finished")
+        self.assertEqual(result["remaining"], 1)
+
+    def test_a_never_started_student_still_blocks_publish_as_before(self):
+        newcomer = User.objects.create(username="n", email="n@x.io")
+        self.assertIn(newcomer.id, students_still_to_sit_for(self.midterm, {newcomer.id}))
+
+
+def students_still_to_sit_for(midterm, ids):
+    from midterms.certificate_service import students_still_to_sit
+
+    return students_still_to_sit(midterm, ids)
 
 
 class ResitEndpointTests(TestCase):

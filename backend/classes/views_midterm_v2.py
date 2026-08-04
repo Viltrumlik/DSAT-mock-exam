@@ -390,7 +390,13 @@ class MidtermV2PanelView(_ClassroomScopedView):
         students.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0), r["student_name"]))
 
         sched = MidtermSchedule.objects.filter(classroom=classroom, midterm=midterm).first()
-        all_finished = bool(cohort) and cohort <= set(latest.keys())
+        # Not "everyone has a completed attempt": a student holding an unspent re-sit, or
+        # part-way through one, is still to sit it. Publishing over them would freeze their
+        # rank and certificate from the paper they are about to replace — and this flag is
+        # what invites the teacher to press publish.
+        from midterms.certificate_service import students_still_to_sit
+
+        all_finished = bool(cohort) and not students_still_to_sit(midterm, cohort)
         versions = list(MidtermVersion.objects.filter(midterm=midterm))
         stats = {
             "assigned": len(cohort),

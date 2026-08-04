@@ -92,10 +92,15 @@ class Command(BaseCommand):
                 pair = (midterm.pk, attempt.student_id)
                 superseded = pair in verdict_written
                 verdict_written.add(pair)
-                exists = superseded or MidtermOutcome.objects.filter(
+                exists = MidtermOutcome.objects.filter(
                     midterm_id=midterm.pk, student_id=attempt.student_id
                 ).exists()
-                if exists and not rejudge:
+                # ``superseded`` outranks --rejudge. The rows arrive newest-first, so once a
+                # pair has been written every later row for it is an OLDER sitting; letting
+                # --rejudge through would walk back down the student's history and leave the
+                # FIRST attempt as the verdict — the exact inversion this ordering exists to
+                # prevent.
+                if superseded or (exists and not rejudge):
                     stats["outcomes_skipped_existing"] += 1
                 elif not dry:
                     with transaction.atomic():
