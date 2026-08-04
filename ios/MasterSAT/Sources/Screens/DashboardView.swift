@@ -29,8 +29,18 @@ struct DashboardView: View {
     @State private var showingGoal = false
     @State private var savingExamDate = false
     @State private var openedAssignmentId: Int?
+    @State private var promptDismissed = false
 
     private var current: CurrentUser { profile ?? user }
+
+    /// Only asked once iOS has confirmed it has not asked yet, and only when there is
+    /// something real to be reminded about — a prompt on an empty account is a prompt for a
+    /// benefit the student cannot see, and iOS never offers the chance again.
+    private var showsReminderPrompt: Bool {
+        !promptDismissed
+            && session.notifications.permission == .notAsked
+            && (!dueSoon.isEmpty || midterms.contains { !$0.submitted })
+    }
 
     /// Section targets, with the site's own fallback: a student who set a total before the
     /// two sliders existed still has one, so split it rather than showing two dashes under
@@ -96,6 +106,18 @@ struct DashboardView: View {
 
                     NextLessonCard(event: month.nextLesson, onOpen: open)
                     SelectedDayCard(dayKey: selectedDay, events: selectedEvents, onOpen: open)
+
+                    if showsReminderPrompt {
+                        ReminderPromptCard(
+                            onEnable: {
+                                Task {
+                                    await session.notifications.requestPermission()
+                                    await session.notifications.reschedule(assignments: assignments, midterms: midterms)
+                                }
+                            },
+                            onDismiss: { promptDismissed = true }
+                        )
+                    }
 
                     if !dueSoon.isEmpty { homeworkSection }
                     if !results.isEmpty { resultsSection }
@@ -180,10 +202,15 @@ struct DashboardView: View {
     /// reads as a zero.
     private var resultsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            DotHeading(title: "Your results", count: results.count, tone: Theme.success)
+            HStack(spacing: 9) {
+                DotHeading(title: "Your results", count: results.count, tone: Theme.success)
+                NavigationLink("See all") { MidtermsView() }
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+            }
             ForEach(results) { midterm in
                 NavigationLink {
-                    MidtermResultView(attemptId: midterm.attemptId ?? 0, title: midterm.title)
+                    MidtermReportView(attemptId: midterm.attemptId ?? 0, title: midterm.title)
                 } label: {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -246,6 +273,11 @@ struct DashboardView: View {
         do {
             assignments = try await homework
             midterms = try await papers
+            // Home is the screen a student opens most, so it is where the device's
+            // reminders are kept in step with what they have actually been set. Rebuilding
+            // the whole schedule is what lets a handed-in homework stop nagging.
+            await session.notifications.reschedule(assignments: assignments, midterms: midterms)
+            await session.notifications.announceResults(midterms: midterms)
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {
@@ -555,98 +587,5 @@ struct RetryNotice: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
-    }
-}
-
-/// A midterm result. Reachable from Home once the paper has been sat.
-struct MidtermResultView: View {
-    let attemptId: Int
-    let title: String
-
-    @Environment(Session.self) private var session
-    @State private var result: MidtermResult?
-    @State private var loadError: String?
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                if let result {
-                    if result.released, let score = result.totalScore {
-                        VStack(spacing: 6) {
-                            Overline("Your score")
-                            Text(ScoreText.string(score))
-                                .font(.system(size: 64, weight: .bold, design: .rounded))
-                                .monospacedDigit()
-                                .foregroundStyle(Theme.accent)
-                            if let ceiling = result.scoreCeiling {
-                                Text("out of \(ScoreText.string(ceiling))")
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            if let subject = result.subject, !subject.isEmpty {
-                                Chip(text: subject.humanisedSubject, tone: .accent)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .cardStyle(padding: 28)
-                    } else {
-                        VStack(spacing: 10) {
-                            Image(systemName: "hourglass")
-                                .font(.system(size: 34))
-                                .foregroundStyle(Theme.warning)
-                            Text("Not released yet").font(.system(size: 17, weight: .bold))
-                            // Scored on submit, sealed until the teacher publishes.
-                            // Saying so stops an absent score reading as a bad one.
-                            Text("Your teacher will publish the results for this midterm.")
-                                .font(.system(size: 14))
-                                .foregroundStyle(Theme.textSecondary)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .cardStyle(padding: 28)
-                    }
-
-                    if let cert = result.certificate, cert.available {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Label("Certificate", systemImage: "rosette")
-                                .font(.system(size: 15, weight: .bold))
-                            if let rank = cert.rank, let cohort = cert.cohortSize {
-                                Text("Ranked \(ScoreText.string(rank)) of \(ScoreText.string(cohort))")
-                                    .font(.system(size: 13))
-                                    .foregroundStyle(Theme.textSecondary)
-                            }
-                            if let raw = cert.downloadURL, let url = URL(string: raw) {
-                                Link(destination: url) {
-                                    Label("Open certificate", systemImage: "arrow.up.right.square")
-                                        .font(.system(size: 14, weight: .semibold))
-                                }
-                            }
-                        }
-                        .cardStyle()
-                    }
-                } else if let loadError {
-                    RetryNotice(message: loadError) { await load() }
-                } else {
-                    ProgressView().padding(.vertical, 60)
-                }
-            }
-            .padding(16)
-        }
-        .background(Theme.background)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
-    }
-
-    @MainActor
-    private func load() async {
-        loadError = nil
-        do {
-            result = try await session.results.midtermResult(attemptId: attemptId)
-        } catch let error as APIError {
-            loadError = error.errorDescription
-        } catch {
-            loadError = error.localizedDescription
-        }
     }
 }
