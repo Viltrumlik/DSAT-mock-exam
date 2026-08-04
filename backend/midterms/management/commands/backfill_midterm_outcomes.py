@@ -53,7 +53,11 @@ class Command(BaseCommand):
         attempts = (
             MidtermAttempt.objects.filter(is_completed=True, score__isnull=False)
             .select_related("midterm")
-            .order_by("pk")
+            # NEWEST first, so that when a student has re-sat a midterm the sitting that
+            # counts is the one this command records. Ordered on completed_at with the pk as
+            # a tiebreak; a NULL completed_at sorts last under Postgres DESC, which is right —
+            # a row that never recorded when it finished is the weakest candidate.
+            .order_by("-completed_at", "-pk")
         )
         if options["midterm"]:
             attempts = attempts.filter(midterm_id=options["midterm"])
@@ -69,6 +73,13 @@ class Command(BaseCommand):
             "questions_unavailable": 0,
         }
 
+        # A (midterm, student) pair can have MORE than one completed attempt since re-sits
+        # exist — a student who failed a month, repeated it, and sat the paper again. Only the
+        # LATEST sitting is that student's verdict, so the older one must never be the row that
+        # gets written. Ascending order + this guard means the first attempt SEEN for a pair is
+        # also the newest, and the rest are passed over.
+        verdict_written: set[tuple[int, int]] = set()
+
         for attempt in attempts.iterator():
             stats["attempts_seen"] += 1
             midterm = attempt.midterm
@@ -78,7 +89,10 @@ class Command(BaseCommand):
                 # A pre-midterm is a diagnostic; it has no verdict to give.
                 stats["outcomes_skipped_pre_midterm"] += 1
             else:
-                exists = MidtermOutcome.objects.filter(
+                pair = (midterm.pk, attempt.student_id)
+                superseded = pair in verdict_written
+                verdict_written.add(pair)
+                exists = superseded or MidtermOutcome.objects.filter(
                     midterm_id=midterm.pk, student_id=attempt.student_id
                 ).exists()
                 if exists and not rejudge:

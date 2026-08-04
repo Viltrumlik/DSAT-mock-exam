@@ -97,6 +97,55 @@ def has_completed_attempt(user, midterm) -> bool:
     ).exists()
 
 
+def open_resit(user, midterm):
+    """The unspent re-sit grant letting ``user`` sit ``midterm`` again, or None.
+
+    A midterm is once-only by default. This is the single, deliberate exception: a student
+    who failed a month and repeated it has to sit that month's paper again, and someone with
+    a name has to say so.
+    """
+    from .models import MidtermResit
+
+    return (
+        MidtermResit.objects.filter(midterm=midterm, student=user, consumed_at__isnull=True)
+        .order_by("-created_at")
+        .first()
+    )
+
+
+def consume_resit(user, midterm, attempt) -> bool:
+    """Spend the open re-sit grant, if this new attempt is the one it opened.
+
+    A no-op when there is no grant — the ordinary first sitting goes through here too and
+    must not care. Conditional UPDATE rather than save() so two tabs racing the create
+    endpoint can only ever spend it once.
+    """
+    from django.utils import timezone
+
+    from .models import MidtermResit
+
+    return bool(
+        MidtermResit.objects.filter(
+            midterm=midterm, student=user, consumed_at__isnull=True
+        ).update(consumed_at=timezone.now(), attempt=attempt)
+    )
+
+
+def latest_completed_attempt(user, midterm):
+    """The attempt that COUNTS for this (student, midterm) — the most recent completed one.
+
+    Once a re-sit exists a pair can have more than one completed attempt, and every consumer
+    that reports a score, a verdict or a rank must follow the newest. Ordered by
+    ``completed_at`` with the id as a tiebreak, because two rows completed in the same
+    transaction would otherwise come back in whatever order the database felt like.
+    """
+    return (
+        MidtermAttempt.objects.filter(student=user, midterm=midterm, is_completed=True)
+        .order_by("-completed_at", "-id")
+        .first()
+    )
+
+
 def retake_eligibility(user, midterm) -> tuple[bool, str]:
     """Whether ``user`` may SIT ``midterm`` given the retake rules — the start gate.
 
@@ -215,9 +264,10 @@ def retake_eligible_students(midterm):
 def can_start_midterm(user, midterm) -> tuple[bool, str]:
     """Whether ``user`` may create/start an attempt for ``midterm``.
 
-    Returns ``(ok, reason)``. Enforces: published, effective grant, and NO-RETAKE (a completed
-    attempt refuses a new one). The classroom scheduling window (open/closed) is layered on in
-    the certificate/schedule re-home; an in-progress attempt is always resumable.
+    Returns ``(ok, reason)``. Enforces: published, effective grant, and ONCE-ONLY (a completed
+    attempt refuses a new one, unless a staff-granted re-sit says otherwise). The classroom
+    scheduling window (open/closed) is layered on in the certificate/schedule re-home; an
+    in-progress attempt is always resumable.
     """
     if not midterm.is_published:
         return False, "midterm_unpublished"
@@ -226,7 +276,9 @@ def can_start_midterm(user, midterm) -> tuple[bool, str]:
     ).first()
     if active is not None:
         return True, "resume"  # an in-progress attempt is always resumable
-    if has_completed_attempt(user, midterm):
+    if has_completed_attempt(user, midterm) and open_resit(user, midterm) is None:
+        # Once-only, unless someone with a name has granted a re-sit — a student who failed a
+        # month and repeated it must sit that month's paper again. See MidtermResit.
         return False, "midterm_completed"
     grant = winning_grant(user, midterm)
     if grant is None:

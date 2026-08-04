@@ -12,6 +12,7 @@ from .views import MidtermAttemptViewSet
 from .views_report import MidtermErrorReportPdfView, MidtermErrorReportView
 from .views_student import MyMidtermsView
 from .views_teacher import (
+    MidtermResitView,
     MidtermCatalogView,
     MidtermGrantView,
     MidtermRevokeView,
@@ -70,6 +71,8 @@ urlpatterns = [
     path("teacher/students/", MidtermStudentsView.as_view(), name="midterm-teacher-students"),
     path("teacher/midterms/<int:pk>/grant/", MidtermGrantView.as_view(), name="midterm-teacher-grant"),
     path("teacher/midterms/<int:pk>/revoke/", MidtermRevokeView.as_view(), name="midterm-teacher-revoke"),
+    # Let a named student sit a midterm they already completed — see MidtermResit.
+    path("teacher/midterms/<int:pk>/resit/", MidtermResitView.as_view(), name="midterm-teacher-resit"),
     path("teacher/midterms/<int:pk>/results/", MidtermStandaloneResultsView.as_view(), name="midterm-teacher-results"),
     # Admin builder — deepest (questions) route first so it isn't shadowed by the base router.
     path("admin/midterms/<int:midterm_pk>/questions/", include(admin_question_router.urls)),

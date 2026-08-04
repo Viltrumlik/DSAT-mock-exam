@@ -90,6 +90,16 @@ export function StandaloneMidtermDetail({ midtermId }: { midtermId: number }) {
     onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
   });
 
+  // A midterm is once-only. This is the exception: a student who failed a month, repeated it,
+  // and has to sit that month's paper again. One click buys exactly one sitting.
+  const resit = useMutation({
+    mutationFn: async ({ userId, allow }: { userId: number; allow: boolean }) => {
+      if (allow) await midtermApi.allowResit(midtermId, [userId], "repeated the month");
+      else await midtermApi.withdrawResit(midtermId, [userId]);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["midterm", "standalone-results", midtermId] }),
+  });
+
   const revoke = useMutation({
     mutationFn: (userId: number) => midtermApi.revoke(midtermId, [userId]),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["midterm", "standalone-results", midtermId] }),
@@ -161,8 +171,31 @@ export function StandaloneMidtermDetail({ midtermId }: { midtermId: number }) {
                     <td className="py-2.5 text-muted-foreground">{stateLabel[s.state] ?? s.state}</td>
                     <td className="py-2.5 text-right font-bold text-foreground">
                       {s.submitted ? `${s.score} / ${s.score_ceiling}` : "—"}
+                      {s.sittings > 1 && (
+                        <span className="ml-1.5 align-middle text-[10px] font-bold text-muted-foreground">
+                          {s.sittings} sittings
+                        </span>
+                      )}
                     </td>
                     <td className="py-2.5 text-right">
+                      {s.submitted && (
+                        <button
+                          onClick={() => resit.mutate({ userId: s.student_id, allow: !s.resit_open })}
+                          disabled={resit.isPending}
+                          title={
+                            s.resit_open
+                              ? "They may sit it again. Click to take that back."
+                              : "Let them sit this midterm again — for a student who repeated the month."
+                          }
+                          className={`mr-3 text-xs font-semibold disabled:opacity-50 ${
+                            s.resit_open
+                              ? "text-primary hover:text-primary/80"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {s.resit_open ? "Re-sit allowed ✓" : "Allow re-sit"}
+                        </button>
+                      )}
                       <button
                         onClick={() => revoke.mutate(s.student_id)}
                         disabled={revoke.isPending}

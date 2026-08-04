@@ -926,6 +926,65 @@ class MidtermOutcome(models.Model):
         return outcome
 
 
+class MidtermResit(TimestampedModel):
+    """Permission for ONE student to sit ONE midterm again, from the start.
+
+    A midterm is normally once-only: ``can_start_midterm`` refuses a student who already has
+    a completed attempt, so nobody can quietly re-run the same paper until they like the
+    score. But a student who FAILED a month and then REPEATED that month has to sit that
+    month's midterm again — the same paper, not a RETAKE (which is a different midterm object
+    with ``midterm_type=RETAKE``). There was no way to express that, so the answer to every
+    such student was "You have already completed this midterm."
+
+    A grant is spent, not standing: it opens exactly one new sitting and is stamped
+    ``consumed_at`` the moment that attempt is created. Re-sitting twice needs two grants,
+    each with a name against it.
+
+    The old attempt is NOT deleted — it stays as history. What supersedes it is the verdict:
+    ``MidtermOutcome`` is unique per (midterm, student) and re-recorded from the newest
+    completed attempt, so reports, ranks and certificates follow the new sitting.
+    """
+
+    midterm = models.ForeignKey(Midterm, on_delete=models.CASCADE, related_name="resits", db_index=True)
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="midterm_resits", db_index=True
+    )
+    reason = models.CharField(
+        max_length=255, blank=True, default="",
+        help_text="Why this student may sit it again — e.g. 'repeated the first month'.",
+    )
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    # Set when the grant is spent; the attempt it opened is kept for the audit trail.
+    consumed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    attempt = models.ForeignKey(
+        MidtermAttempt, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        db_table = "midterms_resit"
+        ordering = ["-created_at"]
+        constraints = [
+            # One OPEN grant at a time. Granting twice before the student sits would otherwise
+            # bank two re-sits invisibly; spent grants stay for history, so this is partial.
+            models.UniqueConstraint(
+                fields=["midterm", "student"],
+                condition=models.Q(consumed_at__isnull=True),
+                name="uniq_open_midterm_resit",
+            ),
+        ]
+        indexes = [models.Index(fields=["midterm", "student", "consumed_at"])]
+
+    def __str__(self):
+        state = "spent" if self.consumed_at else "open"
+        return f"MidtermResit(midterm={self.midterm_id}, student={self.student_id}, {state})"
+
+    @property
+    def is_open(self) -> bool:
+        return self.consumed_at is None
+
+
 class MidtermAttemptIdempotencyKey(models.Model):
     """Replay store for mutating midterm-attempt endpoints (mirrors exams.AttemptIdempotencyKey)."""
 

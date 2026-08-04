@@ -1,0 +1,369 @@
+"""Sitting a midterm again after repeating the month.
+
+A midterm is once-only, and that is right: nobody should be able to re-run a paper until the
+score suits them. But a student who FAILED month 1, REPEATED month 1, and now has to sit
+month 1's midterm again was told "You have already completed this midterm" with no way
+around it — not by a teacher, not by an admin, not at all.
+
+This is NOT the RETAKE midterm (a separate paper, midterm_type=RETAKE). It is the same paper,
+sat again, on somebody's authority.
+
+    python manage.py test midterms.tests_resit --settings=config.settings_test_nomigrations
+"""
+from __future__ import annotations
+
+from django.contrib.auth import get_user_model
+from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from access.models import ResourceAccessGrant
+from access.resources import RT_MIDTERM_V2
+from midterms.access import can_start_midterm, latest_completed_attempt, open_resit
+from midterms.models import Midterm, MidtermAttempt, MidtermOutcome, MidtermResit
+from midterms.tests_api import make_published_midterm
+
+User = get_user_model()
+
+
+def _grant(student, midterm):
+    return ResourceAccessGrant.objects.create(
+        user=student, resource_type=RT_MIDTERM_V2, resource_id=midterm.id,
+        scope=ResourceAccessGrant.SCOPE_RESOURCE, source=ResourceAccessGrant.SOURCE_MANUAL,
+        status=ResourceAccessGrant.STATUS_ACTIVE,
+    )
+
+
+def _completed(midterm, student, score, *, when=None):
+    """A finished sitting, with the verdict recorded exactly as complete() would."""
+    att = MidtermAttempt.objects.create(
+        midterm=midterm, student=student, is_completed=True,
+        current_state=MidtermAttempt.STATE_COMPLETED, score=score,
+        completed_at=when or timezone.now(),
+    )
+    MidtermOutcome.record_for(att)
+    return att
+
+
+class ResitGateTests(TestCase):
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.midterm.pass_mark = 60
+        self.midterm.save(update_fields=["pass_mark"])
+        self.student = User.objects.create(username="s", email="s@x.io")
+        _grant(self.student, self.midterm)
+        self.failed = _completed(self.midterm, self.student, 40)
+
+    def test_without_a_resit_the_midterm_stays_once_only(self):
+        ok, reason = can_start_midterm(self.student, self.midterm)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "midterm_completed")
+
+    def test_an_open_resit_opens_the_door(self):
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student, reason="repeated month 1")
+        ok, _reason = can_start_midterm(self.student, self.midterm)
+        self.assertTrue(ok)
+
+    def test_a_spent_resit_does_not(self):
+        MidtermResit.objects.create(
+            midterm=self.midterm, student=self.student, consumed_at=timezone.now()
+        )
+        ok, reason = can_start_midterm(self.student, self.midterm)
+        self.assertFalse(ok)
+        self.assertEqual(reason, "midterm_completed")
+
+    def test_a_resit_for_someone_else_does_not_let_this_student_in(self):
+        other = User.objects.create(username="o", email="o@x.io")
+        MidtermResit.objects.create(midterm=self.midterm, student=other)
+        ok, _r = can_start_midterm(self.student, self.midterm)
+        self.assertFalse(ok)
+
+    def test_a_resit_for_another_midterm_does_not_leak(self):
+        other_midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        MidtermResit.objects.create(midterm=other_midterm, student=self.student)
+        ok, _r = can_start_midterm(self.student, self.midterm)
+        self.assertFalse(ok)
+
+    def test_only_one_open_grant_can_exist_at_a_time(self):
+        from django.db import IntegrityError
+
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+        with self.assertRaises(IntegrityError):
+            MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+
+
+class ResitConsumesOnStartTests(TestCase):
+    """The grant is spent when the paper is opened — not when it was issued."""
+
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.student = User.objects.create(username="s", email="s@x.io")
+        _grant(self.student, self.midterm)
+        _completed(self.midterm, self.student, 40)
+        self.c = APIClient()
+        self.c.force_authenticate(self.student)
+
+    def test_starting_again_creates_a_second_attempt_and_spends_the_grant(self):
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+
+        r = self.c.post("/api/midterms/attempts/", {"midterm": self.midterm.id}, format="json")
+
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(MidtermAttempt.objects.filter(midterm=self.midterm, student=self.student).count(), 2)
+        resit = MidtermResit.objects.get()
+        self.assertIsNotNone(resit.consumed_at)
+        self.assertEqual(resit.attempt_id, r.json()["id"])
+        self.assertIsNone(open_resit(self.student, self.midterm))
+
+    def test_one_grant_buys_exactly_one_re_sitting(self):
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+        first = self.c.post("/api/midterms/attempts/", {"midterm": self.midterm.id}, format="json")
+        self.assertEqual(first.status_code, 201)
+        # Finish it, then try to go round again on the same grant.
+        MidtermAttempt.objects.filter(pk=first.json()["id"]).update(
+            is_completed=True, current_state=MidtermAttempt.STATE_COMPLETED,
+            score=55, completed_at=timezone.now(),
+        )
+
+        again = self.c.post("/api/midterms/attempts/", {"midterm": self.midterm.id}, format="json")
+
+        self.assertEqual(again.status_code, 403, again.content)
+        self.assertEqual(again.json()["error"], "midterm_completed")
+
+    def test_an_ordinary_first_sitting_is_unaffected(self):
+        """consume_resit runs on every create; with no grant it must be a silent no-op."""
+        fresh = User.objects.create(username="f", email="f@x.io")
+        _grant(fresh, self.midterm)
+        c = APIClient()
+        c.force_authenticate(fresh)
+        r = c.post("/api/midterms/attempts/", {"midterm": self.midterm.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(MidtermResit.objects.count(), 0)
+
+
+class NewResultSupersedesTests(TestCase):
+    """The student repeated the month — the old mark is history, not their standing."""
+
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.midterm.pass_mark = 60
+        self.midterm.save(update_fields=["pass_mark"])
+        self.student = User.objects.create(username="s", email="s@x.io")
+        _grant(self.student, self.midterm)
+        self.old = _completed(
+            self.midterm, self.student, 40, when=timezone.now() - timezone.timedelta(days=30)
+        )
+
+    def test_the_verdict_follows_the_new_sitting(self):
+        self.assertFalse(MidtermOutcome.objects.get(midterm=self.midterm, student=self.student).passed)
+
+        _completed(self.midterm, self.student, 78)
+
+        outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
+        self.assertTrue(outcome.passed, "the repeated month's pass must supersede the old fail")
+        self.assertEqual(outcome.score, 78)
+
+    def test_there_is_still_exactly_one_verdict(self):
+        _completed(self.midterm, self.student, 78)
+        self.assertEqual(
+            MidtermOutcome.objects.filter(midterm=self.midterm, student=self.student).count(), 1
+        )
+
+    def test_the_old_attempt_is_kept_as_history(self):
+        _completed(self.midterm, self.student, 78)
+        self.assertTrue(MidtermAttempt.objects.filter(pk=self.old.pk).exists())
+        self.assertEqual(
+            MidtermAttempt.objects.filter(midterm=self.midterm, student=self.student).count(), 2
+        )
+
+    def test_latest_completed_attempt_picks_the_newest(self):
+        new = _completed(self.midterm, self.student, 78)
+        self.assertEqual(latest_completed_attempt(self.student, self.midterm).pk, new.pk)
+
+    def test_latest_is_deterministic_when_two_finish_at_the_same_instant(self):
+        stamp = timezone.now()
+        MidtermAttempt.objects.filter(pk=self.old.pk).update(completed_at=stamp)
+        newer = _completed(self.midterm, self.student, 78, when=stamp)
+        self.assertEqual(latest_completed_attempt(self.student, self.midterm).pk, newer.pk)
+
+
+class SupersedesEverywhereTests(TestCase):
+    """"The new result replaces the old" has to be true on every surface, not just the verdict.
+
+    The three readers below already pick the newest attempt — each was written "last write
+    wins" over an ascending order_by. That is load-bearing now rather than incidental, so it
+    is pinned here: a future refactor that swaps in a plain .first() would silently start
+    showing a repeated student their old failing mark.
+    """
+
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.midterm.pass_mark = 60
+        self.midterm.save(update_fields=["pass_mark"])
+        self.student = User.objects.create(username="s", email="s@x.io")
+        _grant(self.student, self.midterm)
+        _completed(self.midterm, self.student, 40, when=timezone.now() - timezone.timedelta(days=30))
+        self.new = _completed(self.midterm, self.student, 78)
+
+    def test_the_admin_report_reads_the_new_sitting(self):
+        from midterms.admin_report import _attempts_by_student
+
+        picked = _attempts_by_student(self.midterm.id, [self.student.id])[self.student.id]
+        self.assertEqual(picked.pk, self.new.pk)
+        self.assertEqual(picked.score, 78)
+
+    def test_the_certificate_cohort_reads_the_new_sitting(self):
+        from midterms.certificate_service import _latest_completed_attempts
+
+        picked = _latest_completed_attempts(self.midterm, [self.student.id])[self.student.id]
+        self.assertEqual(picked.pk, self.new.pk)
+
+    def test_the_students_own_list_shows_the_new_score(self):
+        c = APIClient()
+        c.force_authenticate(self.student)
+        rows = c.get("/api/midterms/mine/").json()["results"]
+        row = next(r for r in rows if r["midterm_id"] == self.midterm.id)
+        self.assertEqual(row["attempt_id"], self.new.pk)
+
+    def test_an_in_flight_resit_does_not_erase_the_old_mark_yet(self):
+        """Mid-re-sitting, the report must still show what they actually last scored."""
+        from midterms.admin_report import _attempts_by_student
+
+        MidtermAttempt.objects.create(
+            midterm=self.midterm, student=self.student,
+            current_state=MidtermAttempt.STATE_NOT_STARTED, is_completed=False,
+        )
+        picked = _attempts_by_student(self.midterm.id, [self.student.id])[self.student.id]
+        self.assertEqual(picked.pk, self.new.pk)
+        self.assertTrue(picked.is_completed)
+
+
+class BackfillPicksTheLatestSittingTests(TestCase):
+    """backfill_midterm_outcomes walked attempts oldest-first and skipped a pair it had
+    already written — so on a re-sat midterm it would have recorded the OLD failing verdict
+    and then passed over the new one."""
+
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.midterm.pass_mark = 60
+        self.midterm.save(update_fields=["pass_mark"])
+        self.student = User.objects.create(username="s", email="s@x.io")
+
+    def _bare_attempt(self, score, when):
+        """A finished sitting with NO outcome row — what the backfill exists to repair."""
+        return MidtermAttempt.objects.create(
+            midterm=self.midterm, student=self.student, is_completed=True,
+            current_state=MidtermAttempt.STATE_COMPLETED, score=score, completed_at=when,
+        )
+
+    def test_it_records_the_newest_sitting(self):
+        from django.core.management import call_command
+
+        now = timezone.now()
+        self._bare_attempt(40, now - timezone.timedelta(days=30))
+        newer = self._bare_attempt(82, now)
+        self.assertEqual(MidtermOutcome.objects.count(), 0)
+
+        call_command("backfill_midterm_outcomes", "--skip-questions")
+
+        outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
+        self.assertEqual(outcome.score, 82)
+        self.assertTrue(outcome.passed)
+        self.assertEqual(outcome.attempt_id, newer.pk)
+
+    def test_it_still_writes_exactly_one_verdict(self):
+        from django.core.management import call_command
+
+        now = timezone.now()
+        self._bare_attempt(40, now - timezone.timedelta(days=30))
+        self._bare_attempt(82, now)
+        call_command("backfill_midterm_outcomes", "--skip-questions")
+        self.assertEqual(
+            MidtermOutcome.objects.filter(midterm=self.midterm, student=self.student).count(), 1
+        )
+
+    def test_a_single_sitting_is_unaffected(self):
+        from django.core.management import call_command
+
+        only = self._bare_attempt(55, timezone.now())
+        call_command("backfill_midterm_outcomes", "--skip-questions")
+        outcome = MidtermOutcome.objects.get(midterm=self.midterm, student=self.student)
+        self.assertEqual(outcome.attempt_id, only.pk)
+
+
+class ResitEndpointTests(TestCase):
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.admin = User.objects.create(username="a", email="a@x.io", is_staff=True, is_superuser=True)
+        self.teacher = User.objects.create(username="t", email="t@x.io", role="teacher")
+        self.student = User.objects.create(username="s", email="s@x.io")
+        _grant(self.student, self.midterm)
+        _completed(self.midterm, self.student, 40)
+        self.url = f"/api/midterms/teacher/midterms/{self.midterm.id}/resit/"
+
+    def _client(self, user):
+        c = APIClient()
+        c.force_authenticate(user)
+        return c
+
+    def test_a_teacher_may_grant_a_resit(self):
+        r = self._client(self.teacher).post(
+            self.url, {"user_ids": [self.student.id], "reason": "repeated month 1"}, format="json"
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["granted"], [self.student.id])
+        resit = MidtermResit.objects.get()
+        self.assertEqual(resit.granted_by_id, self.teacher.id)
+        self.assertEqual(resit.reason, "repeated month 1")
+
+    def test_an_admin_may_grant_a_resit(self):
+        r = self._client(self.admin).post(self.url, {"user_ids": [self.student.id]}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_a_student_may_not_grant_themselves_one(self):
+        r = self._client(self.student).post(self.url, {"user_ids": [self.student.id]}, format="json")
+        self.assertIn(r.status_code, (401, 403))
+        self.assertEqual(MidtermResit.objects.count(), 0)
+
+    def test_granting_to_someone_who_never_sat_it_is_refused_not_banked(self):
+        newcomer = User.objects.create(username="n", email="n@x.io")
+        r = self._client(self.teacher).post(self.url, {"user_ids": [newcomer.id]}, format="json")
+        self.assertEqual(r.json()["granted"], [])
+        self.assertEqual(r.json()["skipped"][0]["reason"], "has_not_sat_it")
+        self.assertEqual(MidtermResit.objects.count(), 0)
+
+    def test_granting_twice_does_not_bank_two(self):
+        c = self._client(self.teacher)
+        c.post(self.url, {"user_ids": [self.student.id]}, format="json")
+        r = c.post(self.url, {"user_ids": [self.student.id]}, format="json")
+        self.assertEqual(MidtermResit.objects.count(), 1)
+        self.assertEqual(r.json()["skipped"][0]["reason"], "already_open")
+
+    def test_an_unspent_grant_can_be_withdrawn(self):
+        c = self._client(self.teacher)
+        c.post(self.url, {"user_ids": [self.student.id]}, format="json")
+        r = c.delete(self.url, {"user_ids": [self.student.id]}, format="json")
+        self.assertEqual(r.json()["withdrawn"], 1)
+        self.assertIsNone(open_resit(self.student, self.midterm))
+
+    def test_a_spent_grant_cannot_be_withdrawn(self):
+        MidtermResit.objects.create(
+            midterm=self.midterm, student=self.student, consumed_at=timezone.now()
+        )
+        r = self._client(self.teacher).delete(self.url, {"user_ids": [self.student.id]}, format="json")
+        self.assertEqual(r.json()["withdrawn"], 0)
+        self.assertEqual(MidtermResit.objects.count(), 1)
+
+    def test_the_list_shows_the_latest_score_and_the_attempt_count(self):
+        _completed(self.midterm, self.student, 78)
+        r = self._client(self.teacher).get(self.url)
+        row = r.json()["results"][0]
+        self.assertEqual(row["student_id"], self.student.id)
+        self.assertEqual(row["score"], 78, "the list must show the sitting that counts")
+        self.assertEqual(row["attempts"], 2)
+        self.assertFalse(row["can_resit_now"])
+
+    def test_the_list_flags_an_open_grant(self):
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+        r = self._client(self.teacher).get(self.url)
+        self.assertTrue(r.json()["results"][0]["can_resit_now"])
