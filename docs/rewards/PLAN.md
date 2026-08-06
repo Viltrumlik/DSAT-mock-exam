@@ -373,7 +373,7 @@ Branch from `origin/main`, not from here.
 | 2 | ✅ **`rewards` core** — app, models (season/rule/award/audit), award service, Django admin, `/api/rewards/` read surfaces, student **Points** page. Wires the two hooks that need nothing new: attendance (5 / 3 late) and midterm (20 / 5) | 1 |
 | 3 | ✅ **Homework bundle scoring** — `recompute_bundle` over assessments + vocab + pastpaper + hand-in, four item-completion hooks, hourly deadline sweep, anti-farming guards, `content_count` vocab fix | 2 |
 | 4 | ✅ **`support_teacher` role** — global role across **9** chokepoints, teacher-portal access, ops role lists, and a classroom assignment endpoint (**not** `AssignTeacherView`) | 0 |
-| 5 | **Ops classrooms** — subject → level drill-down, server-side filtering + pagination, create-from-preset | 4 |
+| 5 | ✅ **Ops classrooms** — subject → level drill-down, server-side `subject`/`level` filters + `?group=1` tallies, create-from-preset, support-teacher staffing | 4 |
 | 6 | **Support booking** — availability, booking (restricted to the student's own classrooms), session confirmation → 10-point hook | 4, 2 |
 | 7 | **Surveys** — Google-Forms-like authoring + fill, super_admin gate, host-guard allowlist → 40-point hook | 2 |
 | 8 | **Coins** — wallet, conversion at the configured rate, transactions, spend surface, ops grant/revoke | 2 |
