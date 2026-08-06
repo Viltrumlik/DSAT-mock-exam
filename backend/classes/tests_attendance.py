@@ -152,6 +152,98 @@ class AttendanceApiTests(_ClassFixture):
         self.assertEqual(r.json()["updated"], 0)
 
 
+class AttendanceOneSessionPerDayTests(_ClassFixture):
+    """A lesson has exactly one session.
+
+    Attendance is about to become a reward trigger (5 points a lesson), so two sessions on
+    one date would each finalize independently and pay the same student twice.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.client.force_authenticate(self.owner)
+
+    def _url(self, suffix=""):
+        return f"/api/classes/{self.classroom.id}/attendance/{suffix}"
+
+    def test_creating_the_same_date_twice_returns_the_first_session(self):
+        first = self.client.post(self._url("sessions/"), {"date": "2026-06-04", "title": "Lesson 1"}, format="json")
+        self.assertEqual(first.status_code, 201)
+        again = self.client.post(self._url("sessions/"), {"date": "2026-06-04", "title": "Typed it again"}, format="json")
+
+        self.assertEqual(again.status_code, 200)          # 200, not 201 — nothing was created
+        self.assertEqual(again.json()["id"], first.json()["id"])
+        self.assertEqual(again.json()["title"], "Lesson 1")   # the original marking survives
+        self.assertEqual(
+            AttendanceSession.objects.filter(classroom=self.classroom, date=date(2026, 6, 4)).count(), 1
+        )
+
+    def test_database_rejects_a_duplicate_session(self):
+        from django.db import IntegrityError, transaction as db_transaction
+
+        self._session(0)
+        with self.assertRaises(IntegrityError):
+            with db_transaction.atomic():
+                self._session(0)
+
+
+class AttendanceFinalizeIsOnceTests(_ClassFixture):
+    """Finalize is the terminal transition the reward hook will hang off, so it must be
+    exactly-once and must actually freeze the session."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.ta = _u("att_ta@t.com")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=self.ta, role=ClassroomMembership.ROLE_TA
+        )
+
+    def _url(self, suffix=""):
+        return f"/api/classes/{self.classroom.id}/attendance/{suffix}"
+
+    def test_second_finalize_is_a_no_op(self):
+        self.client.force_authenticate(self.owner)
+        session = self._session(0, finalized=False)
+
+        first = self.client.post(self._url(f"sessions/{session.id}/finalize/"), {}, format="json")
+        self.assertEqual(first.status_code, 200)
+        self.assertFalse(first.json()["already_finalized"])
+        session.refresh_from_db()
+        stamp = session.updated_at
+
+        second = self.client.post(self._url(f"sessions/{session.id}/finalize/"), {}, format="json")
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(second.json()["already_finalized"])
+        session.refresh_from_db()
+        # Untouched: a re-save would bump auto_now and, once rewards land, re-run the award.
+        self.assertEqual(session.updated_at, stamp)
+        self.assertEqual(session.status, AttendanceSession.STATUS_FINALIZED)
+
+    def test_mark_all_present_cannot_rewrite_a_finalized_session(self):
+        """The gap this closes: `mark/` checked for FINALIZED, `mark-all-present/` did not,
+        so the bulk button could silently overwrite a frozen session."""
+        session = self._session(0, finalized=True)
+        self._mark(session, self.s1, A)
+
+        self.client.force_authenticate(self.ta)
+        r = self.client.post(self._url(f"sessions/{session.id}/mark-all-present/"), {}, format="json")
+
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(AttendanceRecord.objects.get(session=session, student=self.s1).status, A)
+
+    def test_owner_may_still_correct_a_finalized_session(self):
+        session = self._session(0, finalized=True)
+        self._mark(session, self.s1, A)
+
+        self.client.force_authenticate(self.owner)
+        r = self.client.post(self._url(f"sessions/{session.id}/mark-all-present/"), {}, format="json")
+
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(AttendanceRecord.objects.get(session=session, student=self.s1).status, P)
+
+
 class AttendanceIsNotOnTheLeaderboardTests(_ClassFixture):
     """Attendance no longer feeds the Academic ranking.
 
