@@ -372,7 +372,7 @@ Branch from `origin/main`, not from here.
 | 1 | ✅ **Attendance revival** — re-wire the orphaned UI, `unique(classroom, date)`, idempotent atomic finalize, finalized-session guards. Staff-only | 0 |
 | 2 | ✅ **`rewards` core** — app, models (season/rule/award/audit), award service, Django admin, `/api/rewards/` read surfaces, student **Points** page. Wires the two hooks that need nothing new: attendance (5 / 3 late) and midterm (20 / 5) | 1 |
 | 3 | ✅ **Homework bundle scoring** — `recompute_bundle` over assessments + vocab + pastpaper + hand-in, four item-completion hooks, hourly deadline sweep, anti-farming guards, `content_count` vocab fix | 2 |
-| 4 | **`support_teacher` role** — global role across all 7 chokepoints, teacher-portal access, a classroom assignment endpoint (**not** `AssignTeacherView`) | 0 |
+| 4 | ✅ **`support_teacher` role** — global role across **9** chokepoints, teacher-portal access, ops role lists, and a classroom assignment endpoint (**not** `AssignTeacherView`) | 0 |
 | 5 | **Ops classrooms** — subject → level drill-down, server-side filtering + pagination, create-from-preset | 4 |
 | 6 | **Support booking** — availability, booking (restricted to the student's own classrooms), session confirmation → 10-point hook | 4, 2 |
 | 7 | **Surveys** — Google-Forms-like authoring + fill, super_admin gate, host-guard allowlist → 40-point hook | 2 |
@@ -417,6 +417,27 @@ ledger has real data in it before the board starts reading from it.
 - The deadline sweep exists because the item hooks only fire when a student *finishes*
   something: a student who did two of four items and stopped would otherwise never be scored
   at all, rather than being scored 50%.
+
+### Notes from building PR 4
+
+- The audit said seven chokepoints; there were **nine**. The two it missed are the ones that
+  fail silently: `user_domain_subject` (returns `None` for an unlisted role, so every
+  subject-alignment check denies it regardless of the subject on its row) and
+  `_sync_global_user_access` (no global `UserAccess` row → `has_global_subject_access` is
+  always `False`).
+- `_ROLE_RANK` is the security one: `.get(rc, 1)` means an unlisted role ranks as *student*,
+  so any actor holding `assign_access` could mint it. Two tests now walk `CANONICAL_ROLES`
+  and assert every member has both a rank and a permission set — the rule, not the instance.
+- Bare `== ROLE_TEACHER` is the anti-pattern. Subject rules now test membership of
+  `SUBJECT_SCOPED_STAFF_ROLES`; the teacher-portal gate (previously the literal tuple
+  `("teacher", "super_admin")` in three independent layers) is `TEACHER_PORTAL_ROLES`.
+- Assignment goes through a dedicated endpoint, not `AssignTeacherView`: that one overwrites
+  the single `Classroom.teacher` FK (evicting the real teacher) and cannot hold more than one
+  person anyway. Subject alignment is checked at assignment, so a mismatch is a 400 rather
+  than a wasted appointment later.
+
+**Still open for PR 6 (booking):** whether a student may book *any* support teacher assigned
+to any of their classrooms, or only one assigned to the classroom the booking is about.
 
 ---
 
