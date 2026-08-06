@@ -53,4 +53,5 @@ urlpatterns = [
     path('api/mocks/', include('mocks.urls')),
     path('api/question-reports/', include('question_reports.urls')),
     path('api/journals/', include('journals.urls')),
+    path('api/rewards/', include('rewards.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

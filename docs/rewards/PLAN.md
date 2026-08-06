@@ -369,9 +369,9 @@ Branch from `origin/main`, not from here.
 
 | PR | Scope | Depends on |
 |---|---|---|
-| 1 | **Attendance revival** — re-wire the orphaned UI, `unique(classroom, date)`, idempotent atomic finalize, finalized-session guards, student "my attendance" view | 0 |
-| 2 | **`rewards` core** — app, models (season/rule/award/audit), service, ops admin, student surface. Wires the two hooks that need nothing new: attendance (5 / 3 late) and midterm (20 / 5) | 1 |
-| 3 | **Homework bundle scoring** — fix `content_count` to include vocab, build `recompute_bundle`, wire the four item-completion paths + the deadline sweep, anti-farming guards | 2 |
+| 1 | ✅ **Attendance revival** — re-wire the orphaned UI, `unique(classroom, date)`, idempotent atomic finalize, finalized-session guards. Staff-only | 0 |
+| 2 | ✅ **`rewards` core** — app, models (season/rule/award/audit), award service, Django admin, `/api/rewards/` read surfaces, student **Points** page. Wires the two hooks that need nothing new: attendance (5 / 3 late) and midterm (20 / 5) | 1 |
+| 3 | ✅ **Homework bundle scoring** — `recompute_bundle` over assessments + vocab + pastpaper + hand-in, four item-completion hooks, hourly deadline sweep, anti-farming guards, `content_count` vocab fix | 2 |
 | 4 | **`support_teacher` role** — global role across all 7 chokepoints, teacher-portal access, a classroom assignment endpoint (**not** `AssignTeacherView`) | 0 |
 | 5 | **Ops classrooms** — subject → level drill-down, server-side filtering + pagination, create-from-preset | 4 |
 | 6 | **Support booking** — availability, booking (restricted to the student's own classrooms), session confirmation → 10-point hook | 4, 2 |
@@ -382,6 +382,41 @@ Branch from `origin/main`, not from here.
 PR 9 is the risky one: it retires `assessment_points_per_student` as the ACADEMIC currency
 and changes a number every student already sees. It ships last, behind the rest, so the
 ledger has real data in it before the board starts reading from it.
+
+### Notes from building PR 2
+
+- Hooks are **signal receivers**, not calls edited into views. Attendance alone has three
+  write paths (`mark/`, `mark-all-present/`, `finalize/`) and midterm verdicts are written by
+  the runtime *and* by `backfill_midterm_outcomes`; hanging off the model save catches all of
+  them without asking every future caller to remember. Safe only because awarding is
+  idempotent and self-correcting.
+- `award()` runs inside its own `transaction.atomic()` with the `except` **outside** it. A
+  bare try/except would leave the caller's transaction aborted on PostgreSQL — and every hook
+  site is inside somebody else's transaction.
+- Awards carry a nullable `classroom`. Attendance records one; midterms do not (§0.3's open
+  question). `balances_for(..., classroom=...)` therefore returns class-earned points only.
+- Zeroed (revoked) awards are filtered out of the student's feed. A row reading
+  "Attended a lesson — 0" is a punishment notice, not a history entry.
+
+### Notes from building PR 3
+
+- **Blank `question_order` is not a subset.** The anti-farming guard rejects a re-try whose
+  `question_order` is shorter than the set — but an *empty* one means "not recorded" (older
+  rows, and any path that never pinned an order). Treating blank as a subset would silently
+  discard a student's only real attempt. The guard now requires a non-empty order.
+- **Reward item granularity is defined in `rewards/homework.py`, not borrowed from
+  `Assignment.content_count`.** That property counts display slots and expands packs
+  pack-by-pack; for points, "one pastpaper" is one thing a student sits. The two numbers
+  answer different questions and are allowed to differ. (`content_count` was still fixed —
+  it had been missing vocabulary entirely since vocab homework shipped.)
+- **Unpublishing does not confiscate points.** Never-published work earns nothing, but a
+  teacher toggling a published assignment back to draft does not take back points a student
+  genuinely earned. Deliberate asymmetry, pinned by a test.
+- A hand-in counts as done at **submitted**, not at graded — a student must not lose points
+  to their teacher's marking backlog.
+- The deadline sweep exists because the item hooks only fire when a student *finishes*
+  something: a student who did two of four items and stopped would otherwise never be scored
+  at all, rather than being scored 50%.
 
 ---
 

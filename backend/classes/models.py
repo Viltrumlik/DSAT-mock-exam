@@ -447,6 +447,12 @@ class Assignment(models.Model):
             n += self.assessment_homeworks.count()
         except Exception:
             pass
+        # …and so is each attached vocabulary set. Missing here since vocabulary homework was
+        # added, so a "2 assessments + a pastpaper + a vocab set" bundle counted as 3.
+        try:
+            n += self.vocab_homeworks.count()
+        except Exception:
+            pass
         return n
 
     @property

@@ -157,6 +157,7 @@ INSTALLED_APPS = [
     'mocks.apps.MocksConfig',
     'question_reports.apps.QuestionReportsConfig',
     'journals.apps.JournalsConfig',
+    'rewards.apps.RewardsConfig',
 ]
 
 MIDDLEWARE = [
@@ -397,6 +398,14 @@ CELERY_BEAT_SCHEDULE = {
     "classroom-recompute-rankings": {
         "task": "classes.tasks.recompute_classroom_rankings",
         "schedule": crontab(minute="*/20"),
+    },
+    # Homework reward points are settled by hooks when a student finishes an item — so a
+    # student who finished only some of a bundle and stopped would never be scored at all.
+    # This settles past-due homework at whatever it actually reached. Hourly: the deadline
+    # itself is the event, and nobody needs the result inside the minute.
+    "rewards-settle-due-homework": {
+        "task": "rewards.tasks.settle_due_homework",
+        "schedule": crontab(minute=25),
     },
     # Full mocks never pause, so an attempt whose student closed the tab mid-module sits
     # ACTIVE with a dead clock forever — never scored, and blocking that student from ever

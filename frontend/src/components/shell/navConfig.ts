@@ -19,6 +19,7 @@ import {
   GraduationCap,
   MonitorPlay,
   ShieldCheck,
+  Coins,
 } from "lucide-react";
 
 export type NavItem = {
@@ -64,6 +65,7 @@ export const studentNav: NavSection[] = [
         ],
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
+      { href: "/rewards", label: "Points", icon: Coins, isNew: true },
       { href: "/question-bank", label: "Question Bank", icon: Database },
       { href: "/profile", label: "Profile", icon: UserCircle },
     ],
