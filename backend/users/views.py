@@ -149,7 +149,9 @@ def manageable_users_queryset(actor):
                     Q(access_grants__subject=dom)
                     | Q(class_memberships__classroom__subject=clsub)
                 )
-                | Q(subject=dom, role=acc_const.ROLE_TEACHER)
+                # Support teachers are listed alongside teachers of the same subject: they
+                # are the pool an ops/teacher picker assigns to a classroom.
+                | Q(subject=dom, role__in=acc_const.SUBJECT_SCOPED_STAFF_ROLES)
             ).distinct()
         )
     if authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=probe):
@@ -418,12 +420,14 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
         login_console = str(getattr(request, "lms_console", "") or "").strip().lower()
         login_user = getattr(serializer, "user", None)
         login_role = str(getattr(login_user, "role", "") or "").strip().lower()
-        if login_console == "teacher" and login_role not in ("teacher", "super_admin"):
+        if login_console == "teacher" and login_role not in acc_const.TEACHER_PORTAL_ROLES:
             return Response(
                 {"detail": "You do not have permission to access the Teacher Portal."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if login_console == "main" and login_role == "teacher":
+        # Support teachers belong on the portal for the same reason teachers do: the main
+        # site is the student experience, and its classroom pages force the consumer view.
+        if login_console == "main" and login_role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
             return Response(
                 {"detail": "Teachers must sign in at the Teacher Portal: https://teacher.mastersat.uz"},
                 status=status.HTTP_403_FORBIDDEN,

@@ -124,6 +124,17 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
                 constants.PERM_SUBMIT_TEST,
             }
         ),
+        constants.ROLE_SUPPORT_TEACHER: frozenset(
+            {
+                # Enough to be staff (is_admin) and so reach the teacher portal, plus the
+                # ability to sit an assessment in a student-style preview — the same reason
+                # teachers hold submit_test. Deliberately NOT manage_tests (authors nothing),
+                # NOT create_classroom, NOT assign_access and NOT manage_users: a support
+                # teacher helps inside classrooms it has been assigned to, and nothing else.
+                constants.PERM_VIEW_DASHBOARD,
+                constants.PERM_SUBMIT_TEST,
+            }
+        ),
         constants.ROLE_STUDENT: frozenset({constants.PERM_SUBMIT_TEST}),
     }
 
@@ -262,16 +273,22 @@ def can_approve_assessment(user) -> bool:
 
 def user_domain_subject(user) -> Optional[str]:
     """
-    Domain subject (``math`` / ``english``) **only for teachers**.
+    Domain subject (``math`` / ``english``) **only for subject-scoped staff** — teacher and
+    support_teacher.
 
     ``None`` for global roles (admin, test_admin, super_admin), Django superuser, and students
     without a subject field — **do not** assume all staff have a domain here.
+
+    This is the function every subject-alignment check funnels through: ``authorize`` and
+    ``has_global_subject_access`` compare its result against the required domain, so a role
+    missing from the set below is denied everywhere, silently, regardless of the subject
+    stored on its row.
     """
     if not user or not getattr(user, "is_authenticated", False):
         return None
     if is_global_scope_staff(user):
         return None
-    if normalized_role(user) != constants.ROLE_TEACHER:
+    if normalized_role(user) not in constants.SUBJECT_SCOPED_STAFF_ROLES:
         return None
     raw = getattr(user, "subject", None)
     if isinstance(raw, str) and raw.strip().lower() in constants.ALL_DOMAIN_SUBJECTS:
@@ -338,7 +355,7 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
     if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN, constants.ROLE_TEST_AUDITOR):
         return True
 
-    if role == constants.ROLE_TEACHER:
+    if role in constants.SUBJECT_SCOPED_STAFF_ROLES:
         if user_domain_subject(user) != domain_subject:
             return False
         return UserAccess.objects.filter(
@@ -389,7 +406,7 @@ def has_access_for_classroom(user, domain_subject: str, classroom_id: int) -> bo
             Q(classroom_id__isnull=True) | Q(classroom_id=cid)
         ).exists()
 
-    if role == constants.ROLE_TEACHER:
+    if role in constants.SUBJECT_SCOPED_STAFF_ROLES:
         if user_domain_subject(user) != domain_subject:
             return False
         return UserAccess.objects.filter(user_id=user.pk, subject=domain_subject).filter(
@@ -761,7 +778,7 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
     if role in (constants.ROLE_ADMIN, constants.ROLE_TEST_ADMIN, constants.ROLE_TEST_AUDITOR):
         return True
 
-    if role == constants.ROLE_TEACHER:
+    if role in constants.SUBJECT_SCOPED_STAFF_ROLES:
         udom = user_domain_subject(user)
         if udom != required:
             _authorize_log_denial(
@@ -894,5 +911,5 @@ def user_can_assign_as_class_teacher(user) -> bool:
 
 
 def staff_must_have_subject(user) -> bool:
-    """Only **teachers** must carry a domain ``subject``; global roles do not."""
-    return normalized_role(user) == constants.ROLE_TEACHER
+    """Only **subject-scoped staff** must carry a domain ``subject``; global roles do not."""
+    return normalized_role(user) in constants.SUBJECT_SCOPED_STAFF_ROLES

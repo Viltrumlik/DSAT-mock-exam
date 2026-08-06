@@ -61,6 +61,12 @@ ROLE_TEST_ADMIN = "test_admin"
 # timer/fullscreen/proctoring, and may enter the builder to change set status (incl.
 # approve) and edit questions. Not a user/classroom manager — no manage_users / assign_access.
 ROLE_TEST_AUDITOR = "test_auditor"
+# Support teacher: a subject-scoped member of the teaching team who students book for help
+# outside the lesson. Deliberately weaker than ``teacher`` — it may enter the teacher portal
+# and work inside the classrooms it is assigned to, but it authors nothing, creates no
+# classrooms and manages no users. Inside a classroom it holds the existing
+# ``ClassroomMembership.ROLE_TA`` capability set rather than a new one.
+ROLE_SUPPORT_TEACHER = "support_teacher"
 ROLE_STUDENT = "student"
 
 CANONICAL_ROLES = frozenset(
@@ -70,6 +76,21 @@ CANONICAL_ROLES = frozenset(
         ROLE_TEACHER,
         ROLE_TEST_ADMIN,
         ROLE_TEST_AUDITOR,
+        ROLE_SUPPORT_TEACHER,
         ROLE_STUDENT,
     }
 )
+
+#: Roles admitted to the teacher portal (``teacher.<domain>``). Intentionally role-based
+#: rather than permission-based: admin and test_admin hold staff permissions elsewhere but
+#: are deliberately kept off this subdomain. Previously spelled as the literal tuple
+#: ``("teacher", "super_admin")`` in three independent layers — the host guard, the login
+#: endpoint and the SPA guard — which is three places to forget.
+TEACHER_PORTAL_ROLES = frozenset({ROLE_TEACHER, ROLE_SUPPORT_TEACHER, ROLE_SUPER_ADMIN})
+
+#: Staff roles that belong to exactly one domain subject and must carry ``User.subject``.
+#: Everything else is either global scope (super_admin / admin / test_admin / test_auditor)
+#: or subject-less (student). Reference this set instead of comparing to ROLE_TEACHER —
+#: a bare ``== ROLE_TEACHER`` is how a new subject-scoped role silently loses its subject
+#: rules and falls through to a hard deny.
+SUBJECT_SCOPED_STAFF_ROLES = frozenset({ROLE_TEACHER, ROLE_SUPPORT_TEACHER})

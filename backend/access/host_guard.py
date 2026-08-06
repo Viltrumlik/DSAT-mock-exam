@@ -208,7 +208,9 @@ class SubdomainAPIGuardMiddleware:
             # the Next.js session boot + projection cookie refresh on this subdomain.
             if path.startswith("/api/users/me/"):
                 return self.get_response(request)
-            if role not in ("teacher", "super_admin"):
+            from access import constants as _c
+
+            if role not in _c.TEACHER_PORTAL_ROLES:
                 exams_metric_incr("forbidden_admin_route_total")
                 return JsonResponse(
                     {"detail": "You do not have permission to access the Teacher Portal."},

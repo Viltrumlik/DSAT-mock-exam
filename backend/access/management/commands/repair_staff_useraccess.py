@@ -30,7 +30,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         apply_fix = options["apply"]
         planned = 0
-        for u in User.objects.filter(role=C.ROLE_TEACHER).iterator():
+        for u in User.objects.filter(role__in=C.SUBJECT_SCOPED_STAFF_ROLES).iterator():
             dom = user_domain_subject(u)
             if dom not in C.ALL_DOMAIN_SUBJECTS:
                 continue
