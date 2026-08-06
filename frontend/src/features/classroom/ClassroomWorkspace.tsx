@@ -72,8 +72,9 @@ export function ClassroomWorkspace({
       {/* Overview now hosts the class rankings. */}
       {current === "overview" && <Rankings classroom={classroom} />}
       {current === "lessons" && caps.isStaff && <Lessons classroom={classroom} />}
-      {/* Renders the marking grid for staff, the student's own history otherwise. */}
-      {current === "attendance" && caps.isMember && <Attendance classroom={classroom} />}
+      {/* Staff-only register — students never see attendance. Mirrors the tab's own gate;
+          a student who deep-links ?tab=attendance is already bounced to overview above. */}
+      {current === "attendance" && caps.isStaff && <Attendance classroom={classroom} />}
       {current === "assignments" && <Assignments classroom={classroom} />}
       {current === "midterms" && caps.canManageAssignments && <Midterms classroom={classroom} />}
       {current === "materials" && caps.isMember && <Materials classroom={classroom} />}

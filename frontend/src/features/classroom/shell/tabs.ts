@@ -41,10 +41,10 @@ export const CLASSROOM_TABS: ClassroomTabDef[] = [
   // The journal plan delivered into this class. Staff-only: students see the resulting
   // homework in Assignments, never the plan itself.
   { id: "lessons", label: "Lessons", icon: CalendarDays, show: (c) => c.isStaff },
-  // Members, not staff: the page renders the marking grid for staff and the student's own
-  // history for everyone else. Attending a lesson earns reward points, so a student needs to
-  // be able to see what was recorded for them.
-  { id: "attendance", label: "Attendance", icon: CalendarCheck, show: (c) => c.isMember },
+  // Staff-only, by the school's decision: attendance is a register the teaching team keeps,
+  // not something a student browses. (The page still carries a student self-view branch, and
+  // GET attendance/me/ still exists, in case that is ever reopened.)
+  { id: "attendance", label: "Attendance", icon: CalendarCheck, show: (c) => c.isStaff },
   { id: "assignments", label: "Assignments", icon: ClipboardList, show: () => true },
   { id: "midterms", label: "Midterms", icon: Timer, show: (c) => c.canManageAssignments },
   { id: "materials", label: "Materials", icon: FolderOpen, show: (c) => c.isMember },

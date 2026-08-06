@@ -259,7 +259,9 @@ Work required:
 - Guard `AttendanceMarkView` **and** `AttendanceMarkAllPresentView` against writing to a
   FINALIZED session (mark-all-present has no guard at all today) — and route legitimate
   owner corrections through `revoke`/`award` so PRESENT→ABSENT gives the points back.
-- Student-facing "my attendance" surface (none exists).
+- Attendance stays **staff-only** — the school's decision. It is a register the teaching team
+  keeps, not something a student browses. The `GET attendance/me/` endpoint and the page's
+  student-self-view branch both survive unused, so reopening it later is a one-line change.
 - Optional: FK to `journals.ClassroomLesson` so a session is tied to a real delivered lesson
   (`lesson_index` is a free integer the UI never sends).
 
