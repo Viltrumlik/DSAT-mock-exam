@@ -976,9 +976,30 @@ export const classesApi = {
         return r.data;
     },
     // Admin governance (admin/super_admin only)
-    directory: async () => {
-        const r = await api.get('/classes/directory/');
+    // No params reproduces the previous behaviour (every classroom). `subject`/`level` narrow
+    // it for the ops drill-down; level "untagged" reaches classrooms that predate the field.
+    directory: async (params?: { subject?: string; level?: string }) => {
+        const r = await api.get('/classes/directory/', { params });
         return r.data;
+    },
+    /** (subject, level) tallies — lets the drill-down render its pickers without pulling every row. */
+    directoryGroups: async (): Promise<{ subject: string; level: string; count: number }[]> => {
+        const r = await api.get('/classes/directory/', { params: { group: 1 } });
+        return (r.data?.groups ?? []) as { subject: string; level: string; count: number }[];
+    },
+    /** Support teachers on a classroom. A MEMBERSHIP (ROLE_TA), never the Classroom.teacher FK. */
+    supportTeachers: async (classId: number) => {
+        const r = await api.get(`/classes/${classId}/support-teachers/`);
+        return (r.data?.support_teachers ?? []) as {
+            user_id: number; name: string; email: string; subject: string | null;
+        }[];
+    },
+    assignSupportTeacher: async (classId: number, userId: number) => {
+        const r = await api.post(`/classes/${classId}/support-teachers/`, { user_id: userId });
+        return r.data;
+    },
+    removeSupportTeacher: async (classId: number, userId: number) => {
+        await api.delete(`/classes/${classId}/support-teachers/${userId}/`);
     },
     governanceDelete: async (classId: number) => {
         await api.delete(`/classes/${classId}/governance-delete/`);

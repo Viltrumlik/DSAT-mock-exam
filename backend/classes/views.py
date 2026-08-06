@@ -737,7 +737,15 @@ class ClassroomViewSet(ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="directory")
     def directory(self, request):
-        """Directory-wide classroom list (governance: admin / super_admin / superuser)."""
+        """Directory-wide classroom list (governance: admin / super_admin / superuser).
+
+        Optional ``?subject=`` / ``?level=`` narrow the list, and ``?group=1`` returns
+        ``(subject, level, count)`` tallies instead of rows. Both exist for the ops
+        subject → level → classroom drill-down: without them the console has to pull every
+        classroom in the school to render a picker of seven buckets.
+
+        No parameters reproduces the previous behaviour exactly.
+        """
         user = request.user
         if not (getattr(user, "is_superuser", False) or normalized_role(user) in (acc_const.ROLE_SUPER_ADMIN, acc_const.ROLE_ADMIN)):
             raise PermissionDenied(detail="You do not have permission to view the classroom directory.")
@@ -751,6 +759,33 @@ class ClassroomViewSet(ModelViewSet):
             .distinct()
             .order_by("-created_at")
         )
+
+        subject = (request.query_params.get("subject") or "").strip().upper()
+        if subject in dict(Classroom.SUBJECT_CHOICES):
+            qs = qs.filter(subject=subject)
+        level = (request.query_params.get("level") or "").strip().lower()
+        if level:
+            # "" is a real, common value — classrooms predate the level field — so an
+            # explicit bucket is needed to reach them at all.
+            qs = qs.filter(level="") if level == "untagged" else qs.filter(level=level)
+
+        if str(request.query_params.get("group") or "").strip() in ("1", "true", "yes"):
+            rows = (
+                Classroom.objects.values("subject", "level")
+                .annotate(count=Count("id"))
+                .order_by("subject", "level")
+            )
+            return Response({
+                "groups": [
+                    {
+                        "subject": r["subject"],
+                        "level": r["level"] or "untagged",
+                        "count": r["count"],
+                    }
+                    for r in rows
+                ]
+            })
+
         page = self.paginate_queryset(qs)
         if page is not None:
             ser = ClassroomSerializer(page, many=True, context={"request": request})

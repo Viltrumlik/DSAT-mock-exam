@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { classesApi, examsAdminApi, type ClassroomMember } from "@/lib/api";
-import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, X } from "lucide-react";
+import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, X, ChevronRight, LifeBuoy, Calculator, Languages } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
 import { Avatar } from "@/components/ui/Avatar";
@@ -17,7 +17,7 @@ type Row = {
   id: number; name: string; subject?: string; level?: string; members_count?: number; student_count?: number;
   teacher_details?: TeacherDetails;
 };
-type TeacherOpt = { id: number; email: string; name: string; avatar?: string | null };
+type TeacherOpt = { id: number; email: string; name: string; avatar?: string | null; subject?: string | null };
 type StudentOpt = { id: number; email: string; name: string; avatar?: string | null };
 
 function memberName(m: ClassroomMember): string {
@@ -35,6 +35,27 @@ type CreateForm = {
   teacherId: string; // "" = assign a teacher later
 };
 const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "" };
+
+type SubjectKey = "ENGLISH" | "MATH";
+type Group = { subject: string; level: string; count: number };
+/** Where the drill-down currently is. Nothing chosen → subject picker; subject only → level
+ *  picker; both → the classroom list, fetched server-side for that pair. */
+type Crumb = { subject?: SubjectKey; level?: string };
+
+const SUBJECT_META: Record<SubjectKey, { label: string; icon: typeof School; accent: string }> = {
+  ENGLISH: { label: "English", icon: Languages, accent: "bg-teal-100 text-teal-800" },
+  MATH: { label: "Math", icon: Calculator, accent: "bg-purple-100 text-purple-800" },
+};
+
+/** Course length in months per (subject, level) — mirrors journals/structure.COURSE_STRUCTURE,
+ *  the only place the school's seven real courses are already enumerated. Shown on the level
+ *  picker so an admin can see what they are creating into. */
+const COURSE_MONTHS: Record<string, number> = {
+  "MATH:foundation": 1,
+  "ENGLISH:junior": 3, "MATH:junior": 3,
+  "ENGLISH:middle": 2, "MATH:middle": 2,
+  "ENGLISH:senior": 2, "MATH:senior": 2,
+};
 
 function normList(d: unknown): Row[] {
   if (Array.isArray(d)) return d as Row[];
@@ -60,12 +81,19 @@ export default function OpsClassroomGovernancePage() {
   const [rosterMembers, setRosterMembers] = useState<ClassroomMember[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
+  // Drill-down: subject → level → classrooms.
+  const [crumb, setCrumb] = useState<Crumb>({});
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [supportOpts, setSupportOpts] = useState<TeacherOpt[]>([]);
+  const [supportModal, setSupportModal] = useState<{ row: Row } | null>(null);
+  const [supportAssigned, setSupportAssigned] = useState<{ user_id: number; name: string; email: string; subject: string | null }[]>([]);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [pickSupport, setPickSupport] = useState<string>("");
 
-  const load = async () => {
-    setLoading(true); setError(null);
-    try {
-      const data = await classesApi.directory();
-      setRows(normList(data));
+  // People pickers are directory-wide and independent of the drill-down, so they load once
+  // rather than on every level change.
+  useEffect(() => {
+    (async () => {
       try {
         const u = await examsAdminApi.getUsers();
         const list = (Array.isArray(u) ? u : (u as { results?: unknown[] })?.results ?? []) as Record<string, unknown>[];
@@ -73,22 +101,101 @@ export default function OpsClassroomGovernancePage() {
           id: Number(x.id), email: String(x.email ?? ""),
           name: [x.first_name, x.last_name].filter(Boolean).join(" ").trim() || String(x.email ?? `#${x.id}`),
           avatar: (x.profile_image_url as string | null) ?? null,
+          subject: (x.subject as string | null) ?? null,
         });
-        setTeachers(list.filter((x) => String(x.role).toLowerCase() === "teacher").map(toOpt));
-        setStudents(list.filter((x) => String(x.role).toLowerCase() === "student").map(toOpt));
+        const role = (x: Record<string, unknown>) => String(x.role).toLowerCase();
+        setTeachers(list.filter((x) => role(x) === "teacher").map(toOpt));
+        setSupportOpts(list.filter((x) => role(x) === "support_teacher").map(toOpt));
+        setStudents(list.filter((x) => role(x) === "student").map(toOpt));
       } catch { /* people pickers optional */ }
+    })();
+  }, []);
+
+  const load = async () => {
+    setLoading(true); setError(null);
+    try {
+      setGroups(await classesApi.directoryGroups());
+      // Rows are only fetched at the leaf — the pickers above run off the tallies, so the
+      // console never pulls every classroom in the school just to draw seven buttons.
+      if (crumb.subject && crumb.level) {
+        setRows(normList(await classesApi.directory({ subject: crumb.subject, level: crumb.level })));
+      } else {
+        setRows([]);
+      }
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Could not load the classroom directory (admin only).");
     } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // Refetch whenever the drill-down moves. `load` is intentionally not a dependency: it is
+  // recreated every render, and depending on it would loop.
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crumb.subject, crumb.level]);
 
   const filtered = useMemo(() => {
     if (search.trim().length < 2) return rows;
     const t = search.toLowerCase();
     return rows.filter((c) => (c.name ?? "").toLowerCase().includes(t) || (c.subject ?? "").toLowerCase().includes(t));
   }, [rows, search]);
+
+  const countFor = (subject: string, level?: string) =>
+    groups
+      .filter((g) => g.subject === subject && (level === undefined || g.level === level))
+      .reduce((n, g) => n + g.count, 0);
+
+  /** Levels valid for a subject, plus "untagged" when classrooms predate the level field —
+   *  without that bucket those rows are unreachable through the drill-down. */
+  const levelBucketsFor = (subject: SubjectKey): { key: string; label: string }[] => {
+    const real = levelsForSubject(subject).map((l) => ({ key: l as string, label: levelLabel(l) }));
+    return countFor(subject, "untagged") > 0
+      ? [...real, { key: "untagged", label: "No level set" }]
+      : real;
+  };
+
+  /** Open the create form pre-filled from wherever the admin is standing. */
+  function openCreate() {
+    setError(null);
+    const level = crumb.level && crumb.level !== "untagged" ? crumb.level : "";
+    setCreateForm({ ...BLANK_CREATE, subject: crumb.subject ?? "ENGLISH", level });
+    setCreateOpen(true);
+  }
+
+  async function openSupport(row: Row) {
+    setSupportModal({ row }); setSupportAssigned([]); setPickSupport(""); setSupportLoading(true); setError(null);
+    try { setSupportAssigned(await classesApi.supportTeachers(row.id)); }
+    catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not load support teachers.");
+    } finally { setSupportLoading(false); }
+  }
+
+  async function addSupport() {
+    if (!supportModal || !pickSupport) return;
+    setBusy(true); setError(null);
+    try {
+      await classesApi.assignSupportTeacher(supportModal.row.id, Number(pickSupport));
+      setSupportAssigned(await classesApi.supportTeachers(supportModal.row.id));
+      setPickSupport("");
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not assign the support teacher.");
+    } finally { setBusy(false); }
+  }
+
+  async function dropSupport(userId: number, name: string) {
+    if (!supportModal) return;
+    if (!window.confirm(`Remove ${name} from “${supportModal.row.name}”? They can be assigned again later.`)) return;
+    setBusy(true); setError(null);
+    try {
+      await classesApi.removeSupportTeacher(supportModal.row.id, userId);
+      setSupportAssigned(await classesApi.supportTeachers(supportModal.row.id));
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not remove the support teacher.");
+    } finally { setBusy(false); }
+  }
 
   function teacherName(td: TeacherDetails) {
     if (!td) return "— Unassigned —";
@@ -196,7 +303,7 @@ export default function OpsClassroomGovernancePage() {
           <button type="button" onClick={load} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2">
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
-          <button type="button" onClick={() => { setError(null); setCreateForm(BLANK_CREATE); setCreateOpen(true); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
+          <button type="button" onClick={openCreate} className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
             <Plus className="h-4 w-4" /> Create classroom
           </button>
         </div>
@@ -205,13 +312,90 @@ export default function OpsClassroomGovernancePage() {
       {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
 
+      {/* Breadcrumb — the only way back up the drill-down. */}
+      <nav className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+        <button type="button" onClick={() => { setCrumb({}); setSearch(""); }}
+          className={cn("rounded-lg px-2 py-1", crumb.subject ? "text-primary hover:bg-surface-2" : "text-foreground")}>
+          All subjects
+        </button>
+        {crumb.subject && (
+          <>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <button type="button" onClick={() => { setCrumb({ subject: crumb.subject }); setSearch(""); }}
+              className={cn("rounded-lg px-2 py-1", crumb.level ? "text-primary hover:bg-surface-2" : "text-foreground")}>
+              {SUBJECT_META[crumb.subject].label}
+            </button>
+          </>
+        )}
+        {crumb.subject && crumb.level && (
+          <>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="rounded-lg px-2 py-1 text-foreground">
+              {crumb.level === "untagged" ? "No level set" : levelLabel(crumb.level)}
+            </span>
+          </>
+        )}
+      </nav>
+
+      {/* Step 1 — subject */}
+      {!crumb.subject && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(Object.keys(SUBJECT_META) as SubjectKey[]).map((key) => {
+            const meta = SUBJECT_META[key];
+            const Icon = meta.icon;
+            const n = countFor(key);
+            return (
+              <button key={key} type="button" onClick={() => setCrumb({ subject: key })}
+                className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-card p-5 text-left shadow-sm hover:border-primary hover:bg-surface-2">
+                <div className="flex items-center gap-3">
+                  <span className={cn("grid h-11 w-11 place-items-center rounded-xl", meta.accent)}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div>
+                    <p className="text-base font-extrabold text-foreground">{meta.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {loading ? "…" : `${n} classroom${n === 1 ? "" : "s"}`}
+                    </p>
+                  </div>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Step 2 — level */}
+      {crumb.subject && !crumb.level && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {levelBucketsFor(crumb.subject).map((bucket) => {
+            const n = countFor(crumb.subject as SubjectKey, bucket.key);
+            const months = COURSE_MONTHS[`${crumb.subject}:${bucket.key}`];
+            return (
+              <button key={bucket.key} type="button" onClick={() => setCrumb({ subject: crumb.subject, level: bucket.key })}
+                className="rounded-2xl border border-border bg-card p-4 text-left shadow-sm hover:border-primary hover:bg-surface-2">
+                <p className="text-sm font-extrabold text-foreground">{bucket.label}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {loading ? "…" : `${n} classroom${n === 1 ? "" : "s"}`}
+                </p>
+                {months ? (
+                  <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{months}-month course</p>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {crumb.subject && crumb.level && (
+      <>
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
         <input type="search" placeholder="Search classrooms…" value={search} onChange={(e) => setSearch(e.target.value)}
           className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30" />
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="border-b border-border px-5 py-4 font-bold text-foreground">
           {loading ? "Loading…" : `${filtered.length} classroom${filtered.length === 1 ? "" : "s"}`}
         </div>
@@ -241,6 +425,7 @@ export default function OpsClassroomGovernancePage() {
                 <div className="flex items-center gap-2 shrink-0">
                   <button disabled={busy} onClick={() => openRoster(c)} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><Users className="h-3.5 w-3.5" /> Students</button>
                   <button disabled={busy} onClick={() => { setModal({ kind: "assign", row: c }); setPickTeacher(""); }} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><UserCog className="h-3.5 w-3.5" /> Assign teacher</button>
+                  <button disabled={busy} onClick={() => openSupport(c)} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><LifeBuoy className="h-3.5 w-3.5" /> Support</button>
                   <button disabled={busy} onClick={() => { setModal({ kind: "transfer", row: c }); setPickTeacher(""); }} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><ArrowLeftRight className="h-3.5 w-3.5" /> Transfer</button>
                   <button disabled={busy} onClick={() => del(c)} className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50" aria-label={`Delete ${c.name}`}><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
@@ -249,6 +434,8 @@ export default function OpsClassroomGovernancePage() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setModal(null)}>
@@ -330,6 +517,83 @@ export default function OpsClassroomGovernancePage() {
           </div>
         </div>
       )}
+
+      {supportModal && (() => {
+        // Only offer support teachers whose subject matches the class. The server refuses a
+        // mismatch anyway, but a picker that lists impossible choices invites the mistake.
+        const classDomain = (supportModal.row.subject ?? "").toLowerCase() === "math" ? "math" : "english";
+        const assignedIds = new Set(supportAssigned.map((s) => s.user_id));
+        const candidates = supportOpts.filter(
+          (o) => !assignedIds.has(o.id) && (o.subject ?? "").toLowerCase() === classDomain,
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSupportModal(null)}>
+            <div className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-foreground">Support teachers — {supportModal.row.name}</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Students book these staff for help outside the lesson. They join as teaching
+                    assistants — the classroom keeps its own teacher.
+                  </p>
+                </div>
+                <button onClick={() => setSupportModal(null)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2" aria-label="Close"><X className="h-4 w-4" /></button>
+              </div>
+
+              <div className="mt-4">
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Assign a support teacher</label>
+                <div className="flex gap-2">
+                  {/* min-w-0: without it a long option label ("Name (email@…)") sets the
+                      select's min-content width, the flex row overflows the modal, and the
+                      Assign button is pushed off the right edge. */}
+                  <select value={pickSupport} onChange={(e) => setPickSupport(e.target.value)} className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
+                    <option value="">— Choose —</option>
+                    {candidates.map((o) => <option key={o.id} value={String(o.id)}>{o.name} ({o.email})</option>)}
+                  </select>
+                  <button disabled={busy || !pickSupport} onClick={addSupport} className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"><UserPlus className="h-4 w-4" /> Assign</button>
+                </div>
+                {candidates.length === 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    No unassigned {classDomain} support teachers. Create one in Users first — a support
+                    teacher can only cover the subject their account is set to.
+                  </p>
+                )}
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="text-xs font-bold text-muted-foreground">Assigned</label>
+                  <span className="text-xs font-semibold text-muted-foreground">{supportLoading ? "…" : supportAssigned.length}</span>
+                </div>
+                {supportLoading ? (
+                  <div className="flex justify-center p-6"><div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>
+                ) : supportAssigned.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">No support teachers yet.</div>
+                ) : (
+                  <div className="rounded-xl border border-border divide-y divide-border">
+                    {supportAssigned.map((s) => (
+                      <div key={s.user_id} className="flex items-center justify-between gap-2 px-3 py-2">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <Avatar name={s.name} size={32} />
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{s.email}</p>
+                          </div>
+                        </div>
+                        <button disabled={busy} onClick={() => dropSupport(s.user_id, s.name)} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50 shrink-0"><UserMinus className="h-3.5 w-3.5" /> Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 flex justify-end">
+                <button onClick={() => setSupportModal(null)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2">Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {roster && (() => {
         const activeStudents = rosterMembers.filter((m) => m.role.toUpperCase() === "STUDENT" && m.status.toUpperCase() === "ACTIVE");
