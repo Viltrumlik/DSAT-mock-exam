@@ -164,22 +164,24 @@ class SupportAvailabilityView(APIView):
         except (TypeError, ValueError):
             capacity = 1
 
+        note = (request.data.get("note") or "").strip()
         slot, created = SupportAvailability.objects.get_or_create(
             support_teacher=request.user,
             starts_at=starts_at,
-            defaults={
-                "ends_at": ends_at,
-                "capacity": capacity,
-                "note": (request.data.get("note") or "").strip(),
-            },
+            defaults={"ends_at": ends_at, "capacity": capacity, "note": note},
         )
-        if not created and slot.is_cancelled:
-            # Republishing a withdrawn slot reuses the row — the unique (teacher, start)
-            # constraint means there is nothing else it could do.
+        if not created:
+            # Publishing over an existing row applies the teacher's values, whether the row was
+            # withdrawn or minted by a student booking that hour off the calendar. This used to
+            # run only for withdrawn rows, so once students could materialise rows themselves a
+            # teacher opening a group clinic on an already-booked hour got a 200 and no clinic.
             slot.is_cancelled = False
             slot.ends_at = ends_at
             slot.capacity = capacity
-            slot.save(update_fields=["is_cancelled", "ends_at", "capacity", "updated_at"])
+            slot.note = note
+            slot.save(
+                update_fields=["is_cancelled", "ends_at", "capacity", "note", "updated_at"]
+            )
         return Response(
             _slot_json(slot), status=http.HTTP_201_CREATED if created else http.HTTP_200_OK
         )
@@ -224,13 +226,25 @@ class SupportBookingsView(APIView):
         return Response({"bookings": [_booking_json(b) for b in bookings]})
 
     def post(self, request):
+        classroom = None
+        if request.data.get("classroom_id"):
+            classroom = get_object_or_404(Classroom, pk=request.data["classroom_id"])
+        topic = (request.data.get("topic") or "").strip()
+
         # Two ways in. ``availability_id`` books a row the teacher published; the calendar
-        # instead names an hour that has no row yet, and materialises one on the way past.
+        # instead names an hour, and the row is materialised inside the booking transaction so
+        # a refusal leaves nothing behind.
         if request.data.get("availability_id"):
             slot = get_object_or_404(
                 SupportAvailability.objects.select_related("support_teacher"),
                 pk=request.data["availability_id"],
             )
+            try:
+                booking = support_service.book(
+                    request.user, slot, classroom=classroom, topic=topic
+                )
+            except ValidationError as exc:
+                return Response({"detail": "; ".join(exc.messages)}, status=400)
         else:
             teacher = get_object_or_404(
                 get_user_model(), pk=request.data.get("support_teacher_id")
@@ -248,19 +262,11 @@ class SupportBookingsView(APIView):
                     status=400,
                 )
             try:
-                slot = support_service.slot_for(teacher, starts_at)
+                booking = support_service.book_at(
+                    request.user, teacher, starts_at, classroom=classroom, topic=topic
+                )
             except ValidationError as exc:
                 return Response({"detail": "; ".join(exc.messages)}, status=400)
-        classroom = None
-        if request.data.get("classroom_id"):
-            classroom = get_object_or_404(Classroom, pk=request.data["classroom_id"])
-        try:
-            booking = support_service.book(
-                request.user, slot, classroom=classroom,
-                topic=(request.data.get("topic") or "").strip(),
-            )
-        except ValidationError as exc:
-            return Response({"detail": "; ".join(exc.messages)}, status=400)
         booking = SupportBooking.objects.select_related(
             "availability", "availability__support_teacher", "classroom", "student"
         ).get(pk=booking.pk)

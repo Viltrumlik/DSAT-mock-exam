@@ -170,14 +170,21 @@ export default function PracticeTestPackDetailPage() {
         <PageHero
           badge="Practice"
           title={pack.title || `Practice test #${pack.id}`}
-          description={pack.description || "Start any section in any order — no time limit between sections."}
+          // The pack's own blurb and the house instruction are two different things. Folding
+          // them into one `description` made the instruction — the only line telling a student
+          // this is the untimed, any-order one — vanish for every pack a teacher described.
+          description={pack.description || undefined}
           tiles={[
             { label: "Sections", value: sorted.length },
             ...(sorted.length > 0
               ? [{ label: "Finished", value: `${done} of ${sorted.length}`, accent: true as const }]
               : []),
           ]}
-        />
+        >
+          <p className="mt-5 text-[14px] font-medium opacity-[0.86]">
+            Start any section in any order — no time limit between sections.
+          </p>
+        </PageHero>
       </Card>
 
       {sorted.length === 0 ? (

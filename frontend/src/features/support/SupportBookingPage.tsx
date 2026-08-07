@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, Check, Clock, LifeBuoy, Users, X } from "lucide-react";
+import { CalendarClock, Check, Clock, Info, LifeBuoy, Users, X } from "lucide-react";
 import {
   Avatar,
   Field,
@@ -41,8 +41,12 @@ function fmtHour(iso: string) {
 
 /** "Today" and "Tomorrow" earn their names; after that the weekday is what a student uses. */
 function dayLabel(iso: string): { title: string; sub: string } {
-  const d = new Date(`${iso}T00:00:00`);
+  // Accepts a date ("2026-08-08") or a full instant; both must name the same day. The
+  // instant has to be flattened to midnight first, or its time-of-day rounds the day
+  // difference up and a 15:00 pick made today reads as "Tomorrow".
+  const d = iso.includes("T") ? new Date(iso) : new Date(`${iso}T00:00:00`);
   if (Number.isNaN(d.getTime())) return { title: iso, sub: "" };
+  d.setHours(0, 0, 0, 0);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const diff = Math.round((d.getTime() - today.getTime()) / 86_400_000);
@@ -257,6 +261,9 @@ function TeacherCalendar({
   const [dayIndex, setDayIndex] = useState(firstLive);
   const day = teacher.days[dayIndex] ?? teacher.days[0];
   const openCount = day?.hours.filter((h) => h.state === "open").length ?? 0;
+  const pickedNote = picked
+    ? day?.hours.find((h) => h.starts_at === picked)?.note || ""
+    : "";
 
   return (
     <Card className="cr-card space-y-4">
@@ -291,7 +298,13 @@ function TeacherCalendar({
             <button
               key={d.date}
               type="button"
-              onClick={() => setDayIndex(i)}
+              onClick={() => {
+                // Drop the pick when the day changes. Without this the confirm panel stayed
+                // open over a grid it no longer belonged to, with no chip highlighted —
+                // and Confirm still booked the hour from the day the student had left.
+                if (i !== dayIndex) onDismiss();
+                setDayIndex(i);
+              }}
               aria-pressed={active}
               // The visible text is three stacked fragments; without this a screen reader
               // reads "Today Aug 7 10 free" as one run-on and the button has no name.
@@ -331,9 +344,18 @@ function TeacherCalendar({
 
       {picked ? (
         <div className="cr-rowin rounded-2xl border border-primary/30 bg-primary/[0.06] p-4">
+          {/* Named off the pick itself, never off whichever day is on screen. */}
           <p className="text-sm font-extrabold text-foreground">
-            {dayLabel(day.date).title} · {fmtHour(picked)} with {teacher.name}
+            {dayLabel(picked).title} · {fmtHour(picked)} with {teacher.name}
           </p>
+          {/* The teacher's note for this hour. It is addressed to the student — "bring your
+              Module 2 answer sheet" is no use only to the person who wrote it. */}
+          {pickedNote ? (
+            <p className="mt-1.5 flex items-start gap-1.5 text-[13px] font-semibold text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>{pickedNote}</span>
+            </p>
+          ) : null}
           <Field
             className="mt-3"
             label="What do you need help with?"
@@ -404,7 +426,7 @@ function HourChip({
       )}
     >
       <span className="ds-num block text-sm font-extrabold">{time}</span>
-      <span className="block text-[11px] font-semibold opacity-70">
+      <span className="flex items-center justify-center gap-1 text-[11px] font-semibold opacity-70">
         {hour.capacity > 1 ? (
           <span className="inline-flex items-center gap-1">
             <Users className="h-3 w-3" aria-hidden />
@@ -413,6 +435,8 @@ function HourChip({
         ) : (
           "Free"
         )}
+        {/* Marks that the teacher left a note; the note itself shows once the hour is picked. */}
+        {hour.note ? <Info className="h-3 w-3 shrink-0" aria-hidden /> : null}
       </span>
     </button>
   );

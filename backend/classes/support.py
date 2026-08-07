@@ -110,6 +110,25 @@ def _hour_start(day, hour: int):
     )
 
 
+def _row_covering(candidates, hour_start, hour_end):
+    """The published row that governs one hour of the calendar, if any.
+
+    **Overlap, not equality.** Keying on the exact hour instant was wrong: the teacher's form
+    takes free-form start/end datetimes, so a 14:00–17:00 block only ever matched its first
+    hour. Withdrawing that block left 15:00 and 16:00 reading "open" and bookable — a student
+    could take a seat inside the block their teacher had just closed. Off-the-hour rows
+    (09:30–10:30) matched nothing at all and were invisible.
+
+    A withdrawal wins over a publication: if any part of the hour is blocked, the hour is not
+    free. Otherwise the earliest start wins, so the answer is stable.
+    """
+    hits = [r for r in candidates if r.starts_at < hour_end and r.ends_at > hour_start]
+    if not hits:
+        return None
+    hits.sort(key=lambda r: (not r.is_cancelled, r.starts_at, r.id))
+    return hits[0]
+
+
 def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[dict]:
     """The bookable week ahead, one entry per support teacher the student may book.
 
@@ -126,16 +145,18 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
     window_start = _hour_start(dates[0], CALENDAR_OPEN_HOUR)
     window_end = _hour_start(dates[-1], CALENDAR_CLOSE_HOUR)
 
+    # Rows that OVERLAP the window, not just ones that start inside it — a block running from
+    # before the window into it still governs the hours it covers.
     rows = list(
         SupportAvailability.objects.filter(
             support_teacher_id__in=teacher_ids,
-            starts_at__gte=window_start,
-            starts_at__lte=window_end,
+            starts_at__lt=window_end,
+            ends_at__gt=window_start,
         )
     )
-    # Keyed on the instant, not the local hour: two rows can never share one because of the
-    # (teacher, starts_at) unique constraint.
-    by_slot = {(r.support_teacher_id, r.starts_at): r for r in rows}
+    by_teacher: dict[int, list] = {}
+    for r in rows:
+        by_teacher.setdefault(r.support_teacher_id, []).append(r)
     row_ids = [r.id for r in rows]
     taken = dict(
         SupportBooking.objects.filter(
@@ -154,12 +175,14 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
     teachers = get_user_model().objects.filter(id__in=teacher_ids).order_by("first_name", "id")
     out = []
     for teacher in teachers:
+        candidates = by_teacher.get(teacher.id, [])
         days_out = []
         for day in dates:
             hours = []
             for hour in range(CALENDAR_OPEN_HOUR, CALENDAR_CLOSE_HOUR):
                 starts_at = _hour_start(day, hour)
-                row = by_slot.get((teacher.id, starts_at))
+                ends_at = starts_at + timedelta(minutes=SLOT_MINUTES)
+                row = _row_covering(candidates, starts_at, ends_at)
                 capacity = int(row.capacity) if row else 1
                 seats_left = max(0, capacity - taken.get(row.id, 0)) if row else capacity
                 booking_id = mine.get(row.id) if row else None
@@ -177,7 +200,7 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
 
                 hours.append({
                     "starts_at": starts_at,
-                    "ends_at": starts_at + timedelta(minutes=SLOT_MINUTES),
+                    "ends_at": ends_at,
                     "state": state,
                     "capacity": capacity,
                     "seats_left": seats_left,
@@ -212,13 +235,44 @@ def slot_for(support_teacher, starts_at, *, now=None, days: int = CALENDAR_DAYS)
     allowed = calendar_dates(now, days=days)
     if local.date() not in allowed:
         raise ValidationError(f"You can book up to {days} days ahead.")
+    # The docstring above promised this and the code did not do it: a student who left the
+    # page open across an hour boundary could click 09:00 at 09:05 and mint a row for an hour
+    # already gone, which ``book`` would then refuse.
+    if starts_at <= now:
+        raise ValidationError("That hour has already started.")
+
+    ends_at = starts_at + timedelta(minutes=SLOT_MINUTES)
+    # An hour already governed by a published block belongs to that block — including a block
+    # the teacher withdrew. Minting a fresh row here would hand the student a seat inside a
+    # closed afternoon, because a new row is never cancelled.
+    existing = _row_covering(
+        SupportAvailability.objects.filter(
+            support_teacher=support_teacher, starts_at__lt=ends_at, ends_at__gt=starts_at
+        ),
+        starts_at,
+        ends_at,
+    )
+    if existing is not None:
+        return existing
 
     slot, _ = SupportAvailability.objects.get_or_create(
         support_teacher=support_teacher,
         starts_at=starts_at,
-        defaults={"ends_at": starts_at + timedelta(minutes=SLOT_MINUTES), "capacity": 1},
+        defaults={"ends_at": ends_at, "capacity": 1},
     )
     return slot
+
+
+@transaction.atomic
+def book_at(student, support_teacher, starts_at, *, classroom=None, topic: str = "", now=None):
+    """Book an hour off the calendar, materialising its row only if the booking sticks.
+
+    One transaction on purpose. ``slot_for`` used to run outside it, so every refused
+    booking — wrong class, slot full, already settled — left behind an availability row the
+    teacher never published and cannot see.
+    """
+    slot = slot_for(support_teacher, starts_at, now=now)
+    return book(student, slot, classroom=classroom, topic=topic, now=now)
 
 
 @transaction.atomic

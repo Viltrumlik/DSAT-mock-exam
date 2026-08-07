@@ -173,6 +173,145 @@ class SlotMaterialisationTests(SupportFixture):
             support_service.slot_for(self.support, hour)
 
 
+class PublishedBlockTests(SupportFixture):
+    """A teacher's published row governs every hour it COVERS, not just the hour it starts on.
+
+    Keying the calendar on the exact hour instant meant a 14:00–17:00 block only ever matched
+    14:00. Withdrawing it left 15:00 and 16:00 open and bookable — a seat inside an afternoon
+    the teacher had just closed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+
+    def _block(self, from_hour, to_hour, **kw):
+        start = support_service._hour_start(self.tomorrow, from_hour)
+        return SupportAvailability.objects.create(
+            support_teacher=self.support, starts_at=start,
+            ends_at=support_service._hour_start(self.tomorrow, to_hour), **kw,
+        )
+
+    def _states_tomorrow(self):
+        entry = support_service.open_calendar_for(self.student)[0]
+        return {
+            timezone.localtime(h["starts_at"]).hour: h["state"]
+            for h in _hours(entry, 1)
+        }
+
+    def test_a_withdrawn_afternoon_closes_every_hour_it_covers(self):
+        self._block(14, 17, is_cancelled=True)
+        states = self._states_tomorrow()
+        self.assertEqual([states[14], states[15], states[16]], ["closed"] * 3)
+        self.assertEqual(states[13], "open")   # untouched either side
+        self.assertEqual(states[17], "open")
+
+    def test_a_student_cannot_book_inside_a_withdrawn_block(self):
+        self._block(14, 17, is_cancelled=True)
+        hour = support_service._hour_start(self.tomorrow, 15)
+        with self.assertRaises(ValidationError):
+            support_service.book_at(self.student, self.support, hour)
+        # And no row was minted to paper over it.
+        self.assertFalse(
+            SupportAvailability.objects.filter(support_teacher=self.support, starts_at=hour).exists()
+        )
+
+    def test_a_group_block_carries_its_seats_across_every_hour(self):
+        self._block(10, 12, capacity=4, note="Algebra clinic")
+        states = self._states_tomorrow()
+        self.assertEqual([states[10], states[11]], ["open", "open"])
+        entry = support_service.open_calendar_for(self.student)[0]
+        eleven = next(
+            h for h in _hours(entry, 1) if timezone.localtime(h["starts_at"]).hour == 11
+        )
+        self.assertEqual((eleven["capacity"], eleven["note"]), (4, "Algebra clinic"))
+
+    def test_an_off_the_hour_block_is_not_invisible(self):
+        start = support_service._hour_start(self.tomorrow, 9) + timedelta(minutes=30)
+        SupportAvailability.objects.create(
+            support_teacher=self.support, starts_at=start,
+            ends_at=start + timedelta(hours=1), is_cancelled=True,
+        )
+        states = self._states_tomorrow()
+        # 09:30–10:30 overlaps both the 09:00 and the 10:00 hour.
+        self.assertEqual([states[9], states[10]], ["closed", "closed"])
+
+    def test_booking_an_hour_inside_an_open_block_joins_that_block(self):
+        block = self._block(14, 17, capacity=2)
+        hour = support_service._hour_start(self.tomorrow, 15)
+        booking = support_service.book_at(self.student, self.support, hour)
+        # It joins the teacher's block rather than minting a rival row for the same time.
+        self.assertEqual(booking.availability_id, block.id)
+        self.assertEqual(
+            SupportAvailability.objects.filter(support_teacher=self.support).count(), 2
+        )  # the block + the fixture's own slot
+
+
+class MaterialisationIsTransactionalTests(SupportFixture):
+    """A refused booking must not leave an availability row the teacher never published."""
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+
+    def test_an_hour_that_has_already_started_mints_nothing(self):
+        hour = support_service._hour_start(timezone.localdate(), 9)
+        with self.assertRaises(ValidationError):
+            support_service.slot_for(self.support, hour, now=hour + timedelta(minutes=5))
+        self.assertFalse(SupportAvailability.objects.filter(starts_at=hour).exists())
+
+    def test_a_refused_booking_rolls_the_row_back(self):
+        from classes.models import ClassroomMembership
+
+        peer = type(self.student).objects.create_user("sb_peer2@t.com", "secret123")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=peer, role=ClassroomMembership.ROLE_STUDENT
+        )
+        hour = support_service._hour_start(self.tomorrow, 12)
+        support_service.book_at(peer, self.support, hour)          # takes the only seat
+        with self.assertRaises(ValidationError):
+            support_service.book_at(self.student, self.support, hour)
+        # The peer's row survives; the refusal added nothing.
+        self.assertEqual(
+            SupportAvailability.objects.filter(support_teacher=self.support, starts_at=hour).count(), 1
+        )
+
+    def test_a_wrong_classroom_leaves_nothing_behind(self):
+        hour = support_service._hour_start(self.tomorrow, 13)
+        with self.assertRaises(ValidationError):
+            support_service.book_at(
+                self.student, self.support, hour, classroom=self.other_classroom
+            )
+        self.assertFalse(
+            SupportAvailability.objects.filter(support_teacher=self.support, starts_at=hour).exists()
+        )
+
+
+class RepublishOverAStudentRowTests(SupportFixture):
+    """Once students materialise rows, publishing over one must still apply the teacher's values."""
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+        self.hour = support_service._hour_start(self.tomorrow, 10)
+
+    def test_a_teacher_can_open_a_group_on_an_hour_a_student_already_booked(self):
+        support_service.book_at(self.student, self.support, self.hour)
+        self.client.force_authenticate(self.support)
+        r = self.client.post("/api/classes/support/availability/", {
+            "starts_at": self.hour.isoformat(),
+            "ends_at": (self.hour + timedelta(hours=1)).isoformat(),
+            "capacity": 4,
+            "note": "Algebra clinic",
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["capacity"], 4)
+        slot = SupportAvailability.objects.get(support_teacher=self.support, starts_at=self.hour)
+        self.assertEqual((slot.capacity, slot.note), (4, "Algebra clinic"))
+        # The student who already booked keeps their seat; three more are now free.
+        self.assertEqual(slot.seats_left, 3)
+
+
 class CalendarApiTests(SupportFixture):
     def setUp(self):
         super().setUp()
