@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { usePathname } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import AuthGuard from "@/components/AuthGuard";
@@ -8,7 +9,8 @@ import { useMe } from "@/hooks/useMe";
 import { cn } from "@/lib/cn";
 import { AppShell } from "./AppShell";
 import { studentNav, reviewNavSection } from "./navConfig";
-import StudentHeaderExtras from "./StudentHeaderExtras";
+import StudentHeaderExtras, { StudentAccountMenuRows } from "./StudentHeaderExtras";
+import { useOutstandingWorkCount } from "./useOutstandingWorkCount";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
@@ -28,7 +30,17 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   // Content reviewers (test_auditor + admins) get a Review Center entry at the top of the
   // student sidebar. Everyone else sees the standard student IA.
   const isReviewer = isReviewerRole(m?.role);
-  const nav = isReviewer ? [reviewNavSection, ...studentNav] : studentNav;
+  const dueCount = useOutstandingWorkCount(isAuthenticated && !isReviewer);
+  // The count rides on the nav config rather than living in the shell, so any future item
+  // can carry one. `undefined` when zero — a badge reading 0 is noise.
+  const nav = useMemo(() => {
+    const base = isReviewer ? [reviewNavSection, ...studentNav] : studentNav;
+    if (!dueCount) return base;
+    return base.map((s) => ({
+      ...s,
+      items: s.items.map((i) => (i.href === "/assessments" ? { ...i, badge: dueCount } : i)),
+    }));
+  }, [isReviewer, dueCount]);
 
   // Immersive, sidebar-less takeovers (like the pastpaper /exam & /review routes):
   //  - the assessment runner (/assessments/attempt/<id>) — its `fixed inset-0 z-50`
@@ -71,6 +83,7 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
         // Reviewers and staff browse the student shell but earn nothing, so a points pill
         // reading zero on every page would be noise rather than information.
         headerSlot={isAuthenticated && !isReviewer ? <StudentHeaderExtras /> : undefined}
+        accountMenu={isAuthenticated && !isReviewer ? <StudentAccountMenuRows /> : undefined}
       >
         <div className={cn(globalInteractionBlockedHard && "pointer-events-none select-none")} aria-busy={globalInteractionBlockedHard || undefined}>
           {children}
