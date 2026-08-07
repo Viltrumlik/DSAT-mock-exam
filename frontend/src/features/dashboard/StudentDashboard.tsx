@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Target,
@@ -88,14 +89,25 @@ function DashboardBody({
           onSave={async (english, math) => { if (!isPreview) await live.saveGoal(english, math); }}
         />
 
-        {/* Score + countdown */}
+        {/* The work comes first. `font-sans` opts these blocks out of the Plus Jakarta face
+            `.dzboard` imposes on its subtree, so they read as the rest of the product. */}
+        <div className="font-sans" style={{ marginBottom: 22 }}>
+          <DueNext items={model.upcoming} resumeAttemptId={model.resumeAttemptId} />
+        </div>
+
+        {/* Calendar + right column */}
+        <ScheduleSection />
+
+        {/* Score + countdown. Demoted below the work: a countdown moves by one a day and a
+            target is a number the student typed in themselves — neither is why they opened
+            the app, and homework changes daily. */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
             gap: 20,
             alignItems: "stretch",
-            marginBottom: 22,
+            marginTop: 22,
           }}
           className="dz-scoregrid"
         >
@@ -109,11 +121,120 @@ function DashboardBody({
             }}
           />
         </div>
-
-        {/* Calendar + right column */}
-        <ScheduleSection />
       </div>
     </div>
+  );
+}
+
+/* ── Due next ─────────────────────────────────────────────────────────────────
+   The list `useDashboardData` has always built and never rendered. A student opens
+   this product to ask what they have to do and when it is due; until now the answer
+   was four taps away, and the third-to-last landed on a leaderboard. */
+function DueNext({
+  items,
+  resumeAttemptId,
+}: {
+  items: DashboardModel["upcoming"];
+  resumeAttemptId: number | null;
+}) {
+  const behind = items.filter((i) => i.behind).length;
+  const ahead = items.length - behind;
+
+  return (
+    <section aria-labelledby="due-next-heading" className="space-y-3">
+      <p className="text-[15px] text-muted-foreground">
+        {items.length === 0 ? (
+          <span className="font-bold text-foreground">Nothing due right now</span>
+        ) : (
+          <>
+            <span className="text-lg font-bold text-foreground">
+              {ahead > 0
+                ? `${ahead} thing${ahead === 1 ? "" : "s"} due`
+                : `${behind} to catch up on`}
+            </span>
+            {ahead > 0 && behind > 0 ? ` · ${behind} to catch up` : null}
+          </>
+        )}
+      </p>
+
+      {resumeAttemptId != null ? (
+        // `resumeAttemptId` is an EXAM attempt (practice test / mock), which the runner at
+        // /exam/<id> serves — not /assessments/attempt/<id>, which is the separate
+        // assessment runner and would 404 on this id.
+        <Link
+          href={`/exam/${resumeAttemptId}`}
+          className="ds-ring flex items-center gap-3 rounded-2xl border border-primary bg-primary-soft px-4 py-3 transition-colors hover:bg-primary/15"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-foreground">Pick up where you left off</p>
+            <p className="truncate text-xs text-muted-foreground">You have a test in progress</p>
+          </div>
+          <span className="shrink-0 text-sm font-bold text-primary">Resume →</span>
+        </Link>
+      ) : null}
+
+      {items.length > 0 ? (
+        <Card>
+          <CardContent className="p-0">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <h2 id="due-next-heading" className="ds-h4">
+                Due next
+              </h2>
+              <Link href="/assessments" className="text-xs font-bold text-primary hover:underline">
+                See all →
+              </Link>
+            </div>
+            <ul className="divide-y divide-border">
+              {items.map((item) => (
+                <li key={item.id}>
+                  <Link
+                    href={item.href}
+                    className="ds-ring flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2"
+                  >
+                    <span
+                      aria-hidden
+                      className={
+                        item.behind
+                          ? "h-8 w-[3px] shrink-0 rounded-full bg-warning"
+                          : item.soon
+                            ? "h-8 w-[3px] shrink-0 rounded-full bg-primary"
+                            : "h-8 w-[3px] shrink-0 rounded-full bg-border-strong"
+                      }
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-semibold text-foreground">
+                        {item.title}
+                      </span>
+                      {item.meta ? (
+                        <span className="truncate text-xs text-muted-foreground">{item.meta}</span>
+                      ) : null}
+                    </span>
+                    <span
+                      className={
+                        item.behind
+                          ? "shrink-0 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning-foreground"
+                          : "shrink-0 text-xs font-semibold text-muted-foreground"
+                      }
+                    >
+                      {item.dueLabel}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="ds-h4">You&apos;re all caught up</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              New homework will appear here as your teachers set it.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </section>
   );
 }
 
@@ -615,19 +736,31 @@ function ScheduleSection() {
       {/* Calendar */}
       <div
         className="dz-rise"
-        style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 24, padding: "24px 26px" }}
+        style={{
+          background: "var(--dz-panel)",
+          border: "1px solid var(--dz-border)",
+          borderRadius: 24,
+          // Fluid padding: 26px of gutter on each side of a ~297px phone column was most of
+          // the reason the day grid had nowhere to go.
+          padding: "clamp(14px, 4vw, 24px) clamp(12px, 4vw, 26px)",
+          minWidth: 0,
+        }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+        {/* Wraps: the title, the month and the two arrows together needed ~416px and the
+            row could not break, which is what pushed the whole page sideways. */}
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
           <span style={{ color: "var(--dz-indigo)", display: "flex" }}>
             <CalendarRange size={22} />
           </span>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: "1 1 140px", minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>Lesson calendar</div>
             <div style={{ fontSize: 13, color: "var(--dz-mute)", fontWeight: 500 }}>Tap a day to see what&apos;s on</div>
           </div>
-          <CalNavButton dir="l" onClick={prevMonth} />
-          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)", minWidth: 128, textAlign: "center" }}>{monthLabel}</div>
-          <CalNavButton dir="r" onClick={nextMonth} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+            <CalNavButton dir="l" onClick={prevMonth} />
+            <div style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)", minWidth: 112, textAlign: "center" }}>{monthLabel}</div>
+            <CalNavButton dir="r" onClick={nextMonth} />
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 }}>
@@ -688,9 +821,13 @@ type CellModel = {
 
 function DayCell({ c, onClick }: { c: CellModel; onClick: () => void }) {
   const highlight = c.isSelected || c.isNext;
+  // Fluid, not a fixed 40px: seven of those plus gaps need ~322px of grid, and a 375px
+  // phone gives the calendar about 297px — the circles overlapped and the tap target fell
+  // under the 44px floor. `min()` keeps the desktop size without a media query, which this
+  // inline-styled component cannot express.
   const num: React.CSSProperties = {
-    width: 40,
-    height: 40,
+    width: "min(40px, 100%)",
+    aspectRatio: "1",
     borderRadius: "50%",
     display: "flex",
     alignItems: "center",
@@ -737,17 +874,24 @@ function DayCell({ c, onClick }: { c: CellModel; onClick: () => void }) {
 }
 
 function Legend() {
-  const items: { sw: React.CSSProperties; label: string }[] = [
+  const items: { sw: React.CSSProperties; label: string; isText?: boolean }[] = [
     { sw: { border: "2px solid var(--dz-indigo)", background: "var(--dz-indigo-soft)" }, label: "Class" },
     { sw: { border: "2px solid var(--dz-amber)", background: "var(--dz-amber-soft)" }, label: "Mock test" },
     { sw: { background: "var(--dz-indigo)", boxShadow: "0 0 0 3px rgba(42,104,192,.18)" }, label: "Next lesson" },
     { sw: { border: "2px dashed var(--dz-indigo)" }, label: "Today" },
+    // Homework days were already painted — indigo numerals — but never explained, so the
+    // one event type a student is actually accountable for read as nothing at all.
+    { sw: { color: "var(--dz-indigo)" }, label: "Homework due", isText: true },
   ];
   return (
     <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--dz-border)" }}>
       {items.map((it) => (
         <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)" }}>
-          <span style={{ width: 16, height: 16, borderRadius: "50%", ...it.sw }} />
+          {it.isText ? (
+            <span style={{ width: 16, textAlign: "center", fontWeight: 800, ...it.sw }}>7</span>
+          ) : (
+            <span style={{ width: 16, height: 16, borderRadius: "50%", ...it.sw }} />
+          )}
           {it.label}
         </div>
       ))}
@@ -771,8 +915,11 @@ function relativeDays(iso: string | null): string {
 function eventHref(e: ScheduleEvent): string | null {
   if (e.type === "assignment" && e.classroom_id && e.assignment_id != null)
     return `/classes/${e.classroom_id}/assignments/${e.assignment_id}`;
-  if (e.type === "mock" || e.type === "midterm")
-    return e.mock_exam_id != null ? `/mock/${e.mock_exam_id}` : "/mock-exam";
+  // `/mock/<id>` has never existed as a route, and the server always sets `mock_exam_id`
+  // for these events, so the previous branch 404'd the biggest button on this page every
+  // time — the fallback it looked like it had could never fire.
+  if (e.type === "midterm") return "/midterm";
+  if (e.type === "mock") return "/mock-exam";
   if (e.classroom_id != null) return `/classes/${e.classroom_id}`;
   return null;
 }

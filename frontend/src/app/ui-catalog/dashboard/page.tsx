@@ -78,8 +78,9 @@ const SAMPLE: DashboardModel = {
     { id: 3, title: "Problem-solving & Data", meta: "Completed", time: "3d ago", isMath: true },
   ],
   upcoming: [
-    { id: 1, title: "Reading & Writing — Homework 4", href: "/assessments", dueLabel: "Due tomorrow", soon: true },
-    { id: 2, title: "Math practice set 7", href: "/assessments", dueLabel: "Due in 5 days", soon: false },
+    { id: 1, title: "Quadratic equations — problem set", href: "/assessments", dueLabel: "Catch up", soon: true, meta: "27 questions · Math Middle A", behind: true },
+    { id: 2, title: "Reading & Writing — Homework 4", href: "/assessments", dueLabel: "Due tomorrow", soon: true, meta: "22 questions · Reading & Writing Lab", behind: false },
+    { id: 3, title: "Math practice set 7", href: "/assessments", dueLabel: "Due in 5 days", soon: false, meta: "Math Middle A", behind: false },
   ],
 };
 
