@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /assessments — Student assessment workspace, a 3-column board
+ * /assessments — the student's whole workload, a 3-column board
  * (To-do / In progress / Completed) matched 1:1 to the MasterSAT Assessments mockup.
  * Uses the shared `.dzboard` design scope. Data: GET /api/classes/my-assignments/.
  *
@@ -44,29 +44,82 @@ type AssessmentProgress = {
   last_activity_at?: string | null;
 };
 type AssessmentHomework = { homework_id: number; set?: AssessmentSet | null; progress?: AssessmentProgress | null };
+/** One openable thing inside a homework bundle — the server's launcher order. */
+type ContentEntry = { kind: string; title?: string | null; item_count?: number | null; homework_id?: number | null };
+/** A word set attached to a homework. Travels apart from `contents`. */
+type VocabHomework = {
+  id: number;
+  set_id: number;
+  set_title?: string | null;
+  section_title?: string | null;
+  word_count?: number | null;
+  state?: string | null;
+};
 type AssignmentWithStatus = Assignment & {
   assessment_homeworks?: AssessmentHomework[] | null;
   assessment_homework?: AssessmentHomework | null;
+  // `contents` is deliberately NOT redeclared here: the generated schema types it as
+  // `{ [key: string]: unknown }[]`, and intersecting that with a real shape collapses every
+  // field to `unknown`. It is narrowed at the one place it is read instead.
+  vocab_homeworks?: VocabHomework[] | null;
   workflow_status?: string | null;
   item_count?: number | null;
 };
-// One card per ASSESSMENT (a homework can bundle several) — keyed by homework_id.
+
+/**
+ * What a card stands for. A homework bundle can hold several of these at once, and until
+ * now only `QUIZ` was ever drawn: the board skipped any assignment carrying no assessment,
+ * so past papers, mocks, practice packs, word sets and file hand-ins were invisible unless
+ * the student opened each class in turn. The server has served them all along — there is
+ * even a note in `my_assignments` about a vocabulary-only homework looking "EMPTY to any
+ * client that trusts this payload".
+ */
+type EntryKind = "QUIZ" | "MOCK" | "PRACTICE" | "PASTPAPER" | "VOCAB" | "TASK";
+
 type Entry = {
+  /** Stable React key — an assignment can contribute several cards. */
+  key: string;
+  kind: EntryKind;
   assignment: AssignmentWithStatus;
-  hw: AssessmentHomework;
   classroomId: number;
   classroomName: string;
+  title: string;
   subject?: string;
+  /** Questions, or words for a vocabulary set. 0 when the server did not count. */
+  itemCount: number;
+  unit: "questions" | "words" | "";
+  state: State;
+  /** Present only for QUIZ, which is the one kind this board can launch itself. */
+  hw?: AssessmentHomework;
 };
 
 type State = "IN_PROGRESS" | "SUBMITTED" | "COMPLETED" | "NOT_STARTED";
 
-function deriveState(e: Entry): State {
-  const ws = e.hw.progress?.workflow_status;
+/** Per-quiz progress. */
+function quizState(hw: AssessmentHomework): State {
+  const ws = hw.progress?.workflow_status;
   if (ws === "graded" || ws === "completed") return "COMPLETED";
   if (ws === "submitted") return "SUBMITTED";
   if (ws === "in_progress") return "IN_PROGRESS";
   return "NOT_STARTED";
+}
+
+/**
+ * Assignment-level status, for the kinds this payload carries no per-content progress for.
+ * `RETURNED` lands in To do on purpose — it means revise and resubmit, which is work.
+ */
+function statusState(status?: string | null): State {
+  switch ((status || "").trim().toUpperCase()) {
+    case "GRADED":
+    case "COMPLETED":
+      return "COMPLETED";
+    case "SUBMITTED":
+      return "SUBMITTED";
+    case "IN_PROGRESS":
+      return "IN_PROGRESS";
+    default:
+      return "NOT_STARTED";
+  }
 }
 
 type ColKey = "todo" | "progress" | "done";
@@ -130,16 +183,27 @@ function estMinutes(q: number): number {
 
 /** Lowercased searchable text for one card (title, class, subject, category). */
 function entryHaystack(e: Entry): string {
-  const set = e.hw.set;
   return [
-    set?.title ?? e.assignment.title ?? "",
+    e.title,
+    e.assignment.title ?? "",
     e.classroomName,
     subjectStyle(e.subject).label,
-    set?.category ?? "",
+    e.hw?.set?.category ?? "",
+    KIND_LABEL[e.kind],
   ]
     .join(" ")
     .toLowerCase();
 }
+
+/** What a card is, in the student's words — not the API's. */
+const KIND_LABEL: Record<EntryKind, string> = {
+  QUIZ: "Assessment",
+  MOCK: "Mock exam",
+  PRACTICE: "Practice test",
+  PASTPAPER: "Past paper",
+  VOCAB: "Vocabulary",
+  TASK: "Task",
+};
 
 function Board() {
   const router = useRouter();
@@ -171,15 +235,81 @@ function Board() {
       const { items } = await classesApi.myAssignments();
       const collected: Entry[] = [];
       for (const a of items) {
-        const rich = a as AssignmentWithStatus & { classroom_id?: number; classroom_name?: string };
-        // A homework can bundle several assessments — one card per assessment.
-        const hws = rich.assessment_homeworks
-          ?? (rich.assessment_homework ? [rich.assessment_homework] : []);
-        if (!hws.length) continue;
+        const rich = a as AssignmentWithStatus & {
+          classroom_id?: number;
+          classroom_name?: string;
+          subject?: string;
+        };
         const classroomId = rich.classroom_id ?? 0;
         const classroomName = rich.classroom_name ?? `Class #${classroomId}`;
+        const base = { assignment: rich, classroomId, classroomName };
+        const fallbackState = statusState(rich.workflow_status);
+
+        // A homework can bundle several assessments — one card per assessment, each with
+        // its own progress, because a student finishes them one at a time.
+        const hws = rich.assessment_homeworks
+          ?? (rich.assessment_homework ? [rich.assessment_homework] : []);
         for (const hw of hws) {
-          collected.push({ assignment: rich, hw, classroomId, classroomName, subject: hw.set?.subject });
+          collected.push({
+            ...base,
+            key: `q-${rich.id}-${hw.homework_id}`,
+            kind: "QUIZ",
+            hw,
+            title: hw.set?.title ?? rich.title ?? "Assessment",
+            subject: hw.set?.subject,
+            itemCount: hw.progress?.total_questions ?? 0,
+            unit: "questions",
+            state: quizState(hw),
+          });
+        }
+
+        // Everything else the bundle can open. `contents` lists them in launcher order and
+        // already carries a real name and item count for each.
+        const contents = (rich.contents ?? []) as unknown as ContentEntry[];
+        for (const [i, c] of contents.entries()) {
+          const kind = (c.kind || "").toUpperCase();
+          if (kind === "QUIZ") continue;   // drawn above, with its own progress
+          if (kind !== "MOCK" && kind !== "PRACTICE" && kind !== "PASTPAPER") continue;
+          collected.push({
+            ...base,
+            key: `c-${rich.id}-${kind}-${i}`,
+            kind,
+            title: c.title || rich.title || "Practice",
+            subject: rich.subject,
+            itemCount: c.item_count ?? 0,
+            unit: "questions",
+            state: fallbackState,
+          });
+        }
+
+        for (const v of rich.vocab_homeworks ?? []) {
+          collected.push({
+            ...base,
+            key: `v-${rich.id}-${v.id}`,
+            kind: "VOCAB",
+            title: v.set_title || "Vocabulary set",
+            subject: rich.subject,
+            itemCount: v.word_count ?? 0,
+            unit: "words",
+            // Vocabulary tracks its own completion, independent of the submission.
+            state: statusState(v.state),
+          });
+        }
+
+        // A homework with nothing openable is still work: a file to hand in, a link to
+        // read, instructions to follow. It gets one card that opens the assignment.
+        const openable = hws.length + (rich.contents?.length ?? 0) + (rich.vocab_homeworks?.length ?? 0);
+        if (openable === 0) {
+          collected.push({
+            ...base,
+            key: `t-${rich.id}`,
+            kind: "TASK",
+            title: rich.title || "Assignment",
+            subject: rich.subject,
+            itemCount: 0,
+            unit: "",
+            state: fallbackState,
+          });
         }
       }
       setEntries(collected);
@@ -196,7 +326,7 @@ function Board() {
     const q = query.trim().toLowerCase();
     for (const e of entries) {
       if (q && !entryHaystack(e).includes(q)) continue;
-      m[colOf(deriveState(e))].push(e);
+      m[colOf(e.state)].push(e);
     }
     return m;
   }, [entries, query]);
@@ -207,7 +337,7 @@ function Board() {
       <div className="dz-content">
         <div style={{ display: "flex", alignItems: "flex-end", gap: 24, flexWrap: "wrap", marginBottom: 22 }}>
           <h1 style={{ flex: 1, minWidth: 280, margin: 0, fontSize: 38, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)" }}>
-            My assessments
+            My work
           </h1>
           <div className="dz-headin" style={{ position: "relative", width: "100%", maxWidth: 340 }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--dz-faint)", display: "flex", pointerEvents: "none" }}>
@@ -216,8 +346,8 @@ function Board() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search assessments…"
-              aria-label="Search assessments"
+              placeholder="Search your work…"
+              aria-label="Search your work"
               style={{ width: "100%", border: "1px solid var(--dz-border)", background: "var(--dz-panel)", borderRadius: 12, padding: "11px 14px 11px 44px", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--dz-ink)", outline: "none" }}
             />
           </div>
@@ -225,14 +355,18 @@ function Board() {
 
         {!loading && !error && query.trim() && matchCount === 0 ? (
           <div style={{ marginBottom: 18, border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "22px 16px", textAlign: "center", color: "var(--dz-mute)", fontSize: 14, fontWeight: 600 }}>
-            No assessments match “{query.trim()}”.
+            Nothing matches “{query.trim()}”.
           </div>
         ) : null}
 
         {error ? (
           <AssessError onRetry={() => void load()} />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }} className="dz-board">
+          // `auto-fit` rather than a fixed `repeat(3, 1fr)`: the old grid hung its
+          // responsive behaviour on a `dz-board` class that matches no rule anywhere in the
+          // codebase, so a phone got three ~105px columns of the most-used student screen.
+          // `min(100%, 260px)` keeps the track from outgrowing a narrow container.
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 18 }}>
             {COLUMNS.map((col) => (
               <div key={col.key} style={{ background: "var(--dz-card)", border: "1px solid var(--dz-border)", borderRadius: 18, padding: 16, minHeight: 300 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 6px 16px" }}>
@@ -255,11 +389,11 @@ function Board() {
                   ) : (
                     byCol[col.key].map((e) => (
                       <AssessCard
-                        key={`${e.classroomId}-${e.assignment.id}-${e.hw.homework_id}`}
+                        key={e.key}
                         entry={e}
                         onGo={(href) => router.push(href)}
                         onStart={beginAssessment}
-                        starting={startingId === e.hw.homework_id}
+                        starting={e.hw != null && startingId === e.hw.homework_id}
                       />
                     ))
                   )}
@@ -274,25 +408,29 @@ function Board() {
 }
 
 function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (href: string) => void; onStart: (homeworkId: number) => void; starting: boolean }) {
-  const state = deriveState(entry);
+  const state = entry.state;
   const a = entry.assignment;
   const hw = entry.hw;
-  const set = hw.set;
-  const prog = hw.progress ?? null;
-  // Prefer the assessment's own title; fall back to the homework title.
-  const title = set?.title ?? a.title ?? "Assignment";
+  const set = hw?.set;
+  const prog = hw?.progress ?? null;
+  const title = entry.title;
   const subj = subjectStyle(set?.subject ?? entry.subject);
   const category = set?.category;
   const aid = a.id;
-  const hwId = hw.homework_id;
   const col = colOf(state);
   const accent = subj.accent;
   const soft = subj.soft;
 
   // Category → tags (a set carries one category; split on comma/slash if authored that way).
   const tags = (category ? category.split(/[,/·]/).map((t) => t.trim()).filter(Boolean) : []).slice(0, 3);
-  const qCount = prog?.total_questions ?? 0;
+  const qCount = entry.itemCount || prog?.total_questions || 0;
   const resumeHref = prog?.attempt_id ? `/assessments/attempt/${prog.attempt_id}` : undefined;
+  /**
+   * Everything that is not a quiz opens the assignment, which already carries the correct
+   * launcher for each kind (the bundle model). Re-implementing five launchers on this board
+   * would be a second, divergent way into the same work.
+   */
+  const detailHref = `/classes/${entry.classroomId}/assignments/${aid}`;
 
   return (
     <div className="dz-statecard" style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderTop: `3px solid ${accent}`, borderRadius: 14, padding: 16, cursor: "default" }}>
@@ -314,30 +452,39 @@ function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (h
         ) : null}
       </div>
 
-      {/* Title + class · subject subtitle */}
+      {/* Title + class · what it is */}
       <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dz-ink)", lineHeight: 1.3, marginBottom: 6 }}>{title}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: 12 }}>
-        <BookOpen size={13} /> {entry.classroomName} · {subj.label}
+        <BookOpen size={13} /> {entry.classroomName} · {KIND_LABEL[entry.kind]}
       </div>
 
-      {col === "todo" ? <TodoBody qCount={qCount} due={a.due_at} tags={tags} /> : null}
+      {col === "todo" ? <TodoBody qCount={qCount} unit={entry.unit} due={a.due_at} tags={tags} /> : null}
       {col === "progress" ? <ProgressBody prog={prog} qCount={qCount} /> : null}
       {col === "done" ? <DoneBody state={state} prog={prog} /> : null}
 
-      {/* Actions */}
-      {col === "todo" ? (
+      {/* Actions. Only a quiz can be launched from here; the rest open the assignment. */}
+      {hw == null ? (
+        <ActionBtn
+          primary={col === "todo"}
+          amber={col === "progress"}
+          outline={col === "done"}
+          icon={col === "done" ? <CheckCircle2 size={15} /> : <PlayCircle size={15} />}
+          label={col === "done" ? "Review" : col === "progress" ? "Continue" : "Open"}
+          onClick={() => onGo(detailHref)}
+        />
+      ) : col === "todo" ? (
         <ActionBtn
           primary
           disabled={starting}
           icon={starting ? <Loader2 size={15} className="animate-spin" /> : <PlayCircle size={15} />}
           label={starting ? "Starting…" : "Start"}
-          onClick={() => onStart(hwId)}
+          onClick={() => onStart(hw.homework_id)}
         />
       ) : col === "progress" ? (
-        <ActionBtn amber icon={<PlayCircle size={15} />} label="Continue" onClick={() => (resumeHref ? onGo(resumeHref) : onStart(hwId))} />
+        <ActionBtn amber icon={<PlayCircle size={15} />} label="Continue" onClick={() => (resumeHref ? onGo(resumeHref) : onStart(hw.homework_id))} />
       ) : (
         // Completed: just Review — retry lives inside the result/review page.
-        <ActionBtn outline icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}?homework=${hwId}`)} />
+        <ActionBtn outline icon={<CheckCircle2 size={15} />} label={state === "SUBMITTED" ? "View" : "Review"} onClick={() => onGo(`/assessments/result/${aid}?homework=${hw.homework_id}`)} />
       )}
     </div>
   );
@@ -345,18 +492,30 @@ function AssessCard({ entry, onGo, onStart, starting }: { entry: Entry; onGo: (h
 
 // ─── Card bodies ────────────────────────────────────────────────────────────
 
-function TodoBody({ qCount, due, tags }: { qCount: number; due?: string | null; tags: string[] }) {
+function TodoBody({ qCount, unit, due, tags }: { qCount: number; unit: "questions" | "words" | ""; due?: string | null; tags: string[] }) {
   const dl = dueLabel(due);
   return (
     <>
-      {qCount > 0 ? (
+      {qCount > 0 && unit ? (
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: dl || tags.length ? 12 : 14 }}>
-          <Clock size={13} /> {qCount} questions · ~{estMinutes(qCount)} min
+          <Clock size={13} /> {qCount} {qCount === 1 ? unit.replace(/s$/, "") : unit}
+          {/* A time estimate is only meaningful for questions; ten words is not ~13 min. */}
+          {unit === "questions" ? ` · ~${estMinutes(qCount)} min` : null}
         </div>
       ) : null}
       {dl ? (
         <div style={{ marginBottom: tags.length ? 12 : 14 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "#dc2626", background: "color-mix(in srgb, #dc2626 12%, transparent)", border: "1px solid color-mix(in srgb, #dc2626 30%, transparent)", padding: "4px 10px", borderRadius: 8 }}>
+          {/* `dueLabel` has always returned an `overdue` flag and the chip has always
+              ignored it, painting every deadline in danger red — so homework due next
+              Tuesday looked like something had gone wrong. Work still to come is quiet;
+              work to catch up on is amber. Never red: nothing here has failed. */}
+          <span
+            style={
+              dl.overdue
+                ? { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--dz-amber)", background: "color-mix(in srgb, var(--dz-amber) 14%, transparent)", border: "1px solid color-mix(in srgb, var(--dz-amber) 32%, transparent)", padding: "4px 10px", borderRadius: 8 }
+                : { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--dz-mute)", background: "var(--dz-card)", border: "1px solid var(--dz-border)", padding: "4px 10px", borderRadius: 8 }
+            }
+          >
             <Calendar size={13} /> {dl.text}
           </span>
         </div>
