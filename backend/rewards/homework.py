@@ -100,11 +100,31 @@ def _assessment_items(assignment, student) -> list[BundleItem]:
     return items
 
 
+def _assigned_at(assignment):
+    """The floor for "did the student do this FOR this homework".
+
+    Pastpapers and vocabulary sets are shared library content: the same paper is set for
+    revision weeks later, and the same vocab set is given to a second class. Without a floor,
+    last term's completion satisfies this term's homework and the student is paid full marks
+    for an assignment they never opened.
+    """
+    return assignment.created_at
+
+
 def _vocab_items(assignment, student) -> list[BundleItem]:
     """One item per attached vocabulary set — completion only, there is no score."""
+    from vocabulary.models import VocabStudySession
+
     items: list[BundleItem] = []
+    since = _assigned_at(assignment)
     for link in assignment.vocab_homeworks.select_related("vocab_set").all():
-        done = link.vocab_set.is_completed_by(student)
+        # Deliberately not `VocabSet.is_completed_by`: that has no notion of when, so it
+        # would count a set the student finished last term.
+        done = VocabStudySession.objects.filter(
+            user=student, vocab_set_id=link.vocab_set_id, completed_at__isnull=False
+        ).filter(completed_at__gte=since).exists() if since else (
+            link.vocab_set.is_completed_by(student)
+        )
         items.append(BundleItem("vocab", f"vocab:{link.vocab_set_id}", 100.0 if done else 0.0))
     return items
 
@@ -124,14 +144,19 @@ def _sat_content_item(assignment, student) -> BundleItem | None:
     if not target_ids:
         return None
 
-    completed = set(
-        TestAttempt.objects.filter(
-            student=student,
-            practice_test_id__in=target_ids,
-            is_completed=True,
-            current_state=TestAttempt.STATE_COMPLETED,
-        ).values_list("practice_test_id", flat=True)
+    qs = TestAttempt.objects.filter(
+        student=student,
+        practice_test_id__in=target_ids,
+        is_completed=True,
+        current_state=TestAttempt.STATE_COMPLETED,
     )
+    # Only sittings from after this homework was set. The same paper is routinely re-assigned
+    # for revision, and without this the student is paid again for a paper they sat weeks ago
+    # without opening the new assignment.
+    since = _assigned_at(assignment)
+    if since is not None:
+        qs = qs.filter(completed_at__gte=since)
+    completed = set(qs.values_list("practice_test_id", flat=True))
     done = completed.issuperset(set(target_ids))
     return BundleItem("sat_content", f"tests:{len(target_ids)}", 100.0 if done else 0.0)
 

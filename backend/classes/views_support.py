@@ -150,6 +150,17 @@ class SupportAvailabilityView(APIView):
             _slot_json(slot), status=http.HTTP_201_CREATED if created else http.HTTP_200_OK
         )
 
+
+class SupportAvailabilityDetailView(SupportAvailabilityView):
+    """Withdraw one slot. Separate from the collection view so that GET/POST on the detail
+    URL return 405 instead of reaching a handler that has no such argument and raising."""
+
+    def get(self, request, slot_id):
+        return Response(status=http.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def post(self, request, slot_id):
+        return Response(status=http.HTTP_405_METHOD_NOT_ALLOWED)
+
     def delete(self, request, slot_id):
         if not self._guard(request):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
@@ -197,6 +208,16 @@ class SupportBookingsView(APIView):
             "availability", "availability__support_teacher", "classroom", "student"
         ).get(pk=booking.pk)
         return Response(_booking_json(booking), status=http.HTTP_201_CREATED)
+
+
+class SupportBookingDetailView(SupportBookingsView):
+    """Cancel one booking. Separate for the same reason as the availability detail view."""
+
+    def get(self, request, booking_id):
+        return Response(status=http.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def post(self, request, booking_id):
+        return Response(status=http.HTTP_405_METHOD_NOT_ALLOWED)
 
     def delete(self, request, booking_id):
         booking = get_object_or_404(SupportBooking, pk=booking_id)

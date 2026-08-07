@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
@@ -382,6 +384,28 @@ class ItemKindTests(BundleFixture):
             status=Submission.STATUS_SUBMITTED, submitted_at=timezone.now(),
         )
         self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 100.0)
+
+    def test_a_pastpaper_sat_before_the_homework_existed_does_not_count(self):
+        """Library content is re-assigned constantly — the same paper for a revision week, the
+        same vocab set for a second class. Without a floor, last term's work satisfies this
+        term's homework and the student is paid for an assignment they never opened."""
+        (paper,) = self.add_pastpaper()
+        TestAttempt.objects.create(
+            practice_test=paper, student=self.student, score=1200,
+            is_completed=True, current_state=TestAttempt.STATE_COMPLETED,
+            completed_at=self.assignment.created_at - timedelta(days=7),
+        )
+
+        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 0.0)
+
+    def test_a_vocabulary_set_finished_before_the_homework_existed_does_not_count(self):
+        vset = self.add_vocab()
+        VocabStudySession.objects.create(
+            user=self.student, vocab_set=vset, mode="flashcards",
+            completed_at=self.assignment.created_at - timedelta(days=7),
+        )
+
+        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 0.0)
 
     def test_the_award_records_the_classroom(self):
         a = self.add_assessment("A")

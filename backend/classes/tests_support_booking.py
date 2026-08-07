@@ -162,6 +162,28 @@ class BookingMechanicsTests(SupportFixture):
         self.assertEqual(again.pk, first.pk)
         self.assertEqual(SupportBooking.objects.count(), 1)
 
+    def test_a_settled_session_cannot_be_re_booked(self):
+        """Re-booking reuses the row, so without this a student could erase a NO_SHOW — or
+        overwrite a HELD and silently revoke their own points — just by pressing Book again."""
+        booking = support_service.book(self.student, self.slot)
+        support_service.settle(booking, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+
+        with self.assertRaises(ValidationError):
+            support_service.book(self.student, self.slot)
+
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, SupportBooking.STATUS_NO_SHOW)
+
+    def test_re_booking_cannot_take_back_points_from_a_held_session(self):
+        booking = support_service.book(self.student, self.slot)
+        support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
+        self.assertEqual(balance(self.student), 10)
+
+        with self.assertRaises(ValidationError):
+            support_service.book(self.student, self.slot)
+
+        self.assertEqual(balance(self.student), 10)
+
     def test_a_settled_session_cannot_be_cancelled(self):
         booking = support_service.book(self.student, self.slot)
         support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
@@ -294,6 +316,15 @@ class ApiTests(SupportFixture):
             format="json",
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_a_wrong_method_on_a_detail_url_is_405_not_a_crash(self):
+        """The detail routes take a URL kwarg the collection handlers do not accept, so
+        without their own view a plausible client mistake reaches the handler and 500s."""
+        booking = support_service.book(self.student, self.slot)
+        self.client.force_authenticate(self.student)
+
+        self.assertEqual(self.client.get(f"/api/classes/support/bookings/{booking.id}/").status_code, 405)
+        self.assertEqual(self.client.get(f"/api/classes/support/availability/{self.slot.id}/").status_code, 405)
 
     def test_the_diary_shows_the_support_teacher_who_booked_them(self):
         support_service.book(self.student, self.slot)

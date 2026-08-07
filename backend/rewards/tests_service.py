@@ -89,6 +89,49 @@ class AwardIdempotencyTests(TestCase):
         self.assertEqual(PointAward.objects.count(), 1)
 
 
+class PricingIsFrozenAtGrantTests(TestCase):
+    """A rule is a price list for FUTURE earnings, not a lever over banked ones."""
+
+    def setUp(self):
+        self.student = _u("rw_price@t.com")
+
+    def test_retuning_a_rule_does_not_restate_an_award_already_banked(self):
+        """Hooks re-fire freely and the deadline sweep re-runs hourly, so re-reading the rule
+        on every correction would silently rewrite history students have already seen."""
+        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:1:1")
+        self.assertEqual(balance(self.student), 15)
+
+        RewardRule.objects.update_or_create(
+            event=constants.EVENT_HOMEWORK_FULL, defaults={"points": 5}
+        )
+        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:1:1")
+
+        self.assertEqual(balance(self.student), 15)
+
+    def test_a_retuned_rule_does_price_the_next_new_earning(self):
+        RewardRule.objects.update_or_create(
+            event=constants.EVENT_HOMEWORK_FULL, defaults={"points": 5}
+        )
+        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:2:1")
+        self.assertEqual(balance(self.student), 5)
+
+    def test_a_changed_event_is_a_changed_fact_and_re_prices(self):
+        """A re-grade moving MID→FULL must move the points; only the RULE is frozen."""
+        award(self.student, constants.EVENT_HOMEWORK_MID, idempotency_key="homework:3:1")
+        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:3:1")
+        self.assertEqual(balance(self.student), 15)
+
+    def test_a_revoked_award_is_restored_at_the_rules_value(self):
+        """PRESENT → ABSENT → PRESENT has to give the 5 back, not keep the zero."""
+        key = "attendance:99"
+        award(self.student, constants.EVENT_ATTENDANCE_PRESENT, idempotency_key=key)
+        revoke(key, reason="marked absent")
+        self.assertEqual(balance(self.student), 0)
+
+        award(self.student, constants.EVENT_ATTENDANCE_PRESENT, idempotency_key=key)
+        self.assertEqual(balance(self.student), 5)
+
+
 class RevokeTests(TestCase):
     def setUp(self):
         self.student = _u("rw_s2@t.com")

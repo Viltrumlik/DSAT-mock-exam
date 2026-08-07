@@ -100,13 +100,28 @@ def award(
     try:
         with transaction.atomic():   # savepoint — see module docstring
             season = current_season()
-            value = int(points) if points is not None else points_for(event)
 
             existing = (
                 PointAward.objects.select_for_update()
                 .filter(idempotency_key=idempotency_key)
                 .first()
             )
+
+            # Price ONCE, at the moment the earning is first recognised. Re-reading the rule
+            # on every correction would let a retune rewrite history: hooks re-fire freely by
+            # design and the deadline sweep re-runs hourly, so lowering HOMEWORK_FULL from 15
+            # to 5 would silently restate awards students had already banked and seen. The
+            # models docstring states that invariant; this is what holds it.
+            #
+            # A changed EVENT is a changed fact (a re-grade moving MID→FULL) and does re-price.
+            # A revoked award (points zeroed) is re-priced from the rule when the fact comes
+            # back — PRESENT → ABSENT → PRESENT has to restore the 5, not keep the 0.
+            if points is not None:
+                value = int(points)
+            elif existing is not None and existing.event == event and existing.points != 0:
+                value = int(existing.points)
+            else:
+                value = points_for(event)
             if existing is None:
                 created = PointAward.objects.create(
                     student=student, season=season, event=event, points=value,

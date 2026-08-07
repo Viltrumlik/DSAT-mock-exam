@@ -111,6 +111,13 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
     ).first()
     if existing is not None and existing.status == SupportBooking.STATUS_BOOKED:
         raise ValidationError("You have already booked that slot.")
+    if existing is not None and existing.status in (
+        SupportBooking.STATUS_HELD, SupportBooking.STATUS_NO_SHOW
+    ):
+        # A settled session is the teacher's record. Re-booking reuses the row, so allowing
+        # it here would let a student erase a NO_SHOW — or overwrite a HELD and silently
+        # revoke their own 10 points — by pressing Book again.
+        raise ValidationError("That session has already been settled.")
 
     taken = SupportBooking.objects.filter(
         availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES

@@ -26,7 +26,9 @@ from .views_analytics import AnalyticsClassView, AnalyticsMeView, AnalyticsStude
 from .views_gradebook import GradebookOverviewView, GradebookAssignmentView
 from .views_materials import ClassroomMaterialsView, ClassroomMaterialDetailView
 from .views_support import (
+    SupportAvailabilityDetailView,
     SupportAvailabilityView,
+    SupportBookingDetailView,
     SupportBookingSettleView,
     SupportBookingsView,
     SupportDiaryView,
@@ -115,9 +117,9 @@ urlpatterns = [
     # so "support" is never parsed as a classroom id.
     path("support/slots/", SupportSlotsView.as_view(), name="support-slots"),
     path("support/availability/", SupportAvailabilityView.as_view(), name="support-availability"),
-    path("support/availability/<int:slot_id>/", SupportAvailabilityView.as_view(), name="support-availability-detail"),
+    path("support/availability/<int:slot_id>/", SupportAvailabilityDetailView.as_view(), name="support-availability-detail"),
     path("support/bookings/", SupportBookingsView.as_view(), name="support-bookings"),
-    path("support/bookings/<int:booking_id>/", SupportBookingsView.as_view(), name="support-booking-detail"),
+    path("support/bookings/<int:booking_id>/", SupportBookingDetailView.as_view(), name="support-booking-detail"),
     path("support/bookings/<int:booking_id>/settle/", SupportBookingSettleView.as_view(), name="support-booking-settle"),
     path("support/diary/", SupportDiaryView.as_view(), name="support-diary"),
     path("<int:classroom_pk>/support-teachers/", SupportTeacherAssignView.as_view(), name="class-support-teachers"),
