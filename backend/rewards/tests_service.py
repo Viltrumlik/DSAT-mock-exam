@@ -256,3 +256,18 @@ class SeasonTests(TestCase):
     def test_only_one_season_can_be_current(self):
         start_new_season("Season 2")
         self.assertEqual(RewardSeason.objects.filter(is_current=True).count(), 1)
+
+    def test_improving_an_earning_after_a_reset_pays_in_the_new_season(self):
+        """`idempotency_key` is global, not season-scoped, so an earning keeps its row across
+        a reset. Without re-homing, the student is paid nothing in the season they can see
+        while the closed season's archived total silently moves."""
+        award(self.student, constants.EVENT_HOMEWORK_MID, idempotency_key="homework:1:1")
+        season_one = current_season()
+        start_new_season("Season 2")
+        season_two = current_season()
+
+        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:1:1")
+
+        self.assertEqual(balance(self.student, season=season_two), 15)
+        self.assertEqual(balance(self.student, season=season_one), 0)
+        self.assertEqual(PointAward.objects.count(), 1)   # moved, not duplicated

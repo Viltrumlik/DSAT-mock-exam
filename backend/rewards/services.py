@@ -143,11 +143,20 @@ def award(
 
             existing.points = value
             existing.event = event
+            # Re-home a correction into the season it actually happened in.
+            #
+            # `idempotency_key` is globally unique, not season-scoped, so an earning keeps its
+            # row across a reset. Without this the row stays pinned to the closed season:
+            # a student who improves last term's homework this term is paid nothing in the
+            # season they can see, while the closed season's archived total silently moves.
+            existing.season = season
             if classroom is not None:
                 existing.classroom = classroom
             if note:
                 existing.note = note
-            existing.save(update_fields=["points", "event", "classroom", "note", "updated_at"])
+            existing.save(
+                update_fields=["points", "event", "season", "classroom", "note", "updated_at"]
+            )
             PointAwardAudit.objects.create(
                 award=existing, previous_points=previous, new_points=value,
                 reason=reason or "corrected", actor=actor,
