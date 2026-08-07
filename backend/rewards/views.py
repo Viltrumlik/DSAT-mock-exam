@@ -49,8 +49,9 @@ class MyRewardsView(APIView):
         # spendable the two diverge immediately, and a screen that derives them would keep
         # showing a student coins they have already spent.
         wallet = coins_service.wallet_state(request.user)
+        # No season in the payload — see `coins.wallet_state`. The student's balance is
+        # already scoped to the current one; naming it would only invite the question.
         return Response({
-            "season": {"id": season.id, "name": season.name, "started_at": season.started_at},
             "points": balance(request.user, season=season),
             "coins": wallet["coins"],
             "points_per_coin": wallet["points_per_coin"],

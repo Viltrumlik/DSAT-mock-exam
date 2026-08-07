@@ -30,7 +30,6 @@ export interface PointAward {
 }
 
 export interface MyRewards {
-  season: { id: number; name: string; started_at: string };
   points: number;
   /** From the WALLET, not `points / rate`. Once coins are spendable the two diverge, and a
    *  derived figure keeps showing a student coins they have already spent. */
@@ -55,7 +54,6 @@ export interface MyWallet {
   points: number;
   points_per_coin: number;
   points_to_next_coin: number;
-  season: { id: number; name: string };
   transactions: CoinTransaction[];
 }
 

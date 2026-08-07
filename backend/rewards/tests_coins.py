@@ -176,6 +176,17 @@ class WalletApiTests(TestCase):
         self.assertEqual(body["points"], 45)
         self.assertEqual(body["points_to_next_coin"], 5)
 
+    def test_the_wallet_never_names_the_season(self):
+        """Both wallet endpoints spread `wallet_state()`, so one leak there would surface in
+        two places. See the matching test on /api/rewards/me/."""
+        self.client.force_authenticate(self.student)
+        self.assertNotIn("season", self.client.get("/api/rewards/wallet/").json())
+
+        self.client.force_authenticate(self.staff)
+        body = self.client.get(f"/api/rewards/wallet/{self.student.id}/").json()
+        self.assertNotIn("season", body)
+        self.assertNotIn("season", str(body["transactions"]))
+
     def test_the_points_page_reports_the_wallet_not_a_derived_figure(self):
         """Once coins are spendable the two diverge, and a derived figure would keep showing
         a student coins they have already spent."""

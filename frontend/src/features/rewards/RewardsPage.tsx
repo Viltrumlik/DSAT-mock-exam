@@ -103,12 +103,9 @@ export function RewardsPage() {
             media={<RewardCoin kind="coin" size="md" />}
             sub={`${perCoin} points = 1 coin`}
           />
-          <StatCard
-            label="To your next coin"
-            value={toNextCoin}
-            icon={Sparkles}
-            sub={rewards.data?.season?.name}
-          />
+          {/* No subtitle: this card used to name the scoring season, which is an internal
+              accounting boundary the school does not want students reasoning about. */}
+          <StatCard label="To your next coin" value={toNextCoin} icon={Sparkles} />
         </div>
       )}
 
@@ -117,7 +114,7 @@ export function RewardsPage() {
           <CardHeader>
             <div className="min-w-0">
               <CardTitle>Your earnings</CardTitle>
-              <CardDescription>Every point you&apos;ve picked up this season</CardDescription>
+              <CardDescription>Every point you&apos;ve picked up so far</CardDescription>
             </div>
           </CardHeader>
           <CardContent>

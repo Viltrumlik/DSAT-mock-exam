@@ -127,7 +127,13 @@ def adjust(student, amount: int, *, reason: str, actor=None) -> CoinTransaction:
 
 
 def wallet_state(student) -> dict:
-    """Everything a wallet screen needs, with any owed coins minted first."""
+    """Everything a wallet screen needs, with any owed coins minted first.
+
+    The season is deliberately NOT in here. It is an internal accounting boundary, not a
+    thing the school wants students reasoning about — and hiding it in the UI alone would
+    not hide it, since anything in this dict is served to the browser and readable by
+    anyone who opens devtools. It has to leave the payload, not just the screen.
+    """
     mint_owed(student)
     season = current_season()
     rate = max(1, int(season.points_per_coin or 1))
@@ -139,5 +145,4 @@ def wallet_state(student) -> dict:
         "points_per_coin": rate,
         # How many more points until the next coin — the number a student actually wants.
         "points_to_next_coin": rate - (points % rate) if rate else 0,
-        "season": {"id": season.id, "name": season.name},
     }

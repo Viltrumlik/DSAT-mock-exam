@@ -469,6 +469,17 @@ ledger has real data in it before the board starts reading from it.
   the same paper earns the full 20.
 - `LATE` attendance earns **3**.
 - Homework is scored **per bundle** across assessments, pastpapers and vocab (§1.1).
+- **The season is invisible** (2026-08-07). It stays as the mechanism — it is what makes a
+  reset non-destructive, and it is what scopes coin minting so a reset stops new coins
+  without confiscating the wallet — but nothing in the product names it. Removed from the
+  `/api/rewards/me/` and `/api/rewards/wallet/` payloads, not merely from the screen:
+  anything in those dicts is served to the browser and readable in devtools, so hiding it in
+  the UI would not have hidden it. Two regression tests assert its absence from the wire.
+
+  Worth knowing before PR 9: **nothing reads a closed season.** Every read goes through
+  `current_season()`. The archived rows exist and are correct, but there is no screen, no
+  endpoint and no report that looks at them. The only lever that can open a new season is
+  the Django admin — there is no management command.
 - **Two minted objects, not one in two metals** (2026-08-07): the school supplied a silver
   token for **points** and a blue `MASTER SAT` coin for **coins**. Distinct objects suit the
   distinct rules — points are corrected and reset, a coin once given is never taken back.

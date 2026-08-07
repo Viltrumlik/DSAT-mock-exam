@@ -72,6 +72,18 @@ class MyRewardsViewTests(TestCase):
         self.assertEqual(body["points"], 0)
         self.assertEqual(body["history"], [])
 
+    def test_the_season_never_reaches_the_student(self):
+        """The season is an internal accounting boundary the school does not want students
+        reasoning about. Hiding it in the UI would not hide it — anything in this payload is
+        readable by anyone who opens devtools, so it has to be absent from the wire."""
+        award(self.student, constants.EVENT_SURVEY, idempotency_key="survey:1")
+
+        self.client.force_authenticate(self.student)
+        body = self.client.get("/api/rewards/me/").json()
+
+        self.assertNotIn("season", body)
+        self.assertNotIn("season", str(body["history"]))
+
 
 class RewardRulesViewTests(TestCase):
     def setUp(self):
