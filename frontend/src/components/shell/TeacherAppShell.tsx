@@ -6,7 +6,7 @@ import AuthGuard from "@/components/AuthGuard";
 import { authApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { AppShell } from "./AppShell";
-import { teacherNav } from "./navConfig";
+import { teacherNav, supportTeacherNavSection } from "./navConfig";
 
 /**
  * Teacher shell: AppShell wired with the teacher IA.
@@ -18,8 +18,13 @@ export default function TeacherAppShell({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const queryClient = useQueryClient();
   const { isAuthenticated, me } = useMe();
-  const m = me as { first_name?: string; last_name?: string; profile_image_url?: string | null } | undefined;
+  const m = me as { first_name?: string; last_name?: string; profile_image_url?: string | null; role?: string } | undefined;
   const name = [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim() || undefined;
+
+  // Support teachers share this portal with teachers but get one extra section. Composed by
+  // role rather than shown to everyone: the availability endpoints 403 a plain teacher.
+  const isSupportTeacher = String(m?.role ?? "").toLowerCase() === "support_teacher";
+  const nav = isSupportTeacher ? [...teacherNav, supportTeacherNavSection] : teacherNav;
 
   // Full-window, sidebar-less takeovers:
   //  - the assignment creator/editor (instructions + content library);
@@ -40,7 +45,7 @@ export default function TeacherAppShell({ children }: { children: React.ReactNod
     <AuthGuard>
       <AppShell
         brand={{ name: "MasterSAT", tagline: "Teacher", logoSrc: "/images/logo.png" }}
-        nav={teacherNav}
+        nav={nav}
         pathname={pathname}
         user={isAuthenticated ? { name, avatarUrl: m?.profile_image_url ?? null } : null}
         profileHref="/profile"

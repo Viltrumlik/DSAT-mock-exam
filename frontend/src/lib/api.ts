@@ -882,6 +882,31 @@ export type AssignmentOptions = {
     }[];
 };
 
+export interface SupportSlot {
+    id: number;
+    support_teacher_id: number;
+    support_teacher: string;
+    starts_at: string;
+    ends_at: string;
+    capacity: number;
+    note: string;
+    is_cancelled: boolean;
+    seats_left?: number;
+}
+
+export interface SupportBooking {
+    id: number;
+    status: "BOOKED" | "HELD" | "NO_SHOW" | "CANCELLED";
+    topic: string;
+    booked_at: string;
+    settled_at: string | null;
+    classroom_id: number | null;
+    classroom_name: string | null;
+    student_id: number;
+    student: string;
+    slot: SupportSlot;
+}
+
 export const classesApi = {
     list: async (): Promise<NormalizedList<Classroom>> => {
         const r = await api.get('/classes/');
@@ -986,6 +1011,45 @@ export const classesApi = {
     directoryGroups: async (): Promise<{ subject: string; level: string; count: number }[]> => {
         const r = await api.get('/classes/directory/', { params: { group: 1 } });
         return (r.data?.groups ?? []) as { subject: string; level: string; count: number }[];
+    },
+    // ── Support-teacher booking ───────────────────────────────────────────
+    /** Student: slots I am entitled to book (support teachers assigned to my classes). */
+    supportSlots: async (): Promise<SupportSlot[]> => {
+        const r = await api.get('/classes/support/slots/');
+        return (r.data?.slots ?? []) as SupportSlot[];
+    },
+    supportMyBookings: async (): Promise<SupportBooking[]> => {
+        const r = await api.get('/classes/support/bookings/');
+        return (r.data?.bookings ?? []) as SupportBooking[];
+    },
+    supportBook: async (availability_id: number, body?: { classroom_id?: number; topic?: string }) => {
+        const r = await api.post('/classes/support/bookings/', { availability_id, ...(body || {}) });
+        return r.data as SupportBooking;
+    },
+    supportCancelBooking: async (bookingId: number) => {
+        await api.delete(`/classes/support/bookings/${bookingId}/`);
+    },
+    /** Support teacher: my published slots. */
+    supportMyAvailability: async (): Promise<SupportSlot[]> => {
+        const r = await api.get('/classes/support/availability/');
+        return (r.data?.slots ?? []) as SupportSlot[];
+    },
+    supportPublishSlot: async (body: { starts_at: string; ends_at: string; capacity?: number; note?: string }) => {
+        const r = await api.post('/classes/support/availability/', body);
+        return r.data as SupportSlot;
+    },
+    supportWithdrawSlot: async (slotId: number) => {
+        await api.delete(`/classes/support/availability/${slotId}/`);
+    },
+    /** Support teacher: who booked me. */
+    supportDiary: async (): Promise<SupportBooking[]> => {
+        const r = await api.get('/classes/support/diary/');
+        return (r.data?.bookings ?? []) as SupportBooking[];
+    },
+    /** Settling as HELD is what awards the student their points — teacher-only, by design. */
+    supportSettle: async (bookingId: number, status: "HELD" | "NO_SHOW") => {
+        const r = await api.post(`/classes/support/bookings/${bookingId}/settle/`, { status });
+        return r.data as SupportBooking;
     },
     /** Support teachers on a classroom. A MEMBERSHIP (ROLE_TA), never the Classroom.teacher FK. */
     supportTeachers: async (classId: number) => {

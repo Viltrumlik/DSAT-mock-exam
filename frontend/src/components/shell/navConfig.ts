@@ -20,6 +20,7 @@ import {
   MonitorPlay,
   ShieldCheck,
   Coins,
+  LifeBuoy,
 } from "lucide-react";
 
 export type NavItem = {
@@ -65,6 +66,7 @@ export const studentNav: NavSection[] = [
         ],
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
+      { href: "/support", label: "Support", icon: LifeBuoy, isNew: true },
       { href: "/rewards", label: "Points", icon: Coins, isNew: true },
       { href: "/question-bank", label: "Question Bank", icon: Database },
       { href: "/profile", label: "Profile", icon: UserCircle },
@@ -79,6 +81,16 @@ export const studentNav: NavSection[] = [
 export const reviewNavSection: NavSection = {
   section: "",
   items: [{ href: "/review-center", label: "Review Center", icon: ShieldCheck }],
+};
+
+/**
+ * Support-teacher entry, composed into the teacher sidebar only for that role — see
+ * TeacherAppShell. A plain teacher would get a 403 from the availability endpoints, so
+ * showing them the page would be a broken link rather than a permission lesson.
+ */
+export const supportTeacherNavSection: NavSection = {
+  section: "Support",
+  items: [{ href: "/teacher/support", label: "Support sessions", icon: LifeBuoy, isNew: true }],
 };
 
 /** Teacher information architecture (see docs/UI_REBUILD_IA.md §5). */
