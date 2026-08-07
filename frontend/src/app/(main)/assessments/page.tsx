@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * /assessments — the student's whole workload, a 3-column board
+ * /assessments — Student assessment workspace, a 3-column board
  * (To-do / In progress / Completed) matched 1:1 to the MasterSAT Assessments mockup.
  * Uses the shared `.dzboard` design scope. Data: GET /api/classes/my-assignments/.
  *
@@ -337,7 +337,7 @@ function Board() {
       <div className="dz-content">
         <div style={{ display: "flex", alignItems: "flex-end", gap: 24, flexWrap: "wrap", marginBottom: 22 }}>
           <h1 style={{ flex: 1, minWidth: 280, margin: 0, fontSize: 38, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)" }}>
-            My work
+            My assessments
           </h1>
           <div className="dz-headin" style={{ position: "relative", width: "100%", maxWidth: 340 }}>
             <span style={{ position: "absolute", left: 16, top: "50%", transform: "translateY(-50%)", color: "var(--dz-faint)", display: "flex", pointerEvents: "none" }}>
@@ -346,8 +346,8 @@ function Board() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search your work…"
-              aria-label="Search your work"
+              placeholder="Search assessments…"
+              aria-label="Search assessments"
               style={{ width: "100%", border: "1px solid var(--dz-border)", background: "var(--dz-panel)", borderRadius: 12, padding: "11px 14px 11px 44px", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--dz-ink)", outline: "none" }}
             />
           </div>
@@ -355,7 +355,7 @@ function Board() {
 
         {!loading && !error && query.trim() && matchCount === 0 ? (
           <div style={{ marginBottom: 18, border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "22px 16px", textAlign: "center", color: "var(--dz-mute)", fontSize: 14, fontWeight: 600 }}>
-            Nothing matches “{query.trim()}”.
+            No assessments match “{query.trim()}”.
           </div>
         ) : null}
 

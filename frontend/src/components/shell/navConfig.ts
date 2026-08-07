@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   LineChart,
+  GraduationCap,
   Users,
   ClipboardCheck,
   BookOpen,
@@ -14,8 +15,6 @@ import {
   Timer,
   CirclePlay,
   FolderOpen,
-  House,
-  ListTodo,
   BookA,
   CircleHelp,
   ShieldCheck,
@@ -37,11 +36,6 @@ export type NavItem = {
    * still knows the page's name — dropping the entry entirely would cost both.
    */
   hiddenInSidebar?: boolean;
-  /**
-   * A count rendered on the right of the row — "My work · 3". Only a flat row has space
-   * for one, which is half the reason the groups came out.
-   */
-  badge?: number;
   /** When present, this item is a collapsible category whose children are the routes. */
   children?: NavItem[];
 };
@@ -50,27 +44,26 @@ export type NavSection = { section: string; items: NavItem[] };
 
 /**
  * Student information architecture.
- *
- * The old shape grouped by the codebase's taxonomy rather than a student's: "Learn" bundled
- * a place (Classroom), a task type (Assessment) and a subject (Vocabulary), while
- * "Simulation" held three near-identical timed papers and Midterm — the same database model
- * — sat outside as its own peer. Those three daily destinations are now top-level.
- *
- * "Practice" stays a group for the moment. Past Paper and Practice test serve the same rows
- * through two endpoints and offer opposite affordances; merging them into one library is
- * real work with its own route, so this only renames the drawer rather than pretending the
- * merged page exists.
+ * Dashboard, Midterm, Question Bank and Profile are top-level links; "Learn"
+ * and "Simulation" are collapsible categories that expand to reveal their
+ * routes on click. Notifications live in the top-bar bell, not the sidebar.
  */
 export const studentNav: NavSection[] = [
   {
     section: "",
     items: [
-      { href: "/", label: "Today", icon: House },
-      { href: "/assessments", label: "My work", icon: ListTodo },
-      { href: "/classes", label: "Classes", icon: Users },
-      { href: "/vocabulary", label: "Vocabulary", icon: BookA },
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
       {
-        label: "Practice",
+        label: "Learn",
+        icon: GraduationCap,
+        children: [
+          { href: "/classes", label: "Classroom", icon: Users },
+          { href: "/assessments", label: "Assessment", icon: ClipboardCheck },
+          { href: "/vocabulary", label: "Vocabulary", icon: BookA },
+        ],
+      },
+      {
+        label: "Simulation",
         icon: Timer,
         children: [
           { href: "/pastpapers", label: "Past Paper", icon: BookOpen },
@@ -79,13 +72,14 @@ export const studentNav: NavSection[] = [
         ],
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
-      { href: "/question-bank", label: "Question Bank", icon: CircleHelp },
-      { href: "/support", label: "Support", icon: LifeBuoy },
-      // Reached from the header instead. A survey only exists now and then, points are a
-      // running total worth seeing on every page, and Profile already has the avatar.
+      { href: "/support", label: "Support", icon: LifeBuoy, isNew: true },
+      // Surveys and Points are reached from the header, not the sidebar: a survey only
+      // exists now and then, and points are a running total worth seeing on every page
+      // rather than a destination to remember.
       { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, hiddenInSidebar: true },
       { href: "/rewards", label: "Points", icon: Coins, hiddenInSidebar: true },
-      { href: "/profile", label: "Profile", icon: UserCircle, hiddenInSidebar: true },
+      { href: "/question-bank", label: "Question Bank", icon: CircleHelp },
+      { href: "/profile", label: "Profile", icon: UserCircle },
     ],
   },
 ];

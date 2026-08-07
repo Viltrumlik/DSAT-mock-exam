@@ -223,16 +223,7 @@ export function AppShell({
           strokeWidth={2}
         />
         {!collapsed ? <span className="flex-1 truncate">{item.label}</span> : null}
-        {!collapsed && item.badge ? (
-          <span className="ds-num grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-extrabold text-primary-foreground">
-            {item.badge}
-          </span>
-        ) : null}
-        {/* A count on a collapsed rail has nowhere to sit, so it becomes a dot. */}
-        {collapsed && item.badge ? (
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary" aria-hidden />
-        ) : null}
-        {!collapsed && item.isNew && !item.badge ? (
+        {!collapsed && item.isNew ? (
           <span className="rounded-md bg-success-soft px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-success-foreground">
             New
           </span>
