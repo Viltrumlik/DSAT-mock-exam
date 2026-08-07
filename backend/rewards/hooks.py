@@ -185,9 +185,41 @@ def _assignments_targeting_practice_test(student, practice_test_id):
 
 
 def _recompute(assignment, student):
+    """Settle a bundle once the transaction that triggered it has actually committed.
+
+    Deferring is not tidiness, it is the difference between paying and not paying.
+    ``grade_attempt`` writes the ``AssessmentResult`` and only THEN flips the attempt to
+    GRADED (assessments/grading_service.py:120 vs :132-135), both inside one atomic block. A
+    receiver that recomputed inline would run while the attempt was still SUBMITTED, and
+    ``_assessment_items`` — which selects on ``attempt__status=GRADED`` — could not see the
+    very grading that woke it. A perfect homework paid 0.
+
+    On commit the attempt is GRADED and every sibling row is visible. It also means a
+    transaction that rolls back never reaches the ledger, instead of awarding for work the
+    database then threw away.
+    """
+    from django.db import transaction
+
     from .homework import recompute_bundle
 
-    recompute_bundle(assignment, student)
+    assignment_id = getattr(assignment, "pk", None)
+    student_id = getattr(student, "pk", None)
+    if assignment_id is None or student_id is None:
+        return
+
+    def _settle():
+        # Re-read rather than closing over the instances: by commit time the objects the
+        # signal handed us may be several saves stale.
+        from classes.models import Assignment
+        from django.contrib.auth import get_user_model
+
+        assignment_now = Assignment.objects.filter(pk=assignment_id).first()
+        student_now = get_user_model().objects.filter(pk=student_id).first()
+        if assignment_now is None or student_now is None:
+            return
+        recompute_bundle(assignment_now, student_now)
+
+    transaction.on_commit(_settle)
 
 
 @receiver(post_save, sender="assessments.AssessmentResult", dispatch_uid="rewards_hw_assessment")

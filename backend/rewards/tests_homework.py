@@ -63,18 +63,24 @@ class BundleFixture(TestCase):
 
     def grade(self, homework, percent, *, answered=None):
         """A graded attempt. ``answered`` pins ``question_order`` — a shorter list is what a
-        "retry incorrect only" sitting produces."""
+        "retry incorrect only" sitting produces.
+
+        Wrapped in ``captureOnCommitCallbacks`` because the reward hook defers to
+        ``transaction.on_commit``; without it the fixture would silently stop exercising the
+        hook at all, which is exactly how the "perfect homework pays 0" bug survived.
+        """
         order = answered if answered is not None else list(
             homework.assessment_set.questions.values_list("id", flat=True)
         )
-        attempt = AssessmentAttempt.objects.create(
-            homework=homework, student=self.student,
-            status=AssessmentAttempt.STATUS_GRADED,
-            submitted_at=timezone.now(), question_order=order,
-        )
-        AssessmentResult.objects.create(
-            attempt=attempt, score_points=percent, max_points=100, percent=percent
-        )
+        with self.captureOnCommitCallbacks(execute=True):
+            attempt = AssessmentAttempt.objects.create(
+                homework=homework, student=self.student,
+                status=AssessmentAttempt.STATUS_GRADED,
+                submitted_at=timezone.now(), question_order=order,
+            )
+            AssessmentResult.objects.create(
+                attempt=attempt, score_points=percent, max_points=100, percent=percent
+            )
         return attempt
 
     def add_vocab(self, title="Set 1"):
@@ -108,6 +114,60 @@ class BundleFixture(TestCase):
 
     def settle(self):
         return recompute_bundle(self.assignment, self.student)
+
+
+class RealGradingPathTests(BundleFixture):
+    """Drive the ACTUAL grading path, not a hand-built fixture.
+
+    Every other test in this file constructs the attempt as GRADED and then the result — the
+    inverse of what `grade_attempt` does, which writes the result first and flips the attempt
+    afterwards. That inversion hid a bug where the reward hook ran while the attempt was still
+    SUBMITTED and could not see its own grading, so a perfect homework paid nothing.
+    """
+
+    def sit_for_real(self, homework, *, correct=True):
+        """Submit and grade one assessment through `grading_service.grade_attempt`."""
+        from assessments.grading_service import grade_attempt
+        from assessments.models import AssessmentAnswer
+
+        questions = list(homework.assessment_set.questions.order_by("order"))
+        attempt = AssessmentAttempt.objects.create(
+            homework=homework, student=self.student,
+            status=AssessmentAttempt.STATUS_SUBMITTED,
+            submitted_at=timezone.now(),
+            question_order=[q.id for q in questions],
+        )
+        for q in questions:
+            AssessmentAnswer.objects.create(
+                attempt=attempt, question=q, answer="A" if correct else "B"
+            )
+        with self.captureOnCommitCallbacks(execute=True):
+            grade_attempt(attempt_id=attempt.pk)
+        return attempt
+
+    def test_a_perfect_homework_pays_when_graded_for_real(self):
+        homework = self.add_assessment("A")
+        self.sit_for_real(homework)
+
+        self.assertEqual(balance(self.student), 15)
+
+    def test_a_two_assessment_bundle_pays_once_both_are_graded(self):
+        """The second grading must see the FIRST assessment's result as well as its own.
+        While the bug was live this computed 50% — below the band — and revoked."""
+        first = self.add_assessment("A")
+        second = self.add_assessment("B")
+
+        self.sit_for_real(first)
+        self.assertEqual(balance(self.student), 0)   # (100 + 0) / 2 = 50% — below the band
+
+        self.sit_for_real(second)
+        self.assertEqual(balance(self.student), 15)  # both at 100 → 100%
+
+    def test_a_failed_assessment_still_settles_the_bundle(self):
+        homework = self.add_assessment("A")
+        self.sit_for_real(homework, correct=False)
+
+        self.assertEqual(balance(self.student), 0)
 
 
 class TheSchoolsWorkedExampleTests(BundleFixture):
@@ -207,6 +267,36 @@ class AntiFarmingTests(BundleFixture):
         self.grade(a, 100, answered=[])
 
         self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 100.0)
+
+    def test_archiving_a_question_does_not_zero_the_assessment(self):
+        """The guard must not measure against the set's LIVE question count.
+
+        A teacher archiving one question of four makes every later sitting pin 3 ids against
+        a count of 4 — so a genuine full attempt reads as a re-try and the assessment scores
+        0 forever, for every student on it.
+        """
+        homework = self.add_assessment("A", questions=4)
+        homework.assessment_set.questions.order_by("order").last().delete()
+        self.grade(homework, 100)   # a full sitting of what now remains: 3 questions
+
+        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 100.0)
+
+    def test_adding_a_question_does_not_confiscate_banked_points(self):
+        """Same trap, worse outcome: the hourly deadline sweep re-runs on its own, so a set
+        edited after the fact would take back points the student had already earned."""
+        homework = self.add_assessment("A", questions=4)
+        self.grade(homework, 100)
+        self.settle()
+        self.assertEqual(balance(self.student), 15)
+
+        AssessmentQuestion.objects.create(
+            assessment_set=homework.assessment_set, order=99, prompt="Late addition",
+            question_type=AssessmentQuestion.TYPE_MULTIPLE_CHOICE,
+            choices=[{"id": "A", "text": "a"}], correct_answer="A", points=1,
+        )
+        self.settle()
+
+        self.assertEqual(balance(self.student), 15)
 
     def test_repeated_settling_never_stacks_a_second_award(self):
         a = self.add_assessment("A")

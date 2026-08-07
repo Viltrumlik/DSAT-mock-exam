@@ -61,25 +61,38 @@ def _assessment_items(assignment, student) -> list[BundleItem]:
 
     items: list[BundleItem] = []
     for homework in assignment.assessment_homeworks.select_related("assessment_set").all():
-        total_questions = homework.assessment_set.questions.count()
+        rows = list(
+            AssessmentResult.objects.filter(
+                attempt__homework=homework,
+                attempt__student=student,
+                attempt__status=AssessmentAttempt.STATUS_GRADED,
+            ).values("percent", "attempt__question_order")
+        )
 
-        rows = AssessmentResult.objects.filter(
-            attempt__homework=homework,
-            attempt__student=student,
-            attempt__status=AssessmentAttempt.STATUS_GRADED,
-        ).values("percent", "attempt__question_order")
+        # "Full length" is measured against the student's OWN longest sitting of this
+        # homework, never against the set's live question count.
+        #
+        # The live count looks like the obvious denominator and is a trap: it moves. A
+        # teacher archiving one question of four makes every later attempt pin 3 ids against
+        # a count of 4, so every genuine full sitting reads as a re-try and the assessment
+        # scores 0 forever. Appending a fifth question does the same to attempts already
+        # banked — and because the deadline sweep re-runs hourly, it CONFISCATES points a
+        # student had already earned, with no action on their part.
+        #
+        # Comparing the student's attempts to each other is immune to that. It still does
+        # the one job the guard exists for: "retry incorrect only" mints an attempt over a
+        # strict subset of the same sitting, so it is always shorter than the full one.
+        lengths = [len(r["attempt__question_order"] or []) for r in rows]
+        full_length = max(lengths) if lengths else 0
 
         best = 0.0
         for row in rows:
             answered = row["attempt__question_order"] or []
-            # A partial re-try is ignored outright rather than scaled down: its percent is
-            # measured against a denominator the student chose.
-            #
             # An EMPTY question_order means "not recorded", not "zero questions" — older rows
             # and any path that never pinned an order have it blank. Treating blank as a
             # subset would silently discard a student's only real attempt, so absence of
             # evidence is not taken as evidence of a subset.
-            if answered and total_questions and len(answered) < total_questions:
+            if answered and full_length and len(answered) < full_length:
                 continue
             best = max(best, float(row["percent"] or 0))
 
