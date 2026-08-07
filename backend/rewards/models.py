@@ -30,6 +30,11 @@ class RewardSeason(models.Model):
     started_at = models.DateTimeField()
     ended_at = models.DateTimeField(null=True, blank=True)
     is_current = models.BooleanField(default=False)
+    # The conversion rate is a season-level policy, not a global constant: the school can
+    # retune it for a new term without restating what coins cost last term.
+    points_per_coin = models.PositiveSmallIntegerField(
+        default=10, help_text="Points needed to mint one coin."
+    )
     note = models.TextField(blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
@@ -149,3 +154,80 @@ class PointAwardAudit(models.Model):
 
     def __str__(self) -> str:
         return f"award={self.award_id} {self.previous_points}→{self.new_points}"
+
+
+class StudentWallet(models.Model):
+    """A student's spendable coin balance.
+
+    Deliberately GLOBAL, not per season, while points are per season. A season reset zeroes
+    the scoreboard — that is what the school asked for — but confiscating coins a student has
+    already earned and not yet spent would be taking something off them. Minting is still
+    per-season (see ``CoinTransaction.season``), so a reset stops NEW coins from that term's
+    points without touching the wallet.
+
+    ``coins_balance`` is a cache of ``sum(CoinTransaction.amount)``. The ledger is the truth;
+    this column exists so a balance read is one row instead of an aggregate.
+    """
+
+    student = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="coin_wallet"
+    )
+    coins_balance = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "reward_wallets"
+
+    def __str__(self) -> str:
+        return f"{self.student_id}: {self.coins_balance} coins"
+
+
+class CoinTransaction(models.Model):
+    """Append-only. Every coin that appears or disappears leaves a row.
+
+    ``amount`` is signed: minting and grants are positive, spending and revocations negative,
+    so the balance is a plain SUM and can always be recomputed from history if the cached
+    column is ever doubted.
+    """
+
+    KIND_EARN = "EARN"                 # minted from points
+    KIND_SPEND = "SPEND"
+    KIND_ADMIN_GRANT = "ADMIN_GRANT"
+    KIND_ADMIN_REVOKE = "ADMIN_REVOKE"
+    KIND_CHOICES = [
+        (KIND_EARN, "Earned from points"),
+        (KIND_SPEND, "Spent"),
+        (KIND_ADMIN_GRANT, "Granted by an admin"),
+        (KIND_ADMIN_REVOKE, "Taken back by an admin"),
+    ]
+
+    wallet = models.ForeignKey(
+        StudentWallet, on_delete=models.CASCADE, related_name="transactions"
+    )
+    kind = models.CharField(max_length=14, choices=KIND_CHOICES, db_index=True)
+    amount = models.IntegerField(help_text="Signed: positive adds coins, negative removes them.")
+    balance_after = models.IntegerField()
+    # Which season's points minted this. Null for admin adjustments and spends, which belong
+    # to no term's arithmetic.
+    season = models.ForeignKey(
+        RewardSeason, on_delete=models.PROTECT, null=True, blank=True, related_name="coin_mints"
+    )
+    reference = models.CharField(
+        max_length=240, blank=True, help_text="What it was spent on, or why it was adjusted."
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", help_text="Null for an automatic mint.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "reward_coin_transactions"
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["wallet", "-created_at"]),
+            models.Index(fields=["wallet", "kind", "season"]),   # how many minted this season
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.wallet_id} {self.kind} {self.amount:+d}"

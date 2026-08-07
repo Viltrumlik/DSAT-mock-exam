@@ -376,7 +376,7 @@ Branch from `origin/main`, not from here.
 | 5 | ✅ **Ops classrooms** — subject → level drill-down, server-side `subject`/`level` filters + `?group=1` tallies, create-from-preset, support-teacher staffing | 4 |
 | 6 | ✅ **Support booking** — availability slots, booking gated on a shared classroom, confirm-as-held → 10-point hook | 4, 2 |
 | 7 | ✅ **Surveys** — six question types, super_admin authoring, student fill, host-guard allowlist → 40-point hook | 2 |
-| 8 | **Coins** — wallet, conversion at the configured rate, transactions, spend surface, ops grant/revoke | 2 |
+| 8 | ✅ **Coins** — wallet, per-season rate, append-only transactions, staff-recorded spending, ops grant/revoke. A catalogue is still to come | 2 |
 | 9 | **Cutover** — open season 1, **repoint the academic leaderboard at the reward ledger and clear the old points** (§0.3), iOS surface, docs | all |
 
 PR 9 is the risky one: it retires `assessment_points_per_student` as the ACADEMIC currency
@@ -481,7 +481,9 @@ ledger has real data in it before the board starts reading from it.
 
 **Still needed:**
 
-- **What coins buy.** Required to scope PR 7's spend surface. Everything up to and including
-  the wallet and conversion can be built without it.
+- **What coins buy.** The wallet, the rate, the ledger and spending all shipped without it:
+  spending is staff-recorded ("an admin notes that coins were exchanged for a prize"), which
+  is the honest model while the school hands prizes over in person. A catalogue, when it
+  exists, calls the same `spend()` and nothing else has to change.
 - **Do midterm and survey points appear on the per-classroom board**, or only in the global
   balance? (§0.3)

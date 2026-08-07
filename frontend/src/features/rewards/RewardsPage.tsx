@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import {
   Coins,
   Sparkles,
@@ -24,7 +23,7 @@ import {
   StatCard,
 } from "@/components/ui";
 import ErrorPanel from "@/components/ErrorPanel";
-import { useMyRewards, useRewardRules } from "./rewardsHooks";
+import { useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
 import type { RewardEvent } from "./rewardsApi";
 
 /** One icon per family of earning, so the history reads at a glance. */
@@ -51,15 +50,15 @@ function fmtDate(iso: string) {
 export function RewardsPage() {
   const rewards = useMyRewards();
   const rules = useRewardRules();
+  const wallet = useMyWallet();
 
   const points = rewards.data?.points ?? 0;
   const perCoin = rewards.data?.points_per_coin ?? 10;
-
-  const coins = useMemo(() => Math.floor(points / perCoin), [points, perCoin]);
-  const toNextCoin = useMemo(
-    () => (perCoin > 0 ? perCoin - (points % perCoin) : 0),
-    [points, perCoin],
-  );
+  // Both figures come from the wallet. Deriving coins as `points / rate` here would keep
+  // showing a student coins they have already spent — points are a score, coins are a
+  // balance, and once coins are spendable the two stop agreeing.
+  const coins = rewards.data?.coins ?? 0;
+  const toNextCoin = rewards.data?.points_to_next_coin ?? perCoin;
 
   if (rewards.isError) {
     return (
@@ -190,6 +189,38 @@ export function RewardsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {(wallet.data?.transactions.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Coin history</CardTitle>
+            <CardDescription>Coins you&apos;ve earned and spent</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-border">
+              {wallet.data?.transactions.map((t) => (
+                <li key={t.id} className="flex items-center justify-between gap-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">
+                      {t.reference || t.label}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{fmtDate(t.created_at)}</p>
+                  </div>
+                  <span
+                    className={
+                      t.amount >= 0
+                        ? "shrink-0 text-sm font-semibold text-emerald-600 dark:text-emerald-400"
+                        : "shrink-0 text-sm font-semibold text-muted-foreground"
+                    }
+                  >
+                    {t.amount >= 0 ? `+${t.amount}` : t.amount}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
