@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Coins,
   Sparkles,
   CalendarCheck,
   ClipboardList,
@@ -22,7 +21,7 @@ import {
   StatCard,
 } from "@/components/ui";
 import ErrorPanel from "@/components/ErrorPanel";
-import PointCoin from "@/components/PointCoin";
+import RewardCoin from "@/components/RewardCoin";
 import { useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
 import type { RewardEvent } from "./rewardsApi";
 
@@ -85,13 +84,12 @@ export function RewardsPage() {
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
-          <StatCard label="Points" value={points} media={<PointCoin size="md" />} />
+          <StatCard label="Points" value={points} media={<RewardCoin kind="point" size="md" />} />
           <StatCard
             label="Coins"
             value={coins}
-            icon={Coins}
+            media={<RewardCoin kind="coin" size="md" />}
             sub={`${perCoin} points = 1 coin`}
-            accent="text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
           />
           <StatCard
             label="To your next coin"
@@ -117,7 +115,7 @@ export function RewardsPage() {
               </div>
             ) : (rewards.data?.history.length ?? 0) === 0 ? (
               <EmptyState
-                media={<PointCoin size="xl" />}
+                media={<RewardCoin kind="point" size="xl" />}
                 title="Nothing yet — but everything counts"
                 description="Attend a lesson, finish your homework or sit a midterm, and your points will show up here."
               />

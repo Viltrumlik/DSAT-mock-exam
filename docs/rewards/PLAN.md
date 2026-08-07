@@ -469,6 +469,13 @@ ledger has real data in it before the board starts reading from it.
   the same paper earns the full 20.
 - `LATE` attendance earns **3**.
 - Homework is scored **per bundle** across assessments, pastpapers and vocab (§1.1).
+- **Two minted objects, not one in two metals** (2026-08-07): the school supplied a silver
+  token for **points** and a blue `MASTER SAT` coin for **coins**. Distinct objects suit the
+  distinct rules — points are corrected and reset, a coin once given is never taken back.
+  Both are rendered artwork, so `StatCard`/`EmptyState` gained a `media` slot that skips the
+  tinted chip they wrap line icons in. `RewardCoin` refuses `size="sm"` for the coin: its
+  near-black face and thin blue rim collapse into an unreadable dot at 20px on a dark
+  background, where the silver token still survives.
 
 **Working assumptions — flagged, will proceed unless corrected:**
 
