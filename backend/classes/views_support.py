@@ -1,9 +1,11 @@
 """Support-teacher booking API.
 
 Student:
+  GET    /api/classes/support/calendar/             the next four days, 08:00–18:00
   GET    /api/classes/support/slots/                what I may book
   GET    /api/classes/support/bookings/             my bookings
-  POST   /api/classes/support/bookings/             { availability_id, classroom_id?, topic? }
+  POST   /api/classes/support/bookings/             { availability_id | support_teacher_id +
+                                                      starts_at, classroom_id?, topic? }
   DELETE /api/classes/support/bookings/<id>/        give the seat back
 Support teacher:
   GET    /api/classes/support/availability/         my published slots
@@ -18,6 +20,7 @@ owns the slot (or an admin) may do it — a student cannot mark their own sessio
 
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_datetime
@@ -29,6 +32,7 @@ from rest_framework.views import APIView
 
 from access import constants as acc_const
 from access.services import normalized_role
+from users.photos import profile_image_url
 
 from . import support as support_service
 from .models import Classroom
@@ -95,6 +99,36 @@ class SupportSlotsView(APIView):
     def get(self, request):
         slots = support_service.open_slots_for(request.user)
         return Response({"slots": [_slot_json(s) for s in slots]})
+
+
+class SupportCalendarView(APIView):
+    """Student: the open calendar — every support teacher assigned to one of my classes,
+    each with the next few days of school-hours slots and what state each hour is in."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        calendar = support_service.open_calendar_for(request.user)
+        return Response({
+            "days": support_service.CALENDAR_DAYS,
+            "open_hour": support_service.CALENDAR_OPEN_HOUR,
+            "close_hour": support_service.CALENDAR_CLOSE_HOUR,
+            "dates": support_service.calendar_dates(),
+            "teachers": [
+                {
+                    "id": entry["teacher"].id,
+                    "name": _display_name(entry["teacher"]),
+                    "photo_url": profile_image_url(entry["teacher"], request),
+                    "classrooms": [
+                        {"id": c.id, "name": c.name} for c in entry["classrooms"]
+                    ],
+                    "days": [
+                        {"date": day["date"], "hours": day["hours"]} for day in entry["days"]
+                    ],
+                }
+                for entry in calendar
+            ],
+        })
 
 
 class SupportAvailabilityView(APIView):
@@ -190,10 +224,33 @@ class SupportBookingsView(APIView):
         return Response({"bookings": [_booking_json(b) for b in bookings]})
 
     def post(self, request):
-        slot = get_object_or_404(
-            SupportAvailability.objects.select_related("support_teacher"),
-            pk=request.data.get("availability_id"),
-        )
+        # Two ways in. ``availability_id`` books a row the teacher published; the calendar
+        # instead names an hour that has no row yet, and materialises one on the way past.
+        if request.data.get("availability_id"):
+            slot = get_object_or_404(
+                SupportAvailability.objects.select_related("support_teacher"),
+                pk=request.data["availability_id"],
+            )
+        else:
+            teacher = get_object_or_404(
+                get_user_model(), pk=request.data.get("support_teacher_id")
+            )
+            starts_at = _parse_dt(request.data.get("starts_at"))
+            if starts_at is None:
+                return Response(
+                    {"detail": "Choose a time — starts_at is required."}, status=400
+                )
+            # Entitlement first: without this an outsider could mint availability rows for
+            # any teacher on the platform simply by naming an hour.
+            if teacher.id not in support_service.bookable_support_teacher_ids(request.user):
+                return Response(
+                    {"detail": "You can only book a support teacher assigned to one of your classes."},
+                    status=400,
+                )
+            try:
+                slot = support_service.slot_for(teacher, starts_at)
+            except ValidationError as exc:
+                return Response({"detail": "; ".join(exc.messages)}, status=400)
         classroom = None
         if request.data.get("classroom_id"):
             classroom = get_object_or_404(Classroom, pk=request.data["classroom_id"])

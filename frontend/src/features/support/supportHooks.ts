@@ -5,6 +5,7 @@ import { classesApi } from "@/lib/api";
 
 const keys = {
   slots: ["support", "slots"] as const,
+  calendar: ["support", "calendar"] as const,
   myBookings: ["support", "my-bookings"] as const,
   availability: ["support", "availability"] as const,
   diary: ["support", "diary"] as const,
@@ -13,6 +14,22 @@ const keys = {
 /** Student side. */
 export function useSupportSlots() {
   return useQuery({ queryKey: keys.slots, queryFn: () => classesApi.supportSlots() });
+}
+
+export function useSupportCalendar() {
+  return useQuery({ queryKey: keys.calendar, queryFn: () => classesApi.supportCalendar() });
+}
+
+export function useBookSupportHour() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { teacherId: number; startsAt: string; topic?: string }) =>
+      classesApi.supportBookHour(vars.teacherId, vars.startsAt, { topic: vars.topic }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.calendar });
+      qc.invalidateQueries({ queryKey: keys.myBookings });
+    },
+  });
 }
 
 export function useMySupportBookings() {
@@ -38,6 +55,7 @@ export function useCancelSupportBooking() {
     mutationFn: (bookingId: number) => classesApi.supportCancelBooking(bookingId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.slots });
+      qc.invalidateQueries({ queryKey: keys.calendar });
       qc.invalidateQueries({ queryKey: keys.myBookings });
     },
   });

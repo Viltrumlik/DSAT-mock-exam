@@ -894,6 +894,35 @@ export interface SupportSlot {
     seats_left?: number;
 }
 
+/** One hour on the open calendar. `open` is the default — a row only exists when the
+ *  teacher has widened the hour into a group or withdrawn it. */
+export interface SupportHour {
+    starts_at: string;
+    ends_at: string;
+    state: "open" | "mine" | "full" | "closed" | "past";
+    capacity: number;
+    seats_left: number;
+    note: string;
+    availability_id: number | null;
+    booking_id: number | null;
+}
+
+export interface SupportCalendarTeacher {
+    id: number;
+    name: string;
+    photo_url: string | null;
+    classrooms: { id: number; name: string }[];
+    days: { date: string; hours: SupportHour[] }[];
+}
+
+export interface SupportCalendar {
+    days: number;
+    open_hour: number;
+    close_hour: number;
+    dates: string[];
+    teachers: SupportCalendarTeacher[];
+}
+
 export interface SupportBooking {
     id: number;
     status: "BOOKED" | "HELD" | "NO_SHOW" | "CANCELLED";
@@ -1018,12 +1047,34 @@ export const classesApi = {
         const r = await api.get('/classes/support/slots/');
         return (r.data?.slots ?? []) as SupportSlot[];
     },
+    /** Student: the open calendar — my assigned teachers × the next days × school hours. */
+    supportCalendar: async (): Promise<SupportCalendar> => {
+        const r = await api.get('/classes/support/calendar/');
+        return {
+            days: r.data?.days ?? 4,
+            open_hour: r.data?.open_hour ?? 8,
+            close_hour: r.data?.close_hour ?? 18,
+            dates: r.data?.dates ?? [],
+            teachers: r.data?.teachers ?? [],
+        };
+    },
     supportMyBookings: async (): Promise<SupportBooking[]> => {
         const r = await api.get('/classes/support/bookings/');
         return (r.data?.bookings ?? []) as SupportBooking[];
     },
     supportBook: async (availability_id: number, body?: { classroom_id?: number; topic?: string }) => {
         const r = await api.post('/classes/support/bookings/', { availability_id, ...(body || {}) });
+        return r.data as SupportBooking;
+    },
+    /** Book an hour off the calendar. The server materialises the slot on the way past. */
+    supportBookHour: async (
+        support_teacher_id: number,
+        starts_at: string,
+        body?: { classroom_id?: number; topic?: string },
+    ) => {
+        const r = await api.post('/classes/support/bookings/', {
+            support_teacher_id, starts_at, ...(body || {}),
+        });
         return r.data as SupportBooking;
     },
     supportCancelBooking: async (bookingId: number) => {
