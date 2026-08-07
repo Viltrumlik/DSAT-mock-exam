@@ -7,7 +7,6 @@ import {
   BookOpenCheck,
   ClipboardList,
   FileText,
-  Languages,
   UserCircle,
   ClipboardPen,
   Table2,
@@ -15,8 +14,10 @@ import {
   Timer,
   CirclePlay,
   FolderOpen,
-  Database,
-  MonitorPlay,
+  House,
+  ListTodo,
+  BookA,
+  CircleHelp,
   ShieldCheck,
   Coins,
   LifeBuoy,
@@ -64,13 +65,13 @@ export const studentNav: NavSection[] = [
   {
     section: "",
     items: [
-      { href: "/", label: "Today", icon: LayoutDashboard },
-      { href: "/assessments", label: "My work", icon: ClipboardCheck },
+      { href: "/", label: "Today", icon: House },
+      { href: "/assessments", label: "My work", icon: ListTodo },
       { href: "/classes", label: "Classes", icon: Users },
-      { href: "/vocabulary", label: "Vocabulary", icon: Languages },
+      { href: "/vocabulary", label: "Vocabulary", icon: BookA },
       {
         label: "Practice",
-        icon: MonitorPlay,
+        icon: Timer,
         children: [
           { href: "/pastpapers", label: "Past Paper", icon: BookOpen },
           { href: "/mock-exam", label: "Mock Exam", icon: ClipboardList },
@@ -78,7 +79,7 @@ export const studentNav: NavSection[] = [
         ],
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
-      { href: "/question-bank", label: "Question Bank", icon: Database },
+      { href: "/question-bank", label: "Question Bank", icon: CircleHelp },
       { href: "/support", label: "Support", icon: LifeBuoy },
       // Reached from the header instead. A survey only exists now and then, points are a
       // running total worth seeing on every page, and Profile already has the avatar.
