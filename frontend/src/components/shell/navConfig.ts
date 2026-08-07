@@ -78,9 +78,6 @@ export const studentNav: NavSection[] = [
         ],
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
-      // 284 finished lines — readiness, score trend, projection, per-skill radar — that were
-      // reachable only by typing the URL, because the page was never added to this file.
-      { href: "/analytics", label: "Progress", icon: LineChart },
       { href: "/question-bank", label: "Question Bank", icon: Database },
       { href: "/support", label: "Support", icon: LifeBuoy },
       // Reached from the header instead. A survey only exists now and then, points are a

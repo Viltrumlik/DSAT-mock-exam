@@ -10,7 +10,6 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Target,
@@ -89,25 +88,14 @@ function DashboardBody({
           onSave={async (english, math) => { if (!isPreview) await live.saveGoal(english, math); }}
         />
 
-        {/* The work comes first. `font-sans` opts these blocks out of the Plus Jakarta face
-            `.dzboard` imposes on its subtree, so they read as the rest of the product. */}
-        <div className="font-sans" style={{ marginBottom: 22 }}>
-          <DueNext items={model.upcoming} resumeAttemptId={model.resumeAttemptId} />
-        </div>
-
-        {/* Calendar + right column */}
-        <ScheduleSection />
-
-        {/* Score + countdown. Demoted below the work: a countdown moves by one a day and a
-            target is a number the student typed in themselves — neither is why they opened
-            the app, and homework changes daily. */}
+        {/* Score + countdown */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
             gap: 20,
             alignItems: "stretch",
-            marginTop: 22,
+            marginBottom: 22,
           }}
           className="dz-scoregrid"
         >
@@ -121,120 +109,11 @@ function DashboardBody({
             }}
           />
         </div>
+
+        {/* Calendar + right column */}
+        <ScheduleSection />
       </div>
     </div>
-  );
-}
-
-/* ── Due next ─────────────────────────────────────────────────────────────────
-   The list `useDashboardData` has always built and never rendered. A student opens
-   this product to ask what they have to do and when it is due; until now the answer
-   was four taps away, and the third-to-last landed on a leaderboard. */
-function DueNext({
-  items,
-  resumeAttemptId,
-}: {
-  items: DashboardModel["upcoming"];
-  resumeAttemptId: number | null;
-}) {
-  const behind = items.filter((i) => i.behind).length;
-  const ahead = items.length - behind;
-
-  return (
-    <section aria-labelledby="due-next-heading" className="space-y-3">
-      <p className="text-[15px] text-muted-foreground">
-        {items.length === 0 ? (
-          <span className="font-bold text-foreground">Nothing due right now</span>
-        ) : (
-          <>
-            <span className="text-lg font-bold text-foreground">
-              {ahead > 0
-                ? `${ahead} thing${ahead === 1 ? "" : "s"} due`
-                : `${behind} to catch up on`}
-            </span>
-            {ahead > 0 && behind > 0 ? ` · ${behind} to catch up` : null}
-          </>
-        )}
-      </p>
-
-      {resumeAttemptId != null ? (
-        // `resumeAttemptId` is an EXAM attempt (practice test / mock), which the runner at
-        // /exam/<id> serves — not /assessments/attempt/<id>, which is the separate
-        // assessment runner and would 404 on this id.
-        <Link
-          href={`/exam/${resumeAttemptId}`}
-          className="ds-ring flex items-center gap-3 rounded-2xl border border-primary bg-primary-soft px-4 py-3 transition-colors hover:bg-primary/15"
-        >
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-foreground">Pick up where you left off</p>
-            <p className="truncate text-xs text-muted-foreground">You have a test in progress</p>
-          </div>
-          <span className="shrink-0 text-sm font-bold text-primary">Resume →</span>
-        </Link>
-      ) : null}
-
-      {items.length > 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2 id="due-next-heading" className="ds-h4">
-                Due next
-              </h2>
-              <Link href="/assessments" className="text-xs font-bold text-primary hover:underline">
-                See all →
-              </Link>
-            </div>
-            <ul className="divide-y divide-border">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <Link
-                    href={item.href}
-                    className="ds-ring flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2"
-                  >
-                    <span
-                      aria-hidden
-                      className={
-                        item.behind
-                          ? "h-8 w-[3px] shrink-0 rounded-full bg-warning"
-                          : item.soon
-                            ? "h-8 w-[3px] shrink-0 rounded-full bg-primary"
-                            : "h-8 w-[3px] shrink-0 rounded-full bg-border-strong"
-                      }
-                    />
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="truncate text-sm font-semibold text-foreground">
-                        {item.title}
-                      </span>
-                      {item.meta ? (
-                        <span className="truncate text-xs text-muted-foreground">{item.meta}</span>
-                      ) : null}
-                    </span>
-                    <span
-                      className={
-                        item.behind
-                          ? "shrink-0 rounded-full bg-warning-soft px-2 py-0.5 text-[11px] font-bold text-warning-foreground"
-                          : "shrink-0 text-xs font-semibold text-muted-foreground"
-                      }
-                    >
-                      {item.dueLabel}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="py-8 text-center">
-            <p className="ds-h4">You&apos;re all caught up</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              New homework will appear here as your teachers set it.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </section>
   );
 }
 
