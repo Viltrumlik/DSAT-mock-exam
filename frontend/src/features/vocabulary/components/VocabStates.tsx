@@ -1,6 +1,5 @@
-import { AlertTriangle, RefreshCw } from "lucide-react";
-
-import { Button, Skeleton } from "@/components/ui";
+import { Skeleton } from "@/components/ui";
+import { ErrorState } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
 
@@ -94,17 +93,9 @@ export function VocabErrorState({
   onRetry: () => void;
 }) {
   return (
-    <div className="cr-cardrise flex flex-col items-center rounded-2xl border border-dashed border-danger/30 bg-danger-soft p-12 text-center">
-      {/* Same 14×14 rounded-2xl plate `EmptyState` uses, so the two states are
-          the same silhouette with different tints. */}
-      <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-card ring-1 ring-danger/20">
-        <AlertTriangle className="h-6 w-6 text-danger" aria-hidden />
-      </div>
-      <p className="ds-h4">{title}</p>
-      <p className="mx-auto mt-1.5 max-w-sm text-sm text-muted-foreground">{description}</p>
-      <Button className="cr-press mt-5" variant="secondary" leftIcon={<RefreshCw />} onClick={onRetry}>
-        Try again
-      </Button>
-    </div>
+    // The house error state: an untinted, borderless centred panel. The dashed danger-tinted
+    // box this used to be is the one shape the reference areas never draw — dashed is the
+    // empty-state material there, and a failed request is not an empty result.
+    <ErrorState className="cr-cardrise" title={title} message={description} onRetry={onRetry} />
   );
 }
