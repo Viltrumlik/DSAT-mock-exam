@@ -78,6 +78,11 @@ export function useSettleBooking() {
   return useMutation({
     mutationFn: (vars: { bookingId: number; status: "HELD" | "NO_SHOW" }) =>
       classesApi.supportSettle(vars.bookingId, vars.status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.diary }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.diary });
+      // Settling changes which bookings still occupy a seat, so the slot list's
+      // "n of m free" is stale the moment a session is settled.
+      qc.invalidateQueries({ queryKey: keys.availability });
+    },
   });
 }

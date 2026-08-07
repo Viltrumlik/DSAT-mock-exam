@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { classesApi, examsAdminApi, type ClassroomMember } from "@/lib/api";
 import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, X, ChevronRight, LifeBuoy, Calculator, Languages } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -111,21 +111,33 @@ export default function OpsClassroomGovernancePage() {
     })();
   }, []);
 
+  // Monotonic token: two loads can be in flight when an admin clicks through levels quickly,
+  // and without this the SLOWER (earlier) response wins and the list shows the wrong level's
+  // classrooms under the right breadcrumb.
+  const loadSeq = useRef(0);
+
   const load = async () => {
+    const seq = ++loadSeq.current;
+    const stale = () => seq !== loadSeq.current;
     setLoading(true); setError(null);
     try {
-      setGroups(await classesApi.directoryGroups());
+      const groupRows = await classesApi.directoryGroups();
+      if (stale()) return;
+      setGroups(groupRows);
       // Rows are only fetched at the leaf — the pickers above run off the tallies, so the
       // console never pulls every classroom in the school just to draw seven buttons.
       if (crumb.subject && crumb.level) {
-        setRows(normList(await classesApi.directory({ subject: crumb.subject, level: crumb.level })));
+        const data = await classesApi.directory({ subject: crumb.subject, level: crumb.level });
+        if (stale()) return;
+        setRows(normList(data));
       } else {
         setRows([]);
       }
     } catch (e: unknown) {
+      if (stale()) return;
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Could not load the classroom directory (admin only).");
-    } finally { setLoading(false); }
+    } finally { if (!stale()) setLoading(false); }
   };
   // Refetch whenever the drill-down moves. `load` is intentionally not a dependency: it is
   // recreated every render, and depending on it would loop.

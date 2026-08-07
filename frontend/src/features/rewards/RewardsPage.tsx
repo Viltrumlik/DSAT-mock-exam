@@ -166,6 +166,14 @@ export function RewardsPage() {
                 <Skeleton className="h-8" />
                 <Skeleton className="h-8" />
               </div>
+            ) : rules.isError || !rules.data?.length ? (
+              // A blank card reads as "there is nothing to earn", which is the opposite of true.
+              <p className="px-2 py-3 text-sm text-muted-foreground">
+                The rules aren&apos;t loading right now.{" "}
+                <button type="button" onClick={() => rules.refetch()} className="font-semibold text-primary underline">
+                  Try again
+                </button>
+              </p>
             ) : (
               <ul className="space-y-1.5">
                 {rules.data?.map((rule) => (

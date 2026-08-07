@@ -77,8 +77,16 @@ export function SupportTeacherPage() {
         description="Publish times students can book, and record who actually attended."
       />
 
-      {(publish.isError || settle.isError) && (
-        <ErrorPanel message={errorDetail(publish.error ?? settle.error) || "That didn't go through."} />
+      {/* Scoped to the mutation that actually failed. `publish.error ?? settle.error`
+          preferred the older failure, so a stale publish error mislabelled a later settle. */}
+      {(publish.isError || settle.isError || withdraw.isError) && (
+        <ErrorPanel
+          message={
+            errorDetail(
+              settle.isError ? settle.error : withdraw.isError ? withdraw.error : publish.error,
+            ) || "That didn't go through."
+          }
+        />
       )}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
@@ -122,6 +130,14 @@ export function SupportTeacherPage() {
             <div className="mt-3">
               {availability.isLoading ? (
                 <div className="space-y-2"><Skeleton className="h-12" /><Skeleton className="h-12" /></div>
+              ) : availability.isError ? (
+                // "No slots published yet" on a failed load would invite the teacher to
+                // publish a duplicate of a slot that already exists.
+                <ErrorPanel
+                  message="Couldn't load your slots."
+                  actionLabel="Try again"
+                  onAction={() => availability.refetch()}
+                />
               ) : (availability.data?.length ?? 0) === 0 ? (
                 <p className="px-1 py-3 text-sm text-muted-foreground">No slots published yet.</p>
               ) : (
@@ -162,6 +178,14 @@ export function SupportTeacherPage() {
           <CardContent>
             {diary.isLoading ? (
               <div className="space-y-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
+            ) : diary.isError ? (
+              // "Nothing booked yet" would tell a teacher no one is coming. They would then
+              // not turn up, and the students who did book lose their session and their points.
+              <ErrorPanel
+                message="Couldn't load your bookings."
+                actionLabel="Try again"
+                onAction={() => diary.refetch()}
+              />
             ) : (diary.data?.length ?? 0) === 0 ? (
               <EmptyState icon={CalendarClock} title="Nothing booked yet" description="Publish a slot and bookings will appear here." />
             ) : (

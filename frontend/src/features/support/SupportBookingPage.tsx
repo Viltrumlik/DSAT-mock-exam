@@ -68,11 +68,12 @@ export function SupportBookingPage() {
         description="Book time with a support teacher from one of your classes. Attending one earns you points."
       />
 
-      {book.isError && (
+      {(book.isError || cancel.isError) && (
         <ErrorPanel
           message={
-            (book.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-            "That booking didn't go through."
+            ((book.error ?? cancel.error) as { response?: { data?: { detail?: string } } })
+              ?.response?.data?.detail ||
+            (book.isError ? "That booking didn't go through." : "That cancellation didn't go through.")
           }
         />
       )}
@@ -158,6 +159,14 @@ export function SupportBookingPage() {
           <CardContent>
             {bookings.isLoading ? (
               <div className="space-y-2"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
+            ) : bookings.isError ? (
+              // Not an empty state: "no sessions yet" would be a lie, and the Book buttons
+              // opposite would offer slots this student has already taken.
+              <ErrorPanel
+                message="Couldn't load your sessions."
+                actionLabel="Try again"
+                onAction={() => bookings.refetch()}
+              />
             ) : (bookings.data?.length ?? 0) === 0 ? (
               <EmptyState icon={LifeBuoy} title="No sessions yet" description="Book a time and it will appear here." />
             ) : (
