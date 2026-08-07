@@ -121,7 +121,10 @@ export function SupportBookingPage() {
         />
       </Card>
 
-      {calendar.isLoading ? (
+      {/* `isPending`, not `isLoading`: between retries `isLoading` drops to false while the
+          data is still undefined, and the branch below it would flash "no support teacher" at
+          a student whose request is merely being retried. */}
+      {calendar.isPending ? (
         <div className="space-y-3">
           <Skeleton className="h-56 rounded-2xl" />
           <Skeleton className="h-40 rounded-2xl" />
@@ -173,7 +176,7 @@ export function SupportBookingPage() {
           description="Points arrive once your teacher confirms you attended"
         />
         <div className="mt-3">
-          {bookings.isLoading ? (
+          {bookings.isPending ? (
             <div className="space-y-2"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
           ) : bookings.isError ? (
             // Not an empty state: "no sessions yet" would be a lie, and the calendar above
@@ -280,6 +283,9 @@ function TeacherCalendar({
         {teacher.days.map((d, i) => {
           const label = dayLabel(d.date);
           const free = d.hours.filter((h) => h.state === "open").length;
+          // A day with nothing left is usually today, running out hour by hour — calling that
+          // "Full" would blame the other students for what is just the clock.
+          const gone = free === 0 && d.hours.every((h) => h.state === "past" || h.state === "mine");
           const active = i === dayIndex;
           return (
             <button
@@ -287,6 +293,9 @@ function TeacherCalendar({
               type="button"
               onClick={() => setDayIndex(i)}
               aria-pressed={active}
+              // The visible text is three stacked fragments; without this a screen reader
+              // reads "Today Aug 7 10 free" as one run-on and the button has no name.
+              aria-label={`${label.title}, ${label.sub}, ${free > 0 ? `${free} hours free` : gone ? "day over" : "fully booked"}`}
               className={cn(
                 "ds-ring cr-press min-w-[92px] shrink-0 rounded-xl border px-3 py-2 text-left transition-colors",
                 active
@@ -302,7 +311,7 @@ function TeacherCalendar({
                   free > 0 ? "text-emerald-600" : "text-muted-foreground",
                 )}
               >
-                {free > 0 ? `${free} free` : "Full"}
+                {free > 0 ? `${free} free` : gone ? "Day over" : "Full"}
               </span>
             </button>
           );
@@ -386,6 +395,7 @@ function HourChip({
       type="button"
       onClick={onPick}
       aria-pressed={selected}
+      aria-label={`Book ${time}${hour.capacity > 1 ? `, ${hour.seats_left} seats left` : ""}`}
       className={cn(
         "ds-ring cr-press rounded-xl border px-3 py-2.5 text-center transition-colors",
         selected

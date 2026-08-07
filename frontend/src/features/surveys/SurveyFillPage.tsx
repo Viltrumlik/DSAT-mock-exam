@@ -2,22 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, ClipboardList, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ClipboardList, MessageSquare } from "lucide-react";
 import {
   Alert,
-  Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
   Checkbox,
-  EmptyState,
+  HeroPage,
   Input,
-  PageHeader,
+  PageHero,
   Skeleton,
   Textarea,
 } from "@/components/ui";
+// The house devices, so a survey reads as part of the same product as the classroom.
+import { Button, Card, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
 import type { SurveyAnswerValue, SurveyQuestion } from "./surveysApi";
 import { useSurvey, useRespond } from "./surveysHooks";
@@ -197,16 +193,14 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
     });
   }, [survey.data, answers]);
 
-  if (survey.isLoading) {
+  if (survey.isPending) {
     return (
-      <div className="space-y-6">
-        <Skeleton className="h-10 w-64" />
-        <div className="space-y-4">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-40 rounded-2xl" />
-          ))}
-        </div>
-      </div>
+      <HeroPage width="narrow" className="space-y-5">
+        <Skeleton className="h-40 rounded-2xl" />
+        {[0, 1, 2].map((i) => (
+          <Skeleton key={i} className="h-40 rounded-2xl" />
+        ))}
+      </HeroPage>
     );
   }
   if (survey.isError) {
@@ -216,60 +210,69 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
     const status = (survey.error as { response?: { status?: number } })?.response?.status;
     const notFound = status === 404 || status === 403;
     return (
-      <div className="space-y-4">
-        <Alert tone="danger" title={notFound ? "Survey not available" : "That didn't load"}>
-          {notFound
-            ? "It may have closed, or it isn't published yet."
-            : "Nothing has been lost — the survey just couldn't be fetched."}
-        </Alert>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="secondary"
-            leftIcon={<RefreshCw />}
-            onClick={() => void survey.refetch()}
-          >
-            Try again
-          </Button>
-          <Link href="/surveys">
-            <Button variant="ghost">Back to surveys</Button>
-          </Link>
-        </div>
-      </div>
+      <HeroPage width="narrow">
+        <BackToSurveys />
+        <Card className="cr-card mt-4">
+          {notFound ? (
+            <EmptyState
+              icon={ClipboardList}
+              title="Survey not available"
+              description="It may have closed, or it isn't published yet."
+              action={
+                <Link href="/surveys">
+                  <Button variant="secondary">Back to surveys</Button>
+                </Link>
+              }
+            />
+          ) : (
+            <ErrorState
+              title="That didn't load"
+              message="Nothing has been lost — the survey just couldn't be fetched."
+              onRetry={() => void survey.refetch()}
+            />
+          )}
+        </Card>
+      </HeroPage>
     );
   }
   if (!survey.data) {
     return (
-      <EmptyState
-        icon={ClipboardList}
-        title="This survey isn't open yet"
-        description="It may have closed, or it isn't published yet. The surveys page lists everything you can answer right now."
-        action={
-          <Link href="/surveys">
-            <Button variant="secondary">Back to surveys</Button>
-          </Link>
-        }
-      />
+      <HeroPage width="narrow">
+        <BackToSurveys />
+        <Card className="cr-card mt-4">
+          <EmptyState
+            icon={ClipboardList}
+            title="This survey isn't open yet"
+            description="It may have closed, or it isn't published yet. The surveys page lists everything you can answer right now."
+            action={
+              <Link href="/surveys">
+                <Button variant="secondary">Back to surveys</Button>
+              </Link>
+            }
+          />
+        </Card>
+      </HeroPage>
     );
   }
 
   if (done || survey.data.already_completed) {
     return (
-      <Card>
-        <CardContent>
+      <HeroPage width="narrow">
+        <Card className="cr-card">
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-success-soft">
-              <CheckCircle2 className="h-6 w-6 text-success" aria-hidden="true" />
+            <span className="cr-daypop flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/10">
+              <CheckCircle2 className="h-8 w-8 text-emerald-600" aria-hidden="true" />
             </span>
             <div>
-              <p className="ds-h4">Thanks — your answers are in.</p>
-              <p className="mt-1 text-sm text-muted-foreground">Your points have been added.</p>
+              <p className="text-lg font-extrabold text-foreground">Thanks — your answers are in.</p>
+              <p className="mt-1 text-sm font-semibold text-muted-foreground">Your points have been added.</p>
             </div>
             <Link href="/surveys" className="mt-2">
               <Button variant="secondary">Back to surveys</Button>
             </Link>
           </div>
-        </CardContent>
-      </Card>
+        </Card>
+      </HeroPage>
     );
   }
 
@@ -283,9 +286,24 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
     }
   }
 
+  const total = survey.data.questions.length;
+
   return (
-    <div className="space-y-6">
-      <PageHeader title={survey.data.title} description={survey.data.description || undefined} />
+    <HeroPage width="narrow" className="space-y-5">
+      <BackToSurveys />
+
+      <Card pad="none" className="cr-card overflow-hidden">
+        <PageHero
+          badge="Survey"
+          icon={MessageSquare}
+          title={survey.data.title}
+          description={survey.data.description || undefined}
+          tiles={[
+            { label: "Questions", value: total },
+            { label: "Earns you", value: "Points", accent: true },
+          ]}
+        />
+      </Card>
 
       {respond.isError && (
         <Alert tone="danger" title="Couldn't send your answers">
@@ -294,45 +312,58 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
         </Alert>
       )}
 
-      <div className="space-y-4">
-        {survey.data.questions.map((q, i) => (
-          <Card key={q.id}>
-            <CardHeader>
-              <div className="min-w-0">
-                <CardTitle id={labelId(q)}>
-                  <span className="ds-num mr-2 text-muted-foreground">{i + 1}.</span>
-                  {q.prompt}
-                  {/* Same required marker the kit's Field renders, and announced with the label. */}
-                  {q.is_required && <span className="ml-0.5 text-danger">*</span>}
-                </CardTitle>
-                {q.help_text && <CardDescription>{q.help_text}</CardDescription>}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <QuestionField
-                question={q}
-                value={answers[String(q.id)] ?? null}
-                onChange={(v) => setAnswers((prev) => ({ ...prev, [String(q.id)]: v }))}
-              />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {survey.data.questions.map((q, i) => (
+        <Card key={q.id} className="cr-card space-y-3" style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}>
+          <div className="flex items-start gap-[15px]">
+            {/* The homework detail numbers its instruction steps exactly this way. */}
+            <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-primary/10 text-sm font-extrabold text-primary">
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p id={labelId(q)} className="text-[16px] font-bold text-foreground">
+                {q.prompt}
+                {/* Same required marker the kit's Field renders, and announced with the label. */}
+                {q.is_required && <span className="ml-0.5 text-rose-500">*</span>}
+              </p>
+              {q.help_text && (
+                <p className="mt-0.5 text-sm text-muted-foreground">{q.help_text}</p>
+              )}
+            </div>
+          </div>
+          <QuestionField
+            question={q}
+            value={answers[String(q.id)] ?? null}
+            onChange={(v) => setAnswers((prev) => ({ ...prev, [String(q.id)]: v }))}
+          />
+        </Card>
+      ))}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="min-w-0 text-xs text-muted-foreground">
+      <Card className="cr-card flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 text-xs font-semibold text-muted-foreground">
           {missingRequired ? "Answer the questions marked * to finish." : "Ready to send."}
         </p>
         <Button
           className="shrink-0"
-          leftIcon={<ClipboardList />}
+          icon={ClipboardList}
           loading={respond.isPending}
           disabled={missingRequired}
           onClick={submit}
         >
           {respond.isPending ? "Sending…" : "Submit"}
         </Button>
-      </div>
-    </div>
+      </Card>
+    </HeroPage>
+  );
+}
+
+/** The homework detail's way back, so a survey leaves the same way a homework does. */
+function BackToSurveys() {
+  return (
+    <Link
+      href="/surveys"
+      className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden /> Back to surveys
+    </Link>
   );
 }

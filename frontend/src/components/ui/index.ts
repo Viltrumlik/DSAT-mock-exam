@@ -32,7 +32,7 @@ export type { CardVariant } from "./Card";
 export { Container, Stack, PageHeading } from "./layout";
 export { PageHeader } from "./PageHeader";
 export { WorkspaceHeader, WorkspaceFrame } from "./WorkspaceHeader";
-export { PageHero, HeroPage } from "./PageHero";
+export { PageHero, HeroPage, HeroChip } from "./PageHero";
 export { Separator } from "./Separator";
 
 // Disclosure & navigation
