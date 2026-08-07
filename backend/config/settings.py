@@ -158,6 +158,7 @@ INSTALLED_APPS = [
     'question_reports.apps.QuestionReportsConfig',
     'journals.apps.JournalsConfig',
     'rewards.apps.RewardsConfig',
+    'surveys.apps.SurveysConfig',
 ]
 
 MIDDLEWARE = [

@@ -152,6 +152,9 @@ class SubdomainAPIGuardMiddleware:
             # Reward points: the ops console reads balances and the rule table.
             if path.startswith("/api/rewards/"):
                 return self.get_response(request)
+            # Surveys are authored on the admin console (super_admin only, enforced in the view).
+            if path.startswith("/api/surveys/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.

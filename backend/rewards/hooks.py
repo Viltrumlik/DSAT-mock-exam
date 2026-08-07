@@ -322,3 +322,39 @@ def _on_support_booking_saved(sender, instance, **kwargs):
         sync_support_booking(instance)
     except Exception:
         logger.exception("reward_hook_failed support_booking=%s", instance.pk)
+
+
+# ── Survey: 40 for completing one ─────────────────────────────────────────────
+
+def sync_survey_response(response, *, actor=None) -> None:
+    """Award a completed survey.
+
+    Keyed on the response, which is unique per (survey, student) — so a survey pays once per
+    student no matter how the row is touched afterwards. Carries no classroom: a survey is
+    sent by the school, not by a class, and attributing it to one would put it on that class's
+    board and nobody else's.
+    """
+    from surveys.models import SurveyResponse
+
+    key = constants.survey_key(response.id)
+    if response.status != SurveyResponse.STATUS_SUBMITTED:
+        revoke(key, reason="survey response withdrawn", actor=actor)
+        return
+
+    award(
+        response.student,
+        constants.EVENT_SURVEY,
+        idempotency_key=key,
+        source_type="survey_response",
+        source_id=response.id,
+        actor=actor,
+        reason="survey completed",
+    )
+
+
+@receiver(post_save, sender="surveys.SurveyResponse", dispatch_uid="rewards_survey_response")
+def _on_survey_response_saved(sender, instance, **kwargs):
+    try:
+        sync_survey_response(instance)
+    except Exception:
+        logger.exception("reward_hook_failed survey_response=%s", instance.pk)
