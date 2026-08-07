@@ -10,7 +10,10 @@ const keys = {
 };
 
 export function useMyRewards() {
-  return useQuery({ queryKey: keys.me, queryFn: () => rewardsApi.me() });
+  // Read by the top-bar pill on every page, so it gets a stale window to stop each
+  // navigation refetching it. Mutations that earn points invalidate the key, and
+  // invalidation refetches regardless of staleness — the total is never left behind.
+  return useQuery({ queryKey: keys.me, queryFn: () => rewardsApi.me(), staleTime: 60_000 });
 }
 
 export function useMyWallet() {

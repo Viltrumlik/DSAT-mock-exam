@@ -14,7 +14,8 @@ const keys = {
 // ── student ──────────────────────────────────────────────────────────────────
 
 export function useOpenSurveys() {
-  return useQuery({ queryKey: keys.open, queryFn: () => surveysApi.open() });
+  // Also drives the top-bar survey button, so it runs on every page — see useMyRewards.
+  return useQuery({ queryKey: keys.open, queryFn: () => surveysApi.open(), staleTime: 60_000 });
 }
 
 export function useSurvey(id: number) {

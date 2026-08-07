@@ -22,7 +22,8 @@ const ART = {
 } as const;
 
 const SIZES = {
-  sm: "h-5 w-5",      // inline, beside a number
+  xs: "h-5 w-5",      // 20px — inline, beside a number
+  sm: "h-6 w-6",      // 24px — header pill
   md: "h-10 w-10",    // stat card
   lg: "h-16 w-16",    // section heading
   xl: "h-24 w-24",    // hero / empty state
@@ -31,12 +32,13 @@ const SIZES = {
 type Common = { className?: string; decorative?: boolean };
 
 /**
- * `sm` is deliberately unavailable for the coin. Its face is near-black with a thin blue
- * rim, so at 20px on a dark background it collapses into an unreadable dot — the silver
- * token survives that size, the coin does not.
+ * `xs` is deliberately unavailable for the coin. Its face is near-black with a thin blue
+ * rim, so against a dark surface it needs 24px before the shield and rim separate — below
+ * that it collapses into an unreadable dot. The silver token survives 20px; the coin does
+ * not. Measured on the actual card colours, not guessed.
  */
 export type RewardCoinProps = Common &
-  ({ kind?: "point"; size?: keyof typeof SIZES } | { kind: "coin"; size?: "md" | "lg" | "xl" });
+  ({ kind?: "point"; size?: keyof typeof SIZES } | { kind: "coin"; size?: Exclude<keyof typeof SIZES, "xs"> });
 
 export function RewardCoin({
   kind = "point",

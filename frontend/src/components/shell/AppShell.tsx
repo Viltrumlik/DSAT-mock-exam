@@ -44,6 +44,12 @@ export type AppShellProps = {
   profileHref?: string;
   onSignOut?: () => void;
   onSignIn?: () => void;
+  /**
+   * Controls rendered in the top bar, just before the notification bell. The shell is
+   * shared with the teacher portal, so anything role-specific (the student's points and
+   * open surveys) is injected here rather than imported into this file.
+   */
+  headerSlot?: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -55,6 +61,7 @@ export function AppShell({
   profileHref = "/profile",
   onSignOut,
   onSignIn,
+  headerSlot,
   children,
 }: AppShellProps) {
   const { theme, setTheme } = useTheme();
@@ -99,14 +106,16 @@ export function AppShell({
 
   const filteredNav = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
-    if (!q) return nav;
-    const matches = (i: NavItem) => i.label.toLowerCase().includes(q);
+    // `hiddenInSidebar` items are stripped here and nowhere else: the command palette and
+    // the mobile page title both read the unfiltered `nav`, so those keep working.
+    const matches = (i: NavItem) => !q || i.label.toLowerCase().includes(q);
     const filterItems = (items: NavItem[]): NavItem[] =>
       items.flatMap((i) => {
+        if (i.hiddenInSidebar) return [];
         if (i.children && i.children.length) {
+          const kids = filterItems(i.children);
           // Keep the whole group if its own label matches, else keep matching children.
-          if (matches(i)) return [i];
-          const kids = i.children.filter(matches);
+          if (matches(i)) return kids.length || !q ? [{ ...i, children: kids }] : [];
           return kids.length ? [{ ...i, children: kids }] : [];
         }
         return matches(i) ? [i] : [];
@@ -418,6 +427,8 @@ export function AppShell({
           <p className="truncate text-base font-bold tracking-tight md:hidden">{title}</p>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
+            {headerSlot}
+
             <Tooltip content="Notifications" side="bottom">
               <IconButton
                 variant="ghost"

@@ -31,6 +31,12 @@ export type NavItem = {
   icon: React.ElementType;
   /** Marks a page introduced by the rebuild's gap analysis. */
   isNew?: boolean;
+  /**
+   * Kept out of the sidebar but still a real route: reached from the header instead.
+   * It stays in the config so the command palette can find it and so the mobile top bar
+   * still knows the page's name — dropping the entry entirely would cost both.
+   */
+  hiddenInSidebar?: boolean;
   /** When present, this item is a collapsible category whose children are the routes. */
   children?: NavItem[];
 };
@@ -68,8 +74,11 @@ export const studentNav: NavSection[] = [
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
       { href: "/support", label: "Support", icon: LifeBuoy, isNew: true },
-      { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, isNew: true },
-      { href: "/rewards", label: "Points", icon: Coins, isNew: true },
+      // Surveys and Points are reached from the header, not the sidebar: a survey only
+      // exists now and then, and points are a running total worth seeing on every page
+      // rather than a destination to remember.
+      { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, hiddenInSidebar: true },
+      { href: "/rewards", label: "Points", icon: Coins, hiddenInSidebar: true },
       { href: "/question-bank", label: "Question Bank", icon: Database },
       { href: "/profile", label: "Profile", icon: UserCircle },
     ],
