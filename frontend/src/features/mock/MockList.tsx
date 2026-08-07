@@ -4,17 +4,18 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, ArrowRight, Coffee } from "lucide-react";
+import { ArrowRight, ClipboardList, Coffee, Eye, FileText } from "lucide-react";
 import { mockApi, type MockRow } from "@/lib/mockApi";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
+import { HeroPage, PageHero, Skeleton } from "@/components/ui";
+// The house devices, so a mock reads as part of the same product as the classroom.
+import { Button, Card, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
 import MockSessionPanel from "./MockSessionPanel";
 
 /** Student full-mock list — 4-module SAT simulations (2 English + 2 Math + a 10-min break). */
 
-const C = { navy: "#0f1729", blue: "#2a68c0", slate: "#64748b", border: "#e7ebf3" };
-
-function Row({ m }: { m: MockRow }) {
+function Row({ m, index }: { m: MockRow; index: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
@@ -36,68 +37,125 @@ function Row({ m }: { m: MockRow }) {
   const label = m.in_progress ? "Resume mock" : m.submitted ? "Retake mock" : "Start mock";
 
   return (
-    <div className="flex items-center gap-4 rounded-2xl border bg-white px-5 py-4" style={{ borderColor: C.border }}>
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500"><FileText className="h-5 w-5" /></div>
+    <Card
+      className="cr-card cr-lift flex flex-wrap items-center gap-4"
+      style={{ animationDelay: `${Math.min(index, 8) * 60}ms` }}
+    >
+      <span className="cr-iconpop flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-transform">
+        <FileText className="h-5 w-5" aria-hidden />
+      </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[16px] font-extrabold" style={{ color: C.navy }}>{m.title}</p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: C.slate }}>
-          {m.module_count} modules · out of 1600
-          <span className="inline-flex items-center gap-1"><Coffee className="h-3.5 w-3.5" /> {m.break_minutes}m break</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate text-[16px] font-extrabold text-foreground">{m.title}</p>
+          {/* The state used to live only in the button's verb, which a student scanning a
+              list of papers does not read. */}
+          {m.in_progress ? (
+            <Pill tone="warning">In progress</Pill>
+          ) : m.submitted ? (
+            <Pill tone="success">Completed</Pill>
+          ) : null}
+        </div>
+        {/* One text flow, not a flex row: a gap between the number and its unit renders as
+            "4  modules" and "10 m break". */}
+        <p className="mt-0.5 text-[13px] font-semibold text-muted-foreground">
+          <span className="ds-num">{m.module_count}</span> modules · out of 1600
+          <span className="ml-1.5 inline-flex items-center gap-1 align-[-1px]">
+            <Coffee className="h-3.5 w-3.5" aria-hidden />
+            <span><span className="ds-num">{m.break_minutes}</span>m break</span>
+          </span>
         </p>
       </div>
       {m.submitted && m.total_score != null && (
-        <div className="text-right leading-none">
-          <span className="text-[20px] font-extrabold" style={{ color: C.navy }}>{m.total_score}</span>
-          <span className="text-[12px] font-semibold text-slate-400"> /1600</span>
+        <div className="shrink-0 text-right leading-none">
+          <span className="ds-num text-[22px] font-extrabold text-foreground">{m.total_score}</span>
+          <span className="ds-num text-[12px] font-bold text-muted-foreground"> /1600</span>
         </div>
       )}
       {/* A finished sitting needs a way back to its score. The only button used to be
           "Retake", so the single click available to a student who had just completed a
           mock started a NEW attempt and buried the result they were looking for. */}
       {m.result_attempt_id != null && (
-        <Link
-          href={`/mock-exam/result/${m.result_attempt_id}`}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-[14px] py-[10px] text-sm font-bold transition hover:bg-slate-50"
-          style={{ borderColor: C.border, color: C.navy }}
-        >
-          View result
+        <Link href={`/mock-exam/result/${m.result_attempt_id}`} className="shrink-0">
+          <Button variant="secondary" icon={Eye}>View result</Button>
         </Link>
       )}
-      <button onClick={enter} disabled={busy} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60" style={{ background: C.blue }}>
-        {busy ? "…" : label} <ArrowRight className="h-4 w-4" />
-      </button>
-    </div>
+      <Button className="cr-press shrink-0" loading={busy} iconRight={ArrowRight} onClick={enter}>
+        {label}
+      </Button>
+    </Card>
+  );
+}
+
+/** A quiet section label — the same device the page has always used above each block. */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[12px] font-extrabold tracking-[0.16em] text-muted-foreground">{children}</p>
   );
 }
 
 export default function MockList() {
-  const { data, isLoading } = useQuery({ queryKey: ["mock", "mine"], queryFn: mockApi.myMocks });
-  const mocks = data ?? [];
+  const mine = useQuery({ queryKey: ["mock", "mine"], queryFn: mockApi.myMocks });
+  const mocks = mine.data ?? [];
+  const best = mocks.reduce<number | null>(
+    (acc, m) => (m.total_score != null && (acc == null || m.total_score > acc) ? m.total_score : acc),
+    null,
+  );
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-8" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
-      <span className="text-[12px] font-extrabold tracking-[0.16em] text-slate-400">MOCK</span>
-      <h1 className="mt-1 text-[34px] font-extrabold leading-tight" style={{ color: C.navy }}>Mock exam</h1>
-      <p className="mt-2 max-w-2xl text-sm font-medium" style={{ color: C.slate }}>
-        A full timed SAT simulation: 2 Reading &amp; Writing modules, a 10-minute break, then 2 Math modules — scored out of 1600.
-      </p>
+    <HeroPage className="space-y-5">
+      <Card pad="none" className="cr-card overflow-hidden">
+        <PageHero
+          badge="Mock"
+          title="Mock exam"
+          description="A full timed SAT simulation: 2 Reading & Writing modules, a 10-minute break, then 2 Math modules — scored out of 1600."
+          tiles={
+            mine.isSuccess
+              ? [
+                  { label: "Papers", value: mocks.length },
+                  ...(best != null
+                    ? [{ label: "Your best", value: `${best} / 1600`, accent: true as const }]
+                    : []),
+                ]
+              : []
+          }
+        />
+      </Card>
 
       {/* Two ways to sit the same paper. An invigilated sitting is run by a teacher with a
           code; practice below is the student's own, whenever they like. */}
-      <div className="mt-6">
-        <MockSessionPanel />
-      </div>
+      <MockSessionPanel />
 
-      <p className="mt-8 text-[12px] font-extrabold tracking-[0.16em] text-slate-400">PRACTISE ON YOUR OWN</p>
-      <div className="mt-3 space-y-3">
-        {isLoading ? (
-          <p className="text-sm text-slate-500">Loading…</p>
+      <div className="space-y-3 pt-3">
+        <SectionLabel>PRACTISE ON YOUR OWN</SectionLabel>
+        {/* `isPending`, not `isLoading`: between retries `isLoading` drops to false while the
+            data is still undefined, and the branch below would claim there are no papers. */}
+        {mine.isPending ? (
+          <div className="space-y-3">
+            <Skeleton className="h-[86px] rounded-2xl" />
+            <Skeleton className="h-[86px] rounded-2xl" />
+          </div>
+        ) : mine.isError ? (
+          // Not an empty state: "no mocks available yet" told a student with a paper waiting
+          // for them that there was nothing to sit.
+          <Card className="cr-card">
+            <ErrorState
+              title="Your mocks aren't loading right now."
+              message="Nothing has been lost — your papers will be here once the list loads."
+              onRetry={() => void mine.refetch()}
+            />
+          </Card>
         ) : mocks.length === 0 ? (
-          <p className="rounded-2xl border bg-white p-8 text-center text-sm text-slate-500" style={{ borderColor: C.border }}>No mocks available yet.</p>
+          <Card className="cr-card">
+            <EmptyState
+              icon={ClipboardList}
+              title="No mocks available yet"
+              description="When your school publishes a full mock, it will show up here to sit whenever you like."
+            />
+          </Card>
         ) : (
-          mocks.map((m) => <Row key={m.mock_id} m={m} />)
+          mocks.map((m, i) => <Row key={m.mock_id} m={m} index={i} />)
         )}
       </div>
-    </div>
+    </HeroPage>
   );
 }
