@@ -252,3 +252,41 @@ def _on_submission_saved(sender, instance, **kwargs):
         _recompute(instance.assignment, instance.student)
     except Exception:
         logger.exception("reward_hook_failed submission=%s", instance.pk)
+
+
+# ── Support teacher: 10 for a session that actually happened ──────────────────
+
+def sync_support_booking(booking, *, actor=None) -> None:
+    """Award the student for a support session the teacher confirmed as held.
+
+    On HELD, not on booking. A student who books and never turns up has not been helped, and
+    paying at booking time would make the calendar the cheapest points on the platform.
+
+    Revokes on anything else, because a booking can move backwards: a teacher who settles the
+    wrong row can correct it to NO_SHOW, and the points have to follow.
+    """
+    from classes.models_support import SupportBooking
+
+    key = constants.support_session_key(booking.id)
+    if booking.status != SupportBooking.STATUS_HELD:
+        revoke(key, reason=f"support session {booking.status.lower()}", actor=actor)
+        return
+
+    award(
+        booking.student,
+        constants.EVENT_SUPPORT_SESSION,
+        idempotency_key=key,
+        classroom=booking.classroom,
+        source_type="support_booking",
+        source_id=booking.id,
+        actor=actor,
+        reason="support session held",
+    )
+
+
+@receiver(post_save, sender="classes.SupportBooking", dispatch_uid="rewards_support_booking")
+def _on_support_booking_saved(sender, instance, **kwargs):
+    try:
+        sync_support_booking(instance)
+    except Exception:
+        logger.exception("reward_hook_failed support_booking=%s", instance.pk)

@@ -374,7 +374,7 @@ Branch from `origin/main`, not from here.
 | 3 | ✅ **Homework bundle scoring** — `recompute_bundle` over assessments + vocab + pastpaper + hand-in, four item-completion hooks, hourly deadline sweep, anti-farming guards, `content_count` vocab fix | 2 |
 | 4 | ✅ **`support_teacher` role** — global role across **9** chokepoints, teacher-portal access, ops role lists, and a classroom assignment endpoint (**not** `AssignTeacherView`) | 0 |
 | 5 | ✅ **Ops classrooms** — subject → level drill-down, server-side `subject`/`level` filters + `?group=1` tallies, create-from-preset, support-teacher staffing | 4 |
-| 6 | **Support booking** — availability, booking (restricted to the student's own classrooms), session confirmation → 10-point hook | 4, 2 |
+| 6 | ✅ **Support booking** — availability slots, booking gated on a shared classroom, confirm-as-held → 10-point hook | 4, 2 |
 | 7 | **Surveys** — Google-Forms-like authoring + fill, super_admin gate, host-guard allowlist → 40-point hook | 2 |
 | 8 | **Coins** — wallet, conversion at the configured rate, transactions, spend surface, ops grant/revoke | 2 |
 | 9 | **Cutover** — open season 1, **repoint the academic leaderboard at the reward ledger and clear the old points** (§0.3), iOS surface, docs | all |
@@ -436,8 +436,24 @@ ledger has real data in it before the board starts reading from it.
   person anyway. Subject alignment is checked at assignment, so a mismatch is a 400 rather
   than a wasted appointment later.
 
-**Still open for PR 6 (booking):** whether a student may book *any* support teacher assigned
-to any of their classrooms, or only one assigned to the classroom the booking is about.
+### Notes from building PR 6
+
+- **Two models, not three.** The plan sketched availability → booking → session, but a booking
+  with a terminal status *is* the session. A third table would duplicate the booking's own
+  lifecycle and give the reward hook two rows to disagree about.
+- The open question above is settled by building both readings at once: **eligibility** needs
+  only *a* shared classroom (the school's sentence), and the booking **records which** shared
+  classroom it went through — auto-resolved when there is exactly one, left null rather than
+  guessed when there are several. The ledger gets its classroom either way.
+- **Eligibility is computed live, never snapshotted onto the booking.** A student removed from
+  a class loses the entitlement immediately; a snapshot would keep the door open until someone
+  noticed.
+- **Re-booking a cancelled slot reuses the same row** (unique on `(availability, student)`).
+  The reward key is the booking id, so a second row would be a second award.
+- Withdrawing a slot cancels the bookings on it — otherwise a student keeps a
+  confirmed-looking appointment nobody is going to attend.
+- Settling is the support teacher's, explicitly not the student's: `HELD` is what pays, so
+  letting the student set it would be self-service.
 
 ---
 
