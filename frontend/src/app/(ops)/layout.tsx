@@ -13,6 +13,7 @@ import {
   ScrollText,
   BookOpen,
   KeyRound,
+  ClipboardList,
   CalendarClock,
   NotebookText,
   Timer,
@@ -67,6 +68,15 @@ const OPS_NAV = [
   // Operational assignment management + midterm authoring moved out of the admin panel
   // (authoring lives in the Builder console). Admin keeps governance (Classrooms) +
   // Access/Users/Audit.
+  // Authoring is super_admin's alone (the API enforces it on every endpoint; this only
+  // avoids showing a page the server would refuse).
+  {
+    href: "/ops/surveys",
+    label: "Surveys",
+    icon: ClipboardList,
+    exact: false,
+    superAdminOnly: true,
+  },
   {
     href: "/ops/access",
     label: "Access",
@@ -116,6 +126,7 @@ function NavItem({
   icon: React.ElementType;
   exact: boolean;
   pathname: string;
+  superAdminOnly?: boolean;
 }) {
   const active = isNavActive(pathname, href, exact);
   return (
@@ -141,6 +152,10 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
   const role = String(me?.role ?? "").trim().toLowerCase();
   // Link to the Teacher Portal only for roles allowed there (teacher + super_admin).
   const showTeacherPortalLink = role === "teacher" || role === "super_admin";
+  const isSuperAdmin = role === "super_admin" || Boolean(me?.is_superuser);
+  const navItems = OPS_NAV.filter(
+    (item) => !("superAdminOnly" in item && item.superAdminOnly) || isSuperAdmin,
+  );
 
   return (
     <AuthGuard adminOnly>
@@ -159,7 +174,7 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
 
               {/* Operations nav */}
               <nav className="flex flex-col gap-0.5" aria-label="Operations">
-                {OPS_NAV.map((item) => (
+                {navItems.map((item) => (
                   <NavItem key={item.href} {...item} pathname={pathname} />
                 ))}
               </nav>

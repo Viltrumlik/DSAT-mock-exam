@@ -375,7 +375,7 @@ Branch from `origin/main`, not from here.
 | 4 | ✅ **`support_teacher` role** — global role across **9** chokepoints, teacher-portal access, ops role lists, and a classroom assignment endpoint (**not** `AssignTeacherView`) | 0 |
 | 5 | ✅ **Ops classrooms** — subject → level drill-down, server-side `subject`/`level` filters + `?group=1` tallies, create-from-preset, support-teacher staffing | 4 |
 | 6 | ✅ **Support booking** — availability slots, booking gated on a shared classroom, confirm-as-held → 10-point hook | 4, 2 |
-| 7 | **Surveys** — Google-Forms-like authoring + fill, super_admin gate, host-guard allowlist → 40-point hook | 2 |
+| 7 | ✅ **Surveys** — six question types, super_admin authoring, student fill, host-guard allowlist → 40-point hook | 2 |
 | 8 | **Coins** — wallet, conversion at the configured rate, transactions, spend surface, ops grant/revoke | 2 |
 | 9 | **Cutover** — open season 1, **repoint the academic leaderboard at the reward ledger and clear the old points** (§0.3), iOS surface, docs | all |
 

@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Coins,
   LifeBuoy,
+  ClipboardList as ClipboardListIcon,
 } from "lucide-react";
 
 export type NavItem = {
@@ -67,6 +68,7 @@ export const studentNav: NavSection[] = [
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
       { href: "/support", label: "Support", icon: LifeBuoy, isNew: true },
+      { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, isNew: true },
       { href: "/rewards", label: "Points", icon: Coins, isNew: true },
       { href: "/question-bank", label: "Question Bank", icon: Database },
       { href: "/profile", label: "Profile", icon: UserCircle },
