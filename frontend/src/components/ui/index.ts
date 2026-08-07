@@ -31,6 +31,7 @@ export {
 export type { CardVariant } from "./Card";
 export { Container, Stack, PageHeading } from "./layout";
 export { PageHeader } from "./PageHeader";
+export { WorkspaceHeader, WorkspaceFrame } from "./WorkspaceHeader";
 export { Separator } from "./Separator";
 
 // Disclosure & navigation

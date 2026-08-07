@@ -4,21 +4,23 @@ import { useMemo, useState } from "react";
 import { CalendarClock, LifeBuoy, Check, X, Users, RefreshCw } from "lucide-react";
 import {
   Alert,
-  Badge,
   Button,
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-  EmptyState,
   Field,
   IconButton,
   Input,
-  PageHeader,
   Skeleton,
+  WorkspaceFrame,
+  WorkspaceHeader,
 } from "@/components/ui";
-import type { BadgeVariant } from "@/components/ui";
+// The house state devices. The classroom folder is the kit these live in; importing them
+// here is what makes this page read as part of the same product rather than a cousin of it.
+import { EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+import type { PillTone } from "@/features/classroom/ui";
 import type { SupportBooking } from "@/lib/api";
 import {
   useSupportSlots,
@@ -35,12 +37,12 @@ function fmtWhen(iso: string) {
   });
 }
 
-const STATUS_STYLE: Record<SupportBooking["status"], { label: string; variant: BadgeVariant }> = {
-  BOOKED: { label: "Booked", variant: "info" },
-  HELD: { label: "Attended", variant: "success" },
+const STATUS_STYLE: Record<SupportBooking["status"], { label: string; tone: PillTone }> = {
+  BOOKED: { label: "Booked", tone: "info" },
+  HELD: { label: "Attended", tone: "success" },
   // Growth-oriented: the fact is recorded without naming the student a failure.
-  NO_SHOW: { label: "Missed", variant: "warning" },
-  CANCELLED: { label: "Cancelled", variant: "neutral" },
+  NO_SHOW: { label: "Missed", tone: "warning" },
+  CANCELLED: { label: "Cancelled", tone: "neutral" },
 };
 
 export function SupportBookingPage() {
@@ -63,8 +65,9 @@ export function SupportBookingPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
+    <WorkspaceFrame className="space-y-6 pt-0">
+      <WorkspaceHeader
+        icon={LifeBuoy}
         title="Support sessions"
         description="Book time with a support teacher from one of your classes. Attending one earns you points."
       />
@@ -94,22 +97,13 @@ export function SupportBookingPage() {
             {slots.isLoading ? (
               <div className="space-y-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
             ) : slots.isError ? (
-              <div className="space-y-3">
-                <Alert tone="danger" title="Support sessions aren't loading right now.">
-                  Nothing is lost — the times will be here once the list loads.
-                </Alert>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  leftIcon={<RefreshCw />}
-                  onClick={() => void slots.refetch()}
-                >
-                  Try again
-                </Button>
-              </div>
+              <ErrorState
+                title="Support times aren't loading right now."
+                message="Nothing is lost — the times will be here once the list loads."
+                onRetry={() => void slots.refetch()}
+              />
             ) : (slots.data?.length ?? 0) === 0 ? (
               <EmptyState
-                compact
                 icon={CalendarClock}
                 title="No times published yet"
                 description="When a support teacher from one of your classes opens a slot, it will show up here."
@@ -134,7 +128,7 @@ export function SupportBookingPage() {
                           )}
                         </div>
                         {mine ? (
-                          <Badge variant="info" className="shrink-0">Booked</Badge>
+                          <Pill tone="info" className="shrink-0">Booked</Pill>
                         ) : (
                           <Button
                             size="sm"
@@ -218,7 +212,7 @@ export function SupportBookingPage() {
                 </Button>
               </div>
             ) : (bookings.data?.length ?? 0) === 0 ? (
-              <EmptyState compact icon={LifeBuoy} title="No sessions yet" description="Book a time and it will appear here." />
+              <EmptyState icon={LifeBuoy} title="No sessions yet" description="Book a time and it will appear here." />
             ) : (
               <ul className="divide-y divide-border">
                 {bookings.data?.map((b) => (
@@ -232,7 +226,7 @@ export function SupportBookingPage() {
                       {b.topic && <p className="mt-0.5 truncate text-xs text-muted-foreground">{b.topic}</p>}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <Badge variant={STATUS_STYLE[b.status].variant}>{STATUS_STYLE[b.status].label}</Badge>
+                      <Pill tone={STATUS_STYLE[b.status].tone}>{STATUS_STYLE[b.status].label}</Pill>
                       {b.status === "BOOKED" && (
                         <IconButton
                           variant="ghost"
@@ -253,6 +247,6 @@ export function SupportBookingPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </WorkspaceFrame>
   );
 }
