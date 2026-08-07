@@ -315,9 +315,9 @@ export function AppShell({
               No sections match.
             </p>
           ) : (
-            filteredNav.map(({ section, items }, sIdx) => (
+            filteredNav.map(({ id, section, items }, sIdx) => (
               <div
-                key={section}
+                key={id}
                 className="flex flex-col gap-[7px]"
                 style={{ animation: "dz-sectionIn .42s cubic-bezier(.22,1,.36,1) both", animationDelay: `${sIdx * 60}ms` }}
               >
