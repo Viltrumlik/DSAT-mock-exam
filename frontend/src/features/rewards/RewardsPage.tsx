@@ -7,9 +7,12 @@ import {
   FileText,
   LifeBuoy,
   MessageSquare,
+  RefreshCw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
+  Alert,
+  Button,
   Card,
   CardHeader,
   CardTitle,
@@ -20,7 +23,6 @@ import {
   Skeleton,
   StatCard,
 } from "@/components/ui";
-import ErrorPanel from "@/components/ErrorPanel";
 import RewardCoin from "@/components/RewardCoin";
 import { useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
 import type { RewardEvent } from "./rewardsApi";
@@ -38,6 +40,8 @@ const EVENT_ICON: Record<RewardEvent, LucideIcon> = {
   HOMEWORK_MID: ClipboardList,
   MANUAL: Sparkles,
 };
+
+const PAGE_DESCRIPTION = "What you've earned for showing up and doing the work.";
 
 function fmtDate(iso: string) {
   const d = new Date(iso);
@@ -61,26 +65,34 @@ export function RewardsPage() {
 
   if (rewards.isError) {
     return (
-      <ErrorPanel
-        message="Points aren't loading right now."
-        actionLabel="Try again"
-        onAction={() => rewards.refetch()}
-      />
+      <div className="space-y-6">
+        <PageHeader eyebrow="Rewards" title="Points" description={PAGE_DESCRIPTION} />
+        {/* Alert + retry sit in one group, the same shape every other error surface uses. */}
+        <div className="space-y-3">
+          <Alert tone="danger" title="Points aren't loading right now.">
+            Nothing has been lost — the page just couldn&apos;t fetch your total.
+          </Alert>
+          <Button
+            variant="secondary"
+            leftIcon={<RefreshCw />}
+            onClick={() => void rewards.refetch()}
+          >
+            Try again
+          </Button>
+        </div>
+      </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Points"
-        description="What you've earned for showing up and doing the work."
-      />
+      <PageHeader eyebrow="Rewards" title="Points" description={PAGE_DESCRIPTION} />
 
       {rewards.isLoading ? (
         <div className="grid gap-3 sm:grid-cols-3">
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
+          <Skeleton className="h-28 rounded-2xl" />
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
@@ -100,18 +112,20 @@ export function RewardsPage() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <Card>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle>Your earnings</CardTitle>
-            <CardDescription>Every point you&apos;ve picked up this season</CardDescription>
+            <div className="min-w-0">
+              <CardTitle>Your earnings</CardTitle>
+              <CardDescription>Every point you&apos;ve picked up this season</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             {rewards.isLoading ? (
               <div className="space-y-2">
-                <Skeleton className="h-14" />
-                <Skeleton className="h-14" />
-                <Skeleton className="h-14" />
+                <Skeleton className="h-14 rounded-xl" />
+                <Skeleton className="h-14 rounded-xl" />
+                <Skeleton className="h-14 rounded-xl" />
               </div>
             ) : (rewards.data?.history.length ?? 0) === 0 ? (
               <EmptyState
@@ -125,8 +139,8 @@ export function RewardsPage() {
                   const Icon = EVENT_ICON[row.event] ?? Sparkles;
                   return (
                     <li key={row.id} className="flex items-center gap-3 py-3">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-muted-foreground">
-                        <Icon className="h-4 w-4" />
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                        <Icon className="h-4 w-4" aria-hidden />
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-foreground">{row.label}</p>
@@ -135,7 +149,7 @@ export function RewardsPage() {
                           {fmtDate(row.awarded_at)}
                         </p>
                       </div>
-                      <span className="shrink-0 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                      <span className="ds-num shrink-0 text-sm font-semibold text-success-foreground">
                         +{row.points}
                       </span>
                     </li>
@@ -148,24 +162,40 @@ export function RewardsPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>How to earn</CardTitle>
-            <CardDescription>Served from the school&apos;s live rules</CardDescription>
+            <div className="min-w-0">
+              <CardTitle>How to earn</CardTitle>
+              <CardDescription>Served from the school&apos;s live rules</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             {rules.isLoading ? (
               <div className="space-y-2">
-                <Skeleton className="h-8" />
-                <Skeleton className="h-8" />
-                <Skeleton className="h-8" />
+                <Skeleton className="h-8 rounded-lg" />
+                <Skeleton className="h-8 rounded-lg" />
+                <Skeleton className="h-8 rounded-lg" />
               </div>
-            ) : rules.isError || !rules.data?.length ? (
-              // A blank card reads as "there is nothing to earn", which is the opposite of true.
-              <p className="px-2 py-3 text-sm text-muted-foreground">
-                The rules aren&apos;t loading right now.{" "}
-                <button type="button" onClick={() => rules.refetch()} className="font-semibold text-primary underline">
+            ) : rules.isError ? (
+              <div className="space-y-3">
+                <Alert tone="danger" title="The rules aren't loading right now.">
+                  Your points are unaffected — only this list failed to load.
+                </Alert>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<RefreshCw />}
+                  onClick={() => void rules.refetch()}
+                >
                   Try again
-                </button>
-              </p>
+                </Button>
+              </div>
+            ) : !rules.data?.length ? (
+              // A blank card reads as "there is nothing to earn", which is the opposite of true.
+              <EmptyState
+                compact
+                icon={Sparkles}
+                title="No earning rules yet"
+                description="Your school is still tuning how points are awarded — they'll show up here."
+              />
             ) : (
               <ul className="space-y-1.5">
                 {rules.data?.map((rule) => (
@@ -174,7 +204,7 @@ export function RewardsPage() {
                     className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-sm"
                   >
                     <span className="min-w-0 truncate text-muted-foreground">{rule.label}</span>
-                    <span className="shrink-0 font-semibold text-foreground">+{rule.points}</span>
+                    <span className="ds-num shrink-0 font-semibold text-foreground">+{rule.points}</span>
                   </li>
                 ))}
               </ul>
@@ -186,8 +216,10 @@ export function RewardsPage() {
       {(wallet.data?.transactions.length ?? 0) > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Coin history</CardTitle>
-            <CardDescription>Coins you&apos;ve earned and spent</CardDescription>
+            <div className="min-w-0">
+              <CardTitle>Coin history</CardTitle>
+              <CardDescription>Coins you&apos;ve earned and spent</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             <ul className="divide-y divide-border">
@@ -197,13 +229,13 @@ export function RewardsPage() {
                     <p className="truncate text-sm font-medium text-foreground">
                       {t.reference || t.label}
                     </p>
-                    <p className="text-xs text-muted-foreground">{fmtDate(t.created_at)}</p>
+                    <p className="truncate text-xs text-muted-foreground">{fmtDate(t.created_at)}</p>
                   </div>
                   <span
                     className={
                       t.amount >= 0
-                        ? "shrink-0 text-sm font-semibold text-emerald-600 dark:text-emerald-400"
-                        : "shrink-0 text-sm font-semibold text-muted-foreground"
+                        ? "ds-num shrink-0 text-sm font-semibold text-success-foreground"
+                        : "ds-num shrink-0 text-sm font-semibold text-muted-foreground"
                     }
                   >
                     {t.amount >= 0 ? `+${t.amount}` : t.amount}

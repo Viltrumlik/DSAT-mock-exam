@@ -1,24 +1,33 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { CheckCircle2, ClipboardList } from "lucide-react";
+import Link from "next/link";
+import { CheckCircle2, ClipboardList, RefreshCw } from "lucide-react";
 import {
+  Alert,
+  Button,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
+  Checkbox,
+  EmptyState,
+  Input,
   PageHeader,
   Skeleton,
+  Textarea,
 } from "@/components/ui";
-import ErrorPanel from "@/components/ErrorPanel";
 import { cn } from "@/lib/cn";
 import type { SurveyAnswerValue, SurveyQuestion } from "./surveysApi";
 import { useSurvey, useRespond } from "./surveysHooks";
 
-const inputClass =
-  "w-full rounded-xl border border-border bg-card px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30";
+/** The card title is the question's visible label, so controls point at it by id. */
+const controlId = (q: SurveyQuestion) => `survey-q-${q.id}`;
+const labelId = (q: SurveyQuestion) => `survey-q-${q.id}-label`;
+
+const choiceRow =
+  "flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2 text-sm transition-colors";
 
 function QuestionField({
   question,
@@ -29,16 +38,31 @@ function QuestionField({
   value: SurveyAnswerValue;
   onChange: (v: SurveyAnswerValue) => void;
 }) {
+  const id = controlId(question);
+  const labelledBy = labelId(question);
+  const required = question.is_required || undefined;
+
   switch (question.question_type) {
     case "LONG_TEXT":
       return (
-        <textarea rows={4} className={inputClass} value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)} />
+        <Textarea
+          id={id}
+          aria-labelledby={labelledBy}
+          aria-required={required}
+          value={(value as string) ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+        />
       );
     case "DATE":
       return (
-        <input type="date" className={inputClass} value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)} />
+        <Input
+          id={id}
+          type="date"
+          aria-labelledby={labelledBy}
+          aria-required={required}
+          value={(value as string) ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+        />
       );
     case "SCALE": {
       const steps = Array.from(
@@ -46,15 +70,26 @@ function QuestionField({
         (_, i) => question.scale_min + i,
       );
       return (
-        <div className="flex flex-wrap gap-2">
+        <div
+          role="radiogroup"
+          aria-labelledby={labelledBy}
+          aria-required={required}
+          className="flex flex-wrap gap-2"
+        >
           {steps.map((n) => (
-            <button key={n} type="button" onClick={() => onChange(n)}
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={value === n}
+              onClick={() => onChange(n)}
               className={cn(
-                "h-10 w-10 rounded-xl border text-sm font-bold",
+                "ds-ring ds-num h-10 w-10 rounded-xl border text-sm font-bold transition-colors",
                 value === n
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border hover:bg-surface-2",
-              )}>
+                  : "border-border text-foreground hover:bg-surface-2",
+              )}
+            >
               {n}
             </button>
           ))}
@@ -63,42 +98,77 @@ function QuestionField({
     }
     case "SINGLE_CHOICE":
       return (
-        <div className="space-y-1.5">
-          {question.options.map((opt) => (
-            <label key={opt} className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3 py-2 text-sm hover:bg-surface-2">
-              <input type="radio" name={`q${question.id}`} checked={value === opt}
-                onChange={() => onChange(opt)} className="accent-primary" />
-              <span>{opt}</span>
-            </label>
-          ))}
+        <div
+          role="radiogroup"
+          aria-labelledby={labelledBy}
+          aria-required={required}
+          className="space-y-1.5"
+        >
+          {question.options.map((opt) => {
+            const on = value === opt;
+            return (
+              <label
+                key={opt}
+                className={cn(
+                  choiceRow,
+                  on ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
+                )}
+              >
+                <input
+                  type="radio"
+                  name={`q${question.id}`}
+                  checked={on}
+                  onChange={() => onChange(opt)}
+                  className="ds-ring h-[18px] w-[18px] shrink-0 accent-primary"
+                />
+                <span className="min-w-0">{opt}</span>
+              </label>
+            );
+          })}
         </div>
       );
     case "MULTI_CHOICE": {
       const picked = Array.isArray(value) ? value : [];
       return (
-        <div className="space-y-1.5">
-          {question.options.map((opt) => (
-            <label key={opt} className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3 py-2 text-sm hover:bg-surface-2">
-              <input type="checkbox" checked={picked.includes(opt)} className="accent-primary"
-                onChange={() =>
-                  onChange(picked.includes(opt) ? picked.filter((x) => x !== opt) : [...picked, opt])
-                } />
-              <span>{opt}</span>
-            </label>
-          ))}
+        // `role="group"` does not support aria-required; the label's `*` carries it.
+        <div role="group" aria-labelledby={labelledBy} className="space-y-1.5">
+          {question.options.map((opt) => {
+            const on = picked.includes(opt);
+            return (
+              <label
+                key={opt}
+                className={cn(
+                  choiceRow,
+                  on ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
+                )}
+              >
+                <Checkbox
+                  checked={on}
+                  onChange={() =>
+                    onChange(on ? picked.filter((x) => x !== opt) : [...picked, opt])
+                  }
+                />
+                <span className="min-w-0">{opt}</span>
+              </label>
+            );
+          })}
         </div>
       );
     }
     default:
       return (
-        <input className={inputClass} value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)} />
+        <Input
+          id={id}
+          aria-labelledby={labelledBy}
+          aria-required={required}
+          value={(value as string) ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+        />
       );
   }
 }
 
 export function SurveyFillPage({ surveyId }: { surveyId: number }) {
-  const router = useRouter();
   const survey = useSurvey(surveyId);
   const respond = useRespond(surveyId);
   const [answers, setAnswers] = useState<Record<string, SurveyAnswerValue>>({});
@@ -128,15 +198,56 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
   }, [survey.data, answers]);
 
   if (survey.isLoading) {
-    return <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-40" /></div>;
-  }
-  if (survey.isError || !survey.data) {
     return (
-      <ErrorPanel
-        title="Survey not available"
-        message="It may have closed, or it isn't published yet."
-        actionLabel="Back to surveys"
-        onAction={() => router.push("/surveys")}
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <div className="space-y-4">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-40 rounded-2xl" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (survey.isError) {
+    // A 404 means the survey really is gone, closed or unpublished. Anything else means the
+    // request failed, and saying "not available" there would state as fact something we do
+    // not know — the survey may be sitting there perfectly fine behind a dropped connection.
+    const status = (survey.error as { response?: { status?: number } })?.response?.status;
+    const notFound = status === 404 || status === 403;
+    return (
+      <div className="space-y-4">
+        <Alert tone="danger" title={notFound ? "Survey not available" : "That didn't load"}>
+          {notFound
+            ? "It may have closed, or it isn't published yet."
+            : "Nothing has been lost — the survey just couldn't be fetched."}
+        </Alert>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            leftIcon={<RefreshCw />}
+            onClick={() => void survey.refetch()}
+          >
+            Try again
+          </Button>
+          <Link href="/surveys">
+            <Button variant="ghost">Back to surveys</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+  if (!survey.data) {
+    return (
+      <EmptyState
+        icon={ClipboardList}
+        title="This survey isn't open yet"
+        description="It may have closed, or it isn't published yet. The surveys page lists everything you can answer right now."
+        action={
+          <Link href="/surveys">
+            <Button variant="secondary">Back to surveys</Button>
+          </Link>
+        }
       />
     );
   }
@@ -146,13 +257,16 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
       <Card>
         <CardContent>
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <CheckCircle2 className="h-10 w-10 text-emerald-500" />
-            <p className="text-base font-bold text-foreground">Thanks — your answers are in.</p>
-            <p className="text-sm text-muted-foreground">Your points have been added.</p>
-            <button type="button" onClick={() => router.push("/surveys")}
-              className="mt-2 rounded-xl border border-border px-4 py-2 text-sm font-bold hover:bg-surface-2">
-              Back to surveys
-            </button>
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-success-soft">
+              <CheckCircle2 className="h-6 w-6 text-success" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="ds-h4">Thanks — your answers are in.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Your points have been added.</p>
+            </div>
+            <Link href="/surveys" className="mt-2">
+              <Button variant="secondary">Back to surveys</Button>
+            </Link>
           </div>
         </CardContent>
       </Card>
@@ -160,33 +274,39 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
   }
 
   async function submit() {
-    await respond.mutateAsync(answers);
-    setDone(true);
+    try {
+      await respond.mutateAsync(answers);
+      setDone(true);   // only on success — a failed submit must keep the answers on screen
+    } catch {
+      // `respond.isError` already renders the alert above; swallowing here only stops the
+      // rejection going unhandled.
+    }
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader title={survey.data.title} description={survey.data.description || undefined} />
 
       {respond.isError && (
-        <ErrorPanel
-          message={
-            (respond.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
-            "Those answers weren't accepted."
-          }
-        />
+        <Alert tone="danger" title="Couldn't send your answers">
+          {(respond.error as { response?: { data?: { detail?: string } } })?.response?.data
+            ?.detail || "Those answers weren't accepted."}
+        </Alert>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {survey.data.questions.map((q, i) => (
           <Card key={q.id}>
             <CardHeader>
-              <CardTitle>
-                <span className="mr-2 text-muted-foreground">{i + 1}.</span>
-                {q.prompt}
-                {q.is_required && <span className="ml-1 text-rose-500">*</span>}
-              </CardTitle>
-              {q.help_text && <CardDescription>{q.help_text}</CardDescription>}
+              <div className="min-w-0">
+                <CardTitle id={labelId(q)}>
+                  <span className="ds-num mr-2 text-muted-foreground">{i + 1}.</span>
+                  {q.prompt}
+                  {/* Same required marker the kit's Field renders, and announced with the label. */}
+                  {q.is_required && <span className="ml-0.5 text-danger">*</span>}
+                </CardTitle>
+                {q.help_text && <CardDescription>{q.help_text}</CardDescription>}
+              </div>
             </CardHeader>
             <CardContent>
               <QuestionField
@@ -199,15 +319,19 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="min-w-0 text-xs text-muted-foreground">
           {missingRequired ? "Answer the questions marked * to finish." : "Ready to send."}
         </p>
-        <button type="button" disabled={missingRequired || respond.isPending} onClick={submit}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-          <ClipboardList className="h-4 w-4" />
+        <Button
+          className="shrink-0"
+          leftIcon={<ClipboardList />}
+          loading={respond.isPending}
+          disabled={missingRequired}
+          onClick={submit}
+        >
           {respond.isPending ? "Sending…" : "Submit"}
-        </button>
+        </Button>
       </div>
     </div>
   );

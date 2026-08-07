@@ -1,19 +1,24 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, LifeBuoy, Check, X, Users } from "lucide-react";
+import { CalendarClock, LifeBuoy, Check, X, Users, RefreshCw } from "lucide-react";
 import {
+  Alert,
+  Badge,
+  Button,
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
   EmptyState,
+  Field,
+  IconButton,
+  Input,
   PageHeader,
   Skeleton,
 } from "@/components/ui";
-import ErrorPanel from "@/components/ErrorPanel";
-import { cn } from "@/lib/cn";
+import type { BadgeVariant } from "@/components/ui";
 import type { SupportBooking } from "@/lib/api";
 import {
   useSupportSlots,
@@ -30,12 +35,12 @@ function fmtWhen(iso: string) {
   });
 }
 
-const STATUS_STYLE: Record<SupportBooking["status"], { label: string; tone: string }> = {
-  BOOKED: { label: "Booked", tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
-  HELD: { label: "Attended", tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+const STATUS_STYLE: Record<SupportBooking["status"], { label: string; variant: BadgeVariant }> = {
+  BOOKED: { label: "Booked", variant: "info" },
+  HELD: { label: "Attended", variant: "success" },
   // Growth-oriented: the fact is recorded without naming the student a failure.
-  NO_SHOW: { label: "Missed", tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  CANCELLED: { label: "Cancelled", tone: "bg-surface-2 text-muted-foreground" },
+  NO_SHOW: { label: "Missed", variant: "warning" },
+  CANCELLED: { label: "Cancelled", variant: "neutral" },
 };
 
 export function SupportBookingPage() {
@@ -51,10 +56,6 @@ export function SupportBookingPage() {
     [bookings.data],
   );
 
-  if (slots.isError) {
-    return <ErrorPanel message="Support sessions aren't loading right now." actionLabel="Try again" onAction={() => slots.refetch()} />;
-  }
-
   async function confirm(availability_id: number) {
     await book.mutateAsync({ availability_id, topic: topic.trim() || undefined });
     setTopicFor(null);
@@ -69,26 +70,46 @@ export function SupportBookingPage() {
       />
 
       {(book.isError || cancel.isError) && (
-        <ErrorPanel
-          message={
+        <Alert
+          tone="danger"
+          title={
             ((book.error ?? cancel.error) as { response?: { data?: { detail?: string } } })
               ?.response?.data?.detail ||
             (book.isError ? "That booking didn't go through." : "That cancellation didn't go through.")
           }
-        />
+        >
+          Nothing has changed — you can try again.
+        </Alert>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Available times</CardTitle>
-            <CardDescription>Only support teachers from your own classes appear here</CardDescription>
+            <div className="min-w-0">
+              <CardTitle>Available times</CardTitle>
+              <CardDescription>Only support teachers from your own classes appear here</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             {slots.isLoading ? (
               <div className="space-y-2"><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
+            ) : slots.isError ? (
+              <div className="space-y-3">
+                <Alert tone="danger" title="Support sessions aren't loading right now.">
+                  Nothing is lost — the times will be here once the list loads.
+                </Alert>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<RefreshCw />}
+                  onClick={() => void slots.refetch()}
+                >
+                  Try again
+                </Button>
+              </div>
             ) : (slots.data?.length ?? 0) === 0 ? (
               <EmptyState
+                compact
                 icon={CalendarClock}
                 title="No times published yet"
                 description="When a support teacher from one of your classes opens a slot, it will show up here."
@@ -107,41 +128,60 @@ export function SupportBookingPage() {
                           {slot.note && <p className="mt-0.5 text-xs text-muted-foreground">{slot.note}</p>}
                           {slot.capacity > 1 && (
                             <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                              <Users className="h-3 w-3" /> {slot.seats_left} of {slot.capacity} seats left
+                              <Users className="h-3 w-3" aria-hidden />
+                              <span className="ds-num">{slot.seats_left} of {slot.capacity}</span> seats left
                             </p>
                           )}
                         </div>
                         {mine ? (
-                          <span className="shrink-0 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">Booked</span>
+                          <Badge variant="info" className="shrink-0">Booked</Badge>
                         ) : (
-                          <button
-                            type="button"
+                          <Button
+                            size="sm"
+                            className="shrink-0"
                             disabled={full || book.isPending}
                             onClick={() => { setTopicFor(slot.id); setTopic(""); }}
-                            className="shrink-0 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                           >
                             {full ? "Full" : "Book"}
-                          </button>
+                          </Button>
                         )}
                       </div>
                       {topicFor === slot.id && (
-                        <div className="mt-2 flex gap-2">
-                          <input
-                            autoFocus
-                            value={topic}
-                            onChange={(e) => setTopic(e.target.value)}
-                            placeholder="What do you need help with? (optional)"
-                            className="min-w-0 flex-1 rounded-xl border border-border bg-card px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                          />
-                          <button type="button" disabled={book.isPending} onClick={() => confirm(slot.id)}
-                            className="shrink-0 rounded-xl bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                            Confirm
-                          </button>
-                          <button type="button" onClick={() => setTopicFor(null)}
-                            className="shrink-0 rounded-xl px-2 py-1.5 text-xs font-bold text-muted-foreground hover:bg-surface-2">
-                            Cancel
-                          </button>
-                        </div>
+                        <Field
+                          className="mt-3"
+                          label="What do you need help with?"
+                          htmlFor={`support-topic-${slot.id}`}
+                          hint="Optional — it helps your teacher prepare."
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1">
+                              <Input
+                                id={`support-topic-${slot.id}`}
+                                autoFocus
+                                inputSize="sm"
+                                value={topic}
+                                onChange={(e) => setTopic(e.target.value)}
+                                placeholder="e.g. Reading inference questions"
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              className="shrink-0"
+                              loading={book.isPending}
+                              onClick={() => confirm(slot.id)}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="shrink-0"
+                              onClick={() => setTopicFor(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </Field>
                       )}
                     </li>
                   );
@@ -153,8 +193,10 @@ export function SupportBookingPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Your sessions</CardTitle>
-            <CardDescription>Points arrive once your teacher confirms you attended</CardDescription>
+            <div className="min-w-0">
+              <CardTitle>Your sessions</CardTitle>
+              <CardDescription>Points arrive once your teacher confirms you attended</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             {bookings.isLoading ? (
@@ -162,13 +204,21 @@ export function SupportBookingPage() {
             ) : bookings.isError ? (
               // Not an empty state: "no sessions yet" would be a lie, and the Book buttons
               // opposite would offer slots this student has already taken.
-              <ErrorPanel
-                message="Couldn't load your sessions."
-                actionLabel="Try again"
-                onAction={() => bookings.refetch()}
-              />
+              <div className="space-y-3">
+                <Alert tone="danger" title="Couldn't load your sessions.">
+                  Your bookings are safe — they'll appear once the list loads.
+                </Alert>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<RefreshCw />}
+                  onClick={() => void bookings.refetch()}
+                >
+                  Try again
+                </Button>
+              </div>
             ) : (bookings.data?.length ?? 0) === 0 ? (
-              <EmptyState icon={LifeBuoy} title="No sessions yet" description="Book a time and it will appear here." />
+              <EmptyState compact icon={LifeBuoy} title="No sessions yet" description="Book a time and it will appear here." />
             ) : (
               <ul className="divide-y divide-border">
                 {bookings.data?.map((b) => (
@@ -182,16 +232,19 @@ export function SupportBookingPage() {
                       {b.topic && <p className="mt-0.5 truncate text-xs text-muted-foreground">{b.topic}</p>}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className={cn("rounded-lg px-2.5 py-1 text-xs font-bold", STATUS_STYLE[b.status].tone)}>
-                        {STATUS_STYLE[b.status].label}
-                      </span>
+                      <Badge variant={STATUS_STYLE[b.status].variant}>{STATUS_STYLE[b.status].label}</Badge>
                       {b.status === "BOOKED" && (
-                        <button type="button" disabled={cancel.isPending} onClick={() => cancel.mutate(b.id)}
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 disabled:opacity-50" aria-label="Cancel booking">
-                          <X className="h-4 w-4" />
-                        </button>
+                        <IconButton
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Cancel booking"
+                          disabled={cancel.isPending}
+                          onClick={() => cancel.mutate(b.id)}
+                        >
+                          <X className="h-4 w-4" aria-hidden />
+                        </IconButton>
                       )}
-                      {b.status === "HELD" && <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />}
+                      {b.status === "HELD" && <Check className="h-4 w-4 text-success" aria-hidden />}
                     </div>
                   </li>
                 ))}

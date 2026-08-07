@@ -1,18 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarPlus, CalendarClock, Check, UserX, Trash2, Users } from "lucide-react";
+import { CalendarPlus, CalendarClock, Check, UserX, Trash2, Users, RefreshCw } from "lucide-react";
 import {
+  Alert,
+  Badge,
+  Button,
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
   EmptyState,
+  Field,
+  IconButton,
+  Input,
+  Modal,
   PageHeader,
   Skeleton,
 } from "@/components/ui";
-import ErrorPanel from "@/components/ErrorPanel";
+import type { BadgeVariant } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import type { SupportBooking } from "@/lib/api";
 import {
@@ -37,11 +44,12 @@ function toIso(local: string) {
   return Number.isNaN(d.getTime()) ? "" : d.toISOString();
 }
 
-const STATUS_STYLE: Record<SupportBooking["status"], { label: string; tone: string }> = {
-  BOOKED: { label: "Booked", tone: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
-  HELD: { label: "Held", tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  NO_SHOW: { label: "Missed", tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  CANCELLED: { label: "Cancelled", tone: "bg-surface-2 text-muted-foreground" },
+const STATUS_STYLE: Record<SupportBooking["status"], { label: string; variant: BadgeVariant }> = {
+  BOOKED: { label: "Booked", variant: "info" },
+  HELD: { label: "Held", variant: "success" },
+  // Growth-oriented: the fact is recorded without naming the student a failure.
+  NO_SHOW: { label: "Missed", variant: "warning" },
+  CANCELLED: { label: "Cancelled", variant: "neutral" },
 };
 
 export function SupportTeacherPage() {
@@ -55,6 +63,8 @@ export function SupportTeacherPage() {
   const [end, setEnd] = useState("");
   const [capacity, setCapacity] = useState("1");
   const [note, setNote] = useState("");
+  /** Slot awaiting a withdraw confirmation, or null when the dialog is closed. */
+  const [withdrawingId, setWithdrawingId] = useState<number | null>(null);
 
   const errorDetail = (e: unknown) =>
     (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
@@ -80,100 +90,139 @@ export function SupportTeacherPage() {
       {/* Scoped to the mutation that actually failed. `publish.error ?? settle.error`
           preferred the older failure, so a stale publish error mislabelled a later settle. */}
       {(publish.isError || settle.isError || withdraw.isError) && (
-        <ErrorPanel
-          message={
+        <Alert
+          tone="danger"
+          title={
             errorDetail(
               settle.isError ? settle.error : withdraw.isError ? withdraw.error : publish.error,
             ) || "That didn't go through."
           }
-        />
+        >
+          Nothing has changed — you can try again.
+        </Alert>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Your availability</CardTitle>
-            <CardDescription>Only students from your assigned classes can book these</CardDescription>
+            {/* CardHeader is a justify-between flex row, so the title block needs its own column. */}
+            <div className="min-w-0">
+              <CardTitle>Your availability</CardTitle>
+              <CardDescription>Only students from your assigned classes can book these</CardDescription>
+            </div>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2 rounded-xl border border-dashed border-border p-3">
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted-foreground">Starts</span>
-                  <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted-foreground">Ends</span>
-                  <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-                </label>
+          <CardContent className="space-y-4">
+            <div className="space-y-3 rounded-xl border border-border bg-surface-2 p-4">
+              <p className="ds-overline">New slot</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Starts" htmlFor="support-slot-start">
+                  <Input
+                    id="support-slot-start"
+                    type="datetime-local"
+                    value={start}
+                    onChange={(e) => setStart(e.target.value)}
+                  />
+                </Field>
+                <Field label="Ends" htmlFor="support-slot-end">
+                  <Input
+                    id="support-slot-end"
+                    type="datetime-local"
+                    value={end}
+                    onChange={(e) => setEnd(e.target.value)}
+                  />
+                </Field>
               </div>
-              <div className="grid gap-2 sm:grid-cols-[100px_1fr]">
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted-foreground">Seats</span>
-                  <input type="number" min={1} value={capacity} onChange={(e) => setCapacity(e.target.value)}
-                    className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-muted-foreground">Note</span>
-                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional"
-                    className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm" />
-                </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Seats" htmlFor="support-slot-seats">
+                  <Input
+                    id="support-slot-seats"
+                    type="number"
+                    min={1}
+                    value={capacity}
+                    onChange={(e) => setCapacity(e.target.value)}
+                  />
+                </Field>
+                <Field label="Note" htmlFor="support-slot-note">
+                  <Input
+                    id="support-slot-note"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Optional"
+                  />
+                </Field>
               </div>
-              <button type="button" disabled={!start || !end || publish.isPending} onClick={addSlot}
-                className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">
-                <CalendarPlus className="h-4 w-4" /> {publish.isPending ? "Publishing…" : "Publish slot"}
-              </button>
+              <Button
+                fullWidth
+                leftIcon={<CalendarPlus aria-hidden />}
+                loading={publish.isPending}
+                disabled={!start || !end || publish.isPending}
+                onClick={addSlot}
+              >
+                {publish.isPending ? "Publishing…" : "Publish slot"}
+              </Button>
             </div>
 
-            <div className="mt-3">
-              {availability.isLoading ? (
-                <div className="space-y-2"><Skeleton className="h-12" /><Skeleton className="h-12" /></div>
-              ) : availability.isError ? (
-                // "No slots published yet" on a failed load would invite the teacher to
-                // publish a duplicate of a slot that already exists.
-                <ErrorPanel
-                  message="Couldn't load your slots."
-                  actionLabel="Try again"
-                  onAction={() => availability.refetch()}
-                />
-              ) : (availability.data?.length ?? 0) === 0 ? (
-                <p className="px-1 py-3 text-sm text-muted-foreground">No slots published yet.</p>
-              ) : (
-                <ul className="divide-y divide-border">
-                  {availability.data?.map((slot) => (
-                    <li key={slot.id} className={cn("flex items-center justify-between gap-3 py-2.5", slot.is_cancelled && "opacity-50")}>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-foreground">{fmtWhen(slot.starts_at)}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {slot.is_cancelled ? "Withdrawn" : `${slot.seats_left} of ${slot.capacity} free`}
-                          {slot.note ? ` · ${slot.note}` : ""}
-                        </p>
-                      </div>
-                      {!slot.is_cancelled && (
-                        <button type="button" disabled={withdraw.isPending}
-                          onClick={() => {
-                            if (window.confirm("Withdraw this slot? Anyone who booked it will be cancelled.")) {
-                              withdraw.mutate(slot.id);
-                            }
-                          }}
-                          className="shrink-0 rounded-lg p-1.5 text-rose-600 hover:bg-rose-500/10 disabled:opacity-50" aria-label="Withdraw slot">
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            {availability.isLoading ? (
+              <div className="space-y-2"><Skeleton className="h-12" /><Skeleton className="h-12" /></div>
+            ) : availability.isError ? (
+              // "No slots published yet" on a failed load would invite the teacher to
+              // publish a duplicate of a slot that already exists.
+              <div className="space-y-3">
+                <Alert tone="danger" title="Couldn't load your slots">
+                  Your published times are unchanged — only this list failed to load.
+                </Alert>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<RefreshCw aria-hidden />}
+                  onClick={() => void availability.refetch()}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : (availability.data?.length ?? 0) === 0 ? (
+              <EmptyState
+                compact
+                icon={CalendarPlus}
+                title="No slots published yet"
+                description="Publish a time above and students from your classes can book it."
+              />
+            ) : (
+              <ul className="divide-y divide-border">
+                {availability.data?.map((slot) => (
+                  <li key={slot.id} className={cn("flex items-center justify-between gap-3 py-2.5", slot.is_cancelled && "opacity-50")}>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{fmtWhen(slot.starts_at)}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {slot.is_cancelled ? "Withdrawn" : <span className="ds-num">{slot.seats_left} of {slot.capacity} free</span>}
+                        {slot.note ? ` · ${slot.note}` : ""}
+                      </p>
+                    </div>
+                    {!slot.is_cancelled && (
+                      <IconButton
+                        variant="ghost"
+                        size="sm"
+                        disabled={withdraw.isPending}
+                        onClick={() => setWithdrawingId(slot.id)}
+                        className="shrink-0 text-danger hover:bg-danger-soft hover:text-danger-foreground"
+                        aria-label="Withdraw slot"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden />
+                      </IconButton>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Who booked you</CardTitle>
-            <CardDescription>Marking a session held is what awards the student their points</CardDescription>
+            <div className="min-w-0">
+              <CardTitle>Who booked you</CardTitle>
+              <CardDescription>Marking a session held is what awards the student their points</CardDescription>
+            </div>
           </CardHeader>
           <CardContent>
             {diary.isLoading ? (
@@ -181,13 +230,26 @@ export function SupportTeacherPage() {
             ) : diary.isError ? (
               // "Nothing booked yet" would tell a teacher no one is coming. They would then
               // not turn up, and the students who did book lose their session and their points.
-              <ErrorPanel
-                message="Couldn't load your bookings."
-                actionLabel="Try again"
-                onAction={() => diary.refetch()}
-              />
+              <div className="space-y-3">
+                <Alert tone="danger" title="Couldn't load your bookings">
+                  Students who booked you are still expected — only this list failed to load.
+                </Alert>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<RefreshCw aria-hidden />}
+                  onClick={() => void diary.refetch()}
+                >
+                  Try again
+                </Button>
+              </div>
             ) : (diary.data?.length ?? 0) === 0 ? (
-              <EmptyState icon={CalendarClock} title="Nothing booked yet" description="Publish a slot and bookings will appear here." />
+              <EmptyState
+                compact
+                icon={CalendarClock}
+                title="Nothing booked yet"
+                description="Publish a slot and bookings will appear here."
+              />
             ) : (
               <ul className="divide-y divide-border">
                 {diary.data?.map((b) => (
@@ -201,24 +263,32 @@ export function SupportTeacherPage() {
                         </p>
                         {b.topic && <p className="mt-0.5 text-xs text-muted-foreground">{b.topic}</p>}
                       </div>
-                      <span className={cn("shrink-0 rounded-lg px-2.5 py-1 text-xs font-bold", STATUS_STYLE[b.status].tone)}>
+                      <Badge variant={STATUS_STYLE[b.status].variant} className="shrink-0">
                         {STATUS_STYLE[b.status].label}
-                      </span>
+                      </Badge>
                     </div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <button type="button" disabled={settle.isPending || b.status === "HELD"}
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        leftIcon={<Check aria-hidden />}
+                        disabled={settle.isPending || b.status === "HELD"}
                         onClick={() => settle.mutate({ bookingId: b.id, status: "HELD" })}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold hover:bg-surface-2 disabled:opacity-40">
-                        <Check className="h-3.5 w-3.5" /> Attended
-                      </button>
-                      <button type="button" disabled={settle.isPending || b.status === "NO_SHOW"}
+                      >
+                        Attended
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        leftIcon={<UserX aria-hidden />}
+                        disabled={settle.isPending || b.status === "NO_SHOW"}
                         onClick={() => settle.mutate({ bookingId: b.id, status: "NO_SHOW" })}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold hover:bg-surface-2 disabled:opacity-40">
-                        <UserX className="h-3.5 w-3.5" /> Didn&apos;t attend
-                      </button>
+                      >
+                        Didn&apos;t attend
+                      </Button>
                       {b.slot.capacity > 1 && (
-                        <span className="inline-flex items-center gap-1 self-center text-[11px] text-muted-foreground">
-                          <Users className="h-3 w-3" /> group of {b.slot.capacity}
+                        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+                          <Users className="h-3 w-3" aria-hidden /> group of <span className="ds-num">{b.slot.capacity}</span>
                         </span>
                       )}
                     </div>
@@ -229,6 +299,30 @@ export function SupportTeacherPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Withdrawing cancels every booking on the slot, so it stays behind a confirmation. */}
+      <Modal
+        open={withdrawingId !== null}
+        onClose={() => setWithdrawingId(null)}
+        size="sm"
+        title="Withdraw this slot?"
+        description="Anyone who booked it will be cancelled. You can publish a new time whenever you like."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setWithdrawingId(null)}>Keep it</Button>
+            <Button
+              variant="danger"
+              disabled={withdraw.isPending}
+              onClick={() => {
+                if (withdrawingId !== null) withdraw.mutate(withdrawingId);
+                setWithdrawingId(null);
+              }}
+            >
+              Withdraw slot
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }
