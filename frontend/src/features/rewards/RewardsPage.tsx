@@ -8,7 +8,6 @@ import {
   FileText,
   LifeBuoy,
   MessageSquare,
-  Trophy,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -23,6 +22,7 @@ import {
   StatCard,
 } from "@/components/ui";
 import ErrorPanel from "@/components/ErrorPanel";
+import PointCoin from "@/components/PointCoin";
 import { useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
 import type { RewardEvent } from "./rewardsApi";
 
@@ -85,12 +85,7 @@ export function RewardsPage() {
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
-          <StatCard
-            label="Points"
-            value={points}
-            icon={Trophy}
-            accent="text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40"
-          />
+          <StatCard label="Points" value={points} media={<PointCoin size="md" />} />
           <StatCard
             label="Coins"
             value={coins}
@@ -122,7 +117,7 @@ export function RewardsPage() {
               </div>
             ) : (rewards.data?.history.length ?? 0) === 0 ? (
               <EmptyState
-                icon={Trophy}
+                media={<PointCoin size="xl" />}
                 title="Nothing yet — but everything counts"
                 description="Attend a lesson, finish your homework or sit a midterm, and your points will show up here."
               />
