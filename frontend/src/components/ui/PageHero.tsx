@@ -79,10 +79,10 @@ export function PageHero({
             {title}
           </h1>
           {subtitle ? (
-            <p className="-mt-2 mb-[14px] text-[14px] font-bold opacity-[0.78]">{subtitle}</p>
+            <p className="-mt-2 mb-[14px] text-[14px] font-bold opacity-[0.92]">{subtitle}</p>
           ) : null}
           {description ? (
-            <p className="-mt-1 mb-[18px] max-w-2xl text-[15px] font-medium opacity-[0.86]">
+            <p className="-mt-1 mb-[18px] max-w-2xl text-[15px] font-medium opacity-[0.92]">
               {description}
             </p>
           ) : null}
@@ -93,7 +93,7 @@ export function PageHero({
             <div className="flex flex-wrap gap-x-7 gap-y-4 sm:gap-x-[34px]">
               {tiles.map((t, i) => (
                 <div key={t.label} className="cr-pillin whitespace-nowrap" style={{ animationDelay: `${i * 60}ms` }}>
-                  <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">
+                  <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.92]">
                     {t.label}
                   </div>
                   {t.accent ? (

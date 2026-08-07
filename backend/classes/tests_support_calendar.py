@@ -312,6 +312,123 @@ class RepublishOverAStudentRowTests(SupportFixture):
         self.assertEqual(slot.seats_left, 3)
 
 
+class TheMembershipAndTheAccountMustAgreeTests(SupportFixture):
+    """A classroom TA membership alone does not make a support desk.
+
+    There are two doors onto ROLE_TA and only one checks the account role: the roster's
+    "Make TA" button promotes any member. Opt-out hours would otherwise advertise a plain
+    student — or a teacher who cannot open the diary — as bookable 08:00–18:00.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+
+    def _make_ta(self, user):
+        from classes.models import ClassroomMembership
+
+        return ClassroomMembership.objects.create(
+            classroom=self.classroom, user=user, role=ClassroomMembership.ROLE_TA
+        )
+
+    def test_a_student_promoted_to_ta_is_not_a_bookable_desk(self):
+        from access import constants as C
+
+        impostor = type(self.student).objects.create_user("sb_ta_student@t.com", "secret123")
+        self.assertEqual(getattr(impostor, "role", None), C.ROLE_STUDENT)
+        self._make_ta(impostor)
+        self.assertNotIn(impostor.id, support_service.bookable_support_teacher_ids(self.student))
+        self.assertNotIn(
+            impostor.id,
+            [e["teacher"].id for e in support_service.open_calendar_for(self.student)],
+        )
+
+    def test_a_teacher_promoted_to_ta_is_not_a_bookable_desk(self):
+        from access import constants as C
+
+        teacher = type(self.student).objects.create_user(
+            "sb_ta_teacher@t.com", "secret123", role=C.ROLE_TEACHER, subject=C.DOMAIN_MATH
+        )
+        self._make_ta(teacher)
+        # They cannot open the diary or withdraw hours, so publishing them as a desk would
+        # send students to an appointment nobody is going to attend.
+        self.assertNotIn(teacher.id, support_service.bookable_support_teacher_ids(self.student))
+
+    def test_the_api_refuses_to_book_a_promoted_student(self):
+        impostor = type(self.student).objects.create_user("sb_ta_student2@t.com", "secret123")
+        self._make_ta(impostor)
+        self.client.force_authenticate(self.student)
+        r = self.client.post("/api/classes/support/bookings/", {
+            "support_teacher_id": impostor.id,
+            "starts_at": support_service._hour_start(self.tomorrow, 11).isoformat(),
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+        # And no availability row was minted in their name.
+        self.assertFalse(SupportAvailability.objects.filter(support_teacher=impostor).exists())
+
+    def test_a_real_support_teacher_is_unaffected(self):
+        self.assertIn(self.support.id, support_service.bookable_support_teacher_ids(self.student))
+
+
+class RepublishCannotOverbookTests(SupportFixture):
+    """Republishing applies the teacher's values — but never below what is already booked."""
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+        self.hour = support_service._hour_start(self.tomorrow, 10)
+        self.slot = SupportAvailability.objects.create(
+            support_teacher=self.support, starts_at=self.hour,
+            ends_at=self.hour + timedelta(hours=3), capacity=4, note="Algebra clinic",
+        )
+        from classes.models import ClassroomMembership
+
+        self.peers = []
+        for i in range(3):
+            peer = type(self.student).objects.create_user(f"sb_rp{i}@t.com", "secret123")
+            ClassroomMembership.objects.create(
+                classroom=self.classroom, user=peer, role=ClassroomMembership.ROLE_STUDENT
+            )
+            support_service.book(peer, self.slot)
+            self.peers.append(peer)
+
+    def _publish(self, **body):
+        self.client.force_authenticate(self.support)
+        return self.client.post("/api/classes/support/availability/", {
+            "starts_at": self.hour.isoformat(),
+            "ends_at": (self.hour + timedelta(hours=1)).isoformat(),
+            **body,
+        }, format="json")
+
+    def test_omitting_capacity_does_not_shrink_the_group(self):
+        # `capacity` is optional; defaulting it to 1 here left three students overbooked on a
+        # one-seat slot, with seats_left clamping to 0 so nothing ever showed it.
+        r = self._publish(note="one to one")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.slot.refresh_from_db()
+        self.assertGreaterEqual(self.slot.capacity, 3)
+        self.assertEqual(self.slot.note, "one to one")
+
+    def test_shrinking_below_the_bookings_is_refused(self):
+        r = self._publish(capacity=1)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("3 students already booked", r.json()["detail"])
+        self.slot.refresh_from_db()
+        self.assertEqual(self.slot.capacity, 4)   # untouched
+
+    def test_growing_the_group_still_works(self):
+        r = self._publish(capacity=6)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.slot.refresh_from_db()
+        self.assertEqual((self.slot.capacity, self.slot.seats_left), (6, 3))
+
+    def test_shrinking_to_exactly_the_bookings_is_allowed(self):
+        r = self._publish(capacity=3)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.slot.refresh_from_db()
+        self.assertEqual((self.slot.capacity, self.slot.seats_left), (3, 0))
+
+
 class CalendarApiTests(SupportFixture):
     def setUp(self):
         super().setUp()

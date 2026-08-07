@@ -52,15 +52,17 @@ function WalletTile({
   value: React.ReactNode;
   sub?: string;
 }) {
+  // A DARK scrim, not a lighter one. Measured: an 11px label at 72% white on a white/14 panel
+  // over the hero gradient is 2.95:1 in light and 2.09:1 in dark — well under the 4.5:1 body
+  // text needs, and these labels are the only thing naming which figure is which. Darkening
+  // the panel and taking the text to full white gives 7.8:1 and 5.0:1.
   return (
-    <div className="flex min-w-[150px] flex-1 items-center gap-3 rounded-2xl bg-white/[0.14] px-4 py-3.5">
+    <div className="flex min-w-[150px] flex-1 items-center gap-3 rounded-2xl bg-black/[0.22] px-4 py-3.5">
       {media ? <span className="shrink-0">{media}</span> : null}
       <div className="min-w-0">
-        <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">
-          {label}
-        </p>
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.06em]">{label}</p>
         <p className="ds-num text-[28px] font-extrabold leading-none">{value}</p>
-        {sub ? <p className="mt-1 truncate text-[11px] font-bold opacity-[0.72]">{sub}</p> : null}
+        {sub ? <p className="mt-1 truncate text-[11px] font-bold">{sub}</p> : null}
       </div>
     </div>
   );

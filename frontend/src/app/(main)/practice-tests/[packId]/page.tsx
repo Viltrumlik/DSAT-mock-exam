@@ -8,7 +8,7 @@ import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { ArrowLeft, BookOpen, Calculator, FlaskConical } from "lucide-react";
 import { HeroPage, PageHero, Skeleton } from "@/components/ui";
 // The house devices, so practice reads as part of the same product as the classroom.
-import { Button, Card, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+import { Button, buttonClassName, Card, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
 
 type PackSection = {
@@ -144,9 +144,7 @@ export default function PracticeTestPackDetailPage() {
               title="Practice test not found"
               description="It may have been unpublished."
               action={
-                <Link href="/practice-tests">
-                  <Button variant="secondary">Back to practice tests</Button>
-                </Link>
+                <Link href="/practice-tests" className={buttonClassName({ variant: "secondary" })}>Back to practice tests</Link>
               }
             />
           )}

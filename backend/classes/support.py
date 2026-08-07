@@ -15,6 +15,8 @@ from datetime import datetime, time as dt_time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from access import constants as acc_const
+from access.services import normalized_role
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -44,7 +46,22 @@ def _active_student_classroom_ids(student):
     ).values_list("classroom_id", flat=True)
 
 
+#: A classroom TA membership alone does not make a support desk — the account has to be a
+#: support teacher too. There are two doors onto ROLE_TA and only one of them checks:
+#: ``SupportTeacherAssignView`` requires ``role == ROLE_SUPPORT_TEACHER``, while the roster's
+#: "Make TA" button (``views_roster.MemberManageView``) lets an owner promote any member.
+#:
+#: That was harmless while slots had to be published: a plain student or teacher holding a TA
+#: membership could never publish one, so they never appeared. Opt-out hours changed that —
+#: they would be advertised as bookable 08:00–18:00 without lifting a finger, and every
+#: endpoint that would let them see or withdraw those hours 403s on the same account role.
+#: Students would book a desk nobody is going to attend.
+SUPPORT_ACCOUNT_ROLE = acc_const.ROLE_SUPPORT_TEACHER
+
+
 def _support_classroom_ids(support_teacher):
+    if normalized_role(support_teacher) != SUPPORT_ACCOUNT_ROLE:
+        return ClassroomMembership.objects.none().values_list("classroom_id", flat=True)
     return ClassroomMembership.objects.filter(
         user=support_teacher,
         role=ClassroomMembership.ROLE_TA,
@@ -71,6 +88,8 @@ def bookable_support_teacher_ids(student) -> set[int]:
             classroom_id__in=classroom_ids,
             role=ClassroomMembership.ROLE_TA,
             status=ClassroomMembership.STATUS_ACTIVE,
+            # See SUPPORT_ACCOUNT_ROLE: the membership and the account must agree.
+            user__role=SUPPORT_ACCOUNT_ROLE,
         ).values_list("user_id", flat=True)
     )
 

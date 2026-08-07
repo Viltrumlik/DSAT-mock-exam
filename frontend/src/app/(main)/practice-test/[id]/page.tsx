@@ -13,7 +13,7 @@ import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import { cn } from "@/lib/cn";
 import { HeroPage, PageHero, Skeleton } from "@/components/ui";
 // The house devices, so practice reads as part of the same product as the classroom.
-import { Button, Card, CardHeader, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+import { Button, buttonClassName, Card, CardHeader, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
 
 const examsPublicApi = examsStudentApi;
 
@@ -116,9 +116,7 @@ function PracticeTestDetailInner() {
                 title="Practice test not found"
                 description="It may not be assigned to you."
                 action={
-                  <Link href="/practice-tests">
-                    <Button variant="secondary">Back to practice tests</Button>
-                  </Link>
+                  <Link href="/practice-tests" className={buttonClassName({ variant: "secondary" })}>Back to practice tests</Link>
                 }
               />
             )}

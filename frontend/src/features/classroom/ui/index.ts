@@ -2,7 +2,7 @@
 // Tailwind utilities from globals.css). Single accent, whitespace over borders,
 // explicit empty/loading/error states. Reuse these; do not hand-roll inline styles.
 
-export { Button } from "./Button";
+export { Button, buttonClassName } from "./Button";
 export type { ButtonProps } from "./Button";
 export { Card, CardHeader, Divider } from "./Surface";
 export type { CardProps } from "./Surface";

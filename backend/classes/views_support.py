@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
@@ -159,29 +160,55 @@ class SupportAvailabilityView(APIView):
         if ends_at <= starts_at:
             return Response({"detail": "The slot must end after it starts."}, status=400)
 
+        # ``capacity`` is optional. Treating a missing field as 1 was fine while this only ever
+        # created rows; applying that default on republish silently shrank a group a teacher
+        # had opened earlier and left its students overbooked.
+        capacity_given = request.data.get("capacity") not in (None, "")
         try:
             capacity = max(1, int(request.data.get("capacity") or 1))
         except (TypeError, ValueError):
             capacity = 1
 
         note = (request.data.get("note") or "").strip()
-        slot, created = SupportAvailability.objects.get_or_create(
-            support_teacher=request.user,
-            starts_at=starts_at,
-            defaults={"ends_at": ends_at, "capacity": capacity, "note": note},
-        )
-        if not created:
-            # Publishing over an existing row applies the teacher's values, whether the row was
-            # withdrawn or minted by a student booking that hour off the calendar. This used to
-            # run only for withdrawn rows, so once students could materialise rows themselves a
-            # teacher opening a group clinic on an already-booked hour got a 200 and no clinic.
-            slot.is_cancelled = False
-            slot.ends_at = ends_at
-            slot.capacity = capacity
-            slot.note = note
-            slot.save(
-                update_fields=["is_cancelled", "ends_at", "capacity", "note", "updated_at"]
+        with transaction.atomic():
+            slot, created = SupportAvailability.objects.get_or_create(
+                support_teacher=request.user,
+                starts_at=starts_at,
+                defaults={"ends_at": ends_at, "capacity": capacity, "note": note},
             )
+            if not created:
+                # Publishing over an existing row applies the teacher's values, whether the row
+                # was withdrawn or minted by a student booking that hour off the calendar. This
+                # used to run only for withdrawn rows, so once students could materialise rows
+                # themselves a teacher opening a group clinic on an already-booked hour got a
+                # 200 and no clinic.
+                slot = SupportAvailability.objects.select_for_update().get(pk=slot.pk)
+                booked = slot.bookings.filter(
+                    status__in=SupportBooking.OCCUPYING_STATUSES
+                ).count()
+                if capacity_given and capacity < booked:
+                    # Refuse rather than overbook. Withdrawing the slot is the way to undo a
+                    # booking, and that path cancels them explicitly instead of stranding them.
+                    return Response(
+                        {
+                            "detail": (
+                                f"{booked} student{'' if booked == 1 else 's'} already booked "
+                                f"this time — you cannot reduce it below {booked}. Withdraw the "
+                                f"slot instead if you need to cancel."
+                            )
+                        },
+                        status=400,
+                    )
+                slot.is_cancelled = False
+                slot.ends_at = ends_at
+                slot.note = note
+                if capacity_given:
+                    slot.capacity = capacity
+                else:
+                    slot.capacity = max(slot.capacity, booked)
+                slot.save(
+                    update_fields=["is_cancelled", "ends_at", "capacity", "note", "updated_at"]
+                )
         return Response(
             _slot_json(slot), status=http.HTTP_201_CREATED if created else http.HTTP_200_OK
         )

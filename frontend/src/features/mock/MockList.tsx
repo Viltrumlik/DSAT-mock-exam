@@ -10,7 +10,7 @@ import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { HeroPage, PageHero, Skeleton } from "@/components/ui";
 // The house devices, so a mock reads as part of the same product as the classroom.
-import { Button, Card, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+import { Button, buttonClassName, Card, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
 import MockSessionPanel from "./MockSessionPanel";
 
 /** Student full-mock list — 4-module SAT simulations (2 English + 2 Math + a 10-min break). */
@@ -75,8 +75,11 @@ function Row({ m, index }: { m: MockRow; index: number }) {
           "Retake", so the single click available to a student who had just completed a
           mock started a NEW attempt and buried the result they were looking for. */}
       {m.result_attempt_id != null && (
-        <Link href={`/mock-exam/result/${m.result_attempt_id}`} className="shrink-0">
-          <Button variant="secondary" icon={Eye}>View result</Button>
+        <Link
+          href={`/mock-exam/result/${m.result_attempt_id}`}
+          className={buttonClassName({ variant: "secondary", className: "shrink-0" })}
+        >
+          <Eye className="h-4 w-4" aria-hidden /> View result
         </Link>
       )}
       <Button className="cr-press shrink-0" loading={busy} iconRight={ArrowRight} onClick={enter}>

@@ -13,7 +13,7 @@ import {
   Textarea,
 } from "@/components/ui";
 // The house devices, so a survey reads as part of the same product as the classroom.
-import { Button, Card, EmptyState, ErrorState } from "@/features/classroom/ui";
+import { Button, buttonClassName, Card, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
 import type { SurveyAnswerValue, SurveyQuestion } from "./surveysApi";
 import { useSurvey, useRespond } from "./surveysHooks";
@@ -219,9 +219,7 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
               title="Survey not available"
               description="It may have closed, or it isn't published yet."
               action={
-                <Link href="/surveys">
-                  <Button variant="secondary">Back to surveys</Button>
-                </Link>
+                <Link href="/surveys" className={buttonClassName({ variant: "secondary" })}>Back to surveys</Link>
               }
             />
           ) : (
@@ -245,9 +243,7 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
             title="This survey isn't open yet"
             description="It may have closed, or it isn't published yet. The surveys page lists everything you can answer right now."
             action={
-              <Link href="/surveys">
-                <Button variant="secondary">Back to surveys</Button>
-              </Link>
+              <Link href="/surveys" className={buttonClassName({ variant: "secondary" })}>Back to surveys</Link>
             }
           />
         </Card>
@@ -267,9 +263,7 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
               <p className="text-lg font-extrabold text-foreground">Thanks — your answers are in.</p>
               <p className="mt-1 text-sm font-semibold text-muted-foreground">Your points have been added.</p>
             </div>
-            <Link href="/surveys" className="mt-2">
-              <Button variant="secondary">Back to surveys</Button>
-            </Link>
+            <Link href="/surveys" className={buttonClassName({ variant: "secondary", className: "mt-2" })}>Back to surveys</Link>
           </div>
         </Card>
       </HeroPage>
