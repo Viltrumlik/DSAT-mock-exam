@@ -39,8 +39,13 @@ export type NavItem = {
   /** When present, this item is a collapsible category whose children are the routes. */
   children?: NavItem[];
 };
-/** An empty `section` string renders the items as top-level (no header). */
-export type NavSection = { section: string; items: NavItem[] };
+/**
+ * An empty `section` string renders the items as top-level (no header), so the
+ * heading is not unique — `id` is, and it is what the sidebar keys its sections
+ * on (two headerless sections can be composed together, e.g. the reviewer's
+ * Review Center on top of the student IA).
+ */
+export type NavSection = { id: string; section: string; items: NavItem[] };
 
 /**
  * Student information architecture.
@@ -50,6 +55,7 @@ export type NavSection = { section: string; items: NavItem[] };
  */
 export const studentNav: NavSection[] = [
   {
+    id: "student-main",
     section: "",
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -89,6 +95,7 @@ export const studentNav: NavSection[] = [
  * top of the student sidebar only for reviewers — see StudentAppShell.
  */
 export const reviewNavSection: NavSection = {
+  id: "review-center",
   section: "",
   items: [{ href: "/review-center", label: "Review Center", icon: ShieldCheck }],
 };
@@ -99,6 +106,7 @@ export const reviewNavSection: NavSection = {
  * showing them the page would be a broken link rather than a permission lesson.
  */
 export const supportTeacherNavSection: NavSection = {
+  id: "teacher-support",
   section: "Support",
   items: [{ href: "/teacher/support", label: "Support sessions", icon: LifeBuoy, isNew: true }],
 };
@@ -106,6 +114,7 @@ export const supportTeacherNavSection: NavSection = {
 /** Teacher information architecture (see docs/UI_REBUILD_IA.md §5). */
 export const teacherNav: NavSection[] = [
   {
+    id: "teacher-main",
     section: "",
     items: [
       { href: "/teacher", label: "Dashboard", icon: LayoutDashboard },
@@ -113,6 +122,7 @@ export const teacherNav: NavSection[] = [
     ],
   },
   {
+    id: "teacher-classroom",
     section: "Classroom",
     items: [
       { href: "/teacher/classrooms", label: "Classrooms", icon: School },
@@ -125,6 +135,7 @@ export const teacherNav: NavSection[] = [
     ],
   },
   {
+    id: "teacher-grading",
     section: "Grading",
     items: [
       { href: "/teacher/homework", label: "Homework", icon: ClipboardList },

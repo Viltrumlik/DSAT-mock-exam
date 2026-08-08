@@ -371,12 +371,9 @@ export function AppShell({
               No sections match.
             </p>
           ) : (
-            filteredNav.map(({ section, items }, sIdx) => (
+            filteredNav.map(({ id, section, items }, sIdx) => (
               <div
-                // Index, not `section`: a reviewer's nav is `reviewNavSection` prepended to
-                // the student one and BOTH have an empty section name, so keying on it gave
-                // two children the same key and React warned on every render.
-                key={`${sIdx}-${section}`}
+                key={id}
                 className="flex flex-col gap-[7px]"
                 style={{ animation: "dz-sectionIn .42s cubic-bezier(.22,1,.36,1) both", animationDelay: `${sIdx * 60}ms` }}
               >
