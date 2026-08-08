@@ -168,7 +168,7 @@ export function SetOverview({ setId }: { setId: number }) {
         </div>
       </section>
 
-      <WordList words={set.words} />
+      <WordList words={set.words} setId={set.id} />
     </div>
   );
 }
