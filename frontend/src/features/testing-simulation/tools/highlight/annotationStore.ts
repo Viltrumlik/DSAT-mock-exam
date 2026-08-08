@@ -123,6 +123,57 @@ export function primeAnnotations(
   }
 }
 
+/** `ts.annot.<attempt>.<question>.<container>` → the two ids, or null if it is not one. */
+function parseKey(k: string, attemptId: string): { questionId: number; container: string } | null {
+  const prefix = `ts.annot.${attemptId}.`;
+  if (!k.startsWith(prefix)) return null;
+  const rest = k.slice(prefix.length);
+  const dot = rest.indexOf(".");
+  if (dot <= 0) return null; // the legacy two-part shape; migrated on read, not here
+  const questionId = Number(rest.slice(0, dot));
+  const container = rest.slice(dot + 1);
+  if (!Number.isFinite(questionId) || !container) return null;
+  return { questionId, container };
+}
+
+/**
+ * Send marks this browser holds that the server has never seen.
+ *
+ * Everything highlighted before the server existed lives in localStorage alone, so a student
+ * opening review on their phone would find a blank paper and reasonably conclude the feature
+ * is broken. This uploads it once, the first time they open that attempt in the browser that
+ * has it.
+ *
+ * **The server wins where both have a row.** A local copy could be stale — an older device,
+ * or a tab left open across a change made elsewhere — and overwriting the server with it
+ * would lose the newer marks. Only regions the server has no row for are sent, which is
+ * exactly the pre-server case and nothing else.
+ */
+export function backfillLocalAnnotations(
+  attemptId: number | string,
+  serverRows: AnnotationRow[],
+): void {
+  if (typeof window === "undefined" || !syncScope || syncRef === null) return;
+  const id = String(attemptId);
+  const known = new Set(serverRows.map((r) => key(attemptId, r.target_id, r.container)));
+
+  let localKeys: string[];
+  try {
+    localKeys = Object.keys(localStorage);
+  } catch {
+    return; // storage unavailable (private mode, quota) — nothing to backfill from
+  }
+
+  for (const k of localKeys) {
+    if (known.has(k)) continue;
+    const parsed = parseKey(k, id);
+    if (!parsed) continue;
+    const anns = readKey(k);
+    if (!anns || anns.length === 0) continue;
+    push(attemptId, parsed.questionId, parsed.container, anns);
+  }
+}
+
 function push(attemptId: number | string, questionId: number, container: string, anns: Annotation[]): void {
   if (!syncScope || syncRef === null) return;
   const scope = syncScope;

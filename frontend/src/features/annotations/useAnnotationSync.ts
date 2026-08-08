@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 
 import {
+  backfillLocalAnnotations,
   clearAnnotationSync,
   flushAnnotations,
   primeAnnotations,
@@ -48,6 +49,10 @@ export function useAnnotationSync(
       .then((rows) => {
         if (cancelled) return;
         primeAnnotations(ref, rows);
+        // Everything marked before this feature existed is in localStorage alone. Upload it
+        // once, or a student opening review on their phone finds a blank paper and concludes
+        // the highlighter is broken. Server rows win where both exist — see the store.
+        backfillLocalAnnotations(ref, rows);
       })
       .catch(() => {
         /* localStorage is the fallback — see the docstring. */
