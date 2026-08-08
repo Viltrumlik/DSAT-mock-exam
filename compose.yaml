@@ -1,0 +1,92 @@
+# Production topology, containerised. Read deploy/DOCKER.md before running this anywhere real.
+#
+# What is deliberately NOT in here:
+#
+#   Postgres. The database stays on the host, where it is today, with its own backups and its
+#   own upgrade cadence. Putting it in compose would make `docker compose down -v` a data-loss
+#   command and tie the school's data to this file's lifecycle. `host.docker.internal` reaches
+#   it; on Linux that name needs the `extra_hosts` line below.
+#
+#   Nginx. TLS, the maintenance page and the 502→503 rewrite live in the host's nginx and are
+#   updated by hand on purpose (deploy/RELEASE_LAYOUT.md says so, and a bad automated nginx
+#   push takes the site down with no way back in). These containers listen on localhost ports
+#   and nginx proxies to them exactly as it proxies to PM2 today.
+#
+# Secrets come from shared/backend.env at RUNTIME. Never `source` it and never COPY it into an
+# image — the values differ per environment and an image is a thing you push to a registry.
+
+x-backend-common: &backend-common
+  image: ghcr.io/viltrumlik/dsat-backend:${IMAGE_TAG:-latest}
+  restart: unless-stopped
+  env_file:
+    - /var/www/satapp/shared/backend.env
+  extra_hosts:
+    # Linux docker has no host.docker.internal by default; this is how the containers find
+    # Postgres and Redis running on the VPS itself.
+    - "host.docker.internal:host-gateway"
+  volumes:
+    # Uploads survive releases because they live on the host, exactly as they do now.
+    - /var/www/satapp/shared/media:/app/media
+    # Celery beat writes a shelve DB. It crash-looped on the old layout for precisely this
+    # reason — the per-release tree was root-owned and beat runs as a service user.
+    - /var/www/satapp/shared/celery:/var/celery
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  backend:
+    <<: *backend-common
+    command:
+      - gunicorn
+      - config.wsgi:application
+      - --bind=0.0.0.0:8000
+      - --workers=3
+      - --timeout=120
+      - --access-logfile=-
+      - --error-logfile=-
+    ports:
+      # Bound to loopback: nginx is the only thing that should reach it.
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/live/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  celery-worker:
+    <<: *backend-common
+    command: ["celery", "-A", "config", "worker", "-l", "INFO", "--concurrency=2"]
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  celery-beat:
+    <<: *backend-common
+    command:
+      - celery
+      - -A
+      - config
+      - beat
+      - -l
+      - INFO
+      - --schedule=/var/celery/celerybeat-schedule
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/viltrumlik/dsat-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }

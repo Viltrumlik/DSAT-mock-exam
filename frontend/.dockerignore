@@ -1,0 +1,16 @@
+# node_modules is deliberately excluded: the deps stage runs `npm ci` from the lockfile, so a
+# developer's platform-specific install never reaches the build.
+node_modules/
+.next/
+out/
+build/
+
+.env
+.env.*
+!.env.example
+
+test-results/
+playwright-report/
+coverage/
+*.log
+.DS_Store

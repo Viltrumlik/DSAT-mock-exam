@@ -1,0 +1,28 @@
+# Keep the build context small and, more importantly, keep secrets and local state OUT of it.
+# Anything listed here that reached the image would either bloat it or leak.
+
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Local databases. `db.sqlite3` in an image would be served real traffic on a bad day.
+*.sqlite3
+*.sqlite3-journal
+
+# Secrets never enter the image — production reads shared/backend.env at runtime via compose.
+.env
+.env.*
+!.env.example
+
+# Runtime output, not source.
+staticfiles/
+media/
+email_previews/
+logs/
+*.log
+
+.pytest_cache/
+.coverage
+htmlcov/
