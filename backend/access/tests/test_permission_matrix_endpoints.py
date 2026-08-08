@@ -105,9 +105,19 @@ class PermissionMatrixEndpointSmokeTests(TestCase):
     def test_questions_authoring_list_tests_matrix(self):
         """
         /api/exams/admin/tests/ (questions.*) is content-authoring surface: staff authoring only.
+
+        Teachers were added deliberately — see ``access.services.can_manage_questions``,
+        "Authoring rights extended to teachers so they can prepare their own assessments,
+        mock exams, and practice tests for their classrooms." This matrix kept the older
+        answer, and nothing said so while backend CI was down.
         """
         url = "/api/exams/admin/tests/"
-        allowed = {acc_const.ROLE_TEST_ADMIN, acc_const.ROLE_ADMIN, acc_const.ROLE_SUPER_ADMIN}
+        allowed = {
+            acc_const.ROLE_TEACHER,
+            acc_const.ROLE_TEST_ADMIN,
+            acc_const.ROLE_ADMIN,
+            acc_const.ROLE_SUPER_ADMIN,
+        }
         for ru in self._role_users:
             c = self._as(ru.user)
             r = c.get(url, **_QUESTIONS_HOST)
@@ -119,6 +129,13 @@ class PermissionMatrixEndpointSmokeTests(TestCase):
     def test_admin_bulk_assign_matrix(self):
         """
         /api/exams/bulk_assign/ (admin.*) is staff assignment surface.
+
+        ``test_admin`` is not on the list. The gate is ``BulkAssignAccess``, which asks for
+        ``assign_access`` in each subject the payload touches; unlike ``manage_tests``, no
+        role implies it, and this fixture's tester holds no grant. The host guard letting
+        testers onto ``admin.*`` for bulk-assign is a separate, coarser thing — reaching the
+        console is not the same as being entitled to assign. A real tester who has been
+        granted ``assign_access`` still passes.
         """
         url = "/api/exams/bulk_assign/"
         # Target student assignment so view can proceed when authorized.
@@ -128,7 +145,7 @@ class PermissionMatrixEndpointSmokeTests(TestCase):
             "exam_ids": [],
             "assignment_type": "FULL",
         }
-        allowed = {acc_const.ROLE_TEACHER, acc_const.ROLE_TEST_ADMIN, acc_const.ROLE_ADMIN, acc_const.ROLE_SUPER_ADMIN}
+        allowed = {acc_const.ROLE_TEACHER, acc_const.ROLE_ADMIN, acc_const.ROLE_SUPER_ADMIN}
         for ru in self._role_users:
             c = self._as(ru.user)
             r = c.post(url, data=payload, format="json", **_ADMIN_HOST)
@@ -142,9 +159,13 @@ class PermissionMatrixEndpointSmokeTests(TestCase):
     def test_classes_directory_matrix(self):
         """
         /api/classes/directory/ is privileged listing (not membership-scoped).
+
+        ``admin`` belongs here: the view states its own rule as "governance: admin /
+        super_admin / superuser", and the ops console's subject → level → classroom picker
+        reads it. This matrix was written before that.
         """
         url = "/api/classes/directory/"
-        allowed = {acc_const.ROLE_SUPER_ADMIN}
+        allowed = {acc_const.ROLE_ADMIN, acc_const.ROLE_SUPER_ADMIN}
         for ru in self._role_users:
             c = self._as(ru.user)
             r = c.get(url)

@@ -29,11 +29,14 @@ class CanManageQuestionsTests(TestCase):
         u = User.objects.create_user(email="stq@example.com", password="x", role=C.ROLE_STUDENT)
         self.assertFalse(can_manage_questions(u))
 
-    def test_teacher_cannot_manage_questions(self):
+    def test_teacher_can_manage_questions(self):
+        # Extended to teachers on purpose so they can prepare their own assessments, mock
+        # exams and practice tests — see the docstring on ``can_manage_questions``. This read
+        # ``cannot`` until now, and had been failing into a dead CI since the change landed.
         u = User.objects.create_user(
             email="tq@example.com", password="x", role=C.ROLE_TEACHER, subject=C.DOMAIN_MATH
         )
-        self.assertFalse(can_manage_questions(u))
+        self.assertTrue(can_manage_questions(u))
 
     def test_test_admin_can_manage_questions(self):
         u = User.objects.create_user(email="taq@example.com", password="x", role=C.ROLE_TEST_ADMIN)
