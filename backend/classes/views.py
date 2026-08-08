@@ -2230,35 +2230,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         seen_ids: set[int] = set()
         ordered_ids = [sid for sid in wanted_ids if not (sid in seen_ids or seen_ids.add(sid))]
 
-        for sid in ordered_ids:
-            try:
-                from assessments.models import AssessmentSet, HomeworkAssignment as AssessHW
-                aset = AssessmentSet.objects.get(pk=sid)
-                # A homework is a plain classroom↔set link; content is served LIVE from
-                # the set's questions at attempt time, so teacher edits reach every
-                # not-yet-started attempt automatically (no snapshot to pin/resync).
-                try:
-                    with transaction.atomic():
-                        AssessHW.objects.create(
-                            classroom=classroom,
-                            assessment_set=aset,
-                            assignment=assignment,
-                            assigned_by=request.user,
-                        )
-                except IntegrityError:
-                    # Set already assigned to this classroom (uniq_assessment_hw_classroom_set):
-                    # a re-assign of an already-given set is idempotent — skip it.
-                    logger.info(
-                        "assessment set %s already assigned to classroom %s; skipping",
-                        sid, classroom.pk,
-                    )
-            except AssessmentSet.DoesNotExist:
-                logger.warning("assessment_set_id=%s not found; skipping", sid)
-            except Exception:
-                logger.exception(
-                    "Failed to create assessment homework for assignment_id=%s set_id=%s",
-                    assignment.pk, sid,
-                )
+        # A homework is a plain classroom↔set link; content is served LIVE from the set's
+        # questions at attempt time, so teacher edits reach every not-yet-started attempt
+        # automatically (no snapshot to pin/resync).
+        content_warnings = self._attach_assessment_sets(request, assignment, ordered_ids)
 
         # Vocabulary sets — reconcile against an empty set of existing links, which is
         # exactly "attach every selected set" on a freshly created assignment.
@@ -2277,7 +2252,57 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
         self._apply_video(request, assignment)
 
-        return Response(self.get_serializer(assignment).data, status=status.HTTP_201_CREATED)
+        data = self.get_serializer(assignment).data
+        if content_warnings:
+            data["content_warnings"] = content_warnings
+        return Response(data, status=status.HTTP_201_CREATED)
+
+    @staticmethod
+    def _attach_assessment_sets(request, assignment, set_ids) -> list[str]:
+        """Attach each selected assessment set to ``assignment``.
+
+        Returns a list of human-readable warnings for every set that did NOT make it, so
+        the caller can tell the teacher. ``uniq_assessment_hw_classroom_set`` lets a set
+        reach a classroom only ONCE, ever: a set the class already has (from an earlier
+        homework, or opened as classwork) stays on that older assignment and cannot be
+        bound to this one. Swallowing that silently is what produced a homework whose
+        instructions promised an assessment the student had no way to open — the whole
+        card simply never rendered, and the teacher saw a clean success.
+
+        Mirrors journals.delivery, which already reports its skipped sets this way.
+        """
+        from assessments.domain.homework_versioning import attach_assessment_set
+
+        warnings: list[str] = []
+        for sid in set_ids:
+            try:
+                homework, created = attach_assessment_set(
+                    classroom=assignment.classroom,
+                    assignment=assignment,
+                    set_id=sid,
+                    actor=request.user,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to create assessment homework for assignment_id=%s set_id=%s",
+                    assignment.pk, sid,
+                )
+                warnings.append(f"Assessment #{sid} could not be attached.")
+                continue
+            if homework is None:
+                logger.warning("assessment_set_id=%s not found; skipping", sid)
+                warnings.append(f"Assessment #{sid} no longer exists.")
+            elif not created:
+                title = getattr(homework.assessment_set, "title", None) or f"#{sid}"
+                logger.info(
+                    "assessment set %s already assigned to classroom %s; not attached to assignment %s",
+                    sid, assignment.classroom_id, assignment.pk,
+                )
+                warnings.append(
+                    f"“{title}” was already given to this class, so it is not part of this "
+                    f"homework — students open it from the homework it was first given with."
+                )
+        return warnings
 
     def _apply_video(self, request, assignment):
         """Reconcile the lesson video after the serializer set ``video_url``.
@@ -2373,8 +2398,9 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         # who edited an assignment to add/change an assessment saw nothing happen
         # (reported bug). Only reconcile when the client actually sends the key so a
         # partial edit that omits assessments leaves existing links untouched.
+        content_warnings: list[str] = []
         if "assessment_set_ids" in request.data or "assessment_set_id" in request.data:
-            self._reconcile_assessment_homeworks(request, assignment)
+            content_warnings = self._reconcile_assessment_homeworks(request, assignment)
 
         # Same rule for vocabulary: only touch the links when the client actually sends
         # the key, so a partial edit that omits vocabulary leaves the selection alone.
@@ -2384,17 +2410,19 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
         self._apply_video(request, assignment)
 
-        return Response(self.get_serializer(assignment).data)
+        data = self.get_serializer(assignment).data
+        if content_warnings:
+            data["content_warnings"] = content_warnings
+        return Response(data)
 
-    def _reconcile_assessment_homeworks(self, request, assignment):
+    def _reconcile_assessment_homeworks(self, request, assignment) -> list[str]:
         """Bring an assignment's attached assessments in line with the selection sent
         on edit. Adds newly-selected sets (mirroring create()) and detaches de-selected
         ones — but never deletes a homework that has student attempts (they would
-        CASCADE-delete with the HomeworkAssignment)."""
-        from assessments.models import AssessmentSet, HomeworkAssignment as AssessHW
+        CASCADE-delete with the HomeworkAssignment).
 
-        classroom = assignment.classroom
-
+        Returns the warnings for sets that could not be attached (see
+        ``_attach_assessment_sets``)."""
         # Parse wanted set ids the same way create() does (JSON string or list + legacy id).
         raw_ids = request.data.get("assessment_set_ids")
         wanted_ids: list[int] = []
@@ -2422,36 +2450,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
         existing = {hw.assessment_set_id: hw for hw in assignment.assessment_homeworks.all()}
 
-        # Attach newly-selected sets.
-        for sid in wanted:
-            if sid in existing:
-                continue
-            try:
-                aset = AssessmentSet.objects.get(pk=sid)
-            except AssessmentSet.DoesNotExist:
-                logger.warning("assessment_set_id=%s not found on edit; skipping", sid)
-                continue
-            try:
-                try:
-                    with transaction.atomic():
-                        AssessHW.objects.create(
-                            classroom=classroom,
-                            assessment_set=aset,
-                            assignment=assignment,
-                            assigned_by=request.user,
-                        )
-                except IntegrityError:
-                    # Set already assigned to this classroom via another assignment
-                    # (uniq_assessment_hw_classroom_set) — can't attach it here too.
-                    logger.info(
-                        "assessment set %s already assigned to classroom %s; not re-attaching on edit",
-                        sid, classroom.pk,
-                    )
-            except Exception:
-                logger.exception(
-                    "Failed to attach assessment homework on edit assignment_id=%s set_id=%s",
-                    assignment.pk, sid,
-                )
+        # Attach newly-selected sets — same helper (and same warnings) as create().
+        warnings = self._attach_assessment_sets(
+            request, assignment, [sid for sid in wanted if sid not in existing]
+        )
 
         # Detach de-selected sets — but keep any a student has already started.
         for set_id, hw in existing.items():
@@ -2470,6 +2472,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                     "Failed to detach assessment set %s from assignment %s",
                     set_id, assignment.pk,
                 )
+
+        return warnings
 
     def _reconcile_vocab_homeworks(self, request, assignment):
         """Bring an assignment's attached vocabulary sets in line with the selection.

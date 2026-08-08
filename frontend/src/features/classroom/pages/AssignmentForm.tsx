@@ -119,6 +119,19 @@ function readAttachments(a: Record<string, unknown> | null | undefined): Attachm
     .filter((x): x is AttachmentObj => x != null);
 }
 
+/**
+ * Content the server could NOT attach to the homework it just saved (e.g. an assessment
+ * set this class already has — it reaches a classroom only once). The save succeeds, so
+ * these have to be read off the 2xx body and shown, or the homework goes out promising
+ * content the student has no way to open.
+ */
+function readContentWarnings(res: unknown): string[] {
+  if (!res || typeof res !== "object") return [];
+  const raw = (res as { content_warnings?: unknown }).content_warnings;
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => String(x)).filter(Boolean);
+}
+
 // A live-cart entry (aggregates selections across every tab in the left column).
 type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment" | "vocabulary"; title: string; meta: string; assigned: boolean; onRemove: () => void };
 
@@ -137,6 +150,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [allowFileUpload, setAllowFileUpload] = useState(false);
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
+  // Sets this assignment ALREADY holds (captured on edit-hydrate). They read as
+  // "already assigned" to the class — because they are, by this homework — so they must
+  // stay pickable even after the teacher toggles one off and changes their mind.
+  const [ownAssessmentSetIds, setOwnAssessmentSetIds] = useState<Set<number>>(new Set());
   const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
   const [selectedVocabSetIds, setSelectedVocabSetIds] = useState<Set<number>>(new Set());
   // Deadline is composed from two dropdowns (no calendar): a date (next 7 days) + a time.
@@ -174,6 +191,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const [asgOptionsError, setAsgOptionsError] = useState<string | null>(null);
   const [creatingAsg, setCreatingAsg] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // Saved, but the server could not attach something the teacher picked. Shown instead
+  // of navigating away, so the homework never quietly goes out missing its content.
+  const [contentWarnings, setContentWarnings] = useState<string[]>([]);
+  const [savedId, setSavedId] = useState<number | null>(null);
 
   const domainSubject = classroomSubject === "MATH" ? "math" : classroomSubject === "ENGLISH" ? "english" : "";
   const allowedSources = useMemo(() => allowedSourcesForSubject(domainSubject), [domainSubject]);
@@ -271,12 +292,15 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     setAllowFileUpload(false);
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
+    setOwnAssessmentSetIds(new Set());
     setSelectedPackIds(new Set());
     setSelectedVocabSetIds(new Set());
     setAsgFiles([]);
     setReplaceAttachments(false);
     setEditAsgFiles([]);
     setFormError(null);
+    setContentWarnings([]);
+    setSavedId(null);
   };
 
   // Load resource options (already class-subject filtered by the backend).
@@ -366,6 +390,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       if (Number.isFinite(sid)) nextAssessmentIds.add(sid);
     }
     setSelectedAssessmentIds(nextAssessmentIds);
+    setOwnAssessmentSetIds(new Set(nextAssessmentIds));
 
     // ── Practice packs ── multi `practice_test_pack_ids` and/or legacy single `practice_test_pack`.
     const nextPackIds = new Set<number>();
@@ -424,6 +449,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     allowUnapproved = false,
   ) => {
     setFormError(null);
+    setContentWarnings([]);
     // Guard: warn before assigning an assessment that isn't approved yet so a
     // teacher doesn't hand out an incomplete/unchecked set by mistake. The backend
     // enforces the same gate — allow_unapproved is only sent after the teacher agrees.
@@ -468,11 +494,19 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
           allow_unapproved: allowUnapproved,
         };
 
-        await classesApi.updateAssignment(classId, editId, body);
+        const updated = await classesApi.updateAssignment(classId, editId, body);
         if (replaceAttachments || editAsgFiles.length > 0) {
           const fd = new FormData();
           for (const f of editAsgFiles) fd.append("attachment_file", f);
           await classesApi.updateAssignment(classId, editId, fd, true, { replaceAttachments });
+        }
+        const editWarnings = readContentWarnings(updated);
+        if (editWarnings.length > 0) {
+          // Saved, but something the teacher selected did not make it in. Stay on the
+          // form and say so — a homework that quietly lost its content is exactly the
+          // bug this replaces.
+          setContentWarnings(editWarnings);
+          return;
         }
         await onSaved(editId);
         return;
@@ -508,6 +542,12 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       fd.append("status", publishStatus);
       const created = await classesApi.createAssignment(classId, fd, true);
       const createdId = created && typeof created === "object" && "id" in created ? Number((created as { id: number }).id) : undefined;
+      const createWarnings = readContentWarnings(created);
+      if (createWarnings.length > 0) {
+        setContentWarnings(createWarnings);
+        setSavedId(Number.isFinite(createdId) ? (createdId as number) : null);
+        return;
+      }
       await onSaved(Number.isFinite(createdId) ? createdId : undefined);
     } catch (e: unknown) {
       setFormError(formatApiErrorForToast(e));
@@ -537,6 +577,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   };
   const handleAssessmentSelect = (aset: AssessmentSetOption) => {
     const wasSel = selectedAssessmentIds.has(aset.id);
+    // Backstop for the disabled card: adding a set the class already has cannot work
+    // (uniq_assessment_hw_classroom_set), and would save a homework with no assessment.
+    // A set this assignment itself holds is exempt — re-adding it is a plain no-op edit.
+    if (!wasSel && aset.already_assigned && !ownAssessmentSetIds.has(aset.id)) return;
     setSelectedAssessmentIds((prev) => {
       const next = new Set(prev);
       if (wasSel) next.delete(aset.id);
@@ -656,29 +700,41 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
   const searchInputCls = `${crInputClass} pl-10`;
 
   // Reusable pick-card shell (check-circle top-right, hover lift, selected accent).
-  function PickCard({ selected, given, onClick, children }: {
-    selected: boolean; given?: boolean; onClick: () => void; children: React.ReactNode;
+  function PickCard({ selected, given, blocked, blockedNote, onClick, children }: {
+    selected: boolean; given?: boolean; blocked?: boolean; blockedNote?: string;
+    onClick: () => void; children: React.ReactNode;
   }) {
     return (
       <button
         type="button"
-        onClick={onClick}
+        onClick={blocked ? undefined : onClick}
+        disabled={blocked}
         aria-pressed={selected}
-        className={`cr-press relative flex w-full flex-col gap-1.5 rounded-[14px] border-[1.5px] p-4 pr-9 text-left transition-all duration-150 hover:-translate-y-0.5 hover:border-primary hover:shadow-md ${
+        title={blocked ? blockedNote : undefined}
+        className={`cr-press relative flex w-full flex-col gap-1.5 rounded-[14px] border-[1.5px] p-4 pr-9 text-left transition-all duration-150 ${
+          blocked
+            ? "cursor-not-allowed border-border bg-surface-2 opacity-60"
+            : "hover:-translate-y-0.5 hover:border-primary hover:shadow-md"
+        } ${
           selected ? "border-primary bg-primary/10 shadow-[0_0_0_1px_var(--primary)]" : "border-border bg-card"
         }`}
       >
-        <span className={`absolute right-3.5 top-3.5 flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-all ${
-          selected ? "border-primary bg-primary text-white" : "border-border bg-background text-transparent"
-        }`}>
-          <Check className="h-3 w-3" strokeWidth={3} />
-        </span>
+        {!blocked && (
+          <span className={`absolute right-3.5 top-3.5 flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-all ${
+            selected ? "border-primary bg-primary text-white" : "border-border bg-background text-transparent"
+          }`}>
+            <Check className="h-3 w-3" strokeWidth={3} />
+          </span>
+        )}
         {children}
         {given ? (
           <span className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wide text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-            title="Already assigned to this class in an earlier assignment">
+            title={blockedNote || "Already assigned to this class in an earlier assignment"}>
             <Clock className="h-2.5 w-2.5" /> Already assigned
           </span>
+        ) : null}
+        {blocked && blockedNote ? (
+          <span className="mt-0.5 text-[11px] font-semibold leading-snug text-muted-foreground">{blockedNote}</span>
         ) : null}
       </button>
     );
@@ -708,8 +764,22 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
     );
   };
 
+  // An assessment set reaches a classroom only ONCE, ever (uniq_assessment_hw_classroom_set):
+  // a set another homework already carries CANNOT be attached here, and picking it used to
+  // produce a homework with no assessment in it at all. Block it at the source. A set this
+  // assignment already holds stays clickable so an edit can still remove it.
+  const assessmentBlocked = (aset: AssessmentSetOption, given: boolean) =>
+    given && !selectedAssessmentIds.has(aset.id) && !ownAssessmentSetIds.has(aset.id);
+
   const renderAssessmentCard = (aset: AssessmentSetOption, given: boolean) => (
-    <PickCard key={aset.id} selected={selectedAssessmentIds.has(aset.id)} given={given} onClick={() => handleAssessmentSelect(aset)}>
+    <PickCard
+      key={aset.id}
+      selected={selectedAssessmentIds.has(aset.id)}
+      given={given}
+      blocked={assessmentBlocked(aset, given)}
+      blockedNote="This class already has this assessment from an earlier homework — students open it there."
+      onClick={() => handleAssessmentSelect(aset)}
+    >
       <span className="flex flex-wrap items-center gap-1.5">
         <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
           aset.subject === "math" ? "bg-[#6d4ec7]/12 text-[#6d4ec7] dark:bg-purple-900/40 dark:text-purple-300" : "bg-primary/10 text-primary"
@@ -806,6 +876,26 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       </div>
 
       {formError ? <div className="mb-4"><ClassroomAlert tone="error">{formError}</ClassroomAlert></div> : null}
+      {contentWarnings.length > 0 ? (
+        <div className="mb-4">
+          <ClassroomAlert tone="warning" title="Homework saved — but some content did not go with it">
+            <ul className="list-disc space-y-1 pl-5">
+              {contentWarnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+            <button
+              type="button"
+              className="mt-3 rounded-lg bg-amber-600 px-3 py-1.5 text-[13px] font-bold text-white hover:bg-amber-700"
+              onClick={() => {
+                setContentWarnings([]);
+                const fallback = Number(editingAssignment?.id);
+                void onSaved(savedId ?? (Number.isFinite(fallback) ? fallback : undefined));
+              }}
+            >
+              Got it — open the homework
+            </button>
+          </ClassroomAlert>
+        </div>
+      ) : null}
       {asgOptionsError ? <div className="mb-4"><ClassroomAlert tone="warning">{asgOptionsError}</ClassroomAlert></div> : null}
 
       {/* ── Builder split pane ── */}
