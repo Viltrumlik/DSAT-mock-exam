@@ -53,8 +53,21 @@ COPY --chown=satapp:satapp . /app
 
 # collectstatic at build time, not on every boot: the inputs are in the image, so the output
 # is too, and three containers starting from one image must not race each other writing it.
-# A dummy key because settings refuses to import without one; nothing secret is baked.
-RUN SECRET_KEY=build-only DEBUG=False ALLOWED_HOSTS=localhost \
+#
+# The env here is placeholder, and every line of it is required just to *import* settings with
+# DEBUG=False — which is the right way to build, because it is the configuration that runs:
+#   SECRET_KEY    — settings will not import without one
+#   DATABASE_URL  — "must be set in production" (settings.py)
+#   REDIS_URL     — CLASSROOM_ENFORCE_REDIS_CACHE / ASSESSMENT_ENFORCE_REDIS_CACHE default ON
+#                   when DEBUG is off, and ClassesConfig.ready() refuses a LocMem cache
+# Nothing secret is baked and nothing connects: collectstatic only walks static dirs, and
+# Django's Redis cache dials lazily. Both hosts are deliberately non-existent names, so if
+# anything ever does try to connect it fails loudly instead of quietly reaching something real.
+RUN SECRET_KEY=build-only \
+    DEBUG=False \
+    ALLOWED_HOSTS=localhost \
+    DATABASE_URL=postgres://build:build@collectstatic-never-connects:5432/build \
+    REDIS_URL=redis://collectstatic-never-connects:6379/0 \
     python manage.py collectstatic --noinput \
     && chown -R satapp:satapp /app/staticfiles
 
