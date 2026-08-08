@@ -244,32 +244,56 @@ class AttendanceFinalizeIsOnceTests(_ClassFixture):
         self.assertEqual(AttendanceRecord.objects.get(session=session, student=self.s1).status, P)
 
 
-class AttendanceIsNotOnTheLeaderboardTests(_ClassFixture):
-    """Attendance no longer feeds the Academic ranking.
+class AttendanceOnTheLeaderboardTests(_ClassFixture):
+    """Attendance is back on the Academic board — through the reward ledger, not the weights.
 
-    It used to, via ``AcademicWeightConfig.w_attendance``. The board is now "assessment
-    points banked since the class opened", so being present is tracked and reported by the
-    attendance surfaces but does not add rank. Pinned in both directions: the weight column
-    still exists on the model, and setting it must NOT quietly bring the old behaviour back.
+    Three different answers over this project's life, so the distinction matters:
+
+    1. it fed the board through ``AcademicWeightConfig.w_attendance``, a weighted model nobody
+       could explain at the board;
+    2. it fed nothing, while the board was "assessment points banked since the class opened";
+    3. **now**: showing up earns a `PointAward` at the rule's rate, and the board sums the
+       ledger. Same visible outcome as (1), completely different mechanism — a student can be
+       told "you were here five times, that is five awards" and check it.
+
+    Pinned in both directions: attendance contributes, **and** the weight column that still
+    exists on the model must not quietly bring (1) back.
     """
 
-    def test_attendance_does_not_contribute_by_default(self):
-        s = self._session(0); self._mark(s, self.s1, P)   # present for every session
+    def _points_for_attendance(self):
+        from rewards import constants as rc
+        from rewards.services import points_for
+
+        return float(points_for(rc.EVENT_ATTENDANCE_PRESENT))
+
+    def test_being_present_earns_points_on_the_board(self):
+        s = self._session(0); self._mark(s, self.s1, P)
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         snap = RankingSnapshot.objects.get(
             classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.s1)
-        self.assertEqual(float(snap.score), 0.0)
-        self.assertNotIn("category_scores", snap.components)
+        self.assertEqual(float(snap.score), self._points_for_attendance())
+        self.assertEqual(snap.components["source"], "rewards")
+        self.assertEqual(snap.components["awards"], 1)
 
-    def test_weighting_attendance_still_does_not_contribute(self):
+    def test_a_student_who_stayed_away_earns_nothing(self):
+        s = self._session(0); self._mark(s, self.s1, P)
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        snap = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.s2)
+        self.assertEqual(float(snap.score), 0.0)
+
+    def test_the_old_weight_config_still_changes_nothing(self):
+        # `w_attendance` is dead weight on a live model. Setting it must not resurrect the
+        # weighted model — the board reads the ledger and consults this config nowhere.
         cfg, _ = AcademicWeightConfig.objects.get_or_create(classroom=self.classroom)
         cfg.w_homework = 0.35; cfg.w_quiz = 0; cfg.w_classwork = 0
         cfg.w_participation = 0; cfg.w_attendance = 0.15
         cfg.save()
-        s = self._session(0); self._mark(s, self.s1, P)   # attendance_score would be 100
+        s = self._session(0); self._mark(s, self.s1, P)
 
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         snap = RankingSnapshot.objects.get(
             classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.s1)
-        self.assertEqual(float(snap.score), 0.0)
-        self.assertEqual(snap.components["assessments_count"], 0)
+        # Exactly the attendance award, not a weighted blend of a 100% attendance score.
+        self.assertEqual(float(snap.score), self._points_for_attendance())
+        self.assertNotIn("category_scores", snap.components)
