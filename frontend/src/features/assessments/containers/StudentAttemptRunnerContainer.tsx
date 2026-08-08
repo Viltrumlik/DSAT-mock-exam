@@ -50,6 +50,7 @@ import { FullscreenWarning } from "@/features/testing-simulation/components/Full
 import { AssessmentText, processInstructionalText } from "@/lib/assessmentText";
 import StableHtml from "@/features/assessments/components/StableHtml";
 import { useAnnotator } from "@/features/testing-simulation/tools/highlight/useAnnotator";
+import { useAnnotationSync } from "@/features/annotations/useAnnotationSync";
 import { AnnotationToolbar } from "@/features/testing-simulation/tools/highlight/AnnotationToolbar";
 import { DesmosCalculator } from "@/features/testing-simulation/tools/calculator/DesmosCalculator";
 import {
@@ -1769,6 +1770,8 @@ function ExamSimulationView({
   // (the 1-second timer), math, navigation and refresh. The attemptId is
   // namespaced with "asmt-" so assessment highlights never collide with exam
   // attempts in the shared `ts.annot.*` localStorage.
+  // Same string as the annotator's attemptId below, deliberately — see useAnnotationSync.
+  useAnnotationSync("assessment", `asmt-${attemptId}`);
   const annotator = useAnnotator({
     attemptId: `asmt-${attemptId}`,
     questionId: questionId || undefined,

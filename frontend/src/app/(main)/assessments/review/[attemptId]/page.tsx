@@ -24,7 +24,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
-import { AssessmentText } from "@/lib/assessmentText";
+import { AssessmentText, processInstructionalText } from "@/lib/assessmentText";
+import StableHtml from "@/features/assessments/components/StableHtml";
+import { useAnnotationSync } from "@/features/annotations/useAnnotationSync";
+import { useAnnotationReplay } from "@/features/annotations/useAnnotationReplay";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { Avatar } from "@/components/ui/Avatar";
 import { Spinner } from "@/components/ui";
@@ -182,8 +185,36 @@ function ChoiceRow({
 
 // ─── Question deep-dive ──────────────────────────────────────────────────────
 
-function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; index: number; total: number }) {
+function QuestionDeepDive({
+  q, index, total, attemptId, annotationsReady,
+}: {
+  q: PedagogicalReviewQuestion;
+  index: number;
+  total: number;
+  attemptId: number;
+  annotationsReady: boolean;
+}) {
   const [reportOpen, setReportOpen] = useState(false);
+
+  // Refs, not ids: every question on this page renders at once, so a shared id would collide
+  // and `getElementById` would paint the first card's regions over and over.
+  const stemRef = useRef<HTMLDivElement>(null);
+  const stimulusRef = useRef<HTMLDivElement>(null);
+  useAnnotationReplay({
+    // The same key the runner writes under — see useAnnotationSync on why it is prefixed.
+    attemptId: `asmt-${attemptId}`,
+    questionId: q.id ?? null,
+    enabled: annotationsReady,
+    // The runner's container keys, which read backwards from the layout: "question" is the
+    // stem (`prompt`), "passage" is the stimulus (`question_prompt`). Keys follow the field
+    // the offsets were recorded against. "choices" is left out on purpose — review adds
+    // correct/incorrect text inside that region, shifting every offset in it.
+    getContainers: () => [
+      { key: "question", el: stemRef.current },
+      { key: "passage", el: stimulusRef.current },
+    ],
+  });
+
   const outcome = getQuestionOutcome(q);
   const meta = OUTCOME_META[outcome];
   const choices = Array.isArray(q.choices) ? q.choices : [];
@@ -226,12 +257,20 @@ function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; i
       />
 
       <div className="space-y-5 p-6 sm:p-7">
-        {/* main content — shown FIRST (Reading: the passage · Math: the question) */}
-        <AssessmentText
-          text={q.prompt}
-          block
-          className="rounded-2xl border border-border bg-surface-2 p-6 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
-        />
+        {/* main content — shown FIRST (Reading: the passage · Math: the question)
+            StableHtml + processInstructionalText, NOT AssessmentText: the runner renders this
+            exact field through this exact pipeline, so the rendered text is identical and the
+            stored character offsets land where the student put them.
+            MIND THE KEY. The runner's ids read backwards from what you would guess —
+            `assessment-question-content` (key "question") holds `prompt`, and
+            `assessment-passage-content` (key "passage") holds `question_prompt`. The keys are
+            what the offsets were filed under, so they follow the field, not the layout. */}
+        <div ref={stemRef} className="rounded-2xl border border-border bg-surface-2 p-6">
+          <StableHtml
+            className="font-[Georgia] text-base font-medium leading-relaxed text-foreground"
+            html={processInstructionalText(String(q.prompt ?? ""))}
+          />
+        </div>
 
         {/* figure (above the question prompt) */}
         {figure ? (
@@ -242,11 +281,12 @@ function QuestionDeepDive({ q, index, total }: { q: PedagogicalReviewQuestion; i
 
         {/* question prompt — shown AFTER the main content (Reading: the actual question) */}
         {q.question_prompt && q.question_prompt.trim().length > 0 ? (
-          <AssessmentText
-            text={q.question_prompt}
-            block
-            className="border-l-4 border-primary/50 bg-surface-2/50 py-2 pl-5 pr-4 font-[Georgia] text-base font-medium leading-relaxed text-foreground"
-          />
+          <div ref={stimulusRef} className="border-l-4 border-primary/50 bg-surface-2/50 py-2 pl-5 pr-4">
+            <StableHtml
+              className="font-[Georgia] text-base font-medium leading-relaxed text-foreground"
+              html={processInstructionalText(String(q.question_prompt))}
+            />
+          </div>
         ) : null}
 
         {/* answer analysis */}
@@ -323,6 +363,13 @@ function PedagogicalReviewContent() {
   const queryClient = useQueryClient();
 
   const attemptId = Number(params.attemptId);
+  // One request for the whole attempt's marks, before any question card paints. `ready` gates
+  // the painting: this page renders once and settles, so priming after the first paint would
+  // leave the highlights off screen until something else forced a re-render.
+  const { ready: annotationsReady } = useAnnotationSync(
+    "assessment",
+    Number.isFinite(attemptId) && attemptId > 0 ? `asmt-${attemptId}` : null,
+  );
   const initialQ = Number(searchParams.get("q") ?? "1") - 1;
 
   const [filter, setFilter] = useState<FilterMode>("all");
@@ -548,7 +595,13 @@ function PedagogicalReviewContent() {
             </button>
           </div>
         ) : current ? (
-          <QuestionDeepDive q={current} index={safeIndex} total={filteredQuestions.length} />
+          <QuestionDeepDive
+            q={current}
+            index={safeIndex}
+            total={filteredQuestions.length}
+            attemptId={attemptId}
+            annotationsReady={annotationsReady}
+          />
         ) : null}
       </div>
 
