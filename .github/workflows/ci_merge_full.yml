@@ -56,11 +56,7 @@ jobs:
       - name: Dead-code check
         run: npm run deadcode
       - name: Forbid direct "/api" strings outside API layers
-        run: |
-          rg -n "\"/api/" src \
-            --glob '!src/lib/api.ts' \
-            --glob '!src/features/**/api.ts' \
-            --glob '!src/lib/openapi-types.ts'
+        run: npm run check:api-layer
       - name: Generate OpenAPI types/client (must be up to date)
         run: |
           npm run gen:openapi

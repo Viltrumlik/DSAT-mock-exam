@@ -508,6 +508,28 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
     serializer_class = PracticeTestSerializer
 
+    def get_permissions(self):
+        """Honour an ``@action``'s own ``permission_classes`` even when it is routed by hand.
+
+        ``bulk_assign`` is wired in ``exams/urls.py`` as
+        ``PracticeTestViewSet.as_view({"post": "bulk_assign"})``, not by a router. The
+        decorator's kwargs reach the view **through the router** — DRF's own comment on
+        ``action`` says so — and a hand-written path passes none, so
+        ``permission_classes=[IsAuthenticated, BulkAssignAccess]`` was dropped and this
+        viewset's ``AllowAny`` (correct for the public practice catalogue) applied to an
+        assignment endpoint instead. A student POSTing it got 200 and a dispatch row; only
+        the view's own per-subject check kept a grant from being written.
+
+        Repeating the classes at the URL would fix this one route and drift from the
+        decorator later. Reading them off the handler makes the decorator authoritative
+        however the route is built.
+        """
+        handler = getattr(self, getattr(self, "action", "") or "", None)
+        declared = (getattr(handler, "kwargs", None) or {}).get("permission_classes")
+        if declared:
+            return [permission() for permission in declared]
+        return super().get_permissions()
+
     def get_queryset(self):
         """
         Anonymous + students + staff who can browse: ``filter_practice_tests_for_user`` (full bank

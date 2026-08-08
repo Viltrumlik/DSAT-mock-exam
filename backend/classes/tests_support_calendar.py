@@ -312,6 +312,59 @@ class RepublishOverAStudentRowTests(SupportFixture):
         self.assertEqual(slot.seats_left, 3)
 
 
+class TheLastThingPublishedGovernsTheHourTests(SupportFixture):
+    """A second publication over an hour must take effect, not lose to the first.
+
+    The write path keys on the exact ``starts_at``, so narrowing part of a wider block makes a
+    *second* row rather than editing the first. While the calendar picked the earliest-starting
+    overlap, that second row governed nothing: the teacher's edit vanished with a 201 and no
+    error, and the student kept seeing the old figure.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+
+    def _publish(self, hour_from, hour_to, **body):
+        self.client.force_authenticate(self.support)
+        return self.client.post("/api/classes/support/availability/", {
+            "starts_at": support_service._hour_start(self.tomorrow, hour_from).isoformat(),
+            "ends_at": support_service._hour_start(self.tomorrow, hour_to).isoformat(),
+            **body,
+        }, format="json")
+
+    def _cell(self, hour):
+        entry = support_service.open_calendar_for(self.student)[0]
+        day = next(d for d in entry["days"] if d["date"] == self.tomorrow)
+        return next(
+            h for h in day["hours"] if timezone.localtime(h["starts_at"]).hour == hour
+        )
+
+    def test_narrowing_one_hour_of_a_block_beats_the_block(self):
+        self._publish(14, 17, capacity=5, note="Open clinic")
+        self._publish(15, 16, capacity=2, note="Small group")
+
+        self.assertEqual(self._cell(15)["capacity"], 2)
+        self.assertEqual(self._cell(15)["note"], "Small group")
+        # The hours the narrower row does not cover still answer to the block.
+        self.assertEqual(self._cell(14)["capacity"], 5)
+        self.assertEqual(self._cell(16)["capacity"], 5)
+
+    def test_a_withdrawal_anywhere_in_the_hour_still_closes_it(self):
+        self._publish(14, 17, capacity=5)
+        slot = SupportAvailability.objects.get(
+            support_teacher=self.support,
+            starts_at=support_service._hour_start(self.tomorrow, 14),
+        )
+        slot.is_cancelled = True
+        slot.save(update_fields=["is_cancelled"])
+        self._publish(15, 16, capacity=2)
+
+        # Newest-wins applies among publications only — a blocked hour stays blocked, which is
+        # the safe direction when the two rows disagree.
+        self.assertEqual(self._cell(15)["state"], "closed")
+
+
 class TheMembershipAndTheAccountMustAgreeTests(SupportFixture):
     """A classroom TA membership alone does not make a support desk.
 
