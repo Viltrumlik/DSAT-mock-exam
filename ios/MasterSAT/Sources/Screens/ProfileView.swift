@@ -47,6 +47,31 @@ struct ProfileView: View {
                     }
                     .cardStyle(padding: 20)
 
+                    // Points lives behind Profile rather than in the tab bar, matching the
+                    // site: it is a running total worth glancing at, not a destination. The
+                    // web keeps it out of the sidebar and in the header for the same reason.
+                    NavigationLink { PointsView() } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "star.circle.fill")
+                                .font(.title2)
+                                .foregroundStyle(Theme.warning)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Points")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(Color.primary)
+                                Text("What you've earned so far")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.bold))
+                                .foregroundStyle(Theme.textLabel)
+                        }
+                        .cardStyle(padding: 16)
+                    }
+                    .buttonStyle(.plain)
+
                     VStack(alignment: .leading, spacing: 0) {
                         DetailRow(label: "Email", value: user.email)
                         Divider().padding(.leading, 4)
