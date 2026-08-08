@@ -139,13 +139,23 @@ def _row_covering(candidates, hour_start, hour_end):
     (09:30–10:30) matched nothing at all and were invisible.
 
     A withdrawal wins over a publication: if any part of the hour is blocked, the hour is not
-    free. Otherwise the earliest start wins, so the answer is stable.
+    free.
+
+    Among publications, **the most recently touched one governs**. Ordering by earliest start
+    instead was a regression this same overlap change introduced: the write path keys on the
+    exact ``starts_at``, so a teacher who published 14:00–17:00 and then narrowed 15:00–16:00
+    got a second row that no hour ever consulted — the older, wider block kept winning and the
+    edit read as a silent no-op.
+
+    ``updated_at``, not ``created_at`` or ``id``: republishing an hour updates the row in
+    place, so creation order stops tracking what the teacher last said. ``id`` breaks the tie
+    for two rows saved in the same tick, which keeps the answer a total order.
     """
     hits = [r for r in candidates if r.starts_at < hour_end and r.ends_at > hour_start]
     if not hits:
         return None
-    hits.sort(key=lambda r: (not r.is_cancelled, r.starts_at, r.id))
-    return hits[0]
+    blocked = [r for r in hits if r.is_cancelled]
+    return max(blocked or hits, key=lambda r: (r.updated_at, r.id))
 
 
 def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[dict]:
