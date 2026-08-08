@@ -12,7 +12,10 @@ import type { RankingKind, RankingRow } from "../rankingsApi";
 
 const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: string }> = {
   SAT: { title: "SAT", icon: Trophy, desc: "Each student's most recent past paper, out of the ones this class was given." },
-  ACADEMIC: { title: "Academic", icon: GraduationCap, desc: "Assessment points earned since this class opened." },
+  // The currency changed at the rewards cutover: this is the reward ledger now, not a sum of
+  // assessment scores. Naming the ways to earn is the point — a student who can see what
+  // moves the number can decide to move it.
+  ACADEMIC: { title: "Academic", icon: GraduationCap, desc: "Points earned in this class — attendance, homework and support sessions." },
 };
 
 // Foundation and junior classes sit past papers to build stamina, not to be placed against a

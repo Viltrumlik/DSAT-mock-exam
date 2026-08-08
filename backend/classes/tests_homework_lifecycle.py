@@ -89,51 +89,60 @@ class LifecycleEndpointTests(HomeworkLifecycleFixture):
         a.refresh_from_db(); self.assertEqual(a.status, "PUBLISHED")
 
 
-class HandGradedWorkOnTheLeaderboardTests(HomeworkLifecycleFixture):
-    """Academic counts assessment points AND work the teacher graded by hand.
+class AGradeDoesNotMoveTheLeaderboardTests(HomeworkLifecycleFixture):
+    """A teacher's mark is no longer a leaderboard input at all.
 
-    The rule that matters is what happens to work that is handed in but NOT yet marked: it
-    contributes nothing at all, rather than a zero. A leaderboard that scored unmarked work
-    as 0 would punish students for their teacher's backlog and would reshuffle every rank the
-    moment marking started.
+    This class used to assert the opposite — that `SubmissionReview.grade` was added to the
+    board in the same currency as an assessment's `score_points`, and that unmarked work
+    contributed nothing rather than a zero so a student was never punished for their
+    teacher's backlog.
+
+    The rewards cutover retired that whole path (`ranking/rules._hand_graded_points` is gone).
+    Homework earns through the reward ledger, scored **per bundle** in `rewards/homework.py`,
+    and a hand-in counts as done at **submitted** — not at graded. So the backlog guarantee is
+    not merely preserved, it is stronger: marking cannot move a student's points in either
+    direction, and the tests that hold it live in `rewards/tests_homework.py`, next to the
+    code that decides them.
+
+    What is worth keeping here is the negative: a raw grade must not leak onto the board.
     """
 
-    def setUp(self):
-        super().setUp()
-        # The academic window opens when the CLASS does, and the base fixture builds its
-        # classroom "now" — so backdated submissions would fall outside it. Open the class a
-        # month ago, which is what a real one that has homework in it looks like.
-        self.classroom.created_at = timezone.now() - timedelta(days=30)
-        self.classroom.save(update_fields=["created_at"])
-
-    def test_hand_graded_homework_counts_toward_the_score(self):
+    def test_a_hand_graded_mark_is_not_added_to_the_board(self):
         published = self._mk("Pub HW", Assignment.STATUS_PUBLISHED)
-        archived = self._mk("Old HW", Assignment.STATUS_ARCHIVED)
-        for a, grade in ((published, 80), (archived, 100)):
-            sub = Submission.objects.create(assignment=a, student=self.student, status=Submission.STATUS_REVIEWED,
-                                            submitted_at=timezone.now() - timedelta(days=1))
-            SubmissionReview.objects.create(submission=sub, teacher=self.owner, grade=grade)
+        sub = Submission.objects.create(
+            assignment=published, student=self.student, status=Submission.STATUS_REVIEWED,
+            submitted_at=timezone.now() - timedelta(days=1),
+        )
+        SubmissionReview.objects.create(submission=sub, teacher=self.owner, grade=80)
 
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
-        snap = RankingSnapshot.objects.get(classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student)
-        # Archived work keeps the points it earned — retiring an assignment does not
-        # retroactively take a student's marks away.
-        self.assertEqual(float(snap.score), 180.0)
-        self.assertEqual(snap.components["graded_count"], 2)
+        snap = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student)
+        # 80 was the old currency. The board reads awards, and grading writes none.
+        self.assertEqual(float(snap.score), 0.0)
+        self.assertEqual(snap.components["source"], "rewards")
 
-    def test_submitted_but_unmarked_work_contributes_nothing(self):
-        marked = self._mk("Marked", Assignment.STATUS_PUBLISHED)
-        unmarked = self._mk("Waiting on the teacher", Assignment.STATUS_PUBLISHED)
-        sub = Submission.objects.create(assignment=marked, student=self.student, status=Submission.STATUS_REVIEWED,
-                                        submitted_at=timezone.now() - timedelta(days=1))
-        SubmissionReview.objects.create(submission=sub, teacher=self.owner, grade=70)
-        Submission.objects.create(assignment=unmarked, student=self.student, status=Submission.STATUS_REVIEWED,
-                                  submitted_at=timezone.now() - timedelta(days=1))
-
+    def test_marking_work_later_does_not_change_the_board(self):
+        # The backlog property, restated for the ledger: whether the teacher has got to it
+        # cannot be the difference between two students' standings.
+        a = self._mk("Marked", Assignment.STATUS_PUBLISHED)
+        b = self._mk("Waiting on the teacher", Assignment.STATUS_PUBLISHED)
+        for assignment in (a, b):
+            Submission.objects.create(
+                assignment=assignment, student=self.student, status=Submission.STATUS_REVIEWED,
+                submitted_at=timezone.now() - timedelta(days=1),
+            )
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
-        snap = RankingSnapshot.objects.get(classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student)
-        self.assertEqual(float(snap.score), 70.0)          # not 70 halved, not 35 — just 70
-        self.assertEqual(snap.components["graded_count"], 1)
+        before = float(RankingSnapshot.objects.get(
+            classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student).score)
+
+        SubmissionReview.objects.create(
+            submission=Submission.objects.filter(assignment=a).get(), teacher=self.owner, grade=70)
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        after = float(RankingSnapshot.objects.get(
+            classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student).score)
+
+        self.assertEqual(before, after)
 
     def test_every_student_still_appears_on_a_board_with_nothing_graded(self):
         # A roster view with nobody on it is indistinguishable from a broken board.

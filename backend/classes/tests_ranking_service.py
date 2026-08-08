@@ -94,12 +94,12 @@ class SATServiceTests(TestCase):
 
 
 class AcademicServiceTests(TestCase):
-    """Academic is the sum of assessment points banked since the class opened.
+    """Academic is a projection of the reward ledger — the points earned in THIS classroom.
 
-    Note what is NO LONGER an input: teacher-graded submissions, category weights, the
-    completion factor and attendance. The rule the school asked for is "add up the scores of
-    the assessments the students solved" — everything else was removed rather than left
-    half-wired, so a number on the board can be reproduced by hand from the quiz results.
+    It was the sum of raw assessment ``score_points`` until the rewards cutover. Nothing about
+    a point is decided here now: attendance, homework bundles, support sessions and midterms
+    write ``PointAward``, and this board only reads. What is no longer an input: assessment
+    scores directly, teacher-graded submissions, the classroom's opening date.
     """
 
     def setUp(self):
@@ -111,8 +111,10 @@ class AcademicServiceTests(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
         )
-        self.classroom.created_at = timezone.now() - timedelta(days=30)
-        self.classroom.save(update_fields=["created_at"])
+        self.other_classroom = Classroom.objects.create(
+            name="Eng B", subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
+        )
 
         self.full = _student("a_full@t.com")
         self.partial = _student("a_partial@t.com")
@@ -120,37 +122,21 @@ class AcademicServiceTests(TestCase):
             ClassroomMembership.objects.create(
                 classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT
             )
-        self.q1 = self._set("Quiz 1")
-        self.q2 = self._set("Quiz 2")
-        self._grade(self.full, self.q1, 100, 100)
-        self._grade(self.full, self.q2, 80, 100)     # 180 total
-        self._grade(self.partial, self.q1, 90, 100)  # 90, q2 not done
+        self._award(self.full, 15, "hw-full-1")
+        self._award(self.full, 5, "att-full-1")   # 20 total
+        self._award(self.partial, 10, "hw-part-1")
 
-    def _set(self, title):
-        from assessments.models import AssessmentSet
+    def _award(self, student, points, key, *, classroom=-1):
+        from rewards.models import PointAward
+        from rewards.services import current_season
 
-        return AssessmentSet.objects.create(title=title, created_by=self.owner)
-
-    def _grade(self, student, aset, points, max_points):
-        from assessments.models import AssessmentAttempt, AssessmentResult, HomeworkAssignment
-
-        hw = HomeworkAssignment.objects.filter(classroom=self.classroom, assessment_set=aset).first()
-        if hw is None:
-            assignment = Assignment.objects.create(
-                classroom=self.classroom, created_by=self.owner, title=aset.title,
-                category=Assignment.CATEGORY_QUIZ, status=Assignment.STATUS_PUBLISHED,
-            )
-            hw = HomeworkAssignment.objects.create(
-                classroom=self.classroom, assessment_set=aset, assignment=assignment,
-                assigned_by=self.owner,
-            )
-        attempt = AssessmentAttempt.objects.create(
-            homework=hw, student=student, status=AssessmentAttempt.STATUS_GRADED,
-            submitted_at=timezone.now() - timedelta(days=1),
-        )
-        AssessmentResult.objects.create(
-            attempt=attempt, score_points=points, max_points=max_points,
-            percent=(points / max_points * 100) if max_points else 0,
+        return PointAward.objects.create(
+            student=student,
+            season=current_season(),
+            event="MANUAL",
+            points=points,
+            classroom=self.classroom if classroom == -1 else classroom,
+            idempotency_key=key,
         )
 
     def test_points_are_summed_and_ranked(self):
@@ -159,18 +145,80 @@ class AcademicServiceTests(TestCase):
             classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC, period_key="p1")}
 
         full = snaps[self.full.id]
-        self.assertEqual(float(full.score), 180.0)   # 100 + 80
-        self.assertEqual(full.components["assessments_count"], 2)
+        self.assertEqual(float(full.score), 20.0)   # 15 + 5
+        self.assertEqual(full.components["awards"], 2)
+        self.assertEqual(full.components["source"], "rewards")
         self.assertEqual(full.rank, 1)
 
         partial = snaps[self.partial.id]
-        self.assertEqual(float(partial.score), 90.0)
-        self.assertEqual(partial.components["assessments_count"], 1)
+        self.assertEqual(float(partial.score), 10.0)
+        self.assertEqual(partial.components["awards"], 1)
         self.assertEqual(partial.rank, 2)
+
+    def test_the_board_is_scoped_to_this_classroom(self):
+        # Points earned elsewhere belong on the student's own Points page, not on this board.
+        self._award(self.partial, 500, "hw-part-elsewhere", classroom=self.other_classroom)
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        partial = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.partial)
+        self.assertEqual(float(partial.score), 10.0)
+        self.assertEqual(partial.rank, 2)
+
+    def test_a_classroom_less_award_counts_for_no_board(self):
+        # Surveys and midterms carry no classroom. The school's stated default is that they
+        # raise the global balance and no class standing — pinned so a later "helpful" change
+        # to `board_totals_for` cannot quietly move points onto every board a student is in.
+        self._award(self.partial, 40, "survey-part", classroom=None)
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        partial = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.partial)
+        self.assertEqual(float(partial.score), 10.0)
+
+    def test_a_revoked_award_stops_counting(self):
+        # `revoke` zeroes the row rather than deleting it, so the board must sum, not count.
+        award = self._award(self.partial, 30, "hw-part-2")
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        first = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.partial)
+        self.assertEqual(float(first.score), 40.0)
+        self.assertEqual(first.rank, 1)
+
+        award.points = 0
+        award.save(update_fields=["points"])
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        after = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.partial)
+        self.assertEqual(float(after.score), 10.0)
+        self.assertEqual(after.components["awards"], 1)  # the zeroed row is not an earning
+
+    def test_a_student_who_has_earned_nothing_is_still_on_the_board(self):
+        newcomer = _student("a_new@t.com")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=newcomer, role=ClassroomMembership.ROLE_STUDENT
+        )
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        row = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=newcomer)
+        self.assertEqual(float(row.score), 0.0)
+        self.assertEqual(row.rank, 3)
+
+    def test_the_season_never_reaches_the_wire(self):
+        # It stays as the reset mechanism but is invisible product-wide, and `components` is
+        # served to staff and to the student themselves.
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        row = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.full)
+        self.assertNotIn("season", " ".join(row.components.keys()).lower())
 
     def test_rank_change_on_improvement(self):
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
-        self._grade(self.partial, self.q2, 100, 100)  # 90 + 100 = 190, overtakes 180
+        self._award(self.partial, 15, "hw-part-2")  # 10 + 15 = 25, overtakes 20
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p2")
         partial = RankingSnapshot.objects.get(
             classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC, period_key="p2", student=self.partial)
