@@ -1057,7 +1057,22 @@ class TestAttempt(TimestampedModel):
         #   - a single-module MIDTERM (midterm_module_count == 1) has NO Module 2 row, and
         #   - a single-module pastpaper has a Module 2 row with zero questions.
         # Either way there is no second module to take, so finalize for scoring.
-        single_module = (m2 is None) or (m2.questions.count() == 0)
+        #
+        # The empty-Module-2 arm must not apply to a midterm that DECLARES two, though. A
+        # midterm whose Module 2 has not been filled yet — content not synced, provisioning
+        # half-done — is a broken exam, not a one-module one, and reading it as one scores
+        # every student on Module 1 alone and files the result as a normal completion. The
+        # attempt advances into the empty module instead, which fails where someone can see
+        # it. `midterm_module_count` is already the authority for whether the row must exist
+        # (see ensure_full_mock_practice_test_modules); it is the authority here too.
+        mock = getattr(self.practice_test, "mock_exam", None)
+        declares_two_modules = (
+            getattr(mock, "kind", None) == MockExam.KIND_MIDTERM
+            and int(getattr(mock, "midterm_module_count", 2) or 2) >= 2
+        )
+        single_module = (m2 is None) or (
+            m2.questions.count() == 0 and not declares_two_modules
+        )
         if single_module:
             assert_primary_transition_allowed(self.STATE_MODULE_1_ACTIVE, self.STATE_SCORING)
             ts = timezone.now()

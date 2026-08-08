@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from exams.models import PracticeTest, Module, TestAttempt
+from exams.tests.support import seed_mc_question
 
 
 @override_settings(CELERY_TASK_ALWAYS_EAGER=False, EXAMS_SCORE_INLINE_IF_NO_CELERY=False)
@@ -35,6 +36,12 @@ class AttemptTimerEnforcementTests(APITestCase):
         )
         self.m1 = Module.objects.create(practice_test=self.test, module_order=1, time_limit_minutes=1)
         self.m2 = Module.objects.create(practice_test=self.test, module_order=2, time_limit_minutes=1)
+        # Both modules need a question. A pastpaper whose Module 2 is empty is a *one*-module
+        # pastpaper by definition (see submit_module_1), so without these the fixture built the
+        # opposite of the two-module exam these tests describe and the attempt correctly went
+        # straight to SCORING where they expect MODULE_2_ACTIVE.
+        self.q1 = seed_mc_question(self.m1, stem="M1 Q1")
+        self.q2 = seed_mc_question(self.m2, stem="M2 Q1")
 
     def _create_attempt_and_start_m1(self) -> TestAttempt:
         att = TestAttempt.objects.create(student=self.user, practice_test=self.test)
@@ -73,18 +80,31 @@ class AttemptTimerEnforcementTests(APITestCase):
         self.assertEqual(r2.status_code, 200)
         self.assertEqual(r1.data, r2.data)
 
-    def test_explicit_submit_rejected_when_module_deadline_passed(self):
+    def test_a_late_explicit_submit_is_accepted_and_keeps_the_answers(self):
+        """This used to assert 409 ``exam_module_deadline_passed``.
+
+        That behaviour was removed on purpose in d554dc27, "CRITICAL: stop wiping student
+        answers on submit": refusing a late submit threw away what the student had selected
+        and left them on an expired screen that stayed expired on reload. The server now
+        records the answers and moves the module on. The deadline is still detected — it is
+        what the module advances *because of* — so what is worth pinning is that the work
+        survives it.
+        """
         att = self._create_attempt_and_start_m1()
         _rewind_m1_timer(att.pk)
 
         r = self.client.post(
             f"/api/exams/attempts/{att.pk}/submit_module/",
-            {"answers": {}, "flagged": []},
+            {"answers": {str(self.q1.id): "A"}, "flagged": []},
             format="json",
         )
-        self.assertEqual(r.status_code, 409)
-        self.assertEqual(r.data.get("code"), "exam_module_deadline_passed")
-        self.assertIn("attempt", r.data)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data.get("current_state"), TestAttempt.STATE_MODULE_2_ACTIVE)
+
+        att.refresh_from_db()
+        self.assertEqual(
+            (att.module_answers or {}).get(str(self.m1.id), {}).get(str(self.q1.id)), "A"
+        )
 
     def test_deadline_via_save_attempt_auto_advances_via_server_timer(self):
         att = self._create_attempt_and_start_m1()
