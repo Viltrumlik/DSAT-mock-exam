@@ -1,22 +1,26 @@
-"""The two leaderboard rules, as the school actually explains them to students.
+"""The SAT leaderboard rule, as the school actually explains it to students.
 
-    SAT      — your most recent pastpaper, out of the ones this class was given.
-    Academic — the points you have banked on this class's assessments since it opened.
+    SAT — your most recent pastpaper, out of the ones this class was given.
 
-Both are deliberately plain arithmetic. They replaced a weighted model
-(0.50·RecentForm + 0.30·PeakAbility + 0.20·Consistency, and a category-weighted academic
-score × completion factor) that was accurate but that no teacher could explain at the board
-and no student could predict. A leaderboard nobody can reason about is not a motivator.
+Deliberately plain arithmetic. It replaced a weighted model (0.50·RecentForm +
+0.30·PeakAbility + 0.20·Consistency) that was accurate but that no teacher could explain at
+the board and no student could predict. A leaderboard nobody can reason about is not a
+motivator.
+
+**Academic no longer lives here.** It used to be a third helper in this module summing raw
+``AssessmentResult.score_points`` and hand-graded ``SubmissionReview.grade`` over a window
+opening at ``classroom.start_date``. The rewards cutover retired all three: the academic board
+is now a projection of ``rewards.PointAward``, read directly by ``service._recompute_academic``.
+Do not reintroduce a points calculation here — a number derived inside a pipeline that
+re-derives and deletes its own rows every 20 minutes cannot be explained to the student whose
+total moved. See §0 of docs/rewards/PLAN.md.
 
 Gathering only — no ranking, no persistence, no DB writes. ``service.py`` orders and stores.
 """
 
 from __future__ import annotations
 
-import datetime as dt
 import logging
-
-from django.utils import timezone
 
 from exams.models import PracticeTest, TestAttempt
 
@@ -113,142 +117,3 @@ def latest_pastpaper_per_student(student_ids: list[int], pastpaper_ids: list[int
                 "finished_at": finished_at,
             }
     return latest
-
-
-# ── Academic: assessment points banked since the class opened ─────────────────
-
-def classroom_opened_at(classroom, *, now=None):
-    """When this classroom's academic window starts.
-
-    ``start_date`` is the teacher-entered opening day and is what they mean by "guruh
-    ochilgan kun", but it is nullable and unset on most existing classrooms — fall back to
-    ``created_at``, the same precedence the lesson scheduler uses.
-    """
-    start_date = getattr(classroom, "start_date", None)
-    if start_date:
-        naive = dt.datetime.combine(start_date, dt.time.min)
-        return timezone.make_aware(naive, timezone.get_current_timezone())
-    return classroom.created_at or (now or timezone.now())
-
-
-def assessment_points_per_student(classroom, student_ids: list[int], *, since, until) -> dict[int, dict]:
-    """``{student_id: {points, max_points, assessments_count}}`` — banked assessment points.
-
-    Sum of the student's BEST attempt per assessment set, not of every attempt. Retakes are
-    unlimited here (the uniqueness constraint only covers in-progress attempts, and "retry
-    incorrect only" mints a fresh attempt over a subset), so summing every attempt would
-    make re-sitting the same quiz the fastest way to the top of the board — which students
-    work out immediately. Best-per-set keeps the "more work done, more points" meaning the
-    teacher wants while removing that shortcut.
-
-    Raw ``score_points``, not percent: a 50-point assessment is meant to count for more than
-    a 5-point one. Hand-graded homework is added in the same currency (see
-    ``_hand_graded_points``) — an ungraded submission contributes nothing rather than zero.
-    """
-    if not student_ids:
-        return {}
-
-    from assessments.models import AssessmentAttempt, AssessmentResult
-
-    rows = AssessmentResult.objects.filter(
-        attempt__homework__classroom=classroom,
-        attempt__student_id__in=student_ids,
-        attempt__status=AssessmentAttempt.STATUS_GRADED,
-    ).exclude(
-        # A draft has not been given to anyone yet, so its points are not banked. Students
-        # cannot normally reach one, but the SAT side excludes drafts too and a leaderboard
-        # that disagrees with itself about what "assigned" means is not defensible.
-        attempt__homework__assignment__status=Assignment.STATUS_DRAFT,
-    ).values(
-        "score_points",
-        "max_points",
-        "attempt__student_id",
-        "attempt__homework__assessment_set_id",
-        "attempt__submitted_at",
-        "attempt__started_at",
-    )
-
-    # (student, assessment_set) -> best (points, max_points)
-    best: dict[tuple[int, int], tuple[float, float]] = {}
-    for row in rows:
-        # `submitted_at` is the real completion moment; `started_at` is defaulted and always
-        # present, so it keeps a graded-but-undated attempt inside a window it belongs to
-        # rather than silently dropping the student's points.
-        when = row["attempt__submitted_at"] or row["attempt__started_at"]
-        if when is None or when < since or when > until:
-            continue
-        key = (row["attempt__student_id"], row["attempt__homework__assessment_set_id"])
-        points = float(row["score_points"] or 0)
-        current = best.get(key)
-        if current is None or points > current[0]:
-            best[key] = (points, float(row["max_points"] or 0))
-
-    totals: dict[int, dict] = {}
-    for (student_id, _set_id), (points, max_points) in best.items():
-        bucket = totals.setdefault(
-            student_id, {"points": 0.0, "max_points": 0.0, "assessments_count": 0, "graded_count": 0}
-        )
-        bucket["points"] += points
-        bucket["max_points"] += max_points
-        bucket["assessments_count"] += 1
-
-    for student_id, points, max_points in _hand_graded_points(
-        classroom, student_ids, since=since, until=until
-    ):
-        bucket = totals.setdefault(
-            student_id, {"points": 0.0, "max_points": 0.0, "assessments_count": 0, "graded_count": 0}
-        )
-        bucket["points"] += points
-        bucket["max_points"] += max_points
-        bucket["graded_count"] += 1
-
-    for bucket in totals.values():
-        bucket["points"] = round(bucket["points"], 2)
-        bucket["max_points"] = round(bucket["max_points"], 2)
-    return totals
-
-
-def _hand_graded_points(classroom, student_ids: list[int], *, since, until):
-    """Yield ``(student_id, points, max_points)`` for work the teacher graded by hand.
-
-    Only a submission that actually carries a grade counts. **Work the teacher has not got to
-    yet contributes nothing at all** — not a zero. That distinction is the whole point: a
-    leaderboard that scored ungraded work as 0 would punish students for their teacher's
-    backlog, and would move every rank the moment marking started.
-
-    The grade is added as raw points, the same currency as an assessment's ``score_points``,
-    so a 50-point essay counts for more than a 5-point quiz. ``Submission`` is unique per
-    (assignment, student), so there is nothing to deduplicate.
-    """
-    from ..models import Submission, SubmissionReview
-
-    rows = SubmissionReview.objects.filter(
-        submission__assignment__classroom=classroom,
-        submission__student_id__in=student_ids,
-        submission__assignment__category__in=Assignment.ACADEMIC_CATEGORIES,
-        submission__status=Submission.STATUS_REVIEWED,
-        grade__isnull=False,
-    ).exclude(
-        submission__assignment__status=Assignment.STATUS_DRAFT,
-    ).values(
-        "grade",
-        "max_score",
-        "reviewed_at",
-        "submission__student_id",
-        "submission__submitted_at",
-        "submission__assignment__max_score",
-    )
-
-    for row in rows:
-        # The work belongs to the day it was HANDED IN, not the day it happened to be
-        # marked — otherwise a teacher clearing a backlog would drag old work into the
-        # current window. `reviewed_at` only stands in when nothing was ever submitted.
-        when = row["submission__submitted_at"] or row["reviewed_at"]
-        if when is None or when < since or when > until:
-            continue
-        ceiling = row["max_score"] or row["submission__assignment__max_score"] or 0
-        yield (
-            row["submission__student_id"],
-            float(row["grade"] or 0),
-            float(ceiling),
-        )

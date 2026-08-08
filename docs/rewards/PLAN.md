@@ -377,11 +377,37 @@ Branch from `origin/main`, not from here.
 | 6 | ✅ **Support booking** — availability slots, booking gated on a shared classroom, confirm-as-held → 10-point hook | 4, 2 |
 | 7 | ✅ **Surveys** — six question types, super_admin authoring, student fill, host-guard allowlist → 40-point hook | 2 |
 | 8 | ✅ **Coins** — wallet, per-season rate, append-only transactions, staff-recorded spending, ops grant/revoke. A catalogue is still to come | 2 |
-| 9 | **Cutover** — open season 1, **repoint the academic leaderboard at the reward ledger and clear the old points** (§0.3), iOS surface, docs | all |
+| 9 | ✅ **Cutover** — open season 1, **repoint the academic leaderboard at the reward ledger and clear the old points** (§0.3), docs. *Remaining: the iOS Points screen* | all |
 
 PR 9 is the risky one: it retires `assessment_points_per_student` as the ACADEMIC currency
 and changes a number every student already sees. It ships last, behind the rest, so the
 ledger has real data in it before the board starts reading from it.
+
+### Notes from building PR 9
+
+- **Deleting the old snapshots is not tidying, it is the cutover.** `_previous_scores` reads
+  the newest snapshot from a *different* `period_key` to compute `trend`, and `previous_rank`
+  draws the rank arrows. The retired currency was raw assessment `score_points` — routinely in
+  the hundreds — while a reward total starts near zero. Leave one row behind and every student
+  in the school opens the app to DECLINING and a plunging rank on cutover day. The snapshots
+  are a re-derivable cache, not a record, so there is nothing to preserve.
+  `cutover_academic_leaderboard` clears them inside the same transaction as the rebuild.
+- **The three retired helpers were deleted, not left unused.** `assessment_points_per_student`,
+  `_hand_graded_points` and `classroom_opened_at` had exactly one caller between them. Leaving
+  them in `ranking/rules.py` would have left a complete, tested, plausible academic calculation
+  sitting next to the projection for someone to wire back in.
+- **The season stays off the wire.** `components` is served to staff and to the student
+  themselves (`views_rankings.py`), so it carries `points`, `awards`, `source` and the trend —
+  and no season. A regression test asserts its absence rather than trusting review.
+- **Classroom-less awards still count for no board.** Surveys and midterms raise the global
+  balance on the student's Points page and no class standing. That is §0.3's stated default,
+  now pinned by a test so a later change to `board_totals_for` cannot quietly spread them
+  across every class a student is in. **Still open** for the school: whether they want midterm
+  and survey points on the class board too — if so, awards need a home-classroom rule, not a
+  change to the projection.
+- The iOS class board needed no change: it reads `/classes/<id>/rankings/<kind>/`, so the
+  currency switched under it server-side. The **Points screen** (the native equivalent of the
+  web `/rewards` page) is the one line of PR 9 not yet built.
 
 ### Notes from building PR 2
 

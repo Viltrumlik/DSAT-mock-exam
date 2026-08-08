@@ -66,7 +66,7 @@ function StudentView({ classroom }: { classroom: ClassroomWithRole }) {
         <Card>
           <CardHeader title="Academic score trend" description="Your academic ranking score over time" />
           {acadVals.length ? <div className="mt-4"><VBars values={acadVals} labels={data.academic_score_trend.map((p) => p.period_key.slice(5))} color="bg-violet-500/60" /></div>
-            : <EmptyState icon={GraduationCap} title="No academic history yet" description="Graded work will build your trend." />}
+            : <EmptyState icon={GraduationCap} title="No academic history yet" description="Turning up and finishing your homework will build your trend." />}
         </Card>
       </div>
 

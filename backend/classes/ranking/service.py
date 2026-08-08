@@ -1,8 +1,12 @@
 """Ranking orchestration — gather inputs, rank, persist snapshots.
 
-The two rules live in ranking/rules.py and are deliberately plain: SAT is a student's own
-latest assigned pastpaper, Academic is the assessment points they have banked since the
-class opened. This module only orders them and writes the snapshots.
+Two rules, deliberately plain: SAT is a student's own latest assigned pastpaper (see
+ranking/rules.py), Academic is the reward points they have earned in this classroom. This
+module only orders them and writes the snapshots.
+
+Academic is a **projection of the reward ledger**, not a calculation. It was a re-derived sum
+of assessment scores until the rewards cutover; ``rewards.PointAward`` is now the single place
+a point is decided, and this board reads it. Nothing here writes points.
 
 Snapshots are the history ledger: each recompute upserts a row per (classroom, kind,
 period_key, student). `previous_rank` comes from the latest snapshot of a *different*
@@ -134,44 +138,58 @@ def _recompute_sat(classroom, student_ids, period_key, now) -> int:
 
 
 def _recompute_academic(classroom, student_ids, period_key, now) -> int:
-    """Rank on assessment points banked since the class opened (see ranking/rules.py).
+    """Rank on **reward points earned in this classroom** — a projection of the reward ledger.
+
+    The currency changed at the rewards cutover. It used to be the sum of raw
+    ``AssessmentResult.score_points`` re-derived here every 20 minutes; it is now
+    ``rewards.PointAward``, which is event-sourced: attendance, homework bundles, support
+    sessions and midterms write it once and this board only reads. Nothing about a point is
+    decided here any more, which is the whole point — a number re-derived inside a pipeline
+    that also *deletes* its own rows silently changes whenever a rule or a source row changes,
+    and a student cannot be told why their total moved.
+
+    Scoped to awards carrying this classroom, so the board answers "earned in this class".
+    Classroom-less earnings — surveys, midterms — count toward the student's global balance on
+    their Points page but toward no single class board. That is the school's stated default and
+    the reason every award carries a nullable classroom; if they later want midterms on the
+    class board, awards need a home-classroom rule rather than a change here.
 
     Every active student is written, including those on 0 — an academic board is the
     teacher's roster view, and a student who has done nothing is exactly who they want to
     see on it.
     """
-    since = rules.classroom_opened_at(classroom, now=now)
-    totals = rules.assessment_points_per_student(classroom, student_ids, since=since, until=now)
+    from rewards.services import board_totals_for
+
+    totals = board_totals_for(student_ids, classroom=classroom)
 
     computed = sorted(
-        (
-            (sid, totals.get(sid, {"points": 0.0, "max_points": 0.0, "assessments_count": 0, "graded_count": 0}))
-            for sid in student_ids
-        ),
-        key=lambda t: (-t[1]["points"], -t[1]["assessments_count"], t[0]),
+        ((sid, totals.get(sid, {"points": 0, "awards": 0})) for sid in student_ids),
+        key=lambda t: (-t[1]["points"], -t[1]["awards"], t[0]),
     )
-    scores = [row["points"] for _sid, row in computed]
+    scores = [float(row["points"]) for _sid, row in computed]
     prev = _previous_ranks(classroom, RankingSnapshot.KIND_ACADEMIC, period_key)
     prev_scores = _previous_scores(classroom, RankingSnapshot.KIND_ACADEMIC, period_key)
 
     for rank, (sid, row) in enumerate(computed, start=1):
         prev_rank = prev.get(sid)
-        trend = _academic_trend(prev_scores.get(sid), row["points"])
+        points = float(row["points"])
+        trend = _academic_trend(prev_scores.get(sid), points)
         RankingSnapshot.objects.update_or_create(
             classroom=classroom, kind=RankingSnapshot.KIND_ACADEMIC, period_key=period_key, student_id=sid,
             defaults=dict(
                 rank=rank,
                 previous_rank=prev_rank,
-                score=row["points"],
-                percentile=_percentile(row["points"], scores),
+                score=points,
+                percentile=_percentile(points, scores),
                 trend=trend,
                 confidence=None,
+                # No season here, deliberately. `components` is served to staff and to the
+                # student themselves (views_rankings.py), and the season is invisible product-
+                # wide — hiding it in the UI would leave it readable in devtools.
                 components={
                     "points": row["points"],
-                    "max_points": row["max_points"],
-                    "assessments_count": row["assessments_count"],
-                    "graded_count": row["graded_count"],
-                    "since": since.isoformat(),
+                    "awards": row["awards"],
+                    "source": "rewards",
                     "trend": trend,
                     "rank_change": (prev_rank - rank) if prev_rank else None,
                 },

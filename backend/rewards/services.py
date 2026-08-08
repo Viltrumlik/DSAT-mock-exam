@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from . import constants
@@ -225,3 +225,32 @@ def balances_for(student_ids, *, season=None, classroom=None) -> dict[int, int]:
         qs = qs.filter(classroom=classroom)
     rows = qs.values("student_id").annotate(total=Sum("points"))
     return {row["student_id"]: int(row["total"] or 0) for row in rows}
+
+
+def board_totals_for(student_ids, *, season=None, classroom=None) -> dict[int, dict]:
+    """``{student_id: {"points": int, "awards": int}}`` — what a leaderboard projection reads.
+
+    Same scoping as :func:`balances_for`, plus the number of earnings behind the total, so a
+    member of staff looking at a board row can ask "from how many things?" without opening the
+    ledger. Zeroed awards are excluded from that count for the reason they are hidden from the
+    student's own feed: a revoked row is not an earning, and counting it would make a board say
+    a student did something they no longer have any points for.
+
+    The academic board is a **projection** of this table and never writes to it — see §0 of
+    docs/rewards/PLAN.md. Points computed inside the ranking pipeline would silently change
+    whenever a rule or a source row changed, because that pipeline re-derives from scratch.
+    """
+    if not student_ids:
+        return {}
+    season = season or current_season()
+    qs = PointAward.objects.filter(student_id__in=student_ids, season=season)
+    if classroom is not None:
+        qs = qs.filter(classroom=classroom)
+    rows = qs.values("student_id").annotate(
+        total=Sum("points"),
+        earned=Count("id", filter=Q(points__gt=0)),
+    )
+    return {
+        row["student_id"]: {"points": int(row["total"] or 0), "awards": int(row["earned"] or 0)}
+        for row in rows
+    }

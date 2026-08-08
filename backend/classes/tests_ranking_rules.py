@@ -216,184 +216,33 @@ class SatLevelGateTests(TestCase):
         self.assertEqual(_ranked(room), [])
 
 
-class AcademicAssessmentPointsTests(TestCase):
+class AcademicIsNotGatedByLevelTests(TestCase):
+    """What survives of the old AcademicAssessmentPointsTests.
+
+    The rest of that class tested ``assessment_points_per_student`` and
+    ``_hand_graded_points`` — best-attempt-per-set, the opening-date window, hand-graded
+    homework, ungraded-contributes-nothing. The rewards cutover deleted all three functions:
+    the academic board is a projection of ``rewards.PointAward`` now, and the equivalent
+    guarantees live where the points are actually decided (``rewards/tests_*.py``) plus
+    ``classes.tests_ranking_service.AcademicServiceTests`` for the projection itself.
+
+    This one property belongs to ranking, not to rewards, so it stays.
+    """
+
     def setUp(self):
         self.now = timezone.now()
         self.room = _classroom(level="junior")
-        self.room.created_at = self.now - timedelta(days=30)
-        self.room.save(update_fields=["created_at"])
         self.ali = _student(self.room, "Ali")
-        self.vali = _student(self.room, "Vali")
-
-    def _homework(self, aset):
-        """An assessment given to this class. `HomeworkAssignment` always hangs off a
-        `classes.Assignment` (that is what puts it in the homework feed), so both rows exist."""
-        hw = HomeworkAssignment.objects.filter(classroom=self.room, assessment_set=aset).first()
-        if hw is not None:
-            return hw
-        assignment = Assignment.objects.create(
-            classroom=self.room, title=aset.title, category=Assignment.CATEGORY_QUIZ,
-            status=Assignment.STATUS_PUBLISHED, created_by=self.room.teacher,
-        )
-        return HomeworkAssignment.objects.create(
-            classroom=self.room, assessment_set=aset, assignment=assignment,
-            assigned_by=self.room.teacher,
-        )
-
-    def _graded(self, student, aset, points, max_points, *, when):
-        hw = self._homework(aset)
-        attempt = AssessmentAttempt.objects.create(
-            homework=hw, student=student, status=AssessmentAttempt.STATUS_GRADED, submitted_at=when
-        )
-        AssessmentResult.objects.create(
-            attempt=attempt, score_points=points, max_points=max_points,
-            percent=(points / max_points * 100) if max_points else 0,
-        )
-        return attempt
-
-    def _set(self, title):
-        return AssessmentSet.objects.create(title=title, created_by=self.room.teacher)
-
-    def test_points_are_summed_across_assessments(self):
-        a, b, c = self._set("A"), self._set("B"), self._set("C")
-        for aset, pts, mx in ((a, 18, 20), (b, 45, 50), (c, 9, 10)):
-            self._graded(self.ali, aset, pts, mx, when=self.now - timedelta(days=2))
-        self._graded(self.vali, a, 20, 20, when=self.now - timedelta(days=2))
-        self._graded(self.vali, b, 50, 50, when=self.now - timedelta(days=2))
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        rows = _ranked(self.room, RankingSnapshot.KIND_ACADEMIC)
-        self.assertEqual(rows, [(self.ali.id, 1, 72.0), (self.vali.id, 2, 70.0)])
-
-    def test_retaking_the_same_assessment_does_not_farm_points(self):
-        """Retakes are unlimited, so a naive sum makes re-sitting the fastest route to
-        rank 1. Only the best attempt per assessment counts."""
-        a = self._set("A")
-        self._graded(self.ali, a, 12, 20, when=self.now - timedelta(days=3))
-        self._graded(self.ali, a, 18, 20, when=self.now - timedelta(days=2))
-        self._graded(self.ali, a, 15, 20, when=self.now - timedelta(days=1))
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 18.0)
-
-    def test_work_done_before_the_class_opened_does_not_count(self):
-        a = self._set("A")
-        self.room.created_at = self.now - timedelta(days=5)
-        self.room.save(update_fields=["created_at"])
-        self._graded(self.ali, a, 20, 20, when=self.now - timedelta(days=40))  # before opening
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 0.0)
-
-    def test_start_date_wins_over_created_at_as_the_opening_day(self):
-        self.room.start_date = (self.now - timedelta(days=3)).date()
-        self.room.save(update_fields=["start_date"])
-        a = self._set("A")
-        self._graded(self.ali, a, 20, 20, when=self.now - timedelta(days=10))  # before start_date
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 0.0)
-
-    def test_an_ungraded_attempt_contributes_nothing(self):
-        a = self._set("A")
-        AssessmentAttempt.objects.create(
-            homework=self._homework(a), student=self.ali,
-            status=AssessmentAttempt.STATUS_IN_PROGRESS,
-        )
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 0.0)
-
-    def test_everyone_appears_including_students_on_zero(self):
-        a = self._set("A")
-        self._graded(self.ali, a, 10, 10, when=self.now - timedelta(days=1))
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        rows = _ranked(self.room, RankingSnapshot.KIND_ACADEMIC)
-        self.assertEqual(rows, [(self.ali.id, 1, 10.0), (self.vali.id, 2, 0.0)])
-
-    def _hand_graded(self, student, title, grade, max_score, *, when, status=Assignment.STATUS_PUBLISHED):
-        from classes.models import Submission, SubmissionReview
-
-        assignment = Assignment.objects.create(
-            classroom=self.room, title=title, category=Assignment.CATEGORY_HOMEWORK,
-            status=status, max_score=max_score, created_by=self.room.teacher,
-        )
-        sub = Submission.objects.create(
-            assignment=assignment, student=student, status=Submission.STATUS_REVIEWED,
-            submitted_at=when,
-        )
-        if grade is not None:
-            SubmissionReview.objects.create(submission=sub, teacher=self.room.teacher, grade=grade)
-        return assignment
-
-    def test_hand_graded_homework_adds_to_the_total(self):
-        a = self._set("A")
-        self._graded(self.ali, a, 30, 50, when=self.now - timedelta(days=2))
-        self._hand_graded(self.ali, "Essay", 45, 50, when=self.now - timedelta(days=1))
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        row = _ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0]
-        self.assertEqual(row[2], 75.0)  # 30 assessment + 45 hand-graded
-
-    def test_an_ungraded_submission_adds_NOTHING_not_zero(self):
-        """The teacher's backlog must not cost the student anything.
-
-        A student who handed work in that has not been marked yet keeps exactly the points
-        they have already earned — the pending work is absent from the sum, not a zero
-        dragging an average down."""
-        a = self._set("A")
-        self._graded(self.ali, a, 40, 50, when=self.now - timedelta(days=2))
-        self._hand_graded(self.ali, "Unmarked essay", None, 50, when=self.now - timedelta(days=1))
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        row = _ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0]
-        self.assertEqual(row[2], 40.0)  # unchanged by the pending work
-
-    def test_grading_later_only_adds_points(self):
-        from classes.models import Submission, SubmissionReview
-
-        a = self._set("A")
-        self._graded(self.ali, a, 40, 50, when=self.now - timedelta(days=2))
-        assignment = self._hand_graded(self.ali, "Essay", None, 50, when=self.now - timedelta(days=1))
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 40.0)
-
-        sub = Submission.objects.get(assignment=assignment, student=self.ali)
-        SubmissionReview.objects.create(submission=sub, teacher=self.room.teacher, grade=35)
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 75.0)
-
-    def test_hand_graded_work_from_before_the_class_opened_does_not_count(self):
-        self.room.created_at = self.now - timedelta(days=5)
-        self.room.save(update_fields=["created_at"])
-        self._hand_graded(self.ali, "Old essay", 50, 50, when=self.now - timedelta(days=40))
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 0.0)
-
-    def test_a_draft_assignments_grade_does_not_count(self):
-        self._hand_graded(self.ali, "Draft", 40, 50, when=self.now - timedelta(days=1),
-                          status=Assignment.STATUS_DRAFT)
-
-        service.recompute_classroom(self.room, kinds=("ACADEMIC",), now=self.now)
-
-        self.assertEqual(_ranked(self.room, RankingSnapshot.KIND_ACADEMIC)[0][2], 0.0)
 
     def test_academic_is_not_gated_by_level(self):
         # This class is junior — its SAT board is hidden, but Academic must still work.
-        a = self._set("A")
-        self._graded(self.ali, a, 7, 10, when=self.now - timedelta(days=1))
+        from rewards.models import PointAward
+        from rewards.services import current_season
+
+        PointAward.objects.create(
+            student=self.ali, season=current_season(), event="MANUAL",
+            points=7, classroom=self.room, idempotency_key="lvl-ali",
+        )
 
         service.recompute_classroom(self.room, now=self.now)
 
