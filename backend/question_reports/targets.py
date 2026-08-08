@@ -18,6 +18,11 @@ class ResolvedTarget:
     qb_id: str
     subject: str = ""
     module_label: str = ""
+    #: Assessment sets are tagged with the level they are written for, and the same question
+    #: text can be wrong for a junior set and fine for a senior one. Without it the person
+    #: reading the Telegram report has to open the set to know who is affected.
+    #: Exams carry no level of their own — theirs lives on the classroom, not the paper.
+    level: str = ""
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
@@ -163,6 +168,9 @@ def _resolve_assessment(question_id: int) -> Optional[ResolvedTarget]:
     aset = aq.assessment_set if aq.assessment_set_id else None
     title = aset.title if aset else ""
     subject = aset.get_subject_display() if aset else ""
+    # A blank level is legacy/untagged, not an error — those sets show in every classroom.
+    # Report it as blank rather than inventing a default.
+    level = (aset.get_level_display() if (aset and aset.level) else "") or ""
     return ResolvedTarget(
         QuestionErrorReport.RESOURCE_ASSESSMENT,
         aq.assessment_set_id,
@@ -172,6 +180,7 @@ def _resolve_assessment(question_id: int) -> Optional[ResolvedTarget]:
         qb_id,
         subject=subject,
         module_label="",  # assessments have no modules
+        level=level,
     )
 
 
@@ -220,6 +229,8 @@ def build_report_message(report: QuestionErrorReport) -> str:
     ]
     if report.subject:
         lines.append(f"<b>Subject:</b> {e(report.subject)}")
+    if report.level:
+        lines.append(f"<b>Level:</b> {e(report.level)}")
     if report.module_label:
         lines.append(f"<b>Module:</b> {e(report.module_label)}")
     lines += [

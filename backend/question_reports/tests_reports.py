@@ -98,6 +98,34 @@ class ResolverTests(TestCase):
         self.assertEqual(t.resource_title, "Set X")
         self.assertEqual(t.question_order, 1)
 
+    def test_assessment_carries_the_sets_level(self):
+        # The same question text can be wrong for a junior set and fine for a senior one, so
+        # whoever reads the report needs to know which cohort it came from.
+        level = AssessmentSet.allowed_levels_for_subject("english")[0]
+        aset = AssessmentSet.objects.create(
+            subject="english", level=level, title="Set Y", created_by=self.staff
+        )
+        aq = AssessmentQuestion.objects.create(
+            assessment_set=aset, order=0, prompt="…", question_type="short_text"
+        )
+        t = resolve_target("assessment", aq.id)
+        self.assertEqual(t.level, aset.get_level_display())
+
+    def test_an_untagged_set_reports_a_blank_level(self):
+        # Blank means legacy/untagged — it shows in every classroom. Inventing a default here
+        # would tell the reader a cohort that is not true.
+        aset = AssessmentSet.objects.create(subject="english", title="Set Z", created_by=self.staff)
+        aq = AssessmentQuestion.objects.create(
+            assessment_set=aset, order=0, prompt="…", question_type="short_text"
+        )
+        self.assertEqual(resolve_target("assessment", aq.id).level, "")
+
+    def test_an_exam_question_has_no_level(self):
+        # Exams take their level from the classroom sitting them, not from the paper.
+        pt = PracticeTest.objects.create(subject="MATH", title="Sec", is_published=True)
+        q = _add_question(pt.modules.first())
+        self.assertEqual(resolve_target("exam", q.id).level, "")
+
     def test_missing_returns_none(self):
         self.assertIsNone(resolve_target("exam", 999999))
         self.assertIsNone(resolve_target("assessment", 999999))
@@ -235,6 +263,34 @@ class NotificationFanoutTests(TestCase):
         self.assertNotIn("<script>", msg)
         self.assertIn("&lt;script&gt;", msg)
         self.assertIn("1 &lt; 2 &amp; 3 &gt; 2", msg)
+
+    def test_the_level_reaches_the_telegram_message(self):
+        report = QuestionErrorReport.objects.create(
+            system="assessment",
+            question_id=7,
+            resource_type=QuestionErrorReport.RESOURCE_ASSESSMENT,
+            resource_title="Set X",
+            subject="English",
+            level="Junior",
+            question_order=3,
+            category="other",
+            reporter=self.user,
+        )
+        self.assertIn("<b>Level:</b> Junior", build_report_message(report))
+
+    def test_a_blank_level_prints_no_line_at_all(self):
+        # An empty "Level: —" row on every exam report is noise in a channel people skim.
+        report = QuestionErrorReport.objects.create(
+            system="exam",
+            question_id=8,
+            resource_type=QuestionErrorReport.RESOURCE_PASTPAPER,
+            resource_title="March 2024",
+            subject="Math",
+            question_order=1,
+            category="other",
+            reporter=self.user,
+        )
+        self.assertNotIn("Level:", build_report_message(report))
 
 
 @override_settings(

@@ -1523,17 +1523,27 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             module = modules_map.get(str(module_id))
             if not module:
                 continue
-            
+
+            # The flags the student raised while sitting this module. They are already
+            # persisted per module (submit_module_1 / save_attempt write them), but the
+            # review payload never carried them — so "come back to this one" was thrown
+            # away at exactly the moment the student came back to it. Ids are compared as
+            # strings because the stored list has been written by several code paths over
+            # time and mixes ints with strings.
+            flagged_ids = {
+                str(fid) for fid in ((attempt.flagged_questions or {}).get(str(module_id)) or [])
+            }
+
             for q in module.questions.all():
                 total_questions += 1
                 ans = answers.get(str(q.id))
-                
+
                 is_correct = q.check_answer(ans)
-                if ans is not None and str(ans).strip() != "": 
+                if ans is not None and str(ans).strip() != "":
                     total_answered += 1
                     if is_correct:
                         total_correct += 1
-                
+
                 questions_data.append({
                     'id': q.id,
                     'text': q.question_text,
@@ -1545,6 +1555,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     'is_correct': is_correct,
                     'is_math_input': q.is_math_input,
                     'options': q.get_options(),
+                    'was_flagged': str(q.id) in flagged_ids,
                 })
         
         total_skipped = total_questions - total_answered

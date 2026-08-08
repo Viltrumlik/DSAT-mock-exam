@@ -3,7 +3,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
-import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy, Flag } from 'lucide-react';
+import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy, Flag, Bookmark } from 'lucide-react';
 import { MathText } from '@/components/MathText';
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
@@ -43,7 +43,15 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                             {question.is_correct ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
                         </div>
                         <div>
-                            <h2 className={`text-lg font-bold ${question.is_correct ? 'text-emerald-700' : 'text-red-700'}`}>Question {question.index_in_module}</h2>
+                            <h2 className={`flex items-center gap-2 text-lg font-bold ${question.is_correct ? 'text-emerald-700' : 'text-red-700'}`}>
+                                Question {question.index_in_module}
+                                {question.was_flagged && (
+                                    <span className="inline-flex items-center gap-1 rounded-full bg-[#b0122a]/10 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-[#b0122a]">
+                                        <Bookmark className="h-3 w-3 fill-[#b0122a]" aria-hidden />
+                                        Marked
+                                    </span>
+                                )}
+                            </h2>
                             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{question.type} · {question.is_correct ? 'Correct' : isOmitted ? 'Omitted' : 'Incorrect'}</p>
                         </div>
                     </div>
@@ -664,7 +672,18 @@ export default function ReviewPage() {
                                                         style={{ animationDelay: `${i * 0.06}s` }}
                                                         onClick={() => setSelectedQuestion({ ...q, index_in_module: i + 1 })}
                                                     >
-                                                        <span className="whitespace-nowrap text-[15px] font-extrabold text-foreground">Question {i + 1}</span>
+                                                        <span className="flex items-center gap-1.5 whitespace-nowrap text-[15px] font-extrabold text-foreground">
+                                                            Question {i + 1}
+                                                            {/* Same filled bookmark, same red as "Marked for Review" in the runner
+                                                                (AnswerPane.tsx) — the student should recognise their own mark, not
+                                                                have to learn a second symbol for it. */}
+                                                            {q.was_flagged && (
+                                                                <Bookmark
+                                                                    className="h-3.5 w-3.5 shrink-0 fill-[#b0122a] text-[#b0122a]"
+                                                                    aria-label="You marked this for review"
+                                                                />
+                                                            )}
+                                                        </span>
                                                         <span className="text-[15px] font-bold">
                                                             {isOmitted ? (
                                                                 <span className="italic text-muted-foreground">Omitted</span>

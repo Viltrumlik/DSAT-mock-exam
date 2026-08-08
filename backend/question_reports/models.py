@@ -87,6 +87,10 @@ class QuestionErrorReport(models.Model):
     resource_id = models.BigIntegerField(null=True, blank=True)
     resource_title = models.CharField(max_length=255, blank=True, default="")
     subject = models.CharField(max_length=32, blank=True, default="")
+    # Snapshotted like every other field here: the set's level can be re-tagged later, and a
+    # report has to keep saying which cohort it was raised against. Blank for exams, whose
+    # level lives on the classroom rather than the paper, and for legacy untagged sets.
+    level = models.CharField(max_length=32, blank=True, default="")
     module_label = models.CharField(max_length=32, blank=True, default="")
     question_order = models.PositiveIntegerField(null=True, blank=True, help_text="1-based number.")
     question_excerpt = models.CharField(max_length=280, blank=True, default="")
