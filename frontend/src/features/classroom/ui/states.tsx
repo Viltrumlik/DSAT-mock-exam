@@ -57,12 +57,15 @@ export function ErrorState({
 /** Empty state: icon + title + description + optional action. Encouraging, never punishing. */
 export function EmptyState({
   icon: Icon,
+  media,
   title,
   description,
   action,
   className,
 }: {
   icon?: React.ElementType;
+  /** Stands in for the icon when the page has real art to show — a coin, an illustration. */
+  media?: React.ReactNode;
   title: string;
   description?: string;
   action?: React.ReactNode;
@@ -70,11 +73,11 @@ export function EmptyState({
 }) {
   return (
     <div className={cn("flex flex-col items-center justify-center gap-3 px-6 py-14 text-center", className)}>
-      {Icon && (
+      {media ?? (Icon && (
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-2 text-muted-foreground">
           <Icon className="h-6 w-6" aria-hidden />
         </div>
-      )}
+      ))}
       <div className="max-w-sm">
         <p className="text-sm font-semibold text-foreground">{title}</p>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}

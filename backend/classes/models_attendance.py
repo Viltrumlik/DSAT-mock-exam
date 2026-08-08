@@ -32,6 +32,14 @@ class AttendanceSession(models.Model):
         db_table = "classroom_attendance_sessions"
         ordering = ["-date", "-created_at"]
         indexes = [models.Index(fields=["classroom", "date"])]
+        constraints = [
+            # One lesson, one session. Without this a class can hold two sessions for the
+            # same day — each finalizes independently, and the reward hook pays a student
+            # twice for one lesson. The create endpoint upserts on this pair.
+            models.UniqueConstraint(
+                fields=["classroom", "date"], name="uniq_attendance_session_per_day"
+            )
+        ]
 
     def __str__(self) -> str:
         return f"Attendance {self.classroom_id} @ {self.date}"

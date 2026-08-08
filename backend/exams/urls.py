@@ -86,6 +86,9 @@ urlpatterns = [
     ),
     # Pastpaper practice library (explicit int-pk routes avoid router prefix conflicts)
     re_path(r"^$", PracticeTestViewSet.as_view({"get": "list"}), name="practice-test-list"),
-    re_path(r"^(?P<pk>\\d+)/$", PracticeTestViewSet.as_view({"get": "retrieve"}), name="practice-test-detail"),
+    # `\d`, not `\\d`. In a raw string the doubled backslash is a *literal* backslash, so this
+    # pattern matched `\dd/` and never an id — the endpoint 404'd for three months, and with it
+    # every `/practice-test/<id>` page, including the one homework sends students to.
+    re_path(r"^(?P<pk>\d+)/$", PracticeTestViewSet.as_view({"get": "retrieve"}), name="practice-test-detail"),
     path('', include(router.urls)),
 ]

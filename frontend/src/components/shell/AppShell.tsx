@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  UserRound,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
@@ -44,6 +45,16 @@ export type AppShellProps = {
   profileHref?: string;
   onSignOut?: () => void;
   onSignIn?: () => void;
+  /**
+   * Controls rendered in the top bar, just before the notification bell. The shell is
+   * shared with the teacher portal, so anything role-specific (the student's points and
+   * open surveys) is injected here rather than imported into this file.
+   */
+  headerSlot?: React.ReactNode;
+  /** Extra rows at the top of the avatar menu — the student's points and open surveys. */
+  accountMenu?: React.ReactNode;
+  /** Render the notification bell. Off until there is an API behind it. */
+  notifications?: boolean;
   children: React.ReactNode;
 };
 
@@ -55,35 +66,72 @@ export function AppShell({
   profileHref = "/profile",
   onSignOut,
   onSignIn,
+  headerSlot,
+  accountMenu,
+  notifications = false,
   children,
 }: AppShellProps) {
-  const { theme, setTheme } = useTheme();
+  // `resolvedTheme`, not `theme`: with the default `system` setting, `theme` is the string
+  // "system" and every comparison against "dark" is false, so the toggle showed the wrong
+  // icon and moved the wrong way for anyone who had never picked a side.
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  // Read before the first paint rather than in an effect: an effect meant every reload
+  // drew the full 272px sidebar and then snapped it to the rail.
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem(COLLAPSE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [navQuery, setNavQuery] = useState("");
   const [cmd, setCmd] = useState("");
   const [cmdOpen, setCmdOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [acctOpen, setAcctOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const cmdRef = useRef<HTMLDivElement>(null);
+  const cmdInputRef = useRef<HTMLInputElement>(null);
+  const acctRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
-    try {
-      setCollapsed(localStorage.getItem(COLLAPSE_KEY) === "1");
-    } catch {
-      /* ignore */
-    }
-  }, []);
-  useEffect(() => setMobileOpen(false), [pathname]);
+    setMobileOpen(false);
+    setAcctOpen(false);
+  }, [pathname]);
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;
       if (cmdRef.current && !cmdRef.current.contains(t)) setCmdOpen(false);
+      if (acctRef.current && !acctRef.current.contains(t)) setAcctOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setCmdOpen(false);
+        setAcctOpen(false);
+        return;
+      }
+      // The shell had no keyboard handler at all, so the one search box could only be
+      // reached with the mouse. Ignore the shortcut while the caret is already in a field.
+      const el = e.target as HTMLElement | null;
+      const typing =
+        !!el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+      if (typing) return;
+      if (e.key === "/" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) {
+        e.preventDefault();
+        cmdInputRef.current?.focus();
+        setCmdOpen(true);
+      }
     };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   const toggleCollapsed = () =>
@@ -99,14 +147,16 @@ export function AppShell({
 
   const filteredNav = useMemo(() => {
     const q = navQuery.trim().toLowerCase();
-    if (!q) return nav;
-    const matches = (i: NavItem) => i.label.toLowerCase().includes(q);
+    // `hiddenInSidebar` items are stripped here and nowhere else: the command palette and
+    // the mobile page title both read the unfiltered `nav`, so those keep working.
+    const matches = (i: NavItem) => !q || i.label.toLowerCase().includes(q);
     const filterItems = (items: NavItem[]): NavItem[] =>
       items.flatMap((i) => {
+        if (i.hiddenInSidebar) return [];
         if (i.children && i.children.length) {
+          const kids = filterItems(i.children);
           // Keep the whole group if its own label matches, else keep matching children.
-          if (matches(i)) return [i];
-          const kids = i.children.filter(matches);
+          if (matches(i)) return kids.length || !q ? [{ ...i, children: kids }] : [];
           return kids.length ? [{ ...i, children: kids }] : [];
         }
         return matches(i) ? [i] : [];
@@ -234,6 +284,12 @@ export function AppShell({
 
   return (
     <div className="ds-app flex min-h-screen flex-col bg-background text-foreground md:h-[100dvh] md:flex-row md:overflow-hidden">
+      <a
+        href="#main"
+        className="ds-ring sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[300] focus:rounded-lg focus:bg-card focus:px-3 focus:py-2 focus:text-sm focus:font-bold focus:text-foreground focus:shadow-modal"
+      >
+        Skip to content
+      </a>
       {mobileOpen ? (
         <button
           type="button"
@@ -359,8 +415,10 @@ export function AppShell({
         </div>
       </aside>
 
-      {/* Main column */}
-      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Main column. Below `md` nothing here is a scroll container — the DOCUMENT scrolls,
+          which is what lets a mobile browser retract its address bar. While `main` owned the
+          scroll, the bar stayed out permanently and sat over the last ~60px of every page. */}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
         {/* Large faint brand watermark — sits behind all page content */}
         {brand.logoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -384,14 +442,16 @@ export function AppShell({
           <div ref={cmdRef} className="relative hidden min-w-0 max-w-md flex-1 md:block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-label-foreground" />
             <input
+              ref={cmdInputRef}
               value={cmd}
               onChange={(e) => {
                 setCmd(e.target.value);
                 setCmdOpen(true);
               }}
               onFocus={() => setCmdOpen(true)}
-              placeholder="Search pages…"
+              placeholder="Search pages…   /"
               aria-label="Search pages"
+              aria-keyshortcuts="/ Meta+K Control+K"
               className="ds-ring h-10 w-full rounded-xl border border-border bg-surface-2 pl-9 pr-3 text-sm text-foreground placeholder:text-label-foreground focus-visible:border-primary"
             />
             {cmdOpen && cmdResults.length > 0 ? (
@@ -418,35 +478,111 @@ export function AppShell({
           <p className="truncate text-base font-bold tracking-tight md:hidden">{title}</p>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5 md:gap-2">
-            <Tooltip content="Notifications" side="bottom">
-              <IconButton
-                variant="ghost"
-                aria-label="Notifications"
-                aria-expanded={notifOpen}
-                onClick={() => setNotifOpen(true)}
-                className="relative"
-              >
-                <Bell className="h-5 w-5" />
-                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
-              </IconButton>
-            </Tooltip>
+            {headerSlot}
 
-            {mounted ? (
-              <Tooltip content={theme === "dark" ? "Light mode" : "Dark mode"} side="bottom">
+            {/* The bell only appears where it can tell the truth. It used to render an
+                unread dot unconditionally with no data behind it, and opening it always
+                said "You're all caught up" — the loudest permanent control in the product,
+                never once connected to anything. It comes back when there is a
+                notifications API. */}
+            {notifications ? (
+              <Tooltip content="Notifications" side="bottom">
                 <IconButton
-                  variant="default"
-                  aria-label="Toggle theme"
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  variant="ghost"
+                  aria-label="Notifications"
+                  aria-expanded={notifOpen}
+                  onClick={() => setNotifOpen(true)}
+                  className="relative"
                 >
-                  {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                  <Bell className="h-5 w-5" />
                 </IconButton>
               </Tooltip>
             ) : null}
 
+            {/* Theme moves into the account menu: a set-once preference should not be the
+                loudest button on every page, and mobile needs the 40px back. */}
+            {mounted ? (
+              // The responsive class sits on a wrapper, not on IconButton: `lib/cn` is a
+              // plain join rather than tailwind-merge, so a `hidden` passed through
+              // `className` merely joins the component's own `inline-flex` and loses on
+              // stylesheet order.
+              <span className="hidden md:block">
+                <Tooltip content={resolvedTheme === "dark" ? "Light mode" : "Dark mode"} side="bottom">
+                  <IconButton
+                    variant="ghost"
+                    aria-label="Toggle theme"
+                    onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                  >
+                    {resolvedTheme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                  </IconButton>
+                </Tooltip>
+              </span>
+            ) : null}
+
             {signedIn ? (
-              <Link href={profileHref} aria-label="Profile" className="ds-ring rounded-full">
-                <Avatar src={user?.avatarUrl} name={user?.name} size={38} />
-              </Link>
+              <div className="relative" ref={acctRef}>
+                <button
+                  type="button"
+                  aria-label="Your account"
+                  aria-haspopup="menu"
+                  aria-expanded={acctOpen}
+                  onClick={() => setAcctOpen((o) => !o)}
+                  className="ds-ring rounded-full"
+                >
+                  <Avatar src={user?.avatarUrl} name={user?.name} size={38} />
+                </button>
+                {acctOpen ? (
+                  <div
+                    role="menu"
+                    className="ds-anim-fade absolute right-0 top-[calc(100%+8px)] z-50 w-56 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-modal"
+                  >
+                    {user?.name ? (
+                      <p className="truncate px-3 pb-2 pt-1.5 text-sm font-bold text-foreground">
+                        {user.name}
+                      </p>
+                    ) : null}
+                    {accountMenu}
+                    <Link
+                      role="menuitem"
+                      href={profileHref}
+                      onClick={() => setAcctOpen(false)}
+                      className="flex items-center gap-2.5 border-t border-border px-3 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2"
+                    >
+                      <UserRound className="h-4 w-4 text-muted-foreground" />
+                      Profile
+                    </Link>
+                    {mounted ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+                        className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-surface-2 md:hidden"
+                      >
+                        {resolvedTheme === "dark" ? (
+                          <Sun className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Moon className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+                      </button>
+                    ) : null}
+                    {onSignOut ? (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setAcctOpen(false);
+                          onSignOut();
+                        }}
+                        className="flex w-full items-center gap-2.5 border-t border-border px-3 py-2.5 text-left text-sm font-semibold text-foreground transition-colors hover:bg-surface-2"
+                      >
+                        <LogOut className="h-4 w-4 text-muted-foreground" />
+                        Sign out
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
             ) : onSignIn ? (
               <button
                 type="button"
@@ -460,7 +596,12 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-5 md:px-6 lg:px-8">{children}</main>
+        <main
+          id="main"
+          className="relative z-10 min-h-0 flex-1 px-3 py-5 md:overflow-y-auto md:px-6 lg:px-8"
+        >
+          {children}
+        </main>
       </div>
 
       {/* Notifications — bell opens a drawer (not a primary nav item) */}

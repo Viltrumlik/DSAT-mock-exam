@@ -90,9 +90,13 @@ export default function AuthGuard({
     const isTester = roleRaw === "test_admin";
     const isStudent = roleRaw === "student";
     const hasStaff = staffAccess(perms);
-    // Teacher portal access is role-based (NOT permission-based): only teacher + super_admin.
-    // This deliberately excludes admin/test_admin, unlike the perm-based admin console gate.
-    const teacherPortalAllowed = roleRaw === "teacher" || roleRaw === "super_admin";
+    // Teacher portal access is role-based (NOT permission-based): teacher, support_teacher
+    // and super_admin. This deliberately excludes admin/test_admin, unlike the perm-based
+    // admin console gate. Mirrors access.constants.TEACHER_PORTAL_ROLES — the server is the
+    // real gate (host guard + login endpoint); this only avoids rendering a portal the API
+    // would refuse to serve.
+    const teacherPortalAllowed =
+        roleRaw === "teacher" || roleRaw === "support_teacher" || roleRaw === "super_admin";
 
     useEffect(() => {
         if (bootState !== "AUTHENTICATED" || !me) return;

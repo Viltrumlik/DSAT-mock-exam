@@ -1,13 +1,13 @@
 import {
   LayoutDashboard,
   LineChart,
+  GraduationCap,
   Users,
   ClipboardCheck,
   BookOpen,
   BookOpenCheck,
   ClipboardList,
   FileText,
-  Languages,
   UserCircle,
   ClipboardPen,
   Table2,
@@ -15,10 +15,12 @@ import {
   Timer,
   CirclePlay,
   FolderOpen,
-  Database,
-  GraduationCap,
-  MonitorPlay,
+  BookA,
+  CircleHelp,
   ShieldCheck,
+  Coins,
+  LifeBuoy,
+  ClipboardList as ClipboardListIcon,
 } from "lucide-react";
 
 export type NavItem = {
@@ -28,6 +30,12 @@ export type NavItem = {
   icon: React.ElementType;
   /** Marks a page introduced by the rebuild's gap analysis. */
   isNew?: boolean;
+  /**
+   * Kept out of the sidebar but still a real route: reached from the header instead.
+   * It stays in the config so the command palette can find it and so the mobile top bar
+   * still knows the page's name — dropping the entry entirely would cost both.
+   */
+  hiddenInSidebar?: boolean;
   /** When present, this item is a collapsible category whose children are the routes. */
   children?: NavItem[];
 };
@@ -57,12 +65,12 @@ export const studentNav: NavSection[] = [
         children: [
           { href: "/classes", label: "Classroom", icon: Users },
           { href: "/assessments", label: "Assessment", icon: ClipboardCheck },
-          { href: "/vocabulary", label: "Vocabulary", icon: Languages },
+          { href: "/vocabulary", label: "Vocabulary", icon: BookA },
         ],
       },
       {
         label: "Simulation",
-        icon: MonitorPlay,
+        icon: Timer,
         children: [
           { href: "/pastpapers", label: "Past Paper", icon: BookOpen },
           { href: "/mock-exam", label: "Mock Exam", icon: ClipboardList },
@@ -70,7 +78,13 @@ export const studentNav: NavSection[] = [
         ],
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
-      { href: "/question-bank", label: "Question Bank", icon: Database },
+      { href: "/support", label: "Support", icon: LifeBuoy, isNew: true },
+      // Surveys and Points are reached from the header, not the sidebar: a survey only
+      // exists now and then, and points are a running total worth seeing on every page
+      // rather than a destination to remember.
+      { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, hiddenInSidebar: true },
+      { href: "/rewards", label: "Points", icon: Coins, hiddenInSidebar: true },
+      { href: "/question-bank", label: "Question Bank", icon: CircleHelp },
       { href: "/profile", label: "Profile", icon: UserCircle },
     ],
   },
@@ -84,6 +98,17 @@ export const reviewNavSection: NavSection = {
   id: "review-center",
   section: "",
   items: [{ href: "/review-center", label: "Review Center", icon: ShieldCheck }],
+};
+
+/**
+ * Support-teacher entry, composed into the teacher sidebar only for that role — see
+ * TeacherAppShell. A plain teacher would get a 403 from the availability endpoints, so
+ * showing them the page would be a broken link rather than a permission lesson.
+ */
+export const supportTeacherNavSection: NavSection = {
+  id: "teacher-support",
+  section: "Support",
+  items: [{ href: "/teacher/support", label: "Support sessions", icon: LifeBuoy, isNew: true }],
 };
 
 /** Teacher information architecture (see docs/UI_REBUILD_IA.md §5). */

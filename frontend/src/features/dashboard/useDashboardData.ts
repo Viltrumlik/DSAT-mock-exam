@@ -27,12 +27,25 @@ export type Attempt = {
   practice_test_details?: { subject?: string; title?: string };
 };
 
+/**
+ * The shape `/classes/my-assignments/` actually returns. Note `classroom_id`, not
+ * `classroom`: this endpoint hydrates its own flattened payload rather than serving
+ * `AssignmentSerializer` verbatim, and the old `classroom` field here never existed —
+ * which is why every "upcoming" row used to fall back to the catalogue instead of
+ * deep-linking to the assignment.
+ */
 type AssignmentLite = {
   id: number;
   title?: string;
   due_at?: string | null;
   practice_scope?: string;
-  classroom?: number | null;
+  classroom_id?: number | null;
+  classroom_name?: string | null;
+  /** How much work it is — "27 questions". Already served; long unused. */
+  item_count?: number | null;
+  content_type?: string | null;
+  /** NOT_STARTED | IN_PROGRESS | RETURNED | SUBMITTED | GRADED, in either case. */
+  workflow_status?: string | null;
 };
 
 export type DashboardStatus = "booting" | "unauthenticated" | "ready";
@@ -43,7 +56,18 @@ export type ExamDateOption = { id: number; exam_date: string; label: string };
 export type MilestoneItem = { id: string; label: string; done: boolean };
 export type ActionItem = { id: string; title: string; detail: string; href: string };
 export type RecentItem = { id: number; title: string; meta: string; time: string; isMath: boolean };
-export type UpcomingItem = { id: number; title: string; href: string; dueLabel: string; soon: boolean };
+export type UpcomingItem = {
+  id: number;
+  title: string;
+  href: string;
+  dueLabel: string;
+  soon: boolean;
+  /** "27 questions · Math Middle A" — the size and the class, which decide whether a
+   *  student starts now or puts it off. Both were already on the wire. */
+  meta: string;
+  /** True once the due date has passed. Never rendered as "overdue" — see `dueLabel`. */
+  behind: boolean;
+};
 
 export type DashboardModel = {
   firstName: string;
@@ -120,6 +144,32 @@ function projectScore(scores: number[]): number | null {
   }
   const avg = deltas.reduce((a, b) => a + b, 0) / deltas.length;
   return clamp(Math.round(last + avg), Math.min(...scores), 1600);
+}
+
+/**
+ * Still to do. `RETURNED` counts as outstanding — it means "revise and resubmit" — but
+ * submitted and graded work does not: telling a student to do something they have already
+ * turned in is the bug this list exists to end.
+ */
+function isOutstanding(status?: string | null): boolean {
+  return !["submitted", "graded"].includes((status || "").trim().toLowerCase());
+}
+
+/**
+ * "27 questions" — how much work a row is, which is what decides whether a student starts
+ * now or puts it off.
+ *
+ * Only the kinds whose `item_count` really is a question count get a label. For
+ * `content_type: "file"` the server counts *attachments*, and a vocabulary-only assignment
+ * also falls through to "file" (there is no "vocabulary" content type — vocab travels in a
+ * separate `vocab_homeworks` array), so a number there would be describing the wrong thing.
+ * Saying nothing beats saying "1 attachment" about a set of ten words.
+ */
+function sizeLabel(a: { item_count?: number | null; content_type?: string | null }): string {
+  const n = a.item_count ?? 0;
+  if (n <= 0) return "";
+  if (!["assessment", "pastpaper", "practice", "mock"].includes(a.content_type ?? "")) return "";
+  return `${n} question${n === 1 ? "" : "s"}`;
 }
 
 /** Local-midnight timestamp for a date-only ("YYYY-MM-DD") exam date. */
@@ -224,17 +274,18 @@ function buildModel(
 
   // Upcoming assignments (real; growth-framed — no "overdue").
   const upcoming: UpcomingItem[] = assignments
-    .filter((a) => a.due_at)
+    .filter((a) => a.due_at && isOutstanding(a.workflow_status))
     .sort((a, b) => new Date(a.due_at!).getTime() - new Date(b.due_at!).getTime())
-    .slice(0, 4)
+    .slice(0, 5)
     .map((a) => {
       const d = daysUntil(a.due_at);
       const soon = d != null && d <= 3;
+      const behind = d != null && d < 0;
       const dueLabel =
         d == null
           ? ""
-          : d < 0
-            ? "Needs attention"
+          : behind
+            ? "Catch up"
             : d === 0
               ? "Due today"
               : d === 1
@@ -243,9 +294,13 @@ function buildModel(
       return {
         id: a.id,
         title: a.title || "Assignment",
-        href: a.classroom ? `/classes/${a.classroom}/assignments/${a.id}` : "/assessments",
+        href: a.classroom_id
+          ? `/classes/${a.classroom_id}/assignments/${a.id}`
+          : "/assessments",
         dueLabel,
-        soon: soon || (d != null && d < 0),
+        soon: soon || behind,
+        meta: [sizeLabel(a), (a.classroom_name || "").trim()].filter(Boolean).join(" · "),
+        behind,
       };
     });
 

@@ -232,7 +232,10 @@ function Board() {
         {error ? (
           <AssessError onRetry={() => void load()} />
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 18 }} className="dz-board">
+          // `auto-fit` rather than a fixed `repeat(3, 1fr)`: the responsive behaviour used to hang
+          // on a `dz-board` class that matches no rule anywhere in the codebase, so a phone got
+          // three ~105px columns of the most-used student screen.
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 18 }}>
             {COLUMNS.map((col) => (
               <div key={col.key} style={{ background: "var(--dz-card)", border: "1px solid var(--dz-border)", borderRadius: 18, padding: 16, minHeight: 300 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 6px 16px" }}>
@@ -351,12 +354,20 @@ function TodoBody({ qCount, due, tags }: { qCount: number; due?: string | null; 
     <>
       {qCount > 0 ? (
         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: dl || tags.length ? 12 : 14 }}>
-          <Clock size={13} /> {qCount} questions · ~{estMinutes(qCount)} min
+          <Clock size={13} /> {qCount} question{qCount === 1 ? "" : "s"} · ~{estMinutes(qCount)} min
         </div>
       ) : null}
       {dl ? (
         <div style={{ marginBottom: tags.length ? 12 : 14 }}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "#dc2626", background: "color-mix(in srgb, #dc2626 12%, transparent)", border: "1px solid color-mix(in srgb, #dc2626 30%, transparent)", padding: "4px 10px", borderRadius: 8 }}>
+          {/* Work still to come is quiet; work to catch up on is amber. Never red — nothing
+              here has failed, and `dueLabel` has always returned the flag to tell them apart. */}
+          <span
+            style={
+              dl.overdue
+                ? { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--dz-amber)", background: "color-mix(in srgb, var(--dz-amber) 14%, transparent)", border: "1px solid color-mix(in srgb, var(--dz-amber) 32%, transparent)", padding: "4px 10px", borderRadius: 8 }
+                : { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "var(--dz-mute)", background: "var(--dz-card)", border: "1px solid var(--dz-border)", padding: "4px 10px", borderRadius: 8 }
+            }
+          >
             <Calendar size={13} /> {dl.text}
           </span>
         </div>

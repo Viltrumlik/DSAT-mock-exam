@@ -1,11 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { classesApi, examsAdminApi, type ClassroomMember } from "@/lib/api";
-import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, X } from "lucide-react";
+import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, ChevronRight, LifeBuoy, Calculator, Languages } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
-import { Avatar } from "@/components/ui/Avatar";
+import {
+  Alert,
+  Avatar,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  EmptyState,
+  Field,
+  IconButton,
+  Input,
+  Modal,
+  Select,
+  Skeleton,
+  Spinner,
+} from "@/components/ui";
 
 // ADMIN GOVERNANCE. Admins create classrooms and assign a teacher here, and may view all
 // classrooms, transfer ownership, and delete. Teachers do NOT create their own classrooms —
@@ -17,7 +34,7 @@ type Row = {
   id: number; name: string; subject?: string; level?: string; members_count?: number; student_count?: number;
   teacher_details?: TeacherDetails;
 };
-type TeacherOpt = { id: number; email: string; name: string; avatar?: string | null };
+type TeacherOpt = { id: number; email: string; name: string; avatar?: string | null; subject?: string | null };
 type StudentOpt = { id: number; email: string; name: string; avatar?: string | null };
 
 function memberName(m: ClassroomMember): string {
@@ -35,6 +52,40 @@ type CreateForm = {
   teacherId: string; // "" = assign a teacher later
 };
 const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "" };
+
+type SubjectKey = "ENGLISH" | "MATH";
+type Group = { subject: string; level: string; count: number };
+/** Where the drill-down currently is. Nothing chosen → subject picker; subject only → level
+ *  picker; both → the classroom list, fetched server-side for that pair. */
+type Crumb = { subject?: SubjectKey; level?: string };
+
+/** Subject is a *categorical* accent, so it is expressed as design-system tones rather than
+ *  a raw palette colour — that is what keeps the tiles and the row chips readable in dark
+ *  mode without a hand-maintained `dark:` pair. `badge` and `accent` are the same tone. */
+const SUBJECT_META: Record<SubjectKey, { label: string; icon: typeof School; accent: string; badge: "accent" | "primary" }> = {
+  ENGLISH: { label: "English", icon: Languages, accent: "bg-accent-soft text-accent", badge: "accent" },
+  MATH: { label: "Math", icon: Calculator, accent: "bg-primary-soft text-primary", badge: "primary" },
+};
+
+/** A row's subject is free text from the API, so it is matched the same loose way the
+ *  support-teacher picker matches it. */
+function subjectTone(subject?: string): "accent" | "primary" {
+  return (subject ?? "").toLowerCase().includes("math") ? SUBJECT_META.MATH.badge : SUBJECT_META.ENGLISH.badge;
+}
+
+/** Course length in months per (subject, level) — mirrors journals/structure.COURSE_STRUCTURE,
+ *  the only place the school's seven real courses are already enumerated. Shown on the level
+ *  picker so an admin can see what they are creating into. */
+const COURSE_MONTHS: Record<string, number> = {
+  "MATH:foundation": 1,
+  "ENGLISH:junior": 3, "MATH:junior": 3,
+  "ENGLISH:middle": 2, "MATH:middle": 2,
+  "ENGLISH:senior": 2, "MATH:senior": 2,
+};
+
+/** Shared chrome for the two drill-down pickers: a whole tile is the target, so the tile
+ *  itself is the button rather than a card wrapping one. */
+const TILE = "ds-ring rounded-2xl border border-border bg-card text-left shadow-card transition-colors hover:border-border-strong hover:bg-surface-2";
 
 function normList(d: unknown): Row[] {
   if (Array.isArray(d)) return d as Row[];
@@ -59,13 +110,24 @@ export default function OpsClassroomGovernancePage() {
   const [roster, setRoster] = useState<{ row: Row } | null>(null);
   const [rosterMembers, setRosterMembers] = useState<ClassroomMember[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
+  /** The roster/support lists come back empty on failure too, so "nobody is enrolled" and
+   *  "the request failed" are indistinguishable without these. Loading → error → empty. */
+  const [rosterFailed, setRosterFailed] = useState(false);
+  const [supportFailed, setSupportFailed] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
+  // Drill-down: subject → level → classrooms.
+  const [crumb, setCrumb] = useState<Crumb>({});
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [supportOpts, setSupportOpts] = useState<TeacherOpt[]>([]);
+  const [supportModal, setSupportModal] = useState<{ row: Row } | null>(null);
+  const [supportAssigned, setSupportAssigned] = useState<{ user_id: number; name: string; email: string; subject: string | null }[]>([]);
+  const [supportLoading, setSupportLoading] = useState(false);
+  const [pickSupport, setPickSupport] = useState<string>("");
 
-  const load = async () => {
-    setLoading(true); setError(null);
-    try {
-      const data = await classesApi.directory();
-      setRows(normList(data));
+  // People pickers are directory-wide and independent of the drill-down, so they load once
+  // rather than on every level change.
+  useEffect(() => {
+    (async () => {
       try {
         const u = await examsAdminApi.getUsers();
         const list = (Array.isArray(u) ? u : (u as { results?: unknown[] })?.results ?? []) as Record<string, unknown>[];
@@ -73,22 +135,124 @@ export default function OpsClassroomGovernancePage() {
           id: Number(x.id), email: String(x.email ?? ""),
           name: [x.first_name, x.last_name].filter(Boolean).join(" ").trim() || String(x.email ?? `#${x.id}`),
           avatar: (x.profile_image_url as string | null) ?? null,
+          subject: (x.subject as string | null) ?? null,
         });
-        setTeachers(list.filter((x) => String(x.role).toLowerCase() === "teacher").map(toOpt));
-        setStudents(list.filter((x) => String(x.role).toLowerCase() === "student").map(toOpt));
+        const role = (x: Record<string, unknown>) => String(x.role).toLowerCase();
+        setTeachers(list.filter((x) => role(x) === "teacher").map(toOpt));
+        setSupportOpts(list.filter((x) => role(x) === "support_teacher").map(toOpt));
+        setStudents(list.filter((x) => role(x) === "student").map(toOpt));
       } catch { /* people pickers optional */ }
+    })();
+  }, []);
+
+  // Monotonic token: two loads can be in flight when an admin clicks through levels quickly,
+  // and without this the SLOWER (earlier) response wins and the list shows the wrong level's
+  // classrooms under the right breadcrumb.
+  const loadSeq = useRef(0);
+
+  const load = async () => {
+    const seq = ++loadSeq.current;
+    const stale = () => seq !== loadSeq.current;
+    setLoading(true); setError(null);
+    try {
+      const groupRows = await classesApi.directoryGroups();
+      if (stale()) return;
+      setGroups(groupRows);
+      // Rows are only fetched at the leaf — the pickers above run off the tallies, so the
+      // console never pulls every classroom in the school just to draw seven buttons.
+      if (crumb.subject && crumb.level) {
+        const data = await classesApi.directory({ subject: crumb.subject, level: crumb.level });
+        if (stale()) return;
+        setRows(normList(data));
+      } else {
+        setRows([]);
+      }
     } catch (e: unknown) {
+      if (stale()) return;
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Could not load the classroom directory (admin only).");
-    } finally { setLoading(false); }
+    } finally { if (!stale()) setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  // Refetch whenever the drill-down moves. `load` is intentionally not a dependency: it is
+  // recreated every render, and depending on it would loop.
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crumb.subject, crumb.level]);
 
   const filtered = useMemo(() => {
     if (search.trim().length < 2) return rows;
     const t = search.toLowerCase();
     return rows.filter((c) => (c.name ?? "").toLowerCase().includes(t) || (c.subject ?? "").toLowerCase().includes(t));
   }, [rows, search]);
+
+  const countFor = (subject: string, level?: string) =>
+    groups
+      .filter((g) => g.subject === subject && (level === undefined || g.level === level))
+      .reduce((n, g) => n + g.count, 0);
+
+  /** Levels valid for a subject, plus "untagged" when classrooms predate the level field —
+   *  without that bucket those rows are unreachable through the drill-down. */
+  const levelBucketsFor = (subject: SubjectKey): { key: string; label: string }[] => {
+    const real = levelsForSubject(subject).map((l) => ({ key: l as string, label: levelLabel(l) }));
+    return countFor(subject, "untagged") > 0
+      ? [...real, { key: "untagged", label: "No level set" }]
+      : real;
+  };
+
+  /** Open the create form pre-filled from wherever the admin is standing. */
+  function openCreate() {
+    setError(null);
+    const level = crumb.level && crumb.level !== "untagged" ? crumb.level : "";
+    setCreateForm({ ...BLANK_CREATE, subject: crumb.subject ?? "ENGLISH", level });
+    setCreateOpen(true);
+  }
+
+  /** Assign/transfer share one modal. The error is cleared on open so a stale banner from an
+   *  earlier action is not mistaken for a failure of this one — every other opener here does
+   *  the same. */
+  function openTeacherModal(kind: "assign" | "transfer", row: Row) {
+    setError(null);
+    setModal({ kind, row });
+    setPickTeacher("");
+  }
+
+  async function openSupport(row: Row) {
+    setSupportModal({ row }); setSupportAssigned([]); setPickSupport(""); setSupportLoading(true); setError(null);
+    setSupportFailed(false);
+    try { setSupportAssigned(await classesApi.supportTeachers(row.id)); }
+    catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not load support teachers.");
+      setSupportFailed(true);
+    } finally { setSupportLoading(false); }
+  }
+
+  async function addSupport() {
+    if (!supportModal || !pickSupport) return;
+    setBusy(true); setError(null);
+    try {
+      await classesApi.assignSupportTeacher(supportModal.row.id, Number(pickSupport));
+      setSupportAssigned(await classesApi.supportTeachers(supportModal.row.id));
+      setPickSupport("");
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not assign the support teacher.");
+    } finally { setBusy(false); }
+  }
+
+  async function dropSupport(userId: number, name: string) {
+    if (!supportModal) return;
+    if (!window.confirm(`Remove ${name} from “${supportModal.row.name}”? They can be assigned again later.`)) return;
+    setBusy(true); setError(null);
+    try {
+      await classesApi.removeSupportTeacher(supportModal.row.id, userId);
+      setSupportAssigned(await classesApi.supportTeachers(supportModal.row.id));
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : "Could not remove the support teacher.");
+    } finally { setBusy(false); }
+  }
 
   function teacherName(td: TeacherDetails) {
     if (!td) return "— Unassigned —";
@@ -147,10 +311,12 @@ export default function OpsClassroomGovernancePage() {
 
   async function openRoster(row: Row) {
     setRoster({ row }); setRosterMembers([]); setStudentSearch(""); setRosterLoading(true); setError(null);
+    setRosterFailed(false);
     try { setRosterMembers(await classesApi.roster(row.id)); }
     catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Could not load the roster.");
+      setRosterFailed(true);
     } finally { setRosterLoading(false); }
   }
 
@@ -184,7 +350,7 @@ export default function OpsClassroomGovernancePage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-[10px] font-bold text-primary uppercase tracking-widest mb-1.5">Admin console · Governance</p>
           <h1 className="text-xl font-bold text-foreground tracking-tight">Classroom governance</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -192,144 +358,378 @@ export default function OpsClassroomGovernancePage() {
             management lives in the Teacher Portal.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={load} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
-          <button type="button" onClick={() => { setError(null); setCreateForm(BLANK_CREATE); setCreateOpen(true); }} className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90">
-            <Plus className="h-4 w-4" /> Create classroom
-          </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={load} leftIcon={<RefreshCw />}>Refresh</Button>
+          <Button size="sm" onClick={openCreate} leftIcon={<Plus />}>Create classroom</Button>
         </div>
       </div>
 
-      {notice && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{notice}</div>}
-      {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
+      {notice && <Alert tone="success" onClose={() => setNotice(null)}>{notice}</Alert>}
+      {error && <Alert tone="danger" onClose={() => setError(null)}>{error}</Alert>}
 
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-        <input type="search" placeholder="Search classrooms…" value={search} onChange={(e) => setSearch(e.target.value)}
-          className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30" />
+      {/* Breadcrumb — the only way back up the drill-down. */}
+      <nav aria-label="Classroom directory" className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+        <button type="button" onClick={() => { setCrumb({}); setSearch(""); }}
+          className={cn("ds-ring rounded-lg px-2 py-1", crumb.subject ? "text-primary hover:bg-surface-2" : "text-foreground")}>
+          All subjects
+        </button>
+        {crumb.subject && (
+          <>
+            <ChevronRight aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+            <button type="button" onClick={() => { setCrumb({ subject: crumb.subject }); setSearch(""); }}
+              className={cn("ds-ring rounded-lg px-2 py-1", crumb.level ? "text-primary hover:bg-surface-2" : "text-foreground")}>
+              {SUBJECT_META[crumb.subject].label}
+            </button>
+          </>
+        )}
+        {crumb.subject && crumb.level && (
+          <>
+            <ChevronRight aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+            <span aria-current="page" className="rounded-lg px-2 py-1 text-foreground">
+              {crumb.level === "untagged" ? "No level set" : levelLabel(crumb.level)}
+            </span>
+          </>
+        )}
+      </nav>
+
+      {/* Step 1 — subject */}
+      {!crumb.subject && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {(Object.keys(SUBJECT_META) as SubjectKey[]).map((key) => {
+            const meta = SUBJECT_META[key];
+            const Icon = meta.icon;
+            const n = countFor(key);
+            return (
+              <button key={key} type="button" onClick={() => setCrumb({ subject: key })}
+                className={cn(TILE, "flex items-center justify-between gap-4 p-5")}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl", meta.accent)}>
+                    <Icon aria-hidden className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="ds-h4 truncate">{meta.label}</p>
+                    {loading ? (
+                      <Skeleton variant="text" className="mt-1.5 w-24" />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        <span className="ds-num">{n}</span> classroom{n === 1 ? "" : "s"}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <ChevronRight aria-hidden className="h-5 w-5 shrink-0 text-muted-foreground" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Step 2 — level */}
+      {crumb.subject && !crumb.level && (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {levelBucketsFor(crumb.subject).map((bucket) => {
+            const n = countFor(crumb.subject as SubjectKey, bucket.key);
+            const months = COURSE_MONTHS[`${crumb.subject}:${bucket.key}`];
+            return (
+              <button key={bucket.key} type="button" onClick={() => setCrumb({ subject: crumb.subject, level: bucket.key })}
+                className={cn(TILE, "p-4")}>
+                <p className="text-sm font-bold text-foreground">{bucket.label}</p>
+                {loading ? (
+                  <Skeleton variant="text" className="mt-1.5 w-20" />
+                ) : (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    <span className="ds-num">{n}</span> classroom{n === 1 ? "" : "s"}
+                  </p>
+                )}
+                {months ? (
+                  <p className="mt-2 text-[11px] font-semibold text-muted-foreground">
+                    <span className="ds-num">{months}</span>-month course
+                  </p>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {crumb.subject && crumb.level && (
+      <>
+      <div className="max-w-md">
+        <Input
+          id="classroom-search"
+          type="search"
+          aria-label="Search classrooms"
+          leftIcon={<Search />}
+          inputSize="sm"
+          placeholder="Search classrooms…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4 font-bold text-foreground">
-          {loading ? "Loading…" : `${filtered.length} classroom${filtered.length === 1 ? "" : "s"}`}
-        </div>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b border-border pb-4">
+          <CardTitle>
+            {loading ? "Loading classrooms…" : <><span className="ds-num">{filtered.length}</span> classroom{filtered.length === 1 ? "" : "s"}</>}
+          </CardTitle>
+        </CardHeader>
         {loading ? (
-          <div className="flex justify-center p-10"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>
+          <div className="divide-y divide-border">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center gap-3 px-5 py-4">
+                <Skeleton className="h-9 w-9 shrink-0 rounded-xl" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton variant="text" className="w-40" />
+                  <Skeleton variant="text" className="w-64" />
+                </div>
+                <Skeleton className="h-9 w-28 shrink-0 rounded-lg" />
+              </div>
+            ))}
+          </div>
+        ) : error && rows.length === 0 ? (
+          // Loading → error → empty → content. Without this branch a failed request rendered
+          // as "no classrooms", which is a lie: the level may be full. Gated on `rows`, not
+          // `filtered`: a mutation error while a search matches nothing must not relabel the
+          // list as a failed load.
+          <CardContent className="space-y-3">
+            <Alert tone="danger" title="Couldn’t load the classrooms">{error}</Alert>
+            <Button variant="secondary" onClick={load} leftIcon={<RefreshCw />}>Retry</Button>
+          </CardContent>
         ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground"><School className="h-8 w-8 mx-auto mb-3 opacity-30" /><p className="font-semibold">No classrooms.</p></div>
+          <CardContent>
+            {rows.length === 0 ? (
+              <EmptyState
+                compact
+                icon={School}
+                title="No classrooms yet"
+                description="Create the first classroom for this level and it will appear here."
+                action={<Button onClick={openCreate} leftIcon={<Plus />}>Create classroom</Button>}
+              />
+            ) : (
+              <EmptyState
+                compact
+                icon={Search}
+                title="No classrooms match that search"
+                description="Try a different name or subject."
+              />
+            )}
+          </CardContent>
         ) : (
           <div className="divide-y divide-border">
             {filtered.map((c) => (
               <div key={c.id} className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="rounded-xl bg-surface-2 p-2.5 shrink-0"><School className="h-4 w-4 text-muted-foreground" /></div>
+                  <span className="rounded-xl bg-surface-2 p-2.5 shrink-0"><School aria-hidden className="h-4 w-4 text-muted-foreground" /></span>
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                      <p className="font-extrabold text-foreground truncate">{c.name}</p>
-                      {c.subject && <span className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase", c.subject.toLowerCase().includes("math") ? "bg-purple-100 text-purple-800" : "bg-teal-100 text-teal-800")}>{c.subject}</span>}
-                      {c.level && <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-700">{levelLabel(c.level)}</span>}
+                      <p className="font-bold text-foreground truncate">{c.name}</p>
+                      {c.subject && <Badge variant={subjectTone(c.subject)} className="uppercase">{c.subject}</Badge>}
+                      {c.level && <Badge variant="neutral" className="uppercase">{levelLabel(c.level)}</Badge>}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                      <span>ID #{c.id}</span>
-                      <span className="inline-flex items-center gap-1.5">{c.teacher_details?.profile_image_url ? <Avatar src={c.teacher_details.profile_image_url} name={teacherName(c.teacher_details)} size={18} /> : <UserCog className="h-3 w-3" />} {teacherName(c.teacher_details ?? null)}</span>
-                      {typeof (c.members_count ?? c.student_count) === "number" && <span className="inline-flex items-center gap-1"><Users className="h-3 w-3" />{c.members_count ?? c.student_count}</span>}
+                      <span className="ds-num">ID #{c.id}</span>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        {c.teacher_details?.profile_image_url
+                          ? <Avatar src={c.teacher_details.profile_image_url} name={teacherName(c.teacher_details)} size={18} />
+                          : <UserCog aria-hidden className="h-3 w-3 shrink-0" />}
+                        <span className="truncate">{teacherName(c.teacher_details ?? null)}</span>
+                      </span>
+                      {typeof (c.members_count ?? c.student_count) === "number" && (
+                        <span className="inline-flex items-center gap-1">
+                          <Users aria-hidden className="h-3 w-3" />
+                          <span className="ds-num">{c.members_count ?? c.student_count}</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button disabled={busy} onClick={() => openRoster(c)} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><Users className="h-3.5 w-3.5" /> Students</button>
-                  <button disabled={busy} onClick={() => { setModal({ kind: "assign", row: c }); setPickTeacher(""); }} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><UserCog className="h-3.5 w-3.5" /> Assign teacher</button>
-                  <button disabled={busy} onClick={() => { setModal({ kind: "transfer", row: c }); setPickTeacher(""); }} className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold hover:bg-surface-2 disabled:opacity-50"><ArrowLeftRight className="h-3.5 w-3.5" /> Transfer</button>
-                  <button disabled={busy} onClick={() => del(c)} className="inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-bold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50" aria-label={`Delete ${c.name}`}><Trash2 className="h-3.5 w-3.5" /></button>
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => openRoster(c)} leftIcon={<Users />}>Students</Button>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => openTeacherModal("assign", c)} leftIcon={<UserCog />}>Assign teacher</Button>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => openSupport(c)} leftIcon={<LifeBuoy />}>Support</Button>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => openTeacherModal("transfer", c)} leftIcon={<ArrowLeftRight />}>Transfer</Button>
+                  <IconButton size="sm" variant="ghost" disabled={busy} onClick={() => del(c)} aria-label={`Delete ${c.name}`}>
+                    <Trash2 className="h-4 w-4 text-danger" aria-hidden />
+                  </IconButton>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </Card>
+      </>
+      )}
 
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setModal(null)}>
-          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-base font-bold text-foreground">{modal.kind === "assign" ? "Assign teacher" : "Transfer ownership"} — {modal.row.name}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Select a teacher.</p>
-            <select value={pickTeacher} onChange={(e) => setPickTeacher(e.target.value)} className="mt-4 w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
-              <option value="">— Choose teacher —</option>
-              {teachers.map((t) => <option key={t.id} value={String(t.id)}>{t.name} ({t.email})</option>)}
-            </select>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setModal(null)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2">Cancel</button>
-              <button disabled={busy || !pickTeacher} onClick={submitModal} className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{busy ? "Working…" : "Confirm"}</button>
-            </div>
+        <Modal
+          open
+          onClose={() => setModal(null)}
+          title={`${modal.kind === "assign" ? "Assign teacher" : "Transfer ownership"} — ${modal.row.name}`}
+          description="Select a teacher."
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button>
+              <Button loading={busy} disabled={!pickTeacher} onClick={submitModal}>Confirm</Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            {error && <Alert tone="danger">{error}</Alert>}
+            <Field label="Teacher" htmlFor="teacher-pick">
+              <Select id="teacher-pick" value={pickTeacher} onChange={(e) => setPickTeacher(e.target.value)}>
+                <option value="">— Choose teacher —</option>
+                {teachers.map((t) => <option key={t.id} value={String(t.id)}>{t.name} ({t.email})</option>)}
+              </Select>
+            </Field>
           </div>
-        </div>
+        </Modal>
       )}
 
       {createOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setCreateOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-base font-bold text-foreground">Create classroom</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Set up a classroom and assign its teacher. Teachers can’t create their own.</p>
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Class name</label>
-                <input autoFocus value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="SAT Math — Evening Group" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Subject</label>
-                  <select value={createForm.subject} onChange={(e) => {
-                    const subject = e.target.value as CreateForm["subject"];
-                    // Reset level if it isn't valid for the new subject (English has no Foundation).
-                    const levelOk = levelsForSubject(subject).includes(createForm.level as never);
-                    setCreateForm({ ...createForm, subject, level: levelOk ? createForm.level : "" });
-                  }} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
-                    <option value="ENGLISH">English</option>
-                    <option value="MATH">Math</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Level</label>
-                  <select value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
-                    <option value="">— Choose level —</option>
-                    {levelsForSubject(createForm.subject).map((l) => <option key={l} value={l}>{levelLabel(l)}</option>)}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Lesson days</label>
-                  <select value={createForm.lesson_days} onChange={(e) => setCreateForm({ ...createForm, lesson_days: e.target.value as CreateForm["lesson_days"] })} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
-                    <option value="ODD">Odd days</option>
-                    <option value="EVEN">Even days</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Lesson time</label>
-                  <input value={createForm.lesson_time} onChange={(e) => setCreateForm({ ...createForm, lesson_time: e.target.value })} placeholder="18:00" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-bold text-muted-foreground">Room</label>
-                  <input value={createForm.room_number} onChange={(e) => setCreateForm({ ...createForm, room_number: e.target.value })} placeholder="Optional" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
-                </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Teacher</label>
-                <select value={createForm.teacherId} onChange={(e) => setCreateForm({ ...createForm, teacherId: e.target.value })} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
-                  <option value="">— Assign a teacher later —</option>
-                  {teachers.map((t) => <option key={t.id} value={String(t.id)}>{t.name} ({t.email})</option>)}
-                </select>
-              </div>
+        <Modal
+          open
+          onClose={() => setCreateOpen(false)}
+          title="Create classroom"
+          description="Set up a classroom and assign its teacher. Teachers can’t create their own."
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
+              <Button loading={busy} disabled={!createForm.name.trim() || !createForm.level} onClick={submitCreate}>Create classroom</Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            {error && <Alert tone="danger">{error}</Alert>}
+            <Field label="Class name" htmlFor="create-name" required>
+              <Input id="create-name" required autoFocus value={createForm.name}
+                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                placeholder="SAT Math — Evening Group" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Subject" htmlFor="create-subject">
+                <Select id="create-subject" value={createForm.subject} onChange={(e) => {
+                  const subject = e.target.value as CreateForm["subject"];
+                  // Reset level if it isn't valid for the new subject (English has no Foundation).
+                  const levelOk = levelsForSubject(subject).includes(createForm.level as never);
+                  setCreateForm({ ...createForm, subject, level: levelOk ? createForm.level : "" });
+                }}>
+                  <option value="ENGLISH">English</option>
+                  <option value="MATH">Math</option>
+                </Select>
+              </Field>
+              <Field label="Level" htmlFor="create-level" required>
+                <Select id="create-level" required value={createForm.level} onChange={(e) => setCreateForm({ ...createForm, level: e.target.value })}>
+                  <option value="">— Choose level —</option>
+                  {levelsForSubject(createForm.subject).map((l) => <option key={l} value={l}>{levelLabel(l)}</option>)}
+                </Select>
+              </Field>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button onClick={() => setCreateOpen(false)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2">Cancel</button>
-              <button disabled={busy || !createForm.name.trim() || !createForm.level} onClick={submitCreate} className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{busy ? "Creating…" : "Create classroom"}</button>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Lesson days" htmlFor="create-days">
+                <Select id="create-days" value={createForm.lesson_days} onChange={(e) => setCreateForm({ ...createForm, lesson_days: e.target.value as CreateForm["lesson_days"] })}>
+                  <option value="ODD">Odd days</option>
+                  <option value="EVEN">Even days</option>
+                </Select>
+              </Field>
+              <Field label="Lesson time" htmlFor="create-time">
+                <Input id="create-time" value={createForm.lesson_time} onChange={(e) => setCreateForm({ ...createForm, lesson_time: e.target.value })} placeholder="18:00" />
+              </Field>
+              <Field label="Room" htmlFor="create-room">
+                <Input id="create-room" value={createForm.room_number} onChange={(e) => setCreateForm({ ...createForm, room_number: e.target.value })} placeholder="Optional" />
+              </Field>
             </div>
+            <Field label="Teacher" htmlFor="create-teacher">
+              <Select id="create-teacher" value={createForm.teacherId} onChange={(e) => setCreateForm({ ...createForm, teacherId: e.target.value })}>
+                <option value="">— Assign a teacher later —</option>
+                {teachers.map((t) => <option key={t.id} value={String(t.id)}>{t.name} ({t.email})</option>)}
+              </Select>
+            </Field>
           </div>
-        </div>
+        </Modal>
       )}
+
+      {supportModal && (() => {
+        // Only offer support teachers whose subject matches the class. The server refuses a
+        // mismatch anyway, but a picker that lists impossible choices invites the mistake.
+        const classDomain = (supportModal.row.subject ?? "").toLowerCase() === "math" ? "math" : "english";
+        const assignedIds = new Set(supportAssigned.map((s) => s.user_id));
+        const candidates = supportOpts.filter(
+          (o) => !assignedIds.has(o.id) && (o.subject ?? "").toLowerCase() === classDomain,
+        );
+        return (
+          <Modal
+            open
+            onClose={() => setSupportModal(null)}
+            title={`Support teachers — ${supportModal.row.name}`}
+            description="Students book these staff for help outside the lesson. They join as teaching assistants — the classroom keeps its own teacher."
+            footer={<Button variant="secondary" onClick={() => setSupportModal(null)}>Done</Button>}
+          >
+            {error && <Alert tone="danger" className="mb-4">{error}</Alert>}
+
+            <Field
+              label="Assign a support teacher"
+              htmlFor="support-pick"
+              hint={candidates.length === 0
+                ? "No unassigned " + classDomain + " support teachers. Create one in Users first — a support teacher can only cover the subject their account is set to."
+                : undefined}
+            >
+              <div className="flex gap-2">
+                {/* min-w-0: without it a long option label ("Name (email@…)") sets the
+                    select wrapper's min-content width, the flex row overflows the modal, and
+                    the Assign button is pushed off the right edge. */}
+                <div className="min-w-0 flex-1">
+                  <Select id="support-pick" value={pickSupport} onChange={(e) => setPickSupport(e.target.value)}>
+                    <option value="">— Choose —</option>
+                    {candidates.map((o) => <option key={o.id} value={String(o.id)}>{o.name} ({o.email})</option>)}
+                  </Select>
+                </div>
+                <Button className="shrink-0" loading={busy} disabled={!pickSupport} onClick={addSupport} leftIcon={<UserPlus />}>Assign</Button>
+              </div>
+            </Field>
+
+            <div className="mt-5">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <p className="ds-overline">Assigned</p>
+                {supportLoading ? (
+                  <Skeleton variant="text" className="w-5" />
+                ) : supportFailed ? null : (
+                  <span className="ds-num text-xs font-semibold text-muted-foreground">{supportAssigned.length}</span>
+                )}
+              </div>
+              {supportLoading ? (
+                <div className="flex justify-center p-6"><Spinner className="h-6 w-6 text-primary" label="Loading support teachers" /></div>
+              ) : supportFailed ? (
+                // The failure is already named by the Alert at the top of this modal. What must
+                // NOT happen here is "No support teachers yet" — the class may be fully staffed.
+                <Button size="sm" variant="secondary" onClick={() => openSupport(supportModal.row)} leftIcon={<RefreshCw aria-hidden />}>
+                  Try again
+                </Button>
+              ) : supportAssigned.length === 0 ? (
+                <EmptyState compact icon={LifeBuoy} title="No support teachers yet" description="Assign one above and they’ll appear here." />
+              ) : (
+                <div className="rounded-xl border border-border divide-y divide-border">
+                  {supportAssigned.map((s) => (
+                    <div key={s.user_id} className="flex items-center justify-between gap-2 px-3 py-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Avatar name={s.name} size={32} />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{s.email}</p>
+                        </div>
+                      </div>
+                      <Button size="sm" variant="ghost" className="shrink-0" disabled={busy}
+                        onClick={() => dropSupport(s.user_id, s.name)}
+                        leftIcon={<UserMinus className="text-danger" />}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Modal>
+        );
+      })()}
 
       {roster && (() => {
         const activeStudents = rosterMembers.filter((m) => m.role.toUpperCase() === "STUDENT" && m.status.toUpperCase() === "ACTIVE");
@@ -340,77 +740,82 @@ export default function OpsClassroomGovernancePage() {
           .filter((s) => q.length === 0 || s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q))
           .slice(0, 25);
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setRoster(null)}>
-            <div className="w-full max-w-lg rounded-2xl bg-card p-5 shadow-xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-bold text-foreground">Students — {roster.row.name}</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Add a student without a class code, or remove one. Removal is reversible.</p>
-                </div>
-                <button onClick={() => setRoster(null)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2" aria-label="Close"><X className="h-4 w-4" /></button>
-              </div>
+          <Modal
+            open
+            onClose={() => setRoster(null)}
+            title={`Students — ${roster.row.name}`}
+            description="Add a student without a class code, or remove one. Removal is reversible."
+            footer={<Button variant="secondary" onClick={() => setRoster(null)}>Done</Button>}
+          >
+            {error && <Alert tone="danger" className="mb-4">{error}</Alert>}
 
-              {/* Add student */}
-              <div className="mt-4">
-                <label className="mb-1 block text-xs font-bold text-muted-foreground">Add a student</label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <input type="search" value={studentSearch} onChange={(e) => setStudentSearch(e.target.value)} placeholder="Search students by name or email…"
-                    className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/30" />
-                </div>
-                {studentSearch.trim().length > 0 && (
-                  <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-border divide-y divide-border">
-                    {candidates.length === 0 ? (
-                      <div className="px-3 py-3 text-sm text-muted-foreground">No matching students.</div>
-                    ) : candidates.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <Avatar src={s.avatar} name={s.name} size={32} />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
-                            <p className="truncate text-xs text-muted-foreground">{s.email}</p>
-                          </div>
-                        </div>
-                        <button disabled={busy} onClick={() => addStudent(s.id)} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 shrink-0"><UserPlus className="h-3.5 w-3.5" /> Add</button>
+            {/* Add student */}
+            <Field label="Add a student" htmlFor="roster-search">
+              <Input id="roster-search" type="search" leftIcon={<Search />} value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                placeholder="Search students by name or email…" />
+            </Field>
+            {studentSearch.trim().length > 0 && (
+              <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-border divide-y divide-border">
+                {candidates.length === 0 ? (
+                  <p className="px-3 py-3 text-sm text-muted-foreground">No students match that search. Try another name or email.</p>
+                ) : candidates.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Avatar src={s.avatar} name={s.name} size={32} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{s.email}</p>
                       </div>
-                    ))}
+                    </div>
+                    <Button size="sm" className="shrink-0" disabled={busy} onClick={() => addStudent(s.id)} leftIcon={<UserPlus />}>Add</Button>
                   </div>
-                )}
+                ))}
               </div>
+            )}
 
-              {/* Current roster */}
-              <div className="mt-5">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label className="text-xs font-bold text-muted-foreground">Enrolled students</label>
-                  <span className="text-xs font-semibold text-muted-foreground">{rosterLoading ? "…" : `${activeStudents.length}`}</span>
-                </div>
+            {/* Current roster */}
+            <div className="mt-5">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <p className="ds-overline">Enrolled students</p>
                 {rosterLoading ? (
-                  <div className="flex justify-center p-6"><div className="h-6 w-6 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>
-                ) : activeStudents.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground">No students yet. Add one above or share the class code.</div>
-                ) : (
-                  <div className="rounded-xl border border-border divide-y divide-border">
-                    {activeStudents.map((m) => (
-                      <div key={m.user.id} className="flex items-center justify-between gap-2 px-3 py-2">
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <Avatar src={m.user.profile_image_url} name={memberName(m)} size={32} />
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-foreground">{memberName(m)}</p>
-                            <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
-                          </div>
-                        </div>
-                        <button disabled={busy} onClick={() => removeStudent(m.user.id, memberName(m))} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-500/10 disabled:opacity-50 shrink-0"><UserMinus className="h-3.5 w-3.5" /> Remove</button>
-                      </div>
-                    ))}
-                  </div>
+                  <Skeleton variant="text" className="w-5" />
+                ) : rosterFailed ? null : (
+                  <span className="ds-num text-xs font-semibold text-muted-foreground">{activeStudents.length}</span>
                 )}
               </div>
-
-              <div className="mt-5 flex justify-end">
-                <button onClick={() => setRoster(null)} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2">Done</button>
-              </div>
+              {rosterLoading ? (
+                <div className="flex justify-center p-6"><Spinner className="h-6 w-6 text-primary" label="Loading the roster" /></div>
+              ) : rosterFailed ? (
+                // Same rule as the support list: a failed roster must not read as "No students yet",
+                // which would invite an admin to re-add students who are already enrolled.
+                <Button size="sm" variant="secondary" onClick={() => openRoster(roster.row)} leftIcon={<RefreshCw aria-hidden />}>
+                  Try again
+                </Button>
+              ) : activeStudents.length === 0 ? (
+                <EmptyState compact icon={Users} title="No students yet" description="Add one above, or share the class code and they’ll appear here." />
+              ) : (
+                <div className="rounded-xl border border-border divide-y divide-border">
+                  {activeStudents.map((m) => (
+                    <div key={m.user.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <Avatar src={m.user.profile_image_url} name={memberName(m)} size={32} />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-foreground">{memberName(m)}</p>
+                          <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
+                        </div>
+                      </div>
+                      <Button size="sm" variant="ghost" className="shrink-0" disabled={busy}
+                        onClick={() => removeStudent(m.user.id, memberName(m))}
+                        leftIcon={<UserMinus className="text-danger" />}>
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
+          </Modal>
         );
       })()}
     </div>

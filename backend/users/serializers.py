@@ -31,11 +31,16 @@ from .models import ExamDateOption, SecurityAuditEvent, User
 
 
 def _sync_global_user_access(user: User) -> None:
-    """Ensure **teachers** have a global DB access row for their domain subject."""
+    """Ensure **subject-scoped staff** have a global DB access row for their domain subject.
+
+    Not optional for support_teacher: ``has_global_subject_access`` requires the row for every
+    role in ``SUBJECT_SCOPED_STAFF_ROLES``, so without it a support teacher would fail every
+    subject-scoped check despite holding the right role and subject.
+    """
     from access.models import UserAccess
 
     r = normalized_role(user)
-    if r != acc_const.ROLE_TEACHER:
+    if r not in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
         return
     sj = getattr(user, "subject", None)
     if sj not in acc_const.ALL_DOMAIN_SUBJECTS:
@@ -579,8 +584,12 @@ class UserSerializer(serializers.ModelSerializer):
         return None
 
     #: Privilege rank used to forbid assigning a role the actor does not outrank.
+    #: **Every canonical role must appear here.** An unlisted role falls through to the
+    #: ``.get(rc, 1)`` default below, i.e. student rank — which would let any actor holding
+    #: assign_access mint it. Pinned by a test that walks CANONICAL_ROLES.
     _ROLE_RANK = {
         acc_const.ROLE_STUDENT: 1,
+        acc_const.ROLE_SUPPORT_TEACHER: 2,
         acc_const.ROLE_TEACHER: 2,
         acc_const.ROLE_TEST_ADMIN: 3,
         acc_const.ROLE_TEST_AUDITOR: 3,
@@ -645,10 +654,10 @@ class UserSerializer(serializers.ModelSerializer):
         validated_data["role"] = role
 
         subj = validated_data.get("subject")
-        if role == acc_const.ROLE_TEACHER:
+        if role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
             if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
                 raise serializers.ValidationError(
-                    {"subject": "Teacher accounts require subject: math or english."}
+                    {"subject": "Teacher and support_teacher accounts require subject: math or english."}
                 )
         elif role in (
             acc_const.ROLE_ADMIN,
@@ -686,10 +695,10 @@ class UserSerializer(serializers.ModelSerializer):
         eff_role = self._normalize_role(instance.role) or acc_const.ROLE_STUDENT
         if "subject" in validated_data:
             subj = validated_data.get("subject")
-            if eff_role == acc_const.ROLE_TEACHER:
+            if eff_role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
                 if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
                     raise serializers.ValidationError(
-                        {"subject": "Teacher accounts require subject: math or english."}
+                        {"subject": "Teacher and support_teacher accounts require subject: math or english."}
                     )
             elif eff_role in (
                 acc_const.ROLE_ADMIN,
@@ -711,10 +720,10 @@ class UserSerializer(serializers.ModelSerializer):
         user.refresh_from_db()
         eff = self._normalize_role(user.role) or acc_const.ROLE_STUDENT
         sj = getattr(user, "subject", None)
-        if eff == acc_const.ROLE_TEACHER:
+        if eff in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
             if sj not in acc_const.ALL_DOMAIN_SUBJECTS:
                 raise serializers.ValidationError(
-                    {"subject": "Teacher accounts require subject: math or english."}
+                    {"subject": "Teacher and support_teacher accounts require subject: math or english."}
                 )
         elif (
             eff in (acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN, acc_const.ROLE_TEST_AUDITOR)

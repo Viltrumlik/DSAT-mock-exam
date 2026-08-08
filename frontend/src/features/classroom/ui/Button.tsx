@@ -38,6 +38,21 @@ const sizes: Record<Size, string> = {
 
 const iconSize: Record<Size, string> = { sm: "h-3.5 w-3.5", md: "h-4 w-4", lg: "h-5 w-5" };
 
+/**
+ * The same look, for something that navigates rather than acts.
+ *
+ * Wrapping this Button in a `<Link>` produces `<a><button></a>`: two tab stops and two
+ * announced roles for one destination. Use this instead — it renders a single anchor.
+ */
+export function buttonClassName({
+  variant = "primary",
+  size = "md",
+  block,
+  className,
+}: { variant?: Variant; size?: Size; block?: boolean; className?: string } = {}) {
+  return cn(base, variants[variant], sizes[size], block && "w-full", className);
+}
+
 /** Premium, minimal button. One accent, calm states. */
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = "primary", size = "md", loading, icon: Icon, iconRight: IconRight, block, className, children, disabled, ...rest },

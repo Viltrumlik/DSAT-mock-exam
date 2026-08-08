@@ -1,11 +1,11 @@
 import { CheckCircle2, Circle, TrendingUp, type LucideIcon } from "lucide-react";
 
-import { Badge, type BadgeVariant } from "@/components/ui";
+import { Pill, type PillTone } from "@/features/classroom/ui";
 
 import { WORD_STATUS_LABEL, type WordStatus } from "../types";
 
 /** "New" stays neutral on purpose — an unstudied word is not a failure. */
-export const WORD_STATUS_VARIANT: Record<WordStatus, BadgeVariant> = {
+export const WORD_STATUS_VARIANT: Record<WordStatus, PillTone> = {
   new: "neutral",
   learning: "warning",
   mastered: "success",
@@ -24,9 +24,9 @@ const WORD_STATUS_ICON: Record<WordStatus, LucideIcon> = {
 export function WordStatusPill({ status }: { status: WordStatus }) {
   const Icon = WORD_STATUS_ICON[status];
   return (
-    <Badge variant={WORD_STATUS_VARIANT[status]}>
+    <Pill tone={WORD_STATUS_VARIANT[status]}>
       <Icon className="h-3.5 w-3.5" aria-hidden />
       {WORD_STATUS_LABEL[status]}
-    </Badge>
+    </Pill>
   );
 }

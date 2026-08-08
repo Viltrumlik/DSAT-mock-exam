@@ -149,6 +149,12 @@ class SubdomainAPIGuardMiddleware:
             # Journal management (course homework plans) is an admin-console module.
             if path.startswith("/api/journals/"):
                 return self.get_response(request)
+            # Reward points: the ops console reads balances and the rule table.
+            if path.startswith("/api/rewards/"):
+                return self.get_response(request)
+            # Surveys are authored on the admin console (super_admin only, enforced in the view).
+            if path.startswith("/api/surveys/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.
@@ -205,7 +211,9 @@ class SubdomainAPIGuardMiddleware:
             # the Next.js session boot + projection cookie refresh on this subdomain.
             if path.startswith("/api/users/me/"):
                 return self.get_response(request)
-            if role not in ("teacher", "super_admin"):
+            from access import constants as _c
+
+            if role not in _c.TEACHER_PORTAL_ROLES:
                 exams_metric_incr("forbidden_admin_route_total")
                 return JsonResponse(
                     {"detail": "You do not have permission to access the Teacher Portal."},
@@ -232,6 +240,9 @@ class SubdomainAPIGuardMiddleware:
             # grant/revoke/results + the all-students grant picker at /midterms/teacher/students/).
             # The classroom flavor rides /api/classes/ (already allowed).
             if path.startswith("/api/midterms/"):
+                return self.get_response(request)
+            # Reward points: a teacher needs to see what their students have earned.
+            if path.startswith("/api/rewards/"):
                 return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(

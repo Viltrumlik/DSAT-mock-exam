@@ -7,10 +7,14 @@ Reads:
   GET  /api/classes/<pk>/attendance/students/<sid>/      staff or self: student detail
   GET  /api/classes/<pk>/attendance/summary/             staff: class rates + trend series
 Writes (CanTakeAttendance):
-  POST /api/classes/<pk>/attendance/sessions/            create session
+  POST /api/classes/<pk>/attendance/sessions/            upsert session (201 new / 200 existing)
   POST /api/classes/<pk>/attendance/sessions/<id>/mark/  bulk upsert (also single quick-correction)
   POST /api/classes/<pk>/attendance/sessions/<id>/mark-all-present/
-  POST /api/classes/<pk>/attendance/sessions/<id>/finalize/
+  POST /api/classes/<pk>/attendance/sessions/<id>/finalize/   idempotent; echoes already_finalized
+
+A session is unique per (classroom, date) and FINALIZED is a freeze that only an owner/admin
+may write through. Both properties exist because finalize is about to become the trigger that
+awards attendance points, and a lesson must be payable exactly once.
 """
 
 from __future__ import annotations
@@ -65,13 +69,21 @@ class AttendanceSessionsView(_ClassroomScopedView):
         parsed_date = parse_date(request.data.get("date") or "")
         if parsed_date is None:
             return Response({"detail": "A valid date is required (YYYY-MM-DD)."}, status=400)
-        s = AttendanceSession.objects.create(
+        # Upsert, not create: one lesson gets one session (uniq_attendance_session_per_day).
+        # A teacher who adds the same date twice must land back on the session they already
+        # marked, not create a second one that would finalize — and pay out — separately.
+        s, created = AttendanceSession.objects.get_or_create(
             classroom=classroom, date=parsed_date,
-            title=(request.data.get("title") or "").strip(),
-            lesson_index=request.data.get("lesson_index") or None,
-            created_by=request.user,
+            defaults={
+                "title": (request.data.get("title") or "").strip(),
+                "lesson_index": request.data.get("lesson_index") or None,
+                "created_by": request.user,
+            },
         )
-        return Response(_session_brief(s), status=status.HTTP_201_CREATED)
+        return Response(
+            _session_brief(s),
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 class AttendanceSessionDetailView(_ClassroomScopedView):
@@ -133,6 +145,12 @@ class AttendanceMarkAllPresentView(_ClassroomScopedView):
     def post(self, request, classroom_pk, session_id):
         classroom = self.get_classroom()
         session = get_object_or_404(AttendanceSession, pk=session_id, classroom=classroom)
+        # Same freeze as AttendanceMarkView. Without it this endpoint could silently rewrite
+        # a finalized — and, once rewards land, already paid-out — session.
+        if session.status == AttendanceSession.STATUS_FINALIZED and not classroom_capabilities(
+            request.user, classroom
+        ).is_owner:
+            return Response({"detail": "Session is finalized; only an owner/admin can edit."}, status=403)
         existing = {r.student_id: r.status for r in session.records.all()}
         updated = 0
         for m in _active_students(classroom):
@@ -148,14 +166,27 @@ class AttendanceMarkAllPresentView(_ClassroomScopedView):
 
 
 class AttendanceFinalizeView(_ClassroomScopedView):
+    """Freeze a session. This is the terminal, once-per-lesson transition, and the moment
+    the reward system will treat attendance as authoritative — so it has to be exactly
+    once. Previously it re-saved unconditionally on every call."""
+
     permission_classes = [IsAuthenticated, CanTakeAttendance]
 
     def post(self, request, classroom_pk, session_id):
         classroom = self.get_classroom()
-        session = get_object_or_404(AttendanceSession, pk=session_id, classroom=classroom)
-        session.status = AttendanceSession.STATUS_FINALIZED
-        session.save(update_fields=["status", "updated_at"])
-        return Response(_session_brief(session))
+        with transaction.atomic():
+            # Locked so two concurrent finalize clicks serialise; the second observes
+            # FINALIZED and becomes a no-op instead of re-running the transition.
+            session = get_object_or_404(
+                AttendanceSession.objects.select_for_update(),
+                pk=session_id,
+                classroom=classroom,
+            )
+            already = session.status == AttendanceSession.STATUS_FINALIZED
+            if not already:
+                session.status = AttendanceSession.STATUS_FINALIZED
+                session.save(update_fields=["status", "updated_at"])
+        return Response({**_session_brief(session), "already_finalized": already})
 
 
 class AttendanceSummaryView(_ClassroomScopedView):

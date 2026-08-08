@@ -6,13 +6,21 @@ import { examsStudentApi } from "@/features/examsStudent/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import {
-  BookOpen, CalendarClock, Copy, FileText, MailCheck, MailWarning, MessageCircle, Phone, Pencil, School, Shield, Target, Trophy, Users,
+  BookOpen, CalendarClock, Copy, FileText, MailCheck, MailWarning, MessageCircle, Phone,
+  Pencil, School, Shield, Target, Users,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { displayEmail } from "@/lib/email";
 import { EmailVerificationModal } from "@/components/EmailVerificationModal";
 import {
-  Card, CardContent, Badge, Button, Avatar, Stat, ProgressRing, Progress, Field, Input, Select, Modal, Alert, Skeleton, EmptyState, Checkbox, Spinner,
+  Avatar, Alert, Checkbox, Field, HeroChip, HeroPage, Input, Modal, PageHero, Progress,
+  Select, Skeleton,
 } from "@/components/ui";
+// The house devices. Importing the classroom's kit is what makes this page read as part of
+// the same product as the homework it opens onto.
+import {
+  Button, Card, CardHeader, EmptyState, ErrorState, Pill, Spinner,
+} from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
 
 type MeForm = {
@@ -54,6 +62,33 @@ function mapMeToForm(me: any): MeForm {
   };
 }
 
+/** A result card in the classroom's language: icon square, label, figure, one line of context. */
+function ResultCard({
+  label, value, hint, icon: Icon, media, delay = 0,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+  icon?: LucideIcon;
+  media?: React.ReactNode;
+  delay?: number;
+}) {
+  return (
+    <Card className="cr-card flex items-center gap-4" style={{ animationDelay: `${delay}ms` }}>
+      {media ?? (Icon ? (
+        <span className="cr-iconpop flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-transform">
+          <Icon className="h-[22px] w-[22px]" aria-hidden />
+        </span>
+      ) : null)}
+      <div className="min-w-0">
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">{label}</p>
+        <p className="ds-num text-[26px] font-extrabold leading-tight text-foreground">{value}</p>
+        {hint ? <p className="truncate text-xs font-semibold text-muted-foreground">{hint}</p> : null}
+      </div>
+    </Card>
+  );
+}
+
 export default function ProfilePage() {
   const [me, setMe] = useState<MeForm | null>(null);
   const [draft, setDraft] = useState<MeForm | null>(null);
@@ -61,6 +96,7 @@ export default function ProfilePage() {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [clearPhoto, setClearPhoto] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -80,6 +116,7 @@ export default function ProfilePage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsFailed, setSessionsFailed] = useState(false);
   const [sessionsBusyId, setSessionsBusyId] = useState<number | null>(null);
 
   const handleTelegramLink = useCallback(async (result: TelegramOIDCResult) => {
@@ -107,50 +144,51 @@ export default function ProfilePage() {
     return () => URL.revokeObjectURL(u);
   }, [file]);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const [meData, classData, tgWidget, examDatesRaw] = await Promise.all([
-          usersApi.getMe(),
-          classesApi.list(),
-          usersApi.getTelegramWidgetConfig().catch(() => ({ enabled: false, bot_username: null as string | null, client_id: null as string | null, start_url: null as string | null })),
-          usersApi.listExamDates().catch(() => []),
-        ]);
-        if (!cancelled) {
-          setTelegramCfg(tgWidget);
-          setExamDateOptions(Array.isArray(examDatesRaw) ? (examDatesRaw as ExamDateOptionRow[]) : []);
-          const meMapped = mapMeToForm(meData);
-          setMe(meMapped);
-          setLastMockResult(meMapped.last_mock_result || null);
-          const c = classData.items;
-          setClasses(c);
-          if (c.length > 0) setSelectedClassId(c[0].id);
-        }
-      } catch {
-        if (!cancelled) setMessage("Could not load your profile.");
-      } finally {
-        if (!cancelled) { setLoading(false); setClassesLoading(false); }
-      }
-    })();
-    return () => { cancelled = true; };
+  const loadProfile = useCallback(async () => {
+    setLoading(true);
+    setLoadFailed(false);
+    try {
+      const [meData, classData, tgWidget, examDatesRaw] = await Promise.all([
+        usersApi.getMe(),
+        classesApi.list(),
+        usersApi.getTelegramWidgetConfig().catch(() => ({ enabled: false, bot_username: null as string | null, client_id: null as string | null, start_url: null as string | null })),
+        usersApi.listExamDates().catch(() => []),
+      ]);
+      setTelegramCfg(tgWidget);
+      setExamDateOptions(Array.isArray(examDatesRaw) ? (examDatesRaw as ExamDateOptionRow[]) : []);
+      const meMapped = mapMeToForm(meData);
+      setMe(meMapped);
+      setLastMockResult(meMapped.last_mock_result || null);
+      const c = classData.items;
+      setClasses(c);
+      if (c.length > 0) setSelectedClassId((prev) => prev ?? c[0].id);
+    } catch {
+      // Not an empty profile: a failed fetch that renders as a blank page tells the student
+      // their account is empty, which is a different and much worse claim.
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
+      setClassesLoading(false);
+    }
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setSessionsLoading(true);
-      try {
-        const r = await authApi.getSessions();
-        if (!cancelled) setSessions(Array.isArray(r?.sessions) ? r.sessions : []);
-      } catch {
-        if (!cancelled) setSessions([]);
-      } finally {
-        if (!cancelled) setSessionsLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
+  useEffect(() => { void loadProfile(); }, [loadProfile]);
+
+  const loadSessions = useCallback(async () => {
+    setSessionsLoading(true);
+    setSessionsFailed(false);
+    try {
+      const r = await authApi.getSessions();
+      setSessions(Array.isArray(r?.sessions) ? r.sessions : []);
+    } catch {
+      setSessions([]);
+      setSessionsFailed(true);
+    } finally {
+      setSessionsLoading(false);
+    }
   }, []);
+
+  useEffect(() => { void loadSessions(); }, [loadSessions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -275,9 +313,38 @@ export default function ProfilePage() {
     return Math.round((fields.filter(Boolean).length / fields.length) * 100);
   };
 
-  const completion = me ? profileCompletion(me) : 0;
-  const targetScore = me?.target_score ? Math.max(0, Math.min(1600, parseInt(me.target_score, 10))) : null;
-  const nextDays = me?.sat_exam_date ? daysUntil(me.sat_exam_date) : null;
+  const handleOpenEdit = () => { setDraft(me); setFile(null); setObjectUrl(null); setClearPhoto(false); setSaving(false); setMessage(null); setEditOpen(true); };
+  const handleCloseEdit = () => { setEditOpen(false); setDraft(null); setFile(null); setObjectUrl(null); setClearPhoto(false); setSaving(false); setMessage(null); };
+
+  if (loading) {
+    return (
+      <HeroPage className="space-y-5">
+        <Skeleton className="h-52 rounded-2xl" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}
+        </div>
+        <Skeleton className="h-64 rounded-2xl" />
+      </HeroPage>
+    );
+  }
+
+  if (loadFailed || !me) {
+    return (
+      <HeroPage>
+        <Card className="cr-card">
+          <ErrorState
+            title="Your profile isn't loading right now."
+            message="Nothing has changed on your account — it will be here once the connection comes back."
+            onRetry={() => void loadProfile()}
+          />
+        </Card>
+      </HeroPage>
+    );
+  }
+
+  const completion = profileCompletion(me);
+  const targetScore = me.target_score ? Math.max(0, Math.min(1600, parseInt(me.target_score, 10))) : null;
+  const nextDays = me.sat_exam_date ? daysUntil(me.sat_exam_date) : null;
   const enrolledClasses = classes.filter((c) => { const r = String(c.my_role || "").toLowerCase(); return r === "student" || r === "admin"; });
   const totalPeers = enrolledClasses.reduce((acc, c) => acc + Math.max(0, (c.members_count || 0) - 1), 0);
   const selectedClass = enrolledClasses.find((c) => c.id === selectedClassId) || null;
@@ -285,125 +352,152 @@ export default function ProfilePage() {
   const formatSubject = (s?: string) => { if (!s) return "General"; if (s === "READING_WRITING") return "Reading & Writing"; return s.charAt(0) + s.slice(1).toLowerCase(); };
   const homeworkCompletion = homeworkProgress.total > 0 ? Math.round((homeworkProgress.submitted / homeworkProgress.total) * 100) : 0;
 
-  const handleOpenEdit = () => { setDraft(me); setFile(null); setObjectUrl(null); setClearPhoto(false); setSaving(false); setMessage(null); setEditOpen(true); };
-  const handleCloseEdit = () => { setEditOpen(false); setDraft(null); setFile(null); setObjectUrl(null); setClearPhoto(false); setSaving(false); setMessage(null); };
-
-  if (loading || !me) {
-    return (
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-12">
-        <Skeleton className="h-32 rounded-2xl" />
-        <div className="grid grid-cols-3 gap-4">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>
-      </div>
-    );
-  }
-
   const fullName = `${me.first_name} ${me.last_name}`.trim();
   // Empty for Telegram signups and released accounts: their stored address is a
   // placeholder, and showing it would read as a real contact address.
   const realEmail = displayEmail(me.email);
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 pb-12">
+    <HeroPage className="space-y-5">
       {message ? <Alert tone="info" onClose={() => setMessage(null)}>{message}</Alert> : null}
 
-      {/* Header */}
-      <Card>
-        <CardContent className="flex flex-col gap-6 sm:flex-row">
-          <Avatar src={me.profile_image_url} name={fullName} size={96} className="shrink-0 rounded-2xl" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <h1 className="ds-h1">{fullName || me.username}</h1>
-                  <Badge variant="primary">Student</Badge>
-                </div>
-                <p className="mt-1 text-sm font-semibold text-muted-foreground">@{me.username}</p>
-                <div className="mt-3 flex flex-wrap items-center gap-3">
-                  {me.phone_number?.trim() ? <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground"><Phone className="h-3.5 w-3.5 text-primary" /> {me.phone_number}</span> : null}
-                  {me.telegram_linked ? <span className="inline-flex items-center gap-1.5 text-xs font-bold text-success-foreground"><MessageCircle className="h-3.5 w-3.5" /> Telegram linked</span> : null}
-                  {realEmail ? (
-                    <span className="inline-flex max-w-[220px] items-center gap-1.5 truncate text-xs font-semibold text-muted-foreground">{realEmail}</span>
-                  ) : null}
-                  {me.email_verified ? (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-bold text-success-foreground">
-                      <MailCheck className="h-3.5 w-3.5" /> Email confirmed
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setVerifyOpen(true)}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-warning-soft px-2 py-1 text-xs font-bold text-warning-foreground underline underline-offset-2"
-                    >
-                      <MailWarning className="h-3.5 w-3.5" />
-                      {realEmail ? "Confirm your email" : "Add your email"}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Button size="sm" leftIcon={<Pencil />} onClick={handleOpenEdit}>Edit profile</Button>
-                <Button size="sm" variant="secondary" leftIcon={<Copy />} onClick={async () => {
+      {/* IDENTITY — the homework detail's blue masthead, carrying who you are and the four
+          facts a student checks most: goal, exam, classes, homework. */}
+      <Card pad="none" className="cr-card overflow-hidden">
+        <PageHero
+          badge="Student"
+          media={
+            <Avatar
+              src={me.profile_image_url}
+              name={fullName || me.username}
+              size={88}
+              className="rounded-[22px] ring-4 ring-white/25"
+            />
+          }
+          title={fullName || me.username}
+          subtitle={`@${me.username}`}
+          tiles={[
+            { label: "Target score", value: targetScore != null ? targetScore : "—" },
+            {
+              label: "SAT exam",
+              value: nextDays == null ? "Not set" : nextDays < 0 ? "Done" : `${nextDays} days`,
+              accent: true,
+              icon: CalendarClock,
+            },
+            { label: "Classes", value: enrolledClasses.length },
+            { label: "Profile", value: `${completion}%` },
+          ]}
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={handleOpenEdit}
+                className="ds-ring cr-press inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-extrabold text-primary shadow-sm transition-colors hover:bg-white/90"
+              >
+                <Pencil className="h-4 w-4" aria-hidden /> Edit profile
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
                   try { await navigator.clipboard.writeText(me.username); setMessage("Username copied."); window.setTimeout(() => setMessage(null), 1500); }
                   catch { setMessage("Could not copy."); window.setTimeout(() => setMessage(null), 1500); }
-                }}>Copy</Button>
-              </div>
-            </div>
+                }}
+                className="ds-ring cr-press inline-flex items-center gap-2 rounded-xl bg-white/20 px-4 py-2.5 text-sm font-extrabold text-primary-foreground transition-colors hover:bg-white/30"
+              >
+                <Copy className="h-4 w-4" aria-hidden /> Copy
+              </button>
+            </>
+          }
+        >
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {me.phone_number?.trim() ? (
+              <HeroChip icon={Phone}>{me.phone_number}</HeroChip>
+            ) : null}
+            {realEmail ? (
+              <HeroChip className="max-w-[240px]">
+                <span className="truncate">{realEmail}</span>
+              </HeroChip>
+            ) : null}
+            {me.email_verified ? (
+              <HeroChip icon={MailCheck}>Email confirmed</HeroChip>
+            ) : (
+              <HeroChip as="button" type="button" icon={MailWarning} onClick={() => setVerifyOpen(true)}>
+                {realEmail ? "Confirm your email" : "Add your email"}
+              </HeroChip>
+            )}
+            {me.telegram_linked ? (
+              <HeroChip icon={MessageCircle}>Telegram linked</HeroChip>
+            ) : null}
           </div>
-        </CardContent>
+        </PageHero>
       </Card>
 
       {/* Telegram banner */}
-      {!loading && telegramCfg?.enabled && !me.telegram_linked && telegramCfg.start_url ? (
-        <Card className="border-info/20 bg-info-soft">
-          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="ds-overline text-info-foreground">Telegram</p>
-              <p className="mt-0.5 text-sm font-extrabold text-foreground">Connect your Telegram account</p>
-              <p className="text-xs text-muted-foreground">Sign in with one tap next time.</p>
-            </div>
-            <div className="shrink-0">{telegramLinkBusy ? <Spinner className="h-6 w-6 text-info" /> : <TelegramLoginButton startUrl={telegramCfg.start_url} next="/profile" />}</div>
-          </CardContent>
+      {telegramCfg?.enabled && !me.telegram_linked && telegramCfg.start_url ? (
+        <Card className="cr-card flex flex-col gap-4 border-primary/30 bg-primary/5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-primary">Telegram</p>
+            <p className="mt-0.5 text-[15px] font-extrabold text-foreground">Connect your Telegram account</p>
+            <p className="text-xs font-semibold text-muted-foreground">Sign in with one tap next time.</p>
+          </div>
+          <div className="shrink-0">
+            {telegramLinkBusy ? <Spinner className="h-6 w-6 text-primary" /> : <TelegramLoginButton startUrl={telegramCfg.start_url} next="/profile" />}
+          </div>
         </Card>
       ) : null}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        <Card><CardContent className="flex items-center gap-4">
-          <ProgressRing value={completion} size={56} strokeWidth={5} color={completion >= 100 ? "text-success" : "text-primary"} />
-          <div><p className="ds-overline">Profile</p><p className="ds-num text-2xl font-extrabold text-foreground">{completion}%</p><p className="text-[11px] text-muted-foreground">Completion</p></div>
-        </CardContent></Card>
-        <Stat label="Target score" value={targetScore != null ? targetScore : "—"} icon={Trophy} hint={targetScore != null ? `${Math.round((targetScore / 1600) * 100)}% of 1600` : "Set your goal"} />
-        <Stat label="SAT exam" value={nextDays == null ? "—" : nextDays < 0 ? "0" : nextDays} icon={CalendarClock} hint={me.sat_exam_date ? `Until ${formatDate(me.sat_exam_date)}` : "Set exam date"} />
-      </div>
-
-      {/* Results + homework */}
+      {/* RESULTS */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Last practice" value={lastPracticeResult?.score != null ? lastPracticeResult.score : "—"} icon={BookOpen}
-          hint={lastPracticeResult ? `${formatSubject(lastPracticeResult.practice_test_details?.subject)} · ${lastPracticeResult.submitted_at ? formatDate(lastPracticeResult.submitted_at) : "Completed"}` : analyticsLoading ? "Loading…" : "No practice yet"} />
-        <Stat label="Last mock" value={lastMockResult?.score != null ? lastMockResult.score : "—"} icon={Target}
-          hint={lastMockResult ? `${lastMockResult.mock_exam_title || "Mock"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Done"}` : analyticsLoading ? "Loading…" : "No mock yet"} />
-        <Card><CardContent className="flex flex-col gap-3">
-          <div className="flex items-start justify-between gap-3">
-            <div><p className="ds-overline">Homework</p><p className="ds-num mt-1 text-2xl font-extrabold text-foreground">{analyticsLoading ? "…" : `${homeworkCompletion}%`}</p>
-              <p className="mt-1.5 text-xs text-muted-foreground">{analyticsLoading ? "Calculating…" : `${homeworkProgress.submitted}/${homeworkProgress.total} done · ${homeworkProgress.overdue} past due`}</p></div>
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-success-soft text-success-foreground"><FileText className="h-5 w-5" /></span>
+        <ResultCard
+          label="Last practice"
+          value={lastPracticeResult?.score != null ? lastPracticeResult.score : "—"}
+          icon={BookOpen}
+          hint={lastPracticeResult
+            ? `${formatSubject(lastPracticeResult.practice_test_details?.subject)} · ${lastPracticeResult.submitted_at ? formatDate(lastPracticeResult.submitted_at) : "Completed"}`
+            : analyticsLoading ? "Loading…" : "No practice yet"}
+        />
+        <ResultCard
+          label="Last mock"
+          value={lastMockResult?.score != null ? lastMockResult.score : "—"}
+          icon={Target}
+          delay={60}
+          hint={lastMockResult
+            ? `${lastMockResult.mock_exam_title || "Mock"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Done"}`
+            : analyticsLoading ? "Loading…" : "No mock yet"}
+        />
+        <Card className="cr-card flex flex-col justify-center gap-3" style={{ animationDelay: "120ms" }}>
+          <div className="flex items-center gap-4">
+            <span className="cr-iconpop flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 transition-transform">
+              <FileText className="h-[22px] w-[22px]" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">Homework</p>
+              <p className="ds-num text-[26px] font-extrabold leading-tight text-foreground">
+                {analyticsLoading ? "…" : `${homeworkCompletion}%`}
+              </p>
+              <p className="truncate text-xs font-semibold text-muted-foreground">
+                {analyticsLoading
+                  ? "Calculating…"
+                  : `${homeworkProgress.submitted}/${homeworkProgress.total} done · ${homeworkProgress.overdue} past due`}
+              </p>
+            </div>
           </div>
           <Progress value={homeworkCompletion} tone="success" size="sm" />
-        </CardContent></Card>
+        </Card>
       </div>
 
-      {/* Classes + classmates */}
+      {/* CLASSES + CLASSMATES */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card className="xl:col-span-2"><CardContent className="space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2"><School className="h-4 w-4 text-primary" /><h3 className="ds-h4">My classes</h3></div>
-            <Badge variant="primary">{enrolledClasses.length} enrolled</Badge>
-          </div>
+        <Card className="cr-card space-y-4 xl:col-span-2">
+          <CardHeader
+            title={<span className="inline-flex items-center gap-2"><School className="h-4 w-4 text-primary" /> My classes</span>}
+            actions={<Pill tone="primary">{enrolledClasses.length} enrolled</Pill>}
+          />
           <div className="grid grid-cols-3 gap-2">
             {[{ v: enrolledClasses.length, l: "Classes" }, { v: totalPeers, l: "Peers" }, { v: selectedClass?.name || "—", l: "Active" }].map((s, i) => (
               <div key={i} className="rounded-xl bg-surface-2 p-3 text-center">
                 <p className={cn("ds-num font-extrabold text-foreground", typeof s.v === "number" ? "text-xl" : "mt-1 line-clamp-2 text-xs")}>{s.v}</p>
-                <p className="ds-overline">{s.l}</p>
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">{s.l}</p>
               </div>
             ))}
           </div>
@@ -411,90 +505,139 @@ export default function ProfilePage() {
             {classesLoading ? (
               <div className="col-span-full flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
             ) : enrolledClasses.length === 0 ? (
-              <div className="col-span-full"><EmptyState compact title="No classes yet" description="Join a class to see details here." /></div>
+              <div className="col-span-full">
+                <EmptyState icon={School} title="No classes yet" description="Join a class to see details here." />
+              </div>
             ) : (
-              enrolledClasses.map((c) => (
-                <button key={c.id} type="button" onClick={() => setSelectedClassId(c.id)}
-                  className={cn("ds-ring rounded-xl border bg-surface-1 p-4 text-left transition-colors hover:border-border-strong", selectedClassId === c.id ? "border-primary/30 ring-2 ring-primary/15" : "border-border")}>
+              enrolledClasses.map((c, i) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedClassId(c.id)}
+                  style={{ animationDelay: `${i * 50}ms` }}
+                  className={cn(
+                    "cr-rowin ds-ring cr-lift rounded-2xl border bg-card p-4 text-left",
+                    selectedClassId === c.id
+                      ? "border-primary bg-primary/[0.06]"
+                      : "border-border hover:border-primary/40",
+                  )}
+                >
                   <div className="flex items-start justify-between gap-3">
-                    <div><p className="font-bold text-foreground">{c.name}</p><p className="mt-1 text-xs text-muted-foreground">{formatSubject(c.subject)} · {formatLessonDaysMeta(c.lesson_days) || "--"} {c.lesson_time || ""}</p></div>
-                    <BookOpen className="h-4 w-4 shrink-0 text-primary" />
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-extrabold text-foreground">{c.name}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+                        {formatSubject(c.subject)} · {formatLessonDaysMeta(c.lesson_days) || "--"} {c.lesson_time || ""}
+                      </p>
+                    </div>
+                    <BookOpen className="h-4 w-4 shrink-0 text-primary" aria-hidden />
                   </div>
-                  <div className="mt-3 border-t border-border pt-3 text-xs font-semibold text-muted-foreground"><p>Teacher: {formatTeacherLine(c)} · {c.members_count || 0} students</p></div>
+                  <div className="mt-3 border-t border-border pt-3 text-xs font-semibold text-muted-foreground">
+                    <p className="truncate">Teacher: {formatTeacherLine(c)} · {c.members_count || 0} students</p>
+                  </div>
                 </button>
               ))
             )}
           </div>
-        </CardContent></Card>
+        </Card>
 
-        <Card><CardContent>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div><p className="ds-overline">Class roster</p><h3 className="ds-h4 mt-0.5">Classmates</h3></div>
-            <Users className="h-4 w-4 text-primary" />
-          </div>
-          <div className="mb-4 rounded-xl bg-surface-2 p-3">
-            <p className="line-clamp-2 text-sm font-bold text-foreground">{selectedClass?.name || "No class selected"}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{selectedClass?.start_date ? `Started ${formatDate(selectedClass.start_date)}` : "No start date"}</p>
+        <Card className="cr-card space-y-4">
+          <CardHeader
+            title={<span className="inline-flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Classmates</span>}
+          />
+          <div className="rounded-xl bg-surface-2 p-3">
+            <p className="line-clamp-2 text-sm font-extrabold text-foreground">{selectedClass?.name || "No class selected"}</p>
+            <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+              {selectedClass?.start_date ? `Started ${formatDate(selectedClass.start_date)}` : "No start date"}
+            </p>
           </div>
           <div className="max-h-[320px] space-y-2 overflow-auto">
             {peopleLoading ? (
               <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
             ) : selectedStudents.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">No students found.</p>
+              <p className="py-4 text-center text-sm font-semibold text-muted-foreground">No students found.</p>
             ) : (
               selectedStudents.slice(0, 12).map((p) => (
-                <div key={p.id} className="flex items-center gap-2.5 rounded-lg bg-surface-2 p-2.5">
+                <div key={p.id} className="flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
                   <Avatar name={`${p.user.first_name || ""} ${p.user.last_name || ""}`.trim() || p.user.username} src={p.user.profile_image_url} size={32} />
-                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-foreground">{p.user.first_name || ""} {p.user.last_name || ""}</p><p className="truncate text-xs text-muted-foreground">@{p.user.username || "user"}</p></div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-foreground">{p.user.first_name || ""} {p.user.last_name || ""}</p>
+                    <p className="truncate text-xs text-muted-foreground">@{p.user.username || "user"}</p>
+                  </div>
                 </div>
               ))
             )}
           </div>
-          {selectedStudents.length > 12 ? <p className="mt-3 text-xs text-muted-foreground">+{selectedStudents.length - 12} more</p> : null}
-        </CardContent></Card>
+          {selectedStudents.length > 12 ? <p className="text-xs font-semibold text-muted-foreground">+{selectedStudents.length - 12} more</p> : null}
+        </Card>
       </div>
 
-      {/* Sessions */}
-      <Card><CardContent className="space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-primary" /><h3 className="ds-h4">Active sessions</h3></div>
-          <Button size="sm" variant="secondary" loading={sessionsLoading} onClick={async () => {
-            setSessionsLoading(true);
-            try { const r = await authApi.getSessions(); setSessions(Array.isArray(r?.sessions) ? r.sessions : []); } finally { setSessionsLoading(false); }
-          }}>Refresh</Button>
-        </div>
+      {/* SESSIONS */}
+      <Card className="cr-card space-y-3">
+        <CardHeader
+          title={<span className="inline-flex items-center gap-2"><Shield className="h-4 w-4 text-primary" /> Active sessions</span>}
+          description="Revoke anything you don't recognise."
+          actions={
+            <Button variant="secondary" size="sm" loading={sessionsLoading} onClick={() => void loadSessions()}>
+              Refresh
+            </Button>
+          }
+        />
         <div className="space-y-2">
           {sessionsLoading ? (
             <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
+          ) : sessionsFailed ? (
+            // "No session data" here would tell a student nobody is signed in as them, which
+            // is the one thing this card exists to let them check.
+            <ErrorState
+              title="Couldn't load your sessions."
+              message="Your account is unaffected — only this list failed to load."
+              onRetry={() => void loadSessions()}
+            />
           ) : sessions.length === 0 ? (
-            <EmptyState compact title="No session data" description="Sign in again to create a session record." />
+            <EmptyState icon={Shield} title="No session data" description="Sign in again to create a session record." />
           ) : (
-            sessions.map((s) => {
+            sessions.map((s, i) => {
               const revoked = !!s.revoked_at;
               return (
-                <div key={s.id} className="flex flex-col gap-3 rounded-xl border border-border bg-surface-1 p-4 md:flex-row md:items-center md:justify-between">
+                <div
+                  key={s.id}
+                  style={{ animationDelay: `${i * 50}ms` }}
+                  className="cr-rowin flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+                >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-foreground">{revoked ? "Revoked session" : "Active session"}</p>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">IP: {s.ip || "--"} · Last active: {s.last_seen_at ? formatDate(s.last_seen_at) : "--"}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-extrabold text-foreground">{revoked ? "Revoked session" : "Active session"}</p>
+                      {!revoked ? <Pill tone="success">Live</Pill> : null}
+                    </div>
+                    <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">IP: {s.ip || "--"} · Last active: {s.last_seen_at ? formatDate(s.last_seen_at) : "--"}</p>
                     <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{s.user_agent || ""}</p>
                   </div>
-                  <Button size="sm" variant="secondary" disabled={revoked} loading={sessionsBusyId === s.id} className="shrink-0" onClick={async () => {
-                    setSessionsBusyId(s.id);
-                    try { await authApi.revokeSession(Number(s.id)); const r = await authApi.getSessions(); setSessions(Array.isArray(r?.sessions) ? r.sessions : []); } finally { setSessionsBusyId(null); }
-                  }}>Revoke</Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={revoked}
+                    loading={sessionsBusyId === s.id}
+                    className="shrink-0"
+                    onClick={async () => {
+                      setSessionsBusyId(s.id);
+                      try { await authApi.revokeSession(Number(s.id)); await loadSessions(); } finally { setSessionsBusyId(null); }
+                    }}
+                  >
+                    Revoke
+                  </Button>
                 </div>
               );
             })
           )}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <p className="text-xs text-muted-foreground">Tip: revoke unknown sessions for security.</p>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+          <p className="text-xs font-semibold text-muted-foreground">Tip: revoke unknown sessions for security.</p>
           <Button size="sm" variant="danger" onClick={async () => {
             setSessionsLoading(true);
             try { await authApi.revokeAllSessions(); setSessions([]); } finally { setSessionsLoading(false); }
           }}>Revoke all</Button>
         </div>
-      </CardContent></Card>
+      </Card>
 
       {/* Edit modal */}
       <Modal open={editOpen && !!draft} onClose={handleCloseEdit} title="Edit profile" description="Photo updates instantly. Other fields save on confirm." size="lg">
@@ -566,6 +709,6 @@ export default function ProfilePage() {
           window.setTimeout(() => setMessage(null), 4000);
         }}
       />
-    </div>
+    </HeroPage>
   );
 }

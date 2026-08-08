@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { BookOpen, CheckCircle2, Play, Type } from "lucide-react";
 
-import { Badge, Button, Card, CardContent } from "@/components/ui";
+import { Button, Card, CardContent } from "@/components/ui";
+import { Pill } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
 
 import type { ProgressCounts } from "../types";
@@ -79,9 +80,9 @@ export function SetCard({
 
           <div className="flex shrink-0 items-center gap-2">
             {completed ? (
-              <Badge variant="success">
+              <Pill tone="success">
                 <CheckCircle2 className="h-3 w-3" /> Done
-              </Badge>
+              </Pill>
             ) : null}
             {trailing}
           </div>

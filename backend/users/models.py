@@ -51,9 +51,11 @@ class UserManager(BaseUserManager):
         from access import constants as auth_const
 
         eff_role = str(getattr(user, "role", "") or "").strip().lower()
-        if eff_role == auth_const.ROLE_TEACHER:
+        if eff_role in auth_const.SUBJECT_SCOPED_STAFF_ROLES:
             if getattr(user, "subject", None) not in auth_const.ALL_DOMAIN_SUBJECTS:
-                raise ValueError("Teacher accounts require subject: math or english.")
+                raise ValueError(
+                    "Teacher and support_teacher accounts require subject: math or english."
+                )
         elif eff_role in (
             auth_const.ROLE_ADMIN,
             auth_const.ROLE_TEST_ADMIN,
@@ -213,10 +215,10 @@ class User(AbstractUser):
         raw_subj = getattr(self, "subject", None)
         subj = str(raw_subj).strip().lower() if raw_subj not in (None, "") else None
 
-        if role == auth_const.ROLE_TEACHER:
+        if role in auth_const.SUBJECT_SCOPED_STAFF_ROLES:
             if subj not in auth_const.ALL_DOMAIN_SUBJECTS:
                 raise ValidationError(
-                    {"subject": "Teacher accounts require subject: math or english."}
+                    {"subject": "Teacher and support_teacher accounts require subject: math or english."}
                 )
         elif role in (
             auth_const.ROLE_ADMIN,

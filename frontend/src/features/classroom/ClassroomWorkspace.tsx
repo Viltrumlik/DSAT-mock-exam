@@ -16,6 +16,7 @@ import { Gradebook } from "./pages/Gradebook";
 import { Materials } from "./pages/Materials";
 import { Midterms } from "./pages/Midterms";
 import { Results } from "./pages/Results";
+import { Attendance } from "./pages/Attendance";
 
 function isTabId(v: string | null): v is ClassroomTabId {
   return v != null && ["overview", "lessons", "assignments", "materials", "midterms", "results", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
@@ -71,6 +72,9 @@ export function ClassroomWorkspace({
       {/* Overview now hosts the class rankings. */}
       {current === "overview" && <Rankings classroom={classroom} />}
       {current === "lessons" && caps.isStaff && <Lessons classroom={classroom} />}
+      {/* Staff-only register — students never see attendance. Mirrors the tab's own gate;
+          a student who deep-links ?tab=attendance is already bounced to overview above. */}
+      {current === "attendance" && caps.isStaff && <Attendance classroom={classroom} />}
       {current === "assignments" && <Assignments classroom={classroom} />}
       {current === "midterms" && caps.canManageAssignments && <Midterms classroom={classroom} />}
       {current === "materials" && caps.isMember && <Materials classroom={classroom} />}

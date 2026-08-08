@@ -29,7 +29,10 @@ import {
   Users,
 } from "lucide-react";
 
-import { Badge, Button, Card, CardContent, EmptyState, IconButton, Modal, Tabs, type TabItem } from "@/components/ui";
+import { Button, Card, CardContent, IconButton, Modal } from "@/components/ui";
+// The house devices — the borderless status pill, the pill tab bar, and the untinted
+// empty state that the classroom uses.
+import { EmptyState, Pill, Tabs, type TabItem } from "@/features/classroom/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
 
@@ -94,24 +97,16 @@ export function VocabularyHub() {
     { label: "Sets", icon: Layers, value: totals.sets },
   ];
 
+  // The house tab bar takes a plain count and renders the chip itself, so the local
+  // TabCount is no longer needed here.
   const tabs: TabItem[] = [
+    { id: "bank", label: "Question Bank", icon: Library, count: sections.data?.length },
+    { id: "mine", label: "My Sets", icon: BookMarked, count: mySets.data?.length },
     {
-      value: "bank",
-      label: "Question Bank",
-      icon: Library,
-      badge: sections.data ? <TabCount value={sections.data.length} /> : undefined,
-    },
-    {
-      value: "mine",
-      label: "My Sets",
-      icon: BookMarked,
-      badge: mySets.data ? <TabCount value={mySets.data.length} /> : undefined,
-    },
-    {
-      value: "homework",
+      id: "homework",
       label: "Homework",
       icon: GraduationCap,
-      badge: homeworkOutstanding > 0 ? <TabCount value={homeworkOutstanding} tone="primary" /> : undefined,
+      count: homeworkOutstanding > 0 ? homeworkOutstanding : undefined,
     },
   ];
 
@@ -163,11 +158,9 @@ export function VocabularyHub() {
           horizontal scroller that saves the three tabs on a phone. */}
       <div className="-my-1 max-w-full overflow-x-auto py-1">
         <Tabs
-          tabs={tabs}
-          value={tab}
-          onValueChange={(v) => setTab(v as TabKey)}
-          variant="pill"
-          aria-label="Vocabulary sections"
+          items={tabs}
+          active={tab}
+          onChange={(id) => setTab(id as TabKey)}
           className="whitespace-nowrap"
         />
       </div>
@@ -178,14 +171,6 @@ export function VocabularyHub() {
         {tab === "homework" ? <HomeworkTab query={homework} /> : null}
       </div>
     </div>
-  );
-}
-
-function TabCount({ value, tone = "neutral" }: { value: number; tone?: "neutral" | "primary" }) {
-  return (
-    <Badge variant={tone} className="ds-num ml-0.5">
-      {value}
-    </Badge>
   );
 }
 
@@ -384,13 +369,13 @@ function HomeworkGroupCard({ group, index }: { group: VocabHomeworkGroup; index:
               </div>
             </div>
           </div>
-          <Badge variant={allDone ? "success" : due?.late ? "warning" : "neutral"}>
+          <Pill tone={allDone ? "success" : due?.late ? "warning" : "neutral"}>
             {allDone ? <CheckCircle2 className="h-3 w-3" /> : null}
             <span className="ds-num">
               {done} / {group.sets.length}
             </span>
             {allDone ? "complete" : "done"}
-          </Badge>
+          </Pill>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

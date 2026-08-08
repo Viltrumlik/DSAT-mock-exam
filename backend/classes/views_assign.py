@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from access import constants as acc_const
 from access.engine.classroom_service import ClassroomAccessService
 from access.resources import RT_MIDTERM
 from exams.models import MockExam
@@ -34,7 +35,7 @@ from .capabilities import classroom_capabilities
 from .mail_midterm import notify_class_midterm_scheduled
 from .models import Classroom, ClassroomMembership
 from .models_schedule import MidtermSchedule
-from .views_rankings import _ClassroomScopedView
+from .views_rankings import _ClassroomScopedView, _display_name
 
 
 def _parse_schedule_dt(value):
@@ -277,3 +278,109 @@ class ClassroomGovernanceDeleteView(_AdminClassroomGovernanceView):
         classroom = get_object_or_404(Classroom, pk=classroom_pk)
         classroom.delete()
         return Response(status=http.HTTP_204_NO_CONTENT)
+
+
+class SupportTeacherAssignView(_AdminClassroomGovernanceView):
+    """Assign / unassign a support teacher on a classroom.
+
+    Deliberately NOT ``AssignTeacherView``. That endpoint overwrites the single
+    ``Classroom.teacher`` FK, so routing a support teacher through it would silently evict the
+    real teacher — the class would end up with a support teacher listed as its teacher and
+    nobody would notice until someone looked.
+
+    A support teacher is a MEMBERSHIP, not a classroom attribute: it holds
+    ``ClassroomMembership.ROLE_TA``, whose capability matrix is already written and tested
+    (grade, take attendance, create assignments; no settings, no roster, no ranking config).
+    Several support teachers can serve one classroom, which a single FK could never express.
+
+    Subject alignment is enforced here rather than left to the booking flow: a Maths support
+    teacher assigned to an English class would become bookable by English students for help
+    they cannot give, and the error would surface as a wasted appointment rather than a 400.
+    """
+
+    def _support_membership_qs(self, classroom):
+        return ClassroomMembership.objects.filter(
+            classroom=classroom,
+            role=ClassroomMembership.ROLE_TA,
+            status__in=ClassroomMembership.NON_REMOVED_STATUSES,
+        ).select_related("user")
+
+    def get(self, request, classroom_pk):
+        classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        caps = classroom_capabilities(request.user, classroom)
+        # Readable by the teaching team as well as admins: a teacher needs to know who is
+        # supporting their class, and a support teacher needs to see their own colleagues.
+        if not (self._guard(request) or caps.is_staff):
+            return Response({"detail": "Forbidden."}, status=http.HTTP_403_FORBIDDEN)
+        return Response({
+            "support_teachers": [
+                {
+                    "user_id": m.user_id,
+                    "name": _display_name(m.user),
+                    "email": m.user.email,
+                    "subject": getattr(m.user, "subject", None),
+                }
+                for m in self._support_membership_qs(classroom)
+            ]
+        })
+
+    @transaction.atomic
+    def post(self, request, classroom_pk):
+        if not self._guard(request):
+            return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
+        classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        user, role = self._teacher_user(request.data.get("user_id"))
+
+        if role != acc_const.ROLE_SUPPORT_TEACHER:
+            return Response(
+                {"detail": "User is not a support teacher."}, status=http.HTTP_400_BAD_REQUEST
+            )
+        if getattr(user, "subject", None) != classroom.domain_subject:
+            return Response(
+                {
+                    "detail": (
+                        f"Subject mismatch: this support teacher covers "
+                        f"{getattr(user, 'subject', None) or 'no subject'}, the classroom is "
+                        f"{classroom.domain_subject}."
+                    )
+                },
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+
+        membership, created = ClassroomMembership.objects.update_or_create(
+            classroom=classroom,
+            user=user,
+            defaults={
+                "role": ClassroomMembership.ROLE_TA,
+                "status": ClassroomMembership.STATUS_ACTIVE,
+            },
+        )
+        # Classroom.teacher is deliberately untouched.
+        return Response(
+            {
+                "detail": "Support teacher assigned.",
+                "classroom_id": classroom.pk,
+                "user_id": user.pk,
+                "created": created,
+            },
+            status=http.HTTP_201_CREATED if created else http.HTTP_200_OK,
+        )
+
+    @transaction.atomic
+    def delete(self, request, classroom_pk, user_id):
+        if not self._guard(request):
+            return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
+        classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        membership = ClassroomMembership.objects.filter(
+            classroom=classroom, user_id=user_id, role=ClassroomMembership.ROLE_TA
+        ).first()
+        if membership is None:
+            return Response(
+                {"detail": "Not a support teacher on this classroom."},
+                status=http.HTTP_404_NOT_FOUND,
+            )
+        # Soft removal, matching every other membership exit: the row and its history survive
+        # so past grading and attendance keep their author.
+        membership.status = ClassroomMembership.STATUS_REMOVED
+        membership.save(update_fields=["status"])
+        return Response({"detail": "Support teacher removed.", "user_id": int(user_id)})

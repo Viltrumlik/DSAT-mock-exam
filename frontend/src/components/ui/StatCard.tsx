@@ -10,6 +10,11 @@ interface StatCardProps {
   label: string;
   value: string | number;
   icon?: LucideIcon;
+  /**
+   * A rendered mark shown in place of the icon — no tinted chip around it. For artwork that
+   * carries its own material (the point coin) rather than a line icon that needs a backdrop.
+   */
+  media?: React.ReactNode;
   /** Subtitle text below value */
   sub?: string;
   /** Percentage change */
@@ -31,6 +36,7 @@ export function StatCard({
   label,
   value,
   icon: Icon,
+  media,
   sub,
   change,
   trend,
@@ -58,10 +64,14 @@ export function StatCard({
           <p className="mt-1 text-2xl font-black tabular-nums text-foreground leading-none">{value}</p>
           {sub && <p className="mt-1.5 text-xs font-medium text-muted-foreground">{sub}</p>}
         </div>
-        {Icon && (
-          <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", accent)}>
-            <Icon className="h-5 w-5" />
-          </div>
+        {media ? (
+          <div className="shrink-0">{media}</div>
+        ) : (
+          Icon && (
+            <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", accent)}>
+              <Icon className="h-5 w-5" />
+            </div>
+          )
         )}
       </div>
       {change !== undefined && t && TrendIcon && (

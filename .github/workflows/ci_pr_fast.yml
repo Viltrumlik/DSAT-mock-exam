@@ -21,7 +21,7 @@ jobs:
       - name: Install backend deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r ../requirements.txt
+          pip install -r requirements.txt
       - name: Django system check
         run: python manage.py check
       - name: Ensure no schema drift
@@ -50,12 +50,22 @@ jobs:
         run: npm run lint
       - name: Dead-code check
         run: npm run deadcode
+      # `rg` is not on the GitHub runner image, so this step exited 127 on every run and the
+      # check never actually ran. It also inverted its own meaning: `rg` exits 0 when it FINDS
+      # a match, so a stray "/api/ would have passed and a clean tree would have failed.
+      #
+      # `authClientTelemetry.ts` is exempt for the same reason `lib/api.ts` is: it flushes on
+      # tab close via `navigator.sendBeacon` and keepalive `fetch`, neither of which can go
+      # through the axios instance.
       - name: Forbid direct "/api" strings outside API layers
         run: |
-          rg -n "\"/api/" src \
-            --glob '!src/lib/api.ts' \
-            --glob '!src/features/**/api.ts' \
-            --glob '!src/lib/openapi-types.ts'
+          if grep -rn '"/api/' src \
+              --include='*.ts' --include='*.tsx' \
+              --exclude-dir=node_modules \
+            | grep -vE '^src/(lib/api\.ts|lib/openapi-types\.ts|lib/auth/authClientTelemetry\.ts|features/[^:]*/api\.ts):'; then
+            echo "::error::Direct \"/api/ string outside the API layer — call it through lib/api.ts."
+            exit 1
+          fi
       - name: Generate OpenAPI types/client (must be up to date)
         run: |
           npm run gen:openapi

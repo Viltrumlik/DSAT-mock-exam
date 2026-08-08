@@ -25,7 +25,23 @@ from .views_attendance import (
 from .views_analytics import AnalyticsClassView, AnalyticsMeView, AnalyticsStudentView
 from .views_gradebook import GradebookOverviewView, GradebookAssignmentView
 from .views_materials import ClassroomMaterialsView, ClassroomMaterialDetailView
-from .views_assign import AssignMidtermView, AssignTeacherView, TransferOwnershipView, ClassroomGovernanceDeleteView
+from .views_support import (
+    SupportAvailabilityDetailView,
+    SupportAvailabilityView,
+    SupportBookingDetailView,
+    SupportBookingSettleView,
+    SupportBookingsView,
+    SupportCalendarView,
+    SupportDiaryView,
+    SupportSlotsView,
+)
+from .views_assign import (
+    AssignMidtermView,
+    AssignTeacherView,
+    ClassroomGovernanceDeleteView,
+    SupportTeacherAssignView,
+    TransferOwnershipView,
+)
 from .views_lessons import (
     ClassroomLessonDetailView,
     ClassroomLessonGrantView,
@@ -96,6 +112,20 @@ urlpatterns = [
     path("<int:classroom_pk>/assign-midterm/", AssignMidtermView.as_view(), name="class-assign-midterm"),
     path("<int:classroom_pk>/assign-teacher/", AssignTeacherView.as_view(), name="class-assign-teacher"),
     path("<int:classroom_pk>/transfer-ownership/", TransferOwnershipView.as_view(), name="class-transfer-ownership"),
+    # Support teachers are a MEMBERSHIP (ROLE_TA), never the Classroom.teacher FK — routing
+    # them through assign-teacher/ would evict the real teacher.
+    # Support-teacher booking. Collection routes sit ABOVE the <int:pk> classroom routes
+    # so "support" is never parsed as a classroom id.
+    path("support/calendar/", SupportCalendarView.as_view(), name="support-calendar"),
+    path("support/slots/", SupportSlotsView.as_view(), name="support-slots"),
+    path("support/availability/", SupportAvailabilityView.as_view(), name="support-availability"),
+    path("support/availability/<int:slot_id>/", SupportAvailabilityDetailView.as_view(), name="support-availability-detail"),
+    path("support/bookings/", SupportBookingsView.as_view(), name="support-bookings"),
+    path("support/bookings/<int:booking_id>/", SupportBookingDetailView.as_view(), name="support-booking-detail"),
+    path("support/bookings/<int:booking_id>/settle/", SupportBookingSettleView.as_view(), name="support-booking-settle"),
+    path("support/diary/", SupportDiaryView.as_view(), name="support-diary"),
+    path("<int:classroom_pk>/support-teachers/", SupportTeacherAssignView.as_view(), name="class-support-teachers"),
+    path("<int:classroom_pk>/support-teachers/<int:user_id>/", SupportTeacherAssignView.as_view(), name="class-support-teacher-detail"),
     path("<int:classroom_pk>/governance-delete/", ClassroomGovernanceDeleteView.as_view(), name="class-governance-delete"),
     # Classroom materials (downloadable PDF/DOCX)
     path("<int:classroom_pk>/materials/", ClassroomMaterialsView.as_view(), name="class-materials"),

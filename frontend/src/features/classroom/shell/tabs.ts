@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   CalendarDays,
+  CalendarCheck,
   ClipboardList,
   Users,
   GraduationCap,
@@ -35,11 +36,15 @@ export interface ClassroomTabDef {
 
 /** Single source of truth for workspace navigation. Visibility derives from capabilities. */
 export const CLASSROOM_TABS: ClassroomTabDef[] = [
-  // Overview now hosts the class rankings (Rankings/Stream/Attendance/Analytics tabs removed).
+  // Overview now hosts the class rankings (Rankings/Stream/Analytics tabs removed).
   { id: "overview", label: "Overview", icon: LayoutDashboard, show: () => true },
   // The journal plan delivered into this class. Staff-only: students see the resulting
   // homework in Assignments, never the plan itself.
   { id: "lessons", label: "Lessons", icon: CalendarDays, show: (c) => c.isStaff },
+  // Staff-only, by the school's decision: attendance is a register the teaching team keeps,
+  // not something a student browses. (The page still carries a student self-view branch, and
+  // GET attendance/me/ still exists, in case that is ever reopened.)
+  { id: "attendance", label: "Attendance", icon: CalendarCheck, show: (c) => c.isStaff },
   { id: "assignments", label: "Assignments", icon: ClipboardList, show: () => true },
   { id: "midterms", label: "Midterms", icon: Timer, show: (c) => c.canManageAssignments },
   { id: "materials", label: "Materials", icon: FolderOpen, show: (c) => c.isMember },

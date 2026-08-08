@@ -8,6 +8,7 @@ import { useMe } from "@/hooks/useMe";
 import { cn } from "@/lib/cn";
 import { AppShell } from "./AppShell";
 import { studentNav, reviewNavSection } from "./navConfig";
+import { StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
@@ -26,7 +27,8 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
 
   // Content reviewers (test_auditor + admins) get a Review Center entry at the top of the
   // student sidebar. Everyone else sees the standard student IA.
-  const nav = isReviewerRole(m?.role) ? [reviewNavSection, ...studentNav] : studentNav;
+  const isReviewer = isReviewerRole(m?.role);
+  const nav = isReviewer ? [reviewNavSection, ...studentNav] : studentNav;
 
   // Immersive, sidebar-less takeovers (like the pastpaper /exam & /review routes):
   //  - the assessment runner (/assessments/attempt/<id>) — its `fixed inset-0 z-50`
@@ -66,6 +68,10 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
         pathname={pathname}
         user={isAuthenticated ? { name, avatarUrl: m?.profile_image_url ?? null } : null}
         onSignOut={() => authApi.logout(queryClient)}
+        // Reviewers and staff browse the student shell but earn nothing, so a points pill
+        // reading zero on every page would be noise rather than information.
+        headerSlot={isAuthenticated && !isReviewer ? <StudentHeaderExtras /> : undefined}
+        accountMenu={isAuthenticated && !isReviewer ? <StudentAccountMenuRows /> : undefined}
       >
         <div className={cn(globalInteractionBlockedHard && "pointer-events-none select-none")} aria-busy={globalInteractionBlockedHard || undefined}>
           {children}

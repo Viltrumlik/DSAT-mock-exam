@@ -615,19 +615,31 @@ function ScheduleSection() {
       {/* Calendar */}
       <div
         className="dz-rise"
-        style={{ background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderRadius: 24, padding: "24px 26px" }}
+        style={{
+          background: "var(--dz-panel)",
+          border: "1px solid var(--dz-border)",
+          borderRadius: 24,
+          // Fluid padding: 26px of gutter on each side of a ~297px phone column was most of
+          // the reason the day grid had nowhere to go.
+          padding: "clamp(14px, 4vw, 24px) clamp(12px, 4vw, 26px)",
+          minWidth: 0,
+        }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+        {/* Wraps: the title, the month and the two arrows together needed ~416px and the
+            row could not break, which is what pushed the whole page sideways. */}
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
           <span style={{ color: "var(--dz-indigo)", display: "flex" }}>
             <CalendarRange size={22} />
           </span>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: "1 1 140px", minWidth: 0 }}>
             <div style={{ fontSize: 19, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>Lesson calendar</div>
             <div style={{ fontSize: 13, color: "var(--dz-mute)", fontWeight: 500 }}>Tap a day to see what&apos;s on</div>
           </div>
-          <CalNavButton dir="l" onClick={prevMonth} />
-          <div style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)", minWidth: 128, textAlign: "center" }}>{monthLabel}</div>
-          <CalNavButton dir="r" onClick={nextMonth} />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto" }}>
+            <CalNavButton dir="l" onClick={prevMonth} />
+            <div style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)", minWidth: 112, textAlign: "center" }}>{monthLabel}</div>
+            <CalNavButton dir="r" onClick={nextMonth} />
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 6, marginBottom: 6 }}>
@@ -688,9 +700,13 @@ type CellModel = {
 
 function DayCell({ c, onClick }: { c: CellModel; onClick: () => void }) {
   const highlight = c.isSelected || c.isNext;
+  // Fluid, not a fixed 40px: seven of those plus gaps need ~322px of grid, and a 375px
+  // phone gives the calendar about 297px — the circles overlapped and the tap target fell
+  // under the 44px floor. `min()` keeps the desktop size without a media query, which this
+  // inline-styled component cannot express.
   const num: React.CSSProperties = {
-    width: 40,
-    height: 40,
+    width: "min(40px, 100%)",
+    aspectRatio: "1",
     borderRadius: "50%",
     display: "flex",
     alignItems: "center",
@@ -737,17 +753,24 @@ function DayCell({ c, onClick }: { c: CellModel; onClick: () => void }) {
 }
 
 function Legend() {
-  const items: { sw: React.CSSProperties; label: string }[] = [
+  const items: { sw: React.CSSProperties; label: string; isText?: boolean }[] = [
     { sw: { border: "2px solid var(--dz-indigo)", background: "var(--dz-indigo-soft)" }, label: "Class" },
     { sw: { border: "2px solid var(--dz-amber)", background: "var(--dz-amber-soft)" }, label: "Mock test" },
     { sw: { background: "var(--dz-indigo)", boxShadow: "0 0 0 3px rgba(42,104,192,.18)" }, label: "Next lesson" },
     { sw: { border: "2px dashed var(--dz-indigo)" }, label: "Today" },
+    // Homework days were already painted — indigo numerals — but never explained, so the
+    // one event type a student is actually accountable for read as nothing at all.
+    { sw: { color: "var(--dz-indigo)" }, label: "Homework due", isText: true },
   ];
   return (
     <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--dz-border)" }}>
       {items.map((it) => (
         <div key={it.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)" }}>
-          <span style={{ width: 16, height: 16, borderRadius: "50%", ...it.sw }} />
+          {it.isText ? (
+            <span style={{ width: 16, textAlign: "center", fontWeight: 800, ...it.sw }}>7</span>
+          ) : (
+            <span style={{ width: 16, height: 16, borderRadius: "50%", ...it.sw }} />
+          )}
           {it.label}
         </div>
       ))}
@@ -771,8 +794,11 @@ function relativeDays(iso: string | null): string {
 function eventHref(e: ScheduleEvent): string | null {
   if (e.type === "assignment" && e.classroom_id && e.assignment_id != null)
     return `/classes/${e.classroom_id}/assignments/${e.assignment_id}`;
-  if (e.type === "mock" || e.type === "midterm")
-    return e.mock_exam_id != null ? `/mock/${e.mock_exam_id}` : "/mock-exam";
+  // `/mock/<id>` has never existed as a route, and the server always sets `mock_exam_id`
+  // for these events, so the previous branch 404'd the biggest button on this page every
+  // time — the fallback it looked like it had could never fire.
+  if (e.type === "midterm") return "/midterm";
+  if (e.type === "mock") return "/mock-exam";
   if (e.classroom_id != null) return `/classes/${e.classroom_id}`;
   return null;
 }
