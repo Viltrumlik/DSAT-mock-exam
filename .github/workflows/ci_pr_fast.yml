@@ -50,22 +50,11 @@ jobs:
         run: npm run lint
       - name: Dead-code check
         run: npm run deadcode
-      # `rg` is not on the GitHub runner image, so this step exited 127 on every run and the
-      # check never actually ran. It also inverted its own meaning: `rg` exits 0 when it FINDS
-      # a match, so a stray "/api/ would have passed and a clean tree would have failed.
-      #
-      # `authClientTelemetry.ts` is exempt for the same reason `lib/api.ts` is: it flushes on
-      # tab close via `navigator.sendBeacon` and keepalive `fetch`, neither of which can go
-      # through the axios instance.
+      # Inlined here once and copied into ci_merge_full.yml, where the copy kept calling `rg`
+      # (absent from the runner image, so exit 127) long after this one was fixed. It lives in
+      # frontend/scripts/check-api-layer.sh now so the two gates cannot disagree again.
       - name: Forbid direct "/api" strings outside API layers
-        run: |
-          if grep -rn '"/api/' src \
-              --include='*.ts' --include='*.tsx' \
-              --exclude-dir=node_modules \
-            | grep -vE '^src/(lib/api\.ts|lib/openapi-types\.ts|lib/auth/authClientTelemetry\.ts|features/[^:]*/api\.ts):'; then
-            echo "::error::Direct \"/api/ string outside the API layer — call it through lib/api.ts."
-            exit 1
-          fi
+        run: npm run check:api-layer
       - name: Generate OpenAPI types/client (must be up to date)
         run: |
           npm run gen:openapi
