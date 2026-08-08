@@ -12,7 +12,7 @@ import type { LucideIcon } from "lucide-react";
 import { HeroPage, PageHero, Skeleton } from "@/components/ui";
 // The house devices, so the wallet reads as part of the same product as the classroom.
 import { Card, CardHeader, EmptyState, ErrorState } from "@/features/classroom/ui";
-import RewardCoin from "@/components/RewardCoin";
+import { RewardCoin } from "@/components/RewardCoin";
 import { useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
 import type { RewardEvent } from "./rewardsApi";
 

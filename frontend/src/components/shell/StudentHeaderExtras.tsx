@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ClipboardList } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Tooltip } from "@/components/ui/Tooltip";
-import RewardCoin from "@/components/RewardCoin";
+import { RewardCoin } from "@/components/RewardCoin";
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
 import { useOpenSurveys } from "@/features/surveys/surveysHooks";
 
@@ -129,4 +129,3 @@ export function StudentAccountMenuRows() {
   );
 }
 
-export default StudentHeaderExtras;

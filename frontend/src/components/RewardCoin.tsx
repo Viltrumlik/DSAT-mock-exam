@@ -67,4 +67,3 @@ export function RewardCoin({
   );
 }
 
-export default RewardCoin;

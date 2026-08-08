@@ -8,7 +8,7 @@ import { useMe } from "@/hooks/useMe";
 import { cn } from "@/lib/cn";
 import { AppShell } from "./AppShell";
 import { studentNav, reviewNavSection } from "./navConfig";
-import StudentHeaderExtras, { StudentAccountMenuRows } from "./StudentHeaderExtras";
+import { StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
