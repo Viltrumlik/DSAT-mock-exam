@@ -64,6 +64,7 @@ class QuestionErrorReportCreateView(APIView):
             resource_id=target.resource_id,
             resource_title=target.resource_title,
             subject=target.subject,
+            level=target.level,
             module_label=target.module_label,
             question_order=target.question_order,
             question_excerpt=target.question_excerpt,
