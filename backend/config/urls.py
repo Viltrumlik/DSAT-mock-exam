@@ -54,5 +54,6 @@ urlpatterns = [
     path('api/question-reports/', include('question_reports.urls')),
     path('api/journals/', include('journals.urls')),
     path('api/rewards/', include('rewards.urls')),
+    path('api/annotations/', include('annotations.urls')),
     path('api/surveys/', include('surveys.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
