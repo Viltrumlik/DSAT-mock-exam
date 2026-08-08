@@ -1,15 +1,27 @@
 /**
- * Annotation persistence — per (attempt, question, container), in localStorage.
- * Purely a study annotation; independent of the exam engine, never synced.
+ * Annotation persistence — per (attempt, question, container).
  *
- * A "container" is a highlightable region (passage / question / choices), each
- * with its own character-offset space, so the same question can carry separate
- * annotations on its passage, prompt and answer choices.
+ * A "container" is a highlightable region (passage / question / choices), each with its own
+ * character-offset space, so the same question can carry separate annotations on its passage,
+ * prompt and answer choices.
  *
- * Stored under `ts.annot.<attempt>.<question>.<container>`. On read, the
- * passage container migrates forward any legacy single-region data
- * (`ts.annot.<attempt>.<question>` and the older `ts.hl.<...>` shape).
+ * **Reads and writes are synchronous, deliberately.** The annotator paints inside a layout
+ * effect on every commit, and a promise there would mean a frame of un-highlighted text on
+ * every re-render. So the truth the UI reads is an in-memory cache, backed by localStorage,
+ * and the server is reconciled around it:
+ *
+ *   - `primeAnnotations` fills the cache from the server when a page opens
+ *   - `writeAnnotations` updates cache + localStorage now, and pushes to the server debounced
+ *
+ * localStorage stays as the offline cache rather than being replaced. It is what makes a
+ * highlight survive a refresh on a dropped connection, and it is what the store did before
+ * the server existed, so nothing regresses if the API is unreachable.
+ *
+ * Stored under `ts.annot.<attempt>.<question>.<container>`. On read, the passage container
+ * migrates forward any legacy single-region data (`ts.annot.<attempt>.<question>` and the
+ * older `ts.hl.<...>` shape).
  */
+import { annotationsApi, type AnnotationRow, type AnnotationScope } from "@/features/annotations/api";
 import { type Annotation, mergeAnnotations } from "./annotations";
 
 function key(attemptId: number | string, questionId: number, container: string): string {
@@ -59,10 +71,104 @@ function readKey(k: string): Annotation[] | null {
   }
 }
 
+// ── server reconciliation ─────────────────────────────────────────────────────
+
+/**
+ * One surface is annotatable at a time — a runner or a review page, never both — so the
+ * scope/ref the writes belong to is ambient rather than threaded through every call site.
+ * `useAnnotationSync` owns setting and clearing it; leaving it unset simply means
+ * localStorage-only, which is exactly the old behaviour.
+ */
+let syncScope: AnnotationScope | null = null;
+let syncRef: string | null = null;
+
+const cache = new Map<string, Annotation[]>();
+/** Debounced writes, each keeping the request that would fire, so a flush can send it now
+ *  rather than merely cancelling the timer — a dropped debounce is a lost highlight. */
+const pending = new Map<string, { timer: ReturnType<typeof setTimeout>; send: () => void }>();
+
+/** How long to sit on a write. Long enough to collapse a drag-recolour-recolour flurry into
+ *  one request, short enough that closing the tab a second later has already saved. */
+const PUSH_DELAY_MS = 600;
+
+export function setAnnotationSync(scope: AnnotationScope, ref: string | number): void {
+  syncScope = scope;
+  syncRef = String(ref);
+}
+
+export function clearAnnotationSync(): void {
+  flushAnnotations();
+  syncScope = null;
+  syncRef = null;
+  cache.clear();
+}
+
+/** Seed the cache (and localStorage) from what the server holds, before the first paint. */
+export function primeAnnotations(
+  attemptId: number | string,
+  rows: AnnotationRow[],
+): void {
+  for (const row of rows) {
+    const anns = mergeAnnotations((row.data ?? []).filter(isAnnotation));
+    const k = key(attemptId, row.target_id, row.container);
+    cache.set(k, anns);
+    if (typeof window !== "undefined") {
+      try {
+        if (anns.length) localStorage.setItem(k, JSON.stringify(anns));
+        else localStorage.removeItem(k);
+      } catch {
+        /* ignore quota / unavailable */
+      }
+    }
+  }
+}
+
+function push(attemptId: number | string, questionId: number, container: string, anns: Annotation[]): void {
+  if (!syncScope || syncRef === null) return;
+  const scope = syncScope;
+  const ref = syncRef;
+  const k = key(attemptId, questionId, container);
+  const existing = pending.get(k);
+  if (existing) clearTimeout(existing.timer);
+
+  // A failed save is not worth interrupting a student mid-question over: the annotation is
+  // already in localStorage, and the next write to this region retries the whole list anyway
+  // because the payload is the region's full state, not a delta.
+  const send = () => void annotationsApi.write(scope, ref, questionId, container, anns).catch(() => {});
+
+  pending.set(k, {
+    send,
+    timer: setTimeout(() => {
+      pending.delete(k);
+      send();
+    }, PUSH_DELAY_MS),
+  });
+}
+
+/** Send anything still waiting. Call on pagehide — a debounce that never fires is a lost mark. */
+export function flushAnnotations(): void {
+  for (const [, entry] of pending) {
+    clearTimeout(entry.timer);
+    entry.send();
+  }
+  pending.clear();
+}
+
+// ── the API the annotator uses ────────────────────────────────────────────────
+
 export function readAnnotations(attemptId: number | string, questionId: number, container: string): Annotation[] {
+  const k = key(attemptId, questionId, container);
+  const cached = cache.get(k);
+  if (cached) return cached;
   if (typeof window === "undefined") return [];
-  const direct = readKey(key(attemptId, questionId, container));
-  if (direct) return direct;
+  const direct = readKey(k);
+  if (direct) {
+    // Only memoise while a surface is syncing. With no sync context this is the pre-server
+    // store exactly as it was — which keeps the existing annotator tests honest, since a
+    // module-level cache that outlived a test would leak one case's marks into the next.
+    if (syncScope) cache.set(k, direct);
+    return direct;
+  }
   // Passage migrates legacy single-region data once.
   if (container === "passage") {
     try {
@@ -88,13 +194,16 @@ export function writeAnnotations(
   anns: Annotation[],
 ): Annotation[] {
   const merged = mergeAnnotations(anns);
+  const k = key(attemptId, questionId, container);
+  if (syncScope) cache.set(k, merged);
   if (typeof window !== "undefined") {
     try {
-      if (merged.length === 0) localStorage.removeItem(key(attemptId, questionId, container));
-      else localStorage.setItem(key(attemptId, questionId, container), JSON.stringify(merged));
+      if (merged.length === 0) localStorage.removeItem(k);
+      else localStorage.setItem(k, JSON.stringify(merged));
     } catch {
       /* ignore quota / unavailable */
     }
   }
+  push(attemptId, questionId, container, merged);
   return merged;
 }

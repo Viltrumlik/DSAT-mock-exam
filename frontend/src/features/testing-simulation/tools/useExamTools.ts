@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import { clamp } from "../utils/time";
 import { useFullscreen } from "./useFullscreen";
 import { useAnnotator, type AnnotatableContainer } from "./highlight/useAnnotator";
+import { useAnnotationSync } from "@/features/annotations/useAnnotationSync";
 
 interface UseExamToolsArgs {
   attemptId: number | string;
@@ -26,6 +27,10 @@ export function useExamTools({ attemptId, questionId, getContainers }: UseExamTo
   const [zoom, setZoom] = useState(1);
 
   const fullscreen = useFullscreen();
+  // Loads what this student already marked on this attempt and routes later writes to the
+  // server. Not awaited: the annotator repaints on every commit, so marks appear the moment
+  // the fetch lands and a slow request never delays the first question.
+  useAnnotationSync("exam", attemptId);
   const highlighter = useAnnotator({ getContainers, attemptId, questionId, active: highlighterActive });
 
   const zoomIn = useCallback(() => setZoom((z) => clamp(Number((z + 0.1).toFixed(2)), 0.8, 1.6)), []);
