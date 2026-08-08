@@ -1,0 +1,94 @@
+name: Docker images
+
+# Builds both images. On a pull request it builds and throws them away — that build IS the
+# test, and it is the only place the Dockerfiles are exercised, so a change that breaks them
+# fails here rather than on the server. On main it pushes to GHCR.
+#
+# Nothing here deploys. Cutting production over is a separate, manual step — see
+# deploy/DOCKER.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "compose.yaml"
+      - ".github/workflows/docker_images.yml"
+  pull_request:
+    paths:
+      - "backend/Dockerfile"
+      - "backend/.dockerignore"
+      - "backend/requirements.txt"
+      - "frontend/Dockerfile"
+      - "frontend/.dockerignore"
+      - "frontend/package-lock.json"
+      - "compose.yaml"
+      - ".github/workflows/docker_images.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+          - name: frontend
+            context: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Only main pushes. A PR from a fork has no package write anyway, and an unreviewed
+      # image in the registry is a supply-chain problem, not a convenience.
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/dsat-${{ matrix.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+
+      # NEXT_PUBLIC_* are inlined into the client bundle at build time, so the frontend image
+      # is environment-specific. These are public values (they ship to every browser), which
+      # is why they are repo variables and not secrets — but they still decide which backend
+      # the bundle talks to, so a wrong one here points production at the wrong host.
+      - name: Build${{ github.event_name == 'push' && ' and push' || '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_MAIN_SITE_URL=${{ vars.NEXT_PUBLIC_MAIN_SITE_URL }}
+            NEXT_PUBLIC_TEACHER_PORTAL_URL=${{ vars.NEXT_PUBLIC_TEACHER_PORTAL_URL }}
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ vars.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+            NEXT_PUBLIC_DESMOS_API_KEY=${{ vars.NEXT_PUBLIC_DESMOS_API_KEY }}
+            NEXT_PUBLIC_MASTERSAT_AUTH_CORREL_HEADERS=${{ vars.NEXT_PUBLIC_MASTERSAT_AUTH_CORREL_HEADERS }}
