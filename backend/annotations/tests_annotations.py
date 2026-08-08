@@ -118,5 +118,16 @@ class AnnotationApiTests(TestCase):
         self.assertEqual(stored["underline"], "dashed")
         self.assertNotIn("color", stored)
 
+    def test_every_style_the_toolbar_offers_is_accepted(self):
+        # This allowlist has to track HighlightColor/UnderlineStyle in annotations.ts. The
+        # first draft omitted "dotted" — the toolbar offers it, so every dotted underline
+        # would have 400'd and been lost on the next device the student opened. A style the
+        # UI can produce and the server rejects does not degrade, it disappears.
+        for color in ("yellow", "blue", "pink"):
+            self.assertEqual(self._write(data=[_range(color=color)]).status_code, 204, color)
+        for style in ("solid", "dashed", "dotted"):
+            r = self._write(data=[{"start": 0, "end": 3, "kind": "underline", "underline": style}])
+            self.assertEqual(r.status_code, 204, style)
+
     def test_a_runaway_client_is_capped(self):
         self.assertEqual(self._write(data=[_range(i, i + 1) for i in range(600)]).status_code, 400)

@@ -1,15 +1,17 @@
 import api from "@/lib/api";
+import type { Annotation } from "@/features/testing-simulation/tools/highlight/annotations";
 
 /** Which text the offsets belong to. Mirrors `annotations.StudyAnnotation.SCOPE_CHOICES`. */
 export type AnnotationScope = "exam" | "assessment" | "vocab";
 
-export interface StoredAnnotation {
-  start: number;
-  end: number;
-  kind: "highlight" | "underline";
-  color?: "yellow" | "blue" | "pink";
-  underline?: "solid" | "dashed";
-}
+/**
+ * The wire shape, structurally identical to `Annotation` in
+ * `features/testing-simulation/tools/highlight/annotations.ts`. Declared against those types
+ * rather than re-spelling the unions: writing them out by hand here is how `dotted` came to
+ * be missing from the first draft of the server's allowlist, which would have 400'd every
+ * dotted underline and lost it on the next device the student opened.
+ */
+export type StoredAnnotation = Annotation;
 
 export interface AnnotationRow {
   target_id: number;

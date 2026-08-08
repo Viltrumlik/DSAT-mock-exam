@@ -12,8 +12,11 @@ from rest_framework import serializers
 
 from .models import StudyAnnotation
 
+#: Kept in step with `HighlightColor` and `UnderlineStyle` in
+#: `frontend/.../highlight/annotations.ts`. A style the UI offers but this set omits does not
+#: degrade — it 400s, and the mark is lost on the next device the student opens.
 HIGHLIGHT_COLORS = {"yellow", "blue", "pink"}
-UNDERLINE_STYLES = {"solid", "dashed"}
+UNDERLINE_STYLES = {"solid", "dashed", "dotted"}
 
 #: A generous ceiling, not a product rule. Someone highlighting an entire passage word by word
 #: is plausible; ten thousand ranges on one paragraph is a runaway client.

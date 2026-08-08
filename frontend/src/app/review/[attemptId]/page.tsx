@@ -5,6 +5,10 @@ import { examsStudentApi } from "@/features/examsStudent/api";
 import AuthGuard from '@/components/AuthGuard';
 import { CheckCircle2, XCircle, ArrowLeft, BarChart3, Eye, EyeOff, X, ChevronRight, BookOpen, AlertCircle, Lock, ArrowUp, ArrowDown, Trophy, Flag, Bookmark } from 'lucide-react';
 import { MathText } from '@/components/MathText';
+import SafeHtml from '@/components/SafeHtml';
+import { renderExamHtml } from '@/features/testing-simulation/utils/richContent';
+import { useAnnotationSync } from '@/features/annotations/useAnnotationSync';
+import { useAnnotationReplay } from '@/features/annotations/useAnnotationReplay';
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 
@@ -13,13 +17,32 @@ const examsPublicApi = examsStudentApi;
 interface QuestionReviewModalProps {
     question: any;
     showCorrectAnswers: boolean;
+    attemptId: number | string;
+    annotationsReady: boolean;
     onClose: () => void;
     onNext?: () => void;
     onPrevious?: () => void;
 }
 
-const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, onPrevious }: QuestionReviewModalProps) => {
+const QuestionReviewModal = ({ question, showCorrectAnswers, attemptId, annotationsReady, onClose, onNext, onPrevious }: QuestionReviewModalProps) => {
     const [reportOpen, setReportOpen] = useState(false);
+
+    // Repaint the marks this student made while sitting the paper. Hooks run before the
+    // early return below so the order stays stable when the modal opens and closes.
+    useAnnotationReplay({
+        attemptId,
+        questionId: question?.id ?? null,
+        enabled: annotationsReady,
+        // Keys must match the runner's (useExamTools → ExamRunnerPage), because the offsets
+        // were recorded against those regions. "choices" is deliberately absent: review adds
+        // "Correct"/"Incorrect" text inside that container, which shifts every offset in it,
+        // and a highlight three words out is worse than no highlight.
+        getContainers: () => [
+            { key: "passage", el: document.getElementById("review-passage") },
+            { key: "question", el: document.getElementById("review-question") },
+        ],
+    });
+
     if (!question) return null;
 
     // Unanswered question — labelled "Omitted" (not "Incorrect") in the header.
@@ -91,11 +114,18 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                                     />
                                 </div>
                             )}
-                            <MathText
-                                text={question.text || "Question text missing"}
-                                block
-                                className="bg-surface-2 p-6 rounded-2xl border border-border text-foreground leading-normal"
-                            />
+                            {/* SafeHtml + renderExamHtml, NOT MathText — the runner renders this exact
+                                field through this exact pipeline, so the rendered text is identical and
+                                the stored character offsets land where the student put them. MathText
+                                also documents itself as the wrong renderer for runtime <mark> spans:
+                                its KaTeX effect fights them. Same source field either way
+                                (`review.questions[].text` is `Question.question_text`). */}
+                            <div id="review-passage" className="bg-surface-2 p-6 rounded-2xl border border-border text-foreground leading-normal">
+                                <SafeHtml
+                                    className="mathjax-process font-[Georgia] font-medium leading-relaxed"
+                                    html={renderExamHtml(question.text || "Question text missing")}
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -106,11 +136,12 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
                                 <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3 flex items-center">
                                     <BookOpen className="w-3 h-3 mr-2" /> Question Prompt
                                 </h3>
-                                <MathText
-                                    text={question.question_prompt}
-                                    block
-                                    className="font-[Georgia] text-foreground leading-relaxed border-l-4 border-primary pl-5 py-1 text-base font-medium"
-                                />
+                                <div id="review-question" className="border-l-4 border-primary pl-5 py-1">
+                                    <SafeHtml
+                                        className="mathjax-process font-[Georgia] text-base font-medium leading-relaxed text-foreground"
+                                        html={renderExamHtml(question.question_prompt)}
+                                    />
+                                </div>
                             </div>
                         )}
 
@@ -230,6 +261,11 @@ const QuestionReviewModal = ({ question, showCorrectAnswers, onClose, onNext, on
 
 export default function ReviewPage() {
     const { attemptId } = useParams();
+    // Load this student's highlights for the whole attempt in one request, before any
+    // question is opened. `ready` gates the painting: a review page renders once and settles,
+    // so painting from an empty cache and priming a moment later would leave the marks off
+    // screen until something else happened to re-render.
+    const { ready: annotationsReady } = useAnnotationSync("exam", Array.isArray(attemptId) ? attemptId[0] : attemptId);
     const router = useRouter();
     const [review, setReview] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -722,6 +758,8 @@ export default function ReviewPage() {
                 <QuestionReviewModal
                     question={selectedQuestion}
                     showCorrectAnswers={showCorrectAnswers}
+                    attemptId={Array.isArray(attemptId) ? attemptId[0] : (attemptId ?? "")}
+                    annotationsReady={annotationsReady}
                     onClose={() => setSelectedQuestion(null)}
                     onNext={(() => {
                         if (!selectedQuestion || !review.module_results) return undefined;
