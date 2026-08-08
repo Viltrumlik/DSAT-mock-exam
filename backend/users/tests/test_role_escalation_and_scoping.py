@@ -43,11 +43,11 @@ class RoleEscalationTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    def _create(self, actor, email, role):
+    def _create(self, actor, email, role, **extra):
         self.client.force_authenticate(actor)
         return self.client.post(
             reverse("user-create"),
-            {"email": email, "password": "pw123456", "role": role},
+            {"email": email, "password": "pw123456", "role": role, **extra},
             format="json",
         )
 
@@ -77,7 +77,14 @@ class RoleEscalationTests(TestCase):
         self.assertEqual(created.role, acc_const.ROLE_SUPER_ADMIN)
 
     def test_admin_can_still_assign_lower_roles(self):
-        res = self._create(self.admin, "ok-teacher@example.com", acc_const.ROLE_TEACHER)
+        # A teacher account carries a subject — "Teacher and support_teacher accounts require
+        # subject: math or english", enforced in UserCreateSerializer and on the model. The
+        # test asked for a teacher with no subject and read the resulting 400 as the escalation
+        # guard refusing an admin, which is not what happened.
+        res = self._create(
+            self.admin, "ok-teacher@example.com", acc_const.ROLE_TEACHER,
+            subject=acc_const.DOMAIN_MATH,
+        )
         self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(
             User.objects.get(email="ok-teacher@example.com").role, acc_const.ROLE_TEACHER
@@ -132,11 +139,20 @@ class SingleObjectScopeTests(TestCase):
 
 
 class LoginThrottleTests(TestCase):
-    """Fix 3: the login endpoint throttles repeated attempts per IP."""
+    """Fix 3: the login endpoint throttles repeated attempts per IP.
+
+    Sent as a native client. ``APICSRFEnforceMiddleware`` refuses every ``/api/auth/`` POST
+    without a trusted ``Origin`` and a CSRF token pair, so the five bare attempts this used to
+    make were all answered ``403 Bad origin.`` by middleware and never reached DRF — the
+    assertion was reading a CSRF refusal as evidence about brute-force protection. Declaring
+    ``X-MasterSAT-Client`` with no auth cookie takes the documented native-app exemption, and
+    that is the path worth covering: an attacker mounting credential stuffing has no reason to
+    carry a CSRF token, so it is the one with nothing but the throttle in front of it.
+    """
 
     def setUp(self):
         cache.clear()
-        self.client = APIClient()
+        self.client = APIClient(HTTP_X_MASTERSAT_CLIENT="ios-test")
         self.url = reverse("token_obtain_pair")
         User.objects.create_user(
             email="throttle@example.com", password="rightpass", role=acc_const.ROLE_STUDENT
@@ -144,6 +160,15 @@ class LoginThrottleTests(TestCase):
 
     def tearDown(self):
         cache.clear()
+
+    def test_a_bare_browser_post_is_refused_before_it_reaches_the_throttle(self):
+        # Pins why the case above needs the header — so a future reader does not "simplify"
+        # it back and get a green test that proves nothing.
+        r = APIClient().post(
+            self.url, {"email": "throttle@example.com", "password": "wrong"}, format="json"
+        )
+        self.assertEqual(r.status_code, 403)
+        self.assertIn("origin", r.json()["detail"].lower())
 
     def test_repeated_failed_logins_are_throttled(self):
         # Tighten the rate so the test is fast and deterministic regardless of env.
