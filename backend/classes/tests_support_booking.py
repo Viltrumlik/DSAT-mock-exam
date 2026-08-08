@@ -58,10 +58,33 @@ class SupportFixture(TestCase):
         )
         # The outsider is in no class at all.
 
+        self._slots_made = 0
         self.slot = self.make_slot(self.support)
 
-    def make_slot(self, teacher, *, hours=24, capacity=1):
-        start = timezone.now() + timedelta(hours=hours)
+    #: Deliberately **past the calendar's four-day window and on the hour**.
+    #:
+    #: This used to be ``timezone.now() + 24h``, which put a one-hour block at tomorrow's
+    #: HH:MM inside the calendar every subclass reads. Since an hour is governed by any row
+    #: *overlapping* it, a fixture slot at 09:39–10:39 quietly took charge of both 09:00 and
+    #: 10:00 — so three calendar tests passed or failed on what time of day the suite ran.
+    #: They passed locally at 10:23 and failed in CI at 09:39. Nothing here needs the slot to
+    #: be inside the window: ``book`` only asks that it is in the future, and
+    #: ``open_slots_for`` has no window bound at all.
+    SLOT_DAYS_OUT = support_service.CALENDAR_DAYS + 3
+    FIRST_SLOT_HOUR = 10
+
+    def make_slot(self, teacher, *, capacity=1, hour=None):
+        """A future slot outside the calendar window. Each call gets its own hour.
+
+        ``uniq_support_slot_per_teacher_start`` forbids two rows for one teacher at one
+        instant, and the old wall-clock start only cleared it by microseconds.
+        """
+        if hour is None:
+            hour = self.FIRST_SLOT_HOUR + self._slots_made
+            self._slots_made += 1
+        start = support_service._hour_start(
+            timezone.localdate() + timedelta(days=self.SLOT_DAYS_OUT), hour
+        )
         return SupportAvailability.objects.create(
             support_teacher=teacher, starts_at=start,
             ends_at=start + timedelta(hours=1), capacity=capacity,
