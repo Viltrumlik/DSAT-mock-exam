@@ -978,6 +978,9 @@ mark.ts-annot {
   --dz-border: #e7ebf3;
   --dz-amber: #f59e0b;
   --dz-amber-soft: rgba(245, 158, 11, 0.13);
+  /* green-700 — clears WCAG AA (~4.9:1) for small text on the light --dz-card. */
+  --dz-success: #15803d;
+  --dz-success-soft: rgba(21, 128, 61, 0.12);
   font-family: var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 .dark .dzboard {
@@ -992,6 +995,9 @@ mark.ts-annot {
   --dz-border: rgba(255, 255, 255, 0.09);
   --dz-amber: #fbbf24;
   --dz-amber-soft: rgba(251, 191, 36, 0.15);
+  /* green-400 — high contrast for small text on the dark --dz-card. */
+  --dz-success: #4ade80;
+  --dz-success-soft: rgba(74, 222, 128, 0.16);
 }
 
 @keyframes dz-pulseRing { 0% { box-shadow: 0 0 0 0 rgba(42,104,192,.35) } 70% { box-shadow: 0 0 0 10px rgba(42,104,192,0) } 100% { box-shadow: 0 0 0 0 rgba(42,104,192,0) } }

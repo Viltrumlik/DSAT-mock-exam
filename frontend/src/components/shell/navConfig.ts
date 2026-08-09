@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Coins,
   LifeBuoy,
+  Route,
   ClipboardList as ClipboardListIcon,
 } from "lucide-react";
 
@@ -63,6 +64,7 @@ export const studentNav: NavSection[] = [
         label: "Learn",
         icon: GraduationCap,
         children: [
+          { href: "/roadmap", label: "Roadmap", icon: Route, isNew: true },
           { href: "/classes", label: "Classroom", icon: Users },
           { href: "/assessments", label: "Assessment", icon: ClipboardCheck },
           { href: "/vocabulary", label: "Vocabulary", icon: BookA },

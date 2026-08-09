@@ -18,6 +18,7 @@ import {
 } from "@/lib/auth/authTabSync";
 import { meQueryKey } from "@/lib/auth/meQueryKey";
 import type { TestAttempt } from "@/features/examsStudent/testAttemptSchema";
+import type { RoadmapResponse } from "@/features/roadmap/types";
 import {
     parseMockExamPublicList,
     parseMockExamPublicPayload,
@@ -1255,6 +1256,16 @@ export const classesApi = {
             count: data.count ?? 0,
             items: (data.items ?? []) as Assignment[],
         };
+    },
+    /**
+     * Student roadmap: the per-subject level ladder. Every level of each subject the
+     * student studies is visible, but only their own level is openable (see
+     * backend/classes/roadmap.py).
+     */
+    roadmap: async (): Promise<RoadmapResponse> => {
+        const r = await api.get('/classes/roadmap/');
+        const data = r.data as { tracks?: unknown[] };
+        return { tracks: (data.tracks ?? []) } as RoadmapResponse;
     },
     /** Student lessons calendar: class meetings + mock/midterm + assignment due dates in a date range. */
     mySchedule: async (from: string, to: string): Promise<{ from: string; to: string; events: ScheduleEvent[] }> => {

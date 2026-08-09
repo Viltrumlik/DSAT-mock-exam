@@ -69,6 +69,7 @@ from .views_midterm_v2 import (
 )
 from .views_roster import MemberManageView, ClassroomRosterView
 from .views_media import AssignmentVideoUploadUrlView
+from .views_roadmap import StudentRoadmapView
 
 
 router = DefaultRouter()
@@ -86,6 +87,9 @@ submissions_router.register(r"", SubmissionAdminViewSet, basename="class-submiss
 
 urlpatterns = [
     path("join/", JoinClassView.as_view(), name="class-join"),
+    # Student-facing per-subject level ladder. A fixed literal, so it resolves before the
+    # router's <int:pk> classroom detail and the collection routes below.
+    path("roadmap/", StudentRoadmapView.as_view(), name="student-roadmap"),
     path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
     path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
     path("<int:classroom_pk>/comments/", ClassCommentListCreateView.as_view(), name="class-comments"),
