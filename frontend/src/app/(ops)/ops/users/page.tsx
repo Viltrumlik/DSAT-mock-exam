@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import api, { classesApi } from "@/lib/api";
+import { requiresSubject } from "@/lib/roles";
 import {
   Search,
   UserCheck,
@@ -146,7 +147,11 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const needsSubject = role === "teacher";
+  // NOT `role === "teacher"`. The server requires a subject for every role in
+  // SUBJECT_SCOPED_STAFF_ROLES, which is teacher AND support_teacher — so the bare comparison
+  // hid the field for support teachers, and the save below then sent `subject: null` into an
+  // endpoint that rejects it. The role could not be created from this panel at all.
+  const needsSubject = requiresSubject(role);
 
   const handleSave = async () => {
     setSaving(true);
@@ -272,7 +277,10 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
           </div>
         </div>
 
-        {/* Subject — only for teachers */}
+        {/* Subject — required by the server for every subject-scoped staff role, which is
+            teacher and support_teacher. There is no create-user form in ops: staff promote an
+            existing account by changing its role here, so this field appearing is the only way
+            a support teacher can be made at all. */}
         {needsSubject && (
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">

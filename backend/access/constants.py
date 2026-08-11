@@ -81,6 +81,23 @@ CANONICAL_ROLES = frozenset(
     }
 )
 
+#: Ordered (role, label) pairs for forms — Django admin above all, which had no way to see
+#: or set ``User.role`` at all: the admin exposed only ``system_role`` (the FK), and this
+#: field carried no choices, so even adding it would have rendered a free-text box.
+#:
+#: A tuple, not a comprehension over CANONICAL_ROLES: a frozenset has no order, so generating
+#: the pairs from it makes ``makemigrations`` emit a fresh AlterField whenever the set happens
+#: to rehash.
+ROLE_CHOICES = (
+    (ROLE_STUDENT, "Student"),
+    (ROLE_TEACHER, "Teacher"),
+    (ROLE_SUPPORT_TEACHER, "Support teacher"),
+    (ROLE_TEST_ADMIN, "Test admin"),
+    (ROLE_TEST_AUDITOR, "Test auditor"),
+    (ROLE_ADMIN, "Admin"),
+    (ROLE_SUPER_ADMIN, "Super admin"),
+)
+
 #: Roles admitted to the teacher portal (``teacher.<domain>``). Intentionally role-based
 #: rather than permission-based: admin and test_admin hold staff permissions elsewhere but
 #: are deliberately kept off this subdomain. Previously spelled as the literal tuple
