@@ -4,6 +4,8 @@ from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower
 
+from access import constants as acc_const
+
 
 class ExamDateOption(models.Model):
     """Admin-defined SAT/exam dates students may choose from (profile dropdown)."""
@@ -97,7 +99,15 @@ class User(AbstractUser):
     )
     is_frozen = models.BooleanField(default=False, db_index=True)
     # Canonical RBAC + scope fields
-    role = models.CharField(max_length=30, default="student", db_index=True)
+    role = models.CharField(
+        max_length=30,
+        default="student",
+        db_index=True,
+        # Choices are for the forms, not the database — nothing here validates on save, and
+        # the API validates against CANONICAL_ROLES separately. Without them Django admin
+        # renders a free-text box, so the only way to set a role was to type it exactly.
+        choices=acc_const.ROLE_CHOICES,
+    )
     scope = models.JSONField(
         default=list,
         blank=True,
@@ -109,7 +119,10 @@ class User(AbstractUser):
         null=True,
         db_index=True,
         choices=[("math", "Math"), ("english", "English")],
-        help_text="Required for **teacher** (math or english). Must be null for admin, test_admin, super_admin, and students.",
+        help_text=(
+            "Required for **teacher** and **support_teacher** (math or english). Must be null "
+            "for admin, test_admin, test_auditor, super_admin, and students."
+        ),
     )
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
