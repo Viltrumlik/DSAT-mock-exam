@@ -109,7 +109,35 @@ class SupportBooking(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="+",
     )
+
+    # ── Cancellation ────────────────────────────────────────────────────────────────
+    # A cancelled seat costs the teacher an hour they held open and another student the
+    # chance to take it, so the reason is asked for and shown to the teacher. Its own three
+    # fields rather than reusing settled_by: a cancellation is not a settlement, and
+    # overloading them made "who ended this" ambiguous on a row that was later re-booked.
+    cancel_reason = models.CharField(max_length=280, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+
+    # ── How the session went ────────────────────────────────────────────────────────
+    #: The student's rating of the SESSION, 1–5. Never a rating of the student, and never
+    #: tied to their points — settling as HELD is what pays, whatever the rating says.
+    rating = models.PositiveSmallIntegerField(null=True, blank=True)
+    rating_comment = models.CharField(max_length=500, blank=True)
+    rated_at = models.DateTimeField(null=True, blank=True)
+    #: The teacher's own line on what the hour covered, written when they settle it. Visible
+    #: to the student: "we went through inference questions" is worth more to them than a
+    #: green tick.
+    teacher_note = models.CharField(max_length=500, blank=True)
+
     updated_at = models.DateTimeField(auto_now=True)
+
+    #: A rating outside this range is a bug in the caller, not a student's opinion.
+    RATING_MIN = 1
+    RATING_MAX = 5
 
     class Meta:
         db_table = "support_bookings"

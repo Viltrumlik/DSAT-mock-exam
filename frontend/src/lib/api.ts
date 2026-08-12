@@ -921,6 +921,8 @@ export interface SupportCalendar {
     open_hour: number;
     close_hour: number;
     dates: string[];
+    /** Null only against a server that predates the limits. */
+    allowance: SupportAllowance | null;
     teachers: SupportCalendarTeacher[];
 }
 
@@ -934,7 +936,61 @@ export interface SupportBooking {
     classroom_name: string | null;
     student_id: number;
     student: string;
+    /** Why the seat came back. Shown to the support teacher, who held the hour for it. */
+    cancel_reason: string;
+    cancelled_at: string | null;
+    /** The student's 1–5 verdict on the session. Never a verdict on the student, and it
+     *  never affects their points. */
+    rating: number | null;
+    rating_comment: string;
+    rated_at: string | null;
+    /** What the teacher says the hour covered, written when they settle it. */
+    teacher_note: string;
     slot: SupportSlot;
+}
+
+/** How much of the booking allowance a student has left. Sent with the calendar so the
+ *  limit can be shown before they pick an hour, not discovered when the server refuses. */
+export interface SupportAllowance {
+    upcoming: number;
+    max_upcoming: number;
+    this_week: number;
+    max_per_week: number;
+    can_book: boolean;
+}
+
+/** One hour of the support teacher's own week. Mirrors SupportHour but carries the
+ *  appointments rather than a seat count — seeing who is coming is the point. */
+export interface SupportTeacherHour {
+    starts_at: string;
+    ends_at: string;
+    state: "open" | "booked" | "closed" | "past";
+    capacity: number;
+    seats_left: number;
+    note: string;
+    availability_id: number | null;
+    bookings: {
+        id: number;
+        status: SupportBooking["status"];
+        topic: string;
+        student: string;
+        student_id: number;
+        classroom_name: string | null;
+        rating: number | null;
+    }[];
+}
+
+export interface SupportTeacherCalendar {
+    days: number;
+    open_hour: number;
+    close_hour: number;
+    free_hours: number;
+    booked_sessions: number;
+    /** Sessions whose hour has passed and that still have no outcome recorded. */
+    awaiting_settle: number;
+    ratings: { average: number | null; count: number };
+    dates: string[];
+    days_out: { date: string; hours: SupportTeacherHour[] }[];
 }
 
 export const classesApi = {
@@ -1056,6 +1112,7 @@ export const classesApi = {
             open_hour: r.data?.open_hour ?? 8,
             close_hour: r.data?.close_hour ?? 18,
             dates: r.data?.dates ?? [],
+            allowance: r.data?.allowance ?? null,
             teachers: r.data?.teachers ?? [],
         };
     },
@@ -1078,8 +1135,14 @@ export const classesApi = {
         });
         return r.data as SupportBooking;
     },
-    supportCancelBooking: async (bookingId: number) => {
-        await api.delete(`/classes/support/bookings/${bookingId}/`);
+    /** The reason is required of a student and shown to the teacher, who held the hour. */
+    supportCancelBooking: async (bookingId: number, reason: string) => {
+        await api.delete(`/classes/support/bookings/${bookingId}/`, { data: { reason } });
+    },
+    /** Student: rate a session the teacher has marked attended. Re-rating overwrites. */
+    supportRateBooking: async (bookingId: number, rating: number, comment?: string) => {
+        const r = await api.post(`/classes/support/bookings/${bookingId}/rate/`, { rating, comment });
+        return r.data as SupportBooking;
     },
     /** Support teacher: my published slots. */
     supportMyAvailability: async (): Promise<SupportSlot[]> => {
@@ -1098,9 +1161,33 @@ export const classesApi = {
         const r = await api.get('/classes/support/diary/');
         return (r.data?.bookings ?? []) as SupportBooking[];
     },
+    /** Support teacher: my own week, with the appointments on each hour. */
+    supportMyCalendar: async (): Promise<SupportTeacherCalendar> => {
+        const r = await api.get('/classes/support/my-calendar/');
+        return {
+            days: r.data?.days ?? 4,
+            open_hour: r.data?.open_hour ?? 8,
+            close_hour: r.data?.close_hour ?? 18,
+            free_hours: r.data?.free_hours ?? 0,
+            booked_sessions: r.data?.booked_sessions ?? 0,
+            awaiting_settle: r.data?.awaiting_settle ?? 0,
+            ratings: r.data?.ratings ?? { average: null, count: 0 },
+            dates: r.data?.dates ?? [],
+            days_out: r.data?.days_out ?? [],
+        };
+    },
+    /** Withdraw or re-open one hour. The grid speaks in times; the server mints the row. */
+    supportSetHour: async (
+        action: "close" | "open",
+        starts_at: string,
+        body?: { capacity?: number; note?: string },
+    ) => {
+        const r = await api.post(`/classes/support/hours/${action}/`, { starts_at, ...(body || {}) });
+        return r.data as SupportSlot & { bookings_cancelled: number };
+    },
     /** Settling as HELD is what awards the student their points — teacher-only, by design. */
-    supportSettle: async (bookingId: number, status: "HELD" | "NO_SHOW") => {
-        const r = await api.post(`/classes/support/bookings/${bookingId}/settle/`, { status });
+    supportSettle: async (bookingId: number, status: "HELD" | "NO_SHOW", teacher_note?: string) => {
+        const r = await api.post(`/classes/support/bookings/${bookingId}/settle/`, { status, teacher_note });
         return r.data as SupportBooking;
     },
     /** Support teachers on a classroom. A MEMBERSHIP (ROLE_TA), never the Classroom.teacher FK. */

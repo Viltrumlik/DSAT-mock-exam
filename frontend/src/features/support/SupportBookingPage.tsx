@@ -22,7 +22,10 @@ import {
   useMySupportBookings,
   useBookSupportHour,
   useCancelSupportBooking,
+  useRateSupportSession,
 } from "./supportHooks";
+import { CancelBookingDialog } from "./CancelBookingDialog";
+import { SessionRating } from "./SessionRating";
 
 function fmtWhen(iso: string) {
   const d = new Date(iso);
@@ -76,14 +79,30 @@ export function SupportBookingPage() {
   const bookings = useMySupportBookings();
   const book = useBookSupportHour();
   const cancel = useCancelSupportBooking();
+  const rate = useRateSupportSession();
   const [picked, setPicked] = useState<{ teacherId: number; startsAt: string } | null>(null);
   const [topic, setTopic] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** The booking a student is part-way through calling off, or null when the dialog is shut. */
+  const [cancelling, setCancelling] = useState<SupportBooking | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const upcoming = useMemo(
     () => (bookings.data ?? []).filter((b) => b.status === "BOOKED").length,
     [bookings.data],
   );
+  const allowance = calendar.data?.allowance ?? null;
+
+  async function confirmCancel(reason: string) {
+    if (!cancelling) return;
+    setCancelError(null);
+    try {
+      await cancel.mutateAsync({ bookingId: cancelling.id, reason });
+      setCancelling(null);
+    } catch (e) {
+      setCancelError(normalizeApiError(e).message);
+    }
+  }
 
   async function confirm() {
     if (!picked) return;
@@ -116,14 +135,36 @@ export function SupportBookingPage() {
             { label: "Open hours", value: `${pad(openHour)}:00–${pad(closeHour)}:00`, icon: Clock },
             { label: "You can book", value: `${calendar.data?.days ?? 4} days ahead` },
             {
+              // The limit is shown here, before an hour is picked, rather than surfacing as
+              // a refusal after one is. "1 of 2 booked" is a plan; "you can't book that" is
+              // a wall.
               label: "Your sessions",
-              value: `${upcoming} upcoming`,
+              value: allowance
+                ? `${allowance.upcoming} of ${allowance.max_upcoming} booked`
+                : `${upcoming} upcoming`,
               accent: true,
               icon: CalendarClock,
             },
           ]}
         />
       </Card>
+
+      {/* Said once, up front. The alternative is a student picking an hour, typing a topic,
+          pressing Confirm and only then being told they are at their limit. */}
+      {allowance && !allowance.can_book ? (
+        <Card className="cr-card border-amber-400/50 bg-amber-500/[0.06]">
+          <p className="text-sm font-bold text-foreground">
+            {allowance.upcoming >= allowance.max_upcoming
+              ? `You have ${allowance.upcoming} session${allowance.upcoming === 1 ? "" : "s"} booked already`
+              : `You've used this week's ${allowance.max_per_week} sessions`}
+          </p>
+          <p className="mt-1 text-[13px] font-medium text-muted-foreground">
+            {allowance.upcoming >= allowance.max_upcoming
+              ? "Attend one — or cancel it if you can't make it — and you can book another."
+              : "Your next one opens up as this week's sessions pass."}
+          </p>
+        </Card>
+      ) : null}
 
       {/* `isPending`, not `isLoading`: between retries `isLoading` drops to false while the
           data is still undefined, and the branch below it would flash "no support teacher" at
@@ -199,8 +240,8 @@ export function SupportBookingPage() {
           ) : (
             <ul className="divide-y divide-border">
               {bookings.data?.map((b) => (
-                <li key={b.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
+                <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                  <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-foreground">
                       {b.slot.support_teacher}
                     </p>
@@ -211,6 +252,19 @@ export function SupportBookingPage() {
                     {b.topic && (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">{b.topic}</p>
                     )}
+                    {/* What the teacher says the hour covered. Worth more to a student than
+                        the green tick beside it. */}
+                    {b.teacher_note && (
+                      <p className="mt-1 flex items-start gap-1.5 text-xs font-semibold text-foreground">
+                        <Info className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
+                        <span>{b.teacher_note}</span>
+                      </p>
+                    )}
+                    {b.status === "CANCELLED" && b.cancel_reason && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        Cancelled — {b.cancel_reason}
+                      </p>
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <Pill tone={STATUS_STYLE[b.status].tone}>{STATUS_STYLE[b.status].label}</Pill>
@@ -220,7 +274,7 @@ export function SupportBookingPage() {
                         size="sm"
                         icon={X}
                         disabled={cancel.isPending}
-                        onClick={() => cancel.mutate(b.id)}
+                        onClick={() => { setCancelError(null); setCancelling(b); }}
                       >
                         Cancel
                       </Button>
@@ -229,12 +283,36 @@ export function SupportBookingPage() {
                       <Check className="h-4 w-4 text-emerald-600" aria-hidden />
                     )}
                   </div>
+                  {/* Only a session that happened can be rated — there is nothing to judge
+                      about one that was cancelled, missed, or is still to come. */}
+                  {b.status === "HELD" && (
+                    <div className="w-full">
+                      <SessionRating
+                        rating={b.rating}
+                        comment={b.rating_comment}
+                        pending={rate.isPending}
+                        onRate={(rating, comment) =>
+                          rate.mutate({ bookingId: b.id, rating, comment })
+                        }
+                      />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
           )}
         </div>
       </Card>
+
+      <CancelBookingDialog
+        open={cancelling !== null}
+        teacherName={cancelling?.slot.support_teacher ?? ""}
+        when={cancelling ? fmtWhen(cancelling.slot.starts_at) : ""}
+        pending={cancel.isPending}
+        error={cancelError}
+        onClose={() => { setCancelling(null); setCancelError(null); }}
+        onConfirm={confirmCancel}
+      />
     </HeroPage>
   );
 }

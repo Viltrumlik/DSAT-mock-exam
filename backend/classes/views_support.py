@@ -7,18 +7,26 @@ Student:
   POST   /api/classes/support/bookings/             { availability_id | support_teacher_id +
                                                       starts_at, classroom_id?, topic? }
   DELETE /api/classes/support/bookings/<id>/        give the seat back
+  POST   /api/classes/support/bookings/<id>/rate/   { rating: 1-5, comment? }
 Support teacher:
   GET    /api/classes/support/availability/         my published slots
   POST   /api/classes/support/availability/         { starts_at, ends_at, capacity?, note? }
   DELETE /api/classes/support/availability/<id>/    cancel a slot
+  GET    /api/classes/support/my-calendar/          my week, with who is coming
+  POST   /api/classes/support/hours/close/          { starts_at }        withdraw one hour
+  POST   /api/classes/support/hours/open/           { starts_at, capacity?, note? }
   GET    /api/classes/support/diary/                who booked me
-  POST   /api/classes/support/bookings/<id>/settle/ { status: HELD | NO_SHOW }
+  POST   /api/classes/support/bookings/<id>/settle/ { status: HELD | NO_SHOW, teacher_note? }
 
 Settling as HELD is what earns the student their 10 points, so only the support teacher who
 owns the slot (or an admin) may do it — a student cannot mark their own session attended.
+The rating runs the other way and is the student's alone: a review the teacher can write is
+not a review. It never touches points.
 """
 
 from __future__ import annotations
+
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -79,6 +87,14 @@ def _booking_json(booking: SupportBooking) -> dict:
         "classroom_name": booking.classroom.name if booking.classroom else None,
         "student_id": booking.student_id,
         "student": _display_name(booking.student),
+        # Why the seat came back. The teacher held the hour open for it, so they get told.
+        "cancel_reason": booking.cancel_reason,
+        "cancelled_at": booking.cancelled_at,
+        # How it went, from both sides.
+        "rating": booking.rating,
+        "rating_comment": booking.rating_comment,
+        "rated_at": booking.rated_at,
+        "teacher_note": booking.teacher_note,
         "slot": _slot_json(booking.availability, include_seats=False),
     }
 
@@ -115,6 +131,9 @@ class SupportCalendarView(APIView):
             "open_hour": support_service.CALENDAR_OPEN_HOUR,
             "close_hour": support_service.CALENDAR_CLOSE_HOUR,
             "dates": support_service.calendar_dates(),
+            # Sent with the calendar, not discovered on refusal: a student should see "1 of 2
+            # left" before they pick an hour, not after the server turns them down.
+            "allowance": support_service.booking_allowance(request.user),
             "teachers": [
                 {
                     "id": entry["teacher"].id,
@@ -311,13 +330,24 @@ class SupportBookingDetailView(SupportBookingsView):
 
     def delete(self, request, booking_id):
         booking = get_object_or_404(SupportBooking, pk=booking_id)
-        allowed = booking.student_id == request.user.id or _is_admin(request.user) or (
+        is_student = booking.student_id == request.user.id
+        allowed = is_student or _is_admin(request.user) or (
             booking.availability.support_teacher_id == request.user.id
         )
         if not allowed:
             return Response({"detail": "Not your booking."}, status=http.HTTP_403_FORBIDDEN)
+
+        reason = (request.data.get("reason") or "").strip()
+        if is_student and not reason:
+            # Required of the student and only the student. The teacher cancelling is
+            # usually withdrawing the hour, and the student is owed the reason more than
+            # the teacher is: they held an hour open that nobody else could take.
+            return Response(
+                {"detail": "Tell your teacher why you can't make it — they held the hour for you."},
+                status=400,
+            )
         try:
-            support_service.cancel(booking, actor=request.user)
+            support_service.cancel(booking, actor=request.user, reason=reason)
         except ValidationError as exc:
             return Response({"detail": "; ".join(exc.messages)}, status=400)
         return Response({"detail": "Booking cancelled.", "id": booking.id})
@@ -342,7 +372,43 @@ class SupportBookingSettleView(APIView):
             )
         try:
             support_service.settle(
-                booking, str(request.data.get("status") or "").strip().upper(), actor=request.user
+                booking,
+                str(request.data.get("status") or "").strip().upper(),
+                actor=request.user,
+                teacher_note=request.data.get("teacher_note") or "",
+            )
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=400)
+        booking = SupportBooking.objects.select_related(
+            "availability", "availability__support_teacher", "classroom", "student"
+        ).get(pk=booking.pk)
+        return Response(_booking_json(booking))
+
+
+class SupportBookingRateView(APIView):
+    """Student: how the session went.
+
+    Only the student who sat in it, and only once the teacher has marked it attended — there
+    is nothing to judge about a session that was cancelled, missed, or has not happened.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, booking_id):
+        booking = get_object_or_404(
+            SupportBooking.objects.select_related("availability"), pk=booking_id
+        )
+        if booking.student_id != request.user.id:
+            # Explicitly not the teacher: a rating the teacher can write is not a rating.
+            return Response(
+                {"detail": "Only the student who attended can rate this session."},
+                status=http.HTTP_403_FORBIDDEN,
+            )
+        try:
+            support_service.rate(
+                booking,
+                request.data.get("rating"),
+                comment=request.data.get("comment") or "",
             )
         except ValidationError as exc:
             return Response({"detail": "; ".join(exc.messages)}, status=400)
@@ -361,4 +427,126 @@ class SupportDiaryView(APIView):
         if not (_is_support_teacher(request.user) or _is_admin(request.user)):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
         bookings = support_service.bookings_for_teacher(request.user)
-        return Response({"bookings": [_booking_json(b) for b in bookings]})
+        return Response({
+            "bookings": [_booking_json(b) for b in bookings],
+            "ratings": support_service.rating_summary(request.user),
+        })
+
+
+class SupportTeacherCalendarView(APIView):
+    """Support teacher: my own week, with who is coming to each hour.
+
+    The mirror of the student calendar. Every hour is open by default, so what a teacher
+    does here is withdraw the ones they cannot do and see the appointments they have —
+    which is why each hour carries its bookings rather than a bare seat count.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not (_is_support_teacher(request.user) or _is_admin(request.user)):
+            return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
+        days = support_service.teacher_calendar_for(request.user)
+        booked_total = sum(
+            len(h["bookings"]) for d in days for h in d["hours"] if h["state"] == "booked"
+        )
+        free_total = sum(1 for d in days for h in d["hours"] if h["state"] == "open")
+        return Response({
+            "days": support_service.CALENDAR_DAYS,
+            "open_hour": support_service.CALENDAR_OPEN_HOUR,
+            "close_hour": support_service.CALENDAR_CLOSE_HOUR,
+            "free_hours": free_total,
+            "booked_sessions": booked_total,
+            "awaiting_settle": support_service.bookings_for_teacher(request.user)
+            .filter(status=SupportBooking.STATUS_BOOKED, availability__ends_at__lte=timezone.now())
+            .count(),
+            "ratings": support_service.rating_summary(request.user),
+            "dates": [d["date"] for d in days],
+            "days_out": [
+                {
+                    "date": d["date"],
+                    "hours": [
+                        {
+                            **{k: v for k, v in h.items() if k != "bookings"},
+                            "bookings": [
+                                {
+                                    "id": b.id,
+                                    "status": b.status,
+                                    "topic": b.topic,
+                                    "student": _display_name(b.student),
+                                    "student_id": b.student_id,
+                                    "classroom_name": b.classroom.name if b.classroom else None,
+                                    "rating": b.rating,
+                                }
+                                for b in h["bookings"]
+                            ],
+                        }
+                        for h in d["hours"]
+                    ],
+                }
+                for d in days
+            ],
+        })
+
+
+class SupportHourView(APIView):
+    """Support teacher: withdraw or re-open one hour of the calendar.
+
+    Hours are open by default and mostly have no row at all, so "withdraw 15:00" has to be
+    able to mint the row that records the withdrawal. That is the whole reason this exists
+    next to the id-based availability endpoints: the grid speaks in times, not row ids.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _guard(self, request):
+        return _is_support_teacher(request.user) or _is_admin(request.user)
+
+    def post(self, request, action):
+        if not self._guard(request):
+            return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
+        if action not in ("close", "open"):
+            return Response({"detail": "Unknown action."}, status=400)
+
+        starts_at = _parse_dt(request.data.get("starts_at"))
+        if starts_at is None:
+            return Response({"detail": "starts_at is required."}, status=400)
+        local = timezone.localtime(starts_at)
+        if local.minute or local.second:
+            return Response({"detail": "Support hours start on the hour."}, status=400)
+
+        ends_at = starts_at + timedelta(minutes=support_service.SLOT_MINUTES)
+        with transaction.atomic():
+            slot, _created = SupportAvailability.objects.get_or_create(
+                support_teacher=request.user,
+                starts_at=starts_at,
+                defaults={"ends_at": ends_at, "capacity": 1},
+            )
+            slot = SupportAvailability.objects.select_for_update().get(pk=slot.pk)
+            slot.is_cancelled = action == "close"
+            note = request.data.get("note")
+            if note is not None:
+                slot.note = str(note).strip()[:240]
+            capacity = request.data.get("capacity")
+            if action == "open" and capacity not in (None, ""):
+                try:
+                    slot.capacity = max(1, int(capacity))
+                except (TypeError, ValueError):
+                    pass
+            slot.save(update_fields=["is_cancelled", "note", "capacity", "updated_at"])
+
+            cancelled = 0
+            if action == "close":
+                # A withdrawn hour with a live booking on it is an appointment nobody is
+                # going to attend. The student is told why rather than finding an empty room.
+                for booking in slot.bookings.filter(status=SupportBooking.STATUS_BOOKED):
+                    support_service.cancel(
+                        booking, actor=request.user,
+                        reason="Your teacher withdrew this hour.",
+                    )
+                    cancelled += 1
+
+        return Response({
+            **_slot_json(slot),
+            "bookings_cancelled": cancelled,
+        })
