@@ -534,10 +534,15 @@ export default function OpsClassroomGovernancePage() {
                           : <UserCog aria-hidden className="h-3 w-3 shrink-0" />}
                         <span className="truncate">{teacherName(c.teacher_details ?? null)}</span>
                       </span>
-                      {typeof (c.members_count ?? c.student_count) === "number" && (
+                      {/* Enrolled students — the same set the Students button opens. It used
+                          to show members_count, which counts the teacher, the support
+                          teachers, and every student ever removed (removal is a soft
+                          delete), so a class of eight could read as fifteen. */}
+                      {typeof (c.student_count ?? c.members_count) === "number" && (
                         <span className="inline-flex items-center gap-1">
                           <Users aria-hidden className="h-3 w-3" />
-                          <span className="ds-num">{c.members_count ?? c.student_count}</span>
+                          <span className="ds-num">{c.student_count ?? c.members_count}</span>
+                          <span>{(c.student_count ?? c.members_count) === 1 ? "student" : "students"}</span>
                         </span>
                       )}
                     </div>

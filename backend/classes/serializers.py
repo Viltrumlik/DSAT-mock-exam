@@ -85,6 +85,10 @@ class AssignmentCreatedBySerializer(serializers.Serializer):
 
 class ClassroomSerializer(serializers.ModelSerializer):
     members_count = serializers.IntegerField(read_only=True)
+    # Enrolled students only — see classes.views.annotate_member_counts. Both counts come
+    # from the queryset annotation, so a view that forgets to annotate omits them rather
+    # than triggering a per-row query.
+    student_count = serializers.IntegerField(read_only=True)
     my_role = serializers.SerializerMethodField(read_only=True)
     teacher_details = serializers.SerializerMethodField(read_only=True)
 
@@ -109,9 +113,10 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "schedule_summary",
             "created_at",
             "members_count",
+            "student_count",
             "my_role",
         ]
-        read_only_fields = ["join_code", "created_at", "members_count"]
+        read_only_fields = ["join_code", "created_at", "members_count", "student_count"]
 
     def get_my_role(self, obj):
         request = self.context.get("request")

@@ -9895,6 +9895,9 @@ components:
         members_count:
           type: integer
           readOnly: true
+        student_count:
+          type: integer
+          readOnly: true
         my_role:
           type: string
           readOnly: true
@@ -9906,6 +9909,7 @@ components:
       - members_count
       - my_role
       - name
+      - student_count
       - subject
       - teacher_details
     ClassroomCreate:
