@@ -29,11 +29,14 @@ from .views_support import (
     SupportAvailabilityDetailView,
     SupportAvailabilityView,
     SupportBookingDetailView,
+    SupportBookingRateView,
     SupportBookingSettleView,
     SupportBookingsView,
     SupportCalendarView,
     SupportDiaryView,
+    SupportHourView,
     SupportSlotsView,
+    SupportTeacherCalendarView,
 )
 from .views_assign import (
     AssignMidtermView,
@@ -127,6 +130,11 @@ urlpatterns = [
     path("support/bookings/", SupportBookingsView.as_view(), name="support-bookings"),
     path("support/bookings/<int:booking_id>/", SupportBookingDetailView.as_view(), name="support-booking-detail"),
     path("support/bookings/<int:booking_id>/settle/", SupportBookingSettleView.as_view(), name="support-booking-settle"),
+    path("support/bookings/<int:booking_id>/rate/", SupportBookingRateView.as_view(), name="support-booking-rate"),
+    path("support/my-calendar/", SupportTeacherCalendarView.as_view(), name="support-my-calendar"),
+    # <str:action> is constrained to close|open inside the view; a path converter here would
+    # 404 a typo instead of saying which actions exist.
+    path("support/hours/<str:action>/", SupportHourView.as_view(), name="support-hour-action"),
     path("support/diary/", SupportDiaryView.as_view(), name="support-diary"),
     path("<int:classroom_pk>/support-teachers/", SupportTeacherAssignView.as_view(), name="class-support-teachers"),
     path("<int:classroom_pk>/support-teachers/<int:user_id>/", SupportTeacherAssignView.as_view(), name="class-support-teacher-detail"),

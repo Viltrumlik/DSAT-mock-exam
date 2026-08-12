@@ -18,7 +18,7 @@ from django.core.exceptions import ValidationError
 from access import constants as acc_const
 from access.services import normalized_role
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, Q
 from django.utils import timezone
 
 from .models import Classroom, ClassroomMembership
@@ -36,6 +36,21 @@ CALENDAR_DAYS = 4
 CALENDAR_OPEN_HOUR = 8
 CALENDAR_CLOSE_HOUR = 18
 SLOT_MINUTES = 60
+
+#: How many hours one student may hold at once, and how many they may take in a week.
+#:
+#: Both exist because the desk is a shared, finite thing: every seat one student holds is an
+#: hour another cannot book, and an unlimited calendar rewards whoever clicks first rather
+#: than whoever needs it. The two limits answer different abuses — MAX_UPCOMING stops a
+#: student sitting on the whole week, MAX_PER_WEEK stops them cycling through it a session at
+#: a time as each one is settled.
+#:
+#: The numbers are the school's to set; they are named here so changing them is one edit and
+#: the UI reads them off the API rather than hard-coding a second copy.
+MAX_UPCOMING_BOOKINGS = 2
+MAX_BOOKINGS_PER_WEEK = 3
+#: The rolling window MAX_BOOKINGS_PER_WEEK is counted over, ending now.
+BOOKING_WEEK_DAYS = 7
 
 
 def _active_student_classroom_ids(student):
@@ -114,6 +129,61 @@ def open_slots_for(student, *, now=None):
         .select_related("support_teacher")
         .order_by("starts_at", "id")
     )
+
+
+def booking_allowance(student, *, now=None, exclude_booking_id=None) -> dict:
+    """How much of their allowance this student has left, and why.
+
+    Returned rather than raised so the calendar can say "1 of 2 left" before the student
+    picks an hour, instead of letting them choose one and then refusing it.
+
+    A CANCELLED booking counts towards neither limit. Giving a seat back is the behaviour the
+    limits are trying to encourage, so charging for it would punish exactly the student who
+    did the right thing. ``exclude_booking_id`` lets the booking path ignore the row it is
+    about to reuse — re-booking a slot updates the existing row, and counting it would make
+    the student's own cancelled seat block them.
+    """
+    now = now or timezone.now()
+    mine = SupportBooking.objects.filter(student=student).exclude(
+        status=SupportBooking.STATUS_CANCELLED
+    )
+    if exclude_booking_id is not None:
+        mine = mine.exclude(pk=exclude_booking_id)
+
+    upcoming = mine.filter(
+        status=SupportBooking.STATUS_BOOKED, availability__starts_at__gt=now
+    ).count()
+    # Counted on when the seat was TAKEN, not when the hour falls. Counting by hour needs a
+    # window with two edges and makes the answer depend on where "this week" is cut; counting
+    # by ``booked_at`` is one rolling edge and says the plain thing — how many hours you have
+    # claimed in the last seven days.
+    this_week = mine.filter(booked_at__gt=now - timedelta(days=BOOKING_WEEK_DAYS)).count()
+
+    return {
+        "upcoming": upcoming,
+        "max_upcoming": MAX_UPCOMING_BOOKINGS,
+        "this_week": this_week,
+        "max_per_week": MAX_BOOKINGS_PER_WEEK,
+        "can_book": upcoming < MAX_UPCOMING_BOOKINGS and this_week < MAX_BOOKINGS_PER_WEEK,
+    }
+
+
+def _check_booking_allowance(student, *, now=None, exclude_booking_id=None) -> None:
+    """Raise a student-readable ValidationError when they are at a limit."""
+    allowance = booking_allowance(
+        student, now=now, exclude_booking_id=exclude_booking_id
+    )
+    if allowance["upcoming"] >= MAX_UPCOMING_BOOKINGS:
+        raise ValidationError(
+            f"You already have {allowance['upcoming']} support "
+            f"session{'' if allowance['upcoming'] == 1 else 's'} booked. Attend one, or "
+            f"cancel it, and you can book again."
+        )
+    if allowance["this_week"] >= MAX_BOOKINGS_PER_WEEK:
+        raise ValidationError(
+            f"You can book {MAX_BOOKINGS_PER_WEEK} support sessions a week, and you have "
+            f"used them all. Your next one opens up as this week's sessions pass."
+        )
 
 
 def calendar_dates(now=None, *, days: int = CALENDAR_DAYS) -> list:
@@ -246,6 +316,76 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
     return out
 
 
+def teacher_calendar_for(support_teacher, *, now=None, days: int = CALENDAR_DAYS) -> list[dict]:
+    """The same week the students see, from behind the desk.
+
+    The teacher's job on this calendar is not "publish hours" — every hour is open by
+    default — it is to see who is coming and to withdraw the hours they cannot do. So each
+    hour carries its bookings, not just a seat count, and ``state`` names what the teacher
+    needs to act on: ``booked`` outranks ``open`` because a booked hour is an appointment,
+    and ``closed`` outranks everything because a withdrawn hour is a decision they made.
+    """
+    now = now or timezone.now()
+    dates = calendar_dates(now, days=days)
+    window_start = _hour_start(dates[0], CALENDAR_OPEN_HOUR)
+    window_end = _hour_start(dates[-1], CALENDAR_CLOSE_HOUR)
+
+    rows = list(
+        SupportAvailability.objects.filter(
+            support_teacher=support_teacher,
+            starts_at__lt=window_end,
+            ends_at__gt=window_start,
+        )
+    )
+    bookings_by_row: dict[int, list] = {}
+    for b in (
+        SupportBooking.objects.filter(availability_id__in=[r.id for r in rows])
+        .exclude(status=SupportBooking.STATUS_CANCELLED)
+        .select_related("student", "classroom")
+        .order_by("id")
+    ):
+        bookings_by_row.setdefault(b.availability_id, []).append(b)
+
+    out = []
+    for day in dates:
+        hours = []
+        for hour in range(CALENDAR_OPEN_HOUR, CALENDAR_CLOSE_HOUR):
+            starts_at = _hour_start(day, hour)
+            ends_at = starts_at + timedelta(minutes=SLOT_MINUTES)
+            row = _row_covering(rows, starts_at, ends_at)
+            capacity = int(row.capacity) if row else 1
+            booked = [
+                b for b in bookings_by_row.get(row.id, [])
+                if b.status == SupportBooking.STATUS_BOOKED
+            ] if row else []
+            settled = [
+                b for b in bookings_by_row.get(row.id, [])
+                if b.status != SupportBooking.STATUS_BOOKED
+            ] if row else []
+
+            if row is not None and row.is_cancelled:
+                state = "closed"
+            elif booked or settled:
+                state = "booked"
+            elif starts_at <= now:
+                state = "past"
+            else:
+                state = "open"
+
+            hours.append({
+                "starts_at": starts_at,
+                "ends_at": ends_at,
+                "state": state,
+                "capacity": capacity,
+                "seats_left": max(0, capacity - len(booked)),
+                "note": row.note if row else "",
+                "availability_id": row.id if row else None,
+                "bookings": booked + settled,
+            })
+        out.append({"date": day, "hours": hours})
+    return out
+
+
 def slot_for(support_teacher, starts_at, *, now=None, days: int = CALENDAR_DAYS):
     """Turn an open hour on the calendar into a real row, so a booking has something to hold.
 
@@ -342,6 +482,13 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
         # revoke their own 10 points — by pressing Book again.
         raise ValidationError("That session has already been settled.")
 
+    # After the entitlement checks and before the seat is taken. Checked here rather than in
+    # the view so book() and book_at() cannot diverge, and so a management path gets the same
+    # answer as a student clicking a chip.
+    _check_booking_allowance(
+        student, now=now, exclude_booking_id=existing.pk if existing else None
+    )
+
     taken = SupportBooking.objects.filter(
         availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES
     ).count()
@@ -355,7 +502,15 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
         existing.topic = topic or existing.topic
         existing.settled_at = None
         existing.settled_by = None
-        existing.save(update_fields=["status", "classroom", "topic", "settled_at", "settled_by", "updated_at"])
+        # The previous cancellation is history the moment the seat is retaken. Leaving it
+        # behind would show the teacher a live booking labelled with why it was called off.
+        existing.cancel_reason = ""
+        existing.cancelled_at = None
+        existing.cancelled_by = None
+        existing.save(update_fields=[
+            "status", "classroom", "topic", "settled_at", "settled_by",
+            "cancel_reason", "cancelled_at", "cancelled_by", "updated_at",
+        ])
         return existing
 
     return SupportBooking.objects.create(
@@ -365,20 +520,30 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
 
 
 @transaction.atomic
-def cancel(booking, *, actor=None) -> SupportBooking:
-    """Give the seat back. Settled bookings are history and cannot be cancelled."""
+def cancel(booking, *, actor=None, reason: str = "", now=None) -> SupportBooking:
+    """Give the seat back, on the record. Settled bookings are history and cannot be
+    cancelled.
+
+    ``reason`` is optional *here* on purpose: the view requires one from a student, but the
+    slot-withdrawal path cancels other people's bookings on their behalf and supplies its
+    own. A blank reason from a student would be a bug in the view, not in this function.
+    """
     booking = SupportBooking.objects.select_for_update().get(pk=booking.pk)
     if booking.status in (SupportBooking.STATUS_HELD, SupportBooking.STATUS_NO_SHOW):
         raise ValidationError("That session has already been settled.")
     booking.status = SupportBooking.STATUS_CANCELLED
     booking.settled_at = None
-    booking.settled_by = actor
-    booking.save(update_fields=["status", "settled_at", "settled_by", "updated_at"])
+    booking.cancel_reason = (reason or "").strip()[:280]
+    booking.cancelled_at = now or timezone.now()
+    booking.cancelled_by = actor
+    booking.save(update_fields=[
+        "status", "settled_at", "cancel_reason", "cancelled_at", "cancelled_by", "updated_at",
+    ])
     return booking
 
 
 @transaction.atomic
-def settle(booking, status: str, *, actor=None, now=None) -> SupportBooking:
+def settle(booking, status: str, *, actor=None, now=None, teacher_note: str = "") -> SupportBooking:
     """Record whether the session actually happened.
 
     ``HELD`` is what earns the student their points, which is why only the support teacher
@@ -393,8 +558,58 @@ def settle(booking, status: str, *, actor=None, now=None) -> SupportBooking:
     booking.status = status
     booking.settled_at = now or timezone.now()
     booking.settled_by = actor
-    booking.save(update_fields=["status", "settled_at", "settled_by", "updated_at"])
+    note = (teacher_note or "").strip()[:500]
+    fields = ["status", "settled_at", "settled_by", "updated_at"]
+    if note:
+        # Only overwritten when something was typed: re-settling to fix a mis-click must not
+        # silently wipe the note the teacher wrote the first time.
+        booking.teacher_note = note
+        fields.append("teacher_note")
+    booking.save(update_fields=fields)
     return booking
+
+
+@transaction.atomic
+def rate(booking, rating: int, *, comment: str = "", now=None) -> SupportBooking:
+    """The student's verdict on the hour they were given.
+
+    Only a HELD session can be rated — there is nothing to judge about a session that was
+    cancelled, missed, or has not happened yet. Re-rating overwrites, so a student who
+    misclicks 1 is not stuck with it.
+
+    This deliberately does not touch points. Settling as HELD is what pays, whatever the
+    rating says; making the money depend on the review would put the teacher's interest
+    against the student's honesty.
+    """
+    booking = SupportBooking.objects.select_for_update().get(pk=booking.pk)
+    if booking.status != SupportBooking.STATUS_HELD:
+        raise ValidationError("You can rate a session once your teacher marks it attended.")
+    try:
+        value = int(rating)
+    except (TypeError, ValueError):
+        raise ValidationError("Choose a rating from 1 to 5.") from None
+    if not (SupportBooking.RATING_MIN <= value <= SupportBooking.RATING_MAX):
+        raise ValidationError("Choose a rating from 1 to 5.")
+
+    booking.rating = value
+    booking.rating_comment = (comment or "").strip()[:500]
+    booking.rated_at = now or timezone.now()
+    booking.save(update_fields=["rating", "rating_comment", "rated_at", "updated_at"])
+    return booking
+
+
+def rating_summary(support_teacher) -> dict:
+    """Average rating and count for one support teacher's settled sessions."""
+    rated = SupportBooking.objects.filter(
+        availability__support_teacher=support_teacher,
+        status=SupportBooking.STATUS_HELD,
+        rating__isnull=False,
+    )
+    stats = rated.aggregate(avg=Avg("rating"), n=Count("id"))
+    return {
+        "average": round(stats["avg"], 2) if stats["avg"] is not None else None,
+        "count": stats["n"],
+    }
 
 
 def bookings_for_teacher(support_teacher, *, upcoming_only=False, now=None):
