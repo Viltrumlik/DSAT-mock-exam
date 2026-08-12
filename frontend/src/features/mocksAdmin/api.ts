@@ -149,6 +149,11 @@ export const mocksAdminApi = {
     const r = await api.post(`${base}/${mockId}/modules/${moduleId}/questions/bulk-import/`, fd);
     return r.data as { module_id: number; created_count: number; question_ids: number[] };
   },
+  /** All four modules of the mock as one review CSV. super_admin only (403 otherwise). */
+  exportQuestionsCsv: async (mockId: number): Promise<Blob> => {
+    const r = await api.get(`${base}/${mockId}/export-csv/`, { responseType: "blob" });
+    return r.data as Blob;
+  },
 };
 
 export type MocksAdminApi = typeof mocksAdminApi;
@@ -168,4 +173,7 @@ export const mocksModuleQuestionsApi: ModuleQuestionsApi = {
   deleteQuestion: (mockId, moduleId, qid) => mocksAdminApi.deleteModuleQuestion(mockId, moduleId, qid),
   reorderQuestionsBulk: (mockId, moduleId, ids) => mocksAdminApi.reorderModuleQuestions(mockId, moduleId, ids),
   importCsv: (mockId, moduleId, file) => mocksAdminApi.importModuleQuestionsCsv(mockId, moduleId, file),
+  // The whole mock, not this one module: all four modules land in one file and its
+  // `module` column keeps them apart.
+  exportCsv: (mockId) => mocksAdminApi.exportQuestionsCsv(mockId),
 };

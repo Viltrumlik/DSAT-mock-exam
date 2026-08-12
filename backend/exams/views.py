@@ -22,7 +22,8 @@ import json
 from django.db.models import Prefetch
 
 from access import constants as acc_const
-from access.permissions import CanManageQuestions, RequiresSubmitTest
+from access.permissions import CanManageQuestions, IsSuperAdmin, RequiresSubmitTest
+from core.csv_download import csv_download_response
 from access.policies import (
     BulkAssignAccess,
     BulkAssignmentHistoryAccess,
@@ -1681,6 +1682,28 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         exam = serializer.save()
         self._provision_exam_after_create(exam)
 
+    @action(
+        detail=True, methods=["get"], url_path="export-csv",
+        permission_classes=[IsAuthenticated, IsSuperAdmin],
+    )
+    def export_csv(self, request, pk=None):
+        """Every question in the whole exam — all its sections, all their modules.
+
+        A midterm or a full mock is several PracticeTests, and a reviewer checking an answer
+        key wants one file, not one per section. The ``module`` column keeps the sections
+        apart inside it.
+        """
+        from .question_csv_export import questions_for_modules, write_questions_csv
+
+        exam = get_object_or_404(MockExam, pk=pk)
+        module_ids = list(
+            Module.objects.filter(practice_test__mock_exam=exam).values_list("id", flat=True)
+        )
+        return csv_download_response(
+            write_questions_csv(questions_for_modules(module_ids)),
+            f"{exam.title or 'exam'}-{exam.pk}",
+        )
+
     def _provision_midterm_version(self, exam: MockExam):
         """Create one midterm VERSION (a PracticeTest with the midterm's module structure).
 
@@ -2092,6 +2115,29 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
         section.is_published = False
         section.save(update_fields=["is_published", "updated_at"])
         return Response(self.get_serializer(section).data)
+
+    @action(
+        detail=True, methods=["get"], url_path="export-csv",
+        permission_classes=[IsAuthenticated, IsSuperAdmin],
+    )
+    def export_csv(self, request, pk=None):
+        """Every question on this test, in the CSV the importer reads.
+
+        ``permission_classes`` is narrowed on the action rather than the viewset: the rest of
+        the builder stays open to the staff who author it, and only the whole-test download
+        is super_admin's.
+        """
+        from .question_csv_export import questions_for_modules, write_questions_csv
+
+        # NOT self.get_object(): that runs the viewset's subject scoping, which is right for
+        # authoring and irrelevant to a super_admin, and would 404 a Math test for an English
+        # -scoped account that has no business reaching here anyway.
+        test = get_object_or_404(PracticeTest, pk=pk)
+        module_ids = list(test.modules.values_list("id", flat=True))
+        return csv_download_response(
+            write_questions_csv(questions_for_modules(module_ids)),
+            f"{test.title or 'test'}-{test.pk}",
+        )
 
 
 class AdminModuleViewSet(viewsets.ModelViewSet):

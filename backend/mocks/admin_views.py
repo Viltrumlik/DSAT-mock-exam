@@ -16,8 +16,9 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from access.permissions import CanManageQuestions
+from access.permissions import CanManageQuestions, IsSuperAdmin
 from core.authz import can_manage_questions
+from core.csv_download import csv_download_response
 from exams.models import Module, Question
 from exams.question_ordering import dense_compact_module_orders_locked, reindex_module_questions_dense_locked
 from exams.sat_rules import SAT_MODULE_QUESTION_COUNT, SAT_MODULE_TIME_LIMIT_MINUTES
@@ -66,6 +67,32 @@ class AdminMockViewSet(viewsets.ModelViewSet):
         mock.is_published = False
         mock.save(update_fields=["is_published", "updated_at"])
         return Response(self.get_serializer(mock).data)
+
+    @action(
+        detail=True, methods=["get"], url_path="export-csv",
+        permission_classes=[IsAuthenticated, IsSuperAdmin],
+    )
+    def export_csv(self, request, pk=None):
+        """All four modules of the mock in one CSV, for review.
+
+        A mock's modules hang off its sections rather than a PracticeTest
+        (``practice_test=None``), so the ids are gathered here instead of through
+        ``test.modules``. The writer is the same one the exams export uses, so both files
+        have the same columns and both import back.
+        """
+        from exams.question_csv_export import questions_for_modules, write_questions_csv
+
+        mock = get_object_or_404(Mock, pk=pk)
+        module_ids = [
+            mid
+            for section in mock.sections.all()
+            for mid in (section.module1_id, section.module2_id)
+            if mid
+        ]
+        return csv_download_response(
+            write_questions_csv(questions_for_modules(module_ids)),
+            f"{mock.title or 'mock'}-{mock.pk}",
+        )
 
 
 class AdminMockModuleQuestionViewSet(viewsets.ModelViewSet):

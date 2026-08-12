@@ -202,6 +202,25 @@ class CanAssignTests(BasePermission):
         return bool(subj and can_assign_tests(request.user, subj))
 
 
+class IsSuperAdmin(BasePermission):
+    """super_admin (or a Django superuser) and nobody else.
+
+    Narrower than :class:`CanManageQuestions` and than ``is_global_scope_staff`` on purpose.
+    Used by the question CSV exports: the school asked for those as a super_admin review
+    tool, and a whole test's answer key leaving the building as a file is a different act
+    from reading the same questions one at a time in the builder. Widening it is a one-line
+    change if they decide test_admin should download their own work.
+    """
+
+    def has_permission(self, request, view):
+        return bool(getattr(request.user, "is_superuser", False)) or normalized_role(
+            request.user
+        ) == constants.ROLE_SUPER_ADMIN
+
+    def has_object_permission(self, request, view, obj):
+        return self.has_permission(request, view)
+
+
 class CanAuthorVocabulary(BasePermission):
     """
     Author the vocabulary bank (sections / sets / words) under ``/api/vocabulary/admin/``.
