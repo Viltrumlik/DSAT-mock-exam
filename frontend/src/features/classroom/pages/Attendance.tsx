@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarPlus, CheckCircle2, Lock, TrendingUp, TrendingDown, Minus, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { Card, CardHeader, Button, Field, Input, Pill, EmptyState, LoadingState, ErrorState, StatCard } from "../ui";
+import { Card, CardHeader, Button, Input, Pill, EmptyState, LoadingState, ErrorState, StatCard } from "../ui";
 import type { PillTone } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
@@ -69,8 +69,8 @@ function AttendanceStudent({ classroom }: { classroom: ClassroomWithRole }) {
             data.history.map((h) => (
               <div key={h.session_id} className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{h.title || fmtDate(h.date)}</p>
-                  <p className="text-xs text-muted-foreground">{fmtDate(h.date)}{!h.finalized && " · draft"}</p>
+                  <p className="truncate text-sm font-medium text-foreground">{fmtDate(h.date)}</p>
+                  {!h.finalized && <p className="text-xs text-muted-foreground">draft</p>}
                 </div>
                 <Pill tone={META[h.status].tone}>{META[h.status].label}</Pill>
               </div>
@@ -89,18 +89,21 @@ function AttendanceStaff({ classroom }: { classroom: ClassroomWithRole }) {
   const sessions = useAttendanceSessions(classId);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [newDate, setNewDate] = useState("");
-  const [newTitle, setNewTitle] = useState("");
   const createSession = useCreateSession(classId);
 
   const list = useMemo(() => sessions.data?.sessions ?? [], [sessions.data]);
+  // A register opens by itself on each lesson day. The manual form is the escape hatch for
+  // a class whose lesson days can't be read at all — without it that class could never take
+  // attendance, so hiding the form outright would be worse than showing a redundant one.
+  const scheduleUsable = sessions.data?.schedule_is_usable !== false;
   useEffect(() => {
     if (activeId == null && list.length) setActiveId(list[0].id);
   }, [list, activeId]);
 
   async function create() {
     if (!newDate) return;
-    const s = await createSession.mutateAsync({ date: newDate, title: newTitle.trim() || undefined });
-    setNewDate(""); setNewTitle(""); setActiveId(s.id);
+    const s = await createSession.mutateAsync({ date: newDate });
+    setNewDate(""); setActiveId(s.id);
   }
 
   return (
@@ -121,27 +124,37 @@ function AttendanceStaff({ classroom }: { classroom: ClassroomWithRole }) {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
           <Card pad="sm">
-            <CardHeader title="Sessions" />
+            <CardHeader title="Lesson days" description="Each lesson opens its own register" />
             <div className="mt-3 space-y-2">
-              <div className="rounded-xl border border-dashed border-border p-3 space-y-2">
-                <Field label="New session"><Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} /></Field>
-                <Input placeholder="Title (optional)" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
-                <Button size="sm" block icon={CalendarPlus} loading={createSession.isPending} disabled={!newDate} onClick={create}>Add</Button>
-              </div>
+              {!scheduleUsable && (
+                <div className="space-y-2 rounded-xl border border-dashed border-amber-400/60 bg-amber-500/5 p-3">
+                  <p className="text-xs font-semibold text-foreground">This class has no lesson days set</p>
+                  <p className="text-xs text-muted-foreground">
+                    Registers open automatically once the class has lesson days and a time. Until
+                    then, add the day you need here.
+                  </p>
+                  <Input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+                  <Button size="sm" block icon={CalendarPlus} loading={createSession.isPending} disabled={!newDate} onClick={create}>Add a day</Button>
+                </div>
+              )}
               {list.map((s) => (
                 <button key={s.id} onClick={() => setActiveId(s.id)}
                   className={cn("flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm",
                     activeId === s.id ? "border-primary bg-primary/5" : "border-border hover:bg-surface-2")}>
-                  <span className="min-w-0 truncate">{s.title || fmtDate(s.date)}</span>
+                  <span className="min-w-0 truncate">{fmtDate(s.date)}</span>
                   {s.status === "FINALIZED" ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <span className="text-[10px] text-muted-foreground">draft</span>}
                 </button>
               ))}
-              {list.length === 0 && <p className="px-1 py-2 text-xs text-muted-foreground">No sessions yet.</p>}
+              {list.length === 0 && scheduleUsable && (
+                <p className="px-1 py-2 text-xs text-muted-foreground">
+                  The next lesson&apos;s register opens when that lesson starts.
+                </p>
+              )}
             </div>
           </Card>
 
           {activeId ? <RosterMarker classId={classId} sessionId={activeId} /> : (
-            <Card><EmptyState icon={Users} title="Pick or create a session" description="Choose a session to take attendance." /></Card>
+            <Card><EmptyState icon={Users} title="No register open yet" description="Each lesson's register appears here when the lesson starts." /></Card>
           )}
         </div>
       )}
@@ -180,8 +193,8 @@ function RosterMarker({ classId, sessionId }: { classId: number; sessionId: numb
   return (
     <Card>
       <CardHeader
-        title={data.title || fmtDate(data.date)}
-        description={fmtDate(data.date)}
+        title={fmtDate(data.date)}
+        description="Mark everyone, then finalize"
         actions={
           <div className="flex items-center gap-2">
             {finalized ? <Pill tone="neutral"><Lock className="h-3 w-3" /> Finalized</Pill> : <Pill tone="warning">Draft</Pill>}

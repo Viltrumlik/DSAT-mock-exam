@@ -27,6 +27,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from . import attendance as attendance_service
+from . import attendance_auto
 from .capabilities import classroom_capabilities
 from .models import ClassroomMembership
 from .models_attendance import AttendanceRecord, AttendanceSession
@@ -59,10 +60,23 @@ class AttendanceSessionsView(_ClassroomScopedView):
         classroom = self.get_classroom()
         if not classroom_capabilities(request.user, classroom).can_take_attendance:
             return Response({"detail": "Staff only."}, status=status.HTTP_403_FORBIDDEN)
+        # The register for a lesson that has started exists whether or not anyone asked for
+        # it. Doing this on read as well as from the cron means a school with no scheduler
+        # still gets today's register the moment a teacher opens the page.
+        attendance_auto.ensure_sessions(classroom)
         sessions = AttendanceSession.objects.filter(classroom=classroom).order_by("-date", "-id")
-        return Response({"sessions": [_session_brief(s) for s in sessions]})
+        return Response({
+            "sessions": [_session_brief(s) for s in sessions],
+            # False means lesson days cannot be worked out from this classroom at all, so
+            # nothing will ever materialise. The UI says so and re-opens the manual add
+            # rather than showing an empty list that looks like "no lessons yet".
+            "schedule_is_usable": attendance_auto.schedule_is_usable(classroom),
+        })
 
     def post(self, request, classroom_pk):
+        """Manual creation. The lesson schedule normally does this, so the UI only offers it
+        when ``schedule_is_usable`` is False — but the endpoint stays open, because a class
+        with a broken schedule must still be able to take a register."""
         classroom = self.get_classroom()
         if not classroom_capabilities(request.user, classroom).can_take_attendance:
             return Response({"detail": "Staff only."}, status=status.HTTP_403_FORBIDDEN)
@@ -75,7 +89,6 @@ class AttendanceSessionsView(_ClassroomScopedView):
         s, created = AttendanceSession.objects.get_or_create(
             classroom=classroom, date=parsed_date,
             defaults={
-                "title": (request.data.get("title") or "").strip(),
                 "lesson_index": request.data.get("lesson_index") or None,
                 "created_by": request.user,
             },

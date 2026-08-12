@@ -35,9 +35,12 @@ export interface AttendanceDetail {
 const base = (classId: number) => `/classes/${classId}/attendance`;
 
 export const attendanceApi = {
-  listSessions: async (classId: number): Promise<{ sessions: AttendanceSessionBrief[] }> =>
+  /** Sessions materialise server-side on lesson days, so this GET is also what opens
+   *  today's register. ``schedule_is_usable`` false means none ever will — the class has no
+   *  readable lesson_days — and the page falls back to letting a teacher add one. */
+  listSessions: async (classId: number): Promise<{ sessions: AttendanceSessionBrief[]; schedule_is_usable: boolean }> =>
     (await api.get(`${base(classId)}/sessions/`)).data,
-  createSession: async (classId: number, data: { date: string; title?: string; lesson_index?: number | null }): Promise<AttendanceSessionBrief> =>
+  createSession: async (classId: number, data: { date: string; lesson_index?: number | null }): Promise<AttendanceSessionBrief> =>
     (await api.post(`${base(classId)}/sessions/`, data)).data,
   getSession: async (classId: number, sessionId: number): Promise<AttendanceSessionBrief & { roster: RosterRow[] }> =>
     (await api.get(`${base(classId)}/sessions/${sessionId}/`)).data,
