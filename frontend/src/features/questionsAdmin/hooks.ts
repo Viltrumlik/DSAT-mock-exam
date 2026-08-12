@@ -25,6 +25,10 @@ export type ModuleQuestionsApi = {
   deleteQuestion: (a: number, b: number, questionId: number) => Promise<unknown>;
   reorderQuestionsBulk: (a: number, b: number, orderedIds: number[]) => Promise<unknown>;
   importCsv: (a: number, b: number, file: File) => Promise<CsvImportResult>;
+  /** The WHOLE container as CSV, not this one module — a reviewer checking an answer key
+   *  wants one file per test, and the file's `module` column keeps the modules apart. Takes
+   *  only the container id for that reason. super_admin only; the server 403s otherwise. */
+  exportCsv: (a: number) => Promise<Blob>;
 };
 
 export type CsvImportResult = { module_id: number; created_count: number; question_ids: number[] };
@@ -37,6 +41,7 @@ export const examsModuleQuestionsApi: ModuleQuestionsApi = {
   deleteQuestion: (t, m, qid) => examsAdminApi.deleteQuestion(t, m, qid),
   reorderQuestionsBulk: (t, m, ids) => examsAdminApi.reorderQuestionsBulk(t, m, ids),
   importCsv: (t, m, file) => examsAdminApi.importQuestionsCsv(t, m, file),
+  exportCsv: (t) => examsAdminApi.exportTestQuestionsCsv(t),
 };
 
 function unwrapQuestionsList(data: unknown): AdminModuleQuestion[] {

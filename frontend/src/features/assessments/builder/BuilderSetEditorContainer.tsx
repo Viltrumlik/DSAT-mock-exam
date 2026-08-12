@@ -13,6 +13,7 @@ import {
 } from "@/features/assessments/hooks";
 import { getRole } from "@/lib/permissions";
 import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assessmentsAdmin/api";
+import { DownloadQuestionsCsvButton } from "@/features/questionsAdmin/DownloadQuestionsCsvButton";
 import { QuestionBankPickerModal } from "./QuestionBankPickerModal";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
@@ -908,6 +909,13 @@ export default function BuilderSetEditorContainer() {
                 e.target.value = ""; // allow re-selecting the same file
                 if (f) void importCsv(f);
               }}
+            />
+            {/* Renders only for super_admin; the endpoint 403s for anyone else. Same
+                columns as the importer above, so a downloaded file goes back in. */}
+            <DownloadQuestionsCsvButton
+              fetchCsv={() => assessmentAuthoringApi.exportQuestionsCsv(setId)}
+              fallbackName={`assessment-${setId}-questions`}
+              title="Download every question in this set, with its answer key"
             />
           </div>
 

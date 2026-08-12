@@ -151,6 +151,12 @@ export const assessmentsAdminApi = {
     const r = await api.post(`/assessments/admin/sets/${setId}/questions/import-csv/`, fd);
     return r.data as { set_id: number; created_count: number; question_ids: number[] };
   },
+  /** Download the set's questions and answer key as the CSV the importer reads.
+   *  super_admin only — the server answers 403 for everyone else. */
+  exportQuestionsCsv: async (setId: number): Promise<Blob> => {
+    const r = await api.get(`/assessments/admin/sets/${setId}/questions/export-csv/`, { responseType: "blob" });
+    return r.data as Blob;
+  },
 
   // Homework assign (teacher/staff)
   assign: async (payload: HomeworkAssignmentCreateRequest, idempotencyKey?: string) => {

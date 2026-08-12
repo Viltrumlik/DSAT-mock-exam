@@ -1628,6 +1628,17 @@ export const examsAdminApi = {
         const r = await api.post(`/exams/admin/tests/${testId}/modules/${moduleId}/questions/bulk-import/`, fd);
         return r.data as { module_id: number; created_count: number; question_ids: number[] };
     },
+    /** Every question on a test, as the CSV the importer reads. super_admin only (403). */
+    exportTestQuestionsCsv: async (testId: number): Promise<Blob> => {
+        const r = await api.get(`/exams/admin/tests/${testId}/export-csv/`, { responseType: "blob" });
+        return r.data as Blob;
+    },
+    /** The whole exam — a midterm or full mock is several sections, and a reviewer wants
+     *  one file, not one per section. super_admin only. */
+    exportMockExamQuestionsCsv: async (mockId: number): Promise<Blob> => {
+        const r = await api.get(`/exams/admin/mock-exams/${mockId}/export-csv/`, { responseType: "blob" });
+        return r.data as Blob;
+    },
 };
 
 export const assessmentsAdminApi = {

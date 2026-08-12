@@ -32,7 +32,10 @@ from .serializers import (
     AssessmentQuestionAdminWriteSerializer,
     ApiAssessmentDetailSerializer,
 )
+from access.permissions import IsSuperAdmin
+from core.csv_download import csv_download_response
 from .services.authoring_service import create_question, reorder_questions
+from .domain import csv_export
 from .domain.csv_import import decode_csv, parse_rows
 from .domain.question_ordering import dense_compact_set_orders_locked
 from .domain.governance_events import emit_governance_event
@@ -645,6 +648,24 @@ class AdminAssessmentSetQuestionsCsvImportView(APIView):
         return Response(
             {"set_id": aset.pk, "created_count": len(created_ids), "question_ids": created_ids},
             status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminAssessmentSetCsvExportView(APIView):
+    """Download a set's questions and answer key as the CSV the importer reads.
+
+    super_admin only — see ``access.permissions.IsSuperAdmin``. Deliberately narrower than
+    the authoring endpoints above: authoring is the job of the staff who build the sets, and
+    this is the school's review tool.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen, IsSuperAdmin]
+
+    def get(self, request, set_pk: int):
+        aset = get_object_or_404(AssessmentSet, pk=set_pk)
+        return csv_download_response(
+            csv_export.write_questions_csv(csv_export.questions_for_set(aset)),
+            f"{aset.title or 'assessment'}-{aset.pk}",
         )
 
 

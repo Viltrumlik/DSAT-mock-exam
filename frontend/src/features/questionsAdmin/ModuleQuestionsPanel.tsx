@@ -30,6 +30,7 @@ import {
   type ModuleQuestionsApi,
 } from "@/features/questionsAdmin/hooks";
 import type { AdminModuleQuestion } from "@/features/questionsAdmin/types";
+import { DownloadQuestionsCsvButton } from "@/features/questionsAdmin/DownloadQuestionsCsvButton";
 import {
   bankSubjectForQuestionType,
   useSkillTaxonomyQuery,
@@ -1265,6 +1266,14 @@ export default function ModuleQuestionsPanel(props: {
             )}
             Import CSV
           </button>
+          {/* The WHOLE test, not this module — a reviewer wants one file with every
+              question and its key. Renders only for super_admin; the endpoint 403s for
+              anyone else. */}
+          <DownloadQuestionsCsvButton
+            fetchCsv={() => api.exportCsv(testId)}
+            fallbackName={`${api.source}-${testId}-questions`}
+            title="Download every question on this test, with its answer key"
+          />
           <button
             type="button"
             onClick={() => void refetch()}
