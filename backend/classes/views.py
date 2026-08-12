@@ -232,6 +232,36 @@ from .serializers import (
 )
 
 
+def annotate_member_counts(qs):
+    """Annotate the two head-counts a classroom row can show.
+
+    ``student_count`` is the one the UI labels "Students", so it counts exactly what the
+    roster beside it lists: ACTIVE memberships with role STUDENT. The ops directory used to
+    show a bare ``Count("memberships")`` under that label, which counted the teacher, every
+    support teacher and TA, and — because removal is a soft delete — every student who had
+    ever been removed. A class of eight could read as fifteen.
+
+    ``members_count`` stays available for callers that mean the whole teaching-and-learning
+    group, and excludes REMOVED for the same soft-delete reason.
+
+    ``distinct=True`` on both: these are aggregates over a multi-valued relation, and a
+    caller that later joins another one would otherwise multiply the counts. A queryset-level
+    ``.distinct()`` does not reach inside an aggregate.
+    """
+    not_removed = ~Q(memberships__status=ClassroomMembership.STATUS_REMOVED)
+    return qs.annotate(
+        members_count=Count("memberships", filter=not_removed, distinct=True),
+        student_count=Count(
+            "memberships",
+            filter=Q(
+                memberships__role=ClassroomMembership.ROLE_STUDENT,
+                memberships__status=ClassroomMembership.STATUS_ACTIVE,
+            ),
+            distinct=True,
+        ),
+    )
+
+
 class ClassroomViewSet(ModelViewSet):
     """
     - List: classes the current user is a member of
@@ -248,16 +278,9 @@ class ClassroomViewSet(ModelViewSet):
         active_membership = ClassroomMembership.objects.filter(
             classroom=OuterRef("pk"), user=user
         ).exclude(status=ClassroomMembership.STATUS_REMOVED)
-        member_qs = (
+        member_qs = annotate_member_counts(
             Classroom.objects.filter(Exists(active_membership))
-            .annotate(
-                members_count=Count(
-                    "memberships",
-                    filter=~Q(memberships__status=ClassroomMembership.STATUS_REMOVED),
-                )
-            )
-            .distinct()
-        )
+        ).distinct()
         # Membership-scoped for EVERYONE, incl. super_admin (fail-closed): each user sees only
         # the classrooms they are actually a member of, and opening a class only works for its
         # members. This keeps the "Classes" UX private and avoids admins landing in empty
@@ -754,8 +777,7 @@ class ClassroomViewSet(ModelViewSet):
         # true for the teacher's name, and adding their photo would make it look like the
         # photo caused it.
         qs = (
-            Classroom.objects.select_related("teacher")
-            .annotate(members_count=Count("memberships"))
+            annotate_member_counts(Classroom.objects.select_related("teacher"))
             .distinct()
             .order_by("-created_at")
         )

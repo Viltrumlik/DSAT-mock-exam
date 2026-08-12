@@ -179,9 +179,11 @@ function ClassCard({ c, index, onOpen }: { c: ClassroomWithRole; index: number; 
   const lessonTime = (c as { lesson_time?: string }).lesson_time;
   const room = (c as { room_number?: string }).room_number;
   const schedule = [shortDays(lessonDays), fmtTime(lessonTime), roomLabel(room)].filter(Boolean).join(" · ");
+  // student_count first: this line reads "N students", and members_count also counts the
+  // teacher and any support teachers on the class.
   const count =
-    (c as { members_count?: number }).members_count ??
     (c as { student_count?: number }).student_count ??
+    (c as { members_count?: number }).members_count ??
     0;
 
   return (

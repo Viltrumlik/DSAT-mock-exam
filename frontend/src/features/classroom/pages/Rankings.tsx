@@ -11,11 +11,11 @@ import { useRankings, useRecomputeRankings } from "../rankingsHooks";
 import type { RankingKind, RankingRow } from "../rankingsApi";
 
 const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: string }> = {
-  SAT: { title: "SAT", icon: Trophy, desc: "Each student's most recent past paper, out of the ones this class was given." },
   // The currency changed at the rewards cutover: this is the reward ledger now, not a sum of
   // assessment scores. Naming the ways to earn is the point — a student who can see what
   // moves the number can decide to move it.
   ACADEMIC: { title: "Academic", icon: GraduationCap, desc: "Points earned in this class — attendance, homework and support sessions." },
+  SAT: { title: "SAT", icon: Trophy, desc: "Each student's most recent past paper, out of the ones this class was given." },
 };
 
 // Foundation and junior classes sit past papers to build stamina, not to be placed against a
@@ -58,7 +58,10 @@ const AV: [string, string][] = [
 
 export function Rankings({ classroom }: { classroom: ClassroomWithRole }) {
   const satAllowed = ranksOnSat(classroom.level);
-  const [kind, setKind] = useState<RankingKind>(satAllowed ? "SAT" : "ACADEMIC");
+  // Academic opens the board, for every class. It is the only one every class has — a
+  // foundation or junior class has no SAT tab at all — and it is the board a student can
+  // actually move this week, by turning up and handing work in.
+  const [kind, setKind] = useState<RankingKind>("ACADEMIC");
   return <RankingBoard key={kind} classroom={classroom} kind={kind} setKind={setKind} satAllowed={satAllowed} />;
 }
 
@@ -69,14 +72,14 @@ function RankingBoard({ classroom, kind, setKind, satAllowed }: {
   const caps = capabilitiesFor(classroom.my_role);
   const { data, isLoading, isError, refetch } = useRankings(classId, kind);
   const recompute = useRecomputeRankings(classId);
-  const kinds: RankingKind[] = satAllowed ? ["SAT", "ACADEMIC"] : ["ACADEMIC"];
+  const kinds: RankingKind[] = satAllowed ? ["ACADEMIC", "SAT"] : ["ACADEMIC"];
 
   const hideScores = data?.config.hide_score_values;
   const scoreOf = (row: RankingRow) => (row.is_me ? row.score : hideScores && !caps.isStaff ? null : row.score);
 
   return (
     <div className="space-y-5">
-      {/* Header: title + SAT/Academic segmented */}
+      {/* Header: title + Academic/SAT segmented */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Trophy className="h-5 w-5 text-primary" />

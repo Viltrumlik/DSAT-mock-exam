@@ -6355,6 +6355,7 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
             readonly members_count: number;
+            readonly student_count: number;
             readonly my_role: string;
         };
         ClassroomCreate: {

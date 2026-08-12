@@ -13,7 +13,8 @@ function ClassCard({ c }: { c: ClassroomWithRole }) {
   const isMath = subject === "MATH";
   const Icon = isMath ? Calculator : BookOpen;
   const schedule = formatLessonDaysMeta((c as { lesson_days?: string }).lesson_days);
-  const count = (c as { members_count?: number; student_count?: number }).members_count ?? (c as { student_count?: number }).student_count;
+  // Students, not the whole teaching group — the icon beside it is a roster count.
+  const count = (c as { student_count?: number }).student_count ?? (c as { members_count?: number }).members_count;
   const archived = (c as { is_active?: boolean }).is_active === false;
 
   return (

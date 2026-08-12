@@ -9,9 +9,6 @@ import {
   LayoutDashboard,
   Users,
   School,
-  AlertOctagon,
-  ScrollText,
-  BookOpen,
   KeyRound,
   ClipboardList,
   CalendarClock,
@@ -24,12 +21,10 @@ import {
  * Operational console navigation.
  * Serves admin.mastersat.uz.
  *
- * Admin operations nav is shown to all staff. The teacher workspace no longer lives
- * here — it moved to teacher.mastersat.uz — so we surface a single external link to the
- * Teacher Portal for users who can actually access it (teacher + super_admin).
+ * Admin operations nav is shown to all staff. The teacher workspace lives on its own
+ * subdomain (teacher.mastersat.uz) and is reached from there, not from here — this console
+ * is governance only.
  */
-const TEACHER_PORTAL_URL =
-  process.env.NEXT_PUBLIC_TEACHER_PORTAL_URL || "https://teacher.mastersat.uz";
 const OPS_NAV = [
   {
     href: "/ops",
@@ -95,18 +90,6 @@ const OPS_NAV = [
     icon: CalendarClock,
     exact: false,
   },
-  {
-    href: "/ops/scoring-issues",
-    label: "Scoring issues",
-    icon: AlertOctagon,
-    exact: false,
-  },
-  {
-    href: "/ops/audit",
-    label: "Audit log",
-    icon: ScrollText,
-    exact: false,
-  },
 ] as const;
 
 function isNavActive(pathname: string, href: string, exact: boolean): boolean {
@@ -150,8 +133,6 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
   const { me } = useMe();
 
   const role = String(me?.role ?? "").trim().toLowerCase();
-  // Link to the Teacher Portal only for roles allowed there (teacher + super_admin).
-  const showTeacherPortalLink = role === "teacher" || role === "super_admin";
   const isSuperAdmin = role === "super_admin" || Boolean(me?.is_superuser);
   const navItems = OPS_NAV.filter(
     (item) => !("superAdminOnly" in item && item.superAdminOnly) || isSuperAdmin,
@@ -179,22 +160,6 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
                 ))}
               </nav>
 
-              {/* Teacher Portal — external link to teacher.mastersat.uz */}
-              {showTeacherPortalLink && (
-                <div className="mt-3 border-t border-border pt-3">
-                  <p className="mb-1.5 px-3 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                    Teacher
-                  </p>
-                  <a
-                    href={TEACHER_PORTAL_URL}
-                    className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-                  >
-                    <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-                    Teacher Portal
-                    <span aria-hidden className="ml-auto text-xs text-muted-foreground">↗</span>
-                  </a>
-                </div>
-              )}
             </aside>
 
             {/* Main content */}
