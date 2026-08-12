@@ -105,6 +105,26 @@ def next_lesson_start_after(classroom: Classroom, after=None) -> datetime | None
     return None
 
 
+def lesson_days_in_range(classroom: Classroom, first, last) -> list:
+    """Every date in ``[first, last]`` this classroom meets on, in order.
+
+    Empty for an unknown ``lesson_days`` — the caller must treat that as "this class has no
+    computable schedule", never as "this class never meets". Unlike ``lesson_starts`` this is
+    bounded by real dates rather than a count, which is what a backfill wants: it asks "which
+    lessons should already have happened", not "when are the next N".
+    """
+    weekdays = lesson_weekdays(classroom)
+    if not weekdays or first > last:
+        return []
+    out = []
+    day = first
+    while day <= last:
+        if day.weekday() in weekdays:
+            out.append(day)
+        day += timedelta(days=1)
+    return out
+
+
 def lesson_starts(classroom: Classroom, count: int, *, anchor=None) -> list[datetime | None]:
     """The first ``count`` lesson starts for ``classroom``, in order.
 

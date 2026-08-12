@@ -168,15 +168,23 @@ class AttendanceOneSessionPerDayTests(_ClassFixture):
         return f"/api/classes/{self.classroom.id}/attendance/{suffix}"
 
     def test_creating_the_same_date_twice_returns_the_first_session(self):
-        first = self.client.post(self._url("sessions/"), {"date": "2026-06-04", "title": "Lesson 1"}, format="json")
+        first = self.client.post(self._url("sessions/"), {"date": "2026-06-04"}, format="json")
         self.assertEqual(first.status_code, 201)
-        again = self.client.post(self._url("sessions/"), {"date": "2026-06-04", "title": "Typed it again"}, format="json")
+        # Marking the first session is what makes the upsert matter: a second row for the
+        # same lesson would finalize — and pay out — separately.
+        self.client.post(
+            self._url(f"sessions/{first.json()['id']}/mark-all-present/"), {}, format="json"
+        )
+        again = self.client.post(self._url("sessions/"), {"date": "2026-06-04"}, format="json")
 
         self.assertEqual(again.status_code, 200)          # 200, not 201 — nothing was created
         self.assertEqual(again.json()["id"], first.json()["id"])
-        self.assertEqual(again.json()["title"], "Lesson 1")   # the original marking survives
         self.assertEqual(
             AttendanceSession.objects.filter(classroom=self.classroom, date=date(2026, 6, 4)).count(), 1
+        )
+        # The marks the teacher already made survive the second POST.
+        self.assertEqual(
+            AttendanceRecord.objects.filter(session_id=first.json()["id"]).count(), 2
         )
 
     def test_database_rejects_a_duplicate_session(self):

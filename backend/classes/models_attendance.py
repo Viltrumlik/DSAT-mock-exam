@@ -19,6 +19,9 @@ class AttendanceSession(models.Model):
         "classes.Classroom", on_delete=models.CASCADE, related_name="attendance_sessions"
     )
     date = models.DateField(db_index=True)
+    # Deprecated. A register is identified by its date, and sessions now materialise
+    # themselves on lesson days (see attendance_auto), so nothing writes this any more. The
+    # column stays so the titles teachers typed before are not destroyed.
     title = models.CharField(max_length=160, blank=True)
     lesson_index = models.PositiveIntegerField(null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)

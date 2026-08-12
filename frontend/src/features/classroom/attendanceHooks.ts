@@ -46,7 +46,7 @@ export function useMyAttendance(classId: number, enabled = true) {
 export function useCreateSession(classId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { date: string; title?: string }) => attendanceApi.createSession(classId, data),
+    mutationFn: (data: { date: string }) => attendanceApi.createSession(classId, data),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.sessions(classId) }),
   });
 }
