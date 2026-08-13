@@ -128,6 +128,23 @@ class StartAttemptView(APIView):
         if not classroom.memberships.filter(user=request.user, role=ClassroomMembership.ROLE_STUDENT).exists():
             return Response({"detail": "Only students can start this assessment."}, status=status.HTTP_403_FORBIDDEN)
 
+        # Membership is not authorization on its own. DRAFT work was never assigned and
+        # ARCHIVED work no longer is, so neither can be STARTED here — a stale dashboard
+        # or a hand-written request must not be able to turn one into an attempt. Work
+        # already in flight may still be finished, so archiving a homework mid-session
+        # never strands a student's answers.
+        if not hw.assignment.is_visible_to_students:
+            has_attempt_in_flight = AssessmentAttempt.objects.filter(
+                homework=hw,
+                student=request.user,
+                status=AssessmentAttempt.STATUS_IN_PROGRESS,
+            ).exists()
+            if not has_attempt_in_flight:
+                return Response(
+                    {"detail": "This homework is not available."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         # Optional: retry mode — student retries only a specific subset of
         # questions (e.g. the ones they got wrong in a previous attempt).
         # When provided, question_order is restricted to those IDs rather than

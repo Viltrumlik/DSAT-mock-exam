@@ -319,9 +319,17 @@ class ClassroomViewSet(ModelViewSet):
         classroom_ids = [c.id for c in enrolled]
         classroom_map = {c.id: c for c in enrolled}
 
-        # Single query: all assignments across enrolled classrooms.
+        # Single query: all PUBLISHED assignments across enrolled classrooms.
+        # This is a student surface (dashboard, /assessments, analytics, the iOS app),
+        # so DRAFT and ARCHIVED work is never part of it — the same rule the
+        # per-classroom list applies for non-staff. It is not cosmetic: the payload
+        # carries no status, so no client can filter it back out, and an assessment
+        # reachable from here is also startable.
         assignments = list(
-            Assignment.objects.filter(classroom_id__in=classroom_ids)
+            Assignment.objects.filter(
+                classroom_id__in=classroom_ids,
+                status=Assignment.STATUS_PUBLISHED,
+            )
             .select_related(
                 "classroom",
                 "created_by",
