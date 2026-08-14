@@ -259,6 +259,30 @@ def xp_balances_for(student_ids, *, classroom=None) -> dict[int, int]:
     return {row["student_id"]: int(row["total"] or 0) for row in rows}
 
 
+def xp_board_totals_for(student_ids, *, classroom=None) -> dict[int, dict]:
+    """``{student_id: {"xp": int, "awards": int}}`` — what the Academic board reads.
+
+    The XP twin of :func:`board_totals_for`, and it differs in the two ways XP always does:
+    no season filter, and the excluded events contribute nothing. ``awards`` counts only the
+    earnings that actually carried XP, so a student whose entire history is late arrivals
+    reads as 0 from 0 rather than 0 from nine — the second would look like a bug to whoever
+    is staring at the board.
+    """
+    if not student_ids:
+        return {}
+    qs = PointAward.objects.filter(student_id__in=student_ids)
+    if classroom is not None:
+        qs = qs.filter(classroom=classroom)
+    rows = qs.values("student_id").annotate(
+        total=Sum("xp"),
+        earned=Count("id", filter=Q(xp__gt=0)),
+    )
+    return {
+        row["student_id"]: {"xp": int(row["total"] or 0), "awards": int(row["earned"] or 0)}
+        for row in rows
+    }
+
+
 def balances_for(student_ids, *, season=None, classroom=None) -> dict[int, int]:
     """``{student_id: points}`` for a cohort, in one query.
 

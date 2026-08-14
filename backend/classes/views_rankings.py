@@ -21,9 +21,12 @@ from .capabilities import classroom_capabilities
 from .models import Classroom
 from .models_ranking import ClassroomRankingConfig, RankingSnapshot
 from .permissions import CanConfigureRanking, CanRecomputeRanking, IsClassMemberCap
-from .ranking import rules, service
+from .ranking import service
 
-_VALID_KINDS = {RankingSnapshot.KIND_SAT, RankingSnapshot.KIND_ACADEMIC}
+# ACADEMIC only. The SAT board was removed from the classroom; `KIND_SAT` still exists on the
+# model so historical snapshots stay readable, but asking for it here now falls through to the
+# default rather than serving a board nothing recomputes.
+_VALID_KINDS = {RankingSnapshot.KIND_ACADEMIC}
 
 
 def _display_name(user) -> str:
@@ -63,23 +66,25 @@ class _ClassroomScopedView(APIView):
 class RankingsView(_ClassroomScopedView):
     def get(self, request, classroom_pk, kind):
         kind = kind.upper()
-        if kind not in _VALID_KINDS:
+        if kind not in _VALID_KINDS and kind != RankingSnapshot.KIND_SAT:
             return Response({"detail": "Unknown ranking kind."}, status=status.HTTP_400_BAD_REQUEST)
 
         classroom = self.get_classroom()
         caps = classroom_capabilities(request.user, classroom)
         cfg, _ = ClassroomRankingConfig.objects.get_or_create(classroom=classroom)
 
-        # Foundation and junior classes do not rank on SAT — they sit pastpapers to build
-        # stamina, not to be placed against a college-entrance scale. Enforced here as well
-        # as in the UI: the student site rewrites its own role client-side, so a gate that
-        # lived only in the frontend would be one edited request away from being bypassed.
-        sat_available = rules.classroom_ranks_on_sat(classroom)
-        if kind == RankingSnapshot.KIND_SAT and not sat_available:
+        if kind == RankingSnapshot.KIND_SAT:
+            # The retired board. A browser tab open across the deploy still has the old bundle
+            # and will ask for it; answering 400 would paint an error over a board that was
+            # deliberately removed. This is the exact shape the gated-class branch used to
+            # return, so the existing client renders it as "nothing here" and moves on.
             return Response({
                 "kind": kind,
                 "period_key": None,
-                "config": {"leaderboard_mode": cfg.leaderboard_mode, "hide_score_values": cfg.hide_score_values},
+                "config": {
+                    "leaderboard_mode": cfg.leaderboard_mode,
+                    "hide_score_values": cfg.hide_score_values,
+                },
                 "can_configure": caps.can_configure_ranking,
                 "can_recompute": caps.can_recompute_ranking,
                 "sat_available": False,
@@ -143,7 +148,10 @@ class RankingsView(_ClassroomScopedView):
             "config": {"leaderboard_mode": mode, "hide_score_values": cfg.hide_score_values},
             "can_configure": caps.can_configure_ranking,
             "can_recompute": caps.can_recompute_ranking,
-            "sat_available": sat_available,
+            # `sat_available` stays in the payload as a constant false so a client that has
+            # not shipped yet hides its SAT tab instead of rendering an empty board. It goes
+            # once the frontend no longer reads it.
+            "sat_available": False,
             "my": my_row,
             "rows": rows,
         })
@@ -154,8 +162,8 @@ class RankingRecomputeView(_ClassroomScopedView):
 
     def post(self, request, classroom_pk):
         classroom = self.get_classroom()
-        kinds = request.data.get("kinds") or ["SAT", "ACADEMIC"]
-        kinds = tuple(k for k in kinds if k in _VALID_KINDS) or ("SAT", "ACADEMIC")
+        kinds = request.data.get("kinds") or ["ACADEMIC"]
+        kinds = tuple(k for k in kinds if k in _VALID_KINDS) or ("ACADEMIC",)
         summary = service.recompute_classroom(classroom, kinds=kinds)
         return Response({"status": "recomputed", "counts": summary})
 
@@ -188,7 +196,7 @@ class RankingHistoryView(_ClassroomScopedView):
 
     def get(self, request, classroom_pk, kind):
         kind = kind.upper()
-        if kind not in _VALID_KINDS:
+        if kind not in _VALID_KINDS and kind != RankingSnapshot.KIND_SAT:
             return Response({"detail": "Unknown ranking kind."}, status=status.HTTP_400_BAD_REQUEST)
         classroom = self.get_classroom()
         caps = classroom_capabilities(request.user, classroom)

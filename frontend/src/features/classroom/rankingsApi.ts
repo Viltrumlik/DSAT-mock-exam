@@ -29,7 +29,8 @@ export interface RankingResponse {
   config: { leaderboard_mode: LeaderboardMode; hide_score_values: boolean };
   can_configure: boolean;
   can_recompute: boolean;
-  /** False for foundation/junior/untagged classes, which do not rank on SAT. */
+  /** @deprecated Always false — the SAT board was removed from the classroom. The server
+   *  still sends it so a browser tab open across the deploy keeps its SAT tab hidden. */
   sat_available?: boolean;
   my: RankingRow | null;
   rows: RankingRow[];

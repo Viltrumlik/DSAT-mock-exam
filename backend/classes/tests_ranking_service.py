@@ -6,16 +6,11 @@ RankingSnapshot rows, and tracks rank_change across periods. See BUSINESS-ARCHIT
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 from rest_framework.test import APIClient
 
-from exams.models import PracticeTest, TestAttempt
-
-from classes.models import Assignment, Classroom, ClassroomMembership, Submission, SubmissionReview
+from classes.models import Classroom, ClassroomMembership
 from classes.models_ranking import RankingSnapshot
 from classes.ranking import service
 
@@ -24,73 +19,6 @@ User = get_user_model()
 
 def _student(email):
     return User.objects.create_user(email, "secret123")
-
-
-class SATServiceTests(TestCase):
-    def setUp(self):
-        self.owner = _student("w_owner@t.com")
-        # `level` matters now: only middle/senior classes rank on SAT.
-        self.classroom = Classroom.objects.create(
-            name="Math A", subject=Classroom.SUBJECT_MATH, level="middle",
-            lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
-        )
-        ClassroomMembership.objects.create(
-            classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
-        )
-        self.section = PracticeTest.objects.create(
-            subject="MATH", label="M", title="Math sec", collection_name="PP A"
-        )
-        # ...and the paper has to have been GIVEN to this class; an attempt on a pastpaper
-        # nobody assigned is a student's own practice and does not rank.
-        Assignment.objects.create(
-            classroom=self.classroom, title="PP A", category=Assignment.CATEGORY_PAST_PAPER,
-            status=Assignment.STATUS_PUBLISHED, practice_test=self.section, created_by=self.owner,
-        )
-        # three students with distinct Math section scores
-        self.s700 = _student("w700@t.com")
-        self.s600 = _student("w600@t.com")
-        self.s500 = _student("w500@t.com")
-        for u in (self.s700, self.s600, self.s500):
-            ClassroomMembership.objects.create(
-                classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT
-            )
-        now = timezone.now()
-        for u, score in ((self.s700, 700), (self.s600, 600), (self.s500, 500)):
-            TestAttempt.objects.create(
-                student=u, practice_test=self.section, score=score,
-                is_completed=True, current_state="COMPLETED", completed_at=now,
-            )
-
-    def test_ranks_percentiles_and_history(self):
-        service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p1")
-        snaps = {s.student_id: s for s in RankingSnapshot.objects.filter(
-            classroom=self.classroom, kind=RankingSnapshot.KIND_SAT, period_key="p1")}
-
-        self.assertEqual(len(snaps), 3)
-        self.assertEqual(snaps[self.s700.id].rank, 1)
-        self.assertEqual(snaps[self.s600.id].rank, 2)
-        self.assertEqual(snaps[self.s500.id].rank, 3)
-        # The score IS the pastpaper score — no weighting, no decay.
-        self.assertEqual(float(snaps[self.s700.id].score), 700.0)
-        # percentile: top→100, mid→50, low→0
-        self.assertAlmostEqual(float(snaps[self.s700.id].percentile), 100.0, delta=0.1)
-        self.assertAlmostEqual(float(snaps[self.s600.id].percentile), 50.0, delta=0.1)
-        self.assertAlmostEqual(float(snaps[self.s500.id].percentile), 0.0, delta=0.1)
-        # Components point at the paper behind the number, so a teacher can check it.
-        comp = snaps[self.s700.id].components
-        self.assertEqual(comp["practice_test_id"], self.section.id)
-        for key in ("attempt_id", "finished_at"):
-            self.assertIn(key, comp)
-
-    def test_previous_rank_linked_across_periods(self):
-        # Two recomputes with stable data → previous_rank tracks the prior period, change 0.
-        service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p1")
-        service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p2")
-        s = RankingSnapshot.objects.get(
-            classroom=self.classroom, kind=RankingSnapshot.KIND_SAT, period_key="p2", student=self.s700)
-        self.assertEqual(s.rank, 1)
-        self.assertEqual(s.previous_rank, 1)
-        self.assertEqual(s.components.get("rank_change"), 0)
 
 
 class AcademicServiceTests(TestCase):
@@ -126,7 +54,14 @@ class AcademicServiceTests(TestCase):
         self._award(self.full, 5, "att-full-1")   # 20 total
         self._award(self.partial, 10, "hw-part-1")
 
-    def _award(self, student, points, key, *, classroom=-1):
+    def _award(self, student, points, key, *, classroom=-1, xp=None):
+        """Write an award row directly, as `services.award` would.
+
+        `xp` mirrors `points` unless a test wants them to disagree — which is the whole
+        subject of `test_a_revoked_award_keeps_its_xp`. Writing the row by hand rather than
+        through `award()` keeps these tests about the *board*; the awarding rules have their
+        own suite in `rewards/tests_xp.py`.
+        """
         from rewards.models import PointAward
         from rewards.services import current_season
 
@@ -135,6 +70,7 @@ class AcademicServiceTests(TestCase):
             season=current_season(),
             event="MANUAL",
             points=points,
+            xp=points if xp is None else xp,
             classroom=self.classroom if classroom == -1 else classroom,
             idempotency_key=key,
         )
@@ -176,8 +112,13 @@ class AcademicServiceTests(TestCase):
             period_key="p1", student=self.partial)
         self.assertEqual(float(partial.score), 10.0)
 
-    def test_a_revoked_award_stops_counting(self):
-        # `revoke` zeroes the row rather than deleting it, so the board must sum, not count.
+    def test_a_revoked_award_keeps_its_xp(self):
+        """The board is XP now, and XP is never taken back — so a revocation does not move it.
+
+        The inverse of what this asserted while the board ran on points, and the single most
+        important consequence of the switch: correcting a mark can no longer knock a student
+        down the class board for something they had already been credited with.
+        """
         award = self._award(self.partial, 30, "hw-part-2")
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         first = RankingSnapshot.objects.get(
@@ -186,14 +127,30 @@ class AcademicServiceTests(TestCase):
         self.assertEqual(float(first.score), 40.0)
         self.assertEqual(first.rank, 1)
 
+        # What `revoke` does: points to zero, xp untouched.
         award.points = 0
         award.save(update_fields=["points"])
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         after = RankingSnapshot.objects.get(
             classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
             period_key="p1", student=self.partial)
-        self.assertEqual(float(after.score), 10.0)
-        self.assertEqual(after.components["awards"], 1)  # the zeroed row is not an earning
+        self.assertEqual(float(after.score), 40.0)
+        self.assertEqual(after.rank, 1)
+
+    def test_an_award_that_never_earned_xp_is_not_on_the_board(self):
+        """A late arrival and a survey earn points and no XP, so the board must not see them.
+
+        Written against a row with `xp=0, points>0` — exactly the shape `award()` produces
+        for ATTENDANCE_LATE and SURVEY.
+        """
+        self._award(self.partial, 40, "late-part", xp=0)
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+        partial = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.partial)
+
+        self.assertEqual(float(partial.score), 10.0)      # not 50
+        self.assertEqual(partial.components["awards"], 1)  # the XP-less row is not counted
 
     def test_a_student_who_has_earned_nothing_is_still_on_the_board(self):
         newcomer = _student("a_new@t.com")
@@ -229,8 +186,17 @@ class AcademicServiceTests(TestCase):
 
 
 class RankingsApiTests(TestCase):
+    """Visibility, anonymity and permissions on the board endpoint.
+
+    These were written against SAT because it was the board that existed; none of them is
+    about SAT. They now run on ACADEMIC — the only board left — seeded straight into the
+    reward ledger instead of through pastpaper attempts.
+    """
+
     def setUp(self):
         from classes.models_ranking import ClassroomRankingConfig
+        from rewards.models import PointAward
+        from rewards.services import current_season
 
         self.owner = _student("api_owner@t.com")
         self.classroom = Classroom.objects.create(
@@ -240,28 +206,22 @@ class RankingsApiTests(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
         )
-        self.section = PracticeTest.objects.create(
-            subject="MATH", label="M", title="sec", collection_name="PP"
-        )
-        Assignment.objects.create(
-            classroom=self.classroom, title="PP", category=Assignment.CATEGORY_PAST_PAPER,
-            status=Assignment.STATUS_PUBLISHED, practice_test=self.section, created_by=self.owner,
-        )
         self.top = _student("api_top@t.com")
         self.low = _student("api_low@t.com")
-        for u, sc in ((self.top, 760), (self.low, 540)):
+        for u, xp in ((self.top, 760), (self.low, 540)):
             ClassroomMembership.objects.create(
                 classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT
             )
-            TestAttempt.objects.create(
-                student=u, practice_test=self.section, score=sc,
-                is_completed=True, current_state="COMPLETED", completed_at=timezone.now(),
+            PointAward.objects.create(
+                student=u, season=current_season(), event="MANUAL",
+                points=xp, xp=xp, classroom=self.classroom,
+                idempotency_key=f"api-seed-{u.pk}",
             )
-        service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p1")
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         self.cfg_model = ClassroomRankingConfig
         self.client = APIClient()
 
-    def _url(self, kind="SAT"):
+    def _url(self, kind="ACADEMIC"):
         return f"/api/classes/{self.classroom.id}/rankings/{kind}/"
 
     def test_member_only(self):
@@ -360,9 +320,10 @@ class RankingsApiTests(TestCase):
         self.client.force_authenticate(self.low)
         self.assertEqual(self.client.post(url).status_code, 403)
         self.client.force_authenticate(self.owner)
-        r = self.client.post(url, {"kinds": ["SAT"]}, format="json")
+        r = self.client.post(url, {"kinds": ["ACADEMIC"]}, format="json")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["counts"]["SAT"], 2)
+        # 3 rows: both students and the owner, who is also a member.
+        self.assertEqual(r.json()["counts"]["ACADEMIC"], 2)
 
     def test_config_update_requires_manager(self):
         url = f"/api/classes/{self.classroom.id}/rankings/config/"
@@ -377,15 +338,15 @@ class RankingsApiTests(TestCase):
         self.assertEqual(self.client.patch(url, {"leaderboard_mode": "BOGUS"}, format="json").status_code, 400)
 
     def test_history_self_and_privacy(self):
-        service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p2")  # 2nd period
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p2")  # 2nd period
         self.client.force_authenticate(self.top)
-        r = self.client.get(f"/api/classes/{self.classroom.id}/rankings/sat/history/")
+        r = self.client.get(f"/api/classes/{self.classroom.id}/rankings/academic/history/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.json()["history"]), 2)  # p1 (setUp) + p2
         # a student cannot read another student's history
-        r = self.client.get(f"/api/classes/{self.classroom.id}/rankings/sat/history/?student={self.low.id}")
+        r = self.client.get(f"/api/classes/{self.classroom.id}/rankings/academic/history/?student={self.low.id}")
         self.assertEqual(r.status_code, 403)
         # staff can
         self.client.force_authenticate(self.owner)
-        r = self.client.get(f"/api/classes/{self.classroom.id}/rankings/sat/history/?student={self.low.id}")
+        r = self.client.get(f"/api/classes/{self.classroom.id}/rankings/academic/history/?student={self.low.id}")
         self.assertEqual(r.status_code, 200)

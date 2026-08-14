@@ -36,7 +36,7 @@ class CutoverAcademicLeaderboardTests(TestCase):
         )
         PointAward.objects.create(
             student=self.student, season=current_season(), event="MANUAL",
-            points=12, classroom=self.classroom, idempotency_key="cut-1",
+            points=12, xp=12, classroom=self.classroom, idempotency_key="cut-1",
         )
         # A board from before the cutover, in the retired currency.
         self.old = RankingSnapshot.objects.create(
