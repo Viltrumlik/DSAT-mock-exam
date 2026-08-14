@@ -74,6 +74,21 @@ class Classroom(models.Model):
     lesson_hours = models.PositiveIntegerField(default=2, help_text="Lesson duration in hours")
     start_date = models.DateField(null=True, blank=True)
     room_number = models.CharField(max_length=30, blank=True)
+    # Where this class meets. Nullable because every classroom that already exists predates
+    # the concept — an unassigned class is not an error, it is a class nobody has told us
+    # about yet, and it simply does not appear on any branch board.
+    #
+    # SET_NULL rather than CASCADE for the obvious reason: closing a branch must not delete
+    # the classes that met there, along with their rosters, homework and attendance.
+    branch = models.ForeignKey(
+        "classes.Branch",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="classrooms",
+        db_index=True,
+        help_text="The site this class meets at. Students inherit their branch from it.",
+    )
     telegram_chat_id = models.CharField(max_length=100, blank=True)
     max_students = models.PositiveIntegerField(null=True, blank=True)
     teacher = models.ForeignKey(
@@ -1014,4 +1029,5 @@ from .models_analytics import StudentGoal  # noqa: E402,F401
 from .models_schedule import MidtermSchedule  # noqa: E402,F401
 from .models_certificates import MidtermCertificate  # noqa: E402,F401
 from .models_support import SupportAvailability, SupportBooking  # noqa: E402,F401
+from .models_org import Branch, Region  # noqa: E402,F401
 

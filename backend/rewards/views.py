@@ -25,9 +25,13 @@ from rest_framework import status as http
 
 from access import constants as acc_const
 from access.services import is_global_scope_staff, normalized_role
+# Reused rather than re-implemented: it already handles the nullable username/email pair
+# that made the classroom board's sort blow up on two not-started students.
+from classes.views_rankings import _display_name
 
 from . import coins as coins_service
 from . import constants
+from . import leaderboard
 from .models import CoinTransaction, PointAward, RewardRule
 from .serializers import PointAwardSerializer, RewardRuleSerializer
 from .services import balance, current_season
@@ -140,6 +144,123 @@ class ConvertPointsView(APIView):
                 else f"Not enough points yet — {state['points_to_next_coin']} more for a coin."
             ),
             **state,
+        })
+
+
+class LeaderboardView(APIView):
+    """The platform-wide XP board: My Group, My Branch, Global, and the filters over them.
+
+    Named on `/api/rewards/` rather than a namespace of its own for two reasons. It is a
+    projection of this ledger and nothing else, so it belongs beside the balance it is derived
+    from; and `/api/rewards/` is already allowlisted on the admin and teacher subdomains
+    (access/host_guard.py), so staff can open the board on the console they are already using
+    instead of it 403ing there until somebody notices.
+
+    **Every student is named.** The per-classroom boards honour `ClassroomRankingConfig`,
+    where a teacher can anonymise their own class — but that setting is scoped to a classroom
+    and this board crosses all of them. Honouring it here would mean one teacher's preference
+    silently blanking rows on a school-wide board, and refusing to would leak what they asked
+    to hide. Neither is defensible, so the school-wide board is a school-wide decision: it
+    shows names, and a school that wants otherwise needs a platform-level policy rather than
+    this endpoint guessing at one.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from classes.models_org import Branch
+        from users.photos import profile_image_url
+
+        from classes.models_org import branch_ids_for_students
+
+        query = leaderboard.BoardQuery.from_params(request.query_params)
+        rows, meta = leaderboard.board(query, request.user)
+
+        # The viewer's own standing, computed separately so it is present even when they are
+        # nowhere near the visible top. A board that cannot tell a student where they stand is
+        # one they have no reason to open twice.
+        mine = leaderboard.rank_of(request.user, query, viewer=request.user)
+
+        wanted = {r["student_id"] for r in rows}
+        if mine:
+            wanted.add(mine["student_id"])   # they may be far below the limit
+
+        students = {
+            u.pk: u
+            for u in get_user_model().objects.filter(pk__in=wanted)
+            .only("id", "first_name", "last_name", "username", "email", "profile_image")
+        }
+        branch_by_student = branch_ids_for_students(list(wanted))
+        branches = {
+            b.pk: b
+            for b in Branch.objects.filter(
+                pk__in=set(branch_by_student.values())
+            ).select_related("region")
+        }
+
+        def _row(r):
+            student = students.get(r["student_id"])
+            branch = branches.get(branch_by_student.get(r["student_id"]))
+            return {
+                "rank": r["rank"],
+                "student_id": r["student_id"],
+                "name": _display_name(student) if student else "Student",
+                "profile_image_url": profile_image_url(student, request) if student else None,
+                "xp": r["xp"],
+                "awards": r["awards"],
+                "branch": branch.name if branch else None,
+                "region": branch.region.name if branch else None,
+                "is_me": r["student_id"] == request.user.pk,
+            }
+
+        return Response({
+            **meta,
+            "rows": [_row(r) for r in rows],
+            "my": _row(mine) if mine else None,
+        })
+
+
+class LeaderboardFiltersView(APIView):
+    """The options the board's filter chips offer — branches, regions, subjects, windows.
+
+    Served rather than hardcoded in the client so a school that opens a branch does not need a
+    frontend deploy for it to appear.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from classes.models import Classroom
+        from classes.models_org import Branch, Region, branch_for_student
+
+        my_branch = branch_for_student(request.user)
+        return Response({
+            "regions": [
+                {"id": r.pk, "name": r.name, "code": r.code}
+                for r in Region.objects.filter(is_active=True)
+            ],
+            "branches": [
+                {"id": b.pk, "name": b.name, "code": b.code, "region_id": b.region_id}
+                for b in Branch.objects.filter(is_active=True).select_related("region")
+            ],
+            "subjects": [
+                {"value": value, "label": label} for value, label in Classroom.SUBJECT_CHOICES
+            ],
+            "levels": [
+                {"value": value, "label": label} for value, label in Classroom.LEVEL_CHOICES
+            ],
+            "windows": [
+                {"value": leaderboard.WINDOW_ALL, "label": "All time"},
+                {"value": leaderboard.WINDOW_WEEK, "label": "This week"},
+                {"value": leaderboard.WINDOW_MONTH, "label": "This month"},
+                {"value": leaderboard.WINDOW_TERM, "label": "This term"},
+            ],
+            # So the client can label the "My Branch" tab with a name instead of the word
+            # "mine", and can hide the tab entirely when there is no branch behind it.
+            "my_branch": (
+                {"id": my_branch.pk, "name": my_branch.name, "region": my_branch.region.name}
+                if my_branch else None
+            ),
         })
 
 
