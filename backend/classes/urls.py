@@ -54,6 +54,12 @@ from .views_lessons import (
     ClassroomLessonsView,
 )
 from .views_results import ClassroomMidtermResultsView, ClassroomUnifiedResultsView
+from .views_pastpaper_certificates import (
+    AttemptErrorReportView,
+    PastpaperCertificateDetailView,
+    PastpaperCertificateDownloadView,
+    PastpaperCertificateReissueView,
+)
 from .views_certificates import (
     IssueMidtermCertificatesView,
     MidtermCertificatesDownloadAllView,
@@ -146,6 +152,11 @@ urlpatterns = [
     path("my-midterms/", MyMidtermsView.as_view(), name="my-midterms"),
     path("certificates/midterm/<str:code>/download/", MidtermCertificateDownloadView.as_view(), name="midterm-certificate-download"),
     path("certificates/midterm/<str:code>/", MidtermCertificateDetailView.as_view(), name="midterm-certificate-detail"),
+    # Pastpaper certificates. `download/` above the bare code route, the house rule.
+    path("certificates/pastpaper/<str:code>/download/", PastpaperCertificateDownloadView.as_view(), name="pastpaper-certificate-download"),
+    path("certificates/pastpaper/<str:code>/", PastpaperCertificateDetailView.as_view(), name="pastpaper-certificate-detail"),
+    path("pastpapers/attempts/<int:attempt_id>/report/", AttemptErrorReportView.as_view(), name="pastpaper-error-report"),
+    path("pastpapers/attempts/<int:attempt_id>/certificate/reissue/", PastpaperCertificateReissueView.as_view(), name="pastpaper-certificate-reissue"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/panel/", MidtermPanelView.as_view(), name="class-midterm-panel"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/issue/", IssueMidtermCertificatesView.as_view(), name="class-midterm-certificates-issue"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/download-all/", MidtermCertificatesDownloadAllView.as_view(), name="class-midterm-certificates-download-all"),
