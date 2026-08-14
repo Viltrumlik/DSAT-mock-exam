@@ -55,10 +55,39 @@ DEFAULT_POINTS = {
     EVENT_MANUAL: 0,        # always passed explicitly; a default would be a footgun
 }
 
+# ── XP ────────────────────────────────────────────────────────────────────────
+#
+# XP is the school's read on how much a student actually *knows*, and it is deliberately a
+# narrower thing than points. Two events earn points but no XP:
+#
+#   ATTENDANCE_LATE — turning up late is worth encouraging, so it still earns points and
+#                     still keeps a strike. It is not evidence of knowing anything.
+#   SURVEY          — filling in a form is a favour to the school, not a demonstration of
+#                     learning, and at 40 points it is by far the biggest single earning on
+#                     the platform. Letting it into XP would let the highest-XP student be
+#                     whoever answers the most questionnaires.
+#
+# Everything else earns XP equal to its point value. They are the same arithmetic on a
+# smaller set of events, which is the whole reason XP needs no rule table of its own.
+
+XP_EXCLUDED_EVENTS = frozenset({EVENT_ATTENDANCE_LATE, EVENT_SURVEY})
+
+
+def xp_for(event: str, points: int) -> int:
+    """What an earning is worth in XP. Zero for the excluded events, its point value otherwise.
+
+    Negative points cannot become negative XP: a manual adjustment that docks somebody is a
+    points operation, and XP has no downward direction at all (see ``services.award``).
+    """
+    if event in XP_EXCLUDED_EVENTS:
+        return 0
+    return max(0, int(points))
+
+
 # ── Coins ─────────────────────────────────────────────────────────────────────
 
 #: Points needed for one coin. Points are a lifetime score; coins are a spendable wallet
-#: minted from them. Conversion lands in a later PR — this is the agreed rate.
+#: minted from them. Conversion is a deliberate act by the student — see ``coins.convert``.
 DEFAULT_POINTS_PER_COIN = 10
 
 

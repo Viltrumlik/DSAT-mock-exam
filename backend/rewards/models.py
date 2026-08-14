@@ -96,6 +96,17 @@ class PointAward(models.Model):
     event = models.CharField(max_length=40, choices=EVENT_CHOICES, db_index=True)
     points = models.IntegerField(default=0)
 
+    # XP rides on the same row rather than in a table of its own, because it is earned by the
+    # same events, at the same moment, keyed by the same idempotency key — a parallel ledger
+    # would be the same hooks written twice and a second thing to keep in step.
+    #
+    # It is a HIGH-WATER MARK, and that is the entire difference between the two columns.
+    # ``points`` is the current truth and moves in both directions: a re-grade rewrites it, a
+    # revocation zeroes it. ``xp`` only ever climbs. The school's rule is that XP cannot be
+    # taken off a student, so a correction that lowers an earning lowers the points and leaves
+    # the XP where it stood. See ``services.award``.
+    xp = models.PositiveIntegerField(default=0)
+
     # Where it happened. Nullable because surveys and midterms belong to no single class —
     # they count toward the student's global balance but not to any one class board.
     classroom = models.ForeignKey(
@@ -125,6 +136,9 @@ class PointAward(models.Model):
             models.Index(fields=["student", "season"]),          # balance
             models.Index(fields=["season", "classroom"]),        # per-class board
             models.Index(fields=["student", "-awarded_at"]),     # history feed
+            # XP is read across every season at once — it is a lifetime figure, so its
+            # aggregate cannot ride the season-scoped index above.
+            models.Index(fields=["student", "xp"], name="reward_award_student_xp_idx"),
         ]
 
     def __str__(self) -> str:
@@ -141,6 +155,11 @@ class PointAwardAudit(models.Model):
     award = models.ForeignKey(PointAward, on_delete=models.CASCADE, related_name="audit_events")
     previous_points = models.IntegerField(null=True, blank=True, help_text="Null on first grant.")
     new_points = models.IntegerField()
+    # XP is tracked here too, because the one question the ledger will be asked is "why is my
+    # XP higher than my points?" — and without these columns the answer would have to be
+    # reconstructed by replaying the rules against the point history.
+    previous_xp = models.PositiveIntegerField(null=True, blank=True, help_text="Null on first grant.")
+    new_xp = models.PositiveIntegerField(null=True, blank=True)
     reason = models.CharField(max_length=240, blank=True)
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
