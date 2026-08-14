@@ -22,6 +22,7 @@ import {
   LifeBuoy,
   Route,
   Trophy,
+  ShoppingBag,
   ClipboardList as ClipboardListIcon,
 } from "lucide-react";
 
@@ -82,6 +83,7 @@ export const studentNav: NavSection[] = [
       },
       { href: "/midterm", label: "Midterm", icon: FileText },
       { href: "/leaderboard", label: "Leaderboard", icon: Trophy, isNew: true },
+      { href: "/shop", label: "Shop", icon: ShoppingBag, isNew: true },
       { href: "/support", label: "Support", icon: LifeBuoy, isNew: true },
       // Surveys and Points are reached from the header, not the sidebar: a survey only
       // exists now and then, and points are a running total worth seeing on every page

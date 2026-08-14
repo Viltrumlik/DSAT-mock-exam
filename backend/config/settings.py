@@ -159,6 +159,7 @@ INSTALLED_APPS = [
     'journals.apps.JournalsConfig',
     'rewards.apps.RewardsConfig',
     'surveys.apps.SurveysConfig',
+    'shop.apps.ShopConfig',
     'annotations.apps.AnnotationsConfig',
 ]
 
