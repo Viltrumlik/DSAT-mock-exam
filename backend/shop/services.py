@@ -82,6 +82,20 @@ def fulfil(order_id: int, *, actor, note: str = "") -> ShopOrder:
     if note:
         order.note = note
     order.save(update_fields=["status", "settled_at", "settled_by", "note"])
+
+    # Told, not left to check. A student who ordered something has no other way to learn it
+    # is ready, and `notify` swallows its own failures so this cannot break a fulfilment.
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    notify(
+        order.student,
+        event=note_const.EVENT_SHOP_ORDER_READY,
+        title=f"Your {order.item_name} is ready",
+        body="Collect it from the desk.",
+        link_url="/shop",
+        dedupe_key=f"shop-order:{order.pk}",
+    )
     return order
 
 

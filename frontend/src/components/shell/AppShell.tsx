@@ -22,7 +22,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { IconButton } from "@/components/ui/IconButton";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { Drawer } from "@/components/ui/Drawer";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { NotificationPanel } from "@/features/notifications/NotificationPanel";
+import { useUnreadSummary } from "@/features/notifications/notificationsHooks";
 import {
   flattenNav,
   isNavItemActive,
@@ -53,7 +54,8 @@ export type AppShellProps = {
   headerSlot?: React.ReactNode;
   /** Extra rows at the top of the avatar menu — the student's points and open surveys. */
   accountMenu?: React.ReactNode;
-  /** Render the notification bell. Off until there is an API behind it. */
+  /** Render the notification bell. There is an API behind it now — see
+   *  `features/notifications` — so this is on wherever a shell wants it. */
   notifications?: boolean;
   children: React.ReactNode;
 };
@@ -91,6 +93,10 @@ export function AppShell({
   const [cmd, setCmd] = useState("");
   const [cmdOpen, setCmdOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  // Gated on `notifications` so a shell without the bell never polls for a count it will not
+  // draw — the ops and builder consoles mount this same component.
+  const unread = useUnreadSummary(Boolean(notifications));
+  const unreadTotal = unread.data?.total ?? 0;
   const [acctOpen, setAcctOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const cmdRef = useRef<HTMLDivElement>(null);
@@ -483,18 +489,30 @@ export function AppShell({
             {/* The bell only appears where it can tell the truth. It used to render an
                 unread dot unconditionally with no data behind it, and opening it always
                 said "You're all caught up" — the loudest permanent control in the product,
-                never once connected to anything. It comes back when there is a
-                notifications API. */}
+                never once connected to anything. The dot below is now a real count, so it
+                is absent when there is nothing rather than decorative. */}
             {notifications ? (
               <Tooltip content="Notifications" side="bottom">
                 <IconButton
                   variant="ghost"
-                  aria-label="Notifications"
+                  aria-label={
+                    unreadTotal > 0
+                      ? `Notifications, ${unreadTotal} unread`
+                      : "Notifications"
+                  }
                   aria-expanded={notifOpen}
                   onClick={() => setNotifOpen(true)}
                   className="relative"
                 >
                   <Bell className="h-5 w-5" />
+                  {unreadTotal > 0 ? (
+                    <span
+                      className="absolute right-1 top-1 min-w-[16px] rounded-full bg-danger px-1 text-[10px] font-extrabold leading-4 text-white"
+                      aria-hidden
+                    >
+                      {unreadTotal > 9 ? "9+" : unreadTotal}
+                    </span>
+                  ) : null}
                 </IconButton>
               </Tooltip>
             ) : null}
@@ -610,12 +628,7 @@ export function AppShell({
         onClose={() => setNotifOpen(false)}
         title="Notifications"
       >
-        <EmptyState
-          compact
-          icon={Bell}
-          title="You're all caught up"
-          description="Grades, assignments, and reminders will appear here."
-        />
+        <NotificationPanel open={notifOpen} />
       </Drawer>
     </div>
   );
