@@ -42,10 +42,50 @@ PERMISSIONS_REQUIRING_PLATFORM_SUBJECT = frozenset(
 # Overrides must never grant these to students (defense in depth vs. bad admin data).
 PERMISSIONS_STUDENT_OVERRIDE_DENIED = PERMISSIONS_REQUIRING_PLATFORM_SUBJECT
 
-# Domain subject stored on User.subject and UserAccess.subject (exactly one for staff).
+# Domain subject stored on User.subject and UserAccess.subject.
 DOMAIN_MATH = "math"
 DOMAIN_ENGLISH = "english"
 ALL_DOMAIN_SUBJECTS = (DOMAIN_MATH, DOMAIN_ENGLISH)
+
+#: A support teacher who covers both subjects.
+#:
+#: Deliberately NOT in ``ALL_DOMAIN_SUBJECTS``, and this is the load-bearing decision. That
+#: tuple is the vocabulary of *grants and resources* — a ``UserAccess`` row, an
+#: ``AssessmentSet``, a ``PracticeTest`` — and "both" is meaningless there: a question is
+#: maths or it is english. It is only ever a property of a *person*.
+#:
+#: The practical consequence is that nothing which compares a single subject needs to change.
+#: ``user_domain_subject`` still returns one value or None; a "both" member of staff simply
+#: gets None from it, and the comparison sites that must understand them use
+#: :func:`access.services.user_domain_subjects` instead. Making the singular function return
+#: "both" would have been the tempting change and a silent disaster — every caller compares
+#: its result with ``==`` against one domain, so a "both" teacher would have been denied
+#: everywhere rather than allowed everywhere.
+DOMAIN_BOTH = "both"
+
+#: What ``User.subject`` may hold. A superset of ``ALL_DOMAIN_SUBJECTS``.
+ALL_STAFF_SUBJECTS = (DOMAIN_MATH, DOMAIN_ENGLISH, DOMAIN_BOTH)
+
+#: Which domains a stored ``User.subject`` value actually covers.
+SUBJECTS_COVERED_BY = {
+    DOMAIN_MATH: (DOMAIN_MATH,),
+    DOMAIN_ENGLISH: (DOMAIN_ENGLISH,),
+    DOMAIN_BOTH: ALL_DOMAIN_SUBJECTS,
+}
+
+
+def allowed_subjects_for_role(role: str) -> tuple:
+    """What ``User.subject`` may be for a given role.
+
+    "both" is a **support teacher's** option and nobody else's. A support teacher helps
+    whoever books them and the school wanted one account able to take both queues; a class
+    teacher owns a classroom, and a classroom has exactly one subject, so a both-subject
+    teacher would be a teacher no classroom could be aligned against.
+    """
+    normalized = str(role or "").strip().lower()
+    if normalized == ROLE_SUPPORT_TEACHER:
+        return ALL_STAFF_SUBJECTS
+    return ALL_DOMAIN_SUBJECTS
 
 # Platform subject values stored in DB (PracticeTest.subject)
 SUBJECT_ENGLISH_PLATFORM = "READING_WRITING"  # "English / R&W"

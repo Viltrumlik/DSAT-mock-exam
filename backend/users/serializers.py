@@ -36,6 +36,12 @@ def _sync_global_user_access(user: User) -> None:
     Not optional for support_teacher: ``has_global_subject_access`` requires the row for every
     role in ``SUBJECT_SCOPED_STAFF_ROLES``, so without it a support teacher would fail every
     subject-scoped check despite holding the right role and subject.
+
+    A ``subject="both"`` support teacher gets **two** rows, one per domain. There is no "both"
+    grant and there must not be: ``UserAccess.subject`` names a domain of *resources*, where
+    the value would be meaningless. Two real rows is also what makes every existing
+    subject-scoped check work unchanged — each one finds the row for the domain it is asking
+    about, and none of them has to learn a new value.
     """
     from access.models import UserAccess
 
@@ -43,14 +49,13 @@ def _sync_global_user_access(user: User) -> None:
     if r not in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
         return
     sj = getattr(user, "subject", None)
-    if sj not in acc_const.ALL_DOMAIN_SUBJECTS:
-        return
-    UserAccess.objects.get_or_create(
-        user_id=user.pk,
-        subject=sj,
-        classroom_id=None,
-        defaults={"granted_by_id": user.pk},
-    )
+    for domain in acc_const.SUBJECTS_COVERED_BY.get(sj, ()):
+        UserAccess.objects.get_or_create(
+            user_id=user.pk,
+            subject=domain,
+            classroom_id=None,
+            defaults={"granted_by_id": user.pk},
+        )
 
 
 class ExamDateOptionSerializer(serializers.ModelSerializer):
@@ -524,11 +529,17 @@ class UserSerializer(serializers.ModelSerializer):
         return None
 
     def validate_subject(self, value):
+        """Accepts "both" here and lets the role decide.
+
+        The role is not reliably on this serializer at field-validation time — it may be
+        unchanged on a PATCH — so the role-specific rule (only a support teacher may be
+        "both") is enforced by `User.clean`, which every save path runs through.
+        """
         if value in (None, ""):
             return None
         v = str(value).strip().lower()
-        if v not in acc_const.ALL_DOMAIN_SUBJECTS:
-            raise serializers.ValidationError('Subject must be "math" or "english".')
+        if v not in acc_const.ALL_STAFF_SUBJECTS:
+            raise serializers.ValidationError('Subject must be "math", "english" or "both".')
         return v
 
     def get_class_teacher_eligible(self, obj):
@@ -655,9 +666,10 @@ class UserSerializer(serializers.ModelSerializer):
 
         subj = validated_data.get("subject")
         if role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
-            if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
+            allowed = acc_const.allowed_subjects_for_role(role)
+            if subj not in allowed:
                 raise serializers.ValidationError(
-                    {"subject": "Teacher and support_teacher accounts require subject: math or english."}
+                    {"subject": f"A {role} account requires subject: " + " or ".join(allowed) + "."}
                 )
         elif role in (
             acc_const.ROLE_ADMIN,
@@ -696,9 +708,10 @@ class UserSerializer(serializers.ModelSerializer):
         if "subject" in validated_data:
             subj = validated_data.get("subject")
             if eff_role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
-                if subj not in acc_const.ALL_DOMAIN_SUBJECTS:
+                allowed = acc_const.allowed_subjects_for_role(eff_role)
+                if subj not in allowed:
                     raise serializers.ValidationError(
-                        {"subject": "Teacher and support_teacher accounts require subject: math or english."}
+                        {"subject": f"A {eff_role} account requires subject: " + " or ".join(allowed) + "."}
                     )
             elif eff_role in (
                 acc_const.ROLE_ADMIN,
@@ -721,9 +734,10 @@ class UserSerializer(serializers.ModelSerializer):
         eff = self._normalize_role(user.role) or acc_const.ROLE_STUDENT
         sj = getattr(user, "subject", None)
         if eff in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
-            if sj not in acc_const.ALL_DOMAIN_SUBJECTS:
+            allowed = acc_const.allowed_subjects_for_role(eff)
+            if sj not in allowed:
                 raise serializers.ValidationError(
-                    {"subject": "Teacher and support_teacher accounts require subject: math or english."}
+                    {"subject": f"A {eff} account requires subject: " + " or ".join(allowed) + "."}
                 )
         elif (
             eff in (acc_const.ROLE_ADMIN, acc_const.ROLE_TEST_ADMIN, acc_const.ROLE_TEST_AUDITOR)

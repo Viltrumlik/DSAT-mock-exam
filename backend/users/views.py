@@ -150,8 +150,13 @@ def manageable_users_queryset(actor):
                     | Q(class_memberships__classroom__subject=clsub)
                 )
                 # Support teachers are listed alongside teachers of the same subject: they
-                # are the pool an ops/teacher picker assigns to a classroom.
-                | Q(subject=dom, role__in=acc_const.SUBJECT_SCOPED_STAFF_ROLES)
+                # are the pool an ops/teacher picker assigns to a classroom. A "both" support
+                # teacher belongs in BOTH pickers — without this they appear in neither, and
+                # ops could never assign the account they just created.
+                | Q(
+                    subject__in=(dom, acc_const.DOMAIN_BOTH),
+                    role__in=acc_const.SUBJECT_SCOPED_STAFF_ROLES,
+                )
             ).distinct()
         )
     if authorize(actor, acc_const.PERM_ASSIGN_ACCESS, subject=probe):

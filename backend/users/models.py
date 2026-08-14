@@ -54,9 +54,11 @@ class UserManager(BaseUserManager):
 
         eff_role = str(getattr(user, "role", "") or "").strip().lower()
         if eff_role in auth_const.SUBJECT_SCOPED_STAFF_ROLES:
-            if getattr(user, "subject", None) not in auth_const.ALL_DOMAIN_SUBJECTS:
+            allowed = auth_const.allowed_subjects_for_role(eff_role)
+            if getattr(user, "subject", None) not in allowed:
                 raise ValueError(
-                    "Teacher and support_teacher accounts require subject: math or english."
+                    "Teacher and support_teacher accounts require subject: "
+                    + " or ".join(allowed)
                 )
         elif eff_role in (
             auth_const.ROLE_ADMIN,
@@ -118,10 +120,13 @@ class User(AbstractUser):
         blank=True,
         null=True,
         db_index=True,
-        choices=[("math", "Math"), ("english", "English")],
+        # "both" is offered here because the Django admin renders these choices verbatim,
+        # but it is only *valid* for a support teacher — `clean` is what enforces that.
+        choices=[("math", "Math"), ("english", "English"), ("both", "Both (support only)")],
         help_text=(
-            "Required for **teacher** and **support_teacher** (math or english). Must be null "
-            "for admin, test_admin, test_auditor, super_admin, and students."
+            "Required for **teacher** (math or english) and **support_teacher** (math, "
+            "english, or both). Must be null for admin, test_admin, test_auditor, "
+            "super_admin, and students."
         ),
     )
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
@@ -229,10 +234,16 @@ class User(AbstractUser):
         subj = str(raw_subj).strip().lower() if raw_subj not in (None, "") else None
 
         if role in auth_const.SUBJECT_SCOPED_STAFF_ROLES:
-            if subj not in auth_const.ALL_DOMAIN_SUBJECTS:
-                raise ValidationError(
-                    {"subject": "Teacher and support_teacher accounts require subject: math or english."}
-                )
+            allowed = auth_const.allowed_subjects_for_role(role)
+            if subj not in allowed:
+                # Names the roles' different vocabularies rather than one blanket message:
+                # "both" being refused for a teacher is a rule, not a typo, and the error is
+                # the only place that says so.
+                raise ValidationError({
+                    "subject": (
+                        f"A {role} account requires subject: " + " or ".join(allowed) + "."
+                    )
+                })
         elif role in (
             auth_const.ROLE_ADMIN,
             auth_const.ROLE_TEST_ADMIN,
