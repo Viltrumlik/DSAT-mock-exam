@@ -110,12 +110,22 @@ _INJECT = r"""
     "out of 800": "out of " + d.ceiling,
     "Mathematics": d.subjectFull,
     "Aziz Karimov": d.name,
-    // The template's fixed citation is replaced WHOLESALE by the score-tier sentence
-    // (a weak result must not be praised "for outstanding performance"). The trailing
-    // space is part of the template's text node, so it is preserved.
-    "for outstanding performance on the MasterSAT June 2026 ": d.citation + " ",
+    // Replaced WHOLESALE by the score-tier sentence — a weak result must not be praised
+    // "for outstanding performance". NO trailing space: that space existed to separate this
+    // node from the "Math" node after it, and that node is now emptied (see below), so
+    // keeping it would print "... midterm ." with a gap before the full stop.
+    "for outstanding performance on the MasterSAT June 2026 ": d.citation,
     "CERTIFICATE OF ACHIEVEMENT": d.headline,
-    "Math": d.subjectShort,
+    // The template's sentence is three text nodes:
+    //     "for outstanding performance on the MasterSAT June 2026 " + "Math" + " Midterm."
+    // which read correctly while the first node was fixed template copy. It stopped reading
+    // correctly when `citation` became the WHOLE sentence — it already ends "... Mathematics
+    // midterm", so the last two nodes repeated it and every certificate printed
+    //     "... August 2026 Mathematics midterm Math Midterm."
+    // So they collapse to the full stop the sentence still needs. `subjectShort` survives in
+    // `cert_data` because the React viewer's copy of this map is kept identical to it.
+    "Math": "",
+    " Midterm.": ".",
     "Class Rank #3": "Class Rank #" + d.rank,
     "of 24 students": "of " + d.cohort + " students",
     "Dr. Sarah Chen": d.instructor,
