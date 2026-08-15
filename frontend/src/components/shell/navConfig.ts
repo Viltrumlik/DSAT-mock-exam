@@ -113,14 +113,26 @@ export const supportTeacherNavSection: NavSection = {
   items: [{ href: "/teacher/support", label: "Support sessions", icon: LifeBuoy, isNew: true }],
 };
 
-/** Teacher information architecture (see docs/UI_REBUILD_IA.md §5). */
+/**
+ * Teacher information architecture (see docs/UI_REBUILD_IA.md §5).
+ *
+ * Six pages — Analytics, Materials, Students, Homework, Grading, Gradebook — are marked
+ * `hiddenInSidebar` rather than deleted. The school wants them off the teacher's sidebar,
+ * but the routes, their inbound links from classroom pages, and every endpoint behind them
+ * are still live and still used by ops and admin. Hiding is therefore the whole change:
+ * deleting the routes would 404 links that other roles follow, and the work would have to
+ * be undone to bring any of the six back.
+ *
+ * The whole `teacher-grading` section vanishes with its three items, because the sidebar
+ * drops a section once nothing visible is left in it (see AppShell's `filteredNav`).
+ */
 export const teacherNav: NavSection[] = [
   {
     id: "teacher-main",
     section: "",
     items: [
       { href: "/teacher", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/teacher/analytics", label: "Analytics", icon: LineChart, isNew: true },
+      { href: "/teacher/analytics", label: "Analytics", icon: LineChart, hiddenInSidebar: true },
     ],
   },
   {
@@ -132,17 +144,17 @@ export const teacherNav: NavSection[] = [
       { href: "/teacher/midterms", label: "Midterms", icon: Timer },
       // Run an invigilated full mock: let students in with the admin's code, press Start.
       { href: "/teacher/mock-sessions", label: "Mock sittings", icon: CirclePlay, isNew: true },
-      { href: "/teacher/materials", label: "Materials", icon: FolderOpen },
-      { href: "/teacher/students", label: "Students", icon: Users },
+      { href: "/teacher/materials", label: "Materials", icon: FolderOpen, hiddenInSidebar: true },
+      { href: "/teacher/students", label: "Students", icon: Users, hiddenInSidebar: true },
     ],
   },
   {
     id: "teacher-grading",
     section: "Grading",
     items: [
-      { href: "/teacher/homework", label: "Homework", icon: ClipboardList },
-      { href: "/teacher/grading", label: "Grading", icon: ClipboardPen, isNew: true },
-      { href: "/teacher/gradebook", label: "Gradebook", icon: Table2, isNew: true },
+      { href: "/teacher/homework", label: "Homework", icon: ClipboardList, hiddenInSidebar: true },
+      { href: "/teacher/grading", label: "Grading", icon: ClipboardPen, hiddenInSidebar: true },
+      { href: "/teacher/gradebook", label: "Gradebook", icon: Table2, hiddenInSidebar: true },
     ],
   },
 ];
