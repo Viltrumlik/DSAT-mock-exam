@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    Branch,
     Classroom,
     ClassroomMembership,
     ClassPost,
@@ -12,14 +13,34 @@ from .models import (
     StaleStorageBlob,
     ClassroomStreamItem,
     ClassComment,
+    Region,
 )
+
+
+@admin.register(Region)
+class RegionAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "code", "is_active", "created_at")
+    search_fields = ("name", "code")
+    list_filter = ("is_active",)
+
+
+@admin.register(Branch)
+class BranchAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "region", "code", "is_active", "created_at")
+    search_fields = ("name", "code", "region__name")
+    list_filter = ("is_active", "region")
+    # Editable on purpose, unlike the reward ledger: this is reference data a school
+    # administrator maintains, not a record of something that happened.
 
 
 @admin.register(Classroom)
 class ClassroomAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "subject", "lesson_days", "lesson_time", "room_number", "join_code", "is_active", "created_at")
-    search_fields = ("name", "subject", "lesson_time", "room_number", "join_code")
-    list_filter = ("is_active", "created_at")
+    list_display = ("id", "name", "subject", "branch", "lesson_days", "lesson_time", "room_number", "join_code", "is_active", "created_at")
+    search_fields = ("name", "subject", "lesson_time", "room_number", "join_code", "branch__name")
+    list_filter = ("is_active", "branch", "created_at")
+    # `branch` is on `list_display` and `list_filter` because assigning it is the whole point
+    # — an unassigned classroom is invisible to every branch board, and this list is where a
+    # school administrator will notice.
 
 
 @admin.register(ClassroomMembership)

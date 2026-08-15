@@ -91,6 +91,12 @@ class ClassroomSerializer(serializers.ModelSerializer):
     student_count = serializers.IntegerField(read_only=True)
     my_role = serializers.SerializerMethodField(read_only=True)
     teacher_details = serializers.SerializerMethodField(read_only=True)
+    # Where the class meets. `branch` is writable so an administrator can assign one from the
+    # ops console; the two read-only names ride along so a client can label a classroom
+    # without a second request, and because the region is only ever reachable through the
+    # branch.
+    branch_name = serializers.CharField(source="branch.name", read_only=True, default=None)
+    region_name = serializers.CharField(source="branch.region.name", read_only=True, default=None)
 
     class Meta:
         model = Classroom
@@ -104,6 +110,9 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "lesson_hours",
             "start_date",
             "room_number",
+            "branch",
+            "branch_name",
+            "region_name",
             "telegram_chat_id",
             "max_students",
             "teacher",
