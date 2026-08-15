@@ -12,6 +12,7 @@ import {
   KeyRound,
   ClipboardList,
   ShoppingBag,
+  Building2,
   CalendarClock,
   NotebookText,
   Timer,
@@ -72,6 +73,15 @@ const OPS_NAV = [
     icon: ClipboardList,
     exact: false,
     superAdminOnly: true,
+  },
+  {
+    // Regions, branches, and which branch each classroom meets at. Without this the branch
+    // leaderboard has nothing to group by — a student's branch is derived from their
+    // classroom, so an unassigned classroom puts its whole roster on no branch board.
+    href: "/ops/branches",
+    label: "Branches",
+    icon: Building2,
+    exact: false,
   },
   {
     // Stock, prices and the collection queue. Not super_admin-only: handing a prize over is

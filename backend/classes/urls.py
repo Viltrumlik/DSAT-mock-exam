@@ -54,6 +54,13 @@ from .views_lessons import (
     ClassroomLessonsView,
 )
 from .views_results import ClassroomMidtermResultsView, ClassroomUnifiedResultsView
+from .views_org import (
+    BranchDetailView,
+    BranchListCreateView,
+    ClassroomBranchView,
+    RegionDetailView,
+    RegionListCreateView,
+)
 from .views_pastpaper_certificates import (
     AttemptErrorReportView,
     PastpaperCertificateDetailView,
@@ -143,6 +150,7 @@ urlpatterns = [
     # 404 a typo instead of saying which actions exist.
     path("support/hours/<str:action>/", SupportHourView.as_view(), name="support-hour-action"),
     path("support/diary/", SupportDiaryView.as_view(), name="support-diary"),
+    path("<int:classroom_pk>/branch/", ClassroomBranchView.as_view(), name="class-branch"),
     path("<int:classroom_pk>/support-teachers/", SupportTeacherAssignView.as_view(), name="class-support-teachers"),
     path("<int:classroom_pk>/support-teachers/<int:user_id>/", SupportTeacherAssignView.as_view(), name="class-support-teacher-detail"),
     path("<int:classroom_pk>/governance-delete/", ClassroomGovernanceDeleteView.as_view(), name="class-governance-delete"),
@@ -154,6 +162,11 @@ urlpatterns = [
     path("certificates/midterm/<str:code>/download/", MidtermCertificateDownloadView.as_view(), name="midterm-certificate-download"),
     path("certificates/midterm/<str:code>/", MidtermCertificateDetailView.as_view(), name="midterm-certificate-detail"),
     # Pastpaper certificates. `download/` above the bare code route, the house rule.
+    # Regions and branches. Static "org/" segments sit above anything taking an <int:...>.
+    path("org/regions/", RegionListCreateView.as_view(), name="org-regions"),
+    path("org/regions/<int:region_id>/", RegionDetailView.as_view(), name="org-region"),
+    path("org/branches/", BranchListCreateView.as_view(), name="org-branches"),
+    path("org/branches/<int:branch_id>/", BranchDetailView.as_view(), name="org-branch"),
     path("certificates/pastpaper/<str:code>/download/", PastpaperCertificateDownloadView.as_view(), name="pastpaper-certificate-download"),
     path("certificates/pastpaper/<str:code>/", PastpaperCertificateDetailView.as_view(), name="pastpaper-certificate-detail"),
     path("pastpapers/attempts/<int:attempt_id>/report/pdf/", PastpaperErrorReportPdfView.as_view(), name="pastpaper-error-report-pdf"),
