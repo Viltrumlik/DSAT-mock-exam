@@ -155,6 +155,11 @@ class SubdomainAPIGuardMiddleware:
             # Surveys are authored on the admin console (super_admin only, enforced in the view).
             if path.startswith("/api/surveys/"):
                 return self.get_response(request)
+            # Shop: stock, prices and the fulfilment queue are all administered here. The
+            # storefront itself is on the apex, which needs no entry — but without this the
+            # inventory page 403s on the only console that can reach it.
+            if path.startswith("/api/shop/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.

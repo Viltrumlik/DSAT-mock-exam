@@ -79,12 +79,38 @@ def sync_attendance_session(session, *, actor=None) -> None:
         sync_attendance_record(record, actor=actor)
 
 
+def sync_attendance_strikes(session, *, actor=None) -> None:
+    """Re-derive the streak of everyone on a finalized register.
+
+    Separate from the points hook above because the two answer different questions from the
+    same row. Points are per-record and idempotent on that record; a strike is a property of a
+    student's whole history, so one mark changing means recomputing that student — and a
+    session finalizing means recomputing all of them.
+    """
+    from classes.models_attendance import AttendanceSession
+
+    from . import strikes
+
+    if session.status != AttendanceSession.STATUS_FINALIZED:
+        return
+    for student_id in set(session.records.values_list("student_id", flat=True)):
+        from django.contrib.auth import get_user_model
+
+        student = get_user_model().objects.filter(pk=student_id).first()
+        if student is not None:
+            strikes.recompute(student, actor=actor)
+
+
 @receiver(post_save, sender="classes.AttendanceSession", dispatch_uid="rewards_attendance_session")
 def _on_attendance_session_saved(sender, instance, **kwargs):
     try:
         sync_attendance_session(instance)
     except Exception:
         logger.exception("reward_hook_failed attendance_session=%s", instance.pk)
+    try:
+        sync_attendance_strikes(instance)
+    except Exception:
+        logger.exception("strike_hook_failed attendance_session=%s", instance.pk)
 
 
 @receiver(post_save, sender="classes.AttendanceRecord", dispatch_uid="rewards_attendance_record")
@@ -93,6 +119,12 @@ def _on_attendance_record_saved(sender, instance, **kwargs):
         sync_attendance_record(instance)
     except Exception:
         logger.exception("reward_hook_failed attendance_record=%s", instance.pk)
+    try:
+        from . import strikes
+
+        strikes.sync_from_attendance(instance)
+    except Exception:
+        logger.exception("strike_hook_failed attendance_record=%s", instance.pk)
 
 
 # ── Midterm: 20 for a pass, 5 for passing a retake ────────────────────────────

@@ -201,6 +201,94 @@ class StudentWallet(models.Model):
         return f"{self.student_id}: {self.coins_balance} coins"
 
 
+class StudentStrike(models.Model):
+    """A student's attendance streak — and, separately, what is left of it to spend.
+
+    A strike is earned by turning up: PRESENT or LATE adds one, anything else resets to zero.
+    That is the school's rule verbatim, and it is why this is not a second coin wallet. Coins
+    accumulate forever; a strike is use-it-or-lose-it, and missing one lesson takes the lot.
+
+    **Two numbers, because one cannot answer both questions.**
+
+    ``current_streak`` is the pure count of consecutive lessons attended, re-derived from the
+    register and never touched by spending. It is what the student is shown and what they are
+    proud of.
+
+    ``balance`` is what the shop may take. It starts equal to the streak and falls as they
+    spend, so buying something does not rewrite the number on their profile — a streak that
+    dropped from 12 to 4 because they bought a notebook would be a lie about their attendance.
+    Both reset together when a lesson is missed, which is the use-it-or-lose-it part: strikes
+    are worth spending precisely because they do not keep.
+
+    ``best_streak`` is a high-water mark, kept for the same reason XP is: a student who broke
+    a 30-lesson run should not be left with nothing to show for it.
+    """
+
+    student = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="strike_record"
+    )
+    current_streak = models.PositiveIntegerField(default=0)
+    best_streak = models.PositiveIntegerField(default=0)
+    spent_in_streak = models.PositiveIntegerField(
+        default=0, help_text="Spent since the streak last broke. balance = current_streak - this."
+    )
+    # The register this was last computed against. Advisory — the recompute reads the whole
+    # history — but it makes "why is my strike 3?" answerable without replaying anything.
+    last_counted_date = models.DateField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "reward_student_strikes"
+
+    def __str__(self) -> str:
+        return f"{self.student_id}: {self.current_streak} strike(s)"
+
+    @property
+    def balance(self) -> int:
+        """Spendable strikes. Clamped at zero — see ``strikes.recompute`` for how spending
+        beyond a shrinking streak is settled."""
+        return max(0, int(self.current_streak) - int(self.spent_in_streak))
+
+
+class StrikeTransaction(models.Model):
+    """Append-only: every strike spent, and every reset that wiped some.
+
+    A student who loses nine strikes to one missed lesson will ask what happened, and the
+    streak counter alone cannot tell them — it only ever shows the current number. This is the
+    record that can.
+    """
+
+    KIND_SPEND = "SPEND"
+    KIND_RESET = "RESET"           # a missed lesson wiped the streak
+    KIND_ADMIN_GRANT = "ADMIN_GRANT"
+    KIND_CHOICES = [
+        (KIND_SPEND, "Spent"),
+        (KIND_RESET, "Reset by a missed lesson"),
+        (KIND_ADMIN_GRANT, "Granted by an admin"),
+    ]
+
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="strike_transactions"
+    )
+    kind = models.CharField(max_length=14, choices=KIND_CHOICES, db_index=True)
+    amount = models.IntegerField(help_text="Signed: negative removes strikes.")
+    balance_after = models.IntegerField()
+    reference = models.CharField(max_length=240, blank=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", help_text="Null for an automatic reset.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "reward_strike_transactions"
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["student", "-created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.student_id} {self.kind} {self.amount:+d}"
+
+
 class CoinTransaction(models.Model):
     """Append-only. Every coin that appears or disappears leaves a row.
 

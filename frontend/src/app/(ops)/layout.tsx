@@ -11,6 +11,7 @@ import {
   School,
   KeyRound,
   ClipboardList,
+  ShoppingBag,
   CalendarClock,
   NotebookText,
   Timer,
@@ -71,6 +72,14 @@ const OPS_NAV = [
     icon: ClipboardList,
     exact: false,
     superAdminOnly: true,
+  },
+  {
+    // Stock, prices and the collection queue. Not super_admin-only: handing a prize over is
+    // a desk job, and the API gate is the same one that guards moving a student's coins.
+    href: "/ops/shop",
+    label: "Shop",
+    icon: ShoppingBag,
+    exact: false,
   },
   {
     href: "/ops/access",
