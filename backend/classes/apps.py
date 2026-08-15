@@ -16,6 +16,7 @@ class ClassesConfig(AppConfig):
         # Stream feed + comment cleanup signals (derived layer; core models unchanged).
         import classes.stream_signals  # noqa: F401
         import classes.homework_attempt_signals  # noqa: F401
+        import classes.pastpaper_signals  # noqa: F401
 
         from django.conf import settings
         from django.core.exceptions import ImproperlyConfigured

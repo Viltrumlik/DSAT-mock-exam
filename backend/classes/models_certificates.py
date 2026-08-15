@@ -169,3 +169,97 @@ class MidtermCertificate(models.Model):
             period=self.period_display,
             subject=self.subject_label.title(),
         )
+
+
+class PastpaperCertificate(models.Model):
+    """One student's certificate for one completed pastpaper.
+
+    Separate from ``MidtermCertificate`` rather than a third flavor on it, because almost
+    nothing they hold is the same. A midterm certificate freezes a class rank against a
+    cohort at a moment a teacher chose; a pastpaper is sat whenever the student likes, has no
+    cohort, and is scored on the 200–800 SAT section scale rather than a midterm's 0–100 or
+    0–800. Bolting a `PASTPAPER` flavor onto a model with a `midterm` FK, a `rank`, a
+    `cohort_size` and three uniqueness constraints keyed on midterms would leave every one of
+    them nullable-and-meaningless.
+
+    **Issued automatically, on completion.** Nobody approves a pastpaper — the student sat it,
+    they get their certificate. That is the whole difference in lifecycle, and it is why there
+    is no `issued_by` here: the school issued it, not a person.
+
+    Like its neighbour, this is a frozen snapshot and no PDF is stored. The error report
+    printed alongside it is *not* frozen — it is re-derived from the attempt at download time
+    (see ``pastpaper_report``), because an answer key correction has to reach a student who
+    downloads their certificate afterwards.
+    """
+
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="pastpaper_certificates"
+    )
+    attempt = models.ForeignKey(
+        "exams.TestAttempt", on_delete=models.CASCADE, related_name="certificates"
+    )
+
+    # Frozen at issue.
+    student_name = models.CharField(max_length=200)
+    paper_title = models.CharField(max_length=200)
+    collection_name = models.CharField(max_length=200, blank=True, default="")
+    subject = models.CharField(max_length=32, blank=True)
+    score = models.IntegerField()
+
+    # The report's headline numbers, frozen so the certificate face never disagrees with
+    # itself between two downloads. The detail behind them is re-derived; these are what is
+    # printed in large type.
+    questions_total = models.PositiveIntegerField(default=0)
+    questions_correct = models.PositiveIntegerField(default=0)
+
+    code = models.CharField(max_length=32, unique=True, default=_new_code, db_index=True)
+    issued_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "pastpaper_certificates"
+        ordering = ["-issued_at", "-id"]
+        constraints = [
+            # One certificate per attempt. A student who re-sits the same paper gets a second
+            # attempt and therefore a second certificate, which is correct — they earned it
+            # twice.
+            models.UniqueConstraint(fields=["attempt"], name="uniq_pastpaper_cert_per_attempt"),
+        ]
+        indexes = [models.Index(fields=["student", "-issued_at"])]
+
+    def __str__(self) -> str:
+        return f"Pastpaper cert {self.code} student={self.student_id} score={self.score}"
+
+    #: A pastpaper section is scored on the SAT scale, which starts at 200 rather than 0.
+    SCORE_FLOOR = 200
+    SCORE_CEILING = 800
+
+    @property
+    def number(self) -> str:
+        year = self.issued_at.year if self.issued_at else 0
+        return f"PP-{year}-{(self.pk or 0):04d}"
+
+    @property
+    def subject_label(self) -> str:
+        return "MATHEMATICS" if (self.subject or "").upper().startswith("MATH") else "ENGLISH"
+
+    @property
+    def accuracy(self) -> float:
+        if not self.questions_total:
+            return 0.0
+        return round(100.0 * self.questions_correct / self.questions_total, 1)
+
+    @property
+    def date_display(self) -> str:
+        return self.issued_at.strftime("%B %d, %Y") if self.issued_at else ""
+
+    @property
+    def tier_info(self) -> dict:
+        """Tier wording — the ONE source the PDF, the API and the React page all read.
+
+        Borrows the midterm tier floors so the same performance is never praised differently
+        by the two certificates, with pastpaper-specific sentences: the midterm citations name
+        a midterm, which is simply false here.
+        """
+        from .pastpaper_certificate import tier_info_for
+
+        return tier_info_for(self.score, paper=self.paper_title)

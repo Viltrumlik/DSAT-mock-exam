@@ -23,7 +23,7 @@ import { useMe } from "@/hooks/useMe";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
 import {
   BookOpen, Calculator, Calendar, Globe, Search, Play, PlayCircle, Eye, Clock,
-  AlertTriangle, FileText, RefreshCw,
+  AlertTriangle, FileText, RefreshCw, Award,
 } from "lucide-react";
 
 function fmtMonth(s: string | null | undefined): string {
@@ -263,6 +263,7 @@ export default function PastpapersPage() {
                       busy={starting === section.id}
                       error={startError?.sectionId === section.id ? startError.msg : null}
                       onOpen={() => void handleOpen(section, d)}
+                      onReport={() => { if (d.completedAttemptId) router.push(`/pastpapers/${d.completedAttemptId}/report`); }}
                     />
                   ))}
                 </div>
@@ -296,7 +297,7 @@ function Segmented({ label, value, onChange, options }: { label: string; value: 
   );
 }
 
-function Booklet({ section, d, busy, error, onOpen }: { section: PastpaperSection; d: Derived; busy: boolean; error: string | null; onOpen: () => void }) {
+function Booklet({ section, d, busy, error, onOpen, onReport }: { section: PastpaperSection; d: Derived; busy: boolean; error: string | null; onOpen: () => void; onReport: () => void }) {
   const isUS = section.form_type === "US";
   const rw = isRW(section.subject);
   const regionMain = isUS ? "var(--dz-indigo)" : "#0d9488";
@@ -368,6 +369,15 @@ function Booklet({ section, d, busy, error, onOpen }: { section: PastpaperSectio
               style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-indigo)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
               <Eye size={15} /> Review answers
             </button>
+            {/* Second, quieter button. "Review answers" walks the paper question by question;
+                this is the other question a student has after a score — what to practise —
+                and it is also where the certificate is downloaded. */}
+            {d.completedAttemptId ? (
+              <button type="button" onClick={(e) => { e.stopPropagation(); onReport(); }} className="dz-actionbtn"
+                style={{ width: "100%", marginTop: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 11, borderRadius: 11, border: "1px solid var(--dz-line)", background: "transparent", color: "var(--dz-ink)", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                <Award size={15} /> Report &amp; certificate
+              </button>
+            ) : null}
           </>
         ) : d.status === "progress" ? (
           <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"

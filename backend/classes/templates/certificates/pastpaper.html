@@ -1,0 +1,215 @@
+{% comment %}
+Pastpaper certificate — one A4 landscape sheet.
+
+**Recreated from the midterm certificate**, not invented. That card is the house design and
+a student who sits both should be handed the same object: white field, blue rail down the
+left carrying the shield and a vertical wordmark, the wide letterspaced blue title, the score
+in a filled disc with a navy subject pill under it, "Awarded to" and the name in heavy sans,
+the citation, a chip, and a two-up footer. The faint oversized shield watermark behind the
+content is the same device.
+
+Three things differ, and each is content rather than styling:
+
+  * the rail reads PAST PAPER rather than MIDTERM;
+  * there is no INSTRUCTOR block — a pastpaper is issued by the school on completion, not by
+    a person, so printing a name would invent an author;
+  * the rank chip becomes an accuracy chip, because a pastpaper is sat whenever the student
+    likes and has no cohort to be ranked against.
+
+Written as a Django template with real variables rather than as another ~600 KB design export
+whose data is injected by walking text nodes for "Aziz Karimov". That technique exists only
+because those two files cannot be edited, and it needs a second injection map in the React
+viewer kept in step with the backend one. This needs neither.
+
+The error report is NOT on this sheet. The midterm keeps them as two documents — a certificate
+and a separate portrait report — and this follows, so the report can be drawn by the midterm's
+own renderer and the two sheets stay one family. See classes/pastpaper_certificate_pdf.py.
+
+Fonts are a system sans stack rather than an embedded webfont: the bundled templates ship a
+webfont that Chromium embeds as a Type-3 PDF font, whose advance widths the Linux font engine
+rounds into jammed-together words (see the --font-render-hinting note in
+certificate_html_pdf.py). A system stack cannot hit that.
+{% endcomment %}
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { size: 297mm 210mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 297mm; height: 210mm;
+    font-family: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+    background: #ffffff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .sheet { width: 297mm; height: 210mm; position: relative; overflow: hidden; display: flex; }
+
+  /* ── Left rail ─────────────────────────────────────────────────────────
+     The signature of the house certificate: a full-height blue gradient column
+     carrying the shield and a rotated wordmark. */
+  .rail {
+    width: 52mm; flex-shrink: 0;
+    background: linear-gradient(160deg, #1e5bc6 0%, #2f6fd6 55%, #1c53b4 100%);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 14mm 0 16mm;
+    position: relative;
+  }
+  .rail img { width: 22mm; height: auto; }
+  .rail .wordmark {
+    margin-top: auto;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-size: 4.4mm; font-weight: 800;
+    letter-spacing: 0.42em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.94);
+    white-space: nowrap;
+  }
+
+  /* ── Body ──────────────────────────────────────────────────────────────── */
+  /* A column, so the middle block can take the slack between the title and the footer.
+     Laid out from the top it ended around 48% of the sheet with a third of the card empty
+     under it, which reads as a rendering fault rather than as space. */
+  .body {
+    flex: 1; position: relative; padding: 16mm 18mm 34mm;
+    display: flex; flex-direction: column;
+  }
+
+  /* The oversized, very faint shield behind the content — the midterm card's device. */
+  /* `shield_navy`, not `shield_white`: the white asset is invisible on a white card, which
+     is exactly what it looked like the first time this rendered. */
+  .watermark {
+    position: absolute; right: 4mm; top: 30mm;
+    width: 135mm; opacity: 0.045; pointer-events: none;
+  }
+
+  .title {
+    text-align: center;
+    font-size: 8.2mm; font-weight: 700;
+    letter-spacing: 0.3em; text-transform: uppercase;
+    color: #2a68c0;
+    position: relative; z-index: 1;
+  }
+
+  .middle {
+    margin: auto 0;              /* centred in the space the title and footer leave */
+    display: flex; align-items: center; gap: 14mm;
+    position: relative; z-index: 1;
+  }
+
+  /* Score disc */
+  .disc-wrap { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+  .disc {
+    width: 54mm; height: 54mm; border-radius: 50%;
+    background: linear-gradient(150deg, #3a7ade 0%, #2059bd 100%);
+    box-shadow: 0 0 0 4mm rgba(47, 111, 214, 0.10);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #ffffff;
+  }
+  .disc .n { font-size: 17mm; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  .disc .of {
+    margin-top: 1.5mm; font-size: 3.1mm; font-weight: 600;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.82);
+  }
+  .subject-pill {
+    margin-top: -3mm; position: relative; z-index: 2;
+    padding: 2mm 6mm; border-radius: 20mm;
+    background: #0f1f3d; color: #ffffff;
+    font-size: 3.3mm; font-weight: 800;
+    letter-spacing: 0.16em; text-transform: uppercase;
+  }
+
+  /* Right column */
+  .who { flex: 1; min-width: 0; }
+  .awarded { font-size: 4.6mm; font-weight: 500; color: #8b9bb4; }
+  .name {
+    margin-top: 1mm;
+    font-size: 14mm; font-weight: 800; line-height: 1.05;
+    color: #101a2c; letter-spacing: -0.015em;
+  }
+  .citation {
+    margin-top: 4mm; max-width: 150mm;
+    font-size: 4.5mm; line-height: 1.5; color: #3f4d63;
+  }
+  .chip {
+    margin-top: 6mm; display: inline-flex; align-items: center; gap: 3mm;
+    padding: 3mm 6mm; border-radius: 3mm;
+    background: #f2f6fc; border: 0.3mm solid #e0e9f6;
+  }
+  .chip .star { font-size: 5mm; color: #f0a92b; line-height: 1; }
+  .chip .big { font-size: 4.6mm; font-weight: 800; color: #101a2c; }
+  .chip .small {
+    margin-top: 0.6mm; font-size: 2.9mm; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase; color: #8b9bb4;
+  }
+
+  /* Footer */
+  .foot {
+    position: absolute; left: 18mm; right: 18mm; bottom: 14mm;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    z-index: 1;
+  }
+  .foot .big { font-size: 5.4mm; font-weight: 800; color: #101a2c; }
+  .foot .small {
+    margin-top: 1mm; font-size: 3mm; font-weight: 600;
+    letter-spacing: 0.16em; text-transform: uppercase; color: #9aa8bd;
+  }
+  .foot .right { text-align: right; }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="rail">
+    {% if shield_white %}<img src="{{ shield_white }}" alt="">{% endif %}
+    <div class="wordmark">MasterSAT Past Paper</div>
+  </div>
+
+  <div class="body">
+    {% if watermark %}<img class="watermark" src="{{ watermark }}" alt="">{% endif %}
+
+    <div class="title">{{ tier.headline }}</div>
+
+    <div class="middle">
+      <div class="disc-wrap">
+        <div class="disc">
+          <div class="n">{{ cert.score }}</div>
+          <div class="of">out of 800</div>
+        </div>
+        <div class="subject-pill">{{ cert.subject_label }}</div>
+      </div>
+
+      <div class="who">
+        <div class="awarded">Awarded to</div>
+        <div class="name">{{ cert.student_name }}</div>
+        <div class="citation">{{ tier.citation }}.</div>
+        {% if cert.questions_total %}
+        <div class="chip">
+          <span class="star">★</span>
+          <span>
+            <span class="big">{{ cert.questions_correct }} of {{ cert.questions_total }} correct</span>
+            <div class="small">{{ cert.accuracy }}% accuracy · {{ tier.tier_label }}</div>
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="foot">
+      <div>
+        <div class="big">{{ cert.paper_title }}</div>
+        <div class="small">Past Paper</div>
+      </div>
+      <div class="right">
+        <div class="big">{{ cert.date_display }}</div>
+        <div class="small">Date issued · No. {{ cert.number }}</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
