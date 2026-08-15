@@ -99,10 +99,16 @@ function applyInjection(doc: Document, d: ReturnType<typeof injectData>): boolea
     "Mathematics": d.subjectFull,
     "Aziz Karimov": d.name,
     // Replaced WHOLESALE by the score-tier sentence — a weak result must not be praised
-    // "for outstanding performance". The trailing space belongs to the template's node.
-    "for outstanding performance on the MasterSAT June 2026 ": d.citation + " ",
+    // "for outstanding performance". NO trailing space: that space existed to separate this
+    // node from the "Math" node after it, and that node is now emptied (see below), so
+    // keeping it would print "... midterm ." with a gap before the full stop.
+    "for outstanding performance on the MasterSAT June 2026 ": d.citation,
     "CERTIFICATE OF ACHIEVEMENT": d.headline,
-    "Math": d.subjectShort,
+    // Kept identical to the backend `_INJECT` map — see certificate_html_pdf.py. The
+    // template's sentence is three nodes and `citation` is now the whole of it, so the
+    // trailing subject and " Midterm." repeated it. They collapse to the full stop.
+    "Math": "",
+    " Midterm.": ".",
     "Class Rank #3": "Class Rank #" + d.rank,
     "of 24 students": "of " + d.cohort + " students",
     "Dr. Sarah Chen": d.instructor,
