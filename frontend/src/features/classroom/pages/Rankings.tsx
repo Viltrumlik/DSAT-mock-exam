@@ -167,7 +167,9 @@ function Podium({ rows, scoreOf }: { rows: RankingRow[]; scoreOf: (r: RankingRow
             <div className="mt-2.5 max-w-full truncate text-[15px] font-extrabold text-foreground">
               {r.name}{r.is_me ? <span className="ml-1 text-xs text-primary">You</span> : null}
             </div>
-            <div className="mt-0.5 text-[13px] font-bold text-muted-foreground">{score != null ? `${fmt(score)} pts` : "—"}</div>
+            {/* XP, not "pts". The board moved off points when the school asked for it — points
+                still exist and still buy coins, but they are not what this ranks. */}
+            <div className="mt-0.5 text-[13px] font-bold text-muted-foreground">{score != null ? `${fmt(score)} XP` : "—"}</div>
           </div>
         );
       })}
