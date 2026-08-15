@@ -114,7 +114,9 @@ export function ClassroomShell({
           <div className="flex items-center divide-x divide-border">
             <Stat value={my ? `#${my.rank}` : "—"} label="Rank" tone="primary" />
             <Stat value={studentCount ?? "—"} label="Students" />
-            <Stat value={fmtPts(my?.score)} label="Your pts" tone="accent" />
+            {/* The class board runs on XP now, not points. Points still exist and still buy
+                coins — they live on the student's own Points page. */}
+            <Stat value={fmtPts(my?.score)} label="Your XP" tone="accent" />
           </div>
         ) : (
           <div className="flex items-center gap-4">

@@ -13,6 +13,7 @@ from exams.models import Module, PracticeTest, Question, TestAttempt
 
 from classes import analytics
 from classes.models import Assignment, Classroom, ClassroomMembership, Submission, SubmissionReview
+from classes.models_ranking import RankingSnapshot
 from classes.ranking import service
 
 User = get_user_model()
@@ -44,7 +45,21 @@ class AnalyticsFixture(TestCase):
         for u, sc in ((self.s1, 700), (self.s2, 500)):
             TestAttempt.objects.create(student=u, practice_test=self.section, score=sc,
                                        is_completed=True, current_state="COMPLETED", completed_at=now)
-        service.recompute_classroom(self.classroom, kinds=("SAT",), period_key="p1")
+
+        # The SAT board is written by hand here because nothing computes one any more: the
+        # school removed it from the classroom, and `recompute_classroom` no longer has a SAT
+        # branch. The analytics that read `kind="SAT"` still work — they read snapshots, and
+        # the snapshots a school already has do not disappear — so this fixture is now what
+        # production looks like: historical SAT rows nothing refreshes.
+        #
+        # Which is also the warning. `avg_sat_score`, `best_sat_score`, `latest_sat_score` and
+        # `sat_score_trend` will read null for every classroom created from here on.
+        for rank, (u, sc) in enumerate(((self.s1, 700), (self.s2, 500)), start=1):
+            RankingSnapshot.objects.create(
+                classroom=self.classroom, kind=RankingSnapshot.KIND_SAT, period_key="p1",
+                student=u, rank=rank, score=sc, computed_at=now,
+            )
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
 
 
 class ClassAnalyticsTests(AnalyticsFixture):

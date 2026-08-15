@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Trophy, GraduationCap, Crown, EyeOff, RefreshCw, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar as UiAvatar } from "@/components/ui/Avatar";
@@ -8,22 +7,19 @@ import { Button, EmptyState, LoadingState, ErrorState } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
 import { useRankings, useRecomputeRankings } from "../rankingsHooks";
-import type { RankingKind, RankingRow } from "../rankingsApi";
+import type { RankingRow } from "../rankingsApi";
 
-const KIND_META: Record<RankingKind, { title: string; icon: LucideIcon; desc: string }> = {
-  // The currency changed at the rewards cutover: this is the reward ledger now, not a sum of
-  // assessment scores. Naming the ways to earn is the point — a student who can see what
-  // moves the number can decide to move it.
-  ACADEMIC: { title: "Academic", icon: GraduationCap, desc: "Points earned in this class — attendance, homework and support sessions." },
-  SAT: { title: "SAT", icon: Trophy, desc: "Each student's most recent past paper, out of the ones this class was given." },
+// One board. The SAT leaderboard was removed from the classroom — it ranked students on a
+// single past-paper result, which told them who had sat one recently rather than who was
+// working. `RankingKind` still carries "SAT" so historical data stays readable.
+//
+// The currency is XP: what a student has earned by learning in this class. Naming the ways to
+// earn is the point — a student who can see what moves the number can decide to move it.
+const ACADEMIC: { title: string; icon: LucideIcon; desc: string } = {
+  title: "Academic",
+  icon: GraduationCap,
+  desc: "XP earned in this class — attendance, homework and support sessions.",
 };
-
-// Foundation and junior classes sit past papers to build stamina, not to be placed against a
-// college-entrance scale, so they get no SAT board. An untagged class is excluded too: the
-// past-paper picker already filters by level, so it has nothing assigned and its board would
-// be empty anyway. The server enforces the same rule — this only keeps the tab off screen.
-const SAT_LEVELS = ["middle", "senior"];
-const ranksOnSat = (level?: string) => SAT_LEVELS.includes((level ?? "").trim().toLowerCase());
 
 /** Photo when there is one, coloured initials when there is not — the shared Avatar
  *  handles both, including degrading a dead media URL back to initials. The bg/color/ring
@@ -57,29 +53,18 @@ const AV: [string, string][] = [
 ];
 
 export function Rankings({ classroom }: { classroom: ClassroomWithRole }) {
-  const satAllowed = ranksOnSat(classroom.level);
-  // Academic opens the board, for every class. It is the only one every class has — a
-  // foundation or junior class has no SAT tab at all — and it is the board a student can
-  // actually move this week, by turning up and handing work in.
-  const [kind, setKind] = useState<RankingKind>("ACADEMIC");
-  return <RankingBoard key={kind} classroom={classroom} kind={kind} setKind={setKind} satAllowed={satAllowed} />;
-}
-
-function RankingBoard({ classroom, kind, setKind, satAllowed }: {
-  classroom: ClassroomWithRole; kind: RankingKind; setKind: (k: RankingKind) => void; satAllowed: boolean;
-}) {
   const classId = Number(classroom.id);
   const caps = capabilitiesFor(classroom.my_role);
-  const { data, isLoading, isError, refetch } = useRankings(classId, kind);
+  const { data, isLoading, isError, refetch } = useRankings(classId, "ACADEMIC");
   const recompute = useRecomputeRankings(classId);
-  const kinds: RankingKind[] = satAllowed ? ["ACADEMIC", "SAT"] : ["ACADEMIC"];
 
   const hideScores = data?.config.hide_score_values;
   const scoreOf = (row: RankingRow) => (row.is_me ? row.score : hideScores && !caps.isStaff ? null : row.score);
 
   return (
     <div className="space-y-5">
-      {/* Header: title + Academic/SAT segmented */}
+      {/* Header. The Academic/SAT segmented control went with the SAT board — one board
+          needs no switch. */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Trophy className="h-5 w-5 text-primary" />
@@ -92,20 +77,9 @@ function RankingBoard({ classroom, kind, setKind, satAllowed }: {
               Recompute
             </Button>
           ) : null}
-          {kinds.length > 1 ? (
-            <div className="flex gap-1 rounded-xl bg-surface-2 p-1">
-              {kinds.map((k) => (
-                <button key={k} type="button" onClick={() => setKind(k)}
-                  className={cn("rounded-lg px-3.5 py-1.5 text-sm font-bold transition-colors",
-                    kind === k ? "bg-card text-foreground shadow-card" : "text-muted-foreground hover:text-foreground")}>
-                  {KIND_META[k].title}
-                </button>
-              ))}
-            </div>
-          ) : null}
         </div>
       </div>
-      <p className="-mt-3 text-[13px] font-medium text-muted-foreground">{KIND_META[kind].desc}</p>
+      <p className="-mt-3 text-[13px] font-medium text-muted-foreground">{ACADEMIC.desc}</p>
 
       {isLoading ? (
         <LoadingState label="Loading rankings…" />
