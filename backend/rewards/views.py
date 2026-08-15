@@ -1,8 +1,12 @@
-"""Read-only reward surfaces.
+"""Reward surfaces.
 
-Deliberately no write endpoints yet. Points are earned by *doing the thing* — attending,
-sitting a midterm, finishing homework — and every write goes through a hook. An HTTP endpoint
-that granted points would be a second, unaudited way in.
+Points are earned by *doing the thing* — attending, sitting a midterm, finishing homework —
+and every one of those writes goes through a hook. There is deliberately no endpoint that
+grants points or XP: it would be a second, unaudited way in.
+
+The one write here is conversion, and it is a write precisely because it is not an earning.
+Turning points into coins is a choice the student makes about something they have already
+earned, so it needs a button, and a button needs somewhere to POST.
 
 Manual adjustments and season control land with the ops console; they are staff operations
 with their own authorization, not part of this surface.
@@ -54,8 +58,10 @@ class MyRewardsView(APIView):
         return Response({
             "points": balance(request.user, season=season),
             "coins": wallet["coins"],
+            "xp": wallet["xp"],
             "points_per_coin": wallet["points_per_coin"],
             "points_to_next_coin": wallet["points_to_next_coin"],
+            "convertible_coins": wallet["convertible_coins"],
             "history": PointAwardSerializer(awards, many=True).data,
         })
 
@@ -106,6 +112,37 @@ class MyWalletView(APIView):
         })
 
 
+class ConvertPointsView(APIView):
+    """The student turns their own points into coins.
+
+    Idempotent in the way that matters: pressing it twice in a row mints nothing the second
+    time, because the amount owed is derived from what has already been paid rather than
+    accumulated. So a double-tap, a retry on a flaky connection and a refreshed tab all land
+    on the same balance, and the endpoint needs no idempotency key of its own.
+
+    Only ever acts on the caller's own wallet. Staff move somebody else's coins through
+    ``WalletAdminView``, which is a different operation with a different audit trail.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        minted = coins_service.convert(request.user)
+        state = coins_service.wallet_state(request.user)
+        return Response({
+            "minted": minted,
+            # Not an error. A student with 7 points and a rate of 10 has pressed a button that
+            # legitimately does nothing yet, and telling them how far off they are is more
+            # use than refusing them.
+            "detail": (
+                f"Converted {minted} coin{'s' if minted != 1 else ''}."
+                if minted
+                else f"Not enough points yet — {state['points_to_next_coin']} more for a coin."
+            ),
+            **state,
+        })
+
+
 class WalletAdminView(APIView):
     """Staff: spend a student's coins on their behalf, or adjust the balance by hand.
 
@@ -113,6 +150,13 @@ class WalletAdminView(APIView):
     prize in person — so the honest model is "an admin records that coins were exchanged",
     not a shop the student clicks through. When a catalogue exists it can call the same
     `spend()`; nothing here has to change.
+
+    ``action=convert`` exists because conversion became manual. Without it a student who
+    never pressed Convert cannot be handed a prize at the desk at all: the admin sees points
+    they cannot reach, `spend` refuses, and there is no way forward that does not involve
+    finding the student and asking them to open the app. It is a separate action rather than
+    something `spend` does quietly, so that converting somebody else's points is always a
+    thing a member of staff chose and the ledger recorded.
     """
 
     permission_classes = [IsAuthenticated]
@@ -139,6 +183,15 @@ class WalletAdminView(APIView):
         if not _is_reward_staff(request.user):
             return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
         student = get_object_or_404(get_user_model(), pk=student_id)
+
+        if str(request.data.get("action") or "").lower() == "convert":
+            minted = coins_service.convert(student)
+            return Response({
+                "detail": f"Converted {minted} coin{'s' if minted != 1 else ''}.",
+                "minted": minted,
+                **coins_service.wallet_state(student),
+            })
+
         reference = (request.data.get("reference") or "").strip()
         if not reference:
             return Response(

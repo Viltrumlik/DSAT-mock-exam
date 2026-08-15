@@ -7,13 +7,15 @@ import {
   FileText,
   LifeBuoy,
   MessageSquare,
+  ArrowRightLeft,
+  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { HeroPage, PageHero, Skeleton } from "@/components/ui";
+import { Button, HeroPage, PageHero, Skeleton } from "@/components/ui";
 // The house devices, so the wallet reads as part of the same product as the classroom.
 import { Card, CardHeader, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { RewardCoin } from "@/components/RewardCoin";
-import { useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
+import { useConvertPoints, useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
 import type { RewardEvent } from "./rewardsApi";
 
 /** One icon per family of earning, so the history reads at a glance. */
@@ -72,6 +74,7 @@ export function RewardsPage() {
   const rewards = useMyRewards();
   const rules = useRewardRules();
   const wallet = useMyWallet();
+  const convert = useConvertPoints();
 
   const points = rewards.data?.points ?? 0;
   const perCoin = rewards.data?.points_per_coin ?? 10;
@@ -79,7 +82,9 @@ export function RewardsPage() {
   // showing a student coins they have already spent — points are a score, coins are a
   // balance, and once coins are spendable the two stop agreeing.
   const coins = rewards.data?.coins ?? 0;
+  const xp = rewards.data?.xp ?? 0;
   const toNextCoin = rewards.data?.points_to_next_coin ?? perCoin;
+  const convertible = rewards.data?.convertible_coins ?? 0;
 
   if (rewards.isError) {
     return (
@@ -106,21 +111,67 @@ export function RewardsPage() {
               ))}
             </div>
           ) : (
-            <div className="mt-6 flex flex-wrap gap-3">
-              <WalletTile
-                media={<RewardCoin kind="point" size="lg" />}
-                label="Points"
-                value={points}
-              />
-              <WalletTile
-                media={<RewardCoin kind="coin" size="lg" />}
-                label="Coins"
-                value={coins}
-                sub={`${perCoin} points = 1 coin`}
-              />
-              {/* No season named here: that is an internal accounting boundary the school
-                  does not want students reasoning about. */}
-              <WalletTile label="To your next coin" value={toNextCoin} />
+            <div className="mt-6 space-y-3">
+              <div className="flex flex-wrap gap-3">
+                <WalletTile
+                  media={<RewardCoin kind="point" size="lg" />}
+                  label="Points"
+                  value={points}
+                />
+                <WalletTile
+                  media={<RewardCoin kind="coin" size="lg" />}
+                  label="Coins"
+                  value={coins}
+                  sub={`${perCoin} points = 1 coin`}
+                />
+                {/* XP sits beside points rather than replacing them, because they answer
+                    different questions and a student will notice the two disagree. The `sub`
+                    says why before they have to ask. */}
+                <WalletTile
+                  media={
+                    <span className="grid h-10 w-10 place-items-center rounded-full bg-white/20">
+                      <Zap className="h-5 w-5" aria-hidden />
+                    </span>
+                  }
+                  label="XP"
+                  value={xp}
+                  sub="Learning only — never goes down"
+                />
+              </div>
+
+              {/* The conversion strip. Points no longer become coins on their own, so this is
+                  the only thing standing between a student and their coins — it has to be
+                  visible, and it has to say what it will do. When there is nothing to convert
+                  it keeps its place and reports the distance instead of vanishing, so the
+                  student learns where the button lives before they need it. */}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-black/[0.22] px-4 py-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-extrabold uppercase tracking-[0.06em]">
+                    {convertible > 0 ? "Ready to convert" : "To your next coin"}
+                  </p>
+                  <p className="mt-0.5 text-sm font-bold">
+                    {convertible > 0
+                      ? `Your points are worth ${convertible} coin${convertible === 1 ? "" : "s"}.`
+                      : `${toNextCoin} more point${toNextCoin === 1 ? "" : "s"} and you can convert.`}
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => convert.mutate()}
+                  disabled={convertible === 0 || convert.isPending}
+                >
+                  <ArrowRightLeft className="mr-1.5 h-4 w-4" aria-hidden />
+                  {convert.isPending ? "Converting…" : "Convert to coins"}
+                </Button>
+              </div>
+
+              {convert.isError ? (
+                <p className="text-sm font-bold">
+                  That didn&apos;t go through — your points are untouched. Try again.
+                </p>
+              ) : convert.data && convert.data.minted > 0 ? (
+                <p className="text-sm font-bold">{convert.data.detail}</p>
+              ) : null}
             </div>
           )}
         </PageHero>

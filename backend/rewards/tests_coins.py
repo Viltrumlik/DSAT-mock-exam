@@ -128,12 +128,21 @@ class SpendingTests(TestCase):
             coins_service.spend(self.student, 99, reference="Bicycle", actor=self.staff)
         self.assertEqual(coins_service.wallet_for(self.student).coins_balance, 5)
 
-    def test_a_spend_mints_anything_owed_first(self):
-        """A student should be able to spend what they have just earned."""
-        award(self.student, constants.EVENT_MANUAL, idempotency_key="manual:2", points=50)
-        coins_service.spend(self.student, 9, reference="Big prize", actor=self.staff)
+    def test_a_spend_does_not_convert_unspent_points(self):
+        """Conversion is manual, and a spend is not a request to convert.
 
-        self.assertEqual(coins_service.wallet_for(self.student).coins_balance, 1)
+        The inverse of what this used to assert. Minting inside `spend` would put automatic
+        conversion back in through the back door — at the one moment a student is least
+        likely to notice it happening.
+        """
+        award(self.student, constants.EVENT_MANUAL, idempotency_key="manual:2", points=50)
+
+        with self.assertRaises(ValidationError):
+            coins_service.spend(self.student, 9, reference="Big prize", actor=self.staff)
+
+        # The points are still there, still convertible, still theirs.
+        self.assertEqual(coins_service.wallet_for(self.student).coins_balance, 5)
+        self.assertEqual(coins_service.convertible_coins(self.student), 5)
 
     def test_the_ledger_and_the_cached_balance_agree(self):
         coins_service.spend(self.student, 2, reference="Notebook", actor=self.staff)
@@ -168,13 +177,53 @@ class WalletApiTests(TestCase):
         self.teacher = _u("cn_teacher@t.com", role=C.ROLE_TEACHER, subject=C.DOMAIN_MATH)
         award(self.student, constants.EVENT_MANUAL, idempotency_key="manual:1", points=45)
 
-    def test_the_wallet_endpoint_mints_on_read(self):
+    def test_the_wallet_endpoint_does_not_mint_on_read(self):
+        """Reading a wallet is not converting. It reports what could be converted instead."""
         self.client.force_authenticate(self.student)
         body = self.client.get("/api/rewards/wallet/").json()
 
-        self.assertEqual(body["coins"], 4)
+        self.assertEqual(body["coins"], 0)
         self.assertEqual(body["points"], 45)
+        self.assertEqual(body["convertible_coins"], 4)
         self.assertEqual(body["points_to_next_coin"], 5)
+
+    def test_converting_is_what_mints(self):
+        self.client.force_authenticate(self.student)
+        body = self.client.post("/api/rewards/wallet/convert/").json()
+
+        self.assertEqual(body["minted"], 4)
+        self.assertEqual(body["coins"], 4)
+        self.assertEqual(body["points"], 45)      # converting does not consume the score
+        self.assertEqual(body["convertible_coins"], 0)
+
+    def test_converting_twice_mints_once(self):
+        """A double-tap or a retry must not pay twice — the amount owed is derived from what
+        has already been minted, so the endpoint needs no idempotency key."""
+        self.client.force_authenticate(self.student)
+        self.client.post("/api/rewards/wallet/convert/")
+        second = self.client.post("/api/rewards/wallet/convert/").json()
+
+        self.assertEqual(second["minted"], 0)
+        self.assertEqual(second["coins"], 4)
+
+    def test_converting_below_the_rate_is_not_an_error(self):
+        poor = _u("cn_poor@t.com")
+        award(poor, constants.EVENT_MANUAL, idempotency_key="manual:poor", points=7)
+        self.client.force_authenticate(poor)
+
+        response = self.client.post("/api/rewards/wallet/convert/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["minted"], 0)
+        self.assertIn("3 more", response.json()["detail"])
+
+    def test_a_student_cannot_convert_for_somebody_else(self):
+        """There is no route that takes a student id — conversion is always the caller's own
+        wallet, so this is a route-shape guarantee rather than a permission check."""
+        self.client.force_authenticate(self.other)
+        self.client.post("/api/rewards/wallet/convert/")
+
+        self.assertEqual(coins_service.wallet_for(self.student).coins_balance, 0)
 
     def test_the_wallet_never_names_the_season(self):
         """Both wallet endpoints spread `wallet_state()`, so one leak there would surface in
@@ -191,7 +240,7 @@ class WalletApiTests(TestCase):
         """Once coins are spendable the two diverge, and a derived figure would keep showing
         a student coins they have already spent."""
         self.client.force_authenticate(self.student)
-        self.client.get("/api/rewards/wallet/")           # mint
+        self.client.post("/api/rewards/wallet/convert/")
         coins_service.spend(self.student, 4, reference="Prize", actor=self.staff)
 
         body = self.client.get("/api/rewards/me/").json()
@@ -199,6 +248,7 @@ class WalletApiTests(TestCase):
         self.assertEqual(body["coins"], 0)
 
     def test_staff_can_record_a_spend(self):
+        coins_service.convert(self.student)      # 45 points → 4 coins
         self.client.force_authenticate(self.staff)
         response = self.client.post(
             f"/api/rewards/wallet/{self.student.id}/",
@@ -207,6 +257,33 @@ class WalletApiTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["balance_after"], 2)
+
+    def test_staff_cannot_spend_points_the_student_never_converted(self):
+        """The desk cannot reach into unconverted points. `action=convert` is the way out."""
+        self.client.force_authenticate(self.staff)
+        refused = self.client.post(
+            f"/api/rewards/wallet/{self.student.id}/",
+            {"action": "spend", "amount": 2, "reference": "Notebook"}, format="json",
+        )
+        self.assertEqual(refused.status_code, 400)
+
+        self.client.post(
+            f"/api/rewards/wallet/{self.student.id}/", {"action": "convert"}, format="json",
+        )
+        allowed = self.client.post(
+            f"/api/rewards/wallet/{self.student.id}/",
+            {"action": "spend", "amount": 2, "reference": "Notebook"}, format="json",
+        )
+        self.assertEqual(allowed.status_code, 201)
+
+    def test_a_teacher_cannot_convert_a_students_points(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            f"/api/rewards/wallet/{self.student.id}/", {"action": "convert"}, format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(coins_service.wallet_for(self.student).coins_balance, 0)
 
     def test_a_spend_must_say_what_it_was_for(self):
         self.client.force_authenticate(self.staff)
@@ -239,7 +316,7 @@ class WalletApiTests(TestCase):
 
     def test_the_history_shows_what_each_movement_was_for(self):
         self.client.force_authenticate(self.student)
-        self.client.get("/api/rewards/wallet/")
+        self.client.post("/api/rewards/wallet/convert/")
         coins_service.spend(self.student, 1, reference="Sticker pack", actor=self.staff)
 
         body = self.client.get("/api/rewards/wallet/").json()

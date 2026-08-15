@@ -125,23 +125,34 @@ def award(
             if existing is None:
                 created = PointAward.objects.create(
                     student=student, season=season, event=event, points=value,
+                    xp=constants.xp_for(event, value),
                     classroom=classroom, source_type=source_type, source_id=source_id,
                     idempotency_key=idempotency_key, created_by=actor, note=note,
                 )
                 PointAwardAudit.objects.create(
                     award=created, previous_points=None, new_points=value,
+                    previous_xp=None, new_xp=created.xp,
                     reason=reason or "granted", actor=actor,
                 )
                 return created
 
             previous = existing.points
-            changed = previous != value or existing.event != event
+            previous_xp = int(existing.xp)
+            # The high-water mark. `max` rather than assignment is the whole of the school's
+            # "XP can never be taken away" rule, and it holds against every way an earning can
+            # fall: a re-grade dropping HOMEWORK_FULL to HOMEWORK_MID, a PRESENT corrected to
+            # LATE, a manual adjustment revised downwards. Each lowers `points` and leaves
+            # `xp` untouched. It still climbs freely — ABSENT corrected back to PRESENT, or a
+            # re-sit scoring higher, raises both.
+            new_xp = max(previous_xp, constants.xp_for(event, value))
+            changed = previous != value or existing.event != event or new_xp != previous_xp
             if not changed:
                 # The common case on a re-run: a backfill command or a duplicate Celery
                 # delivery. Deliberately writes nothing at all, not even an audit row.
                 return existing
 
             existing.points = value
+            existing.xp = new_xp
             existing.event = event
             # Re-home a correction into the season it actually happened in.
             #
@@ -155,10 +166,11 @@ def award(
             if note:
                 existing.note = note
             existing.save(
-                update_fields=["points", "event", "season", "classroom", "note", "updated_at"]
+                update_fields=["points", "xp", "event", "season", "classroom", "note", "updated_at"]
             )
             PointAwardAudit.objects.create(
                 award=existing, previous_points=previous, new_points=value,
+                previous_xp=previous_xp, new_xp=new_xp,
                 reason=reason or "corrected", actor=actor,
             )
             return existing
@@ -176,6 +188,12 @@ def revoke(idempotency_key: str, *, reason: str, actor=None) -> bool:
     Used when the fact behind an award is corrected away — a PRESENT flipped to ABSENT after
     the session was finalized, a survey response withdrawn. Deleting the row instead would
     make the student's history silently disagree with their balance.
+
+    ``xp`` is deliberately left standing. This is the sharp end of the school's rule: XP is
+    never taken off a student, so the one operation whose whole job is taking an earning back
+    must not touch it. The award ends up with 0 points and its XP intact, which is exactly
+    what the columns are for — and it is why the audit row records the XP that did *not*
+    move, rather than leaving the reader to infer it.
     """
     try:
         with transaction.atomic():
@@ -191,6 +209,7 @@ def revoke(idempotency_key: str, *, reason: str, actor=None) -> bool:
             existing.save(update_fields=["points", "updated_at"])
             PointAwardAudit.objects.create(
                 award=existing, previous_points=previous, new_points=0,
+                previous_xp=existing.xp, new_xp=existing.xp,
                 reason=reason or "revoked", actor=actor,
             )
             return True
@@ -208,6 +227,36 @@ def balance(student, *, season=None) -> int:
         total=Sum("points")
     )["total"]
     return int(total or 0)
+
+
+# ── XP ────────────────────────────────────────────────────────────────────────
+#
+# XP reads are LIFETIME — they cross every season, where points are always scoped to one.
+#
+# That is forced by the rule rather than chosen for convenience. Closing a season is how the
+# school resets the scoreboard, and if XP were season-scoped that reset would be the single
+# largest subtraction on the platform — taking every student's XP to zero, which is the one
+# thing XP is defined never to do. A `classroom` filter is still offered, because the
+# Academic board is per-class; it narrows *where* the XP was earned, never *when*.
+
+def xp_balance(student, *, classroom=None) -> int:
+    """A student's lifetime XP, optionally only what was earned in one classroom."""
+    qs = PointAward.objects.filter(student=student)
+    if classroom is not None:
+        qs = qs.filter(classroom=classroom)
+    return int(qs.aggregate(total=Sum("xp"))["total"] or 0)
+
+
+def xp_balances_for(student_ids, *, classroom=None) -> dict[int, int]:
+    """``{student_id: xp}`` for a cohort, in one query. Missing students are absent, not zero —
+    callers rendering a board must default them, the same as :func:`balances_for`."""
+    if not student_ids:
+        return {}
+    qs = PointAward.objects.filter(student_id__in=student_ids)
+    if classroom is not None:
+        qs = qs.filter(classroom=classroom)
+    rows = qs.values("student_id").annotate(total=Sum("xp"))
+    return {row["student_id"]: int(row["total"] or 0) for row in rows}
 
 
 def balances_for(student_ids, *, season=None, classroom=None) -> dict[int, int]:

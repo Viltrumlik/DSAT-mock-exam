@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { rewardsApi } from "./rewardsApi";
 
 const keys = {
@@ -18,6 +18,23 @@ export function useMyRewards() {
 
 export function useMyWallet() {
   return useQuery({ queryKey: keys.wallet, queryFn: () => rewardsApi.wallet() });
+}
+
+/**
+ * Press Convert. Invalidates both reward keys rather than writing the response into the
+ * cache: the top-bar pill reads `me` and the page reads `wallet`, and a mint moves the
+ * coin figure on both. Leaving one to its 60s stale window would show a student two
+ * different coin balances on the same screen.
+ */
+export function useConvertPoints() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => rewardsApi.convert(),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.me });
+      qc.invalidateQueries({ queryKey: keys.wallet });
+    },
+  });
 }
 
 export function useRewardRules() {
