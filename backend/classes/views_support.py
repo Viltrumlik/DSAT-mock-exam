@@ -151,8 +151,36 @@ class SupportCalendarView(APIView):
         })
 
 
+def _target_teacher(request):
+    """Whose calendar is being edited: ``(user, error_response)``.
+
+    A support teacher may only ever edit their own. An administrator may name someone else
+    with `support_teacher=<id>` — which is the whole of "the admin sets support work hours".
+    Without a resolver, the write paths were hard-wired to `request.user`, so an admin
+    pressing a button on a teacher's grid quietly published the hour onto their own calendar,
+    where no student would ever see it.
+
+    Omitting the field keeps the old behaviour exactly, so nothing a support teacher does
+    changes.
+    """
+    raw = request.data.get("support_teacher")
+    if raw in (None, ""):
+        return request.user, None
+    if not _is_admin(request.user):
+        return None, Response(
+            {"detail": "Only an administrator can set somebody else's hours."},
+            status=http.HTTP_403_FORBIDDEN,
+        )
+    from django.contrib.auth import get_user_model
+
+    target = get_user_model().objects.filter(pk=raw).first()
+    if target is None or not _is_support_teacher(target):
+        return None, Response({"detail": "That user is not a support teacher."}, status=400)
+    return target, None
+
+
 class SupportAvailabilityView(APIView):
-    """Support teacher: publish and withdraw my own slots."""
+    """Support teacher: publish and withdraw slots. An admin may act on a teacher's behalf."""
 
     permission_classes = [IsAuthenticated]
 
@@ -162,8 +190,13 @@ class SupportAvailabilityView(APIView):
     def get(self, request):
         if not self._guard(request):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
+        # An admin opening a teacher's grid needs to read it before they can edit it.
+        whose = request.query_params.get("support_teacher")
+        owner_id = request.user.pk
+        if whose and _is_admin(request.user):
+            owner_id = whose
         slots = (
-            SupportAvailability.objects.filter(support_teacher=request.user)
+            SupportAvailability.objects.filter(support_teacher_id=owner_id)
             .select_related("support_teacher")
             .order_by("starts_at", "id")
         )
@@ -172,6 +205,9 @@ class SupportAvailabilityView(APIView):
     def post(self, request):
         if not self._guard(request):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
+        owner, denied = _target_teacher(request)
+        if denied:
+            return denied
         starts_at = _parse_dt(request.data.get("starts_at"))
         ends_at = _parse_dt(request.data.get("ends_at"))
         if starts_at is None or ends_at is None:
@@ -191,7 +227,7 @@ class SupportAvailabilityView(APIView):
         note = (request.data.get("note") or "").strip()
         with transaction.atomic():
             slot, created = SupportAvailability.objects.get_or_create(
-                support_teacher=request.user,
+                support_teacher=owner,
                 starts_at=starts_at,
                 defaults={"ends_at": ends_at, "capacity": capacity, "note": note},
             )
@@ -490,7 +526,8 @@ class SupportTeacherCalendarView(APIView):
 
 
 class SupportHourView(APIView):
-    """Support teacher: withdraw or re-open one hour of the calendar.
+    """Withdraw or re-open one hour of the calendar — the teacher's own, or an admin on
+    their behalf via `support_teacher`.
 
     Hours are open by default and mostly have no row at all, so "withdraw 15:00" has to be
     able to mint the row that records the withdrawal. That is the whole reason this exists
@@ -507,6 +544,9 @@ class SupportHourView(APIView):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
         if action not in ("close", "open"):
             return Response({"detail": "Unknown action."}, status=400)
+        owner, denied = _target_teacher(request)
+        if denied:
+            return denied
 
         starts_at = _parse_dt(request.data.get("starts_at"))
         if starts_at is None:
@@ -518,7 +558,7 @@ class SupportHourView(APIView):
         ends_at = starts_at + timedelta(minutes=support_service.SLOT_MINUTES)
         with transaction.atomic():
             slot, _created = SupportAvailability.objects.get_or_create(
-                support_teacher=request.user,
+                support_teacher=owner,
                 starts_at=starts_at,
                 defaults={"ends_at": ends_at, "capacity": 1},
             )

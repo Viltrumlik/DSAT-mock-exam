@@ -296,6 +296,41 @@ def user_domain_subject(user) -> Optional[str]:
     return None
 
 
+def user_domain_subjects(user) -> frozenset:
+    """Every domain this member of staff covers — one, two, or none.
+
+    The plural companion to :func:`user_domain_subject`, and the only thing that understands
+    ``subject="both"``. Use it wherever the question is *"may this person work on X?"*; keep
+    using the singular where the question is *"which one subject is this person's?"* — the two
+    are different questions and a support teacher covering both has no answer to the second.
+
+    Returns an empty set for global staff and students, exactly as the singular returns None:
+    a global admin has no domain, they bypass domain checks entirely.
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return frozenset()
+    if is_global_scope_staff(user):
+        return frozenset()
+    if normalized_role(user) not in constants.SUBJECT_SCOPED_STAFF_ROLES:
+        return frozenset()
+    raw = getattr(user, "subject", None)
+    key = raw.strip().lower() if isinstance(raw, str) else ""
+    return frozenset(constants.SUBJECTS_COVERED_BY.get(key, ()))
+
+
+def covers_domain_subject(user, subject: Optional[str]) -> bool:
+    """True when this member of staff may work on ``subject``.
+
+    Replaces the ``user.subject != classroom.domain_subject`` comparison at the call sites
+    that must accept a both-subject support teacher. Written as a function rather than left
+    inline because the comparison it replaces appears in several places, and each one that
+    stayed inline would be a place a "both" teacher is silently refused.
+    """
+    if not subject:
+        return False
+    return str(subject).strip().lower() in user_domain_subjects(user)
+
+
 def platform_subject_for_user(user) -> Optional[str]:
     """
     Platform subject for **teachers** only (``MATH`` / ``READING_WRITING``).

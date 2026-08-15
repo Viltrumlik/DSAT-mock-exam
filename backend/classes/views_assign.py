@@ -27,6 +27,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from access import constants as acc_const
+from access.services import covers_domain_subject
 from access.engine.classroom_service import ClassroomAccessService
 from access.resources import RT_MIDTERM
 from exams.models import MockExam
@@ -335,7 +336,10 @@ class SupportTeacherAssignView(_AdminClassroomGovernanceView):
             return Response(
                 {"detail": "User is not a support teacher."}, status=http.HTTP_400_BAD_REQUEST
             )
-        if getattr(user, "subject", None) != classroom.domain_subject:
+        # `covers_domain_subject`, not a `!=` on the raw field: a support teacher whose
+        # subject is "both" covers this classroom and a direct comparison would refuse them
+        # for every class in the school.
+        if not covers_domain_subject(user, classroom.domain_subject):
             return Response(
                 {
                     "detail": (

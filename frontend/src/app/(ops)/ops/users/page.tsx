@@ -295,6 +295,12 @@ function EditUserModal({ user, onClose, onSaved }: EditModalProps) {
                 <option value="">— select —</option>
                 <option value="math">Mathematics</option>
                 <option value="english">English / Reading & Writing</option>
+                {/* Support teachers only — a classroom has one subject, so a both-subject
+                    class teacher is one no class could be aligned against. The server
+                    refuses it for any other role; this keeps it off screen too. */}
+                {role === "support_teacher" ? (
+                  <option value="both">Both (support teachers only)</option>
+                ) : null}
               </select>
               <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             </div>
