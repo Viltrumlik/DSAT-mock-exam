@@ -20,26 +20,45 @@ import { pastpaperReportApi } from "./pastpaperReportApi";
 export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
   const router = useRouter();
   const report = useAttemptReport(attemptId);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<null | "cert" | "report">(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
-  const download = async () => {
+  const save = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Two downloads, because they are two documents — the same split a midterm has.
+  const downloadCertificate = async () => {
     const code = report.data?.certificate_code;
     if (!code) return;
-    setDownloading(true);
+    setDownloading("cert");
     setDownloadError(null);
     try {
-      const blob = await pastpaperReportApi.downloadCertificate(code);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `MasterSAT-${code}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      save(await pastpaperReportApi.downloadCertificate(code), `MasterSAT-${code}.pdf`);
     } catch {
-      setDownloadError("The PDF couldn't be produced right now. Your result is safe.");
+      setDownloadError("The certificate couldn't be produced right now. Your result is safe.");
     } finally {
-      setDownloading(false);
+      setDownloading(null);
+    }
+  };
+
+  const downloadReport = async () => {
+    setDownloading("report");
+    setDownloadError(null);
+    try {
+      save(
+        await pastpaperReportApi.downloadReport(attemptId),
+        `MasterSAT-error-report-${attemptId}.pdf`,
+      );
+    } catch {
+      setDownloadError("The report couldn't be produced right now. Nothing has been lost.");
+    } finally {
+      setDownloading(null);
     }
   };
 
@@ -109,23 +128,43 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
               {report.data.headline}
             </div>
 
-            {report.data.certificate_code ? (
-              <button
-                type="button"
-                onClick={() => void download()}
-                disabled={downloading}
-                className="dz-actionbtn"
-                style={{
-                  marginTop: 16, display: "inline-flex", alignItems: "center", gap: 7,
-                  padding: "11px 18px", borderRadius: 11, border: "none",
-                  background: "var(--dz-indigo)", color: "#fff",
-                  fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer",
-                }}
-              >
-                {downloading ? <Award size={15} /> : <Download size={15} />}
-                {downloading ? "Preparing…" : "Download certificate"}
-              </button>
-            ) : null}
+            <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {report.data.certificate_code ? (
+                <button
+                  type="button"
+                  onClick={() => void downloadCertificate()}
+                  disabled={downloading !== null}
+                  className="dz-actionbtn"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 7,
+                    padding: "11px 18px", borderRadius: 11, border: "none",
+                    background: "var(--dz-indigo)", color: "#fff",
+                    fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer",
+                  }}
+                >
+                  <Award size={15} />
+                  {downloading === "cert" ? "Preparing…" : "Certificate"}
+                </button>
+              ) : null}
+              {report.data.wrong > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => void downloadReport()}
+                  disabled={downloading !== null}
+                  className="dz-actionbtn"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 7,
+                    padding: "11px 18px", borderRadius: 11,
+                    border: "1px solid var(--dz-line)", background: "transparent",
+                    color: "var(--dz-ink)",
+                    fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer",
+                  }}
+                >
+                  <Download size={15} />
+                  {downloading === "report" ? "Preparing…" : "Error report PDF"}
+                </button>
+              ) : null}
+            </div>
             {downloadError ? (
               <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 700, color: "var(--dz-mute)" }}>
                 {downloadError}
@@ -136,7 +175,7 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
           {/* Totals */}
           <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
             {[
-              { n: report.data.correct, l: "Correct" },
+              { n: report.data.correct_count, l: "Correct" },
               { n: report.data.wrong, l: "To review" },
               { n: `${report.data.accuracy}%`, l: "Accuracy" },
             ].map((stat) => (
@@ -184,9 +223,7 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
                   background: "var(--dz-card)", border: "1px solid var(--dz-line)", marginBottom: 20,
                 }}
               >
-                {report.data.skills
-                  .filter((row) => row.wrong > 0)
-                  .map((row, i) => (
+                {report.data.skills.map((row, i) => (
                     <div
                       key={row.skill}
                       style={{
@@ -213,6 +250,16 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
                     </div>
                   ))}
               </div>
+
+              {/* The same disclosure the PDF carries. Untagged questions are counted but
+                  never folded into a skill row, so without this line the skill totals would
+                  look like they should add up to the mistake count and would not. */}
+              {report.data.unclassified_wrong > 0 ? (
+                <div style={{ margin: "-12px 2px 20px", fontSize: 12, fontWeight: 600, color: "var(--dz-mute)" }}>
+                  {report.data.unclassified_wrong} of your mistakes are on questions that
+                  aren&apos;t tagged with a skill yet, so they aren&apos;t in the list above.
+                </div>
+              ) : null}
 
               {/* Then the questions themselves, with both answers — "wrong" without the right
                   answer is a scolding rather than a lesson. */}

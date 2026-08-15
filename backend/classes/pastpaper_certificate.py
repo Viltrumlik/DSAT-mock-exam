@@ -154,8 +154,8 @@ def issue_for_attempt(attempt, *, force: bool = False):
         "collection_name": (getattr(practice_test, "collection_name", "") or "")[:200],
         "subject": getattr(practice_test, "subject", "") or "",
         "score": int(attempt.score or 0),
-        "questions_total": report["total"],
-        "questions_correct": report["correct"],
+        "questions_total": report["total_count"],
+        "questions_correct": report["correct_count"],
     }
     certificate, _created = PastpaperCertificate.objects.update_or_create(
         attempt=attempt, defaults=values

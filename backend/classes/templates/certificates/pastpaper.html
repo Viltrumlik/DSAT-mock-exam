@@ -1,25 +1,34 @@
 {% comment %}
-Pastpaper certificate — two A4 landscape pages.
+Pastpaper certificate — one A4 landscape sheet.
 
-Written as a real Django template with real variables, deliberately unlike its neighbours.
-`ranked.html` and `norank.html` are ~600 KB design exports carrying fixed placeholder strings
-("Aziz Karimov", "740"), which the renderer replaces by walking text nodes — a technique that
-exists only because nobody could edit those files. Nothing here needs that: the data arrives
-as context, so a wording change is a wording change rather than a hunt for the exact string in
-a minified bundle, and the two injection maps (backend and React) that had to stay in step
-with each other do not exist.
+**Recreated from the midterm certificate**, not invented. That card is the house design and
+a student who sits both should be handed the same object: white field, blue rail down the
+left carrying the shield and a vertical wordmark, the wide letterspaced blue title, the score
+in a filled disc with a navy subject pill under it, "Awarded to" and the name in heavy sans,
+the citation, a chip, and a two-up footer. The faint oversized shield watermark behind the
+content is the same device.
 
-The design is distinct from the midterm certificate on purpose — the school asked for the
-same thing with a different face. Where the midterm cert is a landscape card with a vertical
-rail and a gold seal, this is a centred column on a deep field with the score as the single
-loudest element, and a second page nobody else has: the error report.
+Three things differ, and each is content rather than styling:
 
-Page 2 only renders when there is something to review. A student who got everything right is
-handed a certificate, not a blank page headed "What to work on".
+  * the rail reads PAST PAPER rather than MIDTERM;
+  * there is no INSTRUCTOR block — a pastpaper is issued by the school on completion, not by
+    a person, so printing a name would invent an author;
+  * the rank chip becomes an accuracy chip, because a pastpaper is sat whenever the student
+    likes and has no cohort to be ranked against.
 
-Fonts are system stacks, not embedded webfonts. That costs a little polish and buys a file a
-tenth of the size that cannot render with jammed advance widths on the prod Linux box the way
-an embedded Type-3 font can (see the --font-render-hinting note in certificate_html_pdf.py).
+Written as a Django template with real variables rather than as another ~600 KB design export
+whose data is injected by walking text nodes for "Aziz Karimov". That technique exists only
+because those two files cannot be edited, and it needs a second injection map in the React
+viewer kept in step with the backend one. This needs neither.
+
+The error report is NOT on this sheet. The midterm keeps them as two documents — a certificate
+and a separate portrait report — and this follows, so the report can be drawn by the midterm's
+own renderer and the two sheets stay one family. See classes/pastpaper_certificate_pdf.py.
+
+Fonts are a system sans stack rather than an embedded webfont: the bundled templates ship a
+webfont that Chromium embeds as a Type-3 PDF font, whose advance widths the Linux font engine
+rounds into jammed-together words (see the --font-render-hinting note in
+certificate_html_pdf.py). A system stack cannot hit that.
 {% endcomment %}
 <!doctype html>
 <html>
@@ -30,239 +39,177 @@ an embedded Type-3 font can (see the --font-render-hinting note in certificate_h
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
   html, body {
-    width: 297mm;
-    font-family: "Georgia", "Times New Roman", serif;
+    width: 297mm; height: 210mm;
+    font-family: "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+    background: #ffffff;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  .sheet {
-    width: 297mm; height: 210mm;
-    position: relative; overflow: hidden;
-    page-break-after: always;
-  }
-  .sheet:last-child { page-break-after: auto; }
+  .sheet { width: 297mm; height: 210mm; position: relative; overflow: hidden; display: flex; }
 
-  /* ── Page 1: the certificate ─────────────────────────────────────────── */
-
-  .cert {
-    background: #0f2744;
-    color: #f4f7fb;
-    padding: 20mm 20mm 24mm;
+  /* ── Left rail ─────────────────────────────────────────────────────────
+     The signature of the house certificate: a full-height blue gradient column
+     carrying the shield and a rotated wordmark. */
+  .rail {
+    width: 52mm; flex-shrink: 0;
+    background: linear-gradient(160deg, #1e5bc6 0%, #2f6fd6 55%, #1c53b4 100%);
     display: flex; flex-direction: column; align-items: center;
-    /* Centred, not top-aligned. Laid out from the top the block ended around 60% of the
-       sheet with a third of the page empty under it, which reads as a rendering fault
-       rather than as space. */
-    justify-content: center;
+    padding: 14mm 0 16mm;
+    position: relative;
+  }
+  .rail img { width: 22mm; height: auto; }
+  .rail .wordmark {
+    margin-top: auto;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-size: 4.4mm; font-weight: 800;
+    letter-spacing: 0.42em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.94);
+    white-space: nowrap;
+  }
+
+  /* ── Body ──────────────────────────────────────────────────────────────── */
+  /* A column, so the middle block can take the slack between the title and the footer.
+     Laid out from the top it ended around 48% of the sheet with a third of the card empty
+     under it, which reads as a rendering fault rather than as space. */
+  .body {
+    flex: 1; position: relative; padding: 16mm 18mm 34mm;
+    display: flex; flex-direction: column;
+  }
+
+  /* The oversized, very faint shield behind the content — the midterm card's device. */
+  /* `shield_navy`, not `shield_white`: the white asset is invisible on a white card, which
+     is exactly what it looked like the first time this rendered. */
+  .watermark {
+    position: absolute; right: 4mm; top: 30mm;
+    width: 135mm; opacity: 0.045; pointer-events: none;
+  }
+
+  .title {
     text-align: center;
+    font-size: 8.2mm; font-weight: 700;
+    letter-spacing: 0.3em; text-transform: uppercase;
+    color: #2a68c0;
+    position: relative; z-index: 1;
   }
-  /* A thin inner rule rather than an ornate border: it reads as a document at A4 and does
-     not compete with the score. */
-  .cert::after {
-    content: ""; position: absolute; inset: 8mm;
-    border: 0.6mm solid rgba(215, 178, 96, 0.55);
-  }
-  .cert > * { position: relative; z-index: 1; }
 
-  .brand {
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 3.4mm; font-weight: 700;
-    letter-spacing: 0.5em; text-transform: uppercase;
-    color: #d7b260;
+  .middle {
+    margin: auto 0;              /* centred in the space the title and footer leave */
+    display: flex; align-items: center; gap: 14mm;
+    position: relative; z-index: 1;
   }
-  .headline {
-    margin-top: 7mm;
-    font-size: 8mm; font-weight: 400;
+
+  /* Score disc */
+  .disc-wrap { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+  .disc {
+    width: 54mm; height: 54mm; border-radius: 50%;
+    background: linear-gradient(150deg, #3a7ade 0%, #2059bd 100%);
+    box-shadow: 0 0 0 4mm rgba(47, 111, 214, 0.10);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #ffffff;
+  }
+  .disc .n { font-size: 17mm; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  .disc .of {
+    margin-top: 1.5mm; font-size: 3.1mm; font-weight: 600;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.82);
+  }
+  .subject-pill {
+    margin-top: -3mm; position: relative; z-index: 2;
+    padding: 2mm 6mm; border-radius: 20mm;
+    background: #0f1f3d; color: #ffffff;
+    font-size: 3.3mm; font-weight: 800;
     letter-spacing: 0.16em; text-transform: uppercase;
-    color: #ffffff;
   }
-  .rule { width: 34mm; height: 0.5mm; background: #d7b260; margin: 5mm 0; }
 
-  .awarded {
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 3.2mm; letter-spacing: 0.28em; text-transform: uppercase;
-    color: rgba(244, 247, 251, 0.72);
-  }
+  /* Right column */
+  .who { flex: 1; min-width: 0; }
+  .awarded { font-size: 4.6mm; font-weight: 500; color: #8b9bb4; }
   .name {
-    margin-top: 3mm;
-    font-size: 15mm; font-weight: 400; line-height: 1.1;
-    color: #ffffff;
+    margin-top: 1mm;
+    font-size: 14mm; font-weight: 800; line-height: 1.05;
+    color: #101a2c; letter-spacing: -0.015em;
   }
   .citation {
-    margin-top: 4mm; max-width: 190mm;
-    font-size: 4.6mm; font-style: italic; line-height: 1.5;
-    color: rgba(244, 247, 251, 0.88);
+    margin-top: 4mm; max-width: 150mm;
+    font-size: 4.5mm; line-height: 1.5; color: #3f4d63;
+  }
+  .chip {
+    margin-top: 6mm; display: inline-flex; align-items: center; gap: 3mm;
+    padding: 3mm 6mm; border-radius: 3mm;
+    background: #f2f6fc; border: 0.3mm solid #e0e9f6;
+  }
+  .chip .star { font-size: 5mm; color: #f0a92b; line-height: 1; }
+  .chip .big { font-size: 4.6mm; font-weight: 800; color: #101a2c; }
+  .chip .small {
+    margin-top: 0.6mm; font-size: 2.9mm; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase; color: #8b9bb4;
   }
 
-  /* The score is the loudest thing on the page — it is what the student looks for first,
-     and burying it under the citation would make them hunt. */
-  .score-row {
-    margin-top: 8mm;
-    display: flex; align-items: flex-end; justify-content: center; gap: 10mm;
-  }
-  .score {
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 26mm; font-weight: 800; line-height: 0.9;
-    color: #d7b260; letter-spacing: -0.02em;
-  }
-  .score-meta { text-align: left; padding-bottom: 3mm; }
-  .score-of {
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 4mm; letter-spacing: 0.14em; text-transform: uppercase;
-    color: rgba(244, 247, 251, 0.7);
-  }
-  .score-sub {
-    margin-top: 1.5mm;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 4mm; color: #ffffff;
-  }
-  .tier {
-    display: inline-block; margin-top: 5mm;
-    padding: 1.8mm 6mm;
-    border: 0.4mm solid rgba(215, 178, 96, 0.7); border-radius: 20mm;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 3.4mm; font-weight: 700;
-    letter-spacing: 0.2em; text-transform: uppercase;
-    color: #d7b260;
-  }
-  .note {
-    margin-top: 4mm; max-width: 170mm;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 3.6mm; line-height: 1.5;
-    color: rgba(244, 247, 251, 0.78);
-  }
-
-  /* Pinned inside the gold rule rather than pushed down by `margin-top:auto`, so the
-     block above stays optically centred instead of being stretched to reach it. */
-  .footer {
-    position: absolute; left: 16mm; right: 16mm; bottom: 13mm;
+  /* Footer */
+  .foot {
+    position: absolute; left: 18mm; right: 18mm; bottom: 14mm;
     display: flex; justify-content: space-between; align-items: flex-end;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 3.2mm; letter-spacing: 0.1em; text-transform: uppercase;
-    color: rgba(244, 247, 251, 0.6);
+    z-index: 1;
   }
-
-  /* ── Page 2: the error report ────────────────────────────────────────── */
-
-  .report { background: #ffffff; color: #12243c; padding: 14mm 18mm; }
-  .report h1 {
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 7mm; letter-spacing: 0.04em;
+  .foot .big { font-size: 5.4mm; font-weight: 800; color: #101a2c; }
+  .foot .small {
+    margin-top: 1mm; font-size: 3mm; font-weight: 600;
+    letter-spacing: 0.16em; text-transform: uppercase; color: #9aa8bd;
   }
-  .report .lede {
-    margin-top: 2mm;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 4.4mm; color: #37506f;
-  }
-  .totals {
-    margin-top: 6mm; display: flex; gap: 6mm;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-  }
-  .stat {
-    flex: 1; border: 0.3mm solid #d5dde8; border-radius: 2mm;
-    padding: 4mm 5mm;
-  }
-  .stat-n { font-size: 9mm; font-weight: 800; line-height: 1; }
-  .stat-l {
-    margin-top: 1.5mm; font-size: 3.2mm;
-    letter-spacing: 0.14em; text-transform: uppercase; color: #6b7f9a;
-  }
-
-  .section-title {
-    margin-top: 8mm; margin-bottom: 3mm;
-    font-family: "Helvetica Neue", Arial, sans-serif;
-    font-size: 3.4mm; font-weight: 700;
-    letter-spacing: 0.2em; text-transform: uppercase; color: #6b7f9a;
-  }
-
-  table { width: 100%; border-collapse: collapse; font-family: "Helvetica Neue", Arial, sans-serif; }
-  th {
-    text-align: left; font-size: 3.2mm; letter-spacing: 0.12em;
-    text-transform: uppercase; color: #6b7f9a;
-    padding: 2mm 3mm; border-bottom: 0.3mm solid #d5dde8;
-  }
-  td {
-    font-size: 3.8mm; padding: 2.4mm 3mm;
-    border-bottom: 0.2mm solid #eaeff5;
-  }
-  td.num, th.num { text-align: right; }
-  .qnums { color: #6b7f9a; font-size: 3.2mm; }
+  .foot .right { text-align: right; }
 </style>
 </head>
 <body>
+<div class="sheet">
 
-<div class="sheet cert">
-  <div class="brand">MasterSAT</div>
-  <div class="headline">{{ tier.headline }}</div>
-  <div class="rule"></div>
+  <div class="rail">
+    {% if shield_white %}<img src="{{ shield_white }}" alt="">{% endif %}
+    <div class="wordmark">MasterSAT Past Paper</div>
+  </div>
 
-  <div class="awarded">This certifies that</div>
-  <div class="name">{{ cert.student_name }}</div>
-  <div class="citation">{{ tier.citation }}</div>
+  <div class="body">
+    {% if watermark %}<img class="watermark" src="{{ watermark }}" alt="">{% endif %}
 
-  <div class="score-row">
-    <div class="score">{{ cert.score }}</div>
-    <div class="score-meta">
-      <div class="score-of">out of 800</div>
-      <div class="score-sub">{{ cert.questions_correct }} of {{ cert.questions_total }} correct · {{ cert.accuracy }}%</div>
+    <div class="title">{{ tier.headline }}</div>
+
+    <div class="middle">
+      <div class="disc-wrap">
+        <div class="disc">
+          <div class="n">{{ cert.score }}</div>
+          <div class="of">out of 800</div>
+        </div>
+        <div class="subject-pill">{{ cert.subject_label }}</div>
+      </div>
+
+      <div class="who">
+        <div class="awarded">Awarded to</div>
+        <div class="name">{{ cert.student_name }}</div>
+        <div class="citation">{{ tier.citation }}.</div>
+        {% if cert.questions_total %}
+        <div class="chip">
+          <span class="star">★</span>
+          <span>
+            <span class="big">{{ cert.questions_correct }} of {{ cert.questions_total }} correct</span>
+            <div class="small">{{ cert.accuracy }}% accuracy · {{ tier.tier_label }}</div>
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="foot">
+      <div>
+        <div class="big">{{ cert.paper_title }}</div>
+        <div class="small">Past Paper</div>
+      </div>
+      <div class="right">
+        <div class="big">{{ cert.date_display }}</div>
+        <div class="small">Date issued · No. {{ cert.number }}</div>
+      </div>
     </div>
   </div>
 
-  <div class="tier">{{ tier.tier_label }}</div>
-  <div class="note">{{ tier.note }}</div>
-
-  <div class="footer">
-    <div>{{ cert.subject_label }}</div>
-    <div>{{ cert.date_display }}</div>
-    <div>No. {{ cert.number }}</div>
-  </div>
 </div>
-
-{% if report.wrong %}
-<div class="sheet report">
-  <h1>What to work on</h1>
-  <div class="lede">{{ report.headline }}</div>
-
-  <div class="totals">
-    <div class="stat">
-      <div class="stat-n">{{ report.correct }}</div>
-      <div class="stat-l">Correct</div>
-    </div>
-    <div class="stat">
-      <div class="stat-n">{{ report.wrong }}</div>
-      <div class="stat-l">To review</div>
-    </div>
-    <div class="stat">
-      <div class="stat-n">{{ report.accuracy }}%</div>
-      <div class="stat-l">Accuracy</div>
-    </div>
-  </div>
-
-  <div class="section-title">By skill — weakest first</div>
-  <table>
-    <thead>
-      <tr>
-        <th>Skill</th>
-        <th>Area</th>
-        <th class="num">Wrong</th>
-        <th class="num">Accuracy</th>
-        <th>Questions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in report.skills %}{% if row.wrong %}
-      <tr>
-        <td>{{ row.skill }}</td>
-        <td>{{ row.domain }}</td>
-        <td class="num">{{ row.wrong }} / {{ row.total }}</td>
-        <td class="num">{{ row.accuracy }}%</td>
-        <td class="qnums">{{ row.question_numbers|join:", " }}</td>
-      </tr>
-      {% endif %}{% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
 </body>
 </html>

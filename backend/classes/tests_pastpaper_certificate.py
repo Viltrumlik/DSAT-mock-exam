@@ -1,11 +1,13 @@
-"""Pastpaper certificates and the error report printed with them.
+"""Pastpaper certificates and their error report.
 
-The report's job is to be *actionable*, and two properties carry that: unclassified questions
-are bucketed rather than dropped (so its totals agree with the student's own score), and
-skills are ordered worst-first (so the thing to work on is the first thing read).
+Both are recreations of the midterm pair rather than new designs, so the load-bearing tests
+here are the ones that pin the family: the report payload carries every key the midterm's
+renderer reads, untagged questions are disclosed rather than folded into a skill (that
+renderer's own rule), and the certificate does NOT carry the report — they are two documents,
+which is what lets the second one be drawn by the midterm's code.
 
-The certificate's job is to be issuable without anyone approving it, which means the
-issuance path has to survive being called on every save of an attempt row.
+The rest is behaviour the pastpaper does not share: issuance with nobody approving it, which
+means the path has to survive being called on every save of an attempt row.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from rest_framework.test import APIClient
 from access import constants as C
 from classes.models_certificates import PastpaperCertificate
 from classes.pastpaper_certificate import is_eligible, issue_for_attempt, tier_info_for
-from classes.pastpaper_report import UNCLASSIFIED, build_error_report
+from classes.pastpaper_report import build_error_report
 from exams.models import Module, PracticeTest, Question, TestAttempt
 from questionbank.models import BankDomain, BankSkill
 
@@ -72,8 +74,8 @@ class ErrorReportTests(PastpaperFixture):
 
         report = build_error_report(attempt)
 
-        self.assertEqual(report["total"], 2)
-        self.assertEqual(report["correct"], 1)
+        self.assertEqual(report["total_count"], 2)
+        self.assertEqual(report["correct_count"], 1)
         self.assertEqual(report["wrong"], 1)
         self.assertEqual(report["accuracy"], 50.0)
 
@@ -89,23 +91,42 @@ class ErrorReportTests(PastpaperFixture):
         self.assertEqual(row["skill"], "Linear Functions")
 
     def test_an_unanswered_question_reads_as_a_dash_not_a_blank(self):
-        q1 = self._question(1, "A", skill=self.skill)
+        self._question(1, "A", skill=self.skill)
         attempt = self._attempt({})
 
         row = build_error_report(attempt)["questions"][0]
 
         self.assertEqual(row["your_answer"], "—")
 
-    def test_unclassified_questions_are_bucketed_not_dropped(self):
-        """~2000 legacy questions have no skill. Dropping them would make the report's totals
-        disagree with the student's own score — the fastest way to lose their trust in it."""
+    def test_untagged_questions_are_disclosed_not_folded_into_a_skill(self):
+        """The midterm report's rule, followed here: an untagged question is COUNTED and
+        reported in a footnote, never folded into a skill row where it would inflate that
+        skill's question count and misstate its accuracy."""
         q1 = self._question(1, "A")            # no skill
         attempt = self._attempt({str(q1.id): "B"})
 
         report = build_error_report(attempt)
 
-        self.assertEqual(report["total"], 1)
-        self.assertEqual(report["skills"][0]["skill"], UNCLASSIFIED)
+        self.assertEqual(report["total_count"], 1)
+        self.assertEqual(report["unclassified_total"], 1)
+        self.assertEqual(report["unclassified_wrong"], 1)
+        self.assertEqual(report["skills"], [])      # never a skill row
+
+    def test_the_payload_matches_the_midterm_report(self):
+        """The two sheets are drawn by the same renderer, so every key it reads must be here
+        under the same name. This is the contract that keeps them one document family."""
+        q1 = self._question(1, "A", skill=self.skill)
+        attempt = self._attempt({str(q1.id): "X"})
+
+        report = build_error_report(attempt)
+
+        for key in ("student_name", "date", "score", "correct_count", "total_count",
+                    "skills", "unclassified_wrong"):
+            self.assertIn(key, report, f"the shared renderer reads {key!r}")
+        for key in ("title", "subject_label", "score_ceiling"):
+            self.assertIn(key, report["exam"])
+        for key in ("skill", "domain", "total", "wrong"):
+            self.assertIn(key, report["skills"][0])
 
     def test_skills_are_ordered_worst_first(self):
         """The point of the report is what to work on, so the weakest skill has to be the
@@ -139,6 +160,7 @@ class ErrorReportTests(PastpaperFixture):
 
         self.assertEqual(report["wrong"], 0)
         self.assertEqual(report["questions"], [])
+        self.assertEqual(report["skills"], [])   # a fully-correct skill is not an error
         self.assertIn("every question correct", report["headline"].lower())
 
     def test_question_numbers_are_continuous_across_modules(self):
@@ -361,18 +383,70 @@ class TemplateRenderTests(PastpaperFixture):
         self.assertIn(cert.student_name, html)
         self.assertIn("430", html)
         self.assertIn("SAT March 2024", html)
-        self.assertIn("What to work on", html)          # page 2 present
-        self.assertIn("Linear Functions", html)
+        self.assertIn("CERTIFICATE OF", html)
 
-    def test_a_perfect_paper_gets_no_second_page(self):
-        """A student who got everything right is handed a certificate, not a blank page
-        headed "What to work on"."""
+    def test_the_certificate_carries_the_house_marks(self):
+        """The rail wordmark and the shield are what make it the same object as the midterm
+        certificate rather than a lookalike."""
         from classes.pastpaper_certificate_pdf import render_html
 
         q1 = self._question(1, "A", skill=self.skill)
-        attempt = self._attempt({str(q1.id): "A"}, score=800)
+        attempt = self._attempt({str(q1.id): "A"}, score=700)
         cert = PastpaperCertificate.objects.get(attempt=attempt)
 
         html = render_html(cert)
 
-        self.assertNotIn("What to work on", html)
+        self.assertIn("MasterSAT Past Paper", html)
+        self.assertIn("data:image/png;base64,", html)   # shield inlined, not linked
+
+    def test_the_certificate_does_not_carry_the_report(self):
+        """They are two documents, which is what lets the report be drawn by the midterm's
+        renderer instead of a second design."""
+        from classes.pastpaper_certificate_pdf import render_html
+
+        q1 = self._question(1, "A", skill=self.skill)
+        attempt = self._attempt({str(q1.id): "X"}, score=430)
+        cert = PastpaperCertificate.objects.get(attempt=attempt)
+
+        self.assertNotIn("Mistakes by skill", render_html(cert))
+
+
+class ReportPdfTests(PastpaperFixture):
+    def test_the_report_is_drawn_by_the_midterms_renderer(self):
+        """Not "a report that looks similar" — literally the same drawing code, with a
+        different heading."""
+        from classes.pastpaper_certificate_pdf import render_report_pdf
+
+        q1 = self._question(1, "A", skill=self.skill)
+        q2 = self._question(2, "B", skill=self.skill)
+        attempt = self._attempt({str(q1.id): "A", str(q2.id): "X"}, score=560)
+
+        pdf = render_report_pdf(attempt)
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertGreater(len(pdf), 1000)
+
+    def test_a_student_downloads_their_own_report_pdf(self):
+        from rest_framework.test import APIClient
+
+        q1 = self._question(1, "A", skill=self.skill)
+        attempt = self._attempt({str(q1.id): "X"}, score=430)
+        client = APIClient()
+        client.force_authenticate(self.student)
+
+        response = client.get(f"/api/classes/pastpapers/attempts/{attempt.pk}/report/pdf/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+
+    def test_somebody_elses_report_pdf_is_refused(self):
+        from rest_framework.test import APIClient
+
+        q1 = self._question(1, "A", skill=self.skill)
+        attempt = self._attempt({str(q1.id): "X"}, score=430)
+        client = APIClient()
+        client.force_authenticate(_u("pc_thief@t.com"))
+
+        response = client.get(f"/api/classes/pastpapers/attempts/{attempt.pk}/report/pdf/")
+
+        self.assertEqual(response.status_code, 403)

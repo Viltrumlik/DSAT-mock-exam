@@ -59,6 +59,7 @@ from .views_pastpaper_certificates import (
     PastpaperCertificateDetailView,
     PastpaperCertificateDownloadView,
     PastpaperCertificateReissueView,
+    PastpaperErrorReportPdfView,
 )
 from .views_certificates import (
     IssueMidtermCertificatesView,
@@ -155,6 +156,7 @@ urlpatterns = [
     # Pastpaper certificates. `download/` above the bare code route, the house rule.
     path("certificates/pastpaper/<str:code>/download/", PastpaperCertificateDownloadView.as_view(), name="pastpaper-certificate-download"),
     path("certificates/pastpaper/<str:code>/", PastpaperCertificateDetailView.as_view(), name="pastpaper-certificate-detail"),
+    path("pastpapers/attempts/<int:attempt_id>/report/pdf/", PastpaperErrorReportPdfView.as_view(), name="pastpaper-error-report-pdf"),
     path("pastpapers/attempts/<int:attempt_id>/report/", AttemptErrorReportView.as_view(), name="pastpaper-error-report"),
     path("pastpapers/attempts/<int:attempt_id>/certificate/reissue/", PastpaperCertificateReissueView.as_view(), name="pastpaper-certificate-reissue"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/panel/", MidtermPanelView.as_view(), name="class-midterm-panel"),

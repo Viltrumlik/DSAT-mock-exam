@@ -1,8 +1,12 @@
 """Pastpaper certificate + error report endpoints.
 
-Three surfaces, one ownership rule: a student reads their own, class staff and global staff
-read anyone's. The rule lives in `_readable`, so adding a fourth endpoint cannot accidentally
-ship without it.
+**Two documents, as a midterm has**: the certificate PDF and a separate error report PDF. They
+are downloaded from two endpoints because they are two sheets, which is what lets the report
+be drawn by the midterm's own renderer.
+
+One ownership rule throughout: a student reads their own, class staff and global staff read
+anyone's. It lives in `_readable`, so adding another endpoint cannot accidentally ship
+without it.
 
 There is no *issue* endpoint. A pastpaper certificate is minted when the paper is completed —
 nobody approves it, so nothing needs a button. Only the repair path (`?force=1` for staff)
@@ -24,7 +28,7 @@ from access.services import is_global_scope_staff, normalized_role
 
 from .models_certificates import PastpaperCertificate
 from .pastpaper_certificate import issue_for_attempt
-from .pastpaper_certificate_pdf import render_pdf_safe
+from .pastpaper_certificate_pdf import render_pdf_safe, render_report_pdf
 from .pastpaper_report import build_error_report
 
 
@@ -80,7 +84,7 @@ class PastpaperCertificateDetailView(APIView):
 
 
 class PastpaperCertificateDownloadView(APIView):
-    """The PDF — certificate on page 1, error report on page 2."""
+    """The certificate PDF. The error report is its own sheet — see the PDF view below."""
 
     permission_classes = [IsAuthenticated]
 
@@ -139,6 +143,37 @@ class AttemptErrorReportView(APIView):
             "certificate_code": cert.code if cert else None,
             **build_error_report(attempt),
         })
+
+
+class PastpaperErrorReportPdfView(APIView):
+    """The error report as a PDF — the second document, exactly as a midterm has.
+
+    Drawn by ``midterms.report_pdf`` with a different heading, so this sheet and the midterm's
+    are the same document. reportlab rather than Chromium, so unlike the certificate it cannot
+    fail for want of a browser on the box.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, attempt_id):
+        from exams.models import TestAttempt
+
+        attempt = get_object_or_404(
+            TestAttempt.objects.select_related("practice_test", "student"), pk=attempt_id
+        )
+        if not (attempt.student_id == request.user.pk or _is_staff(request.user)
+                or is_global_scope_staff(request.user)):
+            return Response({"detail": "Not yours."}, status=http.HTTP_403_FORBIDDEN)
+        if not attempt.is_completed:
+            return Response(
+                {"detail": "This paper isn't finished yet."}, status=http.HTTP_400_BAD_REQUEST
+            )
+
+        response = HttpResponse(render_report_pdf(attempt), content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="MasterSAT-error-report-{attempt.pk}.pdf"'
+        )
+        return response
 
 
 class PastpaperCertificateReissueView(APIView):

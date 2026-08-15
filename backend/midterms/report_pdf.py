@@ -337,7 +337,18 @@ BAR_W = 16
 BAR_MAX_GAP = 46
 
 
-def _error_header(c, report, generated_at):
+def _exam(report) -> dict:
+    """The paper this report is about.
+
+    Reads `exam` and falls back to `midterm`. The renderer was written for midterms and its
+    payload key said so; pastpaper reports use the same drawing code — sharing the document
+    family was the point — and a pastpaper carrying a dict called "midterm" would be a lie in
+    the payload to save one line here.
+    """
+    return report.get("exam") or report["midterm"]
+
+
+def _error_header(c, report, generated_at, heading="Midterm Error Report"):
     reg, bold = _fonts()
     y0 = PAGE_H - BAND_H
     c.setFillColor(BLUE)
@@ -353,8 +364,8 @@ def _error_header(c, report, generated_at):
         except Exception:  # pragma: no cover - a missing asset must not break the report
             pass
 
-    m = report["midterm"]
-    _text(c, bold, 16, HexColor("#ffffff"), x, y0 + 50, "Midterm Error Report")
+    m = _exam(report)
+    _text(c, bold, 16, HexColor("#ffffff"), x, y0 + 50, heading)
     _text(c, reg, 9, HexColor("#cfe0f7"), x, y0 + 34,
           _truncate(c, f"{report['student_name']} · {m['title']} · {m['subject_label']}", reg, 9, 300))
     _text(c, reg, 8, HexColor("#cfe0f7"), PAGE_W - MARGIN, y0 + 50, report["date"], align="right")
@@ -367,7 +378,7 @@ def _error_summary(c, report, y0):
     reg, bold = _fonts()
     wrong = report["total_count"] - report["correct_count"]
     cells = [
-        ("Score", f"{report['score']}", f"/ {report['midterm']['score_ceiling']}"),
+        ("Score", f"{report['score']}", f"/ {_exam(report)['score_ceiling']}"),
         ("Correct", f"{report['correct_count']}", f"/ {report['total_count']}"),
         ("Mistakes", str(wrong), ""),
         ("Weak skills", str(len(report["skills"])), ""),
@@ -437,15 +448,21 @@ def _error_chart(c, skills, y_base):
     return y_base - CHART_LABEL_H
 
 
-def render_student_error_report_pdf(report, *, generated_at=None) -> bytes:
-    """PDF bytes for one student's error report (the payload from build_error_report)."""
+def render_student_error_report_pdf(report, *, generated_at=None, heading="Midterm Error Report") -> bytes:
+    """PDF bytes for one student's error report (the payload from build_error_report).
+
+    ``heading`` is the only thing that differs between the midterm and pastpaper sheets. They
+    are deliberately the same document otherwise: a student who sat both should recognise them
+    as one family, which is the same reason this module already shares its palette, fonts and
+    header band with the certificate PDF.
+    """
     reg, bold = _fonts()
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(PAGE_W, PAGE_H))
     c.setFillColor(BG)
     c.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
 
-    _error_header(c, report, generated_at)
+    _error_header(c, report, generated_at, heading=heading)
     y = PAGE_H - BAND_H - 18 - SUMMARY_H
     _error_summary(c, report, y)
 
