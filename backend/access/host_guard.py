@@ -160,6 +160,11 @@ class SubdomainAPIGuardMiddleware:
             # inventory page 403s on the only console that can reach it.
             if path.startswith("/api/shop/"):
                 return self.get_response(request)
+            # Notifications: the bell is in the shell, so it renders on every console. Without
+            # this it 403s on all of them except the apex, and an admin's bell would be
+            # permanently empty rather than obviously broken.
+            if path.startswith("/api/notifications/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.
@@ -248,6 +253,9 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             # Reward points: a teacher needs to see what their students have earned.
             if path.startswith("/api/rewards/"):
+                return self.get_response(request)
+            # Notifications: the bell lives in the shell on the teacher portal too.
+            if path.startswith("/api/notifications/"):
                 return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(

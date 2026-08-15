@@ -52,3 +52,8 @@ redis==6.2.0
 # Inert unless R2_BUCKET is set, so installing these changes nothing on its own.
 django-storages==1.14.6
 boto3==1.43.61
+
+
+# Web Push (optional at runtime — notifications.push.is_configured() returns False without
+# VAPID keys and the platform behaves exactly as it did before, bell included).
+pywebpush>=2.0.0

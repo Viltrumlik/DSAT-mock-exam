@@ -72,6 +72,9 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
         // reading zero on every page would be noise rather than information.
         headerSlot={isAuthenticated && !isReviewer ? <StudentHeaderExtras /> : undefined}
         accountMenu={isAuthenticated && !isReviewer ? <StudentAccountMenuRows /> : undefined}
+        // Gated on being signed in: the summary endpoint 401s for an anonymous visitor, and
+        // a bell nobody can fill is the decoration this was rebuilt to remove.
+        notifications={isAuthenticated}
       >
         <div className={cn(globalInteractionBlockedHard && "pointer-events-none select-none")} aria-busy={globalInteractionBlockedHard || undefined}>
           {children}

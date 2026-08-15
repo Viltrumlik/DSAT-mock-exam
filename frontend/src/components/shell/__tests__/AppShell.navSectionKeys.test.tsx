@@ -8,10 +8,24 @@
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AppShell } from "../AppShell";
 import { reviewNavSection, studentNav, teacherNav } from "../navConfig";
+
+/**
+ * AppShell reads the unread-notification count, so it needs a query client the way every
+ * real mount has one — `QueryProvider` sits in the root layout, above every page. Retries
+ * are off so an unmocked fetch fails once and stays quiet instead of logging into the
+ * console spy this test asserts on.
+ */
+function withQuery(ui: React.ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
 
 let host: HTMLElement;
 let root: Root;
@@ -41,14 +55,16 @@ describe("AppShell nav sections", () => {
 
     await act(async () => {
       root.render(
-        <AppShell
-          brand={{ name: "MasterSAT" }}
-          nav={[reviewNavSection, ...studentNav]}
-          pathname="/"
-          user={{ name: "Test Admin" }}
-        >
-          <div />
-        </AppShell>,
+        withQuery(
+          <AppShell
+            brand={{ name: "MasterSAT" }}
+            nav={[reviewNavSection, ...studentNav]}
+            pathname="/"
+            user={{ name: "Test Admin" }}
+          >
+            <div />
+          </AppShell>,
+        ),
       );
     });
 

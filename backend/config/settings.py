@@ -160,6 +160,7 @@ INSTALLED_APPS = [
     'rewards.apps.RewardsConfig',
     'surveys.apps.SurveysConfig',
     'shop.apps.ShopConfig',
+    'notifications.apps.NotificationsConfig',
     'annotations.apps.AnnotationsConfig',
 ]
 
@@ -820,3 +821,16 @@ LOGGING = {
 
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# ── Web Push (optional) ───────────────────────────────────────────────────────
+#
+# Absent keys are not an error: `notifications.push.is_configured()` returns False, the client
+# never asks the browser for permission, and the in-app bell works exactly as it does with
+# them. That matters because a REFUSED notification permission is permanent per origin — a
+# deployment that asks and then cannot deliver has burned its one chance.
+#
+# Generate a pair with:  python -m py_vapid --gen
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@mastersat.uz")

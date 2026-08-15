@@ -118,6 +118,34 @@ def _emit_grade_realtime(classroom_id: int, student_id: int) -> None:
         event_type="notifications.updated",
         payload={"reason": "graded", "classroom_id": classroom_id},
     )
+    # The hint above tells an open tab to refetch; this writes the thing it refetches. Both,
+    # because the hint is lossy by design and reaped after 24h — a student who was not looking
+    # at the page when their work was marked still has to find out.
+    _notify_graded(classroom_id, student_id)
+
+
+def _notify_graded(classroom_id: int, student_id: int) -> None:
+    from django.contrib.auth import get_user_model
+
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    from .models import Classroom
+
+    student = get_user_model().objects.filter(pk=student_id).first()
+    if student is None:
+        return
+    classroom = Classroom.objects.filter(pk=classroom_id).only("name").first()
+    notify(
+        student,
+        event=note_const.EVENT_HOMEWORK_GRADED,
+        title="Your work has been marked",
+        body=f"in {classroom.name}" if classroom else "",
+        link_url=f"/classes/{classroom_id}" if classroom_id else "/",
+        # Several items in one bundle can each trigger a grade write. To the student that is
+        # one piece of news, not four.
+        dedupe_key=f"graded:{classroom_id}:{student_id}",
+    )
 
 
 def _emit_return_realtime(classroom_id: int, student_id: int) -> None:
@@ -3278,6 +3306,17 @@ class ClassCommentListCreateView(APIView):
                 user_id=c.parent.author_id,
                 event_type="notifications.updated",
                 payload={"reason": "comment_reply", "classroom_id": classroom.pk},
+            )
+            from notifications import constants as note_const
+            from notifications.services import notify
+
+            notify(
+                c.parent.author,
+                event=note_const.EVENT_COMMENT_REPLY,
+                title="Somebody replied to you",
+                body=(c.body or "")[:140],
+                link_url=f"/classes/{classroom.pk}",
+                dedupe_key=f"reply:{c.parent_id}",
             )
         return Response(ClassCommentSerializer(c, context={"request": request}).data, status=status.HTTP_201_CREATED)
 

@@ -50,6 +50,7 @@ export default function TeacherAppShell({ children }: { children: React.ReactNod
         user={isAuthenticated ? { name, avatarUrl: m?.profile_image_url ?? null } : null}
         profileHref="/profile"
         onSignOut={() => authApi.logout(queryClient)}
+        notifications={isAuthenticated}
       >
         {children}
       </AppShell>
