@@ -14,7 +14,7 @@ from django.db import transaction
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -369,30 +369,108 @@ class HomeworkListView(APIView):
 # --------------------------------------------------------------------------- sessions
 
 
+class SessionStartWithBindingSerializer(SessionStartSerializer):
+    """
+    ``set_id`` / ``mode``, plus the launcher's claim about WHICH homework this run is for.
+
+    Both ids are optional and either identifies the same thing: ``assignment_id`` is the
+    group ``GET homework/`` returns, ``homework_id`` the link row inside it. Optional
+    because every client shipped before this field sends neither — a request without them
+    is not an error, and a run bound to nothing is a legitimate row (self-study).
+    """
+
+    assignment_id = serializers.IntegerField(
+        required=False, allow_null=True, min_value=1
+    )
+    homework_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+
+
+def _live_homework_links(user, vocab_set):
+    """
+    Links carrying this set that the requester could have launched from.
+
+    Three filters, each a fact about the requester rather than about the id they sent:
+    the set is THIS set, the classroom is one they still belong to (removal is a soft
+    delete, so ``_member_classroom_ids`` excludes REMOVED), and the assignment is
+    PUBLISHED — a draft is invisible to a student, so it cannot be where they started.
+    """
+    return VocabHomework.objects.filter(
+        vocab_set=vocab_set,
+        classroom_id__in=_member_classroom_ids(user),
+        assignment__status=Assignment.STATUS_PUBLISHED,
+    )
+
+
+def _bind_homework(user, vocab_set, data) -> tuple[VocabHomework | None, Response | None]:
+    """
+    Which homework a study run belongs to.
+
+    Binding matters beyond bookkeeping: the classroom reconcile path refuses to detach a
+    VocabHomework that already has sessions, so this row is what stops a teacher's edit
+    from erasing work a student already did.
+
+    The supplied ids are a CLAIM, never a fact. Each is re-resolved against the
+    requester's own live memberships and against THIS set, so an id belonging to another
+    classroom's homework — or to a homework carrying a different set — binds nothing.
+
+    A supplied id that resolves to nothing is refused rather than quietly falling back to
+    the guess below: the guess is what writes wrong-homework rows, and doing it silently
+    behind a client that asked for something specific is how the bug got here.
+    """
+    assignment_id = data.get("assignment_id")
+    homework_id = data.get("homework_id")
+
+    if assignment_id or homework_id:
+        links = _live_homework_links(user, vocab_set)
+        if assignment_id:
+            links = links.filter(assignment_id=assignment_id)
+        if homework_id:
+            links = links.filter(pk=homework_id)
+        # Send both and they must agree: two contradicting ids narrow to no row, which is
+        # the honest answer to a client that cannot say what it launched from.
+        link = links.order_by("-created_at", "-id").first()
+        if link is None:
+            return None, Response(
+                {"detail": "That homework is not assigned to you for this set."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return link, None
+
+    if vocab_set.is_custom:
+        return None, None
+
+    # Nothing was claimed, so what follows is a GUESS and not a fact. The newest live link
+    # is merely the most likely one: a set assigned to two classrooms, or re-assigned for
+    # revision, has several and only the client knows which one the student opened. This
+    # column is guessed often enough that ``rewards.homework`` deliberately stopped reading
+    # it, so treat it as a hint about provenance and never as an authority.
+    #
+    # Classwork carriers are excluded from the guess. Classwork is deadline-less and paid
+    # only by a teacher's hand, so a link minted for a lesson is never the homework a
+    # student was "doing" — naming it here is a wrong answer where null is an honest
+    # "we do not know". An explicitly claimed classwork id is a different matter and is
+    # honoured above: then it is what the student actually opened.
+    return (
+        _live_homework_links(user, vocab_set)
+        .exclude(assignment__category=Assignment.CATEGORY_CLASSWORK)
+        .order_by("-created_at", "-id")
+        .first()
+    ), None
+
+
 class SessionCreateView(APIView):
     permission_classes = VOCAB_STUDENT_PERMS
 
     def post(self, request):
-        ser = SessionStartSerializer(data=request.data)
+        ser = SessionStartWithBindingSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         vocab_set = _readable_set(request.user, ser.validated_data["set_id"])
         if vocab_set is None:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Bind the run to the homework that assigned it when there is one: the classroom
-        # reconcile path refuses to detach a VocabHomework that already has sessions, so
-        # this is what stops a teacher's edit from erasing work a student already did.
-        homework = None
-        if not vocab_set.is_custom:
-            homework = (
-                VocabHomework.objects.filter(
-                    vocab_set=vocab_set,
-                    classroom_id__in=_member_classroom_ids(request.user),
-                    assignment__status=Assignment.STATUS_PUBLISHED,
-                )
-                .order_by("-created_at", "-id")
-                .first()
-            )
+        homework, denied = _bind_homework(request.user, vocab_set, ser.validated_data)
+        if denied is not None:
+            return denied
 
         session = VocabStudySession.objects.create(
             user=request.user,
@@ -409,7 +487,9 @@ class SessionFinishView(APIView):
 
     The body carries only the answers the client has not sent yet, so the server APPENDS:
     the session's counts accumulate across flushes and ``duration_ms`` — a running clock,
-    not a delta — keeps the largest value reported.
+    not a delta — keeps the largest value reported. ``distinct_words`` accumulates too, but
+    as a UNION: the same word can arrive in two flushes (flashcards re-drill the missed
+    pile), and a word answered twice is still one word of the set covered.
 
     ``partial: true`` is the flush a mode fires when the student navigates away mid-run.
     It records the answers but leaves ``completed_at`` unset, so 20 of 25 flashcards are
@@ -481,7 +561,13 @@ class SessionFinishView(APIView):
                 total=len(graded),
                 duration_ms=duration_ms,
             )
-            update_fields = list(VocabStudySession.BATCH_FIELDS)
+            # Folded into ``locked``, never ``session``: the union has to build on the row
+            # as it is in the database, or a flush that raced another would drop its words.
+            locked.record_distinct_words(entry["word_id"] for entry in graded)
+            update_fields = [
+                *VocabStudySession.BATCH_FIELDS,
+                *VocabStudySession.DISTINCT_FIELDS,
+            ]
             if not is_partial:
                 locked.complete(at=now)
                 update_fields.append("completed_at")

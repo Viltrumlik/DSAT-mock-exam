@@ -3,8 +3,8 @@ import api, { getCachedCsrfToken } from "@/lib/api";
 import type {
   CustomSetSummary,
   SessionFinishPayload,
+  SessionStartPayload,
   SessionSummary,
-  StudyMode,
   StudySession,
   VocabHomeworkGroup,
   VocabSectionDetail,
@@ -64,8 +64,24 @@ export const vocabularyApi = {
     return r.data as VocabHomeworkGroup[];
   },
 
-  startSession: async (body: { set_id: number; mode: StudyMode }): Promise<StudySession> => {
-    const r = await api.post(`${BASE}/sessions/`, body);
+  /**
+   * Open a study run. `assignment_id` tells the server WHICH homework this run
+   * belongs to; without it the server guesses the newest live assignment
+   * carrying the set, which is wrong the moment a set is assigned twice.
+   *
+   * A supplied id the server cannot resolve against the student's own live
+   * memberships is a 400, not a silent fallback — that refusal is deliberate on
+   * the server side, so this call only ever carries an id that came from a real
+   * homework launcher.
+   */
+  startSession: async (body: SessionStartPayload): Promise<StudySession> => {
+    // Assembled key by key so self-study sends NO `assignment_id` at all rather
+    // than an explicit null. The server reads both as "unclaimed", but an absent
+    // key is what "the client has nothing to say" means, and it keeps the
+    // self-study request byte-identical to the one every earlier client sent.
+    const payload: Record<string, unknown> = { set_id: body.set_id, mode: body.mode };
+    if (body.assignment_id != null) payload.assignment_id = body.assignment_id;
+    const r = await api.post(`${BASE}/sessions/`, payload);
     return r.data as StudySession;
   },
 

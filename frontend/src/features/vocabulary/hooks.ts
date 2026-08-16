@@ -6,7 +6,7 @@ import { normalizeApiError } from "@/lib/apiError";
 
 import { vocabularyApi } from "./api";
 import { vocabularyKeys } from "./queryKeys";
-import type { SessionResult, StudyMode } from "./types";
+import type { SessionResult, SessionStartPayload } from "./types";
 
 const enabledId = (id: number | undefined | null) => Number.isFinite(id) && Number(id) > 0;
 
@@ -101,7 +101,7 @@ export function useDeleteMySet() {
 
 export function useStartSession() {
   return useMutation({
-    mutationFn: (body: { set_id: number; mode: StudyMode }) => vocabularyApi.startSession(body),
+    mutationFn: (body: SessionStartPayload) => vocabularyApi.startSession(body),
     onError: (e) => {
       throw normalizeApiError(e);
     },

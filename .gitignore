@@ -37,6 +37,9 @@ backend/dev.sqlite3
 # UAT scratch DB (built from model state)
 backend/uat.sqlite3
 
+# `manage.py test --parallel --keepdb` leaves one clone per worker behind.
+backend/default_*.sqlite3
+
 # Local tooling / generated artifacts
 .claude/
 graphify-out/

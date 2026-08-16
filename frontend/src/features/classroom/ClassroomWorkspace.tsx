@@ -4,11 +4,12 @@ import { useState, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LoadingState, ErrorState } from "./ui";
 import { ClassroomShell } from "./shell/ClassroomShell";
-import { visibleTabs, type ClassroomTabId } from "./shell/tabs";
+import { isClassroomTabId, visibleTabs, type ClassroomTabId } from "./shell/tabs";
 import { capabilitiesFor } from "./capabilities";
 import { useClassroom } from "./hooks";
 import { People } from "./pages/People";
 import { Assignments } from "./pages/Assignments";
+import { Classwork } from "./pages/Classwork";
 import { Lessons } from "./pages/Lessons";
 import { Settings } from "./pages/Settings";
 import { Rankings } from "./pages/Rankings";
@@ -18,9 +19,8 @@ import { Midterms } from "./pages/Midterms";
 import { Results } from "./pages/Results";
 import { Attendance } from "./pages/Attendance";
 
-function isTabId(v: string | null): v is ClassroomTabId {
-  return v != null && ["overview", "lessons", "assignments", "materials", "midterms", "results", "stream", "people", "rankings", "grading", "attendance", "analytics", "settings"].includes(v);
-}
+// The `?tab=` guard lives in shell/tabs.ts next to the ids it narrows. It used to be a
+// second hardcoded copy of the list here, which drifted out of step with the union.
 
 export function ClassroomWorkspace({
   classId,
@@ -47,7 +47,7 @@ export function ClassroomWorkspace({
   const searchParams = useSearchParams();
 
   const initial = searchParams.get("tab");
-  const [active, setActive] = useState<ClassroomTabId>(isTabId(initial) ? initial : "overview");
+  const [active, setActive] = useState<ClassroomTabId>(isClassroomTabId(initial) ? initial : "overview");
 
   const onTabChange = useCallback(
     (tab: ClassroomTabId) => {
@@ -72,6 +72,9 @@ export function ClassroomWorkspace({
       {/* Overview now hosts the class rankings. */}
       {current === "overview" && <Rankings classroom={classroom} />}
       {current === "lessons" && caps.isStaff && <Lessons classroom={classroom} />}
+      {/* Every member, students included. Mirrors the tab's own gate — the third of the
+          three places a tab is gated, without which the tab renders an empty shell. */}
+      {current === "classwork" && caps.isMember && <Classwork classroom={classroom} />}
       {/* Staff-only register — students never see attendance. Mirrors the tab's own gate;
           a student who deep-links ?tab=attendance is already bounced to overview above. */}
       {current === "attendance" && caps.isStaff && <Attendance classroom={classroom} />}

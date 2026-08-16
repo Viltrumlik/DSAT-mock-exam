@@ -119,6 +119,11 @@ const studentDetailsSchema = z
 /**
  * Full TestAttempt as returned by `/api/exams/attempts/...` (status, submit, start, resume).
  * Aligns with generated OpenAPI `components["schemas"]["TestAttempt"]`.
+ *
+ * `.passthrough()` like its neighbours, and not decoration: a bare `z.object()` STRIPS keys
+ * it does not know, so a field the serializer starts sending — the reward this attempt paid,
+ * say — would be silently deleted here and read as absent everywhere downstream. Failing to
+ * parse is loud; quietly dropping data is not.
  */
 export const testAttemptSchema = z.object({
   id: z.number(),
@@ -157,7 +162,7 @@ export const testAttemptSchema = z.object({
   engine_phase: enginePhaseSchema,
   scoring_notice: z.string().nullable(),
   is_paused: z.boolean().default(false),
-});
+}).passthrough();
 
 export type TestAttempt = z.infer<typeof testAttemptSchema>;
 

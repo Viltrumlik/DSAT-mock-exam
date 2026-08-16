@@ -328,6 +328,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
     # The requesting student's assessment attempt state, so the launcher shows
     # Start / Resume / Review (and never silently overwrites a finished attempt).
     assessment_progress = serializers.SerializerMethodField(read_only=True)
+    # What a teacher has awarded the requester for this classwork, or null. Classwork is
+    # never scored automatically, so this reward is the ONLY outcome a student can read
+    # off the page — without it a classwork assignment renders as work with no result.
+    classwork_award = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Assignment
@@ -354,6 +358,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "subject",
             "assigned_at",
             "assessment_progress",
+            "classwork_award",
             "module",
             "external_url",
             "external_urls",
@@ -388,6 +393,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "item_count",
             "subject",
             "assigned_at",
+            "classwork_award",
             # Homework has no manual deadline. ``due_at`` is DERIVED server-side as the
             # start of the classroom's next lesson (classes.lesson_schedule.homework_due_at)
             # and is null when no next lesson can be computed. Client input is ignored.
@@ -883,6 +889,48 @@ class AssignmentSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.DateTimeField(allow_null=True, read_only=True))
     def get_assigned_at(self, obj):
         return obj.published_at or obj.created_at
+
+    @extend_schema_field(serializers.DictField(allow_null=True, read_only=True))
+    def get_classwork_award(self, obj):
+        """The viewer's own classwork points for this assignment, or None.
+
+        Classwork is paid only by a teacher's hand — there is no percentage, no deadline
+        and no attempt behind it — so this is the whole of a student's outcome for an
+        in-class lesson.
+
+        ``None`` covers three different situations on purpose (not classwork, nobody has
+        awarded yet, the viewer is staff with no award of their own); none of them is a
+        result the student page should dress up as a zero, and only an explicit award of 0
+        means "looked at, earned nothing this time".
+
+        Scoped to ``category == CLASSWORK`` so an ordinary homework list costs no extra
+        queries at all.
+        """
+        if obj.category != Assignment.CATEGORY_CLASSWORK:
+            return None
+        user = self._req_user()
+        if user is None:
+            return None
+        # Imported here, not at module level: rewards imports classes.models, so a
+        # top-level import would close the cycle.
+        from rewards.constants import EVENT_CLASSWORK_MANUAL, classwork_key
+        from rewards.models import PointAward
+
+        row = (
+            PointAward.objects.filter(
+                idempotency_key=classwork_key(obj.id, user.id), event=EVENT_CLASSWORK_MANUAL
+            )
+            .values("points", "xp", "awarded_at", "note")
+            .first()
+        )
+        if row is None:
+            return None
+        return {
+            "points": int(row["points"]),
+            "xp": int(row["xp"]),
+            "awarded_at": row["awarded_at"],
+            "note": row["note"],
+        }
 
     def validate_title(self, value):
         text = (value or "").strip()

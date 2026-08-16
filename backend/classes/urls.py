@@ -46,6 +46,8 @@ from .views_assign import (
     TransferOwnershipView,
 )
 from .views_lessons import (
+    ClassroomLessonClassworkAwardView,
+    ClassroomLessonClassworkView,
     ClassroomLessonDetailView,
     ClassroomLessonGrantView,
     ClassroomLessonReleaseView,
@@ -191,6 +193,10 @@ urlpatterns = [
     path("<int:classroom_pk>/lessons/<int:lesson_id>/", ClassroomLessonDetailView.as_view(), name="class-lesson-detail"),
     path("<int:classroom_pk>/lessons/<int:lesson_id>/release/", ClassroomLessonReleaseView.as_view(), name="class-lesson-release"),
     path("<int:classroom_pk>/lessons/<int:lesson_id>/grant/", ClassroomLessonGrantView.as_view(), name="class-lesson-grant"),
+    # Classwork: student-visible, handed out by hand, and paid only by a teacher's hand.
+    # `classwork/award/` sits above the bare `classwork/` route, the house ordering rule.
+    path("<int:classroom_pk>/lessons/<int:lesson_id>/classwork/award/", ClassroomLessonClassworkAwardView.as_view(), name="class-lesson-classwork-award"),
+    path("<int:classroom_pk>/lessons/<int:lesson_id>/classwork/", ClassroomLessonClassworkView.as_view(), name="class-lesson-classwork"),
     path("<int:classroom_pk>/lessons/<int:lesson_id>/grants/<int:grant_id>/revoke/", ClassroomLessonRevokeView.as_view(), name="class-lesson-revoke"),
     # Teacher gradebook
     path("<int:classroom_pk>/midterm-results/", ClassroomMidtermResultsView.as_view(), name="class-midterm-results"),

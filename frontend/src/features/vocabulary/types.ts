@@ -116,6 +116,21 @@ export interface StudySession {
   started_at: string;
 }
 
+/**
+ * Body of `POST sessions/`.
+ *
+ * `assignment_id` is the classroom assignment the student launched this run
+ * from — see `launchContext`. It is OPTIONAL in both directions: a run started
+ * from the vocabulary hub or the question bank belongs to no homework, and the
+ * server still accepts a body without it (every client shipped before this
+ * field sent none).
+ */
+export interface SessionStartPayload {
+  set_id: number;
+  mode: StudyMode;
+  assignment_id?: number;
+}
+
 /** One graded answer. Modes push these in the order the student answered. */
 export interface SessionResult {
   word_id: number;

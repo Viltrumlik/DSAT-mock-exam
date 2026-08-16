@@ -27,6 +27,7 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import { Button, Card, CardHeader, ConfirmDialog, EmptyState, ErrorState, LoadingState, Pill, Tabs } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import { classroomKeys } from "../queryKeys";
+import { ClassworkTeacherPanel } from "./ClassworkTeacherPanel";
 import {
   useGrantItem,
   useGrantMidterm,
@@ -178,10 +179,17 @@ function ClassworkPanel({
   detail,
   classId,
   canManage,
+  canAward,
 }: {
   detail: NonNullable<ReturnType<typeof useLessonDetail>["data"]>;
   classId: number;
   canManage: boolean;
+  /**
+   * Manager tier (OWNER + TEACHER), separate from `canManage` above — that one is
+   * `canManageAssignments`, which includes TAs. Opening an item to the class is a TA's job;
+   * minting points is not.
+   */
+  canAward: boolean;
 }) {
   const cw = detail.classwork;
   // (resource_type, resource_id) -> grant id, so a given item can offer Undo.
@@ -193,6 +201,10 @@ function ClassworkPanel({
   }
   return (
     <div className="space-y-4">
+      {/* First, because handing the lesson to the class and paying for it are the two
+          things a teacher does with this tab; the timetable is reference material. */}
+      <ClassworkTeacherPanel classId={classId} lessonId={detail.lesson_id} canManage={canAward} />
+
       <Card>
         <CardHeader
           title="Lesson timetable"
@@ -495,6 +507,7 @@ function LessonDetailView({
   lessonId,
   row,
   canManage,
+  canAward,
   focusLabel,
   onBack,
 }: {
@@ -502,6 +515,8 @@ function LessonDetailView({
   lessonId: number;
   row: LessonRow;
   canManage: boolean;
+  /** Manager tier only — see ClassworkPanel. */
+  canAward: boolean;
   /** "Today's lesson" etc. when this was auto-selected; empty when browsed to. */
   focusLabel?: string;
   /** Present only when there is a plan to go back to. */
@@ -553,7 +568,7 @@ function LessonDetailView({
           {tab === "homework" ? (
             <HomeworkPanel detail={data} classId={classId} canManage={canManage} />
           ) : (
-            <ClassworkPanel detail={data} classId={classId} canManage={canManage} />
+            <ClassworkPanel detail={data} classId={classId} canManage={canManage} canAward={canAward} />
           )}
         </>
       )}
@@ -609,6 +624,7 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
         lessonId={open.lesson_id}
         row={open}
         canManage={canManage}
+        canAward={caps.canManageClass}
         focusLabel={focusLabel}
         // More than one session? Offer the full plan. A single-session plan has nothing
         // to go back to, so the button is hidden.

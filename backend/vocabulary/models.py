@@ -306,12 +306,26 @@ class VocabStudySession(models.Model):
     correct_count = models.PositiveIntegerField(default=0)
     total_count = models.PositiveIntegerField(default=0)
     accuracy = models.FloatField(default=0.0)
+    # How many DISTINCT words of the set this run actually answered. NOT the same number
+    # as ``total_count`` in any mode: flashcards re-drill the missed pile into the same
+    # run and report every verdict, so a 10-word set can report 18 answers over 10 words.
+    distinct_words = models.PositiveIntegerField(default=0)
+    # The ids behind ``distinct_words``. A bare counter cannot accumulate a DISTINCT set
+    # across flushes: a mode sends only the answers it has not sent yet, and the same word
+    # legitimately arrives in two different flushes (that flashcard re-drill), so adding
+    # each flush's own distinct count would count it twice and inflate coverage.
+    answered_word_ids = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = "vocab_study_sessions"
         ordering = ["-started_at", "-id"]
         indexes = [
-            models.Index(fields=["user", "vocab_set", "completed_at"]),
+            # ``mode`` sits between the set and the timestamp because the scoring query is
+            # "the FIRST completed session for this (set, mode)" — one lookup per mode, four
+            # times per set. Without it the planner reads every mode's sessions for the set
+            # and filters; the leading (user, vocab_set) pair still serves the mode-agnostic
+            # "has this student completed the set at all" lookup.
+            models.Index(fields=["user", "vocab_set", "mode", "completed_at"]),
             models.Index(fields=["user", "-started_at"]),
         ]
 
@@ -336,6 +350,45 @@ class VocabStudySession(models.Model):
         self.accuracy = (
             round((self.correct_count / self.total_count) * 100, 1) if self.total_count else 0.0
         )
+
+    # Written together by record_distinct_words(); the count is derived from the ids, so
+    # the two columns cannot drift. Handed to save(update_fields=...) by callers.
+    DISTINCT_FIELDS = ("distinct_words", "answered_word_ids")
+
+    def record_distinct_words(self, word_ids) -> None:
+        """
+        Fold one flush's word ids into the run's distinct set. Caller saves.
+
+        Set-union, not addition, for the same reason :meth:`record_batch` adds: the flushes
+        are partial and a word may appear in more than one of them.
+        """
+        seen = {int(w) for w in (self.answered_word_ids or [])}
+        seen.update(int(w) for w in word_ids)
+        # Sorted so the column is diffable and two runs that answered the same words in a
+        # different order store the same value.
+        self.answered_word_ids = sorted(seen)
+        self.distinct_words = len(seen)
+
+    def coverage(self, set_size: int) -> float:
+        """
+        How much of the set this run reached, 0..1.
+
+        Coverage exists because raw ``accuracy`` is not comparable across the four modes
+        and is trivially farmable on its own: Speed only ever reports the prompts answered
+        before its 60-second clock expires, so answering 2 of 20 words correctly stores
+        ``accuracy = 100``. At coverage 0.1 that run is worth 10, which is what it was.
+
+        Capped at 1.0 because a custom set can be edited after a run — ``word_ids``
+        REPLACES membership, so a set can shrink below the number of words a past session
+        answered, and a shrunken set must not pay more than a complete one.
+        """
+        if not set_size:
+            return 0.0
+        return min(1.0, self.distinct_words / set_size)
+
+    def scaled_accuracy(self, set_size: int) -> float:
+        """This run's homework percent: ``accuracy`` (0..100) discounted by :meth:`coverage`."""
+        return self.accuracy * self.coverage(set_size)
 
     def complete(self, at=None) -> None:
         """

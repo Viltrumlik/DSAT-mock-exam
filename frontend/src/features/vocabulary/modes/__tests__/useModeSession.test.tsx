@@ -18,6 +18,17 @@ const mocks = vi.hoisted(() => ({
   flush: vi.fn(),
 }));
 
+/**
+ * The launch homework travels in the query string, so the hook reads the router.
+ * Mocked rather than left to the real `useSearchParams` (which returns null
+ * outside an App Router tree) so a test can actually SET the launch context.
+ */
+const url = vi.hoisted(() => ({ params: new URLSearchParams() }));
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => url.params,
+}));
+
 vi.mock("../../hooks", () => ({
   useStartSession: () => ({ mutateAsync: mocks.start }),
   useFinishSession: () => ({ mutateAsync: mocks.finish }),
@@ -116,6 +127,7 @@ describe("useModeSession — an abandoned round records what was answered", () =
 
   beforeEach(() => {
     visibility = "visible";
+    url.params = new URLSearchParams();
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => visibility,
@@ -251,5 +263,63 @@ describe("useModeSession — an abandoned round records what was answered", () =
 
     expect(mocks.finish).toHaveBeenCalledTimes(1);
     h.unmount();
+  });
+
+  /**
+   * Without this the server picks the newest published assignment carrying the
+   * set, across every classroom the student is in. One set on two assignments
+   * then banks both runs against one of them — measured as one homework at 100%
+   * and its twin at 0%.
+   */
+  describe("the homework a run is bound to", () => {
+    const startedWith = () => mocks.start.mock.calls[0][0];
+
+    it("claims the assignment the mode was launched from", async () => {
+      url.params = new URLSearchParams("assignment=42");
+      const h = await booted();
+
+      expect(startedWith()).toEqual({ set_id: SET_ID, mode: "flashcard", assignment_id: 42 });
+      h.unmount();
+    });
+
+    it("claims nothing for self-study", async () => {
+      const h = await booted();
+
+      // Absent, not null: `api.startSession` only writes the key when there is
+      // one, so a hub-launched run sends the same body it always did.
+      expect(startedWith().assignment_id).toBeUndefined();
+      h.unmount();
+    });
+
+    it("claims nothing for a param that is not an assignment id", async () => {
+      // A hand-edited URL must cost the binding, never the round: the server
+      // would 400 on `min_value=1` and the student could not study at all.
+      for (const junk of ["abc", "0", "-3", "1.5", ""]) {
+        mocks.start.mockClear();
+        url.params = new URLSearchParams(`assignment=${junk}`);
+        const h = await booted();
+        expect(startedWith().assignment_id, `?assignment=${junk}`).toBeUndefined();
+        h.unmount();
+      }
+    });
+
+    it("does not re-open the session when the query string changes mid-round", async () => {
+      url.params = new URLSearchParams("assignment=42");
+      const h = await booted();
+
+      // `begin` closes over the launch id, so a changed query string changes its
+      // identity and re-runs the boot effect. `finish()` is simply the cheapest
+      // real re-render available here.
+      url.params = new URLSearchParams("assignment=99");
+      await act(async () => {
+        h.current.finish();
+        await Promise.resolve();
+      });
+
+      // A second start would split one round's answers across two session rows.
+      expect(mocks.start).toHaveBeenCalledTimes(1);
+      expect(startedWith().assignment_id).toBe(42);
+      h.unmount();
+    });
   });
 });

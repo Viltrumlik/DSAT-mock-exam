@@ -22,6 +22,7 @@ import { StudyModeCard } from "../components/StudyModeCard";
 import { VocabErrorState, VocabRowsSkeleton } from "../components/VocabStates";
 import { WordList } from "../components/WordList";
 import { useVocabSet } from "../hooks";
+import { useLaunchAssignmentId } from "../launchContext";
 import { STUDY_MODES, type ProgressCounts } from "../types";
 
 const JAKARTA = "var(--font-plus-jakarta), system-ui, sans-serif";
@@ -29,6 +30,14 @@ const JAKARTA = "var(--font-plus-jakarta), system-ui, sans-serif";
 export function SetOverview({ setId }: { setId: number }) {
   const q = useVocabSet(setId);
   const set = q.data;
+  /**
+   * This page is a crossroads: the same set is reached from the question bank,
+   * from "My sets" and from one or more homework cards. It cannot work out
+   * which on its own — a set assigned to two classrooms has two right answers
+   * and the page sees neither — so the launcher that sent the student here says
+   * so in the URL, and every mode link below passes it on.
+   */
+  const assignmentId = useLaunchAssignmentId();
 
   const progress = useMemo<ProgressCounts>(() => {
     const counts: ProgressCounts = { new: 0, learning: 0, mastered: 0, total: 0 };
@@ -162,7 +171,7 @@ export function SetOverview({ setId }: { setId: number }) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {STUDY_MODES.map((mode, i) => (
             <div key={mode} className="cr-pop h-full" style={{ animationDelay: `${i * 70}ms` }}>
-              <StudyModeCard mode={mode} setId={set.id} disabled={empty} />
+              <StudyModeCard mode={mode} setId={set.id} disabled={empty} assignmentId={assignmentId} />
             </div>
           ))}
         </div>
