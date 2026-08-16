@@ -1044,9 +1044,19 @@ class GoogleAuthView(APIView):
         if not credential:
             return Response({"detail": "Missing Google credential."}, status=status.HTTP_400_BAD_REQUEST)
 
-        audience = settings.GOOGLE_CLIENT_ID or None
+        # An unset client id must DISABLE Google sign-in, never weaken it: passing
+        # audience=None makes verify_oauth2_token skip the audience check entirely, so
+        # any Google-signed token minted for any other OAuth client would be accepted
+        # and logged in as whoever owns the matching email. Same contract as the
+        # Telegram path (_verified_telegram_oidc_payload).
+        client_id = (settings.GOOGLE_CLIENT_ID or "").strip()
+        if not client_id:
+            return Response(
+                {"detail": "Google sign-in is not configured on the server."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         try:
-            payload = id_token.verify_oauth2_token(credential, google_requests.Request(), audience=audience)
+            payload = id_token.verify_oauth2_token(credential, google_requests.Request(), audience=client_id)
         except Exception:
             return Response({"detail": "Invalid Google token."}, status=status.HTTP_400_BAD_REQUEST)
 

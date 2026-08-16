@@ -152,3 +152,40 @@ class AGradeDoesNotMoveTheLeaderboardTests(HomeworkLifecycleFixture):
                 classroom=self.classroom, kind="ACADEMIC", period_key="p1", student=self.student
             ).exists()
         )
+
+
+class DashboardVisibilityTests(HomeworkLifecycleFixture):
+    """``/api/classes/my-assignments/`` is the cross-classroom sibling of the list
+    above — it feeds the student dashboard, /assessments, analytics and the iOS app.
+
+    It used to skip the status filter entirely. That leaked harder than a normal
+    visibility bug: its payload carries no ``status`` field, so no client could
+    filter drafts back out, and an assessment reachable from it is also startable.
+    """
+
+    def _dash_ids(self):
+        return {r["id"] for r in self.client.get("/api/classes/my-assignments/").json()["items"]}
+
+    def test_student_dashboard_shows_only_published(self):
+        self._mk("Draft one", Assignment.STATUS_DRAFT)
+        pub = self._mk("Published one", Assignment.STATUS_PUBLISHED)
+        self._mk("Archived one", Assignment.STATUS_ARCHIVED)
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self._dash_ids(), {pub.id})
+
+    def test_dashboard_agrees_with_the_per_classroom_list(self):
+        # The two endpoints disagreeing is precisely what let drafts through.
+        self._mk("Draft one", Assignment.STATUS_DRAFT)
+        self._mk("Published one", Assignment.STATUS_PUBLISHED)
+        self._mk("Archived one", Assignment.STATUS_ARCHIVED)
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self._dash_ids(), self._ids(self.client.get(self._list_url())))
+
+    def test_publishing_a_draft_puts_it_on_the_dashboard(self):
+        draft = self._mk("Later", Assignment.STATUS_DRAFT)
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self._dash_ids(), set())
+
+        draft.status = Assignment.STATUS_PUBLISHED
+        draft.save(update_fields=["status"])
+        self.assertEqual(self._dash_ids(), {draft.id})
