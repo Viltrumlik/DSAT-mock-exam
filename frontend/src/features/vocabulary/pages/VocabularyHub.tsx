@@ -40,6 +40,7 @@ import { SectionCard } from "../components/SectionCard";
 import { SetCard } from "../components/SetCard";
 import { VocabCardsSkeleton, VocabErrorState, vocabErrorMessage } from "../components/VocabStates";
 import { useDeleteMySet, useMySets, useVocabHomework, useVocabSections } from "../hooks";
+import { withLaunchAssignment } from "../launchContext";
 import type { CustomSetSummary, VocabHomeworkGroup } from "../types";
 
 type TabKey = "bank" | "mine" | "homework";
@@ -378,13 +379,18 @@ function HomeworkGroupCard({ group, index }: { group: VocabHomeworkGroup; index:
           </Pill>
         </div>
 
+        {/* The link carries the assignment this card belongs to. The SAME set can
+            appear under two groups here — assigned to two classrooms, or
+            re-assigned for revision — and the two cards then differ ONLY by this
+            id. Drop it and the server binds both runs to whichever assignment is
+            newest, which is how one homework scored 100% while its twin scored 0. */}
         <div className="grid gap-4 sm:grid-cols-2">
           {group.sets.map((s, i) => (
             <SetCard
               key={s.id}
               index={i}
               title={s.title}
-              href={`/vocabulary/sets/${s.id}`}
+              href={withLaunchAssignment(`/vocabulary/sets/${s.id}`, group.assignment_id)}
               wordCount={s.word_count}
               completed={s.completed}
               subtitle={s.section_title}

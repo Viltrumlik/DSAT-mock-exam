@@ -1,5 +1,8 @@
 import api from "@/lib/api";
 
+/** Mirrors `rewards.constants.EVENT_CHOICES`. It is a closed union and it keys
+ *  `Record<RewardEvent, LucideIcon>`, so an event the backend can award but this list omits
+ *  is a row the history renders without an icon — add here first, then to `EVENT_ICON`. */
 export type RewardEvent =
   | "ATTENDANCE_PRESENT"
   | "ATTENDANCE_LATE"
@@ -7,10 +10,16 @@ export type RewardEvent =
   | "SURVEY"
   | "MIDTERM_PASS"
   | "MIDTERM_RETAKE_PASS"
+  /** Proportional: the rule's points are the *maximum*, scaled by the bundle percentage. */
+  | "HOMEWORK"
+  /** Classwork, priced by the teacher who awards it. Never automatic. */
+  | "CLASSWORK_MANUAL"
+  | "MANUAL"
+  // Retired bands. Nothing new is awarded with these, but thousands of ledger rows carry
+  // them, so a student's history still serves them and they must still parse and render.
   | "HOMEWORK_FULL"
   | "HOMEWORK_HIGH"
-  | "HOMEWORK_MID"
-  | "MANUAL";
+  | "HOMEWORK_MID";
 
 export interface RewardRule {
   event: RewardEvent;
@@ -34,8 +43,14 @@ export interface MyRewards {
   /** From the WALLET, not `points / rate`. Once coins are spendable the two diverge, and a
    *  derived figure keeps showing a student coins they have already spent. */
   coins: number;
-  /** Lifetime, and it only ever climbs. Lower than `points` for anyone who has been late to
-   *  a lesson or filled in a survey — neither earns XP. */
+  /** Lifetime. Every event now earns XP equal to its points, so this no longer trails
+   *  `points` for lateness or surveys — the old exclusion list moved into `RewardRule`.
+   *
+   *  It is a high-water mark against a *smaller* fact only: a re-grade that drops a homework
+   *  percent leaves it standing (`award` keeps `max(previous_xp, …)`). A *withdrawn* fact
+   *  takes its XP with it — `revoke` zeroes XP alongside points, which is what lets
+   *  attendance pay the moment a teacher saves and still be correctable to ABSENT. So this
+   *  number can fall, and a UI that promises "never goes down" is lying. */
   xp: number;
   points_per_coin: number;
   points_to_next_coin: number;

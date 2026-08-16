@@ -263,6 +263,11 @@ def session_summary_out(session: VocabStudySession, *, user) -> dict:
         "correct_count": session.correct_count,
         "total_count": session.total_count,
         "accuracy": session.accuracy,
+        # Reported alongside the raw accuracy because the two answer different questions —
+        # how well the run went, and how much of the set it actually reached. The set size
+        # is already in hand here, so neither costs a query.
+        "distinct_words": session.distinct_words,
+        "coverage": round(session.coverage(len(word_ids)), 4),
         "duration_ms": session.duration_ms,
         "set_completed": session.vocab_set.is_completed_by(user),
         "progress": progress_buckets(word_ids, status_map),

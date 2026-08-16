@@ -6,6 +6,7 @@ import { normalizeApiError } from "@/lib/apiError";
 
 import { vocabularyApi } from "../api";
 import { useFinishSession, useStartSession } from "../hooks";
+import { useLaunchAssignmentId } from "../launchContext";
 import type { SessionResult, SessionSummary, StudyMode } from "../types";
 
 /**
@@ -85,10 +86,18 @@ export interface ModeSession {
  * A student who leaves mid-round used to record nothing. The unsent answers are
  * now flushed on the way out (`partial`, so the set is not marked complete), and
  * the ledger guarantees the server's append can never see the same answer twice.
+ *
+ * The launch homework is read here rather than taken as an argument so all four
+ * modes are bound the same way and none can forget: the mode components are
+ * mounted by page files outside this feature that pass nothing but `setId`, so
+ * a prop would have to be plumbed through files this feature does not own.
+ * Only the START call carries it — a session is bound once, when it is created,
+ * and neither the partial flush nor the finish can re-point it.
  */
 export function useModeSession(setId: number, mode: StudyMode): ModeSession {
   const startMutation = useStartSession();
   const finishMutation = useFinishSession(setId);
+  const assignmentId = useLaunchAssignmentId();
 
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [summary, setSummary] = useState<SessionSummary | null>(null);
@@ -121,7 +130,11 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
     setError(null);
     setFatal(false);
     try {
-      const session = await startRef.current.mutateAsync({ set_id: setId, mode });
+      const session = await startRef.current.mutateAsync({
+        set_id: setId,
+        mode,
+        assignment_id: assignmentId,
+      });
       startedAtRef.current = Date.now();
       sessionIdRef.current = session.id;
       setSessionId(session.id);
@@ -129,7 +142,7 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
       setError(readErrorMessage(e));
       setFatal(true);
     }
-  }, [setId, mode]);
+  }, [setId, mode, assignmentId]);
 
   const submit = useCallback(() => {
     const id = sessionIdRef.current;
@@ -176,7 +189,10 @@ export function useModeSession(setId: number, mode: StudyMode): ModeSession {
 
   useEffect(() => {
     // A ref latch, not a dependency dance: StrictMode's double-invoked effects
-    // would otherwise open two sessions and orphan one.
+    // would otherwise open two sessions and orphan one. It also pins the run to
+    // the homework it was launched from — `begin` now changes identity if the
+    // query string does, and a mid-round rebind would open a second session and
+    // silently split the answers across two rows.
     if (bootedRef.current) return;
     bootedRef.current = true;
     void begin();

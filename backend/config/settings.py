@@ -403,13 +403,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "classes.tasks.recompute_classroom_rankings",
         "schedule": crontab(minute="*/20"),
     },
-    # Homework reward points are settled by hooks when a student finishes an item — so a
-    # student who finished only some of a bundle and stopped would never be scored at all.
-    # This settles past-due homework at whatever it actually reached. Hourly: the deadline
-    # itself is the event, and nobody needs the result inside the minute.
+    # Homework points now settle at the deadline: a bundle short of 100% writes nothing until
+    # its due date passes, so this sweep is the ONLY thing that ever pays it. Every 10 minutes,
+    # not hourly — the deadline is what the student was told, and up to an hour's lag is not
+    # "at the deadline". Re-runs are free (recompute_bundle upserts and writes nothing when the
+    # percentage is unchanged), so the extra passes cost queries, not correctness.
     "rewards-settle-due-homework": {
         "task": "rewards.tasks.settle_due_homework",
-        "schedule": crontab(minute=25),
+        "schedule": crontab(minute="*/10"),
     },
     # Full mocks never pause, so an attempt whose student closed the tab mid-module sits
     # ACTIVE with a dead clock forever — never scored, and blocking that student from ever
@@ -503,6 +504,15 @@ LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'Asia/Tashkent'
 USE_I18N = True
 USE_TZ = True
+
+# Celery has its OWN timezone setting and defaults to UTC — it does not inherit TIME_ZONE.
+# Nothing set this until now, so every hour-pinned entry in CELERY_BEAT_SCHEDULE above has been
+# firing 5h off its intent: crontab(hour=3, minute=15), written to run in the dead of night,
+# actually ran at 08:15 Asia/Tashkent — the start of the school day.
+#
+# Setting the timezone IS the fix. The hours above are deliberately left alone: re-pinning them
+# as well would move each entry twice and land it 5h the other side of where it was meant to be.
+CELERY_TIMEZONE = TIME_ZONE
 
 
 # ─── Static & Media Files ─────────────────────────────────────────────────────

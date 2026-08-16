@@ -17,6 +17,7 @@ from rewards.services import (
     balances_for,
     current_season,
     points_for,
+    pricing_for,
     revoke,
     start_new_season,
 )
@@ -44,6 +45,22 @@ class PointsForTests(TestCase):
             event=constants.EVENT_SURVEY, defaults={"points": 99, "is_active": False}
         )
         self.assertEqual(points_for(constants.EVENT_SURVEY), 40)
+
+    def test_the_price_and_the_xp_flag_come_from_one_query(self):
+        """`award` needs both on every grant, and the ten-minute sweep re-prices every open
+        bundle — reading them through two lookups would double the queries on that path."""
+        RewardRule.objects.update_or_create(
+            event=constants.EVENT_SURVEY, defaults={"points": 40, "grants_xp": False}
+        )
+        with self.assertNumQueries(1):
+            self.assertEqual(pricing_for(constants.EVENT_SURVEY), (40, False))
+
+    def test_an_inactive_rule_is_absent_for_the_xp_flag_too(self):
+        """Not "worth nothing" and not "no XP" — an inactive rule means no rule at all."""
+        RewardRule.objects.update_or_create(
+            event=constants.EVENT_SURVEY, defaults={"points": 99, "grants_xp": False, "is_active": False}
+        )
+        self.assertEqual(pricing_for(constants.EVENT_SURVEY), (40, True))
 
 
 class AwardIdempotencyTests(TestCase):
@@ -96,24 +113,33 @@ class PricingIsFrozenAtGrantTests(TestCase):
         self.student = _u("rw_price@t.com")
 
     def test_retuning_a_rule_does_not_restate_an_award_already_banked(self):
-        """Hooks re-fire freely and the deadline sweep re-runs hourly, so re-reading the rule
-        on every correction would silently rewrite history students have already seen."""
-        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:1:1")
+        """Hooks re-fire freely and the deadline sweep re-runs every ten minutes, so re-reading
+        the rule on every correction would silently rewrite history students have seen."""
+        award(self.student, constants.EVENT_HOMEWORK, idempotency_key="homework:1:1")
         self.assertEqual(balance(self.student), 15)
 
         RewardRule.objects.update_or_create(
-            event=constants.EVENT_HOMEWORK_FULL, defaults={"points": 5}
+            event=constants.EVENT_HOMEWORK, defaults={"points": 5}
         )
-        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:1:1")
+        award(self.student, constants.EVENT_HOMEWORK, idempotency_key="homework:1:1")
 
         self.assertEqual(balance(self.student), 15)
 
     def test_a_retuned_rule_does_price_the_next_new_earning(self):
         RewardRule.objects.update_or_create(
-            event=constants.EVENT_HOMEWORK_FULL, defaults={"points": 5}
+            event=constants.EVENT_HOMEWORK, defaults={"points": 5}
         )
-        award(self.student, constants.EVENT_HOMEWORK_FULL, idempotency_key="homework:2:1")
+        award(self.student, constants.EVENT_HOMEWORK, idempotency_key="homework:2:1")
         self.assertEqual(balance(self.student), 5)
+
+    def test_an_explicit_amount_bypasses_the_frozen_price(self):
+        """Proportional homework re-settles at whatever the percentage now says, which is the
+        one thing the price-once branch must not freeze. It passes `points=` and so never
+        reaches that branch."""
+        award(self.student, constants.EVENT_HOMEWORK, idempotency_key="homework:4:1", points=14)
+        award(self.student, constants.EVENT_HOMEWORK, idempotency_key="homework:4:1", points=9)
+
+        self.assertEqual(balance(self.student), 9)
 
     def test_a_changed_event_is_a_changed_fact_and_re_prices(self):
         """A re-grade moving MID→FULL must move the points; only the RULE is frozen."""
@@ -142,6 +168,7 @@ class RevokeTests(TestCase):
 
         a = PointAward.objects.get(idempotency_key="attendance:1")
         self.assertEqual(a.points, 0)
+        self.assertEqual(a.xp, 0)   # a withdrawn fact takes its XP with it — see tests_xp
         self.assertEqual(balance(self.student), 0)
         self.assertEqual(PointAwardAudit.objects.filter(award=a).count(), 2)
 

@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   ClipboardList,
   FileText,
+  GraduationCap,
   LifeBuoy,
   MessageSquare,
   ArrowRightLeft,
@@ -16,9 +17,12 @@ import { Button, HeroPage, PageHero, Skeleton } from "@/components/ui";
 import { Card, CardHeader, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { RewardCoin } from "@/components/RewardCoin";
 import { useConvertPoints, useMyRewards, useMyWallet, useRewardRules } from "./rewardsHooks";
-import type { RewardEvent } from "./rewardsApi";
+import type { RewardEvent, RewardRule } from "./rewardsApi";
 
-/** One icon per family of earning, so the history reads at a glance. */
+/** One icon per family of earning, so the history reads at a glance.
+ *
+ *  The three retired homework bands keep their icon: they are no longer awarded, but every
+ *  row already banked under them still comes back in the history and must not render bare. */
 const EVENT_ICON: Record<RewardEvent, LucideIcon> = {
   ATTENDANCE_PRESENT: CalendarCheck,
   ATTENDANCE_LATE: CalendarCheck,
@@ -26,11 +30,36 @@ const EVENT_ICON: Record<RewardEvent, LucideIcon> = {
   SURVEY: MessageSquare,
   MIDTERM_PASS: FileText,
   MIDTERM_RETAKE_PASS: FileText,
+  HOMEWORK: ClipboardList,
+  CLASSWORK_MANUAL: GraduationCap,
+  MANUAL: Sparkles,
   HOMEWORK_FULL: ClipboardList,
   HOMEWORK_HIGH: ClipboardList,
   HOMEWORK_MID: ClipboardList,
-  MANUAL: Sparkles,
 };
+
+/** The bands were retired when homework started paying proportionally, but `/rewards/rules/`
+ *  still serves their seeded rows. Left in, "How to earn" would tell a student to aim for a
+ *  60–79% band that no longer exists — and would contradict the live homework rule sitting
+ *  three lines above it. Filtered here, not from `EVENT_ICON`: history still needs those. */
+const RETIRED_RULE_EVENTS: readonly RewardEvent[] = ["HOMEWORK_FULL", "HOMEWORK_HIGH", "HOMEWORK_MID"];
+
+/** Events a person prices when they award them. Their rule row is seeded at 0, and "+0" in a
+ *  list headed "How to earn" reads as "this is worth nothing", which is the opposite of true. */
+const TEACHER_PRICED_EVENTS: readonly RewardEvent[] = ["CLASSWORK_MANUAL"];
+
+/** What a student can actually do about a rule, where the amount alone does not say it.
+ *  Homework is the one that matters: it stopped being a band and became a share. */
+function ruleHint(rule: RewardRule): string | null {
+  switch (rule.event) {
+    case "HOMEWORK":
+      return `Finish it all before the deadline and the full ${rule.points} lands right away. Otherwise you're paid at the deadline for the share you've finished — only what's done by then counts, so starting early is what pays.`;
+    case "CLASSWORK_MANUAL":
+      return "Your teacher decides this one, for the work you do in the lesson itself.";
+    default:
+      return null;
+  }
+}
 
 const PAGE_DESCRIPTION = "What you've earned for showing up and doing the work.";
 
@@ -64,7 +93,9 @@ function WalletTile({
       <div className="min-w-0">
         <p className="text-[11px] font-extrabold uppercase tracking-[0.06em]">{label}</p>
         <p className="ds-num text-[28px] font-extrabold leading-none">{value}</p>
-        {sub ? <p className="mt-1 truncate text-[11px] font-bold">{sub}</p> : null}
+        {/* Wraps rather than truncates: the XP rule takes a sentence to state honestly, and a
+            half-sentence about what does and does not take XP away is worse than none. */}
+        {sub ? <p className="mt-1 text-[11px] font-bold leading-snug">{sub}</p> : null}
       </div>
     </div>
   );
@@ -85,6 +116,7 @@ export function RewardsPage() {
   const xp = rewards.data?.xp ?? 0;
   const toNextCoin = rewards.data?.points_to_next_coin ?? perCoin;
   const convertible = rewards.data?.convertible_coins ?? 0;
+  const earnableRules = (rules.data ?? []).filter((r) => !RETIRED_RULE_EVENTS.includes(r.event));
 
   if (rewards.isError) {
     return (
@@ -126,7 +158,12 @@ export function RewardsPage() {
                 />
                 {/* XP sits beside points rather than replacing them, because they answer
                     different questions and a student will notice the two disagree. The `sub`
-                    says why before they have to ask. */}
+                    says why before they have to ask.
+                    It no longer says "learning only — never goes down", and neither half of
+                    that was still true: XP follows points on every event now, and `revoke`
+                    zeroes it when a fact is withdrawn (a PRESENT corrected to ABSENT). What
+                    survives is the narrower promise the school actually makes — doing worse
+                    never costs XP. */}
                 <WalletTile
                   media={
                     <span className="grid h-10 w-10 place-items-center rounded-full bg-white/20">
@@ -135,7 +172,7 @@ export function RewardsPage() {
                   }
                   label="XP"
                   value={xp}
-                  sub="Learning only — never goes down"
+                  sub="Every point earns XP. A lower score never takes it away — only a corrected record does."
                 />
               </div>
 
@@ -236,7 +273,7 @@ export function RewardsPage() {
               message="Your points are unaffected — only this list failed to load."
               onRetry={() => void rules.refetch()}
             />
-          ) : !rules.data?.length ? (
+          ) : earnableRules.length === 0 ? (
             // A blank card reads as "there is nothing to earn", which is the opposite of true.
             <EmptyState
               icon={Sparkles}
@@ -245,19 +282,38 @@ export function RewardsPage() {
             />
           ) : (
             <ul className="space-y-1">
-              {rules.data?.map((rule) => (
-                <li
-                  key={rule.event}
-                  className="flex items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-sm hover:bg-surface-2"
-                >
-                  <span className="min-w-0 truncate font-semibold text-muted-foreground">
-                    {rule.label}
-                  </span>
-                  <span className="ds-num shrink-0 font-extrabold text-foreground">
-                    +{rule.points}
-                  </span>
-                </li>
-              ))}
+              {earnableRules.map((rule) => {
+                const hint = ruleHint(rule);
+                return (
+                  <li
+                    key={rule.event}
+                    className="rounded-xl px-2.5 py-2 text-sm hover:bg-surface-2"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="min-w-0 truncate font-semibold text-muted-foreground">
+                        {rule.label}
+                      </span>
+                      {TEACHER_PRICED_EVENTS.includes(rule.event) ? (
+                        <span className="shrink-0 text-xs font-bold text-muted-foreground">
+                          Set by your teacher
+                        </span>
+                      ) : (
+                        <span className="ds-num shrink-0 font-extrabold text-foreground">
+                          +{rule.points}
+                        </span>
+                      )}
+                    </div>
+                    {/* The amount alone used to be the whole rule. Homework is now a share of
+                        its maximum, settled at the deadline, so "+15" on its own is a figure
+                        almost nobody will actually see and no guide to what to do about it. */}
+                    {hint ? (
+                      <p className="mt-0.5 text-xs font-semibold leading-snug text-muted-foreground">
+                        {hint}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </Card>

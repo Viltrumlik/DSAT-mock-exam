@@ -24,12 +24,26 @@ import { Badge, Button, EmptyState, Progress, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { useVocabSet } from "../hooks";
+import { useLaunchAssignmentId, withLaunchAssignment } from "../launchContext";
 import type { VocabSetDetail } from "../types";
 import { useDistractorPool } from "./useDistractorPool";
 import type { ModeSession } from "./useModeSession";
 import type { DistractorWord } from "./utils";
 
 export const setHref = (setId: number) => `/vocabulary/sets/${setId}`;
+
+/**
+ * Every way out of a mode leads back to the set page — and must carry the
+ * homework this run was launched from with it. Dropping it here is not
+ * cosmetic: the set's score is the mean over four games, so a student who plays
+ * flashcards from Monday's homework, walks back and starts matching would have
+ * the second game bound by the server's guess instead, splitting one homework's
+ * work across two assignments.
+ */
+function useSetHref(setId: number): string {
+  const assignmentId = useLaunchAssignmentId();
+  return withLaunchAssignment(setHref(setId), assignmentId);
+}
 
 /**
  * The takeover renders outside the student shell, so it carries the app's face
@@ -49,6 +63,7 @@ interface ModeFrameProps {
 }
 
 export function ModeFrame({ setId, title, subtitle, right, progress, children }: ModeFrameProps) {
+  const backHref = useSetHref(setId);
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-background" style={MODE_FONT}>
       {/* Progress rides the very top edge of the takeover. The empty rail keeps
@@ -64,7 +79,7 @@ export function ModeFrame({ setId, title, subtitle, right, progress, children }:
 
       <header className="flex shrink-0 items-center gap-3 border-b border-border bg-card px-3 py-2.5 sm:px-5">
         <Link
-          href={setHref(setId)}
+          href={backHref}
           className="ds-ring inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface-2 px-2.5 py-1.5 text-[13px] font-bold text-muted-foreground transition-[color,border-color,background-color] duration-150 hover:border-border-strong hover:text-foreground sm:px-3"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />
@@ -151,6 +166,8 @@ export function ModeBoot({
   const { data: set, isLoading, isError } = useVocabSet(setId);
   const pool = useDistractorPool(set);
   const [runKey, setRunKey] = useState(0);
+  // Above the early returns, as every hook here must be.
+  const backHref = useSetHref(setId);
 
   if (isLoading) {
     return (
@@ -173,7 +190,7 @@ export function ModeBoot({
             title="This set isn't available"
             description="It may have been removed, or it isn't shared with you."
             action={
-              <Link href={setHref(setId)}>
+              <Link href={backHref}>
                 <Button variant="secondary">Back to vocabulary</Button>
               </Link>
             }
@@ -193,7 +210,7 @@ export function ModeBoot({
             title="No words to study yet"
             description="This set is empty. Add words to it and the study modes will light up."
             action={
-              <Link href={setHref(setId)}>
+              <Link href={backHref}>
                 <Button variant="secondary">Back to vocabulary</Button>
               </Link>
             }
@@ -218,6 +235,7 @@ export function ModeStartError({
   message: string;
   onRetry: () => void;
 }) {
+  const backHref = useSetHref(setId);
   return (
     <ModeFrame setId={setId} title={title}>
       <div className="mx-auto max-w-lg px-4 py-16">
@@ -231,7 +249,7 @@ export function ModeStartError({
               <Button onClick={onRetry} leftIcon={<RotateCcw />}>
                 Try again
               </Button>
-              <Link href={setHref(setId)}>
+              <Link href={backHref}>
                 <Button variant="secondary">Back to vocabulary</Button>
               </Link>
             </div>
@@ -442,6 +460,7 @@ export function ModeOutcome({
   children,
 }: ModeOutcomeProps) {
   const partying = Boolean(celebrate) || Boolean(session.summary?.set_completed);
+  const backHref = useSetHref(setId);
 
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6 px-4 py-10">
@@ -491,7 +510,7 @@ export function ModeOutcome({
         <Button size="lg" onClick={onRestart} leftIcon={<RotateCcw />}>
           {restartLabel}
         </Button>
-        <Link href={setHref(setId)}>
+        <Link href={backHref}>
           <Button size="lg" variant="secondary">
             Back to vocabulary
           </Button>

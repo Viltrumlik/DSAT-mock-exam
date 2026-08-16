@@ -189,8 +189,8 @@ def _delivery_for(classroom, session: JournalLesson, *, planned_start=None) -> C
     return row
 
 
-def _copy_files(session: JournalLesson, assignment) -> None:
-    """Copy the session's files onto the Assignment, primary + extras.
+def _dup_file(src_field):
+    """A fresh ``ContentFile`` holding ``src_field``'s bytes, or None if it cannot be read.
 
     Deliberately a copy, not a FileField assignment: assigning one FileField to another
     stores the SAME storage path on both rows, so the journal template and every classroom
@@ -199,23 +199,26 @@ def _copy_files(session: JournalLesson, assignment) -> None:
     ``upload_to``.
     """
     from django.core.files.base import ContentFile
+
+    try:
+        src_field.open("rb")
+        try:
+            return ContentFile(src_field.read(), name=os.path.basename(src_field.name))
+        finally:
+            src_field.close()
+    except Exception:
+        # A missing file on disk must not sink the whole release — the rest of the
+        # homework is still worth delivering.
+        logger.exception("journal file copy failed for %s", getattr(src_field, "name", "?"))
+        return None
+
+
+def _copy_files(session: JournalLesson, assignment) -> None:
+    """Copy the session's homework files onto the Assignment, primary + extras."""
     from classes.models import AssignmentExtraAttachment
 
-    def _dup(src_field):
-        try:
-            src_field.open("rb")
-            try:
-                return ContentFile(src_field.read(), name=os.path.basename(src_field.name))
-            finally:
-                src_field.close()
-        except Exception:
-            # A missing file on disk must not sink the whole release — the rest of the
-            # homework is still worth delivering.
-            logger.exception("journal file copy failed for %s", getattr(src_field, "name", "?"))
-            return None
-
     if session.attachment_file:
-        copied = _dup(session.attachment_file)
+        copied = _dup_file(session.attachment_file)
         if copied is not None:
             assignment.attachment_file = copied
             assignment.save(update_fields=["attachment_file", "updated_at"])
@@ -223,7 +226,29 @@ def _copy_files(session: JournalLesson, assignment) -> None:
     for extra in session.extra_attachments.all():
         if not extra.file:
             continue
-        copied = _dup(extra.file)
+        copied = _dup_file(extra.file)
+        if copied is not None:
+            AssignmentExtraAttachment.objects.create(assignment=assignment, file=copied)
+
+
+def _copy_classwork_files(cw, assignment) -> None:
+    """Copy the classwork block's files onto the carrier Assignment, primary + extras.
+
+    Same copy-never-assign rule as :func:`_copy_files`; the journal template's file must
+    not end up shared with every classroom that was ever taught the lesson.
+    """
+    from classes.models import AssignmentExtraAttachment
+
+    if cw.new_topic_attachment_file:
+        copied = _dup_file(cw.new_topic_attachment_file)
+        if copied is not None:
+            assignment.attachment_file = copied
+            assignment.save(update_fields=["attachment_file", "updated_at"])
+
+    for extra in cw.extra_attachments.all():
+        if not extra.file:
+            continue
+        copied = _dup_file(extra.file)
         if copied is not None:
             AssignmentExtraAttachment.objects.create(assignment=assignment, file=copied)
 
@@ -357,30 +382,215 @@ def release_homework(
 
 
 def _classwork_assignment(delivery: ClassroomLesson, session: JournalLesson, *, actor):
-    """The lesson's in-class Assignment, created on first grant.
+    """The lesson's in-class Assignment, created on first grant or on an explicit hand-out.
 
     ``HomeworkAssignment`` requires an ``Assignment``, so an assessment opened in class
     still needs one. It is categorised CLASSWORK (which routes it to the Academic ranking
     rather than SAT, per the Assignment category contract) and carries no ``due_at`` — it
     is done in the room, not by a deadline. One per lesson, so opening three items does
     not litter the Assignments tab with three entries.
+
+    The whole authored new-topic block is copied across, not just the instructions.
+    Classwork is student-visible now, and a carrier holding one text field showed the
+    class a page with none of the material the lesson was actually built from.
     """
     from classes.models import Assignment
 
     if delivery.classwork_assignment_id:
         return delivery.classwork_assignment
+
+    cw = getattr(session, "classwork", None)
+
+    def _authored(name, default=""):
+        # A session can have no classwork block at all (a plan that only ever released
+        # homework), and the grant path still has to be able to mint a carrier for it.
+        return (getattr(cw, name, default) if cw is not None else default) or default
+
+    video_file = _authored("new_topic_video_file", None)
     assignment = Assignment.objects.create(
         classroom=delivery.classroom,
         created_by=actor,
-        title=f"Lesson {session.lesson_number} — classwork",
-        instructions=(getattr(session, "classwork", None) and session.classwork.new_topic_instructions) or "",
+        # The authored topic name is what a student recognises on their list; the lesson
+        # label is only a fallback for a plan that never named its new topic.
+        title=_authored("new_topic_title").strip() or f"Lesson {session.lesson_number} — classwork",
+        instructions=_authored("new_topic_instructions"),
+        external_url=_authored("new_topic_external_url"),
+        external_urls=list(_authored("new_topic_external_urls", [])),
+        video_url=_authored("new_topic_video_url"),
+        # Alias the same R2 object key rather than re-copying a 2GB video — the same
+        # trade release_homework makes, and safe for the same reason: Django never
+        # auto-deletes storage files, so the shared key stays valid for both rows.
+        video_file=(video_file.name or None) if video_file else None,
         category=Assignment.CATEGORY_CLASSWORK,
         status=Assignment.STATUS_PUBLISHED,
+        # Load-bearing, never "not set yet": a due_at silently enrols this carrier in
+        # settle_due_homework and switches automatic homework scoring back on. Classwork
+        # is paid by a teacher's hand only.
         due_at=None,
+        # Everything student-facing sorts and labels by Coalesce(published_at, created_at).
+        # Left null the carrier still appeared, but "when was this given" quietly meant
+        # "when was the row made" — which for a carrier minted by an earlier grant is a
+        # different moment from the one it became visible.
+        published_at=timezone.now(),
     )
+    # Files: COPY, never assign the template's FileField across (see _dup_file).
+    if cw is not None:
+        _copy_classwork_files(cw, assignment)
     delivery.classwork_assignment = assignment
     delivery.save(update_fields=["classwork_assignment", "updated_at"])
     return assignment
+
+
+@transaction.atomic
+def assign_classwork(classroom, session: JournalLesson, *, actor):
+    """Hand this lesson's classwork to the class as a student-visible Assignment.
+
+    The teacher's explicit "give this out" action. Until now the carrier only ever
+    appeared as a side effect of granting an individual item, so a lesson whose classwork
+    is a written brief — no assessment, no pastpaper, no vocabulary — reached the students
+    not at all.
+
+    Idempotent; returns ``(assignment, created)``. Deliberately does NOT require
+    ``classwork_ready``: the grant path has never enforced it either, and refusing to hand
+    out a plan mid-lesson over a missing title would strand a teacher in front of a class.
+    The panel already surfaces ``validation`` so the gap is visible rather than fatal.
+    """
+    if session.is_midterm:
+        raise DeliveryError("midterm_session", "A midterm session has no classwork to give out.")
+    if getattr(session, "classwork", None) is None:
+        raise DeliveryError("no_classwork", "This session has no classwork plan to give out.")
+
+    delivery = _delivery_for(classroom, session)
+    # Same lock as grant_resource: an unlocked read-then-write let a double-press create
+    # two carriers for one lesson, and no DB constraint stands behind that field.
+    delivery = ClassroomLesson.objects.select_for_update().get(pk=delivery.pk)
+    if delivery.classwork_assignment_id:
+        return delivery.classwork_assignment, False
+    return _classwork_assignment(delivery, session, actor=actor), True
+
+
+def classwork_assignment_for(classroom, session: JournalLesson):
+    """The lesson's classwork carrier if it has been handed out, else None. Never creates."""
+    delivery = ClassroomLesson.objects.filter(
+        classroom=classroom, journal_lesson=session
+    ).select_related("classwork_assignment").first()
+    return delivery.classwork_assignment if delivery else None
+
+
+# ── classwork points ───────────────────────────────────────────────────────────
+#
+# Classwork is paid ONLY by a teacher's hand. Nothing in the automatic homework path may
+# ever settle a CLASSWORK carrier: it has no deadline, so a percentage-of-the-bundle rule
+# has no moment to be true at, and in-class work is judged in the room.
+
+
+def award_classwork(assignment, student, *, points: int, actor, note: str = ""):
+    """Pay one student for one lesson's classwork. Returns the award, or None if it failed.
+
+    One award per (carrier, student) and deliberately not per item — the carrier is a
+    single Assignment per lesson shared by every granted item, so there is no per-item row
+    to key on. A teacher paying the same lesson twice therefore CORRECTS the amount in
+    place instead of stacking a second earning.
+
+    Never raises: ``services.award`` swallows and logs by design (a points failure must not
+    take a teacher's action down with it), which is why the return value is the only signal
+    a caller gets.
+    """
+    from rewards import constants as reward_constants
+    from rewards.services import award
+
+    return award(
+        student,
+        reward_constants.EVENT_CLASSWORK_MANUAL,
+        idempotency_key=reward_constants.classwork_key(assignment.id, student.id),
+        classroom=assignment.classroom,
+        # Names the source MODEL, not the purpose — the carrier is a classes.Assignment,
+        # exactly like the homework path's source. `event` is what tells the two apart.
+        source_type="assignment",
+        source_id=assignment.id,
+        # Explicit on EVERY call, including a correction. ``award`` prices an earning ONCE
+        # and reuses the stored value whenever `points` is None, so a teacher revising 3 up
+        # to 5 would be silently ignored if this were ever left to the rule.
+        points=int(points),
+        actor=actor,
+        note=note,
+        reason="classwork awarded by a teacher",
+    )
+
+
+def withdraw_classwork(assignment, student, *, actor, reason: str = ""):
+    """Take one student's classwork award back entirely. Returns the row, or None if there
+    never was one.
+
+    **This is not "award 0", and the difference is the XP.** CLASSWORK_MANUAL is the one
+    event whose amount a human types by hand, so it is the one most likely to be typed
+    wrong, and the two ways it can be wrong are different facts (OVERHAUL §6):
+
+    * *a smaller fact* — the lesson was worth 5, not 50. That is :func:`award_classwork`
+      with the lower number, and ``award``'s ``max(previous_xp, …)`` deliberately leaves the
+      XP standing: XP is never taken away for doing worse.
+    * *a withdrawn fact* — the teacher paid the wrong student, or paid the same lesson
+      twice, or fat-fingered an amount that never should have existed. That reaches here,
+      and ``services.revoke`` zeroes points **and** XP, because a fact that never happened
+      cannot be evidence of anything.
+
+    Correcting downwards is therefore NOT a way to undo a mis-click: ``award(points=0)``
+    hits that same ``max()`` and leaves the mis-awarded XP on the board permanently. This is
+    the only path that clears it.
+
+    Never raises — ``services.revoke`` swallows and logs by design, exactly like ``award``.
+    The RETURNED ROW is the only trustworthy signal: a swallowed write failure and an
+    already-withdrawn award both come back from ``revoke`` as the same ``False``, so a caller
+    must check the row really is zeroed rather than trust a boolean.
+    """
+    from rewards import constants as reward_constants
+    from rewards.models import PointAward
+    from rewards.services import revoke
+
+    key = reward_constants.classwork_key(assignment.id, student.id)
+    existing = PointAward.objects.filter(idempotency_key=key).first()
+    if existing is None:
+        # Nothing to take back, and deliberately not "award 0" instead: a zero row reads in
+        # the ledger and on the student's page as "a teacher marked this lesson", which is
+        # the very claim a withdrawal exists to retract.
+        return None
+    revoke(
+        key,
+        # The audit row is the only place a withdrawal's "why" survives. `revoke` does not
+        # touch PointAward.note, and overwriting it here would destroy the record of what
+        # the award was originally given for.
+        reason=(
+            f"classwork withdrawn by a teacher: {reason}"
+            if reason
+            else "classwork withdrawn by a teacher"
+        )[:240],
+        actor=actor,
+    )
+    existing.refresh_from_db()
+    return existing
+
+
+def classwork_awards(assignment) -> dict[int, dict]:
+    """``{student_id: {points, xp, awarded_at, note}}`` already granted for one carrier.
+
+    The panel has to show what each student has, or a teacher re-awarding a lesson is
+    typing blind into a field that overwrites the previous figure.
+    """
+    from rewards.constants import EVENT_CLASSWORK_MANUAL
+    from rewards.models import PointAward
+
+    rows = PointAward.objects.filter(
+        event=EVENT_CLASSWORK_MANUAL, source_type="assignment", source_id=assignment.id
+    ).values("student_id", "points", "xp", "awarded_at", "note")
+    return {
+        row["student_id"]: {
+            "points": int(row["points"]),
+            "xp": int(row["xp"]),
+            "awarded_at": row["awarded_at"],
+            "note": row["note"],
+        }
+        for row in rows
+    }
 
 
 def plan_items(session: JournalLesson) -> set[tuple[str, str, int]]:

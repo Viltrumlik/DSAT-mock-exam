@@ -4,6 +4,7 @@ import { ArrowRight, Layers, Shuffle, Timer, ClipboardCheck, type LucideIcon } f
 import { Card, CardContent } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
+import { withLaunchAssignment } from "../launchContext";
 import { STUDY_MODE_LABEL, type StudyMode } from "../types";
 
 /** URL segment per mode — the route is `/vocabulary/sets/<id>/<segment>`. */
@@ -85,12 +86,20 @@ export function StudyModeCard({
   setId,
   disabled,
   accent,
+  assignmentId,
 }: {
   mode: StudyMode;
   setId: number;
   disabled?: boolean;
   /** Override the mode's own accent. Defaults to the per-mode colour above. */
   accent?: StudyModeAccent;
+  /**
+   * The homework this launcher was reached from, handed on to the mode so the
+   * study session it opens is bound to that assignment instead of the server's
+   * guess. Absent for the question bank and the student's own sets — that is
+   * self-study, which belongs to no homework.
+   */
+  assignmentId?: number;
 }) {
   const meta = MODE_META[mode];
   const tone = ACCENT[accent ?? STUDY_MODE_ACCENT[mode]];
@@ -129,7 +138,10 @@ export function StudyModeCard({
   if (disabled) return body;
 
   return (
-    <Link href={`/vocabulary/sets/${setId}/${STUDY_MODE_SEGMENT[mode]}`} className="ds-ring block h-full rounded-2xl">
+    <Link
+      href={withLaunchAssignment(`/vocabulary/sets/${setId}/${STUDY_MODE_SEGMENT[mode]}`, assignmentId)}
+      className="ds-ring block h-full rounded-2xl"
+    >
       {body}
     </Link>
   );

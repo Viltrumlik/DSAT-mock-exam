@@ -53,6 +53,9 @@ export interface LessonRow {
   homework_released: boolean;
   homework_released_at: string | null;
   assignment_id: number | null;
+  /** Classwork has its own carrier — `homework_released` says nothing about it. */
+  classwork_given: boolean;
+  classwork_assignment_id: number | null;
   grants: LessonGrant[];
   midterm?: LessonMidterm | null;
 }
@@ -81,6 +84,27 @@ export interface LessonDetail extends LessonRow {
     revision: { minutes: number; notes: string };
     validation: string[];
   };
+}
+
+/** What a teacher has already recorded for one student on one lesson's classwork. */
+export interface ClassworkAward {
+  student_id: number;
+  points: number;
+  xp: number;
+  awarded_at: string;
+  note: string;
+}
+
+/** Teacher-facing state of one lesson's classwork carrier. */
+export interface LessonClasswork {
+  /** False until the teacher hands it out — the carrier does not exist before that. */
+  given: boolean;
+  assignment_id: number | null;
+  title: string;
+  given_at: string | null;
+  /** Server-side ceiling on one award; the points field is bounded by it, not by a local constant. */
+  max_points: number;
+  awards: ClassworkAward[];
 }
 
 export type LessonFocus = "today" | "next" | "last" | "undated";
@@ -123,6 +147,31 @@ export const lessonsApi = {
 
   revoke: async (classId: number, lessonId: number, grantId: number) =>
     (await api.post(`${base(classId)}${lessonId}/grants/${grantId}/revoke/`, {})).data,
+
+  /** Read the classwork carrier's state + every award already recorded. Staff-readable. */
+  classwork: async (classId: number, lessonId: number): Promise<LessonClasswork> =>
+    (await api.get(`${base(classId)}${lessonId}/classwork/`)).data,
+
+  /** Hand this lesson's classwork to the class. Idempotent; manager-only server-side. */
+  assignClasswork: async (
+    classId: number,
+    lessonId: number,
+  ): Promise<LessonClasswork & { detail?: string; created?: boolean }> =>
+    (await api.post(`${base(classId)}${lessonId}/classwork/`, {})).data,
+
+  /**
+   * Record one student's classwork points. Manager-only server-side (OWNER + TEACHER):
+   * classwork points are minted rather than derived from work, so a TA must not reach this.
+   *
+   * Re-awarding the same student CORRECTS the figure in place — there is one award per
+   * (lesson, student), not one per press.
+   */
+  awardClasswork: async (
+    classId: number,
+    lessonId: number,
+    body: { student_id: number; points: number; note?: string },
+  ): Promise<{ detail: string; student_id: number; points: number; xp: number; awarded_at: string }> =>
+    (await api.post(`${base(classId)}${lessonId}/classwork/award/`, body)).data,
 
   reschedule: async (classId: number, startsOn: string) =>
     (await api.patch(`${base(classId)}reschedule/`, { starts_on: startsOn })).data,

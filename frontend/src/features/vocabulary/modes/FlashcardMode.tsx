@@ -6,13 +6,17 @@
  * a word answered wrong then right records both attempts and the streak-based
  * progress model sees the real history.
  *
+ * A verdict does not deal the next card: it starts a five-second hold with the
+ * definition face-up. The hold is the teaching, and it is also what stops the
+ * mode being cleared by holding down `2` — see `lockedRef` below.
+ *
  * Accent: **primary** — the same one `STUDY_MODE_ACCENT.flashcard` gives the
  * Flashcards card on the set page. The verdict buttons are danger/success
  * because they *are* the grade, not because of the accent.
  */
 
-import { Check, Flag, RotateCcw, RotateCw, Sparkles, X } from "lucide-react";
-import { useState } from "react";
+import { Check, Flag, RotateCcw, RotateCw, Sparkles, Timer, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui";
@@ -25,6 +29,21 @@ import { useModeSession } from "./useModeSession";
 import { accuracyPercent } from "./utils";
 
 const TITLE = "Flashcards";
+
+/**
+ * How long the card holds after a verdict. Long enough that the definition is
+ * actually read — the pause is study time the student was skipping, not a
+ * penalty for answering.
+ */
+const COOLDOWN_SECONDS = 5;
+const COOLDOWN_STEP_MS = 1000;
+
+/** Non-null only while a graded card is being held. */
+interface Cooldown {
+  /** The verdict just given — the strip and the buttons both colour off it. */
+  correct: boolean;
+  secondsLeft: number;
+}
 
 export function FlashcardMode({ setId }: { setId: number }) {
   return (
@@ -56,24 +75,49 @@ function FlashcardRunner({
   const [results, setResults] = useState<SessionResult[]>([]);
   const [round, setRound] = useState(1);
   const [phase, setPhase] = useState<Phase>("study");
+  const [cooldown, setCooldown] = useState<Cooldown | null>(null);
+
+  // Both piles are committed through refs rather than the state above, because
+  // `answer` also runs from a window-level key handler: two events in one tick
+  // would each read the same render's `results`/`missed` and the second would
+  // overwrite the first, silently dropping a verdict. MatchingMode carries
+  // `missedRef` for exactly this reason.
+  const resultsRef = useRef<SessionResult[]>([]);
+  const missedRef = useRef<VocabWord[]>([]);
+  /**
+   * The throttle itself, and the only one. A ref rather than `cooldown != null`
+   * because a held key repeats faster than React re-renders, and because the
+   * two buttons are one of *three* ways in — `useModeKeys` binds
+   * `1`/`ArrowLeft`/`2`/`ArrowRight` at the window, so `disabled` on them
+   * throttles nothing at all.
+   */
+  const lockedRef = useRef(false);
+
+  const cooldownTimer = useRef<number | undefined>(undefined);
+  // The mode is a full-screen takeover the student leaves by a client-side
+  // <Link>, so no navigation event ever stops this interval: without the
+  // unmount clear it keeps ticking and advances a card in a tree that is gone.
+  // Same guard MatchingMode puts on its board timers.
+  useEffect(() => () => window.clearInterval(cooldownTimer.current), []);
 
   const current = deck[index];
 
-  const answer = (correct: boolean) => {
-    if (!current) return;
-    const nextMissed = correct ? missed : [...missed, current];
-    setResults([...results, { word_id: current.id, correct }]);
-    setMissed(nextMissed);
-    // Reported here, not at the end: a student who quits after 20 of 25 cards
-    // keeps those 20 verdicts.
-    session.report({ word_id: current.id, correct });
+  /** End the hold and deal the next card — or close the round. */
+  const advance = () => {
+    window.clearInterval(cooldownTimer.current);
+    cooldownTimer.current = undefined;
+    setCooldown(null);
+    setFlipped(false);
+    lockedRef.current = false;
 
     if (index + 1 < deck.length) {
       setIndex(index + 1);
-      setFlipped(false);
       return;
     }
-    if (nextMissed.length === 0) {
+    if (missedRef.current.length === 0) {
+      // Already graded the instant the last verdict landed (see `answer`);
+      // `finish` is a latch, so this call is only here to keep the two exits
+      // honest if the round ever ends by some other path.
       setPhase("done");
       session.finish();
     } else {
@@ -81,8 +125,52 @@ function FlashcardRunner({
     }
   };
 
+  const answer = (correct: boolean) => {
+    if (lockedRef.current || !current) return;
+    lockedRef.current = true;
+
+    const result: SessionResult = { word_id: current.id, correct };
+    resultsRef.current = [...resultsRef.current, result];
+    setResults(resultsRef.current);
+    if (!correct) {
+      missedRef.current = [...missedRef.current, current];
+      setMissed(missedRef.current);
+    }
+    // Reported here, not when the hold ends: a student who walks out mid-pause —
+    // or after 20 of 25 cards — keeps every verdict they actually gave.
+    session.report(result);
+
+    // Graded here too, for the same reason and a sharper one: the hold opens a
+    // five-second window after the *final* card in which leaving would flush the
+    // session as partial, and a session that never completes scores as if the
+    // game was never played. The student has finished the set by this point.
+    if (index + 1 >= deck.length && missedRef.current.length === 0) session.finish();
+
+    // The hold is meant to teach, so the answer has to be on screen for it.
+    setFlipped(true);
+    setCooldown({ correct, secondsLeft: COOLDOWN_SECONDS });
+
+    // The remaining count is an interval-local instead of being read back off
+    // `cooldown`: this callback is created once and would otherwise keep seeing
+    // the render that started it and stall at 4. `useLeadInTicks` in ./timers
+    // has the right shape but re-anchors from an effect, which paints one frame
+    // of the *previous* card's leftover 0 before it resets.
+    let left = COOLDOWN_SECONDS;
+    cooldownTimer.current = window.setInterval(() => {
+      left -= 1;
+      if (left > 0) {
+        setCooldown({ correct, secondsLeft: left });
+        return;
+      }
+      advance();
+    }, COOLDOWN_STEP_MS);
+  };
+
   const practiseMissed = () => {
-    setDeck(missed);
+    // Read before the reset: `setDeck` keeps the array it was handed, so
+    // re-pointing the ref afterwards cannot empty the new deck.
+    setDeck(missedRef.current);
+    missedRef.current = [];
     setMissed([]);
     setIndex(0);
     setFlipped(false);
@@ -90,6 +178,9 @@ function FlashcardRunner({
     setPhase("study");
   };
 
+  // Flipping stays live during the hold — the pause is a pause, not a freeze —
+  // but the verdict keys are swallowed by `answer`'s lock. They still report as
+  // consumed so an arrow doesn't scroll the takeover out from under the card.
   useModeKeys(phase === "study", (key) => {
     if (key === " " || key === "Enter") {
       setFlipped((f) => !f);
@@ -214,15 +305,29 @@ function FlashcardRunner({
 
         <FlipCard word={current} flipped={flipped} onFlip={() => setFlipped(!flipped)} />
 
-        <p className="text-center text-[12px] text-muted-foreground">
-          Click the card or press <Kbd>Space</Kbd> to flip · <Kbd>1</Kbd> wrong · <Kbd>2</Kbd> correct
-        </p>
+        {cooldown ? (
+          <CooldownStrip correct={cooldown.correct} secondsLeft={cooldown.secondsLeft} />
+        ) : (
+          <p className="text-center text-[12px] text-muted-foreground">
+            Click the card or press <Kbd>Space</Kbd> to flip · <Kbd>1</Kbd> wrong · <Kbd>2</Kbd> correct
+          </p>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
-          <VerdictButton tone="wrong" onClick={() => answer(false)}>
+          <VerdictButton
+            tone="wrong"
+            held={cooldown != null}
+            chosen={cooldown?.correct === false}
+            onClick={() => answer(false)}
+          >
             <X className="h-5 w-5" /> Wrong
           </VerdictButton>
-          <VerdictButton tone="correct" onClick={() => answer(true)}>
+          <VerdictButton
+            tone="correct"
+            held={cooldown != null}
+            chosen={cooldown?.correct === true}
+            onClick={() => answer(true)}
+          >
             <Check className="h-5 w-5" /> Correct
           </VerdictButton>
         </div>
@@ -333,12 +438,68 @@ function CardFace({ children, back, hint }: { children: ReactNode; back?: boolea
   );
 }
 
+/**
+ * The hold between a verdict and the next card. It has to read as a deliberate
+ * pause: two greyed-out buttons on their own just look broken, so this names
+ * what happens next and shows the time draining away.
+ */
+function CooldownStrip({ correct, secondsLeft }: { correct: boolean; secondsLeft: number }) {
+  return (
+    <div
+      role="status"
+      className="cr-pillin flex items-center gap-3 rounded-2xl border border-border bg-surface-2 px-4 py-3"
+    >
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+          correct ? "bg-success-soft text-success" : "bg-warning-soft text-warning",
+        )}
+      >
+        {correct ? (
+          <Check className="h-4.5 w-4.5" aria-hidden />
+        ) : (
+          <RotateCcw className="h-4.5 w-4.5" aria-hidden />
+        )}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-bold text-foreground">
+          {correct ? "Nice — sit with the definition for a beat." : "Read it through — you'll see this one again."}
+        </p>
+        {/* The width steps once a second; the linear tween joins the steps into
+            one continuous drain. Under reduced motion the steps stay bare, which
+            still reads as a countdown because the digit beside it moves too. */}
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-surface-3">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-1000 ease-linear motion-reduce:transition-none"
+            style={{ width: `${(secondsLeft / COOLDOWN_SECONDS) * 100}%` }}
+          />
+        </div>
+      </div>
+      {/* aria-hidden: `role="status"` announces the strip once when it appears,
+          and a digit ticking every second would re-announce the whole thing five
+          times over the top of it. */}
+      <span aria-hidden>
+        <ModePill tone="primary">
+          <Timer className="h-3.5 w-3.5" />
+          <span className="ds-num">{secondsLeft}s</span>
+        </ModePill>
+      </span>
+    </div>
+  );
+}
+
 function VerdictButton({
   tone,
+  held,
+  chosen,
   onClick,
   children,
 }: {
   tone: "wrong" | "correct";
+  /** A card is being held: neither button takes a click. */
+  held: boolean;
+  /** This is the verdict the student just gave. */
+  chosen: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -346,11 +507,19 @@ function VerdictButton({
     <button
       type="button"
       onClick={onClick}
+      disabled={held}
+      aria-pressed={chosen}
       className={cn(
         "ds-ring cr-press inline-flex h-16 items-center justify-center gap-2.5 rounded-2xl border-2 text-[16px] font-extrabold shadow-card",
         tone === "wrong"
           ? "border-danger/25 bg-danger-soft text-danger-foreground hover:border-danger/60"
           : "border-success/25 bg-success-soft text-success-foreground hover:border-success/60",
+        // Cosmetic only — the real throttle is `lockedRef`, which the window key
+        // handler goes through and `disabled` never reaches. This just keeps the
+        // chosen verdict readable and lets the other one recede for the hold.
+        held && "pointer-events-none",
+        held && !chosen && "opacity-40 shadow-none",
+        chosen && (tone === "wrong" ? "border-danger" : "border-success"),
       )}
     >
       {children}

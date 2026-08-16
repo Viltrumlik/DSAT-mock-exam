@@ -605,6 +605,11 @@ class PartialFlushTests(VocabFixture):
         body = final.json()
         self.assertEqual((body["correct_count"], body["total_count"]), (25, 25))
         self.assertEqual(body["accuracy"], 100.0)
+        # The distinct set accumulates alongside the counts — three disjoint flushes over
+        # 25 words is full coverage. The union's harder case (a word arriving in two
+        # flushes) is in test_vocab_coverage.py.
+        self.assertEqual(body["distinct_words"], 25)
+        self.assertAlmostEqual(body["coverage"], 1.0)
         self.assertEqual(body["duration_ms"], 30_000)
         self.assertTrue(body["set_completed"])
 
@@ -617,6 +622,7 @@ class PartialFlushTests(VocabFixture):
         self.assertEqual(fourth.json()["total_count"], 25)
         session.refresh_from_db()
         self.assertEqual((session.correct_count, session.total_count), (25, 25))
+        self.assertEqual(session.distinct_words, 25)
         self.assertEqual(session.duration_ms, 30_000)
         self.assertEqual(session.completed_at, completed_at)
         self.assertEqual(

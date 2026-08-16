@@ -64,13 +64,33 @@ def start_new_season(name: str, *, actor=None, note: str = "") -> RewardSeason:
 
 # ── Rules ─────────────────────────────────────────────────────────────────────
 
-def points_for(event: str) -> int:
-    """Live value of an event. Falls back to the seeded default when no rule row exists, so
-    introducing a new event never silently awards nothing."""
-    rule = RewardRule.objects.filter(event=event, is_active=True).only("points").first()
+def pricing_for(event: str) -> tuple[int, bool]:
+    """``(points, grants_xp)`` for an event, in ONE query.
+
+    Both answers live on the same ``RewardRule`` row, and ``award`` needs both on every grant.
+    Reading them through two lookups would double the query count on the ledger's hottest
+    path — the deadline sweep re-prices every open bundle every ten minutes.
+
+    Falls back to the seeded default when no *active* rule row exists, so introducing a new
+    event never silently awards nothing. An inactive rule is treated as absent for both
+    answers, not as "worth nothing" and not as "no XP".
+    """
+    rule = (
+        RewardRule.objects.filter(event=event, is_active=True)
+        .only("points", "grants_xp")
+        .first()
+    )
     if rule is not None:
-        return int(rule.points)
-    return int(constants.DEFAULT_POINTS.get(event, 0))
+        return int(rule.points), bool(rule.grants_xp)
+    return (
+        int(constants.DEFAULT_POINTS.get(event, 0)),
+        event not in constants.XP_EXCLUDED_EVENTS,
+    )
+
+
+def points_for(event: str) -> int:
+    """Live value of an event. See :func:`pricing_for`."""
+    return pricing_for(event)[0]
 
 
 # ── Awarding ──────────────────────────────────────────────────────────────────
@@ -107,11 +127,22 @@ def award(
                 .first()
             )
 
+            # One rule read for both answers. `grants_xp` is needed on every path — even the
+            # no-op re-run has to compute the XP to know nothing moved — so the lookup is
+            # unconditional, but it must stay a SINGLE query: pricing and the XP flag live on
+            # the same row, and asking for them separately would double the query count on the
+            # path the ten-minute sweep hammers.
+            rule_points, grants_xp = pricing_for(event)
+
             # Price ONCE, at the moment the earning is first recognised. Re-reading the rule
             # on every correction would let a retune rewrite history: hooks re-fire freely by
-            # design and the deadline sweep re-runs hourly, so lowering HOMEWORK_FULL from 15
-            # to 5 would silently restate awards students had already banked and seen. The
-            # models docstring states that invariant; this is what holds it.
+            # design and the sweep re-runs every ten minutes, so lowering HOMEWORK from 15 to 5
+            # would silently restate awards students had already banked and seen. The models
+            # docstring states that invariant; this is what holds it.
+            #
+            # Proportional homework is unaffected: it passes an explicit `points=`, which takes
+            # the first branch and never reaches the frozen one — a re-settled bundle is meant
+            # to move with the percentage.
             #
             # A changed EVENT is a changed fact (a re-grade moving MID→FULL) and does re-price.
             # A revoked award (points zeroed) is re-priced from the rule when the fact comes
@@ -121,11 +152,11 @@ def award(
             elif existing is not None and existing.event == event and existing.points != 0:
                 value = int(existing.points)
             else:
-                value = points_for(event)
+                value = rule_points
             if existing is None:
                 created = PointAward.objects.create(
                     student=student, season=season, event=event, points=value,
-                    xp=constants.xp_for(event, value),
+                    xp=constants.xp_for(event, value, grants_xp=grants_xp),
                     classroom=classroom, source_type=source_type, source_id=source_id,
                     idempotency_key=idempotency_key, created_by=actor, note=note,
                 )
@@ -139,12 +170,15 @@ def award(
             previous = existing.points
             previous_xp = int(existing.xp)
             # The high-water mark. `max` rather than assignment is the whole of the school's
-            # "XP can never be taken away" rule, and it holds against every way an earning can
-            # fall: a re-grade dropping HOMEWORK_FULL to HOMEWORK_MID, a PRESENT corrected to
-            # LATE, a manual adjustment revised downwards. Each lowers `points` and leaves
-            # `xp` untouched. It still climbs freely — ABSENT corrected back to PRESENT, or a
-            # re-sit scoring higher, raises both.
-            new_xp = max(previous_xp, constants.xp_for(event, value))
+            # "XP is never taken away for doing WORSE" rule, and it holds against every way an
+            # earning can shrink: a re-grade dropping a homework from 90% to 60%, a PRESENT
+            # corrected to LATE, a manual adjustment revised downwards. Each lowers `points`
+            # and leaves `xp` untouched. It still climbs freely — ABSENT corrected back to
+            # PRESENT, or a re-sit scoring higher, raises both.
+            #
+            # The narrower rule lives in `revoke`: a fact that never happened at all does take
+            # its XP back. `max` here is only about a fact that got smaller.
+            new_xp = max(previous_xp, constants.xp_for(event, value, grants_xp=grants_xp))
             changed = previous != value or existing.event != event or new_xp != previous_xp
             if not changed:
                 # The common case on a re-run: a backfill command or a duplicate Celery
@@ -183,17 +217,29 @@ def award(
 
 
 def revoke(idempotency_key: str, *, reason: str, actor=None) -> bool:
-    """Take an award back by zeroing it, keeping the row and its history.
+    """Take an award back by zeroing it — points **and** XP — keeping the row and its history.
 
-    Used when the fact behind an award is corrected away — a PRESENT flipped to ABSENT after
-    the session was finalized, a survey response withdrawn. Deleting the row instead would
-    make the student's history silently disagree with their balance.
+    Used when the fact behind an award is corrected away: a PRESENT flipped to ABSENT, a
+    survey response withdrawn, a support session un-held. Deleting the row instead would make
+    the student's history silently disagree with their balance.
 
-    ``xp`` is deliberately left standing. This is the sharp end of the school's rule: XP is
-    never taken off a student, so the one operation whose whole job is taking an earning back
-    must not touch it. The award ends up with 0 points and its XP intact, which is exactly
-    what the columns are for — and it is why the audit row records the XP that did *not*
-    move, rather than leaving the reader to infer it.
+    **The refined XP rule, precisely.** XP is never taken away for doing WORSE — that is
+    ``award``'s ``max(previous_xp, …)``, and a re-grade that lowers an earning still leaves
+    the XP standing. But a WITHDRAWN fact takes its XP with it, because a fact that never
+    happened cannot be evidence of anything. Doing worse and not having done it at all are
+    different, and only the second reaches here.
+
+    That distinction is what makes save-time attendance payment safe. Attendance now pays the
+    moment a teacher saves the register, not when the session is finalized, and the register
+    has a **Mark all present** button that writes a PRESENT row for the entire roster with no
+    confirmation. Under the old rule one mis-click permanently granted XP to every absentee in
+    the class and no correction could take it back — the teacher could fix the points and the
+    board would stay wrong forever. Zeroing XP here is the only thing that makes the mis-click
+    recoverable.
+
+    The audit row records the XP leaving (``previous_xp`` → 0) rather than leaving a reader to
+    infer it, for the same reason the columns exist at all: "why did my XP drop?" has to be
+    answerable from the ledger alone.
     """
     try:
         with transaction.atomic():
@@ -202,14 +248,19 @@ def revoke(idempotency_key: str, *, reason: str, actor=None) -> bool:
                 .filter(idempotency_key=idempotency_key)
                 .first()
             )
-            if existing is None or existing.points == 0:
+            # Both columns, not just `points`: a row revoked before this rule existed still
+            # carries its XP, and a re-fired hook is then the thing that finishes the job.
+            # Re-revoking a fully zeroed row is still the no-op the hooks depend on.
+            if existing is None or (existing.points == 0 and existing.xp == 0):
                 return False
             previous = existing.points
+            previous_xp = int(existing.xp)
             existing.points = 0
-            existing.save(update_fields=["points", "updated_at"])
+            existing.xp = 0
+            existing.save(update_fields=["points", "xp", "updated_at"])
             PointAwardAudit.objects.create(
                 award=existing, previous_points=previous, new_points=0,
-                previous_xp=existing.xp, new_xp=existing.xp,
+                previous_xp=previous_xp, new_xp=0,
                 reason=reason or "revoked", actor=actor,
             )
             return True
@@ -262,11 +313,11 @@ def xp_balances_for(student_ids, *, classroom=None) -> dict[int, int]:
 def xp_board_totals_for(student_ids, *, classroom=None) -> dict[int, dict]:
     """``{student_id: {"xp": int, "awards": int}}`` — what the Academic board reads.
 
-    The XP twin of :func:`board_totals_for`, and it differs in the two ways XP always does:
-    no season filter, and the excluded events contribute nothing. ``awards`` counts only the
-    earnings that actually carried XP, so a student whose entire history is late arrivals
-    reads as 0 from 0 rather than 0 from nine — the second would look like a bug to whoever
-    is staring at the board.
+    The XP twin of :func:`board_totals_for`, and it differs in the way XP always does: no
+    season filter, because XP is a lifetime figure. ``awards`` counts only the earnings that
+    actually carried XP, which is now the revoked rows and anything a rule has had ``grants_xp``
+    turned off for — a student whose whole history was withdrawn reads as 0 from 0 rather than
+    0 from nine, and the second would look like a bug to whoever is staring at the board.
     """
     if not student_ids:
         return {}

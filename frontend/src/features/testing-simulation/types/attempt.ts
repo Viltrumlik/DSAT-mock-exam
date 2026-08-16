@@ -53,13 +53,19 @@ export const examQuestionSchema = z
   .passthrough();
 export type ExamQuestion = z.infer<typeof examQuestionSchema>;
 
-/** The module the student is currently inside, with its question list. */
-export const activeModuleSchema = z.object({
-  id: z.number(),
-  module_order: moduleOrderSchema,
-  time_limit_minutes: z.number(),
-  questions: z.array(examQuestionSchema),
-});
+/** The module the student is currently inside, with its question list.
+ *
+ *  `.passthrough()` like every other shape in this file. A bare `z.object()` STRIPS unknown
+ *  keys, so a field the serializer adds later — what this module is worth, a reward flag —
+ *  would vanish here without an error and read as "the backend never sent it". */
+export const activeModuleSchema = z
+  .object({
+    id: z.number(),
+    module_order: moduleOrderSchema,
+    time_limit_minutes: z.number(),
+    questions: z.array(examQuestionSchema),
+  })
+  .passthrough();
 export type ActiveModule = z.infer<typeof activeModuleSchema>;
 
 const practiceTestDetailsSchema = z

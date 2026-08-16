@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 
-from django.db.models.signals import post_save
+from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from . import constants
@@ -37,18 +37,31 @@ _ATTENDANCE_EVENTS = {
 def sync_attendance_record(record, *, actor=None) -> None:
     """Bring one student's award for one lesson in line with the mark on the register.
 
-    Nothing is banked until the session is FINALIZED — a teacher toggles P/A/L/E freely while
-    marking, and paying on each toggle would let a mis-click mint points. After finalize an
-    owner may still correct a mark, which is why this also *revokes*: PRESENT→ABSENT has to
-    give the 5 back, not leave it stranded.
-    """
-    from classes.models_attendance import AttendanceSession
+    **Pays the moment the mark is saved.** This reverses the old rule, which banked nothing
+    until the session was FINALIZED. The school's instruction is that attendance credit lands
+    on save: a student marked present at 09:05 sees the 5 points then, not whenever the teacher
+    gets round to finalizing — which in practice is often never, leaving a lesson that plainly
+    happened worth nothing.
 
+    **What that costs, stated plainly.** ``Mark all present`` writes a PRESENT row for the whole
+    roster in one press with no confirmation (``classes/views_attendance.py``), and a teacher
+    toggles P/A/L/E freely while marking. Payment is therefore *provisional* and
+    *correction-driven*: every mis-mark is paid first and taken back when the register is
+    fixed, where before it was confirmed first and paid once.
+
+    **Why that is safe now and was not before.** ``revoke`` zeroes ``xp`` alongside ``points``
+    (services.py) — a withdrawn fact takes its XP with it. Under the old rule XP was a permanent
+    high-water mark, so one stray press granted XP to every absentee in the class and no
+    correction could ever take it back: the teacher could fix the points and the board would
+    stay wrong forever. Paying on save without that change would have been unrecoverable.
+
+    Correcting is most of what this function now does, which is why it also *revokes*:
+    PRESENT → ABSENT has to give the 5 back, not leave it stranded.
+
+    Strikes deliberately did **not** move with this — see :func:`sync_attendance_strikes`.
+    """
     session = record.session
     key = constants.attendance_key(record.id)
-
-    if session.status != AttendanceSession.STATUS_FINALIZED:
-        return
 
     event = _ATTENDANCE_EVENTS.get(record.status)
     if event is None:
@@ -70,7 +83,16 @@ def sync_attendance_record(record, *, actor=None) -> None:
 
 
 def sync_attendance_session(session, *, actor=None) -> None:
-    """Settle every mark on a finalized session."""
+    """Re-settle every mark on a finalized session.
+
+    No longer the payment path — each record pays itself on save — so this is a reconciliation
+    pass: it re-runs marks whose own award write lost a race or failed transiently, and finalize
+    is the natural moment to do that because it is the point the register stops moving.
+
+    Still FINALIZED-gated, and that is a cost decision rather than a rule: dropping the gate
+    would walk and re-price every record on *every* session save (a date edit, a note, the
+    nightly ensure-sessions job) to re-derive awards the record hook has already written.
+    """
     from classes.models_attendance import AttendanceSession
 
     if session.status != AttendanceSession.STATUS_FINALIZED:
@@ -86,6 +108,14 @@ def sync_attendance_strikes(session, *, actor=None) -> None:
     same row. Points are per-record and idempotent on that record; a strike is a property of a
     student's whole history, so one mark changing means recomputing that student — and a
     session finalizing means recomputing all of them.
+
+    **Deliberately still FINALIZED-gated, while points now pay on save.** That asymmetry is the
+    decision, not an oversight. ``strikes.recompute`` re-derives a student's entire attendance
+    history, zeroes ``spent_in_streak`` and writes a visible ``KIND_RESET`` transaction the
+    student can read. Running it on every P/A/L/E toggle would break and rebuild a student's
+    streak under the teacher's cursor, spending and refunding their strike balance as the
+    register is typed. An idempotent per-record award survives that; a re-derived history with
+    a user-visible reset row does not.
     """
     from classes.models_attendance import AttendanceSession
 
@@ -127,7 +157,167 @@ def _on_attendance_record_saved(sender, instance, **kwargs):
         logger.exception("strike_hook_failed attendance_record=%s", instance.pk)
 
 
+# ── Attendance: the mark went away ────────────────────────────────────────────
+#
+# The only ``post_delete`` receivers in the app, and the register is the reason: it is the one
+# reward source staff routinely delete. A session opened on the wrong date, a duplicate created
+# by two teachers at once, a class rebuilt — each takes its marks with it. Every other source
+# (a graded attempt, a survey response, a support booking) is corrected in place, never removed.
+#
+# Without these, deleting a session left its points paid with nothing left to explain them:
+# the student's feed showed an earning for a lesson that no longer exists, and no re-run of any
+# hook could find it to take back.
+
+def revoke_attendance_award(record_id, *, reason: str, actor=None) -> None:
+    """Zero the award for an attendance mark that no longer exists."""
+    if record_id is None:
+        return
+    revoke(constants.attendance_key(record_id), reason=reason, actor=actor)
+
+
+def _award_dies_with_this_delete(instance, origin) -> bool:
+    """Is the award this mark paid being deleted by the very cascade that removed the mark?
+
+    ``PointAward.student`` is the ONLY cascading FK into the ledger — ``season`` is PROTECT,
+    ``classroom`` and ``created_by`` are SET_NULL — so the question reduces to "is this mark's
+    student being deleted too". A classroom, a session or a queryset of marks all leave the
+    award standing, which is exactly why they must still revoke.
+
+    ``origin`` — what ``delete()`` was actually called on, sent with the signal since Django
+    4.1 — is the only thing in scope that can answer it. Every cheaper reading is wrong:
+
+    * the student row is still there (``Collector.sort`` deletes children first, so the parent
+      user goes last), so an existence check says "alive" throughout the cascade;
+    * whether the ``PointAward`` row has gone yet is arbitrary — nothing orders it against
+      ``AttendanceRecord`` in the collector, so the two land in model-registration order and
+      the bug this guard exists for reproduced only half the time.
+
+    A queryset origin over the user model is treated as fatal without checking membership,
+    because the only route from a user to an ``AttendanceRecord`` is the record's own
+    ``student`` FK: ``AttendanceRecord.marked_by`` and ``AttendanceSession.created_by`` are
+    SET_NULL and ``Classroom.created_by`` is PROTECT, so a user cascade cannot reach a mark
+    belonging to somebody else.
+    """
+    if origin is None:
+        return False
+
+    from django.contrib.auth import get_user_model
+
+    user_model = get_user_model()
+    if isinstance(origin, user_model):
+        return origin.pk == instance.student_id
+    origin_model = getattr(origin, "model", None)      # a QuerySet.delete()
+    return origin_model is not None and issubclass(origin_model, user_model)
+
+
+@receiver(post_delete, sender="classes.AttendanceRecord", dispatch_uid="rewards_attendance_record_deleted")
+def _on_attendance_record_deleted(sender, instance, origin=None, **kwargs):
+    """A mark was removed, so whatever it paid comes back — unless the payee is going with it.
+
+    ``instance.pk`` is still populated here: the collector clears primary keys only *after*
+    every ``post_delete`` has been sent, so the idempotency key is still derivable.
+
+    ``instance.session`` is deliberately not touched. ``revoke`` needs nothing but the key, and
+    dereferencing the FK would be a query against a row that is itself mid-delete in the cascade
+    case below.
+
+    Registering this receiver is what makes that cascade work at all:
+    ``Collector.can_fast_delete`` consults ``post_delete.has_listeners``, so a listener here is
+    what stops Django collapsing the child rows into one raw ``DELETE`` that signals nothing.
+    The per-record loop it falls back to is the cost of getting the revoke — which is why this
+    stays a ``post_delete`` receiver rather than moving onto ``AttendanceRecord.delete()``: a
+    cascade never calls the model's ``delete()``, and the register's commonest removals (a
+    session on the wrong date, a rebuilt class, a student taken off the platform) are all
+    cascades.
+
+    **Why the guard.** Deleting a student cascades into ``AttendanceRecord`` *and* into
+    ``PointAward``, and the collector fast-deletes ``PointAwardAudit`` before either. Revoking
+    here would then write a fresh audit row pointing at a ``PointAward`` the same cascade is
+    about to remove, and the delete would fail its foreign key — at COMMIT, because Django
+    declares that FK ``DEFERRABLE INITIALLY DEFERRED``. Note where that lands: *outside* this
+    receiver and outside ``revoke``'s savepoint, so neither the ``except`` below nor the
+    swallow inside ``services`` can catch it. Deleting a student simply raised.
+
+    Skipping is not a compromise, it is the correct answer: the whole ledger for that student
+    is being deleted by the same statement, so there is no award left to take back and nobody
+    left to take it from. Every other delete — one mark, a session, a classroom, a queryset of
+    marks — leaves the award row standing and still revokes.
+
+    ``transaction.on_commit`` would also dodge the FK, and is wrong here: the register is
+    corrected inside teacher requests that read the balance back, and a deferred revoke leaves
+    a deleted lesson paid until the request finishes.
+    """
+    try:
+        if _award_dies_with_this_delete(instance, origin):
+            return
+        revoke_attendance_award(instance.pk, reason="attendance record deleted")
+    except Exception:
+        logger.exception("reward_hook_failed attendance_record_deleted=%s", instance.pk)
+
+
+@receiver(post_delete, sender="classes.AttendanceSession", dispatch_uid="rewards_attendance_session_deleted")
+def _on_attendance_session_deleted(sender, instance, **kwargs):
+    """A whole lesson was deleted — sweep up any attendance award left standing without a mark.
+
+    Normally there is nothing to find: ``AttendanceRecord.session`` is ``CASCADE``, and a cascade
+    deletes rows *without* ever calling the model's ``delete()``, so the receiver above is the
+    only thing that runs — and by the time this fires it already has. This is the reconciliation
+    pass for the rows it could not reach: records removed by a raw ``DELETE``, by a data
+    migration, or during the period before that receiver existed.
+
+    Driven by the awards rather than by the records, because the records are the thing that is
+    gone. Scoped to this session's classroom so the scan stays small, and to rows that still
+    carry something — a re-run finds nothing and writes nothing, which is what lets it sit on a
+    delete path.
+
+    Needs no equivalent of ``_award_dies_with_this_delete``: nothing cascades from a user into
+    an ``AttendanceSession`` (``created_by`` is SET_NULL, and ``Classroom.created_by`` is
+    PROTECT), so the awards this touches always outlive the delete that woke it. Under a
+    *classroom* cascade it writes nothing at all — ``PointAward.classroom`` is SET_NULL and the
+    collector applies its field updates before any ``post_delete``, so the filter below matches
+    no rows by the time this runs.
+    """
+    try:
+        from classes.models_attendance import AttendanceRecord
+
+        from .models import PointAward
+
+        paid = set(
+            PointAward.objects.filter(
+                classroom_id=instance.classroom_id,
+                source_type="attendance_record",
+                source_id__isnull=False,
+            )
+            .exclude(points=0, xp=0)
+            .values_list("source_id", flat=True)
+        )
+        if not paid:
+            return
+        alive = set(AttendanceRecord.objects.filter(id__in=paid).values_list("id", flat=True))
+        for record_id in paid - alive:
+            revoke_attendance_award(record_id, reason="attendance session deleted")
+    except Exception:
+        logger.exception("reward_hook_failed attendance_session_deleted=%s", instance.pk)
+
+
 # ── Midterm: 20 for a pass, 5 for passing a retake ────────────────────────────
+
+def _verdict_rests_on_a_later_sitting(outcome, awarded_at) -> bool:
+    """Did the student sit this paper AGAIN after the award was banked?
+
+    ``MidtermOutcome`` is one upserted row per (midterm, student) that always follows the
+    newest sitting, so the row alone cannot say which of the two things happened to it. This
+    compares the sitting the verdict now rests on against the moment the award was first
+    written: a **re-score** corrects a sitting that finished before the award, a **re-sit**
+    finishes after it.
+
+    Deliberately strict, and deliberately conservative when it cannot tell (no attempt, no
+    completion time, or the two timestamps tie): the caller keeps XP only on positive proof of
+    a later sitting, and treats everything else as the re-score it looks like.
+    """
+    completed_at = getattr(outcome.attempt, "completed_at", None)
+    return completed_at is not None and awarded_at is not None and completed_at > awarded_at
+
 
 def sync_midterm_outcome(outcome, *, actor=None) -> None:
     """Award the verdict recorded for one student on one midterm.
@@ -138,20 +328,73 @@ def sync_midterm_outcome(outcome, *, actor=None) -> None:
     mechanisms are unrelated despite the shared word.
 
     A verdict can move: ``record_for`` is an ``update_or_create`` that a re-score or a later
-    sitting can flip. A pass turning into a fail therefore revokes.
+    sitting can flip.
+
+    **A non-pass is two different facts, and the overhaul split them.** ``revoke`` now zeroes
+    XP as well as points (OVERHAUL §6), which turned one branch into a confiscation the school
+    never asked for. §6 narrows the rule to "XP is never taken away for doing WORSE", and the
+    two ways a pass becomes a fail sit on opposite sides of that line:
+
+    * **A re-score** — the same sitting, re-judged — is a *withdrawn* fact. The student never
+      passed; the platform was wrong. That still ``revoke``s, and the XP goes with it, exactly
+      as a PRESENT corrected to ABSENT does.
+    * **A lower re-sit** is the definition of doing worse. The earlier pass genuinely happened
+      and its XP was genuinely earned. Because the outcome row follows the newest sitting, the
+      old branch let a student who voluntarily sat again to try to improve be stripped of XP
+      they had banked weeks earlier — a strictly worse outcome than not sitting at all, which
+      is precisely the incentive §6 exists to remove. This settles at ``points=0`` instead:
+      points are the current truth and must fall, while ``award``'s ``max(previous_xp, …)``
+      leaves the XP standing.
+
+    ``points=0`` rather than "write nothing" on that branch is the load-bearing part: it
+    records that the verdict was assessed and is currently worth nothing, which a later pass
+    raises back to the rule's price. Skipping the write would leave the old points paid.
+
+    The two are told apart by :func:`_verdict_rests_on_a_later_sitting`, and one case is read
+    imprecisely: a student who failed, then passed a re-sit, then had *that* re-sit re-scored
+    down is treated as a downgrade and keeps the XP. The outcome row cannot distinguish it —
+    nothing records which sitting the award was paid for — and of the two ways to be wrong,
+    keeping XP a student was once shown is the one that does not confiscate.
     """
     from midterms.models import Midterm
 
+    from .models import PointAward
+
     key = constants.midterm_key(outcome.id)
-
-    if not outcome.passed:
-        revoke(key, reason="midterm verdict is not a pass", actor=actor)
-        return
-
     is_retake = outcome.midterm.midterm_type == Midterm.TYPE_RETAKE
     event = (
         constants.EVENT_MIDTERM_RETAKE_PASS if is_retake else constants.EVENT_MIDTERM_PASS
     )
+
+    if not outcome.passed:
+        # Only read the ledger on the branch that can confiscate. `xp > 0` is the test for
+        # "a pass was banked here": no row, a never-paid fail, or an already-revoked one all
+        # fall through to `revoke`, which is a no-op on every one of them.
+        banked = (
+            PointAward.objects.filter(idempotency_key=key)
+            .only("id", "xp", "awarded_at")
+            .first()
+        )
+        downgraded = (
+            banked is not None
+            and banked.xp > 0
+            and _verdict_rests_on_a_later_sitting(outcome, banked.awarded_at)
+        )
+        if downgraded:
+            award(
+                outcome.student,
+                event,
+                idempotency_key=key,
+                points=0,
+                source_type="midterm_outcome",
+                source_id=outcome.id,
+                actor=actor,
+                reason="midterm re-sat below the pass mark",
+            )
+        else:
+            revoke(key, reason="midterm verdict is not a pass", actor=actor)
+        return
+
     award(
         outcome.student,
         event,

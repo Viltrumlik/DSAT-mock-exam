@@ -67,6 +67,13 @@ class RewardRule(models.Model):
 
     event = models.CharField(max_length=40, choices=EVENT_CHOICES, unique=True)
     points = models.IntegerField()
+    # Whether this event's points also count as XP. Data rather than a constant because the
+    # school reversed the old exclusion list (see ``constants.XP_EXCLUDED_EVENTS``) and will
+    # want to reverse parts of it back — SURVEY at 40 points dominates the XP board — without
+    # waiting for a deploy. Default True: XP follows points everywhere unless told otherwise.
+    grants_xp = models.BooleanField(
+        default=True, help_text="Whether this event's points also earn XP."
+    )
     is_active = models.BooleanField(default=True)
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
@@ -100,11 +107,13 @@ class PointAward(models.Model):
     # same events, at the same moment, keyed by the same idempotency key — a parallel ledger
     # would be the same hooks written twice and a second thing to keep in step.
     #
-    # It is a HIGH-WATER MARK, and that is the entire difference between the two columns.
-    # ``points`` is the current truth and moves in both directions: a re-grade rewrites it, a
-    # revocation zeroes it. ``xp`` only ever climbs. The school's rule is that XP cannot be
-    # taken off a student, so a correction that lowers an earning lowers the points and leaves
-    # the XP where it stood. See ``services.award``.
+    # It is a HIGH-WATER MARK **while the earning stands**, and that is the entire difference
+    # between the two columns. ``points`` is the current truth and moves in both directions.
+    # ``xp`` never falls for a *smaller* fact — a re-grade dropping a homework percent, a
+    # PRESENT corrected to LATE — because the school's rule is that XP is not taken off a
+    # student for doing worse. A *withdrawn* fact is the one exception and takes its XP with
+    # it: ``services.revoke`` zeroes both. Without that, one "Mark all present" mis-click
+    # would permanently grant XP to a whole roster. See ``services.award`` / ``services.revoke``.
     xp = models.PositiveIntegerField(default=0)
 
     # Where it happened. Nullable because surveys and midterms belong to no single class —
