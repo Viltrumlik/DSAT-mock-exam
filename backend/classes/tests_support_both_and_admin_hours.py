@@ -333,3 +333,37 @@ class AdminSetsHoursTests(TestCase):
         ).json()
 
         self.assertEqual(len(body["slots"]), 1)
+
+    def test_an_admin_reads_the_named_teachers_week_not_their_own(self):
+        """The read-side twin of the bug at the top of this class.
+
+        The writes learned to take a target; the calendar endpoint had not, so it answered
+        with ``request.user``'s week whatever was asked for. An admin opening a teacher's grid
+        was shown their own — empty — week and then invited to edit it, which is how hours end
+        up published onto the wrong person.
+        """
+        self.client.force_authenticate(self.admin)
+
+        body = self.client.get(
+            f"/api/classes/support/my-calendar/?support_teacher={self.support.pk}"
+        ).json()
+
+        self.assertEqual(body["support_teacher"]["id"], self.support.pk)
+
+    def test_a_support_teacher_cannot_read_somebody_elses_week(self):
+        """Refused outright rather than quietly handed their own calendar — a silent
+        substitution is indistinguishable from the endpoint working."""
+        self.client.force_authenticate(self.support)
+
+        response = self.client.get(
+            f"/api/classes/support/my-calendar/?support_teacher={self.other.pk}"
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_omitting_the_target_still_reads_your_own_week(self):
+        self.client.force_authenticate(self.support)
+
+        body = self.client.get("/api/classes/support/my-calendar/").json()
+
+        self.assertEqual(body["support_teacher"]["id"], self.support.pk)

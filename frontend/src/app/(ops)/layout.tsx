@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   Building2,
   CalendarClock,
+  LifeBuoy,
   NotebookText,
   Timer,
   CirclePlay,
@@ -81,6 +82,15 @@ const OPS_NAV = [
     href: "/ops/branches",
     label: "Branches",
     icon: Building2,
+    exact: false,
+  },
+  {
+    // Who teaches support, and which hours they are available. The endpoints for an admin to
+    // set somebody else's hours already existed; there was simply no page that used them, so
+    // the only way to change a support teacher's calendar was to be that teacher.
+    href: "/ops/support",
+    label: "Support",
+    icon: LifeBuoy,
     exact: false,
   },
   {

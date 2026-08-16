@@ -7,13 +7,9 @@ import { cn } from "@/lib/cn";
 import { EmptyState, Skeleton } from "@/components/ui";
 // ErrorState lives with the classroom devices, not in the shared barrel.
 import { ErrorState } from "@/features/classroom/ui";
-import {
-  useMarkRead,
-  useNotifications,
-  usePushConfig,
-} from "./notificationsHooks";
-import { notificationsApi, type NotificationCategory } from "./notificationsApi";
-import { permissionState, pushSupported, subscribeToPush } from "@/lib/push";
+import { useMarkRead, useNotifications } from "./notificationsHooks";
+import { type NotificationCategory } from "./notificationsApi";
+import { usePushOptIn } from "./usePushOptIn";
 
 function ago(iso: string): string {
   const then = new Date(iso).getTime();
@@ -36,33 +32,12 @@ function ago(iso: string): string {
  * when they have not already answered, and it is dismissible.
  */
 function PushPrompt() {
-  const config = usePushConfig();
-  const [dismissed, setDismissed] = useState(false);
-  const [state, setState] = useState<"idle" | "asking" | "done" | "refused">("idle");
+  // The when-to-ask rules moved to `usePushOptIn` when the same ask gained a second home in
+  // the student shell — a student who never opens this drawer never met it, which is why the
+  // school reported that nothing ever asked. Two copies of those rules would drift.
+  const { shouldAsk, state, ask, dismiss } = usePushOptIn();
 
-  const supported = pushSupported();
-  const permission = supported ? permissionState() : "unsupported";
-
-  if (
-    dismissed ||
-    !supported ||
-    !config.data?.enabled ||
-    permission !== "default" ||
-    state === "done"
-  ) {
-    return null;
-  }
-
-  const ask = async () => {
-    setState("asking");
-    const subscription = await subscribeToPush(config.data.public_key);
-    if (!subscription) {
-      setState("refused");
-      return;
-    }
-    await notificationsApi.subscribe(subscription);
-    setState("done");
-  };
+  if (!shouldAsk) return null;
 
   return (
     <div className="mb-3 rounded-xl border border-border bg-surface-2 p-3">
@@ -89,7 +64,7 @@ function PushPrompt() {
           </button>
           <button
             type="button"
-            onClick={() => setDismissed(true)}
+            onClick={dismiss}
             className="rounded-lg px-3 py-1.5 text-xs font-extrabold text-muted-foreground"
           >
             Not now
