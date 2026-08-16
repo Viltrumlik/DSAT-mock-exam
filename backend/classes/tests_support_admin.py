@@ -371,6 +371,26 @@ class TellingPeopleTests(SupportFixture):
         support_service.cancel(booking, actor=self.support, reason="I withdrew this hour.")
         self.assertFalse(self.notes(self.support, note_const.EVENT_SUPPORT_CANCELLED).exists())
 
+    def test_a_teacher_withdrawing_an_hour_tells_the_student(self):
+        """Otherwise the first the student knows about it is an empty room."""
+        booking = support_service.book(self.student, self.slot)
+        support_service.cancel(booking, actor=self.support, reason="I'm away that day.")
+        note = self.notes(self.student, note_const.EVENT_SUPPORT_CANCELLED).get()
+        self.assertIn("I'm away that day.", note.body)
+
+    def test_withdrawing_an_hour_through_the_api_tells_everyone_booked_on_it(self):
+        support_service.book(self.student, self.slot)
+        self.client.force_authenticate(self.support)
+        r = self.client.delete(f"/api/classes/support/availability/{self.slot.id}/")
+        self.assertEqual(r.status_code, 200)
+        note = self.notes(self.student, note_const.EVENT_SUPPORT_CANCELLED).get()
+        self.assertIn("withdrew", note.body)
+
+    def test_a_student_cancelling_is_not_told_about_their_own_cancellation(self):
+        booking = support_service.book(self.student, self.slot)
+        support_service.cancel(booking, actor=self.student, reason="Unwell")
+        self.assertFalse(self.notes(self.student, note_const.EVENT_SUPPORT_CANCELLED).exists())
+
     def test_holding_a_session_tells_the_student_what_they_earned(self):
         booking = support_service.book(self.student, self.slot)
         support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)

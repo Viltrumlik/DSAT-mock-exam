@@ -505,6 +505,33 @@ def _notify_teacher_cancelled(booking) -> None:
     )
 
 
+def _notify_student_cancelled(booking) -> None:
+    """The other half of a withdrawal.
+
+    Withdrawing an hour cancels every booking on it, and until now the student was told
+    nothing at all — the row simply changed state on a page they had no reason to reopen,
+    so the first they knew was an empty room. The reason the withdrawal supplied travels
+    with it, which is the whole point of the withdrawal path setting one.
+    """
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    notify(
+        booking.student,
+        event=note_const.EVENT_SUPPORT_CANCELLED,
+        title="Your support session was cancelled",
+        body=" · ".join(
+            p for p in (
+                _person(booking.availability.support_teacher),
+                _when(booking.availability.starts_at),
+                booking.cancel_reason,
+            ) if p
+        ),
+        link_url="/support",
+        dedupe_key=f"support-cancelled-student:{booking.id}",
+    )
+
+
 def _notify_student_awarded(booking) -> None:
     """Name the earning at the moment it happens.
 
@@ -655,11 +682,17 @@ def cancel(booking, *, actor=None, reason: str = "", now=None) -> SupportBooking
     booking.save(update_fields=[
         "status", "settled_at", "cancel_reason", "cancelled_at", "cancelled_by", "updated_at",
     ])
-    # Only when the student is the one calling it off. The other caller is the teacher
-    # withdrawing their own hour, and telling somebody what they just did themselves is
-    # noise that teaches them to stop reading the bell.
+    # Whoever did NOT do it is the one who needs telling. A teacher withdrawing their own
+    # hour already knows; the student holding a seat on it does not, and would otherwise
+    # find out by turning up. Telling somebody what they just did themselves is noise that
+    # teaches them to stop reading the bell.
+    #
+    # A ``None`` actor is a management path, and lands on the student for the same reason:
+    # a session called off by nobody in particular is still news to the person expecting it.
     if actor is not None and actor.id == booking.student_id:
         _notify_teacher_cancelled(booking)
+    else:
+        _notify_student_cancelled(booking)
     return booking
 
 

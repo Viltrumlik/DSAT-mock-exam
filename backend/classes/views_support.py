@@ -344,8 +344,15 @@ class SupportAvailabilityDetailView(SupportAvailabilityView):
         slot.save(update_fields=["is_cancelled", "updated_at"])
         # Bookings on a withdrawn slot are cancelled, not left dangling — the student would
         # otherwise keep a confirmed-looking appointment nobody is going to attend.
+        #
+        # With a reason, matching the hour-close path. This used to pass none, so the row
+        # the student was left holding said "Cancelled" and nothing else — and now that the
+        # cancellation also sends them a notification, a blank reason would be a message
+        # that names no cause at all.
         for booking in slot.bookings.filter(status=SupportBooking.STATUS_BOOKED):
-            support_service.cancel(booking, actor=request.user)
+            support_service.cancel(
+                booking, actor=request.user, reason="Your teacher withdrew this hour.",
+            )
         return Response({"detail": "Slot cancelled.", "id": slot.id})
 
 
@@ -766,27 +773,3 @@ class SupportRatingsView(_SupportAdminView):
         })
 
 
-class SupportDeskTeachersView(_SupportAdminView):
-    """The picker: every support-teacher account, whether or not they cover a class.
-
-    Deliberately not derived from classroom memberships. A support teacher assigned to
-    nothing is exactly the row an administrator needs to see — they are on the payroll and
-    no student can book them — and a membership-derived list is the one list that can never
-    show it.
-    """
-
-    def get(self, request):
-        denied = self._guard(request)
-        if denied:
-            return denied
-        return Response({
-            "support_teachers": [
-                {
-                    "id": t.id,
-                    "name": _display_name(t),
-                    "email": t.email,
-                    "subject": getattr(t, "subject", None),
-                }
-                for t in support_service.support_teachers_qs()
-            ]
-        })

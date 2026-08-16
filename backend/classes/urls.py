@@ -34,7 +34,6 @@ from .views_support import (
     SupportBookingsView,
     SupportCalendarView,
     SupportDeskOverviewView,
-    SupportDeskTeachersView,
     SupportDiaryView,
     SupportHourView,
     SupportRatingsView,
@@ -153,10 +152,8 @@ urlpatterns = [
     # 404 a typo instead of saying which actions exist.
     path("support/hours/<str:action>/", SupportHourView.as_view(), name="support-hour-action"),
     path("support/diary/", SupportDiaryView.as_view(), name="support-diary"),
-    # Administrator oversight. "desks/teachers/" sits above "desks/" only for readability —
-    # both are literal segments, so the order between them does not matter here; what does
-    # is that all three stay above the <int:pk> classroom routes below.
-    path("support/desks/teachers/", SupportDeskTeachersView.as_view(), name="support-desk-teachers"),
+    # Administrator oversight. Above the <int:pk> classroom routes below, like every other
+    # literal "support/..." segment.
     path("support/desks/", SupportDeskOverviewView.as_view(), name="support-desks"),
     path("support/ratings/", SupportRatingsView.as_view(), name="support-ratings"),
     path("<int:classroom_pk>/branch/", ClassroomBranchView.as_view(), name="class-branch"),
