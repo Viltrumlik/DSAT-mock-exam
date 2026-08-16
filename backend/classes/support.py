@@ -316,36 +316,15 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
     return out
 
 
-def teacher_calendar_for(support_teacher, *, now=None, days: int = CALENDAR_DAYS) -> list[dict]:
-    """The same week the students see, from behind the desk.
+def _desk_week(rows, bookings_by_row, dates, now) -> list[dict]:
+    """The hour-by-hour state of one desk's week, from rows already in memory.
 
-    The teacher's job on this calendar is not "publish hours" — every hour is open by
-    default — it is to see who is coming and to withdraw the hours they cannot do. So each
-    hour carries its bookings, not just a seat count, and ``state`` names what the teacher
-    needs to act on: ``booked`` outranks ``open`` because a booked hour is an appointment,
-    and ``closed`` outranks everything because a withdrawn hour is a decision they made.
+    Factored out of :func:`teacher_calendar_for` so the admin overview counts a teacher's
+    free and withdrawn hours with the **same** code that renders their grid. Counting them
+    a second way is how a headline number ends up disagreeing with the list underneath it —
+    ``_row_covering``'s overlap-and-recency rules are subtle enough that a reimplementation
+    would drift on the first off-the-hour row.
     """
-    now = now or timezone.now()
-    dates = calendar_dates(now, days=days)
-    window_start = _hour_start(dates[0], CALENDAR_OPEN_HOUR)
-    window_end = _hour_start(dates[-1], CALENDAR_CLOSE_HOUR)
-
-    rows = list(
-        SupportAvailability.objects.filter(
-            support_teacher=support_teacher,
-            starts_at__lt=window_end,
-            ends_at__gt=window_start,
-        )
-    )
-    bookings_by_row: dict[int, list] = {}
-    for b in (
-        SupportBooking.objects.filter(availability_id__in=[r.id for r in rows])
-        .exclude(status=SupportBooking.STATUS_CANCELLED)
-        .select_related("student", "classroom")
-        .order_by("id")
-    ):
-        bookings_by_row.setdefault(b.availability_id, []).append(b)
-
     out = []
     for day in dates:
         hours = []
@@ -384,6 +363,39 @@ def teacher_calendar_for(support_teacher, *, now=None, days: int = CALENDAR_DAYS
             })
         out.append({"date": day, "hours": hours})
     return out
+
+
+def teacher_calendar_for(support_teacher, *, now=None, days: int = CALENDAR_DAYS) -> list[dict]:
+    """The same week the students see, from behind the desk.
+
+    The teacher's job on this calendar is not "publish hours" — every hour is open by
+    default — it is to see who is coming and to withdraw the hours they cannot do. So each
+    hour carries its bookings, not just a seat count, and ``state`` names what the teacher
+    needs to act on: ``booked`` outranks ``open`` because a booked hour is an appointment,
+    and ``closed`` outranks everything because a withdrawn hour is a decision they made.
+    """
+    now = now or timezone.now()
+    dates = calendar_dates(now, days=days)
+    window_start = _hour_start(dates[0], CALENDAR_OPEN_HOUR)
+    window_end = _hour_start(dates[-1], CALENDAR_CLOSE_HOUR)
+
+    rows = list(
+        SupportAvailability.objects.filter(
+            support_teacher=support_teacher,
+            starts_at__lt=window_end,
+            ends_at__gt=window_start,
+        )
+    )
+    bookings_by_row: dict[int, list] = {}
+    for b in (
+        SupportBooking.objects.filter(availability_id__in=[r.id for r in rows])
+        .exclude(status=SupportBooking.STATUS_CANCELLED)
+        .select_related("student", "classroom")
+        .order_by("id")
+    ):
+        bookings_by_row.setdefault(b.availability_id, []).append(b)
+
+    return _desk_week(rows, bookings_by_row, dates, now)
 
 
 def slot_for(support_teacher, starts_at, *, now=None, days: int = CALENDAR_DAYS):
@@ -430,6 +442,107 @@ def slot_for(support_teacher, starts_at, *, now=None, days: int = CALENDAR_DAYS)
         defaults={"ends_at": ends_at, "capacity": 1},
     )
     return slot
+
+
+# ── Telling people ────────────────────────────────────────────────────────────
+#
+# Three notification events for the support desk have existed since the notifications app
+# shipped — ``SUPPORT_BOOKED``, ``SUPPORT_CANCELLED``, ``REWARD_EARNED`` — and until now not
+# one of them had a caller anywhere in the codebase. A support teacher learned they had an
+# appointment only by opening their page; a student learned a session had paid only by
+# opening a different one.
+#
+# ``notify`` never raises, and returns ``None`` when the recipient has muted the category or
+# has already been told, so none of this can break a booking. It is called inside the
+# caller's transaction on purpose: a notification about a booking that then rolls back is
+# worse than no notification at all.
+
+
+def _person(user) -> str:
+    """A name for somebody in a sentence, never an empty string."""
+    name = f"{getattr(user, 'first_name', '') or ''} {getattr(user, 'last_name', '') or ''}".strip()
+    return name or getattr(user, "username", None) or getattr(user, "email", None) or "Someone"
+
+
+def _when(dt) -> str:
+    """An hour written in the school's own timezone, not the server's."""
+    return timezone.localtime(dt).strftime("%a %d %b, %H:%M")
+
+
+def _notify_teacher_booked(booking) -> None:
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    notify(
+        booking.availability.support_teacher,
+        event=note_const.EVENT_SUPPORT_BOOKED,
+        title=f"{_person(booking.student)} booked a support session",
+        body=" · ".join(
+            p for p in (_when(booking.availability.starts_at), booking.topic) if p
+        ),
+        link_url="/teacher/support",
+        # Keyed on the booking, so a student who cancels and retakes the same seat inside
+        # the dedupe window does not ring the bell twice for one appointment.
+        dedupe_key=f"support-booked:{booking.id}",
+    )
+
+
+def _notify_teacher_cancelled(booking) -> None:
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    notify(
+        booking.availability.support_teacher,
+        event=note_const.EVENT_SUPPORT_CANCELLED,
+        title=f"{_person(booking.student)} cancelled",
+        # The reason travels with it. The teacher held that hour open and nobody else could
+        # take it, which is the whole reason a student is made to give one.
+        body=" · ".join(
+            p for p in (_when(booking.availability.starts_at), booking.cancel_reason) if p
+        ),
+        link_url="/teacher/support",
+        dedupe_key=f"support-cancelled:{booking.id}",
+    )
+
+
+def _notify_student_awarded(booking) -> None:
+    """Name the earning at the moment it happens.
+
+    Reads the figure back out of the ledger rather than quoting the rule: the rule can be
+    retuned, an award can be priced at zero, and ``RewardRule.grants_xp`` can put an event
+    outside XP entirely. Telling a student "+10 XP" from a constant while the ledger says
+    something else is the one failure mode this is here to prevent.
+    """
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    award = award_for(booking)
+    if award is None:
+        # Recorded, but it paid nothing — priced at zero, or the write failed and was
+        # already logged. Announcing an earning that is not in the ledger would be a lie
+        # the student can check.
+        return
+    points, xp = award["points"], award["xp"]
+    if points and xp:
+        earned = f"+{points} points and +{xp} XP"
+    elif xp:
+        earned = f"+{xp} XP"
+    else:
+        earned = f"+{points} points"
+
+    notify(
+        booking.student,
+        event=note_const.EVENT_REWARD_EARNED,
+        title=f"You earned {earned}",
+        body=(
+            f"{_person(booking.availability.support_teacher)} confirmed your support "
+            f"session on {_when(booking.availability.starts_at)}."
+        ),
+        # To the session, not the ledger: the teacher's note on what the hour covered is
+        # worth more to the student than the row that paid for it.
+        link_url="/support",
+        dedupe_key=f"support-award:{booking.id}",
+    )
 
 
 @transaction.atomic
@@ -511,12 +624,15 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
             "status", "classroom", "topic", "settled_at", "settled_by",
             "cancel_reason", "cancelled_at", "cancelled_by", "updated_at",
         ])
-        return existing
+        booking = existing
+    else:
+        booking = SupportBooking.objects.create(
+            availability=availability, student=student, classroom=classroom,
+            topic=topic, status=SupportBooking.STATUS_BOOKED,
+        )
 
-    return SupportBooking.objects.create(
-        availability=availability, student=student, classroom=classroom,
-        topic=topic, status=SupportBooking.STATUS_BOOKED,
-    )
+    _notify_teacher_booked(booking)
+    return booking
 
 
 @transaction.atomic
@@ -539,6 +655,11 @@ def cancel(booking, *, actor=None, reason: str = "", now=None) -> SupportBooking
     booking.save(update_fields=[
         "status", "settled_at", "cancel_reason", "cancelled_at", "cancelled_by", "updated_at",
     ])
+    # Only when the student is the one calling it off. The other caller is the teacher
+    # withdrawing their own hour, and telling somebody what they just did themselves is
+    # noise that teaches them to stop reading the bell.
+    if actor is not None and actor.id == booking.student_id:
+        _notify_teacher_cancelled(booking)
     return booking
 
 
@@ -555,6 +676,7 @@ def settle(booking, status: str, *, actor=None, now=None, teacher_note: str = ""
     booking = SupportBooking.objects.select_for_update().get(pk=booking.pk)
     if booking.status == SupportBooking.STATUS_CANCELLED:
         raise ValidationError("That booking was cancelled.")
+    was = booking.status
     booking.status = status
     booking.settled_at = now or timezone.now()
     booking.settled_by = actor
@@ -566,6 +688,15 @@ def settle(booking, status: str, *, actor=None, now=None, teacher_note: str = ""
         booking.teacher_note = note
         fields.append("teacher_note")
     booking.save(update_fields=fields)
+
+    # The save above is what fires the reward hook, so the ledger row exists by now and the
+    # student can be told the actual figure rather than a promise of one.
+    #
+    # On the TRANSITION only. Re-settling an already-held session to fix its note must not
+    # announce a second payment for the same hour — the award is idempotent, and the
+    # notification has to be too or the ledger and the bell stop agreeing.
+    if status == SupportBooking.STATUS_HELD and was != SupportBooking.STATUS_HELD:
+        _notify_student_awarded(booking)
     return booking
 
 
@@ -598,6 +729,61 @@ def rate(booking, rating: int, *, comment: str = "", now=None) -> SupportBooking
     return booking
 
 
+# ── What the session paid ─────────────────────────────────────────────────────
+#
+# The award itself is written by ``rewards.hooks.sync_support_booking`` on the booking's
+# post_save, and has been since the desk shipped. What was missing is anybody ever being
+# told: the student's page said "points arrive once your teacher confirms you attended" and
+# then, when they did, showed a green tick and nothing else. These read the ledger back so
+# the earning can be named at the moment it happens.
+#
+# Read, never written, from here. The ledger has exactly one writer (``rewards.services``)
+# and a second one would be the end of "why did I get 10?" being answerable.
+
+
+def awards_for(bookings) -> dict[int, dict]:
+    """``{booking_id: {"points": int, "xp": int}}``, for the sessions that actually paid.
+
+    One query for a whole list, because the diary and the student's own booking list are
+    both lists — a per-row lookup here would be an N+1 on the page a teacher opens most.
+
+    **Only a HELD booking carries an earning**, and that gate is on the booking's status
+    rather than on the ledger row alone. Revoking an award zeroes its points but is
+    documented to leave XP standing — "XP is never taken away" — so a session corrected
+    from HELD to NO_SHOW keeps a live XP figure in the ledger for as long as the student
+    keeps the XP. That is the right answer for the reward board and the wrong one here:
+    a row labelled "Missed" must not also say "+10 XP". The retained XP is a platform-wide
+    rule and belongs on the rewards page, which is where it is already shown.
+
+    Rows worth nothing at all are dropped too. "+0 XP" reads as a broken award, where
+    nothing at all correctly reads as nothing at all.
+
+    Because the gate reads ``booking.status`` off the objects handed in, they must be the
+    current ones. ``settle`` re-reads its row under a lock and returns *that* object, so a
+    caller holding the pre-settle copy would ask about a booking still marked BOOKED and be
+    told, correctly and uselessly, that it earned nothing.
+    """
+    ids = [b.id for b in bookings if b.status == SupportBooking.STATUS_HELD]
+    if not ids:
+        return {}
+    from rewards.constants import support_session_key
+    from rewards.models import PointAward
+
+    by_key = {support_session_key(i): i for i in ids}
+    out: dict[int, dict] = {}
+    for key, points, xp in PointAward.objects.filter(
+        idempotency_key__in=list(by_key)
+    ).values_list("idempotency_key", "points", "xp"):
+        if points or xp:
+            out[by_key[key]] = {"points": int(points), "xp": int(xp)}
+    return out
+
+
+def award_for(booking) -> dict | None:
+    """What one session paid, or ``None``."""
+    return awards_for([booking]).get(booking.id)
+
+
 def rating_summary(support_teacher) -> dict:
     """Average rating and count for one support teacher's settled sessions."""
     rated = SupportBooking.objects.filter(
@@ -612,17 +798,201 @@ def rating_summary(support_teacher) -> dict:
     }
 
 
-def bookings_for_teacher(support_teacher, *, upcoming_only=False, now=None):
-    """A support teacher's diary."""
+def bookings_for_teacher(
+    support_teacher, *, upcoming_only=False, now=None, include_cancelled=False
+):
+    """A support teacher's diary.
+
+    Cancelled rows are excluded by default because the callers that count seats and chase
+    unsettled sessions are asking "who is coming", and a returned seat is nobody.
+
+    ``include_cancelled`` is for the diary the teacher actually reads. A student who called
+    off an hour gave a reason, that reason is stored, and until now the teacher had no
+    surface that could show it — the row was filtered out one layer below the page. The seat
+    maths is unaffected: every count that matters filters on ``status`` explicitly.
+    """
     qs = (
         SupportBooking.objects.filter(availability__support_teacher=support_teacher)
-        .exclude(status=SupportBooking.STATUS_CANCELLED)
         .select_related("availability", "student", "classroom")
         .order_by("availability__starts_at", "id")
     )
+    if not include_cancelled:
+        qs = qs.exclude(status=SupportBooking.STATUS_CANCELLED)
     if upcoming_only:
         qs = qs.filter(
             Q(availability__starts_at__gt=(now or timezone.now()))
             | Q(status=SupportBooking.STATUS_BOOKED)
         )
     return qs
+
+
+# ── Oversight: the whole desk, for an administrator ───────────────────────────
+#
+# Everything above answers a question one person has about their own week. An administrator
+# has a different question — "is the desk being run?" — and it is not answerable by opening
+# ten teachers' calendars one at a time. So these read across every support teacher at once,
+# and each aggregate is a single grouped query rather than a loop: the cost of this page must
+# not grow with the number of support teachers on it.
+
+
+def support_teachers_qs():
+    """Every account that is a support desk.
+
+    Filtered on the stored ``role`` rather than :func:`normalized_role`, matching
+    :func:`bookable_support_teacher_ids` — the two must agree, or the overview would list a
+    desk no student can book, or hide one they can.
+    """
+    return (
+        get_user_model()
+        .objects.filter(role=SUPPORT_ACCOUNT_ROLE)
+        .order_by("first_name", "last_name", "id")
+    )
+
+
+def rating_feed(support_teacher, *, limit: int = 50):
+    """The ratings a support teacher has actually been given, newest first.
+
+    Only ``HELD`` sessions carry a rating (``rate`` refuses every other status), so this is
+    the whole of the feedback that exists. Ordered on ``rated_at`` and not on when the hour
+    fell: a student who rates a session a week later has just said something new.
+    """
+    return (
+        SupportBooking.objects.filter(
+            availability__support_teacher=support_teacher,
+            status=SupportBooking.STATUS_HELD,
+            rating__isnull=False,
+        )
+        .select_related("student", "classroom", "availability")
+        .order_by("-rated_at", "-id")[:limit]
+    )
+
+
+def desk_overview(*, now=None, days: int = CALENDAR_DAYS) -> list[dict]:
+    """One row per support teacher: who they cover, what they have done, how it went.
+
+    Six grouped queries plus one pass over the calendar window, for any number of teachers.
+
+    The counts deliberately reuse the same filters as the paths they describe —
+    ``ROLE_TA``+``STATUS_ACTIVE`` for a desk's classrooms, ``ROLE_STUDENT``+``STATUS_ACTIVE``
+    for its reach — because a number shown beside a list must be computed the way the list
+    is. A "12 students" that counts removed members next to a roster of 8 is the bug that
+    reads as a data problem and is really an arithmetic one.
+    """
+    now = now or timezone.now()
+    teachers = list(support_teachers_qs())
+    if not teachers:
+        return []
+    ids = [t.id for t in teachers]
+
+    # ── Which classrooms each desk covers, and how many students that reaches ──
+    memberships = list(
+        ClassroomMembership.objects.filter(
+            user_id__in=ids,
+            role=ClassroomMembership.ROLE_TA,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        ).select_related("classroom")
+    )
+    classrooms_by_teacher: dict[int, list] = {}
+    for m in memberships:
+        classrooms_by_teacher.setdefault(m.user_id, []).append(m.classroom)
+
+    covered_ids = {m.classroom_id for m in memberships}
+    # The (classroom, student) pairs rather than a per-classroom count: a student in two of
+    # the same teacher's classrooms must be one student, and summing counts would say two.
+    roster: dict[int, set[int]] = {}
+    if covered_ids:
+        for classroom_id, user_id in ClassroomMembership.objects.filter(
+            classroom_id__in=covered_ids,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        ).values_list("classroom_id", "user_id"):
+            roster.setdefault(classroom_id, set()).add(user_id)
+
+    # ── What has happened at each desk ────────────────────────────────────────
+    by_status: dict[int, dict[str, int]] = {}
+    for row in (
+        SupportBooking.objects.filter(availability__support_teacher_id__in=ids)
+        .values("availability__support_teacher_id", "status")
+        .annotate(n=Count("id"))
+    ):
+        by_status.setdefault(row["availability__support_teacher_id"], {})[row["status"]] = row["n"]
+
+    ratings: dict[int, dict] = {
+        row["availability__support_teacher_id"]: {
+            "average": round(row["avg"], 2) if row["avg"] is not None else None,
+            "count": row["n"],
+        }
+        for row in SupportBooking.objects.filter(
+            availability__support_teacher_id__in=ids,
+            status=SupportBooking.STATUS_HELD,
+            rating__isnull=False,
+        )
+        .values("availability__support_teacher_id")
+        .annotate(avg=Avg("rating"), n=Count("id"))
+    }
+
+    upcoming = dict(
+        SupportBooking.objects.filter(
+            availability__support_teacher_id__in=ids,
+            status=SupportBooking.STATUS_BOOKED,
+            availability__starts_at__gt=now,
+        )
+        .values("availability__support_teacher_id")
+        .annotate(n=Count("id"))
+        .values_list("availability__support_teacher_id", "n")
+    )
+    # The one number that is a to-do rather than a fact: the hour has passed and nobody has
+    # said whether the student turned up, so nobody has been paid.
+    awaiting = dict(
+        SupportBooking.objects.filter(
+            availability__support_teacher_id__in=ids,
+            status=SupportBooking.STATUS_BOOKED,
+            availability__ends_at__lte=now,
+        )
+        .values("availability__support_teacher_id")
+        .annotate(n=Count("id"))
+        .values_list("availability__support_teacher_id", "n")
+    )
+
+    # ── This week's grid, counted the same way the grid renders it ────────────
+    dates = calendar_dates(now, days=days)
+    window_start = _hour_start(dates[0], CALENDAR_OPEN_HOUR)
+    window_end = _hour_start(dates[-1], CALENDAR_CLOSE_HOUR)
+    rows_by_teacher: dict[int, list] = {}
+    for row in SupportAvailability.objects.filter(
+        support_teacher_id__in=ids, starts_at__lt=window_end, ends_at__gt=window_start
+    ):
+        rows_by_teacher.setdefault(row.support_teacher_id, []).append(row)
+    window_bookings: dict[int, list] = {}
+    for b in (
+        SupportBooking.objects.filter(
+            availability_id__in=[r.id for rs in rows_by_teacher.values() for r in rs]
+        )
+        .exclude(status=SupportBooking.STATUS_CANCELLED)
+        .order_by("id")
+    ):
+        window_bookings.setdefault(b.availability_id, []).append(b)
+
+    out = []
+    for teacher in teachers:
+        classrooms = classrooms_by_teacher.get(teacher.id, [])
+        reach: set[int] = set()
+        for classroom in classrooms:
+            reach |= roster.get(classroom.id, set())
+        counts = by_status.get(teacher.id, {})
+        week = _desk_week(rows_by_teacher.get(teacher.id, []), window_bookings, dates, now)
+        hours = [h for day in week for h in day["hours"]]
+        out.append({
+            "teacher": teacher,
+            "classrooms": classrooms,
+            "students": len(reach),
+            "held": counts.get(SupportBooking.STATUS_HELD, 0),
+            "missed": counts.get(SupportBooking.STATUS_NO_SHOW, 0),
+            "cancelled": counts.get(SupportBooking.STATUS_CANCELLED, 0),
+            "upcoming": upcoming.get(teacher.id, 0),
+            "awaiting_settle": awaiting.get(teacher.id, 0),
+            "free_hours": sum(1 for h in hours if h["state"] == "open"),
+            "closed_hours": sum(1 for h in hours if h["state"] == "closed"),
+            "ratings": ratings.get(teacher.id, {"average": None, "count": 0}),
+        })
+    return out

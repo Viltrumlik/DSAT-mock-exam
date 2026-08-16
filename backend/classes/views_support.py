@@ -17,9 +17,21 @@ Support teacher:
   POST   /api/classes/support/hours/open/           { starts_at, capacity?, note? }
   GET    /api/classes/support/diary/                who booked me
   POST   /api/classes/support/bookings/<id>/settle/ { status: HELD | NO_SHOW, teacher_note? }
+Administrator:
+  GET    /api/classes/support/desks/                every desk, with its numbers
+  GET    /api/classes/support/desks/teachers/       the picker
+  GET    /api/classes/support/ratings/?support_teacher=<id>   the comments, not just the average
 
-Settling as HELD is what earns the student their 10 points, so only the support teacher who
-owns the slot (or an admin) may do it — a student cannot mark their own session attended.
+...plus `?support_teacher=<id>` on `my-calendar` and `diary`, matching the `support_teacher`
+body field the hour and availability writes already accept. An administrator therefore reads
+and edits a teacher's week through the **same** endpoints the teacher does, rather than a
+parallel set that could quietly come to disagree with them.
+
+Settling as HELD is what earns the student their session award, so only the support teacher
+who owns the slot (or an admin) may do it — a student cannot mark their own session
+attended. The award is written by ``rewards.hooks``; every booking payload carries it back
+as ``award`` so the earning can be named where it happens instead of merely promised.
+
 The rating runs the other way and is the student's alone: a review the teacher can write is
 not a review. It never touches points.
 """
@@ -76,7 +88,7 @@ def _slot_json(slot: SupportAvailability, *, include_seats=True) -> dict:
     return data
 
 
-def _booking_json(booking: SupportBooking) -> dict:
+def _booking_json(booking: SupportBooking, *, award: dict | None = None) -> dict:
     return {
         "id": booking.id,
         "status": booking.status,
@@ -95,8 +107,23 @@ def _booking_json(booking: SupportBooking) -> dict:
         "rating_comment": booking.rating_comment,
         "rated_at": booking.rated_at,
         "teacher_note": booking.teacher_note,
+        # What the session actually paid, read back out of the reward ledger — ``null``
+        # until it is settled as held, and still ``null`` if the award was later revoked.
+        #
+        # The page has always promised "points arrive once your teacher confirms you
+        # attended" and then, when they did, shown a green tick and nothing else. The
+        # ledger has been writing the award since the desk shipped; this is the field that
+        # lets somebody see it.
+        "award": award,
         "slot": _slot_json(booking.availability, include_seats=False),
     }
+
+
+def _booking_list_json(bookings) -> list[dict]:
+    """A list of bookings with their awards attached, in one extra query for the lot."""
+    bookings = list(bookings)
+    awards = support_service.awards_for(bookings)
+    return [_booking_json(b, award=awards.get(b.id)) for b in bookings]
 
 
 def _parse_dt(value):
@@ -173,6 +200,34 @@ def _target_teacher(request):
         )
     from django.contrib.auth import get_user_model
 
+    target = get_user_model().objects.filter(pk=raw).first()
+    if target is None or not _is_support_teacher(target):
+        return None, Response({"detail": "That user is not a support teacher."}, status=400)
+    return target, None
+
+
+def _target_desk(request):
+    """Whose desk is being READ: ``(user, error_response)``.
+
+    The mirror of :func:`_target_teacher` for the GET paths, which name their target in the
+    query string rather than the body.
+
+    Without it, ``my-calendar`` and ``diary`` were hard-wired to ``request.user``. An admin
+    opening a support teacher's week therefore got a 200 and their **own** empty grid —
+    which is the most misleading of the three possible answers, because it reads as "this
+    teacher has nothing on" rather than "you asked the wrong question".
+
+    Omitting the parameter keeps the old behaviour exactly, so nothing a support teacher
+    does changes.
+    """
+    raw = request.query_params.get("support_teacher")
+    if raw in (None, ""):
+        return request.user, None
+    if not _is_admin(request.user):
+        return None, Response(
+            {"detail": "Only an administrator can read somebody else's desk."},
+            status=http.HTTP_403_FORBIDDEN,
+        )
     target = get_user_model().objects.filter(pk=raw).first()
     if target is None or not _is_support_teacher(target):
         return None, Response({"detail": "That user is not a support teacher."}, status=400)
@@ -305,7 +360,7 @@ class SupportBookingsView(APIView):
             .select_related("availability", "availability__support_teacher", "classroom", "student")
             .order_by("-booked_at", "-id")
         )
-        return Response({"bookings": [_booking_json(b) for b in bookings]})
+        return Response({"bookings": _booking_list_json(bookings)})
 
     def post(self, request):
         classroom = None
@@ -418,7 +473,10 @@ class SupportBookingSettleView(APIView):
         booking = SupportBooking.objects.select_related(
             "availability", "availability__support_teacher", "classroom", "student"
         ).get(pk=booking.pk)
-        return Response(_booking_json(booking))
+        # Read AFTER the settle, so the response carries the award the save just triggered.
+        # This is what makes the earning visible at the moment it is decided instead of on
+        # whatever page the student happens to open next.
+        return Response(_booking_json(booking, award=support_service.award_for(booking)))
 
 
 class SupportBookingRateView(APIView):
@@ -451,21 +509,29 @@ class SupportBookingRateView(APIView):
         booking = SupportBooking.objects.select_related(
             "availability", "availability__support_teacher", "classroom", "student"
         ).get(pk=booking.pk)
-        return Response(_booking_json(booking))
+        return Response(_booking_json(booking, award=support_service.award_for(booking)))
 
 
 class SupportDiaryView(APIView):
-    """Support teacher: who booked me."""
+    """Support teacher: who booked me. An admin may read somebody else's with
+    ``?support_teacher=<id>``."""
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         if not (_is_support_teacher(request.user) or _is_admin(request.user)):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
-        bookings = support_service.bookings_for_teacher(request.user)
+        owner, denied = _target_desk(request)
+        if denied:
+            return denied
+        # Cancelled rows included here and nowhere else. The student gave a reason for
+        # calling the hour off, it has been stored since the desk shipped, and the one
+        # person it was collected for could not see it — the row was filtered out a layer
+        # below the page. Every seat count still filters on status explicitly.
+        bookings = support_service.bookings_for_teacher(owner, include_cancelled=True)
         return Response({
-            "bookings": [_booking_json(b) for b in bookings],
-            "ratings": support_service.rating_summary(request.user),
+            "bookings": _booking_list_json(bookings),
+            "ratings": support_service.rating_summary(owner),
         })
 
 
@@ -482,21 +548,26 @@ class SupportTeacherCalendarView(APIView):
     def get(self, request):
         if not (_is_support_teacher(request.user) or _is_admin(request.user)):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
-        days = support_service.teacher_calendar_for(request.user)
+        owner, denied = _target_desk(request)
+        if denied:
+            return denied
+        days = support_service.teacher_calendar_for(owner)
         booked_total = sum(
             len(h["bookings"]) for d in days for h in d["hours"] if h["state"] == "booked"
         )
         free_total = sum(1 for d in days for h in d["hours"] if h["state"] == "open")
         return Response({
+            "support_teacher_id": owner.pk,
+            "support_teacher": _display_name(owner),
             "days": support_service.CALENDAR_DAYS,
             "open_hour": support_service.CALENDAR_OPEN_HOUR,
             "close_hour": support_service.CALENDAR_CLOSE_HOUR,
             "free_hours": free_total,
             "booked_sessions": booked_total,
-            "awaiting_settle": support_service.bookings_for_teacher(request.user)
+            "awaiting_settle": support_service.bookings_for_teacher(owner)
             .filter(status=SupportBooking.STATUS_BOOKED, availability__ends_at__lte=timezone.now())
             .count(),
-            "ratings": support_service.rating_summary(request.user),
+            "ratings": support_service.rating_summary(owner),
             "dates": [d["date"] for d in days],
             "days_out": [
                 {
@@ -589,4 +660,133 @@ class SupportHourView(APIView):
         return Response({
             **_slot_json(slot),
             "bookings_cancelled": cancelled,
+        })
+
+
+# ── Oversight, for an administrator ───────────────────────────────────────────
+
+
+class _SupportAdminView(APIView):
+    """Admin-only, and by role rather than by permission.
+
+    ``AuthGuard adminOnly`` on the console admits anyone holding ``manage_tests``, so a
+    ``test_auditor`` reaches every ops page. Staffing decisions and a teacher's ratings are
+    not theirs to read, so the gate is ``_is_admin`` — the same one the write paths already
+    use — and it is enforced here rather than left to the nav hiding a link.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _guard(self, request):
+        if _is_admin(request.user):
+            return None
+        return Response({"detail": "Administrators only."}, status=http.HTTP_403_FORBIDDEN)
+
+
+class SupportDeskOverviewView(_SupportAdminView):
+    """Every support desk on one screen: who they cover, what they have done, how it went.
+
+    This is the question an administrator actually has — "is the desk being run?" — and it
+    was not answerable at all before. The per-teacher endpoints each answer it for one
+    person, and opening ten of them in turn is not oversight, it is a chore nobody does.
+    """
+
+    def get(self, request):
+        denied = self._guard(request)
+        if denied:
+            return denied
+        rows = support_service.desk_overview()
+        return Response({
+            "days": support_service.CALENDAR_DAYS,
+            "open_hour": support_service.CALENDAR_OPEN_HOUR,
+            "close_hour": support_service.CALENDAR_CLOSE_HOUR,
+            "teachers": [
+                {
+                    "id": row["teacher"].id,
+                    "name": _display_name(row["teacher"]),
+                    "email": row["teacher"].email,
+                    "subject": getattr(row["teacher"], "subject", None),
+                    "photo_url": profile_image_url(row["teacher"], request),
+                    "classrooms": [
+                        {"id": c.id, "name": c.name} for c in row["classrooms"]
+                    ],
+                    "students": row["students"],
+                    "held": row["held"],
+                    "missed": row["missed"],
+                    "cancelled": row["cancelled"],
+                    "upcoming": row["upcoming"],
+                    "awaiting_settle": row["awaiting_settle"],
+                    "free_hours": row["free_hours"],
+                    "closed_hours": row["closed_hours"],
+                    "ratings": row["ratings"],
+                }
+                for row in rows
+            ],
+        })
+
+
+class SupportRatingsView(_SupportAdminView):
+    """What students actually wrote about one support teacher.
+
+    The average alone cannot tell a head of school whether a 3.4 is one bad week or a
+    pattern, so the comments come with it. They are shown WITH the student's name: this is
+    a management surface, the school asked for it, and a rating that cannot be followed up
+    is a number rather than feedback. The student is never told a rating is anonymous, so
+    nothing here breaks a promise that was made — but it is a policy choice, not a
+    technical one, and it lives in this docstring so the next reader knows it was made.
+    """
+
+    def get(self, request):
+        denied = self._guard(request)
+        if denied:
+            return denied
+        raw = request.query_params.get("support_teacher")
+        target = get_user_model().objects.filter(pk=raw).first() if raw else None
+        if target is None or not _is_support_teacher(target):
+            return Response({"detail": "That user is not a support teacher."}, status=400)
+        return Response({
+            "support_teacher_id": target.pk,
+            "support_teacher": _display_name(target),
+            "summary": support_service.rating_summary(target),
+            "ratings": [
+                {
+                    "booking_id": b.id,
+                    "rating": b.rating,
+                    "comment": b.rating_comment,
+                    "rated_at": b.rated_at,
+                    "student": _display_name(b.student),
+                    "student_id": b.student_id,
+                    "classroom_name": b.classroom.name if b.classroom else None,
+                    "starts_at": b.availability.starts_at,
+                    "topic": b.topic,
+                    "teacher_note": b.teacher_note,
+                }
+                for b in support_service.rating_feed(target)
+            ],
+        })
+
+
+class SupportDeskTeachersView(_SupportAdminView):
+    """The picker: every support-teacher account, whether or not they cover a class.
+
+    Deliberately not derived from classroom memberships. A support teacher assigned to
+    nothing is exactly the row an administrator needs to see — they are on the payroll and
+    no student can book them — and a membership-derived list is the one list that can never
+    show it.
+    """
+
+    def get(self, request):
+        denied = self._guard(request)
+        if denied:
+            return denied
+        return Response({
+            "support_teachers": [
+                {
+                    "id": t.id,
+                    "name": _display_name(t),
+                    "email": t.email,
+                    "subject": getattr(t, "subject", None),
+                }
+                for t in support_service.support_teachers_qs()
+            ]
         })
