@@ -12,8 +12,7 @@ from __future__ import annotations
 
 from django.http import JsonResponse
 
-from access import constants as C
-from access.services import normalized_role, staff_must_have_subject, user_domain_subject
+from access.services import staff_must_have_subject, user_domain_subjects
 
 
 class JWTUserMiddleware:
@@ -37,7 +36,20 @@ class JWTUserMiddleware:
 
 
 class StaffSubjectRequiredMiddleware:
-    """Teachers must have exactly one configured domain subject (global roles do not)."""
+    """Subject-scoped staff must cover at least one domain (global roles do not).
+
+    The question here is "is this account configured?", not "which single subject is theirs?",
+    and the difference is not academic — it locked a real member of staff out of the entire
+    platform. This asked ``user_domain_subject(user) not in ALL_DOMAIN_SUBJECTS``, and that
+    function returns ``None`` for a support teacher whose subject is ``"both"``, deliberately
+    (see ``access.constants``: "both" is kept out of ``ALL_DOMAIN_SUBJECTS`` because every
+    caller compares its result with ``==``). ``None`` is not in the tuple, so this middleware
+    — which runs on **every** ``/api/`` request — answered 403 to every call a both-subject
+    support teacher ever made. They could not open the teacher panel at all.
+
+    ``user_domain_subjects`` is the plural companion that understands "both": a non-empty set
+    is exactly the "configured" this gate means to test.
+    """
 
     def __init__(self, get_response):
         self.get_response = get_response
@@ -49,10 +61,9 @@ class StaffSubjectRequiredMiddleware:
         user = getattr(request, "user", None)
         if not user or not getattr(user, "is_authenticated", False):
             return self.get_response(request)
-        if staff_must_have_subject(user):
-            if user_domain_subject(user) not in C.ALL_DOMAIN_SUBJECTS:
-                return JsonResponse(
-                    {"detail": "Teacher account is missing a valid subject (math or english)."},
-                    status=403,
-                )
+        if staff_must_have_subject(user) and not user_domain_subjects(user):
+            return JsonResponse(
+                {"detail": "Staff account is missing a valid subject (math, english or both)."},
+                status=403,
+            )
         return self.get_response(request)

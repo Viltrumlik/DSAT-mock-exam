@@ -391,7 +391,11 @@ def has_global_subject_access(user, domain_subject: str) -> bool:
         return True
 
     if role in constants.SUBJECT_SCOPED_STAFF_ROLES:
-        if user_domain_subject(user) != domain_subject:
+        # "may this person work on X?", so the plural helper — a support teacher whose subject
+        # is "both" has no single domain and `user_domain_subject` returns None for them, which
+        # made this comparison refuse them for BOTH subjects. Their UserAccess rows are real and
+        # per-subject (two rows, never one "both" row), so the filter below needs no change.
+        if not covers_domain_subject(user, domain_subject):
             return False
         return UserAccess.objects.filter(
             user_id=user.pk,
@@ -442,7 +446,9 @@ def has_access_for_classroom(user, domain_subject: str, classroom_id: int) -> bo
         ).exists()
 
     if role in constants.SUBJECT_SCOPED_STAFF_ROLES:
-        if user_domain_subject(user) != domain_subject:
+        # See the note in `has_global_subject_access`: "both" has no single domain, so the
+        # singular comparison denied a support teacher on every classroom of either subject.
+        if not covers_domain_subject(user, domain_subject):
             return False
         return UserAccess.objects.filter(user_id=user.pk, subject=domain_subject).filter(
             Q(classroom_id__isnull=True) | Q(classroom_id=cid)
@@ -814,15 +820,18 @@ def authorize(user, permission_codename: str, *, subject: Optional[str] = None) 
         return True
 
     if role in constants.SUBJECT_SCOPED_STAFF_ROLES:
-        udom = user_domain_subject(user)
-        if udom != required:
+        # The question is "may this person act on `required`?" — plural, because a support
+        # teacher may cover both domains. The singular helper returns None for them, so this
+        # denied every permission they held and logged it as an "actor_subject_mismatch",
+        # which reads like a misconfigured account rather than the bug it was.
+        if not covers_domain_subject(user, required):
             _authorize_log_denial(
                 "actor_subject_mismatch",
                 perm=permission_codename,
                 user_id=getattr(user, "pk", None),
                 role=role,
                 required_domain=required,
-                user_domain=udom,
+                user_domain=sorted(user_domain_subjects(user)) or None,
             )
             return False
         if not has_global_subject_access(user, required):
