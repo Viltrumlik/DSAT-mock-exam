@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   CalendarClock,
   Check,
@@ -8,6 +8,8 @@ import {
   Info,
   LockOpen,
   RefreshCw,
+  Settings2,
+  Sparkles,
   Star,
   UserX,
   Users,
@@ -22,6 +24,7 @@ import {
   CardDescription,
   CardContent,
   EmptyState,
+  Field,
   Input,
   Modal,
   PageHeader,
@@ -74,6 +77,33 @@ const STATUS_STYLE: Record<SupportBooking["status"], { label: string; variant: B
   CANCELLED: { label: "Cancelled", variant: "neutral" },
 };
 
+/**
+ * The diary, in the order a teacher actually works through it.
+ *
+ * It used to be one all-time list, oldest first, so the session needing a decision *today*
+ * sat at the bottom under every hour ever taught — and the number in the "To record" tile
+ * pointed at rows the teacher had to scroll to find.
+ *
+ * Three groups, each with its own natural direction: what is owed (soonest overdue first),
+ * what is coming (soonest first), what is done (newest first).
+ */
+export function groupDiary(bookings: SupportBooking[]) {
+  const now = Date.now();
+  const started = (b: SupportBooking) => new Date(b.slot.starts_at).getTime();
+  const ended = (b: SupportBooking) => new Date(b.slot.ends_at).getTime();
+
+  const toRecord = bookings
+    .filter((b) => b.status === "BOOKED" && ended(b) <= now)
+    .sort((a, b) => started(a) - started(b));
+  const coming = bookings
+    .filter((b) => b.status === "BOOKED" && ended(b) > now)
+    .sort((a, b) => started(a) - started(b));
+  const done = bookings
+    .filter((b) => b.status !== "BOOKED")
+    .sort((a, b) => started(b) - started(a));
+  return { toRecord, coming, done };
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -92,14 +122,16 @@ export function SupportTeacherPage() {
   const settle = useSettleBooking();
 
   const [dayIndex, setDayIndex] = useState(0);
-  /** The hour whose withdraw confirmation is open, or null. Withdrawing cancels the
-   *  bookings on it, so it never happens on a single click. */
-  const [withdrawing, setWithdrawing] = useState<SupportTeacherHour | null>(null);
+  /** The hour whose management sheet is open, or null. Withdrawing cancels the bookings on
+   *  it, so it never happens on a single click. */
+  const [managing, setManaging] = useState<SupportTeacherHour | null>(null);
 
   const errorDetail = (e: unknown) =>
     (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
 
   const day = calendar.data?.days_out[dayIndex] ?? calendar.data?.days_out[0];
+  const bookings = diary.data?.bookings;
+  const groups = useMemo(() => groupDiary(bookings ?? []), [bookings]);
 
   return (
     <div className="space-y-6">
@@ -148,11 +180,10 @@ export function SupportTeacherPage() {
               // been paid.
               warn={calendar.data.awaiting_settle > 0}
             />
-            <Stat
-              label="Session rating"
-              value={calendar.data.ratings.average != null ? calendar.data.ratings.average.toFixed(1) : "—"}
-              sub={calendar.data.ratings.count ? `${calendar.data.ratings.count} rated` : "none yet"}
-              icon={Star}
+            <RatingStat
+              average={calendar.data.ratings.average}
+              count={calendar.data.ratings.count}
+              bookings={bookings}
             />
           </div>
 
@@ -161,7 +192,7 @@ export function SupportTeacherPage() {
               <div className="min-w-0">
                 <CardTitle>Your week</CardTitle>
                 <CardDescription>
-                  Every hour is open to your classes by default — tap one to withdraw it
+                  Every hour is open to your classes by default — tap one to manage it
                 </CardDescription>
               </div>
             </CardHeader>
@@ -207,7 +238,7 @@ export function SupportTeacherPage() {
                     key={h.starts_at}
                     hour={h}
                     busy={setHour.isPending}
-                    onWithdraw={() => setWithdrawing(h)}
+                    onManage={() => setManaging(h)}
                     onReopen={() => setHour.mutate({ action: "open", startsAt: h.starts_at })}
                   />
                 ))}
@@ -234,7 +265,7 @@ export function SupportTeacherPage() {
                     Try again
                   </Button>
                 </div>
-              ) : (diary.data?.length ?? 0) === 0 ? (
+              ) : (bookings?.length ?? 0) === 0 ? (
                 <EmptyState
                   compact
                   icon={CalendarClock}
@@ -242,50 +273,42 @@ export function SupportTeacherPage() {
                   description="Your hours are open above — bookings appear here as students take them."
                 />
               ) : (
-                <ul className="divide-y divide-border">
-                  {diary.data?.map((b) => (
-                    <DiaryRow
-                      key={b.id}
-                      booking={b}
-                      pending={settle.isPending}
-                      onSettle={(status, note) =>
-                        settle.mutate({ bookingId: b.id, status, teacherNote: note })
-                      }
-                    />
-                  ))}
-                </ul>
+                <div className="space-y-5">
+                  {/* Ordered by what is owed, not by when it happened. The sessions with no
+                      outcome recorded are the only rows that need the teacher to do
+                      anything, so they are the only rows worth putting first. */}
+                  <DiarySection
+                    title="Waiting on you"
+                    hint="These hours have passed. Nobody is paid until you say what happened."
+                    tone="warn"
+                    bookings={groups.toRecord}
+                    settle={settle}
+                  />
+                  <DiarySection
+                    title="Coming up"
+                    bookings={groups.coming}
+                    settle={settle}
+                  />
+                  <DiarySection
+                    title="Done"
+                    bookings={groups.done}
+                    settle={settle}
+                  />
+                </div>
               )}
             </CardContent>
           </Card>
         </>
       )}
 
-      {/* Withdrawing cancels every booking on the hour, so it stays behind a confirmation. */}
-      <Modal
-        open={withdrawing !== null}
-        onClose={() => setWithdrawing(null)}
-        size="sm"
-        title="Withdraw this hour?"
-        description={
-          withdrawing && withdrawing.bookings.length
-            ? `${withdrawing.bookings.length} student${withdrawing.bookings.length === 1 ? "" : "s"} booked this hour and will be told you withdrew it.`
-            : "Students won't be able to book it. You can re-open it whenever you like."
-        }
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setWithdrawing(null)}>Keep it open</Button>
-            <Button
-              variant="danger"
-              disabled={setHour.isPending}
-              onClick={() => {
-                if (withdrawing) setHour.mutate({ action: "close", startsAt: withdrawing.starts_at });
-                setWithdrawing(null);
-              }}
-            >
-              Withdraw
-            </Button>
-          </>
-        }
+      <ManageHourModal
+        hour={managing}
+        busy={setHour.isPending}
+        onClose={() => setManaging(null)}
+        onSave={(vars) => {
+          if (managing) setHour.mutate({ ...vars, startsAt: managing.starts_at });
+          setManaging(null);
+        }}
       />
     </div>
   );
@@ -294,7 +317,7 @@ export function SupportTeacherPage() {
 // ─── Pieces ───────────────────────────────────────────────────────────────────
 
 function Stat({
-  label, value, sub, icon: Icon, accent, warn,
+  label, value, sub, icon: Icon, accent, warn, children,
 }: {
   label: string;
   value: number | string;
@@ -302,6 +325,7 @@ function Stat({
   icon: React.ElementType;
   accent?: boolean;
   warn?: boolean;
+  children?: React.ReactNode;
 }) {
   return (
     <div
@@ -316,26 +340,88 @@ function Stat({
       </div>
       <p className="ds-num mt-1 text-2xl font-extrabold text-foreground">{value}</p>
       {sub ? <p className="text-[11px] font-semibold text-muted-foreground">{sub}</p> : null}
+      {children}
     </div>
+  );
+}
+
+/**
+ * The rating tile, with the shape of the ratings under it.
+ *
+ * An average on its own cannot tell a teacher whether a 3.8 is a steady middle or a
+ * handful of fives and one one — and those two call for completely different responses.
+ * The bars come from the diary this page has already fetched, so knowing costs no request.
+ */
+function RatingStat({
+  average, count, bookings,
+}: {
+  average: number | null;
+  count: number;
+  bookings: SupportBooking[] | undefined;
+}) {
+  const spread = useMemo(() => {
+    const tally = [0, 0, 0, 0, 0];
+    for (const b of bookings ?? []) {
+      if (b.rating != null && b.rating >= 1 && b.rating <= 5) tally[b.rating - 1] += 1;
+    }
+    return tally;
+  }, [bookings]);
+  const most = Math.max(1, ...spread);
+
+  return (
+    <Stat
+      label="Session rating"
+      value={average != null ? average.toFixed(1) : "—"}
+      sub={count ? `${count} rated` : "none yet"}
+      icon={Star}
+    >
+      {count > 0 && (
+        <div className="mt-2 flex items-end gap-1" aria-hidden>
+          {spread.map((n, i) => (
+            <div key={i} className="flex-1" title={`${n} × ${i + 1}★`}>
+              <div
+                className={cn(
+                  "rounded-sm",
+                  n === 0 ? "bg-border" : i >= 3 ? "bg-amber-400" : i === 2 ? "bg-amber-300" : "bg-border",
+                )}
+                style={{ height: `${Math.max(3, Math.round((n / most) * 20))}px` }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </Stat>
   );
 }
 
 /** One hour of the teacher's own grid. A booked hour names who is coming — a seat count
  *  tells the teacher a number when what they need is a person. */
 function TeacherHourChip({
-  hour, busy, onWithdraw, onReopen,
+  hour, busy, onManage, onReopen,
 }: {
   hour: SupportTeacherHour;
   busy: boolean;
-  onWithdraw: () => void;
+  onManage: () => void;
   onReopen: () => void;
 }) {
   const time = fmtHour(hour.starts_at);
 
   if (hour.state === "booked") {
+    // Was an inert <div>. A booked hour is the one a teacher most needs to act on — to see
+    // the topic, to open it wider for a second student, or to withdraw it — and it was the
+    // only state on the grid that could not be touched.
     return (
-      <div className="rounded-xl border border-primary bg-primary/10 px-3 py-2.5 text-left">
-        <span className="ds-num block text-sm font-extrabold text-primary">{time}</span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onManage}
+        aria-label={`Manage ${time}, ${hour.bookings.length} booked`}
+        className="ds-ring rounded-xl border border-primary bg-primary/10 px-3 py-2.5 text-left transition-colors hover:bg-primary/15"
+      >
+        <span className="ds-num flex items-center justify-between text-sm font-extrabold text-primary">
+          {time}
+          <Settings2 className="h-3 w-3 opacity-60" aria-hidden />
+        </span>
         {hour.bookings.map((b) => (
           <span key={b.id} className="mt-0.5 block truncate text-[11px] font-bold text-foreground" title={b.topic || undefined}>
             {b.student}
@@ -344,7 +430,7 @@ function TeacherHourChip({
         {hour.bookings.some((b) => b.topic) && (
           <Info className="mt-1 h-3 w-3 text-muted-foreground" aria-hidden />
         )}
-      </div>
+      </button>
     );
   }
 
@@ -378,13 +464,195 @@ function TeacherHourChip({
     <button
       type="button"
       disabled={busy}
-      onClick={onWithdraw}
-      aria-label={`Withdraw ${time}`}
-      className="ds-ring rounded-xl border border-border bg-card px-3 py-2.5 text-center text-foreground transition-colors hover:border-danger/50 hover:bg-danger-soft"
+      onClick={onManage}
+      aria-label={`Manage ${time}`}
+      className="ds-ring rounded-xl border border-border bg-card px-3 py-2.5 text-center text-foreground transition-colors hover:border-primary/50 hover:bg-surface-2"
     >
       <span className="ds-num block text-sm font-extrabold">{time}</span>
-      <span className="block text-[11px] font-semibold text-emerald-600">Free</span>
+      <span className="block text-[11px] font-semibold text-emerald-600">
+        {hour.capacity > 1 ? `Group of ${hour.capacity}` : "Free"}
+      </span>
     </button>
+  );
+}
+
+/**
+ * Everything a teacher can decide about one hour, in one sheet.
+ *
+ * `capacity` and `note` have been accepted by `POST support/hours/open/` since the opt-out
+ * calendar shipped and there has never been a control for either, so a teacher could not
+ * run a group clinic or say what an hour was for without asking somebody with database
+ * access. Withdrawing stays behind this sheet rather than a single tap because it cancels
+ * every booking on the hour.
+ */
+function ManageHourModal({
+  hour, busy, onClose, onSave,
+}: {
+  hour: SupportTeacherHour | null;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (vars: { action: "close" | "open"; note?: string; capacity?: number }) => void;
+}) {
+  // Keyed on the hour so the fields reset when a different one is opened — without the key
+  // the state would persist and one hour's note would be offered as the next one's.
+  return (
+    <Modal open={hour !== null} onClose={onClose} size="sm" title={hour ? `${fmtHour(hour.starts_at)} — ${fmtHour(hour.ends_at)}` : ""}>
+      {hour && <ManageHourBody key={hour.starts_at} hour={hour} busy={busy} onClose={onClose} onSave={onSave} />}
+    </Modal>
+  );
+}
+
+function ManageHourBody({
+  hour, busy, onClose, onSave,
+}: {
+  hour: SupportTeacherHour;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (vars: { action: "close" | "open"; note?: string; capacity?: number }) => void;
+}) {
+  const [note, setNote] = useState(hour.note);
+  const [capacity, setCapacity] = useState(String(hour.capacity || 1));
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
+
+  const booked = hour.bookings.filter((b) => b.status === "BOOKED");
+  const parsedCapacity = Math.max(1, Number.parseInt(capacity, 10) || 1);
+  // The server refuses a capacity below the number already booked, and says so — but the
+  // teacher should not have to press Save to find out.
+  const tooSmall = parsedCapacity < booked.length;
+
+  return (
+    <div className="space-y-4">
+      {booked.length > 0 && (
+        <div className="rounded-xl border border-border bg-surface-2 p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+            Coming to this hour
+          </p>
+          <ul className="mt-1.5 space-y-1">
+            {booked.map((b) => (
+              <li key={b.id} className="text-sm">
+                <span className="font-bold text-foreground">{b.student}</span>
+                {b.classroom_name && (
+                  <span className="text-muted-foreground"> · {b.classroom_name}</span>
+                )}
+                {b.topic && <p className="text-xs text-muted-foreground">{b.topic}</p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <Field label="Group size" hint="More than one seat turns the hour into a small group.">
+        <Input
+          type="number"
+          min={Math.max(1, booked.length)}
+          max={12}
+          inputSize="sm"
+          value={capacity}
+          onChange={(e) => setCapacity(e.target.value)}
+        />
+      </Field>
+      {tooSmall && (
+        <Alert tone="warning" title={`${booked.length} already booked`}>
+          You can&apos;t take the hour below {booked.length}. Withdraw it instead if you need
+          to call the session off.
+        </Alert>
+      )}
+
+      <Field label="Note" hint="Students see this on the hour before they book it.">
+        <Input
+          inputSize="sm"
+          value={note}
+          maxLength={240}
+          placeholder="e.g. Bring your Module 2 mistakes"
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </Field>
+
+      {confirmingWithdraw ? (
+        <Alert tone="danger" title="Withdraw this hour?">
+          {booked.length > 0
+            ? `${booked.length} student${booked.length === 1 ? "" : "s"} booked this hour and will be told you withdrew it.`
+            : "Students won't be able to book it. You can re-open it whenever you like."}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              variant="danger"
+              size="sm"
+              disabled={busy}
+              onClick={() => onSave({ action: "close" })}
+            >
+              Yes, withdraw it
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmingWithdraw(false)}>
+              Keep it open
+            </Button>
+          </div>
+        </Alert>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-danger"
+            onClick={() => setConfirmingWithdraw(true)}
+          >
+            Withdraw this hour
+          </Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+            <Button
+              size="sm"
+              disabled={busy || tooSmall}
+              onClick={() => onSave({ action: "open", note, capacity: parsedCapacity })}
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type SettleMutation = ReturnType<typeof useSettleBooking>;
+
+function DiarySection({
+  title, hint, tone, bookings, settle,
+}: {
+  title: string;
+  hint?: string;
+  tone?: "warn";
+  bookings: SupportBooking[];
+  settle: SettleMutation;
+}) {
+  if (bookings.length === 0) return null;
+  return (
+    <section>
+      <h3
+        className={cn(
+          "flex items-baseline gap-2 text-[11px] font-bold uppercase tracking-wide",
+          tone === "warn" ? "text-amber-600" : "text-muted-foreground",
+        )}
+      >
+        {title}
+        <span className="ds-num font-extrabold">{bookings.length}</span>
+      </h3>
+      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
+      <ul className="mt-1 divide-y divide-border">
+        {bookings.map((b) => (
+          <DiaryRow
+            key={b.id}
+            booking={b}
+            // Per row, not per page. One shared `isPending` disabled every button in the
+            // list on every settle, so a teacher working down a morning's sessions had to
+            // wait out each round trip before the next row would respond.
+            pending={settle.isPending && settle.variables?.bookingId === b.id}
+            onSettle={(status, note) =>
+              settle.mutate({ bookingId: b.id, status, teacherNote: note })
+            }
+          />
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -400,6 +668,7 @@ function DiaryRow({
 }) {
   const [note, setNote] = useState(b.teacher_note);
   const settled = b.status === "HELD" || b.status === "NO_SHOW";
+  const noteChanged = note.trim() !== b.teacher_note.trim();
 
   return (
     <li className="py-3">
@@ -411,7 +680,9 @@ function DiaryRow({
             {b.classroom_name ? ` · ${b.classroom_name}` : ""}
           </p>
           {b.topic && <p className="mt-0.5 text-xs text-muted-foreground">{b.topic}</p>}
-          {/* Why the seat came back. The hour was held open for it, so the teacher is told. */}
+          {/* Why the seat came back. The hour was held open for it, so the teacher is told —
+              and until the diary stopped filtering cancelled rows out, this branch could
+              never render at all. */}
           {b.status === "CANCELLED" && b.cancel_reason && (
             <p className="mt-1 text-xs font-semibold text-foreground">
               Cancelled — <span className="font-medium text-muted-foreground">{b.cancel_reason}</span>
@@ -419,6 +690,17 @@ function DiaryRow({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* What the student was actually paid. The teacher's action is what triggers it,
+              so the teacher is the one person who should be able to see it landed. */}
+          {b.award && (
+            <span
+              className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-600"
+              title="What this session earned the student"
+            >
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              +{b.award.xp > 0 ? `${b.award.xp} XP` : `${b.award.points}`}
+            </span>
+          )}
           {b.rating != null && (
             <span className="inline-flex items-center gap-0.5 text-xs font-bold text-amber-600" title={b.rating_comment || undefined}>
               <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" aria-hidden />
@@ -463,14 +745,23 @@ function DiaryRow({
             >
               Didn&apos;t attend
             </Button>
+            {/* Saving the note used to require settling again — so fixing a typo meant
+                pressing an outcome button, and the only hint that the note was unsaved was
+                a line of grey text. Re-settling at the SAME status is idempotent: the award
+                is keyed on the booking and the student is not told a second time. */}
+            {settled && noteChanged && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={() => onSettle(b.status as "HELD" | "NO_SHOW", note)}
+              >
+                Save note
+              </Button>
+            )}
             {b.slot.capacity > 1 && (
               <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
                 <Users className="h-3 w-3" aria-hidden /> group of <span className="ds-num">{b.slot.capacity}</span>
-              </span>
-            )}
-            {settled && b.teacher_note !== note && (
-              <span className="text-[11px] font-semibold text-muted-foreground">
-                Press a button again to save the note
               </span>
             )}
           </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CalendarClock, Check, Clock, Info, LifeBuoy, Users, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarClock, Check, Clock, Info, LifeBuoy, Sparkles, Users, X } from "lucide-react";
 import {
   Avatar,
   Field,
@@ -17,6 +17,7 @@ import type { PillTone } from "@/features/classroom/ui";
 import type { SupportBooking, SupportCalendarTeacher, SupportHour } from "@/lib/api";
 import { normalizeApiError } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
+import { pushGlobalToast } from "@/lib/toastBus";
 import {
   useSupportCalendar,
   useMySupportBookings,
@@ -40,6 +41,66 @@ function fmtHour(iso: string) {
   return Number.isNaN(d.getTime())
     ? iso
     : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Booking ids this browser has already congratulated the student for.
+ *
+ *  The student is not at the keyboard when their teacher settles the session, so "on the
+ *  spot" can only mean "the first moment they look". A server-side "announced" flag would
+ *  be a second source of truth about a thing the ledger already knows; a per-browser
+ *  memory is the cheapest correct answer, and the notification bell is the durable copy. */
+const SEEN_AWARDS_KEY = "mastersat.support.awards.seen";
+
+/**
+ * Announce an earning the first time this browser sees it.
+ *
+ * **The first run announces nothing.** Without that, a student who has attended nine
+ * sessions gets congratulated for all nine the first time this ships — which is not news,
+ * it is noise, and it teaches them to ignore the next one that is real.
+ *
+ * Several at once are one toast, not several. Two sessions settled while a student was
+ * away is one piece of good news.
+ */
+function useAwardAnnouncements(bookings: SupportBooking[] | undefined) {
+  useEffect(() => {
+    if (!bookings) return;
+    const awarded = bookings.filter((b) => b.status === "HELD" && b.award);
+
+    let seen: Set<number>;
+    let firstRun: boolean;
+    try {
+      const raw = window.localStorage.getItem(SEEN_AWARDS_KEY);
+      firstRun = raw === null;
+      const parsed: unknown = firstRun ? [] : JSON.parse(raw as string);
+      seen = new Set(Array.isArray(parsed) ? parsed.filter((n): n is number => typeof n === "number") : []);
+    } catch {
+      // Private browsing, or a corrupted value. Saying nothing is the right failure: the
+      // bell still has the notification, and a toast we cannot remember having shown would
+      // repeat on every refetch.
+      return;
+    }
+
+    const fresh = awarded.filter((b) => !seen.has(b.id));
+    try {
+      // Written BEFORE anything is announced. If the write is what fails, the toast must
+      // not have happened either — otherwise it repeats on every poll.
+      window.localStorage.setItem(SEEN_AWARDS_KEY, JSON.stringify(awarded.map((b) => b.id)));
+    } catch {
+      return;
+    }
+
+    if (firstRun || fresh.length === 0) return;
+    const xp = fresh.reduce((total, b) => total + (b.award?.xp ?? 0), 0);
+    const points = fresh.reduce((total, b) => total + (b.award?.points ?? 0), 0);
+    const earned = xp > 0 ? `+${xp} XP` : `+${points} points`;
+    pushGlobalToast({
+      tone: "success",
+      message:
+        fresh.length === 1
+          ? `${earned} — your support session was confirmed`
+          : `${earned} from ${fresh.length} support sessions`,
+    });
+  }, [bookings]);
 }
 
 /** "Today" and "Tomorrow" earn their names; after that the weekday is what a student uses. */
@@ -86,6 +147,8 @@ export function SupportBookingPage() {
   /** The booking a student is part-way through calling off, or null when the dialog is shut. */
   const [cancelling, setCancelling] = useState<SupportBooking | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  useAwardAnnouncements(bookings.data);
 
   const upcoming = useMemo(
     () => (bookings.data ?? []).filter((b) => b.status === "BOOKED").length,
@@ -279,7 +342,18 @@ export function SupportBookingPage() {
                         Cancel
                       </Button>
                     )}
-                    {b.status === "HELD" && (
+                    {/* The earning, named. The header above promises "points arrive once
+                        your teacher confirms you attended" — and until now, when they did,
+                        this was a green tick and nothing else. The figure comes from the
+                        ledger, never from a constant: the rule is retunable and a rule can
+                        have XP switched off entirely. */}
+                    {b.status === "HELD" && b.award && (
+                      <Pill tone="success">
+                        <Sparkles className="mr-1 inline h-3 w-3" aria-hidden />
+                        +{b.award.xp > 0 ? `${b.award.xp} XP` : `${b.award.points} points`}
+                      </Pill>
+                    )}
+                    {b.status === "HELD" && !b.award && (
                       <Check className="h-4 w-4 text-emerald-600" aria-hidden />
                     )}
                   </div>

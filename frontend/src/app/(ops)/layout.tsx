@@ -17,6 +17,7 @@ import {
   NotebookText,
   Timer,
   CirclePlay,
+  LifeBuoy,
 } from "lucide-react";
 
 /**
@@ -44,6 +45,20 @@ const OPS_NAV = [
     href: "/ops/journals",
     label: "Journals",
     icon: NotebookText,
+    exact: false,
+  },
+  {
+    // Who covers which class, what students say about them, and their working hours. The
+    // hours are the reason this is a write surface at all: the API has accepted an admin
+    // setting somebody else's since opt-out hours shipped, and there has never been a
+    // screen for it. Sits next to Classrooms because that is where support teachers are
+    // ASSIGNED — this page is oversight, not staffing, and does not duplicate it.
+    //
+    // Not superAdminOnly: staffing the desk is a head-of-school job, and the API gate is
+    // `_is_admin` — the same one that already guards editing a teacher's hours.
+    href: "/ops/support",
+    label: "Support desk",
+    icon: LifeBuoy,
     exact: false,
   },
   // Reports only — midterm *authoring* still lives in the Builder console. This is the

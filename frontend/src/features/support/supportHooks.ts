@@ -110,8 +110,16 @@ export function useMySupportCalendar() {
 export function useSetSupportHour() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { action: "close" | "open"; startsAt: string; note?: string }) =>
-      classesApi.supportSetHour(vars.action, vars.startsAt, { note: vars.note }),
+    mutationFn: (vars: {
+      action: "close" | "open";
+      startsAt: string;
+      note?: string;
+      capacity?: number;
+    }) =>
+      classesApi.supportSetHour(vars.action, vars.startsAt, {
+        note: vars.note,
+        capacity: vars.capacity,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.myCalendar });
       // Withdrawing an hour cancels the bookings on it, so the diary changes too.

@@ -946,6 +946,13 @@ export interface SupportBooking {
     rated_at: string | null;
     /** What the teacher says the hour covered, written when they settle it. */
     teacher_note: string;
+    /** What the session actually paid, read back out of the reward ledger.
+     *
+     *  Null until the teacher marks it attended, and null again if they correct that —
+     *  the server gates this on the booking's status, so a row reading "Missed" never
+     *  also reads "+10 XP" even though the ledger keeps the XP standing. Never computed
+     *  on the client: the rule is retunable and only the ledger knows what was paid. */
+    award: { points: number; xp: number } | null;
     slot: SupportSlot;
 }
 
@@ -981,6 +988,10 @@ export interface SupportTeacherHour {
 }
 
 export interface SupportTeacherCalendar {
+    /** Whose desk this is. Present so an admin reading somebody else's week can show a
+     *  name rather than trusting the id they asked with. */
+    support_teacher_id: number | null;
+    support_teacher: string;
     days: number;
     open_hour: number;
     close_hour: number;
@@ -1156,15 +1167,31 @@ export const classesApi = {
     supportWithdrawSlot: async (slotId: number) => {
         await api.delete(`/classes/support/availability/${slotId}/`);
     },
-    /** Support teacher: who booked me. */
-    supportDiary: async (): Promise<SupportBooking[]> => {
-        const r = await api.get('/classes/support/diary/');
-        return (r.data?.bookings ?? []) as SupportBooking[];
+    /** Support teacher: who booked me — including the sessions that were called off, so the
+     *  reason a student is required to give reaches the person it was collected for.
+     *
+     *  `supportTeacherId` is an admin reading somebody else's desk; the server refuses it
+     *  from anyone else. The ratings summary rides along rather than being discarded: the
+     *  endpoint has always returned it and the client used to throw it away. */
+    supportDiary: async (
+        supportTeacherId?: number,
+    ): Promise<{ bookings: SupportBooking[]; ratings: { average: number | null; count: number } }> => {
+        const r = await api.get('/classes/support/diary/', {
+            params: supportTeacherId ? { support_teacher: supportTeacherId } : undefined,
+        });
+        return {
+            bookings: (r.data?.bookings ?? []) as SupportBooking[],
+            ratings: r.data?.ratings ?? { average: null, count: 0 },
+        };
     },
     /** Support teacher: my own week, with the appointments on each hour. */
-    supportMyCalendar: async (): Promise<SupportTeacherCalendar> => {
-        const r = await api.get('/classes/support/my-calendar/');
+    supportMyCalendar: async (supportTeacherId?: number): Promise<SupportTeacherCalendar> => {
+        const r = await api.get('/classes/support/my-calendar/', {
+            params: supportTeacherId ? { support_teacher: supportTeacherId } : undefined,
+        });
         return {
+            support_teacher_id: r.data?.support_teacher_id ?? null,
+            support_teacher: r.data?.support_teacher ?? '',
             days: r.data?.days ?? 4,
             open_hour: r.data?.open_hour ?? 8,
             close_hour: r.data?.close_hour ?? 18,
@@ -1180,7 +1207,7 @@ export const classesApi = {
     supportSetHour: async (
         action: "close" | "open",
         starts_at: string,
-        body?: { capacity?: number; note?: string },
+        body?: { capacity?: number; note?: string; support_teacher?: number },
     ) => {
         const r = await api.post(`/classes/support/hours/${action}/`, { starts_at, ...(body || {}) });
         return r.data as SupportSlot & { bookings_cancelled: number };
