@@ -10,6 +10,7 @@ import { AppShell } from "./AppShell";
 import { studentNav, reviewNavSection } from "./navConfig";
 import { StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
+import { PushOptInBanner } from "@/features/notifications/PushOptInBanner";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
 export default function StudentAppShell({ children }: { children: React.ReactNode }) {
@@ -77,6 +78,12 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
         notifications={isAuthenticated}
       >
         <div className={cn(globalInteractionBlockedHard && "pointer-events-none select-none")} aria-busy={globalInteractionBlockedHard || undefined}>
+          {/* The notification ask lives here rather than only inside the bell drawer, where a
+              student who never opens the bell never met it. Deliberately NOT in the immersive
+              branch above: interrupting a timed assessment to ask for permission is the worst
+              possible moment, and a refusal is permanent. Reviewers and staff browsing the
+              student shell are excluded for the same reason the points pill is. */}
+          {isAuthenticated && !isReviewer ? <PushOptInBanner /> : null}
           {children}
         </div>
       </AppShell>

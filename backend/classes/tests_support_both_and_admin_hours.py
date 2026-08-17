@@ -110,6 +110,105 @@ class BothSubjectApiTests(TestCase):
             self.assertIn(both.pk, ids, f"missing from the {domain} picker")
 
 
+class TheGatesTests(TestCase):
+    """The gates a both-subject support teacher is actually stopped by.
+
+    Every test above this class passed while a real both-subject support teacher could not
+    load a single page of the platform. That is the whole lesson: ``BothSubjectTests`` proves
+    ``covers_domain_subject`` answers correctly, and proves nothing at all about whether
+    anything **calls** it.
+
+    Four central gates still compared the singular ``user_domain_subject``, which returns
+    ``None`` for "both" by design, so the account was refused everywhere:
+
+      * ``StaffSubjectRequiredMiddleware`` — runs on EVERY ``/api/`` request, so this one
+        alone returned 403 to every call the account ever made;
+      * ``has_global_subject_access``;
+      * ``has_access_for_classroom``;
+      * ``authorize`` — which logged the refusal as ``actor_subject_mismatch``, reading like a
+        misconfigured account rather than the bug it was.
+
+    Each test here goes through the real gate rather than through the helper.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.both = _u("gate_both@t.com", role=C.ROLE_SUPPORT_TEACHER, subject=C.DOMAIN_BOTH)
+        self.math_only = _u("gate_math@t.com", role=C.ROLE_SUPPORT_TEACHER, subject=C.DOMAIN_MATH)
+        for domain in (C.DOMAIN_MATH, C.DOMAIN_ENGLISH):
+            UserAccess.objects.create(user=self.both, subject=domain, classroom=None)
+        UserAccess.objects.create(user=self.math_only, subject=C.DOMAIN_MATH, classroom=None)
+
+    def test_the_middleware_lets_a_both_subject_account_make_any_api_call(self):
+        """The bug the school reported as "cannot get into the teacher panel".
+
+        The middleware sits in front of every ``/api/`` path, so this is not one broken screen
+        — it is the whole account. Asserted on the refusal's own wording so that a 403 arriving
+        from some unrelated permission check cannot make this test look green.
+
+        ``force_login``, NOT ``force_authenticate``: DRF's helper attaches the user inside the
+        view, and this gate is Django middleware that has already run and gone by then. Written
+        with ``force_authenticate`` the test passes whatever the middleware does, because
+        ``request.user`` is still anonymous when the gate reads it and the gate skips anonymous
+        requests. Session login goes through ``AuthenticationMiddleware``, which the stack
+        places before this gate (config/settings.py).
+        """
+        self.client.force_login(self.both)
+
+        response = self.client.get("/api/classes/")
+
+        self.assertNotEqual(response.status_code, 403, response.content)
+        self.assertNotIn(b"missing a valid subject", response.content)
+
+    def test_an_account_with_no_subject_at_all_is_still_refused(self):
+        """The gate must still do its job — "both" is configured, blank is not.
+
+        The blank has to be written with ``update()`` because ``create_user`` already refuses
+        it, which is the stronger guard. That is precisely the state this middleware defends
+        against, though: a row that got into a bad shape by some route that never went through
+        the manager — a data migration, a fixture, a hand-edited row.
+        """
+        broken = _u("gate_none@t.com", role=C.ROLE_SUPPORT_TEACHER, subject=C.DOMAIN_MATH)
+        User.objects.filter(pk=broken.pk).update(subject="")
+        broken.refresh_from_db()
+        self.client.force_login(broken)   # see the note above on force_login vs force_authenticate
+
+        response = self.client.get("/api/classes/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn(b"missing a valid subject", response.content)
+
+    def test_global_subject_access_is_granted_for_either_domain(self):
+        from access.services import has_global_subject_access
+
+        self.assertTrue(has_global_subject_access(self.both, C.DOMAIN_MATH))
+        self.assertTrue(has_global_subject_access(self.both, C.DOMAIN_ENGLISH))
+
+    def test_classroom_access_is_granted_in_either_subject(self):
+        """The bug the school reported as "cannot be assigned to a classroom"."""
+        from access.services import has_access_for_classroom
+
+        teacher = _u("gate_owner@t.com", role=C.ROLE_TEACHER, subject=C.DOMAIN_MATH)
+        maths = Classroom.objects.create(
+            name="M", subject=Classroom.SUBJECT_MATH,
+            lesson_days=Classroom.DAYS_ODD, created_by=teacher,
+        )
+        english = Classroom.objects.create(
+            name="E", subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD, created_by=teacher,
+        )
+
+        self.assertTrue(has_access_for_classroom(self.both, C.DOMAIN_MATH, maths.pk))
+        self.assertTrue(has_access_for_classroom(self.both, C.DOMAIN_ENGLISH, english.pk))
+
+    def test_a_single_subject_support_teacher_is_still_refused_the_other_one(self):
+        """The fix must not become "everyone covers everything"."""
+        from access.services import has_global_subject_access
+
+        self.assertTrue(has_global_subject_access(self.math_only, C.DOMAIN_MATH))
+        self.assertFalse(has_global_subject_access(self.math_only, C.DOMAIN_ENGLISH))
+
+
 class SupportAssignmentTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -234,3 +333,37 @@ class AdminSetsHoursTests(TestCase):
         ).json()
 
         self.assertEqual(len(body["slots"]), 1)
+
+    def test_an_admin_reads_the_named_teachers_week_not_their_own(self):
+        """The read-side twin of the bug at the top of this class.
+
+        The writes learned to take a target; the calendar endpoint had not, so it answered
+        with ``request.user``'s week whatever was asked for. An admin opening a teacher's grid
+        was shown their own — empty — week and then invited to edit it, which is how hours end
+        up published onto the wrong person.
+        """
+        self.client.force_authenticate(self.admin)
+
+        body = self.client.get(
+            f"/api/classes/support/my-calendar/?support_teacher={self.support.pk}"
+        ).json()
+
+        self.assertEqual(body["support_teacher"]["id"], self.support.pk)
+
+    def test_a_support_teacher_cannot_read_somebody_elses_week(self):
+        """Refused outright rather than quietly handed their own calendar — a silent
+        substitution is indistinguishable from the endpoint working."""
+        self.client.force_authenticate(self.support)
+
+        response = self.client.get(
+            f"/api/classes/support/my-calendar/?support_teacher={self.other.pk}"
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_omitting_the_target_still_reads_your_own_week(self):
+        self.client.force_authenticate(self.support)
+
+        body = self.client.get("/api/classes/support/my-calendar/").json()
+
+        self.assertEqual(body["support_teacher"]["id"], self.support.pk)

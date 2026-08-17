@@ -102,27 +102,24 @@ def sync_attendance_session(session, *, actor=None) -> None:
 
 
 def sync_attendance_strikes(session, *, actor=None) -> None:
-    """Re-derive the streak of everyone on a finalized register.
+    """Re-derive the streak of everyone on a register.
 
     Separate from the points hook above because the two answer different questions from the
     same row. Points are per-record and idempotent on that record; a strike is a property of a
     student's whole history, so one mark changing means recomputing that student — and a
-    session finalizing means recomputing all of them.
+    whole session being saved means recomputing all of them.
 
-    **Deliberately still FINALIZED-gated, while points now pay on save.** That asymmetry is the
-    decision, not an oversight. ``strikes.recompute`` re-derives a student's entire attendance
-    history, zeroes ``spent_in_streak`` and writes a visible ``KIND_RESET`` transaction the
-    student can read. Running it on every P/A/L/E toggle would break and rebuild a student's
-    streak under the teacher's cursor, spending and refunding their strike balance as the
-    register is typed. An idempotent per-record award survives that; a re-derived history with
-    a user-visible reset row does not.
+    **The FINALIZED gate is gone, and it had to go.** The argument for keeping it was real:
+    ``strikes.recompute`` re-derives a student's entire attendance history, zeroes
+    ``spent_in_streak`` and writes a visible ``KIND_RESET`` transaction, so running it on every
+    P/A/L/E toggle makes a streak wobble under the teacher's cursor. What settled it was
+    production: **111 sessions, all OPEN, not one finalize ever** — so every strike record sat
+    at 0 while 57 students had real marks, and the shop that spends strikes was dead for the
+    whole school. A wobbling streak is a worse experience than a working one for about a
+    minute; a permanently zero streak is no feature at all.
     """
-    from classes.models_attendance import AttendanceSession
-
     from . import strikes
 
-    if session.status != AttendanceSession.STATUS_FINALIZED:
-        return
     for student_id in set(session.records.values_list("student_id", flat=True)):
         from django.contrib.auth import get_user_model
 

@@ -721,3 +721,83 @@ class WithdrawClassworkEndpointTests(ClassworkFixture):
         rows = resp.json()["awards"]
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0]["points"], rows[0]["xp"]), (0, 0))
+
+
+class HandAuthoredClassworkTests(ClassworkFixture):
+    """Classwork written by a teacher in the ordinary assignment form, not released from a
+    journal lesson.
+
+    The journal route already existed; this is the school asking to create classwork the same
+    way they create homework. The form is the same one — the whole difference is the deadline,
+    and the deadline is not cosmetic: ``rewards.tasks.settle_due_homework`` selects on
+    ``due_at__lte``, so a classwork carrier with a due date would be scored automatically, when
+    classwork is paid only by a teacher's hand.
+    """
+
+    def _create(self, actor, *, category):
+        self.client.force_authenticate(actor)
+        return self.client.post(
+            f"/api/classes/{self.classroom.pk}/assignments/",
+            {
+                "title": f"{category.title()} 1",
+                "instructions": "Do the thing",
+                "category": category,
+                "status": "PUBLISHED",
+            },
+            format="multipart",
+        )
+
+    def test_a_teacher_authors_classwork_and_it_gets_no_deadline(self):
+        response = self._create(self.teacher, category=Assignment.CATEGORY_CLASSWORK)
+
+        self.assertIn(response.status_code, (200, 201), response.content)
+        assignment = Assignment.objects.get(pk=response.json()["id"])
+        self.assertEqual(assignment.category, Assignment.CATEGORY_CLASSWORK)
+        self.assertIsNone(
+            assignment.due_at,
+            "a due date on classwork silently switches automatic scoring back on",
+        )
+
+    def test_homework_authored_the_same_way_still_gets_its_deadline(self):
+        """The guard against fixing classwork by breaking homework: the derived next-lesson
+        deadline must survive untouched."""
+        response = self._create(self.teacher, category=Assignment.CATEGORY_HOMEWORK)
+
+        self.assertIn(response.status_code, (200, 201), response.content)
+        assignment = Assignment.objects.get(pk=response.json()["id"])
+        self.assertEqual(assignment.category, Assignment.CATEGORY_HOMEWORK)
+        self.assertIsNotNone(assignment.due_at)
+
+    def test_omitting_the_category_still_means_homework(self):
+        """Every caller that predates this change sends no category and means homework."""
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post(
+            f"/api/classes/{self.classroom.pk}/assignments/",
+            {"title": "Legacy", "instructions": "x", "status": "PUBLISHED"},
+            format="multipart",
+        )
+
+        self.assertIn(response.status_code, (200, 201), response.content)
+        assignment = Assignment.objects.get(pk=response.json()["id"])
+        self.assertEqual(assignment.category, Assignment.CATEGORY_HOMEWORK)
+        self.assertIsNotNone(assignment.due_at)
+
+    def test_hand_authored_classwork_earns_nothing_automatically(self):
+        """The point of the whole feature, asserted on the ledger rather than on the form.
+
+        `recompute_bundle` refuses CLASSWORK by category, so it does not matter that this
+        carrier was never released from a journal — it is classwork, so it pays nothing until
+        a teacher awards it.
+        """
+        from rewards.homework import recompute_bundle
+        from rewards.models import PointAward
+
+        response = self._create(self.teacher, category=Assignment.CATEGORY_CLASSWORK)
+        assignment = Assignment.objects.get(pk=response.json()["id"])
+
+        recompute_bundle(assignment, self.student)
+
+        self.assertFalse(
+            PointAward.objects.filter(student=self.student).exists(),
+            "hand-authored classwork must not be scored by the homework rules",
+        )

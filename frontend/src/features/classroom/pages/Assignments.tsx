@@ -98,9 +98,12 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
             {staff ? "Homework, practice tests, and classwork" : "Your work for this class"}
           </p>
         </div>
+        {/* Homework only. Classwork is authored from its own tab — the two are different
+            kinds of work with different rules (classwork never has a deadline and is paid
+            only when the teacher awards it), so each is added from the section it belongs to. */}
         {staff && (
           <Link href={newHref}>
-            <Button className="cr-ripple" onPointerDown={spawnRipple} icon={Plus}>New</Button>
+            <Button className="cr-ripple" onPointerDown={spawnRipple} icon={Plus}>New homework</Button>
           </Link>
         )}
       </div>

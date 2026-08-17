@@ -77,9 +77,14 @@ type VocabSectionOption = {
 
 type TabKey = "pastpapers" | "packs" | "assessments" | "vocabulary" | "submission";
 
+/** What is being authored. The form is identical; only the deadline rule and the wording differ. */
+export type AssignmentKind = "HOMEWORK" | "CLASSWORK";
+
 type Props = {
   classId: number;
   editingAssignment?: Record<string, unknown> | null;
+  /** Defaults to HOMEWORK — every existing caller means homework. */
+  kind?: AssignmentKind;
   onCancel: () => void;
   onSaved: (assignmentId?: number) => void | Promise<void>;
 };
@@ -88,6 +93,24 @@ type Props = {
 // the START of the class's next lesson; the server derives that date
 // (classes.lesson_schedule.homework_due_at) and leaves it open when the class has no
 // parseable schedule.
+//
+// CLASSWORK has no deadline at all, and that is a rule rather than a default: the reward
+// sweep selects past-due assignments, so a classwork carrier with a due date would be scored
+// automatically, when classwork is paid only by a teacher's hand. The server enforces it —
+// this form simply never offers one and says so.
+
+const KIND_COPY: Record<AssignmentKind, { noun: string; heading: string; blurb: string }> = {
+  HOMEWORK: {
+    noun: "homework",
+    heading: "New homework",
+    blurb: "Due at the start of your next lesson.",
+  },
+  CLASSWORK: {
+    noun: "classwork",
+    heading: "New classwork",
+    blurb: "Work done in the lesson — no deadline, and you award the points yourself.",
+  },
+};
 
 function cardReactKey(c: CardPastpaperPack | CardSingle): string {
   if (c.kind === "single") return `single-${c.test.id}`;
@@ -135,8 +158,18 @@ function readContentWarnings(res: unknown): string[] {
 // A live-cart entry (aggregates selections across every tab in the left column).
 type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment" | "vocabulary"; title: string; meta: string; assigned: boolean; onRemove: () => void };
 
-export default function AssignmentForm({ classId, editingAssignment = null, onCancel, onSaved }: Props) {
+export default function AssignmentForm({ classId, editingAssignment = null, kind = "HOMEWORK", onCancel, onSaved }: Props) {
   const isEditing = editingAssignment != null;
+  // When editing, the kind is whatever the row already is — the prop only chooses what a NEW
+  // one will be, and re-categorising existing work from this form would silently move it in
+  // or out of automatic scoring.
+  const effectiveKind: AssignmentKind =
+    isEditing
+      ? String((editingAssignment as { category?: string })?.category || "").toUpperCase() === "CLASSWORK"
+        ? "CLASSWORK"
+        : "HOMEWORK"
+      : kind;
+  const copy = KIND_COPY[effectiveKind];
 
   const [newAsg, setNewAsg] = useState({ title: "", instructions: "" });
   // Several external links per homework (was a single string). Raw rows; trimmed on save.
@@ -539,6 +572,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       fd.append("allow_file_upload", String(allowFileUpload));
       for (const f of asgFiles) fd.append("attachment_file", f);
 
+      // The server reads this to decide the deadline: CLASSWORK gets none, and none is what
+      // keeps it out of the automatic reward sweep.
+      fd.append("category", effectiveKind);
       fd.append("status", publishStatus);
       const created = await classesApi.createAssignment(classId, fd, true);
       const createdId = created && typeof created === "object" && "id" in created ? Number((created as { id: number }).id) : undefined;
@@ -866,9 +902,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
         <div className="flex items-center gap-4">
           <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[15px] bg-primary/10 text-primary"><ClipboardList className="h-6 w-6" /></div>
           <div className="min-w-0">
-            <h1 className="text-[25px] font-extrabold tracking-tight text-foreground">{isEditing ? "Edit assignment" : "New assignment"}</h1>
+            <h1 className="text-[25px] font-extrabold tracking-tight text-foreground">{isEditing ? `Edit ${copy.noun}` : copy.heading}</h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13.5px] font-semibold text-muted-foreground">
               {classSubjectLabel && <span>{classSubjectLabel} class</span>}
+              <span>{copy.blurb}</span>
               <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[11px] font-extrabold uppercase tracking-wider text-muted-foreground">{isEditing ? "Edit" : "Draft"}</span>
             </div>
           </div>
@@ -878,7 +915,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
       {formError ? <div className="mb-4"><ClassroomAlert tone="error">{formError}</ClassroomAlert></div> : null}
       {contentWarnings.length > 0 ? (
         <div className="mb-4">
-          <ClassroomAlert tone="warning" title="Homework saved — but some content did not go with it">
+          <ClassroomAlert tone="warning" title={`${effectiveKind === "CLASSWORK" ? "Classwork" : "Homework"} saved — but some content did not go with it`}>
             <ul className="list-disc space-y-1 pl-5">
               {contentWarnings.map((w, i) => <li key={i}>{w}</li>)}
             </ul>
@@ -891,7 +928,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 void onSaved(savedId ?? (Number.isFinite(fallback) ? fallback : undefined));
               }}
             >
-              Got it — open the homework
+              {`Got it — open the ${copy.noun}`}
             </button>
           </ClassroomAlert>
         </div>
@@ -920,14 +957,26 @@ export default function AssignmentForm({ classId, editingAssignment = null, onCa
                 <textarea id="asg-inst" value={newAsg.instructions} onChange={(e) => setNewAsg((p) => ({ ...p, instructions: e.target.value }))} placeholder="Write clear, detailed directions for students" rows={10} className={crTextareaClass} />
               </ClassroomField>
 
-              {/* Deadlines are automatic — no picker. Homework runs until the next lesson. */}
+              {/* Deadlines are automatic — no picker. Homework runs until the next lesson;
+                  classwork never has one at all. */}
               <div className="flex items-start gap-2.5 rounded-[14px] border-[1.5px] border-dashed border-border bg-card px-4 py-3">
                 <Clock className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
                 <div>
-                  <div className="text-[13.5px] font-bold text-foreground">Due at the next lesson</div>
+                  <div className="text-[13.5px] font-bold text-foreground">
+                    {effectiveKind === "CLASSWORK" ? "No deadline" : "Due at the next lesson"}
+                  </div>
                   <p className="mt-0.5 text-[12.5px] text-muted-foreground">
-                    This homework stays open from today until your class&apos;s next lesson
-                    begins. If the class has no set schedule it stays open with no deadline.
+                    {effectiveKind === "CLASSWORK" ? (
+                      <>
+                        Classwork stays open indefinitely and is never scored automatically —
+                        you decide what it earns and award the points yourself.
+                      </>
+                    ) : (
+                      <>
+                        This homework stays open from today until your class&apos;s next lesson
+                        begins. If the class has no set schedule it stays open with no deadline.
+                      </>
+                    )}
                   </p>
                 </div>
               </div>

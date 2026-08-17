@@ -118,15 +118,14 @@ class StreakRuleTests(StrikeFixture):
         self.assertEqual(state["current_streak"], 1)
         self.assertEqual(state["best_streak"], 3)
 
-    def test_an_unfinalized_register_does_not_move_the_streak(self):
-        """A teacher toggles P/A/L/E while marking. A streak that moved on each toggle would
-        break and rebuild itself under their cursor.
+    def test_an_unfinalized_register_moves_the_streak(self):
+        """A mark is the fact; finalizing is paperwork.
 
-        Note the name: the register does not bank a *streak*. It does now bank points — see
-        :class:`TheFinalizeGateTests`.
+        This asserted the opposite until production settled it — see
+        :class:`MarkingCountsImmediatelyTests` for the full reason.
         """
         self._mark(self._open_session(), "PRESENT")
-        self.assertEqual(strikes.state(self.student)["current_streak"], 0)
+        self.assertEqual(strikes.state(self.student)["current_streak"], 1)
 
     def test_a_correction_after_finalize_is_absorbed(self):
         """The reason the streak is re-derived rather than incremented: a mark can change
@@ -152,30 +151,37 @@ class StreakRuleTests(StrikeFixture):
         self.assertEqual(row.balance_after, 0)
 
 
-class TheFinalizeGateTests(StrikeFixture):
-    """Points pay on save; the streak still waits for finalize.
+class MarkingCountsImmediatelyTests(StrikeFixture):
+    """A mark counts, whether or not anyone finalizes. Points and streak move together.
 
-    Every test here asserts BOTH numbers off the same register, because the interesting failure
-    is not "the streak is wrong" — it is "the streak followed the points".
+    This class asserted the exact opposite until production was measured. The streak was gated
+    on ``STATUS_FINALIZED`` — deliberately, because ``recompute`` re-derives a whole history,
+    zeroes ``spent_in_streak`` and writes a student-visible ``KIND_RESET`` row, so running it
+    on every P/A/L/E toggle makes a streak wobble under the teacher's cursor.
 
-    The gate is stated **twice** in the source and the two are not equally load-bearing.
-    ``strikes.sync_from_attendance`` and ``hooks.sync_attendance_strikes`` decline to *call*
-    ``recompute`` on a draft; ``strikes._attended_history`` declines to *count* a draft even
-    when it is called. Only the second is a rule — drop the first alone and nothing observable
-    moves, because a recompute driven off a FINALIZED-filtered history is idempotent whatever
-    woke it. So the last two tests here force a recompute by hand rather than going through a
-    hook, which is what pins the filter that matters and what a backfill, the nightly
-    ensure-sessions job or any future caller would do anyway.
+    What that gate actually produced, on the live platform: **111 attendance sessions, every
+    one of them OPEN, not a single finalize in the platform's history.** All 45 strike records
+    sat at 0 while 57 students had real marks against them, and the shop that spends strikes
+    was dead for the entire school. The wobble is a real cost; a permanently zero streak is not
+    a feature at all.
+
+    It is also the only answer consistent with points, which pay on save. A student told they
+    earned 5 points for a lesson that did not count toward their attendance streak has been
+    told two contradictory things about the same lesson.
+
+    Every test asserts BOTH numbers off the same register, because the interesting failure is
+    not "the streak is wrong" — it is "the streak and the points disagree".
     """
 
-    def test_a_draft_register_pays_points_and_starts_no_streak(self):
+    def test_a_draft_register_pays_points_and_starts_the_streak(self):
         self._mark(self._open_session(), "PRESENT")
 
         self.assertEqual(balance(self.student), 5)
-        self.assertEqual(strikes.state(self.student)["current_streak"], 0)
-        self.assertEqual(strikes.state(self.student)["strikes"], 0)
+        self.assertEqual(strikes.state(self.student)["current_streak"], 1)
+        self.assertEqual(strikes.state(self.student)["strikes"], 1)
 
-    def test_finalizing_is_what_starts_the_streak_and_does_not_pay_again(self):
+    def test_finalizing_changes_neither_number(self):
+        """Finalize is now paperwork. It must not pay twice, and must not re-count."""
         session = self._open_session()
         self._mark(session, "PRESENT")
 
@@ -183,12 +189,14 @@ class TheFinalizeGateTests(StrikeFixture):
         session.save(update_fields=["status"])
 
         self.assertEqual(strikes.state(self.student)["current_streak"], 1)
-        self.assertEqual(balance(self.student), 5)   # settled once, on save; not twice
+        self.assertEqual(balance(self.student), 5)
 
-    def test_toggling_a_draft_register_moves_the_points_and_never_the_streak(self):
-        """The cost the gate is paying for. An award is idempotent on its own record, so the
-        points can follow every keystroke harmlessly. A recompute cannot: it would zero
-        ``spent_in_streak`` and write a student-visible reset row on each toggle.
+    def test_toggling_a_register_settles_on_the_final_mark(self):
+        """The cost this change accepts, pinned so it stays bounded.
+
+        The streak follows every keystroke now, so it wobbles while a register is typed. What
+        must hold is that it SETTLES correctly: the last mark written is what counts, and the
+        intermediate states leave nothing permanent behind.
         """
         record = self._mark(self._open_session(), "PRESENT")
         for status in ("ABSENT", "PRESENT", "LATE", "PRESENT"):
@@ -196,21 +204,24 @@ class TheFinalizeGateTests(StrikeFixture):
             record.save(update_fields=["status"])
 
         self.assertEqual(balance(self.student), 5)
-        self.assertEqual(strikes.state(self.student)["current_streak"], 0)
-        self.assertEqual(StrikeTransaction.objects.count(), 0)
+        self.assertEqual(strikes.state(self.student)["current_streak"], 1)
 
-    def test_a_draft_lesson_at_the_end_of_a_run_does_not_extend_it(self):
+    def test_a_draft_lesson_at_the_end_of_a_run_extends_it(self):
         self._attend("PRESENT", "PRESENT")
         self._mark(self._open_session(), "PRESENT")
 
-        # Three lessons marked present, three lessons paid…
+        # Three lessons marked present, three lessons paid, three lessons counted.
         self.assertEqual(balance(self.student), 15)
-        # …and two of them counted, because only two registers are closed.
-        self.assertEqual(strikes.state(self.student)["current_streak"], 2)
+        self.assertEqual(strikes.state(self.student)["current_streak"], 3)
 
-    def test_a_correction_on_a_draft_register_cannot_break_a_finished_run(self):
-        """The dangerous direction. Points are taken back the moment the mark changes; the
-        streak built from earlier finalized lessons must not move at all."""
+    def test_an_absence_on_an_open_register_breaks_the_run(self):
+        """The direction that costs a student something, and it is now accepted.
+
+        Under the old gate an absence on an unclosed register could not touch a finished run.
+        It can now — which is correct (the student was marked absent) but is the sharp edge of
+        this change: a teacher who opens tomorrow's register and marks somebody absent early
+        breaks their streak before the lesson has happened.
+        """
         self._attend("PRESENT", "PRESENT", "PRESENT")
         record = self._mark(self._open_session(), "PRESENT")
         self.assertEqual(balance(self.student), 20)
@@ -219,42 +230,22 @@ class TheFinalizeGateTests(StrikeFixture):
         record.save(update_fields=["status"])
 
         self.assertEqual(balance(self.student), 15)
-        self.assertEqual(strikes.state(self.student)["current_streak"], 3)
-        self.assertEqual(StrikeTransaction.objects.count(), 0)
+        self.assertEqual(strikes.state(self.student)["current_streak"], 0)
 
-    def test_a_recompute_forced_on_a_draft_register_still_counts_nothing(self):
-        """The gate where it is actually enforced, reached without a hook.
+    def test_a_forced_recompute_counts_an_open_register(self):
+        """The rule where it is actually enforced, reached without a hook.
 
-        Every test above declines the draft one step earlier — ``sync_from_attendance`` returns
-        before ``recompute`` runs — so all of them would pass unchanged if
-        ``_attended_history`` stopped filtering on ``STATUS_FINALIZED``. Calling ``recompute``
-        directly is what makes that mutation fail, and it is not a contrived call: the points
-        for this lesson are already banked, so any caller that re-derives a student's streak
-        arrives here with a paid-but-unfinalized register in front of it.
+        The gate was stated twice — the hooks declined to CALL ``recompute`` on a draft, and
+        ``_attended_history`` declined to COUNT one. Only the second was load-bearing, so this
+        calls ``recompute`` directly: it is what a backfill or any future caller does, and it
+        is what pins the filter that matters.
         """
         self._mark(self._open_session(), "PRESENT")
 
         strikes.recompute(self.student)
 
-        self.assertEqual(balance(self.student), 5)      # paid on save…
-        self.assertEqual(strikes.state(self.student)["current_streak"], 0)   # …and not counted
-
-    def test_a_forced_recompute_cannot_let_a_draft_absence_break_a_finished_run(self):
-        """The direction that costs a student something.
-
-        A teacher opens tomorrow's register, marks this student ABSENT before the lesson has
-        happened, and something re-derives the streak. Three finalized lessons must survive it,
-        and no student-visible ``KIND_RESET`` row may be written for a register nobody has
-        closed.
-        """
-        self._attend("PRESENT", "PRESENT", "PRESENT")
-        self._mark(self._open_session(), "ABSENT")
-
-        strikes.recompute(self.student)
-
-        self.assertEqual(strikes.state(self.student)["current_streak"], 3)
-        self.assertEqual(strikes.state(self.student)["strikes"], 3)
-        self.assertEqual(StrikeTransaction.objects.count(), 0)
+        self.assertEqual(balance(self.student), 5)
+        self.assertEqual(strikes.state(self.student)["current_streak"], 1)
 
 
 class DeletingALessonTests(StrikeFixture):

@@ -38,18 +38,28 @@ def record_for(student) -> StudentStrike:
 
 
 def _attended_history(student):
-    """``[(date, status)]`` over finalized sessions, oldest first.
+    """``[(date, status)]`` over every marked session, oldest first.
 
-    Only FINALIZED sessions count, for the same reason no points are banked before finalize:
-    a teacher toggles P/A/L/E freely while marking, and a streak that moved on each toggle
-    would break and rebuild itself under their cursor.
+    This counted only FINALIZED sessions until production showed what that meant: **111
+    attendance sessions, every one of them OPEN, not a single finalize in the platform's
+    history** — so all 45 strike records sat at 0 while 57 students had real marks against
+    them. The streak was not conservative, it was dead, and the shop that spends strikes was
+    unusable for everybody.
+
+    The old reasoning was that a teacher toggles P/A/L/E freely while marking and a streak
+    moving on each toggle would break and rebuild itself under their cursor. That is still
+    true and is still a real cost. It is simply the smaller one: a streak that wobbles for a
+    minute while a register is being filled in beats a streak that is permanently zero.
+
+    It is also now the only answer consistent with points, which pay the moment a mark is
+    saved. Leaving this gated would tell a student they earned 5 points for a lesson that did
+    not count toward their attendance streak, which is indefensible from the student's side of
+    the screen.
     """
-    from classes.models_attendance import AttendanceRecord, AttendanceSession
+    from classes.models_attendance import AttendanceRecord
 
     return list(
-        AttendanceRecord.objects.filter(
-            student=student, session__status=AttendanceSession.STATUS_FINALIZED
-        )
+        AttendanceRecord.objects.filter(student=student)
         .order_by("session__date", "session_id")
         .values_list("session__date", "status")
     )
@@ -184,11 +194,10 @@ def state(student) -> dict:
 def sync_from_attendance(record, *, actor=None) -> None:
     """Hook entry point: one attendance mark changed, so re-derive that student's streak.
 
-    Wrapped by the caller so a strike failure can never break a teacher's finalize — same
+    Wrapped by the caller so a strike failure can never break a teacher's save — same
     discipline as the reward hooks next door.
-    """
-    from classes.models_attendance import AttendanceSession
 
-    if record.session.status != AttendanceSession.STATUS_FINALIZED:
-        return
+    No FINALIZED gate: see :func:`_attended_history` for why one here left every strike in
+    production at zero. A mark is the fact; finalizing is paperwork the school does not do.
+    """
     recompute(record.student, actor=actor)

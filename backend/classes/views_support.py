@@ -179,6 +179,35 @@ def _target_teacher(request):
     return target, None
 
 
+def _target_teacher_for_read(request):
+    """The read-side twin of :func:`_target_teacher`, reading ``?support_teacher=``.
+
+    Separate because the writes take their target from the request BODY and a GET has none.
+    Without it every read endpoint answered with ``request.user``'s own calendar, so an
+    administrator opening a teacher's grid was shown their own — empty — week and then invited
+    to edit it. The write path already had exactly this bug and its docstring records the fix;
+    this is the same fix one HTTP verb over.
+
+    A non-admin naming somebody else is REFUSED rather than quietly served their own calendar:
+    silently substituting a different subject is how somebody ends up publishing hours onto
+    the wrong person.
+    """
+    raw = request.query_params.get("support_teacher")
+    if raw in (None, ""):
+        return request.user, None
+    if not _is_admin(request.user):
+        return None, Response(
+            {"detail": "Only an administrator can read somebody else's hours."},
+            status=http.HTTP_403_FORBIDDEN,
+        )
+    from django.contrib.auth import get_user_model
+
+    target = get_user_model().objects.filter(pk=raw).first()
+    if target is None or not _is_support_teacher(target):
+        return None, Response({"detail": "That user is not a support teacher."}, status=400)
+    return target, None
+
+
 class SupportAvailabilityView(APIView):
     """Support teacher: publish and withdraw slots. An admin may act on a teacher's behalf."""
 
@@ -191,12 +220,11 @@ class SupportAvailabilityView(APIView):
         if not self._guard(request):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
         # An admin opening a teacher's grid needs to read it before they can edit it.
-        whose = request.query_params.get("support_teacher")
-        owner_id = request.user.pk
-        if whose and _is_admin(request.user):
-            owner_id = whose
+        owner, denied = _target_teacher_for_read(request)
+        if denied:
+            return denied
         slots = (
-            SupportAvailability.objects.filter(support_teacher_id=owner_id)
+            SupportAvailability.objects.filter(support_teacher_id=owner.pk)
             .select_related("support_teacher")
             .order_by("starts_at", "id")
         )
@@ -482,7 +510,10 @@ class SupportTeacherCalendarView(APIView):
     def get(self, request):
         if not (_is_support_teacher(request.user) or _is_admin(request.user)):
             return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
-        days = support_service.teacher_calendar_for(request.user)
+        owner, denied = _target_teacher_for_read(request)
+        if denied:
+            return denied
+        days = support_service.teacher_calendar_for(owner)
         booked_total = sum(
             len(h["bookings"]) for d in days for h in d["hours"] if h["state"] == "booked"
         )
@@ -491,12 +522,13 @@ class SupportTeacherCalendarView(APIView):
             "days": support_service.CALENDAR_DAYS,
             "open_hour": support_service.CALENDAR_OPEN_HOUR,
             "close_hour": support_service.CALENDAR_CLOSE_HOUR,
+            "support_teacher": {"id": owner.pk, "name": _display_name(owner)},
             "free_hours": free_total,
             "booked_sessions": booked_total,
-            "awaiting_settle": support_service.bookings_for_teacher(request.user)
+            "awaiting_settle": support_service.bookings_for_teacher(owner)
             .filter(status=SupportBooking.STATUS_BOOKED, availability__ends_at__lte=timezone.now())
             .count(),
-            "ratings": support_service.rating_summary(request.user),
+            "ratings": support_service.rating_summary(owner),
             "dates": [d["date"] for d in days],
             "days_out": [
                 {

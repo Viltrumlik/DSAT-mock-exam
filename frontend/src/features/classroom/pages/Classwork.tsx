@@ -17,7 +17,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, ExternalLink, Paperclip, Presentation, Sparkles } from "lucide-react";
+import { BookOpen, ExternalLink, Paperclip, Plus, Presentation, Sparkles } from "lucide-react";
 import VideoPlayer from "@/components/VideoPlayer";
 import { buttonClassName, Card, CardHeader, EmptyState, ErrorState, LoadingState, Pill } from "../ui";
 import { capabilitiesFor } from "../capabilities";
@@ -175,13 +175,25 @@ export function Classwork({ classroom }: { classroom: ClassroomWithRole }) {
 
   return (
     <div className="cr-section space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-foreground sm:text-[28px]">Classwork</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {caps.isStudent
-            ? "What you worked on in class, and the points your teacher recorded"
-            : "What the class sees for in-class work — record points from the Lessons tab"}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-foreground sm:text-[28px]">Classwork</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {caps.isStudent
+              ? "What you worked on in class, and the points your teacher recorded"
+              : "In-class work. No deadline — you award the points yourself."}
+          </p>
+        </div>
+        {/* Authoring lives here rather than beside "New homework" on Assignments: the two
+            are different kinds of work with different rules, and the section a teacher is
+            standing in is the one that should offer to add to it. */}
+        {caps.canManageAssignments && (
+          <Link href={`${classBase}/assignments/new?kind=classwork`}>
+            <button type="button" className={buttonClassName({ variant: "primary" })}>
+              <Plus className="h-4 w-4" aria-hidden /> New classwork
+            </button>
+          </Link>
+        )}
       </div>
 
       {isLoading ? (
@@ -201,7 +213,7 @@ export function Classwork({ classroom }: { classroom: ClassroomWithRole }) {
           description={
             caps.isStudent
               ? "Work you do during lessons shows up here, along with the points your teacher gives you."
-              : "Give a lesson's classwork from the Lessons tab and it appears here."
+              : "Add classwork here, or give a lesson's classwork from the Lessons tab — both appear in this list."
           }
         />
       ) : (

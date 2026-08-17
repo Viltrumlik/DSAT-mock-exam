@@ -2235,12 +2235,22 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
 
         serializer = self.get_serializer(data=data_copy)
         serializer.is_valid(raise_exception=True)
+
+        # Classwork is work done IN the lesson, so it has no deadline — ever. This is not a
+        # cosmetic difference: `rewards.tasks.settle_due_homework` selects on `due_at__lte`,
+        # so giving a classwork carrier a deadline silently enrols it in automatic scoring,
+        # and classwork is paid only by a teacher's hand (docs/rewards/OVERHAUL.md §7).
+        is_classwork = (
+            str(serializer.validated_data.get("category") or "").upper()
+            == Assignment.CATEGORY_CLASSWORK
+        )
         assignment = serializer.save(
             classroom=classroom,
             created_by=request.user,
-            # No manual deadline: homework runs from the lesson it is set until the START
-            # of this classroom's next lesson. None (unschedulable classroom) = no deadline.
-            due_at=homework_due_at(classroom),
+            # Homework has no manual deadline either: it runs from the lesson it is set until
+            # the START of this classroom's next lesson. None (unschedulable classroom) = no
+            # deadline.
+            due_at=None if is_classwork else homework_due_at(classroom),
         )
 
         # Save all attachment files manually (primary + extras) so we control

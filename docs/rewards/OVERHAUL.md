@@ -207,10 +207,24 @@ Decision: **a withdrawn fact clears XP; a smaller fact does not.**
 This narrows the school's "XP is never taken away" rule to "XP is never taken away for doing
 worse". Without it, "attendance pays on save" and "XP only ever climbs" cannot both hold.
 
-Strikes stay `FINALIZED`-gated. `strikes.recompute` re-derives a student's whole history,
-zeroes `spent_in_streak` and writes a visible `KIND_RESET` row (`strikes.py:99`); running
-that on every toggle would break and rebuild a student's streak under the teacher's cursor.
-Points are per-record and idempotent, so they can move; a streak is not.
+~~Strikes stay `FINALIZED`-gated.~~ **Reversed on 2026-08-17 by production data — see below.**
+The original reasoning stands on its own terms: `strikes.recompute` re-derives a student's
+whole history, zeroes `spent_in_streak` and writes a visible `KIND_RESET` row
+(`strikes.py:99`), so running it on every toggle makes a streak wobble under the teacher's
+cursor. Points are per-record and idempotent; a streak is not.
+
+What that argument missed is that it assumed registers eventually get finalized. They do not.
+Production held **111 attendance sessions, every one OPEN, zero finalizes ever** — so all 45
+strike records read 0 while 57 students had real marks, and the shop that spends strikes was
+dead for the whole school. The same gate had already suppressed **every attendance point ever
+earned** (66 awards, 322 points, backfilled by hand on deploy day).
+
+Strikes now count any marked register, matching points. The wobble is accepted and bounded by
+a test that pins where it settles. The sharp edge is stated rather than hidden: an absence
+entered early on tomorrow's register now breaks a run before the lesson has happened.
+
+**The lesson generalises beyond strikes: a gate keyed on a step humans are not required to
+take is not conservative, it is an off switch.**
 
 ## 7. Classwork: visible, assignable, deadline-less, manual-only
 
