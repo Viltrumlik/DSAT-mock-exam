@@ -98,10 +98,21 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
             {staff ? "Homework, practice tests, and classwork" : "Your work for this class"}
           </p>
         </div>
+        {/* Two buttons rather than a category picker inside the form: the deadline rule is
+            the difference between them and it is decided before you start typing, not after.
+            Homework is due at the next lesson; classwork never has a deadline and is paid
+            only when the teacher awards it. */}
         {staff && (
-          <Link href={newHref}>
-            <Button className="cr-ripple" onPointerDown={spawnRipple} icon={Plus}>New</Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={newHref}>
+              <Button className="cr-ripple" onPointerDown={spawnRipple} icon={Plus}>New homework</Button>
+            </Link>
+            <Link href={`${newHref}?kind=classwork`}>
+              <Button variant="secondary" className="cr-ripple" onPointerDown={spawnRipple} icon={Plus}>
+                New classwork
+              </Button>
+            </Link>
+          </div>
         )}
       </div>
 
