@@ -807,7 +807,21 @@ class UserListView(generics.ListAPIView):
         # Annotated so the ops console can show how much work each account holds without
         # five queries per row — it is the only signal that separates two same-name rows
         # before verifications accumulate, and it is the delete blast radius.
-        return with_activity_counts(manageable_users_queryset(self.request.user))
+        qs = with_activity_counts(manageable_users_queryset(self.request.user))
+
+        # `?role=` narrows the directory. It is filtered HERE rather than by the caller
+        # because a client-side filter over an unpaginated directory ships every account in
+        # the school to draw a list of two — and because a query parameter this endpoint
+        # silently ignored is a trap: the support console asked for support teachers, got
+        # everybody, and looked like a UI bug rather than a missing filter.
+        #
+        # Unknown values narrow to nothing rather than being ignored, for the same reason:
+        # answering a filter you did not apply with a full directory is the failure mode
+        # this exists to remove.
+        role = (self.request.query_params.get("role") or "").strip().lower()
+        if role:
+            qs = qs.filter(role=role)
+        return qs
 
 class UserCreateView(generics.CreateAPIView):
     serializer_class = UserSerializer
