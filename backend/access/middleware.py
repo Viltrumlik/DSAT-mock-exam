@@ -51,12 +51,35 @@ class StaffSubjectRequiredMiddleware:
     is exactly the "configured" this gate means to test.
     """
 
+    # Auth-bootstrap paths this gate must NEVER answer, no matter how the account is
+    # configured. `/api/users/me/` is the identity probe the SPA calls on every boot to
+    # decide "am I signed in?"; if a subject-misconfigured staff account gets a 403 here,
+    # the client reads it as "not authenticated" and bounces to /login — then the login
+    # succeeds, boots, probes `me`, is refused again, and loops forever with no way to even
+    # SEE they are logged in, let alone be told their subject is unset. The host guard
+    # already lets `/api/users/me/` (and the auth endpoints) through on every console for
+    # exactly this reason; the subject gate has to honour the same boot exemption or it
+    # re-introduces the lockout host_guard was careful to avoid. None of these paths expose
+    # a work surface — subject scoping still guards every real endpoint below — so exempting
+    # them widens nothing. A blank-subject account now boots into the portal and meets a
+    # proper in-app error on its data calls instead of an invisible redirect.
+    _BOOT_EXEMPT_PREFIXES = (
+        "/api/auth/",
+        "/api/users/me/",
+        "/api/users/google/",
+        "/api/users/telegram/",
+        "/api/health/",
+        "/api/schema/",
+    )
+
     def __init__(self, get_response):
         self.get_response = get_response
 
     def __call__(self, request):
         path = request.path or ""
         if not path.startswith("/api/"):
+            return self.get_response(request)
+        if any(path.startswith(p) for p in self._BOOT_EXEMPT_PREFIXES):
             return self.get_response(request)
         user = getattr(request, "user", None)
         if not user or not getattr(user, "is_authenticated", False):
