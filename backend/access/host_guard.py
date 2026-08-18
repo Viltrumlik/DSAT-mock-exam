@@ -75,6 +75,19 @@ class SubdomainAPIGuardMiddleware:
         if path.startswith("/api/auth/"):
             return self.get_response(request)
 
+        # Social sign-in is auth bootstrap too, and it lives under /api/users/ rather than
+        # /api/auth/ purely by URL history. Without this it was reachable on the main site and
+        # nowhere else, so a teacher or support teacher could not use Google to sign in to the
+        # Teacher Portal AT ALL — the guard refused before the view ran — while the same button
+        # on the student site let them in and left them there. Which console a person may land
+        # on is a decision for the sign-in view (`users.views._console_refusal_for`), where the
+        # account is known; the guard's job is to let the request reach it.
+        #
+        # These endpoints are unauthenticated by design and verify a signed third-party token
+        # themselves, so allowing them here widens no authorization surface.
+        if path.startswith("/api/users/google/") or path.startswith("/api/users/telegram/"):
+            return self.get_response(request)
+
         # Health + schema endpoints must always be reachable (for load balancers and deploy checks).
         if path.startswith("/api/health/"):
             return self.get_response(request)

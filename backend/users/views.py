@@ -422,21 +422,9 @@ class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
         #   - main domain: teacher accounts must use the Teacher Portal; refuse here so a
         #     teacher can only enter via teacher.mastersat.uz.
         # Returning before set_auth_cookies means no cookies and no session row are created.
-        login_console = str(getattr(request, "lms_console", "") or "").strip().lower()
-        login_user = getattr(serializer, "user", None)
-        login_role = str(getattr(login_user, "role", "") or "").strip().lower()
-        if login_console == "teacher" and login_role not in acc_const.TEACHER_PORTAL_ROLES:
-            return Response(
-                {"detail": "You do not have permission to access the Teacher Portal."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        # Support teachers belong on the portal for the same reason teachers do: the main
-        # site is the student experience, and its classroom pages force the consumer view.
-        if login_console == "main" and login_role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
-            return Response(
-                {"detail": "Teachers must sign in at the Teacher Portal: https://teacher.mastersat.uz"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        denied = _console_refusal_for(request, getattr(serializer, "user", None))
+        if denied is not None:
+            return denied
 
         data = dict(serializer.validated_data)
         access = str(data.get("access") or "")
@@ -1039,6 +1027,35 @@ class ExamDateOptionAdminDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = ExamDateOption.objects.all()
 
 
+def _console_refusal_for(request, user):
+    """Refuse a sign-in that lands on the wrong console, or ``None`` to let it through.
+
+    Extracted because this rule was enforced on the PASSWORD path only. Google and Telegram
+    sign-in minted tokens without ever asking, so a support teacher signing in with Google on
+    the main site sailed through and landed on the student experience — which is what "I still
+    cannot get into the teacher panel" turned out to be. They were signed in the whole time, on
+    the wrong site, with nothing telling them the portal existed.
+
+    Every path that mints a token has to answer this the same way, or the rule is decoration
+    and the one that skips it becomes the way in.
+    """
+    console = str(getattr(request, "lms_console", "") or "").strip().lower()
+    role = str(getattr(user, "role", "") or "").strip().lower()
+    if console == "teacher" and role not in acc_const.TEACHER_PORTAL_ROLES:
+        return Response(
+            {"detail": "You do not have permission to access the Teacher Portal."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    # Support teachers belong on the portal for the same reason teachers do: the main site is
+    # the student experience, and its classroom pages force the consumer view.
+    if console == "main" and role in acc_const.SUBJECT_SCOPED_STAFF_ROLES:
+        return Response(
+            {"detail": "Teachers must sign in at the Teacher Portal: https://teacher.mastersat.uz"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+    return None
+
+
 class GoogleAuthView(APIView):
     # Truly public: must not 401 on stale JWT (the /login page polls this).
     authentication_classes = []
@@ -1135,6 +1152,13 @@ class GoogleAuthView(APIView):
                 updated = True
             if updated:
                 user.save(update_fields=["first_name", "last_name"])
+
+        # Same console rule the password path applies — see `_console_refusal_for`. Checked
+        # after the account is resolved and BEFORE any token is minted, so a refusal never
+        # hands out credentials it is about to reject.
+        denied = _console_refusal_for(request, user)
+        if denied is not None:
+            return denied
 
         clear_security_step_up(user_id=user.pk)
 
@@ -1282,6 +1306,13 @@ class TelegramAuthView(APIView):
             return phone_err
         user.telegram_id = tg_id
         user.save(update_fields=["telegram_id"])
+
+        # Same console rule the password path applies — see `_console_refusal_for`. Checked
+        # after the account is resolved and BEFORE any token is minted, so a refusal never
+        # hands out credentials it is about to reject.
+        denied = _console_refusal_for(request, user)
+        if denied is not None:
+            return denied
 
         clear_security_step_up(user_id=user.pk)
 
