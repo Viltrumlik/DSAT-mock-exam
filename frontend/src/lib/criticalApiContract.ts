@@ -70,7 +70,16 @@ export const userMeResponseSchema = z
     target_math: z.union([z.number(), z.null()]).optional(),
     last_mock_result: userMeLastMockSchema.nullable().optional(),
     role: z.string(),
-    subject: z.union([z.literal("math"), z.literal("english"), z.null()]),
+    // Any string or null — NOT a fixed `"math" | "english"` union. A support teacher covers
+    // `"both"`, and this schema listing only the two single subjects meant the WHOLE /users/me
+    // response threw for every both-subject support teacher: `me` returned 200, the parse
+    // rejected it, the query went to `error`, `deriveAuthBootState` read that as UNAUTHENTICATED,
+    // and AuthGuard bounced them to /login — a login loop with no 401 anywhere and immune to any
+    // backend fix, because the failure is here. The UI only reads `subject` as a hint and the
+    // server is authoritative on its valid values, so a single field must never be allowed to
+    // take the shell down (same principle as the nullable `email` above). Accept whatever the
+    // backend sends.
+    subject: z.union([z.string(), z.null()]).optional(),
     permissions: z.array(z.string()),
     last_password_change: z.union([z.string(), z.null()]),
     security_step_up_active: z.boolean(),
