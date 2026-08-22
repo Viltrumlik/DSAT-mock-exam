@@ -31,6 +31,10 @@ interface PanelStudent {
   score: number | null;
   rank: number | null;
   certificate_code: string | null;
+  /** How many times they have finished it — >1 means they have already re-sat. */
+  sittings: number;
+  /** They currently hold an unspent re-sit (may sit this paper once more). */
+  resit_open: boolean;
   version_number: number | null;
   version_label: string | null;
   /** Where they sit. Null until a seating plan is committed. */
@@ -79,6 +83,24 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
       pushGlobalToast({ tone: "success", message: `Access code: ${res.access_code}` });
     },
     // Failures are surfaced by the caller (confirmStart), which also owns the dialog state.
+  });
+  // A midterm is once-only. This is the deliberate exception: a student who FAILED this month
+  // and REPEATED it has to sit the same paper again. One click buys exactly one new sitting
+  // (spent when they open it). The re-sit is exempt from the class window/access code, and it
+  // re-opens the room for publish — press "Re-calculate" once they hand the new paper in.
+  const resit = useMutation({
+    mutationFn: async ({ userId, allow }: { userId: number; allow: boolean }) => {
+      if (allow) await midtermApi.allowResit(midtermId, [userId], "repeated the month");
+      else await midtermApi.withdrawResit(midtermId, [userId]);
+    },
+    onSuccess: (_res, vars) => {
+      invalidate();
+      pushGlobalToast({
+        tone: "success",
+        message: vars.allow ? "Re-sit allowed — the student can now sit it again." : "Re-sit withdrawn.",
+      });
+    },
+    onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
   });
 
   const [tab, setTab] = useState<"students" | "schedule">("students");
@@ -263,7 +285,7 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
             )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th>{data.has_versions && <><th>Version</th><th>Seat</th></>}<th>State</th><th>Score</th><th>Rank</th>{certificates_issued && <th>Certificate</th>}</tr></thead>
+                <thead><tr className="text-left text-xs text-muted-foreground"><th className="py-1.5">Student</th>{data.has_versions && <><th>Version</th><th>Seat</th></>}<th>State</th><th>Score</th><th>Rank</th>{certificates_issued && <th>Certificate</th>}<th className="text-right">Re-sit</th></tr></thead>
                 <tbody>
                   {students.map((s) => (
                     <tr key={s.student_id} className="border-t border-border">
@@ -288,7 +310,12 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
                         </>
                       )}
                       <td className="text-muted-foreground">{s.state.replace(/_/g, " ")}</td>
-                      <td className="text-foreground">{s.score != null ? `${s.score} / ${scale}` : "—"}</td>
+                      <td className="text-foreground">
+                        {s.score != null ? `${s.score} / ${scale}` : "—"}
+                        {s.sittings > 1 && (
+                          <span className="ml-1.5 align-middle text-[10px] font-bold text-muted-foreground">{s.sittings} sittings</span>
+                        )}
+                      </td>
                       <td className="text-muted-foreground">{s.rank ?? "—"}</td>
                       {certificates_issued && (
                         <td>
@@ -297,6 +324,20 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
                           ) : <span className="text-muted-foreground">—</span>}
                         </td>
                       )}
+                      <td className="text-right">
+                        {s.submitted ? (
+                          <button
+                            onClick={() => resit.mutate({ userId: s.student_id, allow: !s.resit_open })}
+                            disabled={resit.isPending}
+                            title={s.resit_open
+                              ? "They may sit this midterm again. Click to take that back."
+                              : "Let them sit this midterm again — for a student who repeated the month."}
+                            className={`text-xs font-semibold disabled:opacity-50 ${s.resit_open ? "text-primary hover:text-primary/80" : "text-muted-foreground hover:text-foreground"}`}
+                          >
+                            {s.resit_open ? "Re-sit allowed ✓" : "Allow re-sit"}
+                          </button>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

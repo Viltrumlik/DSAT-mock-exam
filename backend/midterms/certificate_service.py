@@ -212,16 +212,25 @@ def issue_classroom_certificates(midterm: Midterm, classroom, actor, *, force=Fa
     if not cohort:
         return {"ok": False, "reason": "no_students"}
     latest = _latest_completed_attempts(midterm, cohort)
-    remaining = len(students_still_to_sit(midterm, cohort))
-    if remaining and not force:
-        return {"ok": False, "reason": "not_all_finished", "remaining": remaining}
+    still_to_sit = students_still_to_sit(midterm, cohort)
+    if still_to_sit and not force:
+        return {"ok": False, "reason": "not_all_finished", "remaining": len(still_to_sit)}
 
-    finishers = [(sid, att.score) for sid, att in latest.items()]
+    # A force publish issues to the finishers now (a never-shown-up absentee simply has no
+    # completed attempt, so they fall out here on their own). But a student who is OWED a
+    # re-sit, or is part-way through one, DOES have an old completed attempt — and issuing
+    # them a certificate now would freeze the rank and paper they are about to replace, and
+    # rank the rest of the class against a mark that is on its way out. Leave them out until
+    # they hand the new paper in; a later "Re-calculate" folds them in. (Without --force this
+    # never runs: still_to_sit already refused above.)
+    eligible = {sid: att for sid, att in latest.items() if sid not in still_to_sit}
+
+    finishers = [(sid, att.score) for sid, att in eligible.items()]
     ranks, cohort_size = _competition_ranks(finishers)
     instructor_name = _display_name(actor)
 
     certs = []
-    for sid, attempt in latest.items():
+    for sid, attempt in eligible.items():
         student = attempt.student
         defaults = _snapshot(
             cert_defaults={

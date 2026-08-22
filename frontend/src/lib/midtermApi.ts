@@ -25,6 +25,11 @@ export interface MidtermRow {
   attempt_id: number | null;
   state: string;
   submitted: boolean;
+  /**
+   * They hold an unspent re-sit for a paper they already finished (failed a month, repeated
+   * it) — the once-only rule is lifted and the row becomes launchable again. See MidtermResit.
+   */
+  resit_open?: boolean;
   is_open: boolean;
   is_before_start: boolean; // scheduled window hasn't opened yet (countdown)
   awaiting_code: boolean; // classroom window is open but teacher hasn't started it (no access code yet)

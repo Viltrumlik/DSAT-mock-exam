@@ -31,7 +31,7 @@ from midterms.certificate_service import (
     _latest_completed_attempts,
     issue_classroom_certificates,
 )
-from midterms.models import Midterm, MidtermAttempt, MidtermVersion, MidtermVersionAssignment
+from midterms.models import Midterm, MidtermAttempt, MidtermResit, MidtermVersion, MidtermVersionAssignment
 from midterms.seating import (
     DEFAULT_COLUMNS,
     SEATS_PER_DESK,
@@ -362,6 +362,19 @@ class MidtermV2PanelView(_ClassroomScopedView):
         assign_map = {a.student_id: a.version for a in assignment_rows}
         seat_map = {a.student_id: (a.seat_row, a.seat_col) for a in assignment_rows if a.seat_row is not None}
         seat_columns = columns_from_seat_cols(col for _row, col in seat_map.values())
+        # Who currently holds an unspent re-sit (a student who failed and repeated the month may
+        # sit this same paper again), and how many times each has finished it — the two signals
+        # the "Allow re-sit" control in the panel needs. See MidtermResit.
+        resit_open_ids = set(
+            MidtermResit.objects.filter(
+                midterm=midterm, student_id__in=cohort, consumed_at__isnull=True
+            ).values_list("student_id", flat=True)
+        )
+        sittings = {}
+        for sid in MidtermAttempt.objects.filter(
+            midterm=midterm, student_id__in=cohort, is_completed=True
+        ).values_list("student_id", flat=True):
+            sittings[sid] = sittings.get(sid, 0) + 1
         students = []
         scores = []
         for sid in cohort:
@@ -380,6 +393,9 @@ class MidtermV2PanelView(_ClassroomScopedView):
                 "score": score,
                 "rank": ranks.get(sid),
                 "certificate_code": codes.get(sid),
+                # How many times they have finished it, and whether they may sit it once more.
+                "sittings": sittings.get(sid, 0),
+                "resit_open": sid in resit_open_ids,
                 "version_number": ver.version_number if ver else None,
                 "version_label": (ver.label or f"Version {ver.version_number}") if ver else None,
                 "seat_row": seat[0] if seat else None,

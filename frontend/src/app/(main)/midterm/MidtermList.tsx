@@ -106,6 +106,10 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
   }
 
   const hasAttempt = m.attempt_id != null && m.state !== "NOT_STARTED";
+  // A re-sit: they finished this paper and hold a granted permission to sit it once more.
+  // enter() creates a FRESH attempt (not a resume), so the label and badge must say so —
+  // hasAttempt is true here (the completed attempt lingers) and would otherwise read "Resume".
+  const isResit = kind === "available" && !!m.resit_open;
 
   return (
     <div className="relative pl-7">
@@ -115,7 +119,9 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="truncate text-[16px] font-extrabold" style={{ color: C.navy }}>{m.title}</p>
-            {kind === "available" && <Badge text={hasAttempt ? "In progress" : "Available"} bg="#e7effb" color="#21539e" />}
+            {kind === "available" && (isResit
+              ? <Badge text="Re-sit available" bg="#fef3e2" color="#b45309" />
+              : <Badge text={hasAttempt ? "In progress" : "Available"} bg="#e7effb" color="#21539e" />)}
             {kind === "scheduled" && !unlocked && <Badge text={m.awaiting_code ? "Not started" : "Scheduled"} bg="#f1f5f9" color={C.slate} />}
             {kind === "missed" && <Badge text="Missed" bg="#fdeaea" color="#b91c1c" />}
             {kind === "past" && <Badge text="Completed" bg="#dcf2e3" color="#0b7a4f" />}
@@ -124,8 +130,8 @@ function Row({ m, kind, onUnlock }: { m: MidtermRow; kind: "available" | "schedu
         </div>
 
         {kind === "available" ? (
-          <button onClick={enter} disabled={busy} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60" style={{ background: C.blue }}>
-            {busy ? "…" : hasAttempt ? "Resume timed mock" : "Enter timed mock"} <ArrowRight className="h-4 w-4" />
+          <button onClick={enter} disabled={busy} className="inline-flex shrink-0 items-center gap-2 rounded-xl px-[18px] py-[11px] text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-60" style={{ background: isResit ? "#c2740c" : C.blue }}>
+            {busy ? "…" : isResit ? "Start re-sit" : hasAttempt ? "Resume timed mock" : "Enter timed mock"} <ArrowRight className="h-4 w-4" />
           </button>
         ) : unlocked ? (
           // Countdown just hit zero — DON'T expose a live Enter yet. A classroom midterm's
@@ -215,10 +221,14 @@ export default function MidtermList() {
   // A started-but-unfinished attempt is always resumable (even past the deadline), so it
   // belongs in "Available"; a not-started midterm past its deadline is "Missed".
   const resumable = (m: MidtermRow) => !m.submitted && m.attempt_id != null && m.state !== "NOT_STARTED";
-  const available = midterms.filter((m) => !m.submitted && (resumable(m) || m.is_open));
-  const scheduled = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && (m.is_before_start || m.awaiting_code));
-  const missed = midterms.filter((m) => !m.submitted && !m.is_open && !resumable(m) && !m.is_before_start && !m.awaiting_code);
-  const past = midterms.filter((m) => m.submitted);
+  // A granted re-sit lifts the once-only rule for a paper they already finished — it belongs in
+  // "Available" (the actionable place), NOT in "Past" where it would only show the old mark they
+  // are about to replace. It out-ranks the schedule/deadline buckets (the backend exempts a
+  // re-sit from the class window), so a re-sittable midterm never reads as scheduled or missed.
+  const available = midterms.filter((m) => m.resit_open || (!m.submitted && (resumable(m) || m.is_open)));
+  const scheduled = midterms.filter((m) => !m.resit_open && !m.submitted && !m.is_open && !resumable(m) && (m.is_before_start || m.awaiting_code));
+  const missed = midterms.filter((m) => !m.resit_open && !m.submitted && !m.is_open && !resumable(m) && !m.is_before_start && !m.awaiting_code);
+  const past = midterms.filter((m) => m.submitted && !m.resit_open);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "all", label: "All" }, { id: "available", label: "Available now" },

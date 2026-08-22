@@ -447,6 +447,34 @@ class PublishWaitsForTheResitTests(TestCase):
         self.assertEqual(result["reason"], "not_all_finished")
         self.assertEqual(result["remaining"], 1)
 
+    def test_force_publish_leaves_out_a_student_owed_a_resit(self):
+        """A forced publish (for the finishers) must not freeze a certificate — or a rank — from
+        the paper a re-sitting student is about to replace. It folds them in on Re-calculate."""
+        from classes.models_certificates import MidtermCertificate
+        from midterms.certificate_service import issue_classroom_certificates
+
+        MidtermResit.objects.create(midterm=self.midterm, student=self.failed)
+        result = issue_classroom_certificates(self.midterm, self.room, actor=self.teacher, force=True)
+        self.assertTrue(result["ok"], result)
+        issued = {c.student_id for c in result["certificates"]}
+        self.assertIn(self.passed.id, issued)
+        self.assertNotIn(self.failed.id, issued, "the re-sitter's old paper must not be frozen")
+        self.assertFalse(
+            MidtermCertificate.objects.filter(midterm=self.midterm, student=self.failed).exists()
+        )
+
+    def test_recalculate_after_the_resit_folds_the_student_back_in(self):
+        from midterms.certificate_service import issue_classroom_certificates
+
+        MidtermResit.objects.create(
+            midterm=self.midterm, student=self.failed, consumed_at=timezone.now()
+        )
+        _completed(self.midterm, self.failed, 74)  # passed on the re-sit
+        result = issue_classroom_certificates(self.midterm, self.room, actor=self.teacher, force=True)
+        self.assertTrue(result["ok"])
+        issued = {c.student_id for c in result["certificates"]}
+        self.assertEqual(issued, {self.passed.id, self.failed.id})
+
     def test_a_never_started_student_still_blocks_publish_as_before(self):
         newcomer = User.objects.create(username="n", email="n@x.io")
         self.assertIn(newcomer.id, students_still_to_sit_for(self.midterm, {newcomer.id}))
@@ -661,3 +689,109 @@ class ResitAcrossClassroomsTests(TestCase):
 
         ok, reason = can_start_midterm(loner, self.midterm)
         self.assertTrue(ok, f"still blocked: {reason}")
+
+
+class StudentListSurfacesResitTests(TestCase):
+    """The student's own list (/api/midterms/mine/) has to SURFACE an open re-sit.
+
+    Without the flag the list has no signal to offer "Start re-sit" — a re-sittable paper is
+    ``submitted``, so it buckets as a finished "Past attempt" with only "View result", and the
+    permission a teacher just granted opens nothing the student can actually reach.
+    """
+
+    def setUp(self):
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.student = User.objects.create(username="s", email="s@x.io")
+        _grant(self.student, self.midterm)
+        _completed(self.midterm, self.student, 40)
+        self.c = APIClient()
+        self.c.force_authenticate(self.student)
+
+    def _row(self):
+        rows = self.c.get("/api/midterms/mine/").json()["results"]
+        return next(r for r in rows if r["midterm_id"] == self.midterm.id)
+
+    def test_a_completed_midterm_with_no_resit_is_not_flagged(self):
+        row = self._row()
+        self.assertTrue(row["submitted"])
+        self.assertFalse(row["resit_open"])
+
+    def test_an_open_resit_is_flagged(self):
+        MidtermResit.objects.create(midterm=self.midterm, student=self.student)
+        self.assertTrue(self._row()["resit_open"])
+
+    def test_a_spent_resit_is_not_flagged(self):
+        MidtermResit.objects.create(
+            midterm=self.midterm, student=self.student, consumed_at=timezone.now()
+        )
+        self.assertFalse(self._row()["resit_open"])
+
+
+class ClassroomPanelSurfacesResitTests(TestCase):
+    """The classroom teacher panel is where a class-failed student is actually managed.
+
+    It must show the sitting count and a re-sit control, and granting one there (via the shared
+    resit endpoint) must open the door for that student while leaving their classroom grant
+    intact. The standalone Results area lists only standalone grants, so a classroom student
+    never appears there — the classroom panel is the only place their teacher can reach them.
+    """
+
+    def setUp(self):
+        from classes.models import Classroom, ClassroomMembership
+
+        self.midterm = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.midterm.pass_mark = 60
+        self.midterm.save(update_fields=["pass_mark"])
+        self.teacher = User.objects.create(username="t", email="t@x.io", role="teacher")
+        self.room = Classroom.objects.create(
+            name="G12", subject="MATH", lesson_days=Classroom.DAYS_ODD, created_by=self.teacher
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.room, user=self.teacher, role=ClassroomMembership.ROLE_ADMIN
+        )
+        self.failed = User.objects.create(username="f", email="f@x.io")
+        ClassroomMembership.objects.create(
+            classroom=self.room, user=self.failed, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self.classroom_grant = ResourceAccessGrant.objects.create(
+            user=self.failed, classroom=self.room, resource_type=RT_MIDTERM_V2,
+            resource_id=self.midterm.id, scope=ResourceAccessGrant.SCOPE_RESOURCE,
+            source=ResourceAccessGrant.SOURCE_CLASSROOM, status=ResourceAccessGrant.STATUS_ACTIVE,
+        )
+        _completed(self.midterm, self.failed, 40)
+        self.c = APIClient()
+        self.c.force_authenticate(self.teacher)
+        self.panel_url = f"/api/classes/{self.room.id}/midterms-v2/{self.midterm.id}/panel/"
+        self.resit_url = f"/api/midterms/teacher/midterms/{self.midterm.id}/resit/"
+
+    def _row(self):
+        students = self.c.get(self.panel_url).json()["students"]
+        return next(s for s in students if s["student_id"] == self.failed.id)
+
+    def test_panel_reports_the_sitting_count_and_no_open_resit_by_default(self):
+        row = self._row()
+        self.assertEqual(row["sittings"], 1)
+        self.assertFalse(row["resit_open"])
+
+    def test_panel_flags_an_open_resit(self):
+        MidtermResit.objects.create(midterm=self.midterm, student=self.failed)
+        self.assertTrue(self._row()["resit_open"])
+
+    def test_granting_from_the_panel_opens_the_door_and_keeps_the_classroom_grant(self):
+        r = self.c.post(self.resit_url, {"user_ids": [self.failed.id], "reason": "repeated"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        # No duplicate standalone grant — they still hold their classroom grant.
+        self.assertEqual(r.json()["access_restored"], [])
+        self.assertEqual(winning_grant(self.failed, self.midterm).pk, self.classroom_grant.pk)
+        self.assertTrue(self._row()["resit_open"])
+        ok, reason = can_start_midterm(self.failed, self.midterm)
+        self.assertTrue(ok, f"still blocked: {reason}")
+
+    def test_a_second_completed_sitting_shows_as_two(self):
+        MidtermResit.objects.create(
+            midterm=self.midterm, student=self.failed, consumed_at=timezone.now()
+        )
+        _completed(self.midterm, self.failed, 74)
+        row = self._row()
+        self.assertEqual(row["sittings"], 2)
+        self.assertFalse(row["resit_open"])
