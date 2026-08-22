@@ -18,7 +18,7 @@ from .access import (
     resolve_accessible_midterm_ids,
     winning_grant,
 )
-from .models import Midterm, MidtermAttempt
+from .models import Midterm, MidtermAttempt, MidtermResit
 
 
 class MyMidtermsView(APIView):
@@ -31,6 +31,15 @@ class MyMidtermsView(APIView):
         attempts = {}
         for a in MidtermAttempt.objects.filter(student=user, midterm_id__in=ids).order_by("created_at"):
             attempts[a.midterm_id] = a  # last (latest) wins
+        # Midterms this student may sit AGAIN even though they have already completed them —
+        # an unspent MidtermResit (a student who failed a month and repeated it). Without this
+        # the list would bucket a re-sittable midterm as a finished "Past attempt" with no way
+        # to start the new sitting the teacher just granted. See MidtermResit / can_start_midterm.
+        resit_open_ids = set(
+            MidtermResit.objects.filter(
+                student=user, midterm_id__in=ids, consumed_at__isnull=True
+            ).values_list("midterm_id", flat=True)
+        )
 
         rows = []
         for mid, m in midterms.items():
@@ -78,6 +87,9 @@ class MyMidtermsView(APIView):
                 "attempt_id": att.id if att else None,
                 "state": att.current_state if att else "NOT_STARTED",
                 "submitted": submitted,
+                # They hold a granted, unspent re-sit for a paper they already finished, so the
+                # once-only rule is lifted for them and the UI should offer "Start re-sit".
+                "resit_open": mid in resit_open_ids,
                 "is_open": is_open,
                 "is_before_start": is_before_start,
                 "awaiting_code": awaiting_code,
