@@ -10,6 +10,13 @@ demand at download time, so issuance is a fast, purely-DB operation.
 "Assigned" is anchored on the persistent ``RT_MIDTERM`` :class:`ResourceAccessGrant`
 (which survives the post-result access revoke), so viewing a result never shrinks the
 cohort mid-flight.
+
+Issuance also NOTIFIES: ``MIDTERM_RESULT`` to every finisher whose score the release
+actually revealed, and ``CERTIFICATE_READY`` to the same student as a separate message about
+a separate page. Both are re-checked against ``exams.views._midterm_results_state`` — the gate
+the legacy review endpoint itself reads — so the platform never announces a result it then
+refuses to show. This is the mock-exam twin of ``midterms.certificate_service``; the two
+publish paths serve different halves of the school and both have to speak.
 """
 
 from __future__ import annotations
@@ -138,6 +145,100 @@ def _release_results(classroom, mock_exam, actor) -> None:
         schedule.save(update_fields=["results_released", "results_released_at", "released_by", "updated_at"])
 
 
+def _deliver_publish_notifications(*, mock_exam_id: int, title: str, attempts: dict, certs: dict) -> None:
+    """Tell each finisher their score is out, and (separately) that their certificate is up.
+
+    ``attempts`` maps ``student_id -> TestAttempt.pk``; ``certs`` maps
+    ``student_id -> (certificate_pk, certificate_code)``.
+
+    **The gate is asked, never re-derived.** ``exams.views._midterm_results_state`` is what
+    decides whether the legacy review endpoint hands this student a score or withholds it,
+    and it is stricter than "we just flipped a flag": it fails closed across EVERY classroom
+    the student belongs to, so a student enrolled in two rooms sitting the same paper stays
+    gated until both have published. Announcing a result to that student before their other
+    room publishes would send them to a page that still says "awaiting result" — the exact
+    failure this school has already been burned by once, from the other direction (see
+    ``midterms.access.midterm_results_state``'s dual-identity note). If the gate cannot be
+    evaluated the student is skipped: silence beats a broken promise.
+    """
+    from django.contrib.auth import get_user_model
+
+    # The gate itself, not a copy of it. Imported here rather than at module scope because
+    # ``exams.views`` is a heavy module that imports back into this app.
+    from exams.views import _midterm_results_state
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    try:
+        students = {u.pk: u for u in get_user_model().objects.filter(pk__in=attempts.keys())}
+    except Exception:
+        logger.exception("midterm_publish_notify_lookup_failed mock_exam=%s", mock_exam_id)
+        return
+
+    for student_id, attempt_id in attempts.items():
+        student = students.get(student_id)
+        if student is None:
+            continue
+        try:
+            visible = bool(_midterm_results_state(student_id, mock_exam_id).get("results_visible"))
+        except Exception:
+            logger.exception(
+                "midterm_publish_notify_gate_failed mock_exam=%s student=%s", mock_exam_id, student_id
+            )
+            continue
+        if not visible:
+            continue
+
+        notify(
+            student,
+            event=note_const.EVENT_MIDTERM_RESULT,
+            title="Your midterm result is ready",
+            body=f"{title} — see how you did and what to work on next."[:400],
+            # A legacy midterm attempt is an ``exams.TestAttempt``, so its result lives on the
+            # exams review page. NOT /midterm/result/<id>: that route resolves its id against
+            # ``midterms.MidtermAttempt``, a different table with its own id space, and would
+            # open somebody else's paper or nothing at all.
+            link_url=f"/review/{attempt_id}",
+            dedupe_key=f"midterm-result:legacy{mock_exam_id}:{student_id}",
+        )
+
+        # A SECOND notification, not a sentence appended to the first: the breakdown to study
+        # and the sheet to print are different things at different addresses.
+        cert = certs.get(student_id)
+        if not cert:
+            continue
+        cert_pk, cert_code = cert
+        notify(
+            student,
+            event=note_const.EVENT_CERTIFICATE_READY,
+            title="Your certificate is ready",
+            body=f"{title} — open it, download it, keep it."[:400],
+            link_url=f"/certificate/{cert_code}",
+            dedupe_key=f"certificate:{cert_pk}",
+        )
+
+
+def _notify_publish(mock_exam, title: str, attempts: dict, certificates: list) -> None:
+    """Queue the publish notifications for after the transaction commits.
+
+    ``issue_certificates`` is ``@transaction.atomic``, so the release flip and the certificate
+    rows the gate reads are uncommitted while it runs. Firing inline would announce a publish
+    that a later exception rolls back, and point those students at a page still gated.
+
+    Deliberately hooked here and not inside ``_release_results``. That function is a private
+    step of exactly this one caller — it is not an independent "results are out" event — so a
+    hook there would fire a second time for every publish and split one announcement across
+    two sites that would then drift apart.
+    """
+    payload = dict(
+        mock_exam_id=mock_exam.id,
+        title=title,
+        attempts={sid: att.pk for sid, att in attempts.items()},
+        certs={c.student_id: (c.pk, c.code) for c in certificates},
+    )
+    transaction.on_commit(lambda: _deliver_publish_notifications(**payload))
+
+
 @transaction.atomic
 def issue_certificates(classroom, mock_exam, actor, *, force: bool = False) -> dict:
     """Compute rankings, (re)issue certificates for every finisher, and release results.
@@ -201,6 +302,10 @@ def issue_certificates(classroom, mock_exam, actor, *, force: bool = False) -> d
 
     # Issuing certificates releases the results so students can see their score.
     _release_results(classroom, mock_exam, actor)
+
+    # ...and tells them so. A publish is silent otherwise: the student has to guess when to
+    # look, and the ones who guess wrong find their score a week late.
+    _notify_publish(mock_exam, title, latest, certificates)
 
     logger.info(
         "midterm certificates issued classroom=%s midterm=%s count=%s by=%s",

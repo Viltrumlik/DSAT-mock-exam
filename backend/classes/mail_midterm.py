@@ -16,6 +16,12 @@ Two properties the callers depend on:
   ignore all of them, and the teacher is in the room to say so.
 * **One bad address never costs the rest.** Every send is isolated; a Telegram signup with
   no address is skipped by ``is_deliverable_email`` rather than raising.
+
+The same fan-out also writes the in-app ``MIDTERM_SCHEDULED`` notification, because the two
+answer the same need and there is exactly one place that knows a class has been summoned.
+The bell is NOT an email, though, and the differences are deliberate: it reaches students
+with no mailbox, and it is not gated on ``EMAIL_SENDING_ENABLED``. See
+``_notify_class_in_app``.
 """
 
 from __future__ import annotations
@@ -252,27 +258,44 @@ def _text_body(context: dict) -> str:
 
 
 # ── delivery ─────────────────────────────────────────────────────────────────
-def _recipients(schedule: MidtermSchedule) -> list:
-    """Active students of the classroom who have an address worth trying.
+def _summoned_students(schedule: MidtermSchedule) -> list:
+    """Everyone this schedule actually calls into a room, mailbox or no mailbox.
 
-    Removed and invited memberships are excluded: neither is sitting this exam. Telegram
-    signups have no address at all and are dropped here rather than failing at send time.
+    Removed and invited memberships are excluded: neither is sitting this exam.
 
     A RETAKE is narrowed further, to the students who failed its parent: they are the only
-    ones it is granted to, so mailing the rest would summon students who already passed to
+    ones it is granted to, so summoning the rest would call students who already passed to
     an exam they cannot open.
+
+    Deliberately says nothing about email. This is the *roster* question — who has to hear
+    about this exam — and it has one answer. ``_recipients`` narrows it to the subset with
+    an address; the in-app bell takes it whole.
     """
     members = ClassroomMembership.objects.filter(
         classroom_id=schedule.classroom_id,
         role=ClassroomMembership.ROLE_STUDENT,
         status=ClassroomMembership.STATUS_ACTIVE,
     ).select_related("user")
-    users = [m.user for m in members if is_deliverable_email(getattr(m.user, "email", None))]
+    users = [m.user for m in members]
 
     eligible_ids = _retake_eligible_ids(schedule)
     if eligible_ids is not None:
         users = [u for u in users if u.pk in eligible_ids]
     return users
+
+
+def _recipients(schedule: MidtermSchedule) -> list:
+    """The summoned students who have an address worth trying.
+
+    Telegram signups have no address at all and are dropped here rather than failing at
+    send time. They are NOT dropped from the in-app notification: a student without a
+    mailbox still has a bell, and being told when to turn up for their midterm is the one
+    message nobody may miss for want of an email column.
+    """
+    return [
+        u for u in _summoned_students(schedule)
+        if is_deliverable_email(getattr(u, "email", None))
+    ]
 
 
 def _retake_eligible_ids(schedule: MidtermSchedule):
@@ -294,6 +317,65 @@ def _retake_eligible_ids(schedule: MidtermSchedule):
     except Exception:  # pragma: no cover - a mail-scoping lookup must never break the send
         logger.exception("midterm_mail_retake_scope_failed schedule_id=%s", schedule.pk)
         return None
+
+
+def _notify_class_in_app(schedule: MidtermSchedule, context: dict) -> int:
+    """Ring the in-app bell for the whole class. Returns how many rows were written.
+
+    **Not gated on ``EMAIL_SENDING_ENABLED``.** That flag answers one question — may this
+    deployment open a connection to an MTA — and it is the wrong question to ask about the
+    inbox a student opens inside the product. Staging runs with it off; gating the bell on
+    it there would leave the whole notification system dark for exactly the people testing
+    it, and on prod a temporary mail freeze would silently swallow the class's notice.
+
+    **One wording for the whole class, not two.** ``_retake_eligible_ids`` narrows per
+    SCHEDULE, never per student: a schedule either belongs to a RETAKE midterm — in which
+    case every student who reaches this loop failed the parent and is being offered another
+    go — or it does not, in which case every student who reaches it is a first-sitter. There
+    is no mixed roster to write two variants for, and ``context["headline"]`` already carries
+    the right one of the pair ("Your retake is scheduled" / "Your midterm is scheduled")
+    because the email needs the same distinction and computes it from the same facts.
+
+    A plain loop rather than ``notify_many`` because the dedupe key names the student.
+    """
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    # ``notify`` swallows its own failures, but this query is the caller's risk: an exploding
+    # membership lookup here would take the email fan-out below down with it.
+    try:
+        students = _summoned_students(schedule)
+    except Exception:
+        logger.exception("midterm_scheduled_notify_roster_failed schedule=%s", schedule.pk)
+        return 0
+
+    # One token per exam identity. A MidtermSchedule carries EITHER a new ``midterm`` FK or
+    # a legacy ``mock_exam`` one, and the two id spaces overlap — without the prefix, a
+    # Midterm #5 and a MockExam #5 scheduled for the same student inside the dedupe window
+    # would collapse into a single row and one of the two exams would go unannounced.
+    exam_token = schedule.midterm_id or f"legacy{schedule.mock_exam_id}"
+
+    when = f"{context['weekday_label']}, {context['date_label']} at {context['start_time']}"
+    body = (
+        f"{context['midterm_title']} — {when}. "
+        f"Be seated and logged in by {context['seated_by']}."
+    )
+
+    written = 0
+    for student in students:
+        row = notify(
+            student,
+            event=note_const.EVENT_MIDTERM_SCHEDULED,
+            title=context["headline"],
+            body=body[:400],
+            # The student's own midterm list — not a result page, because nobody has an
+            # attempt yet. This is the same destination the email's button points at.
+            link_url="/midterm",
+            dedupe_key=f"midterm-scheduled:{exam_token}:{student.pk}",
+        )
+        if row is not None:
+            written += 1
+    return written
 
 
 def _send_one(*, address: str, subject: str, text: str, html: str) -> bool:
@@ -328,11 +410,18 @@ def send_midterm_scheduled_emails(schedule_id: int) -> dict:
         logger.warning("midterm_scheduled_email skipped: schedule %s has no exam/start", schedule_id)
         return {"status": "noop", "reason": "not_describable", "schedule_id": schedule_id}
 
+    # The bell first, and unconditionally — it is not an email and must not be lost to the
+    # mail switch below. See _notify_class_in_app.
+    notified = _notify_class_in_app(schedule, context)
+
     # Gate on the explicit flag, never on EMAIL_BACKEND: Django always defines that, so
     # testing it opens an SMTP connection to a host with no MTA on every send.
     if not getattr(settings, "EMAIL_SENDING_ENABLED", False):
         logger.info("midterm_scheduled_email not sent (EMAIL_SENDING_ENABLED off) schedule=%s", schedule_id)
-        return {"status": "noop", "reason": "sending_disabled", "schedule_id": schedule_id}
+        return {
+            "status": "noop", "reason": "sending_disabled",
+            "schedule_id": schedule_id, "notified": notified,
+        }
 
     subject = _subject_line(context)
     text = _text_body(context)
@@ -349,8 +438,14 @@ def send_midterm_scheduled_emails(schedule_id: int) -> dict:
             logger.exception(
                 "midterm_scheduled_email failed schedule=%s student=%s", schedule_id, student.pk
             )
-    logger.info("midterm_scheduled_email schedule=%s sent=%s failed=%s", schedule_id, sent, failed)
-    return {"status": "ok", "schedule_id": schedule_id, "sent": sent, "failed": failed}
+    logger.info(
+        "midterm_scheduled_email schedule=%s sent=%s failed=%s notified=%s",
+        schedule_id, sent, failed, notified,
+    )
+    return {
+        "status": "ok", "schedule_id": schedule_id,
+        "sent": sent, "failed": failed, "notified": notified,
+    }
 
 
 def _deliver_off_thread(schedule_id: int) -> None:

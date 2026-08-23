@@ -24,6 +24,21 @@ EVENT_HOMEWORK = "HOMEWORK"             # proportional: max_points × percent / 
 EVENT_CLASSWORK_MANUAL = "CLASSWORK_MANUAL"   # a teacher's hand, amount always explicit
 EVENT_MANUAL = "MANUAL"                 # an admin adjustment, amount always explicit
 
+# ── The one event that SPENDS ─────────────────────────────────────────────────
+#
+# Every other event in this file adds points. This one takes them away, and it is in the same
+# table for the same reason a bank statement holds withdrawals next to deposits: the balance
+# has to be one SUM over one ledger, or there are two numbers to keep in step and they will
+# eventually disagree.
+#
+# Written ONLY by ``coins.convert`` — never by ``services.award``, which prices an event from
+# a ``RewardRule`` and would have to be taught that this one is negative. Its rows always
+# carry ``xp=0``: converting is spending, and this school's rule is that XP never falls for
+# anything a student does. So a student who cashes in every point keeps their whole XP total
+# and their leaderboard position — the board ranks on XP precisely so that spending is not
+# punished.
+EVENT_COIN_CONVERSION = "COIN_CONVERSION"
+
 # ── Retired: the homework bands ───────────────────────────────────────────────
 #
 # Homework is paid proportionally now (``EVENT_HOMEWORK``), so nothing new is ever written
@@ -45,6 +60,7 @@ EVENT_CHOICES = [
     (EVENT_HOMEWORK, "Homework completed"),
     (EVENT_CLASSWORK_MANUAL, "Classwork awarded by a teacher"),
     (EVENT_MANUAL, "Manual adjustment"),
+    (EVENT_COIN_CONVERSION, "Turned into coins"),
     # Legacy — kept so historical rows still read. Never awarded.
     #
     # The labels stay as students already know them: these strings are what
@@ -73,6 +89,10 @@ DEFAULT_POINTS = {
     EVENT_HOMEWORK: 15,
     EVENT_CLASSWORK_MANUAL: 0,   # the teacher names the amount; see EVENT_MANUAL
     EVENT_MANUAL: 0,        # always passed explicitly; a default would be a footgun
+    # Not a price. A conversion's amount is whatever the student chose to spend, negated;
+    # this 0 exists only so a lookup by event never misses, and `services.award` must never
+    # be handed this event in the first place.
+    EVENT_COIN_CONVERSION: 0,
     EVENT_HOMEWORK_FULL: 15,   # legacy — priced only so an old row can still be re-read
     EVENT_HOMEWORK_HIGH: 10,   # legacy
     EVENT_HOMEWORK_MID: 5,     # legacy

@@ -1,7 +1,11 @@
 import api from "@/lib/api";
 
 export type LeaderboardScope = "GLOBAL" | "BRANCH" | "GROUP";
-export type LeaderboardWindow = "ALL" | "WEEK" | "MONTH" | "TERM";
+/** Two windows. "WEEK" and "TERM" were withdrawn — a week ranked whoever had a lesson
+ *  yesterday, and "term" meant nothing anybody could point at. The chips themselves come
+ *  from the server (`LeaderboardFilters.windows`), so this union exists to stop the client
+ *  inventing a value the board will silently coerce back to "ALL". */
+export type LeaderboardWindow = "ALL" | "MONTH";
 
 export interface LeaderboardRow {
   rank: number;

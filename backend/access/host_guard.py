@@ -173,6 +173,11 @@ class SubdomainAPIGuardMiddleware:
             # inventory page 403s on the only console that can reach it.
             if path.startswith("/api/shop/"):
                 return self.get_response(request)
+            # Stories: the rail is posted from the admin console. The student-facing rail is
+            # on the apex, which needs no entry — but without this /ops/stories 403s on the
+            # only console that can reach it, exactly as the shop inventory would.
+            if path.startswith("/api/stories/"):
+                return self.get_response(request)
             # Notifications: the bell is in the shell, so it renders on every console. Without
             # this it 403s on all of them except the apex, and an admin's bell would be
             # permanently empty rather than obviously broken.

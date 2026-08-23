@@ -86,6 +86,11 @@ CORS_ALLOWED_ORIGINS=https://yourdomain.com
 REDIS_URL=redis://127.0.0.1:6379/0
 CELERY_BROKER_URL=redis://127.0.0.1:6379/1
 CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/2
+# Web Push — optional, but push is DEAD until these are set. See "Step 6b" below.
+# Generate with: python manage.py generate_vapid_keys   (never commit the private key)
+VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:admin@yourdomain.com
 ```
 
 `shared/frontend.env.production`:
@@ -157,6 +162,82 @@ subdomain is additive config — no second app/process.
 Access rules and routing for the teacher console are enforced in code:
 `frontend/middleware.ts`, `frontend/src/components/AuthGuard.tsx`,
 `backend/access/host_guard.py`, and the login gate in `backend/users/views.py`.
+
+---
+
+## Step 6b — Web Push (VAPID keys)
+
+The whole Web Push stack — `pywebpush`, the `PushSubscription` model, the Celery sender,
+`frontend/public/sw.js`, the nginx `location = /sw.js` no-cache block — ships and works. Push
+is nevertheless **off in production**, for exactly one reason: the three settings below default
+to empty, `notifications.push.is_configured()` therefore returns `False`, and every send is
+skipped. The in-app bell is unaffected either way.
+
+| Variable | What it is |
+| --- | --- |
+| `VAPID_PUBLIC_KEY` | Base64url. Served to the browser by `GET /api/notifications/push/config/` and handed to `PushManager.subscribe()` as the `applicationServerKey`. Public by nature. |
+| `VAPID_PRIVATE_KEY` | Base64url. **Secret.** The Celery worker signs every push with it. |
+| `VAPID_SUBJECT` | `mailto:` address or https URL — how a push service reaches a human if this platform misbehaves. Required by the spec; some services reject a subscription without it. |
+
+### Generate a pair
+
+Run this **on the server, in the release venv**, and paste the output into
+`shared/backend.env`:
+
+```bash
+cd /var/www/satapp/current/backend
+./venv/bin/python manage.py generate_vapid_keys
+```
+
+The command prints the three lines and **stores nothing**. It writes no file, and there is no
+key committed anywhere in this repository — deliberately. A VAPID private key in git is usable
+by anyone with repository access for the whole life of the history, and the only remedy is
+rotation, which invalidates every subscription every student has ever granted. **Never paste
+the private key into a tracked file, a sample env, a ticket, or a chat message.**
+
+```bash
+chmod 600 /var/www/satapp/shared/backend.env
+```
+
+### Restart BOTH processes
+
+Settings are read once at start, and two different processes read these:
+
+```bash
+pm2 restart sat-backend         # serves the public key to the browser
+pm2 restart sat-celery-worker   # signs and sends the actual pushes
+```
+
+Restarting only one leaves push half-configured. If only the worker has the keys, the client
+is told `enabled: false` and never asks the student for permission, so nothing subscribes and
+nothing is ever sent. If only the web process has them, students are asked for a permission
+that no worker can act on — and **a refused notification permission is permanent per origin**,
+so a half-configured deployment can burn the platform's one chance to ask.
+
+### Verify
+
+```bash
+curl -s -H "Authorization: Bearer <token>" https://yourdomain.com/api/notifications/push/config/
+# {"enabled": true, "public_key": "B..."}
+```
+
+`enabled: false` after a restart means the keys did not reach that process, or `pywebpush` is
+missing from the venv.
+
+### Rotation
+
+Rotating invalidates every existing subscription; browsers do **not** re-ask on their own. Plan
+it as a user-visible event, not a maintenance detail. Dead endpoints are stamped `failed_at`
+by the sender and reaped by the `notifications-prune-push-subscriptions` beat entry.
+
+### Scheduled notification jobs
+
+Both live in `CELERY_BEAT_SCHEDULE` and therefore need `sat-celery-beat` running:
+
+| Entry | Cadence | What breaks without it |
+| --- | --- | --- |
+| `notifications-homework-due-soon` | every 30 min | `HOMEWORK_DUE_SOON` has no other producer at all — a deadline is newsworthy because time passed, so nothing can hook it. No beat, no reminders. |
+| `notifications-prune-push-subscriptions` | daily 04:25 | Dead subscription rows accumulate forever. |
 
 ---
 

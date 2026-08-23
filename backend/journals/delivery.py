@@ -375,7 +375,37 @@ def release_homework(
             "updated_at",
         ]
     )
+
+    # Releasing a session's brief IS the moment the class is given this homework, so it has
+    # to announce itself exactly as the two teacher-facing assign paths do. It did not:
+    # journal-released homework appeared in the feed and nobody was ever told, which for a
+    # student who does not open the app that evening means the homework does not exist.
+    #
+    # Runs LAST, after every content attachment, so nothing is announced before it is
+    # attached — and best-effort, because a homework that reached the class is released
+    # whether or not the bell rang. notify_homework_assigned claims `notified_at`, so a
+    # re-release (already guarded above) could not double-announce even if it got here.
+    _announce_assignment(assignment)
+
     return delivery, True, skipped
+
+
+def _announce_assignment(assignment) -> None:
+    """Ring the bell / mail the class for a homework this module just created.
+
+    Every journal-created Assignment funnels through here so there is one import and one
+    failure policy rather than two. Imported locally: ``classes.mail_homework`` reaches
+    back into ``classes.models``, and journals is loaded on the classes side of that edge.
+    """
+    from classes.mail_homework import notify_homework_assigned
+
+    try:
+        notify_homework_assigned(assignment)
+    except Exception:  # pragma: no cover - defensive; delivery already succeeded
+        logger.exception(
+            "homework notify failed for journal-released assignment %s",
+            getattr(assignment, "pk", None),
+        )
 
 
 # ── in-class grants ────────────────────────────────────────────────────────────
@@ -438,6 +468,12 @@ def _classwork_assignment(delivery: ClassroomLesson, session: JournalLesson, *, 
         _copy_classwork_files(cw, assignment)
     delivery.classwork_assignment = assignment
     delivery.save(update_fields=["classwork_assignment", "updated_at"])
+
+    # The carrier is student-visible the moment it exists, so announce it — once, here, on
+    # the create branch. The early return above hands back an existing carrier untouched,
+    # so opening a second item in the same lesson adds nothing to the class's bell; and
+    # `notified_at` backs that up even if a future caller reaches this line twice.
+    _announce_assignment(assignment)
     return assignment
 
 

@@ -936,6 +936,11 @@ export interface SupportBooking {
     classroom_name: string | null;
     student_id: number;
     student: string;
+    /** The classmate who brought this student in. Null for the ordinary case of a student
+     *  booking themselves — an invited seat has to explain itself to both the student who
+     *  did not book it and the teacher who published the hour as a one-to-one. */
+    invited_by_id: number | null;
+    invited_by: string | null;
     /** Why the seat came back. Shown to the support teacher, who held the hour for it. */
     cancel_reason: string;
     cancelled_at: string | null;
@@ -1138,6 +1143,20 @@ export const classesApi = {
     /** The reason is required of a student and shown to the teacher, who held the hour. */
     supportCancelBooking: async (bookingId: number, reason: string) => {
         await api.delete(`/classes/support/bookings/${bookingId}/`, { data: { reason } });
+    },
+    /** Student: who they may add to a booking they hold. Scoped to that seat — see
+     *  `support.invitable_classmates`; it is not a general class roster. */
+    supportInvitable: async (bookingId: number): Promise<{ id: number; name: string }[]> => {
+        const r = await api.get(`/classes/support/bookings/${bookingId}/invite/`);
+        return (r.data?.students ?? []) as { id: number; name: string }[];
+    },
+    /** Student: add a classmate to a support hour they booked. The invitee gets their own
+     *  booking, plus a notification and an email. */
+    supportInviteMember: async (bookingId: number, studentId: number) => {
+        const r = await api.post(`/classes/support/bookings/${bookingId}/invite/`, {
+            student_id: studentId,
+        });
+        return r.data as { detail: string; booking: SupportBooking };
     },
     /** Student: rate a session the teacher has marked attended. Re-rating overwrites. */
     supportRateBooking: async (bookingId: number, rating: number, comment?: string) => {

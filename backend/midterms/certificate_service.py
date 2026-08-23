@@ -8,9 +8,17 @@ Two flavors:
 
 Scores are copied FROZEN from ``MidtermAttempt.score`` (never recomputed). The certificate
 PDF (``classes.certificate_pdf``) is reused verbatim (already rank-free).
+
+A classroom publish also NOTIFIES: ``MIDTERM_RESULT`` to every student whose score the
+publish actually revealed, and ``CERTIFICATE_READY`` to the subset who came away with a
+certificate. Both are re-checked against ``midterms.access.midterm_results_state`` — the same
+gate the student's own result page reads — so the platform can never announce a result it
+then refuses to show. See ``_deliver_publish_notifications``.
 """
 
 from __future__ import annotations
+
+import logging
 
 from django.db import transaction
 from django.utils import timezone
@@ -20,6 +28,8 @@ from access.resources import RT_MIDTERM_V2
 from users.email_utils import display_email
 
 from .models import Midterm, MidtermAttempt
+
+logger = logging.getLogger(__name__)
 
 
 def _display_name(user) -> str:
@@ -198,6 +208,89 @@ def _competition_ranks(finishers):
     return ranks, len(ordered)
 
 
+def _deliver_publish_notifications(*, midterm_title: str, attempt_ids: list[int], certs: dict) -> None:
+    """Tell each student the publish reached them — score first, certificate second.
+
+    ``certs`` maps ``student_id -> (certificate_pk, certificate_code)``; a student may be
+    absent from it and still belong here (see the caller).
+
+    **Every recipient is re-checked against the real gate.** This is not belt-and-braces, it
+    is the whole point. The live bug this codebase already paid for
+    (``midterms.access.midterm_results_state``'s docstring, and the release-gate suite) was a
+    publish that flipped one identity's row while the student area read the other, leaving
+    students on "awaiting result" after their teacher had published. A notification saying
+    "your result is ready" that lands on a gated page is that bug made louder — the student
+    now has a message telling them the platform is broken. So instead of re-deriving who
+    ought to be able to see their score, we ask the exact function the result page and
+    ``/midterms/mine/`` ask, per student, and notify only where it says yes. If it cannot
+    answer, the student is skipped: silence beats a broken promise.
+    """
+    from notifications import constants as note_const
+    from notifications.services import notify
+
+    from .access import midterm_results_state
+
+    try:
+        attempts = list(
+            MidtermAttempt.objects.filter(pk__in=attempt_ids).select_related("student")
+        )
+    except Exception:
+        logger.exception("midterm_publish_notify_lookup_failed attempts=%s", attempt_ids)
+        return
+
+    for attempt in attempts:
+        try:
+            visible = bool(midterm_results_state(attempt).get("results_visible"))
+        except Exception:
+            logger.exception("midterm_publish_notify_gate_failed attempt=%s", attempt.pk)
+            continue
+        if not visible:
+            continue
+
+        notify(
+            attempt.student,
+            event=note_const.EVENT_MIDTERM_RESULT,
+            title="Your midterm result is ready",
+            body=f"{midterm_title} — see how you did and what to work on next."[:400],
+            link_url=f"/midterm/result/{attempt.pk}",
+            dedupe_key=f"midterm-result:{attempt.midterm_id}:{attempt.student_id}",
+        )
+
+        # A SECOND notification, not a sentence appended to the first. The score and the
+        # certificate are different things at different addresses — one is a breakdown to
+        # study, the other is a sheet to print — and, as the caller's ``eligible`` filter
+        # shows, a student can legitimately have their result released without having a
+        # certificate issued from this publish.
+        cert = certs.get(attempt.student_id)
+        if not cert:
+            continue
+        cert_pk, cert_code = cert
+        notify(
+            attempt.student,
+            event=note_const.EVENT_CERTIFICATE_READY,
+            title="Your certificate is ready",
+            body=f"{midterm_title} — open it, download it, keep it."[:400],
+            link_url=f"/certificate/{cert_code}",
+            dedupe_key=f"certificate:{cert_pk}",
+        )
+
+
+def _notify_publish(midterm: Midterm, attempts_by_student: dict, certificates: list) -> None:
+    """Queue the publish notifications for after the transaction commits.
+
+    ``issue_classroom_certificates`` is ``@transaction.atomic``, so everything the gate reads
+    — the release flip, the freshly-written certificates — is uncommitted while it runs. Firing
+    inline would mean notifying about a publish that a later exception rolls back, and pointing
+    every one of those students at a result page that is still gated.
+    """
+    payload = dict(
+        midterm_title=midterm.title or f"Midterm #{midterm.pk}",
+        attempt_ids=[att.pk for att in attempts_by_student.values()],
+        certs={c.student_id: (c.pk, c.code) for c in certificates},
+    )
+    transaction.on_commit(lambda: _deliver_publish_notifications(**payload))
+
+
 @transaction.atomic
 def issue_classroom_certificates(midterm: Midterm, classroom, actor, *, force=False) -> dict:
     """Class-ranked issuance + results release for a classroom midterm.
@@ -266,6 +359,17 @@ def issue_classroom_certificates(midterm: Midterm, classroom, actor, *, force=Fa
         sched.results_released_at = timezone.now()
         sched.released_by = actor
         sched.save(update_fields=["results_released", "results_released_at", "released_by", "updated_at"])
+
+    # Told, not left to check. A publish is silent to a student otherwise — they have to
+    # guess when to look, and the ones who guess wrong find their score a week late.
+    #
+    # Over ``latest``, deliberately, and not over ``eligible``: a force-published student who
+    # is owed a re-sit is dropped from ``eligible`` (their certificate would freeze a paper
+    # they are about to replace) but the schedule flip above still reveals the score they
+    # already have. Their result IS out; only their certificate is not. Notifying over
+    # ``eligible`` would leave exactly those students staring at a newly-visible score nobody
+    # mentioned. The gate inside decides each case on its own.
+    _notify_publish(midterm, latest, certs)
 
     certs.sort(key=lambda c: (c.rank if c.rank is not None else 10**9))
     return {"ok": True, "issued": len(certs), "certificates": certs}

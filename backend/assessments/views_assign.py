@@ -141,6 +141,12 @@ class AssignAssessmentHomeworkView(APIView):
         # Any client-supplied ``due_at`` is deliberately ignored.
         due_at = homework_due_at(classroom)
 
+        # Set when THIS request minted a new Assignment, and only then. A duplicate assign
+        # (either branch below) hands back the homework the class already has, and a class
+        # must not be told about the same homework twice because a teacher pressed assign
+        # again — so the announcement is keyed on creation, not on a successful response.
+        created_assignment = None
+
         # Create core homework row in existing system — UNIQUE(classroom, assessment_set) + locks.
         # Nested ``atomic()`` establishes a SAVEPOINT so an IntegrityError on duplicate insert
         # does not invalidate the outer transaction under PostgreSQL.
@@ -173,9 +179,12 @@ class AssignAssessmentHomeworkView(APIView):
                             assignment=assignment,
                             assigned_by=request.user,
                         )
+                    created_assignment = assignment
                 except IntegrityError:
                     assessments_metric_incr("homework_duplicate_prevented")
                     Assignment.objects.filter(pk=assignment.pk).delete()
+                    # The Assignment above is gone again; there is nothing to announce.
+                    created_assignment = None
                     hw = (
                         HomeworkAssignment.objects.select_for_update(of=("self",))
                         .select_related("assignment")
@@ -189,6 +198,24 @@ class AssignAssessmentHomeworkView(APIView):
                             context={"actor_id": request.user.pk, "classroom_id": classroom.pk, "set_id": aset.pk},
                         )
                         raise
+
+        # This view is the third way a teacher gives homework, and it was the silent one:
+        # the assignment landed in the feed and no student was told. Converge on the same
+        # entry point the two ``classes.AssignmentViewSet`` paths use, so the bell copy,
+        # the link and the once-only `notified_at` claim are identical whichever door the
+        # teacher came through. Best-effort — the homework exists either way, and an
+        # announcement failure must not 500 an assign that already succeeded.
+        if created_assignment is not None:
+            try:
+                from classes.mail_homework import notify_homework_assigned
+
+                notify_homework_assigned(created_assignment)
+            except Exception:  # pragma: no cover - defensive
+                logger.exception(
+                    "homework notify failed on assessment assign for assignment %s",
+                    created_assignment.pk,
+                )
+
         from .models import AssessmentHomeworkAuditEvent, GovernanceEvent
 
         AssessmentHomeworkAuditEvent.objects.create(

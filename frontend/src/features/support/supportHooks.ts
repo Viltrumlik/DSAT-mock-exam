@@ -64,6 +64,28 @@ export function useCancelSupportBooking() {
   });
 }
 
+/** Who this student may add to a booking they hold. Only fetched when the dialog opens —
+ *  `enabled` keeps a picker's query off every booking row on the page. */
+export function useInvitableClassmates(bookingId: number | null) {
+  return useQuery({
+    queryKey: ["support", "invitable", bookingId] as const,
+    queryFn: () => classesApi.supportInvitable(bookingId as number),
+    enabled: bookingId !== null,
+  });
+}
+
+export function useInviteMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { bookingId: number; studentId: number }) =>
+      classesApi.supportInviteMember(vars.bookingId, vars.studentId),
+    onSuccess: () => {
+      // An invitation can widen the slot, so what is bookable moves too.
+      qc.invalidateQueries({ queryKey: ["support"] });
+    },
+  });
+}
+
 export function useRateSupportSession() {
   const qc = useQueryClient();
   return useMutation({

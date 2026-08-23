@@ -18,6 +18,7 @@ import {
   NotebookText,
   Timer,
   CirclePlay,
+  Images,
 } from "lucide-react";
 
 /**
@@ -99,6 +100,15 @@ const OPS_NAV = [
     href: "/ops/shop",
     label: "Shop",
     icon: ShoppingBag,
+    exact: false,
+  },
+  {
+    // The ring of circles across the top of every student's dashboard. Sits next to Shop
+    // because it is the same kind of job — an admin-authored list with a picture that
+    // students see — and because both are desk work rather than governance.
+    href: "/ops/stories",
+    label: "Stories",
+    icon: Images,
     exact: false,
   },
   {

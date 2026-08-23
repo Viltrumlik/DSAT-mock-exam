@@ -12,6 +12,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { displayEmail } from "@/lib/email";
 import { EmailVerificationModal } from "@/components/EmailVerificationModal";
+import { NotificationPreferencesCard } from "@/features/notifications/NotificationPreferencesCard";
 import {
   Avatar, Alert, Checkbox, Field, HeroChip, HeroPage, Input, Modal, PageHero, Progress,
   Select, Skeleton,
@@ -570,6 +571,12 @@ export default function ProfilePage() {
           {selectedStudents.length > 12 ? <p className="text-xs font-semibold text-muted-foreground">+{selectedStudents.length - 12} more</p> : null}
         </Card>
       </div>
+
+      {/* NOTIFICATIONS — the client for /api/notifications/preferences/, which shipped as a
+          working GET/PATCH that nothing on the site could reach. Sits above the session list
+          because both are "settings about my account", and this is the one a student is far
+          more likely to have come here for. */}
+      <NotificationPreferencesCard />
 
       {/* SESSIONS */}
       <Card className="cr-card space-y-3">

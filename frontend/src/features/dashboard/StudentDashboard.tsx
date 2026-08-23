@@ -28,6 +28,8 @@ import { Button, Card, CardContent, Skeleton } from "@/components/ui";
 import type { ScheduleEvent } from "@/lib/api";
 import { useDashboardData, type DashboardModel, type ExamDateOption } from "./useDashboardData";
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
+import { DashboardStories } from "./DashboardStories";
+import { LevelCards, RewardsStrip } from "./DashboardProgress";
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -87,6 +89,17 @@ function DashboardBody({
           saving={live.savingGoal}
           onSave={async (english, math) => { if (!isPreview) await live.saveGoal(english, math); }}
         />
+
+        {/* Stories — the school's noticeboard, above everything the student owns. It renders
+            nothing at all when there is nothing posted, so it costs an empty dashboard no
+            vertical space. */}
+        <DashboardStories />
+
+        {/* Where they are: level, next level, how far through it, and the group's week. */}
+        <LevelCards />
+
+        {/* What they have earned. */}
+        <RewardsStrip />
 
         {/* Score + countdown */}
         <div
