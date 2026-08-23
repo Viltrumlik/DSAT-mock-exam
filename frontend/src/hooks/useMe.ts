@@ -161,7 +161,26 @@ export function useMe() {
         error: q.error,
       }) ?? "NETWORK";
     persistAuthNotice(reason, lastAuthenticatedUserIdRef.current);
-    broadcastAuthLostToOtherTabs(reason, lastAuthenticatedUserIdRef.current);
+
+    // Only tell the OTHER tabs when the session is genuinely gone.
+    //
+    // `AuthTabSync` reacts to this broadcast with a hard `window.location.href = "/login"`
+    // and no re-verification, so a broadcast is an eviction notice for every tab this user
+    // has open. EXPIRED (401/403) and NO_SESSION (a 4xx or an unusable payload) have actually
+    // established that the credential is dead, and are worth that.
+    //
+    // NETWORK and SERVER have established nothing of the kind. A dropped request, a 10s
+    // timeout on a background `/users/me` refetch, or a 5xx says the server could not be
+    // reached — not that the student is logged out. Broadcasting those turned one transient
+    // blip in one tab into every tab jumping to the login screen at once, which is exactly
+    // what "it kicks me out" describes, and it left no server-side trace because nothing on
+    // the server ever returned 401.
+    //
+    // This tab still handles its own loss below; it simply stops evicting the others on a
+    // guess. A genuinely expired session re-proves itself on the next request in each tab.
+    if (reason === "EXPIRED" || reason === "NO_SESSION") {
+      broadcastAuthLostToOtherTabs(reason, lastAuthenticatedUserIdRef.current);
+    }
     // Interceptor / tab sync may already have marked loss — avoid second bump + duplicate telemetry.
     if (getAuthLossActive()) return;
     markAuthLossDetected(reason);
