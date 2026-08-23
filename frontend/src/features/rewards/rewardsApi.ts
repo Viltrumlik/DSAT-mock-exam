@@ -61,6 +61,11 @@ export interface MyRewards {
    *  the remainder that does not add up to a coin. The two differ whenever a student has
    *  change in hand, and the Max button must fill in this one. */
   max_convertible_points: number;
+  /** Strike balance and attendance streak, folded in so the dashboard needs one request
+   *  rather than also fetching the whole shop catalogue for a single number. */
+  strikes: number;
+  current_streak: number;
+  best_streak: number;
   history: PointAward[];
 }
 

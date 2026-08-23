@@ -22,7 +22,6 @@ import Link from "next/link";
 import { CalendarRange, Coins, Flame, Sparkles, Star, TrendingUp } from "lucide-react";
 import { useRoadmap } from "@/features/roadmap/hooks";
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
-import { useStorefront } from "@/features/shop/shopHooks";
 
 const CARD: React.CSSProperties = {
   background: "var(--dz-card)",
@@ -271,10 +270,10 @@ function Stat({
 }
 
 export function RewardsStrip() {
+  // ONE request for all four numbers. Strikes used to come from `/api/shop/`, which meant the
+  // dashboard fetched the entire shop catalogue — eleven queries and a whole round trip — to
+  // render a single figure and discard the rest. `/api/rewards/me/` carries it now.
   const rewards = useMyRewards();
-  // Strikes and the attendance streak live on the storefront payload, not on /rewards/me/ —
-  // they are what the strike shop is priced in, so that is where they are computed.
-  const shop = useStorefront();
 
   if (rewards.isPending) {
     return <div style={{ ...CARD, marginBottom: 22, height: 84, opacity: 0.5 }} aria-hidden />;
@@ -323,14 +322,7 @@ export function RewardsStrip() {
       <Stat icon={<Star size={18} />} label="Points" value={rewards.data.points} />
       <Stat icon={<TrendingUp size={18} />} label="XP" value={rewards.data.xp} />
       <Stat icon={<Coins size={18} />} label="Coins" value={rewards.data.coins} />
-      {/* The shop payload is a separate request and may still be in flight or have failed.
-          An em dash says "not known yet"; a 0 would say "you have none", which for a streak
-          a student has been building is a small lie with a real sting. */}
-      <Stat
-        icon={<Flame size={18} />}
-        label="Strikes"
-        value={shop.data ? shop.data.strikes : "—"}
-      />
+      <Stat icon={<Flame size={18} />} label="Strikes" value={rewards.data.strikes ?? 0} />
     </Link>
   );
 }
