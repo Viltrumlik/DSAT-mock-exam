@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -14,6 +15,8 @@ from .models import (
     AssessmentResult,
     AssessmentAttemptAuditEvent,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _questions_from_attempt(att: AssessmentAttempt) -> tuple[list[Any], dict[int, Any]]:
@@ -143,4 +146,43 @@ def grade_attempt(*, attempt_id: int) -> AssessmentResult | None:
             "async": True,
         },
     )
+
+    _notify_student_graded(att)
     return res
+
+
+def _notify_student_graded(att: AssessmentAttempt) -> None:
+    """Tell the student their assessment came back.
+
+    Auto-grading usually finishes in a Celery worker minutes after the student closed the
+    tab, with nobody watching a response — so without this, the whole automatic half of
+    marking happened in silence and only work a teacher marked by hand ever rang a bell.
+
+    Reuses ``classes.views._notify_graded`` rather than writing its own copy. That is the
+    load-bearing part: a bundle where the teacher marks the essay and the grader scores
+    the assessment produces two grade events, and only an identical ``dedupe_key`` (and
+    an identical sentence) collapses them into the single piece of news it is to the
+    student. Imported inside the function, like every other call into notifications, so
+    the two apps do not have to be import-orderable.
+
+    Scheduled on commit: ``grade_attempt`` is ``@transaction.atomic``, and a notification
+    (plus the push that rides behind it) must not go out for a score that rolled back.
+    Best-effort — a graded attempt is graded whether or not the bell rang.
+    """
+    homework = getattr(att, "homework", None)
+    classroom_id = getattr(homework, "classroom_id", None)
+    student_id = att.student_id
+    if not classroom_id or not student_id:
+        return
+
+    def _ring() -> None:
+        try:
+            from classes.views import _notify_graded
+
+            _notify_graded(classroom_id, student_id)
+        except Exception:  # pragma: no cover - defensive
+            logger.exception(
+                "auto-grade notification failed attempt=%s student=%s", att.pk, student_id
+            )
+
+    transaction.on_commit(_ring)

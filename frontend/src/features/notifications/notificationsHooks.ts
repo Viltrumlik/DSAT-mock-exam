@@ -1,13 +1,18 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { notificationsApi, type NotificationCategory } from "./notificationsApi";
+import {
+  notificationsApi,
+  type NotificationCategory,
+  type NotificationPreferencesPatch,
+} from "./notificationsApi";
 
 const keys = {
   inbox: (category?: NotificationCategory | null) =>
     ["notifications", "inbox", category ?? "all"] as const,
   summary: ["notifications", "summary"] as const,
   pushConfig: ["notifications", "push-config"] as const,
+  preferences: ["notifications", "preferences"] as const,
 };
 
 /**
@@ -51,5 +56,41 @@ export function usePushConfig() {
     queryKey: keys.pushConfig,
     queryFn: () => notificationsApi.pushConfig(),
     staleTime: 10 * 60 * 1000,
+  });
+}
+
+/**
+ * The student's own switches. `/notifications/preferences/` has been a working GET/PATCH with
+ * no client at all — the categories could be muted by the server and by nothing a student
+ * could reach, so "turn this section off" was a feature only the API had.
+ */
+export function useNotificationPreferences(enabled = true) {
+  return useQuery({
+    queryKey: keys.preferences,
+    queryFn: () => notificationsApi.getPreferences(),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+/**
+ * Saves one change at a time and writes the server's answer straight back into the cache.
+ *
+ * `setQueryData` rather than an invalidate: the response body IS the new preferences, so
+ * refetching would be a second round trip to learn what we were just told — and in the gap
+ * the switches would snap back to their old positions under the student's finger.
+ */
+export function useSaveNotificationPreferences() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: NotificationPreferencesPatch) =>
+      notificationsApi.patchPreferences(payload),
+    onSuccess: (data) => {
+      qc.setQueryData(keys.preferences, data);
+      // Muting a section changes what the bell should be counting, so the badge and any open
+      // inbox are no longer trustworthy.
+      qc.invalidateQueries({ queryKey: ["notifications", "summary"] });
+      qc.invalidateQueries({ queryKey: ["notifications", "inbox"] });
+    },
   });
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Menu,
   X,
@@ -97,6 +98,7 @@ export function AppShell({
   // draw — the ops and builder consoles mount this same component.
   const unread = useUnreadSummary(Boolean(notifications));
   const unreadTotal = unread.data?.total ?? 0;
+  const queryClient = useQueryClient();
   const [acctOpen, setAcctOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const cmdRef = useRef<HTMLDivElement>(null);
@@ -108,6 +110,67 @@ export function AppShell({
     setMobileOpen(false);
     setAcctOpen(false);
   }, [pathname]);
+
+  /**
+   * The bell, live.
+   *
+   * `services.notify` has always fired a `notifications.updated` hint on the realtime bus, and
+   * until now nothing in the app listened for it — the event was emitted, delivered over SSE,
+   * and dropped on the floor. The bell was therefore a 60-second poll and nothing else, so a
+   * student sitting on their homework page could wait the better part of a minute after their
+   * work was marked before the dot appeared.
+   *
+   * The poll STAYS. It is the guarantee and this is the accelerator: the realtime bus samples
+   * low-priority events away before they are ever written and reaps its table after 24 hours,
+   * so a hint is allowed to go missing by design. Listening for it just means the refetch
+   * usually happens in the same second rather than at the next tick.
+   *
+   * **`import()`, not a top-level import.** The SSE client is dead weight for the shells that
+   * draw no bell — the ops and builder consoles mount this same component — so it is loaded
+   * inside the effect, on the consoles that will actually subscribe, and stays out of the
+   * shell's static module graph everywhere else.
+   *
+   * Gated on `notifications` for the same reason the poll is: an SSE connection parks one of
+   * three sync gunicorn workers for its lifetime, so a shell with no bell must not hold one.
+   */
+  useEffect(() => {
+    if (!notifications) return;
+    // jsdom and the SSR pass have no EventSource, and `subscribeRealtime` connects eagerly.
+    if (typeof window === "undefined" || typeof window.EventSource === "undefined") return;
+
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+
+    void import("@/lib/realtime")
+      .then(({ subscribeRealtime }) => {
+        // The shell can unmount, or `notifications` flip, while the chunk is in flight.
+        if (cancelled) return;
+        unsubscribe = subscribeRealtime(
+          {
+            onEvent: (ev) => {
+              // `resync` is the bus admitting it dropped events; after one, everything the
+              // client holds is suspect, so the bell refetches with the rest of the app.
+              if (ev.type === "notifications.updated" || ev.type === "resync") {
+                void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+              }
+            },
+          },
+          // A grade write emits a stream, a workspace and a notification hint together; 300ms
+          // collapses that burst into one refetch, matching HomeworkGradingHub's subscription.
+          { debounceMs: 300 },
+        );
+      })
+      .catch(() => {
+        // A browser that cannot load or open the stream still has the poll, which is the
+        // guarantee. Nothing here is allowed to take the bell down with it.
+      });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [notifications, queryClient]);
+
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       const t = e.target as Node;

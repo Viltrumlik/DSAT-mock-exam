@@ -115,12 +115,71 @@ def recompute(student, *, actor=None) -> StudentStrike:
     # Only a break worth something is worth a row. Resetting a streak of zero, or one the
     # student had already spent to nothing, is not an event they need explained.
     if broke and previous_balance > 0:
-        StrikeTransaction.objects.create(
+        reset = StrikeTransaction.objects.create(
             student=student, kind=StrikeTransaction.KIND_RESET,
             amount=-previous_balance, balance_after=0,
             reference="A missed lesson reset the streak.", actor=actor,
         )
+        # Under the ledger row's guard and nowhere else — see :func:`_notify_streak_reset`.
+        _notify_streak_reset(student, reset, previous_balance)
     return record
+
+
+def _notify_streak_reset(student, reset_row, previous_balance: int) -> None:
+    """Tell a student their streak has gone back to the start.
+
+    **Fired under exactly the guard that writes the ledger row, and under no other.**
+    ``recompute`` re-derives a student's whole attendance history and runs on every change to
+    the register, so it evaluates "did the streak break?" constantly; only
+    ``broke and previous_balance > 0`` is something that *happened to the student* rather than
+    an arithmetic outcome. Re-running ``recompute`` afterwards cannot reach here a second time —
+    the record's ``current_streak`` is already 0, so ``broke`` is False — and the dedupe key is
+    keyed on the reset row itself, so even a hand-forced replay collapses onto the same line in
+    the bell instead of telling somebody twice. A genuine second break weeks later mints a new
+    reset row, gets a new key, and is news again, which is correct.
+
+    **The copy is the reason this is a function and not three lines inline.** ``STRIKE_LOST`` is
+    a machine code; it is not a sentence a fifteen-year-old should read. The standing rule for
+    this platform is that the student UI never uses punishing language, so what the student is
+    told is that the streak has restarted and what restarts it — not that they failed, were
+    penalised, or had something taken off them. The ``StrikeTransaction`` row next door still
+    reads "A missed lesson reset the streak", because that is a record for staff looking at a
+    ledger; this is the message for the person it happened to.
+
+    The balance is named because the streak counter alone cannot answer the question the student
+    will actually ask. It only ever shows the current number, so without this the strikes they
+    had banked simply vanish between one page load and the next.
+    """
+    saved = "strike" if int(previous_balance) == 1 else "strikes"
+    title = "Your attendance streak starts again"
+    body = (
+        f"Your {int(previous_balance)} saved {saved} reset with it. "
+        "Your next lesson opens the new run, and it builds from there."
+    )
+    dedupe_key = f"strike-reset:{reset_row.pk}"
+
+    def _send():
+        # Local import for the same reason every other notify call site in this codebase uses
+        # one: avoid an app-loading cycle between the app that raises the event and the app
+        # that records it.
+        from notifications import constants as note_const
+        from notifications.services import notify
+
+        notify(
+            student,
+            event=note_const.EVENT_STRIKE_LOST,
+            title=title,
+            body=body,
+            # Strikes are shown and spent on the student's shop page; the rewards page carries
+            # points and XP and would not answer "where did my strikes go?".
+            link_url="/shop",
+            dedupe_key=dedupe_key,
+        )
+
+    # ``recompute`` is ``@transaction.atomic`` and its callers hold transactions of their own,
+    # so the send waits for the commit: a student told their streak reset by a mark that then
+    # rolls back has been told something untrue about their own attendance.
+    transaction.on_commit(_send)
 
 
 @transaction.atomic

@@ -13,6 +13,11 @@ class NotificationAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Notifications are written by `services.notify`, which also fires the realtime hint
         # and queues push. One added here would appear in the bell and nowhere else.
+        #
+        # This used to leave EVENT_SYSTEM with no producer at all — declared, categorised,
+        # rendered, and unreachable. The answer is not to relax this flag but the endpoint
+        # that goes through the service properly: POST /api/notifications/broadcast/,
+        # super_admin only. See `views.NotificationBroadcastView`.
         return False
 
 

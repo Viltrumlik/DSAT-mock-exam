@@ -95,6 +95,88 @@ def points_for(event: str) -> int:
 
 # ── Awarding ──────────────────────────────────────────────────────────────────
 
+def _notify_earned(student, award_row, *, previous_points: int | None) -> None:
+    """Tell a student their points moved — in-app only, and only when they moved UP.
+
+    Called from two of :func:`award`'s three branches, and **the branch that does not call it
+    is the entire reason this is a function rather than three inline lines.**
+
+    ``award`` is re-entrant by design. The receivers in ``hooks`` fire it on every save of every
+    source row, ``settle_due_homework`` re-runs it across every open bundle every ten minutes,
+    and the backfill commands replay it over history. The overwhelmingly common outcome is the
+    no-op re-run: nothing changed, so nothing is written — not even an audit row. Ringing a bell
+    there would put a notification in front of every student with an open homework every ten
+    minutes, for ever. That is a platform-wide incident, not a bug, so the no-op branch does not
+    call this and must never start.
+
+    ``previous_points`` is ``None`` on a first grant and the previous value on a correction.
+
+    **A correction downwards is silent.** A re-grade dropping a homework from 90% to 60%, a
+    PRESENT corrected to LATE, a manual adjustment revised down — each of those lowers an
+    earning, and none of them is news a student should be handed. Telling somebody their points
+    went down is exactly the punishing framing this school's student UI does not use, and the
+    ledger on the rewards page already shows the movement to anyone who goes looking. The XP
+    high-water mark next door makes the same judgement in the arithmetic: doing worse does not
+    take anything away, so it should not announce anything either.
+
+    **Nothing worth zero or less is announced.** ``award`` treats an explicit 0 as a recorded
+    "this was assessed and earned nothing" (a 0% homework, a midterm re-sat below the pass mark)
+    and ``MANUAL`` can dock somebody outright. "You earned 0 points" is noise at best. A row that
+    starts at zero and is later corrected upward reaches the correction branch and is announced
+    then — which is the moment it is actually good news.
+
+    **Deliberately not a push.** ``REWARD_EARNED`` is absent from ``notifications.PUSH_EVENTS``
+    and stays absent. Points move several times a day for an active student, and a platform that
+    buzzes a phone for each one teaches students to switch push off — after which the homework
+    deadline does not reach them either.
+    """
+    value = int(award_row.points)
+    if value <= 0:
+        return
+    if previous_points is not None and value <= int(previous_points):
+        return
+
+    # Built HERE, before the callback is registered, so the closure below carries nothing but
+    # plain strings and the student. Nothing about delivering this can touch the database after
+    # the transaction has already closed.
+    label = award_row.get_event_display()
+    if previous_points is None:
+        title = f"You earned {value} points"
+        body = label
+    else:
+        title = f"{label} is now worth {value} points"
+        body = "Your earlier award was updated and your points went up."
+    # Keyed on the award's own idempotency key, so a correction landing inside the dedupe window
+    # rewrites the original's wording in place instead of stacking a second row: one earning,
+    # one line in the bell, however many times it gets re-priced.
+    dedupe_key = f"reward:{award_row.idempotency_key}"
+
+    def _send():
+        # Local import, like every other notify call site in this codebase: `notifications`
+        # imports models at module scope and `rewards` is loaded from signal wiring, so a
+        # top-level import here is an app-loading cycle waiting to happen.
+        from notifications import constants as note_const
+        from notifications.services import notify
+
+        notify(
+            student,
+            event=note_const.EVENT_REWARD_EARNED,
+            title=title,
+            body=body,
+            # The student's own rewards page — the recipient here is always the earner, never
+            # a member of staff, so this is a student-console path.
+            link_url="/rewards",
+            dedupe_key=dedupe_key,
+        )
+
+    # ``award`` always holds a transaction — its own ``atomic``, usually nested inside a
+    # caller's — so the send waits for the commit. A student told they earned points for an
+    # award that then rolls back has read something that is not true and cannot un-read it.
+    # Django discards ``on_commit`` callbacks registered after a savepoint that is rolled back,
+    # which is precisely the failure path ``award``'s savepoint exists to handle.
+    transaction.on_commit(_send)
+
+
 def award(
     student,
     event: str,
@@ -165,6 +247,9 @@ def award(
                     previous_xp=None, new_xp=created.xp,
                     reason=reason or "granted", actor=actor,
                 )
+                # A genuinely new earning. This is the ONLY branch that is unconditionally
+                # worth telling somebody about — see :func:`_notify_earned`.
+                _notify_earned(student, created, previous_points=None)
                 return created
 
             previous = existing.points
@@ -182,7 +267,10 @@ def award(
             changed = previous != value or existing.event != event or new_xp != previous_xp
             if not changed:
                 # The common case on a re-run: a backfill command or a duplicate Celery
-                # delivery. Deliberately writes nothing at all, not even an audit row.
+                # delivery. Deliberately writes nothing at all, not even an audit row — and
+                # deliberately notifies nothing either. The ten-minute sweep lands here for
+                # every settled homework on the platform; a notification on this branch would
+                # be a bell per student per sweep, for ever.
                 return existing
 
             existing.points = value
@@ -207,6 +295,9 @@ def award(
                 previous_xp=previous_xp, new_xp=new_xp,
                 reason=reason or "corrected", actor=actor,
             )
+            # A correction. `_notify_earned` compares against `previous` and stays quiet unless
+            # the earning actually grew — a re-grade downwards is not something to announce.
+            _notify_earned(student, existing, previous_points=previous)
             return existing
     except Exception:
         logger.exception(

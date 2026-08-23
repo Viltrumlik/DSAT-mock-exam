@@ -421,6 +421,26 @@ CELERY_BEAT_SCHEDULE = {
         "task": "mocks.tasks.sweep_mock_attempts_task",
         "schedule": crontab(minute="*/20"),
     },
+    # HOMEWORK_DUE_SOON had a constant, a category and a push entry from day one, and no
+    # producer at all — a deadline is newsworthy because time passed, not because anybody did
+    # anything, so nothing could ever have hooked it. This sweep is the only thing that raises
+    # it. Every 30 minutes rather than hourly: homework is routinely published a few hours
+    # before it is due, and a reminder that arrives after the deadline is worse than none.
+    # Re-runs are free — the task reads back the dedupe keys it has already written and tells
+    # each student about each assignment exactly once.
+    "notifications-homework-due-soon": {
+        "task": "notifications.notify_homework_due_soon",
+        "schedule": crontab(minute="*/30"),
+    },
+    # Push subscriptions the browser has thrown away (404/410 from the push service) are
+    # stamped `failed_at` and kept for a while so "why did my phone stop buzzing?" stays
+    # answerable. "For a while" was the intent; the reaper existed from day one with nothing
+    # scheduled to call it, so in practice the dead rows were kept forever and the table only
+    # ever grew — one row per browser any student has ever cleared their data on.
+    "notifications-prune-push-subscriptions": {
+        "task": "notifications.prune_push_subscriptions",
+        "schedule": crontab(hour=4, minute=25),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.

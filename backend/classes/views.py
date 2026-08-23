@@ -143,8 +143,64 @@ def _notify_graded(classroom_id: int, student_id: int) -> None:
         body=f"in {classroom.name}" if classroom else "",
         link_url=f"/classes/{classroom_id}" if classroom_id else "/",
         # Several items in one bundle can each trigger a grade write. To the student that is
-        # one piece of news, not four.
+        # one piece of news, not four. The auto-grader (assessments.grading_service) reuses
+        # THIS function for exactly that reason: a bundle marked partly by hand and partly
+        # by the grader collapses into one notification instead of racing to write two.
         dedupe_key=f"graded:{classroom_id}:{student_id}",
+    )
+
+
+def _notify_class_announcement(post) -> None:
+    """Tell the class their teacher has posted something. Everyone but the author.
+
+    An announcement is the one classroom event with no other channel: homework has an
+    email, a grade lands on the results page, but a post just appears in a stream nobody
+    is looking at. So it is written to every ACTIVE student — REMOVED memberships are a
+    soft delete and INVITED students have not joined yet, and neither is in this class.
+
+    The author is excluded because a teacher does not need telling what they just typed,
+    and because the same exclusion makes a student-authored post (a capability the class
+    admin can grant) not notify its own writer.
+
+    Best-effort throughout: resolving the roster is our own query, and it must not be able
+    to fail the post that triggered it.
+    """
+    from notifications import constants as note_const
+    from notifications.services import notify_many
+
+    from .models import ClassroomMembership
+
+    try:
+        classroom = post.classroom
+        members = (
+            ClassroomMembership.objects.filter(
+                classroom_id=post.classroom_id,
+                role=ClassroomMembership.ROLE_STUDENT,
+                status=ClassroomMembership.STATUS_ACTIVE,
+            )
+            .exclude(user_id=post.author_id)
+            .select_related("user")
+        )
+        students = [m.user for m in members]
+    except Exception:
+        logger.exception("announcement roster failed for post %s", getattr(post, "pk", None))
+        return
+    if not students:
+        return
+
+    notify_many(
+        students,
+        event=note_const.EVENT_CLASS_ANNOUNCEMENT,
+        title=f"New announcement in {classroom.name}"[:160],
+        # The stream shows the post in full; the bell carries enough of it to decide
+        # whether to open the class now or after dinner.
+        body=(post.content or "").strip()[:180],
+        # The classroom page, not a per-post route: announcements have no detail page of
+        # their own, and this is the student console path (staff read /teacher/...).
+        link_url=f"/classes/{post.classroom_id}",
+        # One post is one piece of news. An edit inside the dedupe window refreshes the
+        # wording of the row already sitting in the bell rather than adding a second.
+        dedupe_key=f"announcement:{post.pk}",
     )
 
 
@@ -1990,6 +2046,10 @@ class ClassPostViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         post = serializer.save(classroom=classroom, author=request.user)
+        # On commit, not inline: the bell row belongs to a post that survived, and the
+        # realtime hint and phone push that ride along behind notify() are not part of the
+        # transaction and could not be taken back if this one rolled back.
+        transaction.on_commit(lambda: _notify_class_announcement(post))
         return Response(self.get_serializer(post).data, status=status.HTTP_201_CREATED)
 
     def perform_update(self, serializer):
