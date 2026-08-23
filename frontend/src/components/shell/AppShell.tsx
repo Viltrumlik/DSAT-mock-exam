@@ -133,43 +133,20 @@ export function AppShell({
    * Gated on `notifications` for the same reason the poll is: an SSE connection parks one of
    * three sync gunicorn workers for its lifetime, so a shell with no bell must not hold one.
    */
-  useEffect(() => {
-    if (!notifications) return;
-    // jsdom and the SSR pass have no EventSource, and `subscribeRealtime` connects eagerly.
-    if (typeof window === "undefined" || typeof window.EventSource === "undefined") return;
-
-    let cancelled = false;
-    let unsubscribe: (() => void) | undefined;
-
-    void import("@/lib/realtime")
-      .then(({ subscribeRealtime }) => {
-        // The shell can unmount, or `notifications` flip, while the chunk is in flight.
-        if (cancelled) return;
-        unsubscribe = subscribeRealtime(
-          {
-            onEvent: (ev) => {
-              // `resync` is the bus admitting it dropped events; after one, everything the
-              // client holds is suspect, so the bell refetches with the rest of the app.
-              if (ev.type === "notifications.updated" || ev.type === "resync") {
-                void queryClient.invalidateQueries({ queryKey: ["notifications"] });
-              }
-            },
-          },
-          // A grade write emits a stream, a workspace and a notification hint together; 300ms
-          // collapses that burst into one refetch, matching HomeworkGradingHub's subscription.
-          { debounceMs: 300 },
-        );
-      })
-      .catch(() => {
-        // A browser that cannot load or open the stream still has the poll, which is the
-        // guarantee. Nothing here is allowed to take the bell down with it.
-      });
-
-    return () => {
-      cancelled = true;
-      unsubscribe?.();
-    };
-  }, [notifications, queryClient]);
+  // NO realtime subscription here. This is deliberate and load-bearing.
+  //
+  // An SSE stream was subscribed here so the bell could learn about a notification without
+  // waiting for its 60-second poll. It took the site down. `/api/realtime/events/` is served
+  // by a `StreamingHttpResponse` that parks a worker inside a generator for the life of the
+  // stream (up to REALTIME_SSE_MAX_STREAM_S, 25s) and the client reconnects immediately — and
+  // gunicorn runs THREE SYNC WORKERS. Mounted in the shell, every open tab on every page held
+  // a stream, so 234 of 500 consecutive backend requests were SSE and ordinary requests queued
+  // 11-25 seconds behind them. `/users/me` then blew its 10s budget, AuthGuard hit its 12s boot
+  // timeout, and students got "Taking too long to verify your session."
+  //
+  // The 60-second poll below is the guarantee and always was. Do not re-add a stream here
+  // until the workers are async (gevent/uvicorn) — with sync workers this is not a latency
+  // optimisation, it is a denial of service against your own site.
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
