@@ -57,6 +57,10 @@ export interface MyRewards {
   /** What Convert would mint right now. Points are no longer converted automatically, so
    *  without this number a student has no way to know there is anything to press for. */
   convertible_coins: number;
+  /** What Max would SPEND — always a whole number of coins' worth, so it is `points` minus
+   *  the remainder that does not add up to a coin. The two differ whenever a student has
+   *  change in hand, and the Max button must fill in this one. */
+  max_convertible_points: number;
   history: PointAward[];
 }
 
@@ -66,6 +70,8 @@ export interface CoinTransaction {
   label: string;
   amount: number;
   balance_after: number;
+  /** Points this mint cost. Zero on a spend or an admin grant, which consume no points. */
+  points_spent: number;
   reference: string;
   created_at: string;
 }
@@ -77,6 +83,8 @@ export interface MyWallet {
   points_per_coin: number;
   points_to_next_coin: number;
   convertible_coins: number;
+  /** What Max would spend — see `MyRewards.max_convertible_points`. */
+  max_convertible_points: number;
   transactions: CoinTransaction[];
 }
 
@@ -85,6 +93,9 @@ export interface ConvertResult extends Omit<MyWallet, "transactions"> {
   /** How many coins this press actually minted. Zero is an ordinary answer — it means they
    *  have not reached the rate yet — so `detail` carries the wording either way. */
   minted: number;
+  /** What the coins cost. Never more than `minted * points_per_coin`, and the number the
+   *  student's balance actually fell by. */
+  points_spent: number;
   detail: string;
 }
 
@@ -101,10 +112,17 @@ export const rewardsApi = {
     const { data } = await api.get<{ rules: RewardRule[] }>("/rewards/rules/");
     return data.rules;
   },
-  /** Turn earned points into coins. Safe to call twice — the amount owed is derived from
-   *  what has already been minted, so a retry mints nothing rather than paying twice. */
-  async convert(): Promise<ConvertResult> {
-    const { data } = await api.post<ConvertResult>("/rewards/wallet/convert/");
+  /** Buy coins with points.
+   *
+   *  Omitting `points` means Max — spend everything that buys a whole coin. NOT safe to call
+   *  twice: converting now SPENDS the points, so a retry is a second purchase rather than a
+   *  no-op. The server takes a row lock and re-reads the balance, so a double-tap can never
+   *  spend the same points twice — but the caller must not fire this speculatively. */
+  async convert(points?: number): Promise<ConvertResult> {
+    const { data } = await api.post<ConvertResult>(
+      "/rewards/wallet/convert/",
+      points === undefined ? {} : { points },
+    );
     return data;
   },
 };

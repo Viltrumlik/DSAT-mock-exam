@@ -1,25 +1,43 @@
-"""Coins: a spendable wallet minted from points.
+"""Coins: a spendable wallet bought with points.
 
-Points and coins answer different questions and behave differently on purpose.
+Points and coins answer different questions, and the exchange between them is a purchase.
 
-    points — a lifetime score for the season. Corrected freely, reset by the school.
-    coins  — a currency. Minted from points, and once spent they are gone.
+    points — what a student has earned and not yet spent. Goes up when they work, and
+             DOWN when they convert.
+    coins  — a currency. Bought with points, and once spent they are gone.
 
-Conversion is **manual**: it happens when a student presses the button, and at no other
-time. Nothing on a read path mints, and neither does a spend. The arithmetic below is
-unchanged from when it ran automatically — only the trigger moved — so leaving points
-unconverted costs a student nothing and converting late gives the same answer as converting
-often.
+Conversion is **manual and explicit**: it happens when a student presses the button, for the
+number of points they chose, and at no other time. Nothing on a read path converts, and
+neither does a spend.
 
-Minting is **monotonic**. The wallet never mints the same point twice, because it mints the
-DIFFERENCE between what this season's points are now worth and what has already been minted
-from them — a figure read straight out of the ledger rather than cached anywhere.
+**Converting costs points.** This is the whole shape of the module and it is worth being
+plain about, because it did not always work this way. Conversion used to MINT — it computed
+what this season's points were worth, subtracted what had already been paid out, and handed
+over the difference while the points themselves stayed where they were. A student's points
+were a lifetime score that coins were derived from, so the same 100 points could show on the
+scoreboard forever and still be worth 10 coins. The school asked for the ordinary meaning
+instead: spend your points, and you no longer have them.
 
-Minting also never runs backwards. If points are revoked after coins were minted from them —
-a mark corrected to ABSENT, a re-grade dropping a bundle below its band — the coins stay. The
-student may already have spent them, and a wallet that can go negative because somebody fixed
-a register is not a wallet. The mint simply pauses until their points climb back past what has
-already been paid out.
+That turns the exchange from a derivation into a transaction, and everything below follows
+from it:
+
+* the amount is an INPUT, not a computed figure — a student may cash in 30 of their 340
+  points and keep the rest;
+* the deduction is a real negative row in the point ledger (``EVENT_COIN_CONVERSION``), so
+  ``services.balance`` falls out of the same SUM it always was and no second number has to
+  be kept in step;
+* there is nothing left to make monotonic. The old ``mint_owed`` had to guard against paying
+  twice for one point and against clawing coins back when a mark was corrected. A debit
+  cannot be applied twice — the points are gone the moment it lands — so both guards are
+  deleted rather than ported.
+
+**XP does not move.** The conversion row carries ``xp=0``, so a student who cashes in every
+point keeps their whole XP total and their place on the board. That is deliberate: the
+leaderboard ranks on XP precisely so that spending your points is never punished.
+
+**Only whole coins.** 34 points at 10 points a coin buys 3 coins and costs 30; the remaining
+4 stay in the student's balance. Charging for a fraction of a coin nobody receives would be
+the one thing a 15-year-old would never forgive.
 """
 
 from __future__ import annotations
@@ -28,9 +46,9 @@ import logging
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Sum
 
-from .models import CoinTransaction, RewardSeason, StudentWallet
+from . import constants
+from .models import CoinTransaction, PointAward, RewardSeason, StudentWallet
 from .services import balance, current_season, xp_balance
 
 logger = logging.getLogger(__name__)
@@ -41,75 +59,105 @@ def wallet_for(student) -> StudentWallet:
     return wallet
 
 
-def _minted_this_season(wallet: StudentWallet, season: RewardSeason) -> int:
-    total = CoinTransaction.objects.filter(
-        wallet=wallet, kind=CoinTransaction.KIND_EARN, season=season
-    ).aggregate(total=Sum("amount"))["total"]
-    return int(total or 0)
-
-
-def _record(wallet, *, kind, amount, season=None, reference="", actor=None) -> CoinTransaction:
+def _record(wallet, *, kind, amount, season=None, reference="", actor=None, points_spent=0):
     """Append one transaction and move the cached balance. Caller holds the wallet lock."""
     wallet.coins_balance = int(wallet.coins_balance) + int(amount)
     wallet.save(update_fields=["coins_balance", "updated_at"])
     return CoinTransaction.objects.create(
         wallet=wallet, kind=kind, amount=int(amount),
         balance_after=wallet.coins_balance, season=season,
-        reference=reference, actor=actor,
+        reference=reference, actor=actor, points_spent=int(points_spent),
     )
 
 
+def _rate(season: RewardSeason) -> int:
+    """Points per coin. Clamped at 1 — a rate of 0 would make every point infinite coins."""
+    return max(1, int(season.points_per_coin or 1))
+
+
 @transaction.atomic
-def mint_owed(student) -> int:
-    """Mint any coins this season's points have earned but not yet paid. Returns how many.
+def convert(student, points: int | None = None, *, actor=None) -> dict:
+    """Spend ``points`` on coins. ``points=None`` means all of them — the Max button.
 
-    **Only ever called from :func:`convert`** — that is, only when a student has actually
-    asked. It used to run lazily on every wallet read and before every spend, which made
-    conversion invisible: points silently became coins and the student never chose anything.
-    The school wants the exchange to be a deliberate act, so the arithmetic stayed exactly as
-    it was and only the trigger moved.
+    Returns ``{"coins": minted, "points_spent": spent}``. Minting zero is an ordinary
+    outcome, not a failure: it means the student asked for less than one coin's worth, and
+    the caller should say so rather than raise.
 
-    Because the figure is *derived* — the difference between what this season's points are
-    worth and what has already been minted — running it late gives the same answer as running
-    it often. Nothing accumulates while a student leaves it unconverted, and nothing is lost.
+    Raises ``ValidationError`` only for a request that cannot be honoured at all — a negative
+    amount, or more points than the student has. Being told "you only have 40" is useful;
+    silently converting 40 when 400 was asked for is not, because the student would read the
+    resulting coin count as a bug.
+
+    The whole thing is one transaction with the wallet row locked, so two taps on a slow
+    connection cannot both read the same balance and spend it twice.
     """
     season = current_season()
-    rate = max(1, int(season.points_per_coin or 1))
+    rate = _rate(season)
+
     wallet = StudentWallet.objects.select_for_update().filter(student=student).first()
     if wallet is None:
         wallet = StudentWallet.objects.create(student=student)
         wallet = StudentWallet.objects.select_for_update().get(pk=wallet.pk)
 
-    earned_total = int(balance(student, season=season)) // rate
-    owed = earned_total - _minted_this_season(wallet, season)
-    if owed <= 0:
-        # Either nothing new, or points fell after coins were minted. Never claw back.
-        return 0
+    available = int(balance(student, season=season))
 
-    _record(wallet, kind=CoinTransaction.KIND_EARN, amount=owed, season=season,
-            reference=f"{rate} points = 1 coin")
-    return owed
+    if points is None:
+        # Max. Not simply `available`: spending every point would charge for the remainder
+        # that does not add up to a coin. Round DOWN to whole coins so the leftover stays.
+        requested = (available // rate) * rate
+    else:
+        requested = int(points)
+        if requested < 0:
+            raise ValidationError("Convert a positive number of points.")
+        if requested > available:
+            raise ValidationError(
+                f"Not enough points: {available} available, {requested} needed."
+            )
 
+    coins = requested // rate
+    spent = coins * rate  # never charge for a fraction of a coin
+    if coins <= 0:
+        return {"coins": 0, "points_spent": 0}
 
-def convert(student) -> int:
-    """The student presses the button. Mint whatever their points have earned, and say how many.
+    # Coins first, so the debit can be keyed on the row it paid for.
+    #
+    # `PointAward.idempotency_key` is unique and every other writer derives it from the thing
+    # that caused the award — an attendance mark, a submission. A conversion's cause is this
+    # transaction, and its id is the only value in the system that is unique per conversion.
+    # Deriving the key from the student and the amount instead would make a student's second
+    # 30-point conversion collide with their first and vanish.
+    tx = _record(
+        wallet, kind=CoinTransaction.KIND_EARN, amount=coins, season=season,
+        reference=f"{rate} points = 1 coin", actor=actor, points_spent=spent,
+    )
 
-    A thin wrapper on purpose: it exists so there is exactly one entry point that means "a
-    person asked for this", which is what separates conversion from the accounting underneath
-    it. Returning 0 is an ordinary outcome, not a failure — it means they have not earned a
-    whole coin yet, and the caller should say so rather than raise.
-    """
-    return mint_owed(student)
+    # The debit. A plain negative row in the same ledger every earning lives in, so
+    # `services.balance` — a SUM over that table — reflects it with no other code involved.
+    # `xp` stays 0: see the module docstring.
+    PointAward.objects.create(
+        student=student,
+        season=season,
+        event=constants.EVENT_COIN_CONVERSION,
+        points=-spent,
+        xp=0,
+        source_type="coin_transaction",
+        source_id=tx.pk,
+        idempotency_key=f"coin-conversion:{tx.pk}",
+        note=f"{spent} points → {coins} coin{'' if coins == 1 else 's'}",
+        created_by=actor,
+    )
+
+    return {"coins": coins, "points_spent": spent}
 
 
 @transaction.atomic
 def spend(student, amount: int, *, reference: str, actor=None) -> CoinTransaction:
     """Take coins out of a wallet. Raises ``ValidationError`` if there are not enough.
 
-    Does **not** mint first. Unconverted points are not money: a spend that quietly converted
-    them would be the automatic conversion the school asked us to remove, arriving through the
-    back door at the moment a student buys something. If they are short, the honest answer is
-    that they have points to convert — which the wallet payload already tells them.
+    Does **not** convert first. Unconverted points are not money: a spend that quietly
+    converted them would take points a student had not chosen to give up, at the moment they
+    were buying something else. If they are short, the honest answer is that they have points
+    to convert — which the wallet payload already tells them.
     """
     amount = int(amount)
     if amount <= 0:
@@ -134,7 +182,8 @@ def adjust(student, amount: int, *, reason: str, actor=None) -> CoinTransaction:
 
     A revocation is clamped at the balance rather than allowed to go negative: a wallet in
     debt has no meaning here, and the alternative is a student who earns coins that silently
-    disappear into a hole somebody else dug.
+    disappear into a hole somebody else dug. Points are not refunded by a revocation; taking
+    a prize back is not the same act as undoing the purchase that paid for it.
     """
     amount = int(amount)
     if amount == 0:
@@ -156,22 +205,18 @@ def adjust(student, amount: int, *, reason: str, actor=None) -> CoinTransaction:
 
 
 def convertible_coins(student) -> int:
-    """How many coins the student could mint right now, without minting them.
+    """How many coins the student's points would buy right now, without buying them.
 
-    The same arithmetic as :func:`mint_owed`, read-only. Since conversion became manual the
-    wallet screen has to show this number — an unconverted balance the student cannot see is
-    one they will never press the button for.
+    Now simply ``points // rate``. It used to have to subtract what had already been minted,
+    because minting left the points in place and the same point could otherwise be paid for
+    twice. A spent point is gone from the balance, so there is nothing left to subtract.
     """
     season = current_season()
-    rate = max(1, int(season.points_per_coin or 1))
-    wallet = StudentWallet.objects.filter(student=student).first()
-    if wallet is None:
-        return max(0, int(balance(student, season=season)) // rate)
-    return max(0, int(balance(student, season=season)) // rate - _minted_this_season(wallet, season))
+    return max(0, int(balance(student, season=season)) // _rate(season))
 
 
 def wallet_state(student) -> dict:
-    """Everything a wallet screen needs. Reads only — it no longer mints.
+    """Everything a wallet screen needs. Reads only — it never converts.
 
     The season is deliberately NOT in here. It is an internal accounting boundary, not a
     thing the school wants students reasoning about — and hiding it in the UI alone would
@@ -179,9 +224,10 @@ def wallet_state(student) -> dict:
     anyone who opens devtools. It has to leave the payload, not just the screen.
     """
     season = current_season()
-    rate = max(1, int(season.points_per_coin or 1))
+    rate = _rate(season)
     wallet = wallet_for(student)
     points = int(balance(student, season=season))
+    convertible = max(0, points // rate)
     return {
         "coins": int(wallet.coins_balance),
         "points": points,
@@ -190,5 +236,8 @@ def wallet_state(student) -> dict:
         # How many more points until the next coin — the number a student actually wants.
         "points_to_next_coin": rate - (points % rate) if rate else 0,
         # What pressing Convert would give them. Zero means the button is honest but idle.
-        "convertible_coins": convertible_coins(student),
+        "convertible_coins": convertible,
+        # What Max would spend. Not the same as `points`: the remainder that does not add up
+        # to a whole coin is left behind, and the button has to be able to say so.
+        "max_convertible_points": convertible * rate,
     }

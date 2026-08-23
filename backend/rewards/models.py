@@ -323,6 +323,17 @@ class CoinTransaction(models.Model):
     kind = models.CharField(max_length=14, choices=KIND_CHOICES, db_index=True)
     amount = models.IntegerField(help_text="Signed: positive adds coins, negative removes them.")
     balance_after = models.IntegerField()
+    # How many points this mint consumed. Only ever set on a KIND_EARN row; a spend or an
+    # admin grant costs no points and leaves it 0.
+    #
+    # The deduction itself is a negative ``PointAward`` (``EVENT_COIN_CONVERSION``) — that is
+    # what makes the balance fall, because the balance is a SUM over that table and nothing
+    # else. This column is the receipt: it lets the wallet history say "40 points → 4 coins"
+    # on the row the student is looking at, without joining back to a point ledger keyed only
+    # by an idempotency string.
+    points_spent = models.PositiveIntegerField(
+        default=0, help_text="Points consumed by this mint. Zero for spends and adjustments."
+    )
     # Which season's points minted this. Null for admin adjustments and spends, which belong
     # to no term's arithmetic.
     season = models.ForeignKey(

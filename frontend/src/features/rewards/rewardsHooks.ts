@@ -29,7 +29,7 @@ export function useMyWallet() {
 export function useConvertPoints() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => rewardsApi.convert(),
+    mutationFn: (points?: number) => rewardsApi.convert(points),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.me });
       qc.invalidateQueries({ queryKey: keys.wallet });

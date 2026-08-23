@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Sparkles,
   CalendarCheck,
@@ -12,7 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Button, HeroPage, PageHero, Skeleton } from "@/components/ui";
+import { Button, HeroPage, Input, PageHero, Skeleton } from "@/components/ui";
 // The house devices, so the wallet reads as part of the same product as the classroom.
 import { Card, CardHeader, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { RewardCoin } from "@/components/RewardCoin";
@@ -116,6 +117,15 @@ export function RewardsPage() {
   const xp = rewards.data?.xp ?? 0;
   const toNextCoin = rewards.data?.points_to_next_coin ?? perCoin;
   const convertible = rewards.data?.convertible_coins ?? 0;
+  // What Max would spend: `points` minus the change that does not add up to a whole coin.
+  const maxPoints = rewards.data?.max_convertible_points ?? 0;
+  // The amount box is a STRING while it is being typed. Storing a number would make an empty
+  // box read as 0 and a half-typed "3" jump to 3 the moment the student meant to type 30.
+  const [amount, setAmount] = useState("");
+  const asked = Number(amount);
+  const amountValid = amount !== "" && Number.isFinite(asked) && asked > 0 && asked <= points;
+  // What pressing Convert would actually buy, so the button can say it before it is pressed.
+  const wouldBuy = amountValid ? Math.floor(asked / perCoin) : 0;
   const earnableRules = (rules.data ?? []).filter((r) => !RETIRED_RULE_EVENTS.includes(r.event));
 
   if (rewards.isError) {
@@ -181,25 +191,84 @@ export function RewardsPage() {
                   visible, and it has to say what it will do. When there is nothing to convert
                   it keeps its place and reports the distance instead of vanishing, so the
                   student learns where the button lives before they need it. */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-black/[0.22] px-4 py-3">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.06em]">
-                    {convertible > 0 ? "Ready to convert" : "To your next coin"}
-                  </p>
-                  <p className="mt-0.5 text-sm font-bold">
-                    {convertible > 0
-                      ? `Your points are worth ${convertible} coin${convertible === 1 ? "" : "s"}.`
-                      : `${toNextCoin} more point${toNextCoin === 1 ? "" : "s"} and you can convert.`}
-                  </p>
+              <div className="space-y-2 rounded-2xl bg-black/[0.22] px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-extrabold uppercase tracking-[0.06em]">
+                      {convertible > 0 ? "Ready to convert" : "To your next coin"}
+                    </p>
+                    <p className="mt-0.5 text-sm font-bold">
+                      {convertible > 0
+                        ? `Your points are worth ${convertible} coin${convertible === 1 ? "" : "s"}.`
+                        : `${toNextCoin} more point${toNextCoin === 1 ? "" : "s"} and you can convert.`}
+                    </p>
+                  </div>
+
+                  {/* How many points to spend, and Max for all of them. The box exists at all
+                      because converting now COSTS points — when conversion was a derivation
+                      there was only ever one sensible amount, so a bare button was honest.
+                      Now that the points leave the balance, choosing to cash in 30 of 340 is
+                      a thing a student can reasonably want, and a single button would take
+                      the lot without asking. */}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={points}
+                      aria-label="Points to convert"
+                      placeholder="Points"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      className="w-28 bg-white/95 text-foreground"
+                      disabled={convertible === 0 || convert.isPending}
+                    />
+                    <Button
+                      variant="secondary"
+                      // Fills the box rather than converting on the spot. Max is a shortcut
+                      // for typing a number, not a second way to spend — one press should
+                      // never be the difference between 0 and 340 points gone.
+                      onClick={() => setAmount(String(maxPoints))}
+                      disabled={maxPoints === 0 || convert.isPending}
+                    >
+                      Max
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() =>
+                        convert.mutate(asked, {
+                          // Clear the box on success only. Leaving a spent amount sitting
+                          // there invites a second press that would spend it again; clearing
+                          // it on failure would throw away what the student typed.
+                          onSuccess: () => setAmount(""),
+                        })
+                      }
+                      disabled={!amountValid || wouldBuy === 0 || convert.isPending}
+                    >
+                      <ArrowRightLeft className="mr-1.5 h-4 w-4" aria-hidden />
+                      {convert.isPending ? "Converting…" : "Convert"}
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  variant="secondary"
-                  onClick={() => convert.mutate()}
-                  disabled={convertible === 0 || convert.isPending}
-                >
-                  <ArrowRightLeft className="mr-1.5 h-4 w-4" aria-hidden />
-                  {convert.isPending ? "Converting…" : "Convert to coins"}
-                </Button>
+
+                {/* Say what the press will do BEFORE it happens. Points do not come back, so
+                    the one number a student must see in advance is how many they are giving
+                    up — including the change that stays behind, which is otherwise read as
+                    points going missing. */}
+                {amount !== "" ? (
+                  <p className="text-xs font-bold">
+                    {!amountValid
+                      ? asked > points
+                        ? `You only have ${points} point${points === 1 ? "" : "s"}.`
+                        : "Enter how many points to convert."
+                      : wouldBuy === 0
+                        ? `${perCoin} points buy a coin — ${asked} isn't enough for one yet.`
+                        : `${wouldBuy * perCoin} points buy ${wouldBuy} coin${wouldBuy === 1 ? "" : "s"}` +
+                          (asked - wouldBuy * perCoin > 0
+                            ? `, and you keep the other ${asked - wouldBuy * perCoin}.`
+                            : ".")}
+                  </p>
+                ) : null}
               </div>
 
               {convert.isError ? (
@@ -249,8 +318,19 @@ export function RewardsPage() {
                         {fmtDate(row.awarded_at)}
                       </p>
                     </div>
-                    <span className="ds-num shrink-0 text-sm font-extrabold text-emerald-600">
-                      +{row.points}
+                    {/* A conversion is the one row in this feed that SPENDS, so it is the
+                        one that must not wear a green plus. Signed and neutral-coloured: the
+                        feed is a record of what happened to a student's points, and a
+                        withdrawal dressed as an earning is the kind of small lie that makes
+                        somebody stop trusting the whole screen. */}
+                    <span
+                      className={
+                        row.points < 0
+                          ? "ds-num shrink-0 text-sm font-extrabold text-muted-foreground"
+                          : "ds-num shrink-0 text-sm font-extrabold text-emerald-600"
+                      }
+                    >
+                      {row.points < 0 ? row.points : `+${row.points}`}
                     </span>
                   </li>
                 );

@@ -66,6 +66,7 @@ class MyRewardsView(APIView):
             "points_per_coin": wallet["points_per_coin"],
             "points_to_next_coin": wallet["points_to_next_coin"],
             "convertible_coins": wallet["convertible_coins"],
+            "max_convertible_points": wallet["max_convertible_points"],
             "history": PointAwardSerializer(awards, many=True).data,
         })
 
@@ -108,6 +109,10 @@ class MyWalletView(APIView):
                     "label": t.get_kind_display(),
                     "amount": t.amount,
                     "balance_after": t.balance_after,
+                    # What the coins cost. Zero on a spend or an admin grant, which consume
+                    # no points — the history row can then say "40 points → 4 coins" without
+                    # the client re-deriving it from a rate that may since have changed.
+                    "points_spent": t.points_spent,
                     "reference": t.reference,
                     "created_at": t.created_at,
                 }
@@ -117,12 +122,19 @@ class MyWalletView(APIView):
 
 
 class ConvertPointsView(APIView):
-    """The student turns their own points into coins.
+    """The student spends their own points on coins.
 
-    Idempotent in the way that matters: pressing it twice in a row mints nothing the second
-    time, because the amount owed is derived from what has already been paid rather than
-    accumulated. So a double-tap, a retry on a flaky connection and a refreshed tab all land
-    on the same balance, and the endpoint needs no idempotency key of its own.
+    ``POST {"points": 30}`` converts thirty of them; ``POST {}`` converts as many as will buy
+    whole coins — the Max button. Max is the omitted case rather than a flag, because "all of
+    it" is the common press and a client that forgets to send an amount should do the obvious
+    thing rather than nothing.
+
+    **This is no longer idempotent, and it cannot be.** It used to be: conversion derived what
+    was owed from what had already been paid, so a double-tap was harmless. Now that points
+    are actually spent, a second press is a second purchase — which is correct (a student may
+    convert twice), and it is why the write holds a row lock on the wallet and re-reads the
+    balance inside it. Two taps on a slow connection cannot both spend the same points; the
+    second one simply finds fewer left.
 
     Only ever acts on the caller's own wallet. Staff move somebody else's coins through
     ``WalletAdminView``, which is a different operation with a different audit trail.
@@ -131,15 +143,36 @@ class ConvertPointsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        minted = coins_service.convert(request.user)
+        raw = request.data.get("points", None)
+        points = None
+        if raw not in (None, ""):
+            try:
+                points = int(raw)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "points must be a whole number."}, status=http.HTTP_400_BAD_REQUEST
+                )
+
+        try:
+            result = coins_service.convert(request.user, points)
+        except ValidationError as exc:
+            # Asking for more points than they hold is a real refusal, not a quiet clamp: a
+            # student who typed 400 and received 4 coins would read the balance as broken.
+            return Response(
+                {"detail": " ".join(exc.messages)}, status=http.HTTP_400_BAD_REQUEST
+            )
+
+        minted = result["coins"]
         state = coins_service.wallet_state(request.user)
         return Response({
             "minted": minted,
+            "points_spent": result["points_spent"],
             # Not an error. A student with 7 points and a rate of 10 has pressed a button that
             # legitimately does nothing yet, and telling them how far off they are is more
             # use than refusing them.
             "detail": (
-                f"Converted {minted} coin{'s' if minted != 1 else ''}."
+                f"Converted {result['points_spent']} points into "
+                f"{minted} coin{'s' if minted != 1 else ''}."
                 if minted
                 else f"Not enough points yet — {state['points_to_next_coin']} more for a coin."
             ),
@@ -296,7 +329,8 @@ class WalletAdminView(APIView):
             "transactions": [
                 {
                     "id": t.id, "kind": t.kind, "amount": t.amount,
-                    "balance_after": t.balance_after, "reference": t.reference,
+                    "balance_after": t.balance_after, "points_spent": t.points_spent,
+                    "reference": t.reference,
                     "created_at": t.created_at,
                 }
                 for t in wallet.transactions.all()[:HISTORY_LIMIT]
@@ -309,10 +343,23 @@ class WalletAdminView(APIView):
         student = get_object_or_404(get_user_model(), pk=student_id)
 
         if str(request.data.get("action") or "").lower() == "convert":
-            minted = coins_service.convert(student)
+            # Staff convert on a student's behalf at the desk, so this is always Max — an
+            # administrator has no business choosing how many of somebody else's points to
+            # spend, and the student is standing there asking for their coins.
+            try:
+                result = coins_service.convert(student, None, actor=request.user)
+            except ValidationError as exc:
+                return Response(
+                    {"detail": " ".join(exc.messages)}, status=http.HTTP_400_BAD_REQUEST
+                )
+            minted = result["coins"]
             return Response({
-                "detail": f"Converted {minted} coin{'s' if minted != 1 else ''}.",
+                "detail": (
+                    f"Converted {result['points_spent']} points into "
+                    f"{minted} coin{'s' if minted != 1 else ''}."
+                ),
                 "minted": minted,
+                "points_spent": result["points_spent"],
                 **coins_service.wallet_state(student),
             })
 
