@@ -315,3 +315,185 @@ class RoadmapEdgeCaseTests(RoadmapTestBase):
     def test_requires_authentication(self):
         r = APIClient().get("/api/classes/roadmap/")
         self.assertIn(r.status_code, (401, 403))
+
+
+class RoadmapProgressAndSatEstimateTests(RoadmapTestBase):
+    """`completion_rate`, `next_level` and `months_to_sat` — the dashboard's three questions.
+
+    All three are derived from the ladder that was just built, so the assertions here are
+    really about one property: the summary at the top of a track can never disagree with the
+    lessons underneath it.
+    """
+
+    def _set_durations(self, **by_level):
+        """Author `duration_months` on the Math journals, the way /ops/journals does."""
+        for level, months in by_level.items():
+            j = Journal.objects.get(subject="MATH", level=level)
+            j.duration_months = months
+            j.save(update_fields=["duration_months"])
+
+    def test_completion_rate_is_the_own_level_only(self):
+        """A student in Middle has completed some of MIDDLE, not some of "Math".
+
+        Rating them against the whole four-rung ladder would tell a Junior they are 25% of
+        the way through a subject they have barely started.
+        """
+        homeworks = list(
+            self.j_mid.lessons.filter(lesson_type=JournalLesson.TYPE_HOMEWORK).order_by("lesson_number")
+        )
+        d1, _, _ = delivery.release_homework(self.math_mid, homeworks[0], actor=self.admin)
+        Submission.objects.create(
+            assignment=d1.assignment, student=self.student, status=Submission.STATUS_SUBMITTED
+        )
+
+        track = self._track(self._get(), "math")
+        # Middle holds 3 homeworks + 1 midterm; one of the four is done.
+        self.assertEqual(track["total_lessons"], 4)
+        self.assertEqual(track["completed_lessons"], 1)
+        self.assertEqual(track["completion_rate"], 0.25)
+
+    def test_next_level_is_the_rung_above_and_null_at_the_top(self):
+        self.assertEqual(self._track(self._get(), "math")["next_level"], "senior")
+        self.assertEqual(self._track(self._get(), "math")["next_level_label"], "Senior")
+
+        # Move the student to the top rung; there is nothing above it.
+        self.math_mid.level = Classroom.LEVEL_SENIOR
+        self.math_mid.save(update_fields=["level"])
+        track = self._track(self._get(), "math")
+        self.assertEqual(track["own_level"], "senior")
+        self.assertIsNone(track["next_level"])
+        self.assertIsNone(track["next_level_label"])
+
+    def test_months_left_is_the_rest_of_this_level_plus_every_level_above(self):
+        """Nothing done yet in Middle → all of Middle (4) plus all of Senior (5)."""
+        self._set_durations(foundation=3, junior=4, middle=4, senior=5)
+        data = self._get()
+        self.assertEqual(self._track(data, "math")["months_remaining"], 9.0)
+        self.assertEqual(data["months_to_sat"], 9.0)
+        self.assertEqual(data["months_to_sat_basis"], ["math"])
+
+    def test_finishing_lessons_shortens_the_estimate(self):
+        """The current level is prorated by lessons, so progress has to move the number."""
+        self._set_durations(middle=4, senior=5)
+        homeworks = list(
+            self.j_mid.lessons.filter(lesson_type=JournalLesson.TYPE_HOMEWORK).order_by("lesson_number")
+        )
+        # Two of Middle's four lessons done → half of Middle's 4 months remain, plus Senior.
+        for hw in homeworks[:2]:
+            d, _, _ = delivery.release_homework(self.math_mid, hw, actor=self.admin)
+            Submission.objects.create(
+                assignment=d.assignment, student=self.student, status=Submission.STATUS_SUBMITTED
+            )
+        self.assertEqual(self._track(self._get(), "math")["months_remaining"], 7.0)
+
+    def test_unauthored_durations_read_as_unknown_not_as_zero(self):
+        """`duration_months` defaults to 0. A student is not finishing today.
+
+        This is the difference between a card that hides itself and a card that tells a
+        student in Junior they can sit the SAT this afternoon.
+        """
+        data = self._get()  # no durations authored anywhere
+        self.assertIsNone(self._track(data, "math")["months_remaining"])
+        self.assertIsNone(data["months_to_sat"])
+        self.assertEqual(data["months_to_sat_basis"], [])
+
+    def test_the_sat_estimate_is_the_slower_subject_never_the_sum(self):
+        """One exam, both sections — a student is ready when the LATER course finishes."""
+        eng = Classroom.objects.create(
+            name="English Junior",
+            subject=Classroom.SUBJECT_ENGLISH,
+            level=Classroom.LEVEL_JUNIOR,
+            lesson_days=Classroom.DAYS_ODD,
+            lesson_time="18:00",
+            start_date=date(2026, 8, 3),
+            created_by=self.admin,
+        )
+        self._enrol(self.student, eng)
+        for level, months in (("junior", 2), ("middle", 3), ("senior", 3)):
+            j = self._journal("ENGLISH", level)
+            j.duration_months = months
+            j.save(update_fields=["duration_months"])
+        self._set_durations(middle=4, senior=5)
+
+        data = self._get()
+        self.assertEqual(self._track(data, "math")["months_remaining"], 9.0)
+        self.assertEqual(self._track(data, "english")["months_remaining"], 8.0)
+        # 9, not 17 — and not 8 either.
+        self.assertEqual(data["months_to_sat"], 9.0)
+        self.assertEqual(sorted(data["months_to_sat_basis"]), ["english", "math"])
+
+    def test_a_subject_we_cannot_estimate_is_left_out_rather_than_counted_as_zero(self):
+        """An unknown English course must not read as "English is already finished"."""
+        eng = Classroom.objects.create(
+            name="English Junior",
+            subject=Classroom.SUBJECT_ENGLISH,
+            level=Classroom.LEVEL_JUNIOR,
+            lesson_days=Classroom.DAYS_ODD,
+            lesson_time="18:00",
+            start_date=date(2026, 8, 3),
+            created_by=self.admin,
+        )
+        self._enrol(self.student, eng)
+        for level in ("junior", "middle", "senior"):
+            self._journal("ENGLISH", level)  # published, but no duration authored
+        self._set_durations(middle=4, senior=5)
+
+        data = self._get()
+        self.assertIsNone(self._track(data, "english")["months_remaining"])
+        self.assertEqual(data["months_to_sat"], 9.0)
+        self.assertEqual(data["months_to_sat_basis"], ["math"])
+
+    def test_a_student_with_no_level_gets_nulls_not_zeroes(self):
+        """A blank-level classroom sets no own level, so there is nothing to be part-way through."""
+        self.math_mid.level = ""
+        self.math_mid.save(update_fields=["level"])
+        data = self._get()
+        track = self._track(data, "math")
+        self.assertIsNone(track["own_level"])
+        self.assertIsNone(track["completion_rate"])
+        self.assertIsNone(track["next_level"])
+        self.assertIsNone(track["months_remaining"])
+        self.assertIsNone(data["months_to_sat"])
+
+
+class RoadmapCurrentWeekTests(RoadmapTestBase):
+    """`current_week` — which week the GROUP is in, counted in lessons held."""
+
+    def test_the_week_counts_lessons_held_not_calendar_weeks(self):
+        """A Mon/Wed/Fri group meets three times a week, so lesson 4 opens week 2.
+
+        Counted this way the dashboard agrees with the attendance register. Counting calendar
+        weeks would call the Monday after a Wednesday start "week 2" while the register still
+        shows only four lessons.
+        """
+        from datetime import timedelta as _td
+        from django.utils import timezone as _tz
+
+        today = _tz.localtime().date()
+        # Rewind to a Monday so the fixture's ODD (Mon/Wed/Fri) schedule is predictable.
+        monday = today - _td(days=today.weekday())
+
+        # Started this Monday → by today the group has met at least once: week 1.
+        self.math_mid.start_date = monday
+        self.math_mid.save(update_fields=["start_date"])
+        self.assertEqual(self._track(self._get(), "math")["current_week"], 1)
+
+        # Started three weeks ago → nine lessons in, which is week 3.
+        self.math_mid.start_date = monday - _td(days=14)
+        self.math_mid.save(update_fields=["start_date"])
+        self.assertEqual(self._track(self._get(), "math")["current_week"], 3)
+
+    def test_a_group_that_has_not_met_yet_has_no_week(self):
+        """"Week 1" is a claim, and a class starting next month has not earned it."""
+        from datetime import timedelta as _td
+        from django.utils import timezone as _tz
+
+        self.math_mid.start_date = _tz.localtime().date() + _td(days=30)
+        self.math_mid.save(update_fields=["start_date"])
+        self.assertIsNone(self._track(self._get(), "math")["current_week"])
+
+    def test_an_unreadable_schedule_reads_as_unknown_rather_than_week_one(self):
+        """`lesson_days` does go dirty in this codebase — it must not become a wrong number."""
+        self.math_mid.lesson_days = "NONSENSE"
+        self.math_mid.save(update_fields=["lesson_days"])
+        self.assertIsNone(self._track(self._get(), "math")["current_week"])

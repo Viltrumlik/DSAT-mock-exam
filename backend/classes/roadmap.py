@@ -25,9 +25,24 @@ The frontend greying is cosmetic — this omission is the real boundary.
 Level is a property of the *classroom*, never the student (``users/models.py`` forbids a
 student a subject). So "the student's own level" is derived from their non-removed STUDENT
 memberships: for each subject, the most-recently-joined classroom that carries a level.
+
+**The payload also answers three questions the dashboard asks**, computed here rather than
+anywhere else because this is the only place that already holds both the ladder and the
+student's per-lesson completion state:
+
+* ``completion_rate`` — how far through their OWN level a student is, per track.
+* ``next_level`` — the rung after theirs, or null when they are already at the top.
+* ``current_week`` — which week the GROUP is in, counted in lessons held.
+* ``months_to_sat`` — how long until they could sit the exam, summed from the journals'
+  authored ``duration_months``. See ``_track_progress`` for what makes it null.
+
+Each of those is null rather than a guess when the data cannot support it, because every one
+of them is a claim a student will repeat to somebody.
 """
 
 from __future__ import annotations
+
+from datetime import timedelta
 
 from .models import Classroom, ClassroomMembership
 
@@ -148,6 +163,118 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
     return lessons
 
 
+def _current_week(classroom) -> int | None:
+    """Which week of the course this GROUP is in — week 1 on the first meeting.
+
+    Counted in **lessons held**, not in calendar weeks, so it agrees with the attendance
+    register rather than with a wall calendar. A group that started on a Wednesday has met
+    twice by the end of that week and is a third of the way through week one; counting
+    calendar weeks would call the following Monday "week 2" while the register still shows
+    four lessons.
+
+    Returns ``None`` rather than 1 when it cannot be worked out — a class with no
+    ``start_date``, an unreadable ``lesson_days`` (which project history shows does happen)
+    or a start date in the future. "Week 1" is a specific claim and a class that has not met
+    yet has not earned it.
+    """
+    from django.utils import timezone as dj_timezone
+    from .lesson_schedule import lesson_weekdays
+
+    start = getattr(classroom, "start_date", None)
+    if not start:
+        return None
+    weekdays = lesson_weekdays(classroom)
+    if not weekdays:
+        return None
+
+    today = dj_timezone.localtime().date()
+    if today < start:
+        return None
+
+    per_week = len(weekdays)
+    # Count the meetings that have actually happened, including today's.
+    held = sum(
+        1
+        for offset in range((today - start).days + 1)
+        if (start + timedelta(days=offset)).weekday() in weekdays
+    )
+    if held <= 0:
+        return None
+    # Lesson 1 is week 1; the week rolls over on the meeting AFTER a full week's worth.
+    return (held - 1) // per_week + 1
+
+
+def _track_progress(levels: list[dict], own_level: str | None) -> dict:
+    """How far through the ladder this track is, and roughly how long is left.
+
+    Everything here is derived from ``levels`` — which was just built — rather than
+    re-queried, so the number under the ring can never disagree with the ring itself.
+
+    **Completion rate is the OWN level only, not the whole ladder.** A student in Junior has
+    not "completed 25% of Math" in any sense they would recognise; they have completed some
+    of Junior. The ladder position is already carried by ``own_level`` and ``next_level``.
+    Midterm markers count — sitting the midterm is part of finishing the level.
+
+    **Months remaining** is the unfinished part of the current level plus the whole of every
+    level above it, using each journal's own ``duration_months``. The current level is
+    prorated by lessons rather than by elapsed time because elapsed time is not recorded
+    anywhere per student, and a student who joined late would otherwise be told they are
+    further along than they are.
+
+    Returns ``months_remaining=None`` rather than a wrong number whenever the estimate would
+    be dishonest: no own level, no published journal for it, or a remaining ladder whose
+    durations are all still at the model default of 0. A missing estimate is a card the
+    dashboard hides; a confident 0 is a promise the school did not make.
+    """
+    if not own_level:
+        return {
+            "completed_lessons": 0,
+            "total_lessons": 0,
+            "completion_rate": None,
+            "next_level": None,
+            "next_level_label": None,
+            "months_remaining": None,
+        }
+
+    codes = [lv["level"] for lv in levels]
+    try:
+        own_index = codes.index(own_level)
+    except ValueError:
+        # The safety valve above keeps a mis-tagged own level in the ladder, so this is
+        # unreachable in practice. Fail soft rather than 500 a student's roadmap.
+        own_index = -1
+
+    own = levels[own_index] if own_index >= 0 else None
+    lessons = (own or {}).get("lessons") or []
+    total = len(lessons)
+    done = sum(1 for l in lessons if l.get("state") == "completed")
+    # A level whose journal is not published yet has no lessons, so it has no rate — 0/0 is
+    # "we don't know", not "you have done none of it".
+    rate = round(done / total, 4) if total else None
+
+    remaining = levels[own_index + 1 :] if own_index >= 0 else []
+    nxt = remaining[0] if remaining else None
+
+    # The unfinished share of the current level, plus every level still ahead.
+    own_months = float((own or {}).get("duration_months") or 0)
+    ahead_months = sum(float(lv.get("duration_months") or 0) for lv in remaining)
+    share_left = (1 - (done / total)) if total else 1.0
+    months = own_months * share_left + ahead_months
+    # All zeroes means the school has not filled in `duration_months` on the journals that
+    # are left, not that the student finishes today.
+    knowable = (own_months + ahead_months) > 0
+    finished = own_index >= 0 and not remaining and total > 0 and done == total
+
+    return {
+        "completed_lessons": done,
+        "total_lessons": total,
+        "completion_rate": rate,
+        "next_level": nxt["level"] if nxt else None,
+        "next_level_label": nxt["level_label"] if nxt else None,
+        "months_remaining": 0 if finished else (round(months, 1) if knowable else None),
+    }
+
+
 def _template_outline(journal) -> list[dict]:
     """The bare, inert outline of a journal — the only thing a locked level ever exposes.
 
@@ -258,6 +385,11 @@ def build_roadmap(user) -> dict:
                     "is_own_level": is_own,
                     "journal_published": journal is not None,
                     "lesson_count": len(lessons),
+                    # How long the school says this level takes. Authored per journal on the
+                    # /ops/journals page; 0 means nobody has filled it in yet, which is why
+                    # the estimate below treats an all-zero remainder as unknown rather than
+                    # as "no time left".
+                    "duration_months": int(getattr(journal, "duration_months", 0) or 0),
                     "lessons": lessons,
                 }
             )
@@ -269,8 +401,37 @@ def build_roadmap(user) -> dict:
                 "own_level": own_level,
                 "own_level_label": _LEVEL_LABELS.get(own_level) if own_level else None,
                 "own_classroom_id": own_c.id if own_c else None,
+                # Which week the GROUP is in — a property of the classroom's schedule, not of
+                # this student's progress through it. A student who joined late is in the
+                # group's week 6, not their own week 1, and that is the number their teacher
+                # and their classmates use.
+                "current_week": _current_week(own_c) if own_c else None,
+                **_track_progress(levels, own_level),
                 "levels": levels,
             }
         )
 
-    return {"tracks": tracks}
+    # ── How long until this student can sit the SAT ───────────────────────────
+    #
+    # The MAXIMUM across tracks, never the sum and never one subject's figure. The SAT is one
+    # exam with both sections in it, so a student is ready when the SLOWER half of their
+    # course finishes; adding Math's remaining months to English's would describe a student
+    # who studies one subject at a time, which nobody here does.
+    #
+    # Tracks we cannot estimate are left out rather than counted as zero — counting them as
+    # zero is what would turn "we don't know about English" into "English is already done".
+    # If that leaves nothing, the answer is None and the card does not render. It is also
+    # deliberately NOT reconciled with the student's own `sat_exam_date`: that is the date
+    # they intend to sit, this is how long the course has left, and the two disagreeing is
+    # information rather than a bug.
+    known = [t["months_remaining"] for t in tracks if t["months_remaining"] is not None]
+
+    return {
+        "tracks": tracks,
+        "months_to_sat": max(known) if known else None,
+        # Which subjects the figure actually accounts for, so a UI can say "based on Math"
+        # rather than implying it covers a course it could not see.
+        "months_to_sat_basis": [
+            t["subject"] for t in tracks if t["months_remaining"] is not None
+        ],
+    }
