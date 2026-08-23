@@ -11,6 +11,7 @@ immediately, which is the point — a snapshot would keep the door open until so
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, time as dt_time, timedelta
 
 from django.contrib.auth import get_user_model
@@ -23,6 +24,8 @@ from django.utils import timezone
 
 from .models import Classroom, ClassroomMembership
 from .models_support import SupportAvailability, SupportBooking
+
+logger = logging.getLogger(__name__)
 
 #: The support desk keeps school hours: bookable on the hour from 08:00, last session
 #: starting at 17:00 and ending as the desk closes at 18:00, four days out including today.
@@ -517,6 +520,200 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
         availability=availability, student=student, classroom=classroom,
         topic=topic, status=SupportBooking.STATUS_BOOKED,
     )
+
+
+def invitable_classmates(booking, *, limit: int = 200):
+    """Who the holder of ``booking`` may add to it.
+
+    Deliberately NARROW rather than a general roster endpoint. It answers exactly one
+    question — "who can go in this seat?" — and it answers it with the same rule
+    :func:`invite_member` enforces, so the picker cannot offer a name the invite would then
+    refuse. Students who already hold a live seat on the slot are excluded for the same
+    reason: offering them is offering a click that fails.
+
+    A student may only see classmates of a class THEY are in that this support teacher also
+    covers, which is the same set of names the classroom leaderboard already shows them.
+    """
+    availability = booking.availability
+    teacher_class_ids = set(
+        ClassroomMembership.objects.filter(
+            user=availability.support_teacher,
+            role=ClassroomMembership.ROLE_TA,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        ).values_list("classroom_id", flat=True)
+    )
+    my_class_ids = set(_active_student_classroom_ids(booking.student))
+    shared_ids = teacher_class_ids & my_class_ids
+    if not shared_ids:
+        return []
+
+    already = set(
+        SupportBooking.objects.filter(
+            availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES
+        ).values_list("student_id", flat=True)
+    )
+    already.add(booking.student_id)
+
+    User = get_user_model()
+    return list(
+        User.objects.filter(
+            class_memberships__classroom_id__in=shared_ids,
+            class_memberships__role=ClassroomMembership.ROLE_STUDENT,
+            class_memberships__status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        .exclude(pk__in=already)
+        .distinct()
+        .order_by("first_name", "last_name", "id")[:limit]
+    )
+
+
+@transaction.atomic
+def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
+    """Bring a classmate into a support hour somebody has already booked.
+
+    Returns the invitee's own ``SupportBooking``. They get a real seat with their own row,
+    their own cancellation and their own rating — not a passenger on the inviter's booking.
+    That matters at settle time: the teacher marks each student HELD or NO_SHOW separately,
+    and the 10-point award is per student.
+
+    **An invitation widens the hour by one seat.** A support hour is capacity 1 by default and
+    only staff may change that, so an invite to a one-to-one has to either fail or make room.
+    The school chose make-room: a student who wants to bring the classmate they are stuck on
+    the same topic with should not have to ask an administrator first. The cost is real and is
+    the reason ``invited_by`` is shown to the teacher — an hour they published as a
+    one-to-one can grow, so it has to be obvious who did it and who they brought.
+
+    **The invitee's own booking limits still apply, with one exception.** The weekly cap is
+    enforced: a classmate who has already had three sessions this week is not free to attend a
+    fourth just because somebody else clicked. The *upcoming* cap is not, because it exists to
+    stop one student sitting on the whole calendar, and a seat they did not ask for is not
+    them hoarding. The error names the invitee so the inviter can read it — they are the one
+    looking at the screen, and "You can book 3 sessions a week" would be nonsense to them.
+    """
+    now = now or timezone.now()
+
+    availability = SupportAvailability.objects.select_for_update().get(
+        pk=booking.availability_id
+    )
+    booking = SupportBooking.objects.select_related("student").get(pk=booking.pk)
+
+    if booking.status != SupportBooking.STATUS_BOOKED:
+        raise ValidationError("You can only add someone to a booking that is still going ahead.")
+    if availability.is_cancelled:
+        raise ValidationError("That slot has been cancelled.")
+    if availability.starts_at <= now:
+        raise ValidationError("That session has already started.")
+    if invitee.id == booking.student_id:
+        raise ValidationError("You are already in this session.")
+
+    # Same entitlement rule as booking it yourself. An invitation must not become a way to put
+    # a student in front of a support teacher who does not teach them.
+    shared = shared_classrooms(invitee, availability.support_teacher)
+    if not shared.exists():
+        raise ValidationError(
+            f"{_display(invitee)} isn't in a class with this support teacher."
+        )
+
+    existing = SupportBooking.objects.filter(
+        availability=availability, student=invitee
+    ).first()
+    if existing is not None and existing.status == SupportBooking.STATUS_BOOKED:
+        raise ValidationError(f"{_display(invitee)} is already in this session.")
+    if existing is not None and existing.status in (
+        SupportBooking.STATUS_HELD, SupportBooking.STATUS_NO_SHOW
+    ):
+        raise ValidationError("That session has already been settled.")
+
+    # The weekly cap only — see the docstring.
+    week_start = now - timedelta(days=BOOKING_WEEK_DAYS)
+    this_week = SupportBooking.objects.filter(
+        student=invitee, booked_at__gte=week_start
+    ).exclude(status=SupportBooking.STATUS_CANCELLED).exclude(
+        pk=existing.pk if existing else None
+    ).count()
+    if this_week >= MAX_BOOKINGS_PER_WEEK:
+        raise ValidationError(
+            f"{_display(invitee)} has already had {MAX_BOOKINGS_PER_WEEK} support sessions "
+            "this week."
+        )
+
+    taken = SupportBooking.objects.filter(
+        availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES
+    ).count()
+    if taken >= int(availability.capacity):
+        # Make room rather than refuse. Locked above, so two simultaneous invites widen by
+        # two seats rather than racing to widen by one.
+        availability.capacity = taken + 1
+        availability.save(update_fields=["capacity", "updated_at"])
+
+    classroom = shared.first() if shared.count() == 1 else None
+
+    if existing is not None:
+        # A previously cancelled seat is reused, so the reward key stays stable.
+        existing.status = SupportBooking.STATUS_BOOKED
+        existing.classroom = classroom
+        existing.topic = booking.topic
+        existing.invited_by = booking.student
+        existing.settled_at = None
+        existing.settled_by = None
+        existing.cancel_reason = ""
+        existing.cancelled_at = None
+        existing.cancelled_by = None
+        existing.save(update_fields=[
+            "status", "classroom", "topic", "invited_by", "settled_at", "settled_by",
+            "cancel_reason", "cancelled_at", "cancelled_by", "updated_at",
+        ])
+        guest = existing
+    else:
+        guest = SupportBooking.objects.create(
+            availability=availability, student=invitee, classroom=classroom,
+            topic=booking.topic, status=SupportBooking.STATUS_BOOKED,
+            invited_by=booking.student,
+        )
+
+    # Told after the seat exists, and never inside the lock's critical path: a notification
+    # that fails must not undo a booking that succeeded. `notify` already swallows its own
+    # errors; the email helper is queued on commit.
+    transaction.on_commit(lambda: _announce_invitation(guest, booking.student))
+    return guest
+
+
+def _display(user) -> str:
+    """A name to put in an error message a classmate will read."""
+    full = (getattr(user, "get_full_name", lambda: "")() or "").strip()
+    return full or (getattr(user, "username", "") or "").strip() or "That student"
+
+
+def _announce_invitation(guest: SupportBooking, inviter) -> None:
+    """Tell the invited student, in the bell and by email.
+
+    Two channels because they answer different situations: a student who is on the site sees
+    the bell immediately, and a student who is not gets an email about an hour that may be
+    tomorrow. Neither is gated on the other, and a large share of this school signed up
+    through Telegram and has no address at all — so the bell must never depend on the mailbox.
+    """
+    from notifications import constants as n_const
+    from notifications.services import notify
+
+    when = timezone.localtime(guest.availability.starts_at)
+    teacher = _display(guest.availability.support_teacher)
+    notify(
+        guest.student,
+        event=n_const.EVENT_SUPPORT_BOOKED,
+        title=f"{_display(inviter)} added you to a support session",
+        body=(
+            f"{when.strftime('%a %d %b, %H:%M')} with {teacher}"
+            + (f" — {guest.topic}" if guest.topic else "")
+        ),
+        link_url="/support",
+        dedupe_key=f"support-invite:{guest.pk}",
+    )
+    try:
+        from .mail_support import send_support_invitation_email
+
+        send_support_invitation_email(guest, inviter)
+    except Exception:  # pragma: no cover - mail must never break a booking
+        logger.warning("support_invite_email_failed booking=%s", guest.pk)
 
 
 @transaction.atomic

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, Check, Clock, Info, LifeBuoy, Users, X } from "lucide-react";
+import { CalendarClock, Check, Clock, Info, LifeBuoy, UserPlus, Users, X } from "lucide-react";
 import {
   Avatar,
   Field,
@@ -25,6 +25,7 @@ import {
   useRateSupportSession,
 } from "./supportHooks";
 import { CancelBookingDialog } from "./CancelBookingDialog";
+import { AddMemberDialog } from "./AddMemberDialog";
 import { SessionRating } from "./SessionRating";
 
 function fmtWhen(iso: string) {
@@ -85,6 +86,7 @@ export function SupportBookingPage() {
   const [error, setError] = useState<string | null>(null);
   /** The booking a student is part-way through calling off, or null when the dialog is shut. */
   const [cancelling, setCancelling] = useState<SupportBooking | null>(null);
+  const [inviting, setInviting] = useState<SupportBooking | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
   const upcoming = useMemo(
@@ -260,6 +262,11 @@ export function SupportBookingPage() {
                         <span>{b.teacher_note}</span>
                       </p>
                     )}
+                    {b.invited_by && (
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {b.invited_by} added you to this one
+                      </p>
+                    )}
                     {b.status === "CANCELLED" && b.cancel_reason && (
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
                         Cancelled — {b.cancel_reason}
@@ -268,6 +275,16 @@ export function SupportBookingPage() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <Pill tone={STATUS_STYLE[b.status].tone}>{STATUS_STYLE[b.status].label}</Pill>
+                    {b.status === "BOOKED" && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={UserPlus}
+                        onClick={() => setInviting(b)}
+                      >
+                        Add a member
+                      </Button>
+                    )}
                     {b.status === "BOOKED" && (
                       <Button
                         variant="ghost"
@@ -303,6 +320,14 @@ export function SupportBookingPage() {
           )}
         </div>
       </Card>
+
+      <AddMemberDialog
+        open={inviting !== null}
+        bookingId={inviting?.id ?? null}
+        teacherName={inviting?.slot.support_teacher ?? ""}
+        when={inviting ? fmtWhen(inviting.slot.starts_at) : ""}
+        onClose={() => setInviting(null)}
+      />
 
       <CancelBookingDialog
         open={cancelling !== null}

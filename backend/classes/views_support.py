@@ -87,6 +87,11 @@ def _booking_json(booking: SupportBooking) -> dict:
         "classroom_name": booking.classroom.name if booking.classroom else None,
         "student_id": booking.student_id,
         "student": _display_name(booking.student),
+        # Who brought them in. Null for the ordinary case of a student booking themselves.
+        # The teacher sees it: an hour they published as a one-to-one can be widened by an
+        # invitation, so it has to explain itself.
+        "invited_by_id": booking.invited_by_id,
+        "invited_by": _display_name(booking.invited_by) if booking.invited_by_id else None,
         # Why the seat came back. The teacher held the hour open for it, so they get told.
         "cancel_reason": booking.cancel_reason,
         "cancelled_at": booking.cancelled_at,
@@ -415,6 +420,81 @@ class SupportBookingDetailView(SupportBookingsView):
         except ValidationError as exc:
             return Response({"detail": "; ".join(exc.messages)}, status=400)
         return Response({"detail": "Booking cancelled.", "id": booking.id})
+
+
+class SupportBookingInviteView(APIView):
+    """Student: bring a classmate into a support hour you have booked.
+
+    ``POST {"student_id": 42}``. The invitee gets their OWN booking — their own cancellation,
+    their own rating, their own HELD/NO_SHOW at settle time — rather than riding on this one.
+
+    Only the student who booked it may invite. Explicitly not the teacher: a teacher who wants
+    a second student in the room can widen the slot from their own calendar, and a teacher
+    adding somebody would be a summons rather than an invitation.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, booking_id):
+        """Who this student may add — the picker's options.
+
+        Narrow on purpose: it answers "who can go in this seat?" using the same rule the
+        POST enforces, so the picker can never offer a name the invite would refuse.
+        """
+        booking = self._own_booking(request, booking_id)
+        if isinstance(booking, Response):
+            return booking
+        return Response({
+            "students": [
+                {"id": u.id, "name": _display_name(u)}
+                for u in support_service.invitable_classmates(booking)
+            ]
+        })
+
+    def _own_booking(self, request, booking_id):
+        booking = get_object_or_404(
+            SupportBooking.objects.select_related("availability", "student"), pk=booking_id
+        )
+        if booking.student_id != request.user.id:
+            return Response(
+                {"detail": "Only the student who booked this can add someone."},
+                status=http.HTTP_403_FORBIDDEN,
+            )
+        return booking
+
+    def post(self, request, booking_id):
+        booking = self._own_booking(request, booking_id)
+        if isinstance(booking, Response):
+            return booking
+
+        try:
+            student_id = int(request.data.get("student_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Say who you want to add."}, status=400)
+
+        invitee = get_user_model().objects.filter(pk=student_id).first()
+        if invitee is None:
+            # Deliberately the same wording as "not in your class" would give, so this cannot
+            # be used to probe which user ids exist.
+            return Response(
+                {"detail": "That student isn't in a class with this support teacher."},
+                status=400,
+            )
+
+        try:
+            guest = support_service.invite_member(booking, invitee, actor=request.user)
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=400)
+
+        guest = SupportBooking.objects.select_related(
+            "availability", "availability__support_teacher", "classroom", "student",
+            "invited_by",
+        ).get(pk=guest.pk)
+        return Response(
+            {"detail": f"{_display_name(invitee)} has been added and told.",
+             "booking": _booking_json(guest)},
+            status=http.HTTP_201_CREATED,
+        )
 
 
 class SupportBookingSettleView(APIView):

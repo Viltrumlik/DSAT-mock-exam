@@ -110,6 +110,19 @@ class SupportBooking(models.Model):
         related_name="+",
     )
 
+    # ── Invitation ──────────────────────────────────────────────────────────────────
+    #: The classmate who brought this student in, when the seat came from an invitation
+    #: rather than from the student finding the slot themselves.
+    #:
+    #: Nullable and SET_NULL because the overwhelming majority of bookings are self-made and
+    #: because a deleted inviter must not take their guest's session with them. It is not an
+    #: audit column: the support teacher sees it, so that an hour they published as a
+    #: one-to-one and which now has two names on it explains itself.
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", help_text="The classmate who invited this student, if any.",
+    )
+
     # ── Cancellation ────────────────────────────────────────────────────────────────
     # A cancelled seat costs the teacher an hour they held open and another student the
     # chance to take it, so the reason is asked for and shown to the teacher. Its own three
