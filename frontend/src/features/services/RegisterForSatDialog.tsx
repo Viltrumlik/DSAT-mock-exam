@@ -1,64 +1,114 @@
 "use client";
 
 /**
- * Register for the SAT — instructions, an explicit agreement, then the way through.
+ * Register for the SAT — the school's checklist, an explicit agreement, then the way through.
  *
  * The gate is the point. Registration finishes in a Telegram conversation with the school's
- * registrar, and a student who arrives there without having read what they need to have ready
- * wastes the registrar's time as well as their own. So the Telegram button does not exist
- * until the box is ticked — not disabled, absent — because a greyed-out button invites
+ * registrar, and a student who arrives there without the six items ready wastes the
+ * registrar's time as well as their own — the school says the whole thing takes 2–3 days, and
+ * most of that is waiting for a student to go and find something. So the Telegram button does
+ * not exist until the box is ticked: absent, not disabled, because a greyed-out button invites
  * clicking rather than reading.
  *
  * Nothing here is recorded. Ticking the box is the student telling themselves they have read
  * it, not a consent the school stores or can later produce. If the school ever needs to prove
  * a student agreed to something, that is a different feature with a row behind it, and this
- * dialog should not be quietly repurposed into it.
+ * dialog should not be quietly repurposed into one.
+ *
+ * The wording is the school's own, taken from the registrar's Telegram message so a student
+ * reads the same list in both places. Two things are deliberately NOT copied verbatim:
+ *
+ *  - the payment card is laid out as a labelled row with a copy button rather than as a wall
+ *    of digits, because a student typing 16 digits from memory into a banking app is how the
+ *    money reaches the wrong account;
+ *  - the password line carries a warning. The school asks for it; this at least makes sure the
+ *    student is told to change it afterwards, which is the one mitigation available from here.
  */
 
 import { useState } from "react";
-import { ExternalLink, MessageCircle } from "lucide-react";
+import { Copy, ExternalLink, MessageCircle } from "lucide-react";
 import { Alert, Button, Modal } from "@/components/ui";
+import { YouTubeEmbed } from "./YouTubeEmbed";
 
 /**
- * Where registration actually happens.
+ * Where registration actually happens — the school's registrar account.
  *
- * The school's registrar account, given by the school: @MS_register. Kept as a named constant
- * rather than inlined in the JSX so there is exactly one place to change it, and so it is
- * greppable the day somebody asks "where does this send students?".
+ * Named constants rather than values inlined in the JSX so there is exactly one place to
+ * change each, and so they are greppable the day somebody asks "where does this send
+ * students, and whose card is that?".
  */
 const TELEGRAM_HANDLE = "MS_register";
 const TELEGRAM_URL = `https://t.me/${TELEGRAM_HANDLE}`;
 
-/**
- * ⚠️ PLACEHOLDER COPY — the school is supplying the real wording.
- *
- * Written to be structurally right (what to bring, what it costs, what happens next) so the
- * dialog can be looked at and the layout judged, but every line here is a guess and none of
- * it should reach a student. Replace the whole array; the component reads its length and
- * nothing else, so swapping in more or fewer steps needs no other change.
- */
-const INSTRUCTIONS: { title: string; body: string }[] = [
-  {
-    title: "Have your passport ready",
-    body: "Registration uses the name and date of birth exactly as they appear on your passport. A name that does not match will stop you sitting the exam on the day.",
-  },
-  {
-    title: "Know which test date you want",
-    body: "Check the SAT dates with your teacher first. Registration closes several weeks before each sitting, and late registration costs more.",
-  },
-  {
-    title: "Have a photo that meets the rules",
-    body: "A clear, recent head-and-shoulders photo against a plain background. No hat, no sunglasses, and your whole face visible.",
-  },
-  {
-    title: "Be ready to pay the exam fee",
-    body: "The fee is paid to College Board, not to the school. The registrar will tell you the current amount and how to pay it.",
-  },
-  {
-    title: "The registrar finishes it with you on Telegram",
-    body: "Send them a message and they will take you through the rest. Do not send your passport photo to anyone else.",
-  },
-];
+/** From https://youtu.be/yQkYwOg5_lc — how to create a College Board account. */
+const ACCOUNT_VIDEO_ID = "yQkYwOg5_lc";
+
+const FEE_UZS = "1,500,000";
+const CARD_NUMBER = "5614681600990570";
+const CARD_HOLDER = "Abdulahad Ne'matjonov";
+
+const TEST_CENTERS = ["Presidential School in Fergana", "Ecocity"];
+const TEST_DATES = ["March 14", "May 2", "June 6"];
+
+function Step({
+  n,
+  title,
+  children,
+}: {
+  n: number;
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <li className="flex gap-3">
+      <span
+        aria-hidden
+        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-extrabold text-primary"
+      >
+        {n}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-foreground">{title}</p>
+        {children ? <div className="mt-1.5">{children}</div> : null}
+      </div>
+    </li>
+  );
+}
+
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused (an insecure origin, a locked-down browser). The
+      // number is on screen and selectable, so the copy button is a convenience — failing
+      // silently is right, and an error toast about the clipboard would be noise.
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2">
+      <div className="min-w-0">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        <p className="truncate font-mono text-sm font-bold text-foreground">{value}</p>
+      </div>
+      <button
+        type="button"
+        onClick={copy}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-foreground"
+      >
+        <Copy className="h-3.5 w-3.5" aria-hidden />
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
 
 export function RegisterForSatDialog({
   open,
@@ -70,8 +120,8 @@ export function RegisterForSatDialog({
   const [agreed, setAgreed] = useState(false);
 
   const close = () => {
-    // Reset the tick on close. A student who reopens this has to read it again, which is
-    // cheap, and it stops a stale agreement from an earlier session standing in for one now.
+    // Reset the tick on close. A student who reopens this reads it again, which is cheap, and
+    // it stops a stale agreement from an earlier session standing in for one now.
     setAgreed(false);
     onClose();
   };
@@ -79,27 +129,77 @@ export function RegisterForSatDialog({
   return (
     <Modal open={open} onClose={close} title="Register for the SAT">
       <div className="space-y-4">
-        <p className="text-sm font-semibold text-muted-foreground">
-          Read these before you message the registrar — having it all ready is what makes
-          registration take five minutes instead of a week.
+        <p className="text-sm font-semibold text-foreground">
+          Send these six things to the registrar on Telegram.
         </p>
 
-        <ol className="space-y-3">
-          {INSTRUCTIONS.map((step, i) => (
-            <li key={step.title} className="flex gap-3">
-              <span
-                aria-hidden
-                className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-extrabold text-primary"
-              >
-                {i + 1}
+        <ol className="space-y-4">
+          <Step n={1} title="Your College Board account">
+            <p className="text-sm font-medium text-muted-foreground">
+              Don&apos;t have one yet? Watch this and create it first.
+            </p>
+            <div className="mt-2">
+              <YouTubeEmbed
+                videoId={ACCOUNT_VIDEO_ID}
+                title="How to create a College Board account"
+              />
+            </div>
+          </Step>
+
+          <Step n={2} title="Your College Board password">
+            {/* Alert draws its own tone icon, so this carries text only. */}
+            <Alert tone="warning">
+              <span className="text-sm font-semibold">
+                Send this only to the registrar, and change your password once your
+                registration is confirmed. Never send it to anyone else who asks.
               </span>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-foreground">{step.title}</p>
-                <p className="text-sm font-medium text-muted-foreground">{step.body}</p>
-              </div>
-            </li>
-          ))}
+            </Alert>
+          </Step>
+
+          <Step n={3} title="Test center">
+            <ul className="space-y-1">
+              {TEST_CENTERS.map((c) => (
+                <li key={c} className="text-sm font-medium text-muted-foreground">
+                  • {c}
+                </li>
+              ))}
+            </ul>
+          </Step>
+
+          <Step n={4} title="Test date">
+            <div className="flex flex-wrap gap-1.5">
+              {TEST_DATES.map((d) => (
+                <span
+                  key={d}
+                  className="rounded-lg bg-surface-2 px-2.5 py-1 text-sm font-bold text-foreground"
+                >
+                  {d}
+                </span>
+              ))}
+            </div>
+          </Step>
+
+          <Step n={5} title="A photo showing your face clearly">
+            <p className="text-sm font-medium text-muted-foreground">
+              Like a passport photo, but not the same one — take a new picture.
+            </p>
+          </Step>
+
+          <Step n={6} title={`Payment — ${FEE_UZS} UZS`}>
+            <div className="space-y-2">
+              <CopyRow label="Card" value={CARD_NUMBER} />
+              <CopyRow label="Cardholder" value={CARD_HOLDER} />
+              <p className="text-sm font-medium text-muted-foreground">
+                Send the screenshot of your payment to the registrar.
+              </p>
+            </div>
+          </Step>
         </ol>
+
+        <Alert tone="info">
+          Registration takes around 2–3 days. Please be patient — the registrar will message
+          you when it&apos;s done.
+        </Alert>
 
         <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border p-3 text-sm font-semibold">
           <input
@@ -108,7 +208,7 @@ export function RegisterForSatDialog({
             onChange={(e) => setAgreed(e.target.checked)}
             className="mt-0.5"
           />
-          <span>I&apos;ve read this and I have everything I need.</span>
+          <span>I&apos;ve read this and I have everything ready.</span>
         </label>
 
         {/* Absent until agreed, not disabled — see the header comment. */}

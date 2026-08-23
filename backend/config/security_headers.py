@@ -45,9 +45,21 @@ class CSPMiddleware:
             "base-uri": ["'self'"],
             "object-src": ["'none'"],
             "frame-ancestors": ["'none'"],
-            "img-src": ["'self'", "data:", "blob:"],
+            # i.ytimg.com is the thumbnail behind the SAT-registration video's lazy player:
+            # the poster loads, the YouTube iframe only appears if a student presses play.
+            "img-src": ["'self'", "data:", "blob:", "https://i.ytimg.com"],
             "font-src": ["'self'", "data:"],
             "media-src": ["'self'", "blob:"],
+            # Without this, `default-src 'self'` blocks the embed — silently today (the policy
+            # ships Report-Only) and visibly the day CSP_ENFORCE is turned on, which is
+            # exactly the kind of delayed breakage that is impossible to attribute later.
+            # youtube-nocookie is the privacy-enhanced host and the one the player uses;
+            # www.youtube.com is listed because that is where nocookie redirects some embeds.
+            "frame-src": [
+                "'self'",
+                "https://www.youtube-nocookie.com",
+                "https://www.youtube.com",
+            ],
             "connect-src": ["'self'"],
             "script-src": script_src,
             "style-src": style_src,
