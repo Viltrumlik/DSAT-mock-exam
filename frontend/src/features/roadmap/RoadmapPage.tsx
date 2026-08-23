@@ -3,7 +3,8 @@
 /**
  * Student Roadmap — a per-subject level ladder.
  *
- * Every level of each subject the student studies is visible; only the student's OWN
+ * Every level the subject actually offers is visible (English starts at Junior — it has no
+ * Foundation course, and no Foundation rung is sent for it); only the student's OWN
  * level is unlocked (its lessons link to real released homework, with completion state).
  * Other levels are read-only outlines. Sourced entirely from GET /api/classes/roadmap/,
  * whose payload already decides what is openable — the greying here is cosmetic, the
@@ -153,11 +154,12 @@ function TrackView({ track }: { track: RoadmapTrack }) {
 
 type Status = { label: string; fg: string; bg: string; border: string; Icon: React.ElementType };
 
+// Every rung the payload carries is a level the subject genuinely teaches (English simply
+// has no Foundation rung), so there is no "not offered" state to render here — the ladder
+// only ever holds real steps on the student's path.
 function levelStatus(level: RoadmapLevel): Status {
   if (level.is_own_level)
     return { label: "Your level", fg: "#fff", bg: "var(--dz-indigo)", border: "var(--dz-indigo)", Icon: Route };
-  if (!level.offered)
-    return { label: "Not offered", fg: "var(--dz-faint)", bg: "var(--dz-panel)", border: "var(--dz-border)", Icon: Circle };
   if (!level.journal_published)
     return { label: "Coming soon", fg: "var(--dz-amber)", bg: "var(--dz-amber-soft)", border: "var(--dz-amber)", Icon: Circle };
   return { label: "Locked", fg: "var(--dz-mute)", bg: "var(--dz-panel)", border: "var(--dz-border)", Icon: Lock };
@@ -178,7 +180,6 @@ function LevelSection({ level, ownClassroomId }: { level: RoadmapLevel; ownClass
         borderRadius: 18,
         background: "var(--dz-card)",
         overflow: "hidden",
-        opacity: level.offered ? 1 : 0.75,
       }}
     >
       {/* Header row */}
@@ -208,11 +209,9 @@ function LevelSection({ level, ownClassroomId }: { level: RoadmapLevel; ownClass
             {level.level_label}
           </div>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--dz-mute)", marginTop: 3 }}>
-            {level.offered
-              ? level.journal_published
-                ? `${level.lesson_count} ${level.lesson_count === 1 ? "lesson" : "lessons"}`
-                : "Being prepared"
-              : "Not part of this subject"}
+            {level.journal_published
+              ? `${level.lesson_count} ${level.lesson_count === 1 ? "lesson" : "lessons"}`
+              : "Being prepared"}
           </div>
         </div>
         <span
@@ -237,9 +236,8 @@ function LevelSection({ level, ownClassroomId }: { level: RoadmapLevel; ownClass
         <div id={bodyId} style={{ borderTop: "1px solid var(--dz-border)", padding: "6px 10px 12px" }}>
           {level.lessons.length === 0 ? (
             <div style={{ padding: "18px 12px", fontSize: 14, fontWeight: 500, color: "var(--dz-mute)" }}>
-              {!level.offered
-                ? "This subject does not have this level."
-                : "Lessons for this level are being prepared."}
+              {/* The only way a rung reaches this branch now is an unpublished journal. */}
+              Lessons for this level are being prepared.
             </div>
           ) : level.is_own_level ? (
             <div style={{ display: "flex", flexDirection: "column" }}>

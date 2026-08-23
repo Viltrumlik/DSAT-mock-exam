@@ -1,11 +1,11 @@
 """Student roadmap: a per-subject level ladder.
 
-Every subject the student studies becomes one **track**. Within a track we show ALL
-levels (foundation→senior for Math; English has no Foundation), but only the student's
-**own** level is openable — its lessons are hydrated with the student's real classroom
-delivery state (upcoming / available / completed) and link to the actual released
-homework. Every other level is a read-only outline: lesson number + title + midterm
-markers, and nothing openable.
+Every subject the student studies becomes one **track**. Within a track we show every level
+the *subject itself* teaches — foundation→senior for Math, junior→senior for English, which
+has no Foundation course at all — but only the student's **own** level is openable: its
+lessons are hydrated with the student's real classroom delivery state (upcoming / available
+/ completed) and link to the actual released homework. Every other level is a read-only
+outline: lesson number + title + midterm markers, and nothing openable.
 
 Why the source differs per level:
 
@@ -31,8 +31,9 @@ from __future__ import annotations
 
 from .models import Classroom, ClassroomMembership
 
-# Display order of the ladder. Math has all four rungs; English omits Foundation, which
-# still renders as a greyed "not offered" rung so the student literally sees every level.
+# Display order of the ladder — the union of every level any subject offers. Each track
+# filters this through its own subject's offered set (see ``build_roadmap``); it is NOT the
+# ladder any single subject gets.
 _LEVEL_ORDER = [
     Classroom.LEVEL_FOUNDATION,
     Classroom.LEVEL_JUNIOR,
@@ -194,7 +195,11 @@ def build_roadmap(user) -> dict:
     if not studied:
         return {"tracks": []}
 
-    # One query for every published journal we might render (≤ 2 subjects × 4 levels).
+    # One query for every published journal we might render. Deliberately NOT filtered by
+    # level, so the bound stays 2 subjects × 4 levels even though English only teaches
+    # three: a stray row (a hand-inserted ENGLISH/foundation journal, say) is fetched here
+    # but then never looked up, because the ladder below decides which (subject, level)
+    # keys get asked for and it is built from the curriculum, not from this dict.
     from journals.models import Journal
 
     journals = {
@@ -210,10 +215,28 @@ def build_roadmap(user) -> dict:
             continue
         own_c = own_classroom.get(subj_const)
         own_level = own_c.level if own_c else None
-        offered_levels = set(Classroom.LEVELS_BY_SUBJECT.get(subj_const, ()))
+
+        # This subject's ladder = the display order filtered through the subject's OWN
+        # offered levels. English has no Foundation course, so an English track emits no
+        # Foundation rung at all — not a greyed "not offered" one, not an empty one. A rung
+        # the school never teaches is not a level the student is "not yet at"; showing it
+        # invents a step on their path. Driven off ``Classroom.LEVELS_BY_SUBJECT`` (the same
+        # tuple the classroom/assessment level pickers use) so a curriculum change lands in
+        # one place instead of being re-hardcoded here.
+        rungs = set(Classroom.allowed_levels_for_subject(subj_const))
+        # Safety valve for mis-tagged data: if the student's classroom carries a level the
+        # subject does not offer (e.g. an English class left on "foundation" from before the
+        # curriculum settled), keep that one rung. Filtering it away would leave that student
+        # with a roadmap where NO rung is theirs and their real released homework is
+        # unreachable — a silent hole, which is worse than one odd-looking rung. It affects
+        # only the student actually enrolled in such a class; every other English roadmap
+        # still starts at Junior.
+        if own_level:
+            rungs.add(own_level)
+        ladder = [lv for lv in _LEVEL_ORDER if lv in rungs]
 
         levels: list[dict] = []
-        for level in _LEVEL_ORDER:
+        for level in ladder:
             journal = journals.get((subj_const, level))
             is_own = bool(own_level) and level == own_level
 
@@ -223,13 +246,15 @@ def build_roadmap(user) -> dict:
             elif journal is not None:
                 lessons = _template_outline(journal)  # locked: inert, no openable id
             else:
-                lessons = []  # own level with no published journal, or a not-offered rung
+                lessons = []  # a rung whose journal isn't published yet ("coming soon")
 
+            # No "offered" flag: every rung we emit is one the subject genuinely offers, so
+            # the flag had become a constant True and the frontend's greyed "not offered"
+            # branch was dead code. A level the subject doesn't teach is absent, not greyed.
             levels.append(
                 {
                     "level": level,
                     "level_label": _LEVEL_LABELS.get(level, level.title()),
-                    "offered": level in offered_levels,
                     "is_own_level": is_own,
                     "journal_published": journal is not None,
                     "lesson_count": len(lessons),

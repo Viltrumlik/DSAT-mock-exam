@@ -1,11 +1,13 @@
 """GET /api/classes/roadmap/ — the student's per-subject level ladder.
 
 The load-bearing guarantees:
-* every level of a studied subject is visible (own + locked), in ladder order;
+* every level the SUBJECT offers is visible (own + locked), in ladder order;
 * only the student's OWN level is openable — locked levels emit no ``assignment_id``;
 * own-level lessons hydrate to upcoming / available / completed against real delivery;
 * a subject the student doesn't study never appears; a removed membership drops out;
-* English shows Foundation as a greyed "not offered" rung.
+* English has no Foundation course, so an English track carries no Foundation rung at
+  all — Math still carries all four. A mis-tagged own level is the one exception, kept so
+  the student never ends up with a roadmap where no rung is theirs.
 """
 
 from __future__ import annotations
@@ -100,13 +102,12 @@ class RoadmapShapeTests(RoadmapTestBase):
         self.assertEqual(track["own_level"], "middle")
         self.assertEqual(track["own_level_label"], "Middle")
         self.assertEqual(track["own_classroom_id"], self.math_mid.id)
-        # All four rungs, in ladder order.
+        # Math offers all four rungs, in ladder order — Foundation is a real Math course.
         self.assertEqual(
             [l["level"] for l in track["levels"]],
             ["foundation", "junior", "middle", "senior"],
         )
         for l in track["levels"]:
-            self.assertTrue(l["offered"])  # Math offers every level
             self.assertTrue(l["journal_published"])
             self.assertEqual(l["is_own_level"], l["level"] == "middle")
         self.assertEqual(self._level(track, "middle")["lesson_count"], 4)  # 3 hw + 1 midterm
@@ -193,17 +194,21 @@ class RoadmapOwnLevelStateTests(RoadmapTestBase):
 
 
 class RoadmapMultiSubjectTests(RoadmapTestBase):
-    def test_two_tracks_for_two_subjects(self):
+    def _enrol_english(self, level=Classroom.LEVEL_SENIOR) -> Classroom:
         eng = Classroom.objects.create(
-            name="Eng Senior",
+            name=f"Eng {level.title()}",
             subject=Classroom.SUBJECT_ENGLISH,
-            level=Classroom.LEVEL_SENIOR,
+            level=level,
             lesson_days=Classroom.DAYS_EVEN,
             lesson_time="17:00",
             start_date=date(2026, 8, 4),
             created_by=self.admin,
         )
         self._enrol(self.student, eng)
+        return eng
+
+    def test_two_tracks_for_two_subjects(self):
+        eng = self._enrol_english()
         self._journal("ENGLISH", "junior", homeworks=2)
         self._journal("ENGLISH", "middle", homeworks=2)
         self._journal("ENGLISH", "senior", homeworks=2)
@@ -213,12 +218,64 @@ class RoadmapMultiSubjectTests(RoadmapTestBase):
 
         etrack = self._track(data, "english")
         self.assertEqual(etrack["own_level"], "senior")
+        self.assertEqual(etrack["own_classroom_id"], eng.id)
         self.assertTrue(self._level(etrack, "senior")["is_own_level"])
-        # English has no Foundation → greyed "not offered" rung, no journal, no lessons.
-        found = self._level(etrack, "foundation")
-        self.assertFalse(found["offered"])
-        self.assertFalse(found["journal_published"])
-        self.assertEqual(found["lessons"], [])
+
+        # THE English rule: there is no Foundation English course, so the ladder starts at
+        # Junior. Not a greyed rung, not an empty one — the level is simply absent.
+        self.assertEqual(
+            [l["level"] for l in etrack["levels"]], ["junior", "middle", "senior"]
+        )
+        self.assertNotIn(
+            "Foundation", [l["level_label"] for l in etrack["levels"]]
+        )
+        # …while Math, which really does teach Foundation, keeps all four rungs.
+        self.assertEqual(
+            [l["level"] for l in self._track(data, "math")["levels"]],
+            ["foundation", "junior", "middle", "senior"],
+        )
+
+    def test_stray_english_foundation_journal_is_not_shown(self):
+        """A legacy/hand-inserted English Foundation journal must not resurrect the rung.
+
+        ``journals.services.create_journal`` refuses the pair, but a row predating that
+        guard (or inserted straight into the DB) would otherwise re-enter the ladder via
+        the journal lookup. The ladder is decided by the subject's curriculum, never by
+        what happens to exist in the journals table.
+        """
+        self._enrol_english()
+        self._journal("ENGLISH", "senior", homeworks=2)
+        Journal.objects.create(
+            subject="ENGLISH",
+            level="foundation",
+            status=Journal.STATUS_PUBLISHED,
+            created_by=self.admin,
+        )
+
+        etrack = self._track(self._get(), "english")
+        self.assertEqual(
+            [l["level"] for l in etrack["levels"]], ["junior", "middle", "senior"]
+        )
+
+    def test_mistagged_english_foundation_classroom_keeps_its_own_rung(self):
+        """The one exception, and why it exists.
+
+        If a student's English classroom is (wrongly) tagged ``foundation``, dropping the
+        rung would leave them a roadmap where NO level is theirs and their real released
+        homework has no entry point — a silent hole. Their own rung stays; the rest of the
+        English ladder is still Junior→Senior. Operators find and re-tag these rows; this
+        test only pins the fallback so the data bug never becomes an invisible one.
+        """
+        self._enrol_english(level=Classroom.LEVEL_FOUNDATION)
+        self._journal("ENGLISH", "junior", homeworks=2)
+
+        etrack = self._track(self._get(), "english")
+        self.assertEqual(etrack["own_level"], "foundation")
+        self.assertEqual(
+            [l["level"] for l in etrack["levels"]],
+            ["foundation", "junior", "middle", "senior"],
+        )
+        self.assertTrue(self._level(etrack, "foundation")["is_own_level"])
 
 
 class RoadmapEdgeCaseTests(RoadmapTestBase):

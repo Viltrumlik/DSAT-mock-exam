@@ -20,11 +20,14 @@ export type RoadmapLesson = {
   scheduled_for?: string | null;
 };
 
+/**
+ * One rung of a subject's ladder. Only levels the subject actually teaches are ever sent —
+ * English starts at Junior and has no Foundation rung at all — so there is no "not offered"
+ * flag to render: an absent level is absent, never greyed.
+ */
 export type RoadmapLevel = {
   level: string;
   level_label: string;
-  /** False for a rung the subject does not offer (English Foundation). */
-  offered: boolean;
   is_own_level: boolean;
   /** False → no published journal for this level yet ("coming soon"). */
   journal_published: boolean;
