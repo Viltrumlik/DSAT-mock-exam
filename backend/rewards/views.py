@@ -30,6 +30,7 @@ from access.services import is_global_scope_staff, normalized_role
 from classes.views_rankings import _display_name
 
 from . import coins as coins_service
+from . import strikes as strikes_service
 from . import constants
 from . import leaderboard
 from .models import CoinTransaction, PointAward, RewardRule
@@ -67,6 +68,12 @@ class MyRewardsView(APIView):
             "points_to_next_coin": wallet["points_to_next_coin"],
             "convertible_coins": wallet["convertible_coins"],
             "max_convertible_points": wallet["max_convertible_points"],
+            # Strikes and the attendance streak ride along here rather than forcing a second
+            # request. The dashboard needs one number from them; fetching `/api/shop/` for it
+            # meant a whole extra round trip and eleven queries to render the entire shop
+            # catalogue and throw it away. `strikes.state` is the same call the storefront
+            # makes, so the two surfaces cannot disagree.
+            **strikes_service.state(request.user),
             "history": PointAwardSerializer(awards, many=True).data,
         })
 
