@@ -1370,8 +1370,22 @@ export const classesApi = {
      */
     roadmap: async (): Promise<RoadmapResponse> => {
         const r = await api.get('/classes/roadmap/');
-        const data = r.data as { tracks?: unknown[] };
-        return { tracks: (data.tracks ?? []) } as RoadmapResponse;
+        const data = (r.data ?? {}) as Partial<RoadmapResponse>;
+        // Spread the payload rather than rebuilding it field by field.
+        //
+        // This used to return `{ tracks } as RoadmapResponse`, which silently dropped every
+        // other key the server sends — and the `as` cast told TypeScript the result was
+        // complete, so adding `months_to_sat` to both the serializer and the type compiled
+        // clean and then crashed the dashboard at runtime on `months_to_sat_basis.length`.
+        // A hand-written whitelist here is a second copy of the contract that nothing checks;
+        // the defaults below exist only so a field the server has not shipped yet reads as
+        // absent instead of undefined.
+        return {
+            ...data,
+            tracks: data.tracks ?? [],
+            months_to_sat: data.months_to_sat ?? null,
+            months_to_sat_basis: data.months_to_sat_basis ?? [],
+        };
     },
     /** Student lessons calendar: class meetings + mock/midterm + assignment due dates in a date range. */
     mySchedule: async (from: string, to: string): Promise<{ from: string; to: string; events: ScheduleEvent[] }> => {

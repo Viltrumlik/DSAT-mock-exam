@@ -111,9 +111,13 @@ export function LevelCards() {
   const tracks = roadmap.data.tracks;
   if (tracks.length === 0) return null;
 
-  const monthsToSat = roadmap.data.months_to_sat;
-  const partial =
-    monthsToSat !== null && roadmap.data.months_to_sat_basis.length < tracks.length;
+  // Defaulted, not just read. The API layer is supposed to guarantee these, but this card
+  // crashed the whole dashboard once because a mapper dropped them, and a summary line is
+  // never worth taking a student's home page down for. `?? null` also collapses `undefined`
+  // into the one "we don't know" value the render below tests for.
+  const monthsToSat = roadmap.data.months_to_sat ?? null;
+  const basis = roadmap.data.months_to_sat_basis ?? [];
+  const partial = monthsToSat !== null && basis.length < tracks.length;
 
   return (
     <div style={{ marginBottom: 22 }}>
@@ -210,7 +214,7 @@ export function LevelCards() {
             {partial ? (
               <span style={{ color: "var(--dz-mute)", fontWeight: 600 }}>
                 {" "}
-                Based on {roadmap.data.months_to_sat_basis.join(" and ")} only.
+                Based on {basis.join(" and ")} only.
               </span>
             ) : null}
           </span>
