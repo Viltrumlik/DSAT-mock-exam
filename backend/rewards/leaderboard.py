@@ -2,7 +2,7 @@
 
 **Computed live, not snapshotted.** The classroom boards persist `RankingSnapshot` rows so a
 teacher can see rank movement day to day; this one deliberately does not, and the reason is
-combinatorial. Three scopes times four time windows times three subjects times every branch
+combinatorial. Three scopes times two time windows times three subjects times every branch
 is a snapshot table that grows faster than the school does, all to cache an aggregate the
 ledger is already indexed for — `PointAward` carries `(student, season)`, `(season, classroom)`
 and `(student, -awarded_at)`, which is every access path below.
@@ -37,15 +37,23 @@ SCOPE_CHOICES = (SCOPE_GLOBAL, SCOPE_BRANCH, SCOPE_GROUP)
 # ── Time windows ──────────────────────────────────────────────────────────────
 #
 # Windows filter on `awarded_at`, not on the season. A season is an accounting boundary the
-# product deliberately never shows a student (see `coins.wallet_state`), and "this term" is
-# not a question anybody asked — "this week" is.
+# product deliberately never shows a student (see `coins.wallet_state`), so a window here is
+# a plain "how recently" question — exactly what the `(student, -awarded_at)` index answers.
+#
+# Two windows, not four. "This week" and "this term" both shipped and were both withdrawn:
+# a week is short enough that the top of the board is decided by who happened to have a
+# lesson yesterday rather than by who is doing the work, and nobody could say what "term"
+# meant without naming a season the product deliberately keeps hidden. What is left are the
+# two questions students actually ask — "who is winning" and "who is winning *now*".
+#
+# The retired values are not rejected anywhere; they are simply absent from `WINDOW_CHOICES`,
+# so anything still asking for one lands on the all-time board. `from_params` names who is
+# still asking, and why that is not a hypothetical.
 
 WINDOW_ALL = "ALL"
-WINDOW_WEEK = "WEEK"
 WINDOW_MONTH = "MONTH"
-WINDOW_TERM = "TERM"        # 90 days — a teaching term, near enough, without naming a season
-WINDOW_DAYS = {WINDOW_WEEK: 7, WINDOW_MONTH: 30, WINDOW_TERM: 90}
-WINDOW_CHOICES = (WINDOW_ALL, WINDOW_WEEK, WINDOW_MONTH, WINDOW_TERM)
+WINDOW_DAYS = {WINDOW_MONTH: 30}
+WINDOW_CHOICES = (WINDOW_ALL, WINDOW_MONTH)
 
 #: Nobody scrolls a thousand rows, and an unbounded board is an unbounded query.
 DEFAULT_LIMIT = 50
@@ -70,6 +78,15 @@ class BoardQuery:
         and 400ing a student because a stale bookmark says `window=fortnight` serves nobody —
         the worst outcome of a bad value here is that they see the all-time global board and
         press a chip.
+
+        This is also how a *retired* value retires. `window=WEEK` and `window=TERM` were real
+        chips once. Nobody has one bookmarked — the page keeps the chosen window in component
+        state and never writes it to the address bar — but a browser that loaded the board
+        before the chips were withdrawn holds its old choice until the tab is reloaded, and
+        goes on sending `window=WEEK` at the new backend for as long as it stays open. Because
+        the check below is membership in `WINDOW_CHOICES` rather than a rejection list, that
+        request quietly becomes the all-time board instead of an error about a chip this
+        product used to offer. Nothing here has to know the value ever existed.
         """
         def _int(name):
             try:
@@ -199,9 +216,7 @@ def _scope_note(query: BoardQuery) -> str:
     narrowed = bool(query.branch_id or query.subject or query.level) or query.scope != SCOPE_GLOBAL
     base = {
         WINDOW_ALL: "All the XP earned",
-        WINDOW_WEEK: "XP earned in the last 7 days",
         WINDOW_MONTH: "XP earned in the last 30 days",
-        WINDOW_TERM: "XP earned in the last 90 days",
     }[query.window]
 
     if narrowed:

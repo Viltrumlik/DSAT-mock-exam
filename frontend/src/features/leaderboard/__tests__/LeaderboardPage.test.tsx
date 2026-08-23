@@ -53,7 +53,7 @@ const FILTERS: LeaderboardFilters = {
   levels: [{ value: "middle", label: "Middle" }],
   windows: [
     { value: "ALL", label: "All time" },
-    { value: "WEEK", label: "This week" },
+    { value: "MONTH", label: "This month" },
   ],
   my_branch: { id: 1, name: "Chilonzor", region: "Tashkent" },
 };

@@ -190,12 +190,12 @@ class FilterTests(OrgFixture):
         self._earn(self.bob, self.eng_north, 900, "b-old", when=old)
 
         all_time, _ = self._board(self.ann, scope="GLOBAL", window="ALL")
-        this_week, _ = self._board(self.ann, scope="GLOBAL", window="WEEK")
+        this_month, _ = self._board(self.ann, scope="GLOBAL", window="MONTH")
 
         self.assertEqual(all_time[0]["student_id"], self.bob.pk)      # 950 all time
-        self.assertEqual(this_week[0]["student_id"], self.ann.pk)     # 100 this week
+        self.assertEqual(this_month[0]["student_id"], self.ann.pk)    # 100 this month
         self.assertEqual(
-            next(r["xp"] for r in this_week if r["student_id"] == self.bob.pk), 50
+            next(r["xp"] for r in this_month if r["student_id"] == self.bob.pk), 50
         )
 
     def test_an_xp_less_award_never_appears(self):
@@ -256,9 +256,23 @@ class QueryParsingTests(TestCase):
         )
 
     def test_scope_and_window_are_case_insensitive(self):
-        q = leaderboard.BoardQuery.from_params({"scope": "branch", "window": "week"})
+        q = leaderboard.BoardQuery.from_params({"scope": "branch", "window": "month"})
         self.assertEqual(q.scope, leaderboard.SCOPE_BRANCH)
-        self.assertEqual(q.window, leaderboard.WINDOW_WEEK)
+        self.assertEqual(q.window, leaderboard.WINDOW_MONTH)
+
+    def test_a_retired_window_falls_back_instead_of_erroring(self):
+        """"This week" and "this term" were real chips, and a deploy does not reload open tabs.
+
+        Withdrawing a chip removes it from the filter bar the *next* page load is served;
+        a student who already had the board open keeps their old choice in component state
+        and goes on asking for `window=WEEK` until they reload. They must land on the
+        all-time board — the same forgiveness a typo gets, for the same reason — and must
+        never be shown an error for a button this product used to offer them.
+        """
+        for retired in ("WEEK", "TERM", "week", "term"):
+            with self.subTest(window=retired):
+                q = leaderboard.BoardQuery.from_params({"window": retired})
+                self.assertEqual(q.window, leaderboard.WINDOW_ALL)
 
 
 class OwnRankTests(OrgFixture):
@@ -309,6 +323,30 @@ class LeaderboardApiTests(OrgFixture):
         self.assertEqual(len(body["rows"]), 1)
         self.assertEqual(body["my"]["student_id"], self.bob.pk)
         self.assertEqual(body["my"]["rank"], 3)
+
+    def test_a_bookmarked_retired_window_still_serves_a_board(self):
+        """The end-to-end half of the fallback: a 200 with the all-time board, not a 400.
+
+        Parsing is forgiving (see `QueryParsingTests`), but what a stale tab actually sends is
+        an HTTP request, so this pins the status code as well as the value.
+        """
+        self.client.force_authenticate(self.ann)
+
+        response = self.client.get("/api/rewards/leaderboard/?window=WEEK")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["window"], leaderboard.WINDOW_ALL)
+
+    def test_the_filters_endpoint_offers_exactly_the_two_surviving_windows(self):
+        """The chips are server-owned — this list *is* the filter bar the student sees."""
+        self.client.force_authenticate(self.ann)
+
+        body = self.client.get("/api/rewards/leaderboard/filters/").json()
+
+        self.assertEqual(
+            [w["value"] for w in body["windows"]],
+            [leaderboard.WINDOW_ALL, leaderboard.WINDOW_MONTH],
+        )
 
     def test_the_filters_endpoint_names_the_viewers_own_branch(self):
         self.client.force_authenticate(self.cal)
