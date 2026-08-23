@@ -386,16 +386,33 @@ class RoadmapProgressAndSatEstimateTests(RoadmapTestBase):
             )
         self.assertEqual(self._track(self._get(), "math")["months_remaining"], 7.0)
 
-    def test_unauthored_durations_read_as_unknown_not_as_zero(self):
-        """`duration_months` defaults to 0. A student is not finishing today.
+    def test_a_zeroed_duration_reads_as_unknown_not_as_zero(self):
+        """A remaining ladder worth 0 months means nobody knows, not "you finish today".
 
-        This is the difference between a card that hides itself and a card that tells a
-        student in Junior they can sit the SAT this afternoon.
+        A journal created the normal way always carries a real duration — `create_journal`
+        takes it from `journals.structure.COURSE_STRUCTURE`, the school's actual curriculum
+        (Foundation 1 month, Junior 3, Middle 2, Senior 2). So this guard only fires when
+        somebody has zeroed the field by hand, which /django-admin/ allows. It is kept
+        because the alternative is a card telling a student in Middle they can sit the SAT
+        this afternoon.
         """
-        data = self._get()  # no durations authored anywhere
+        self._set_durations(foundation=0, junior=0, middle=0, senior=0)
+
+        data = self._get()
         self.assertIsNone(self._track(data, "math")["months_remaining"])
         self.assertIsNone(data["months_to_sat"])
         self.assertEqual(data["months_to_sat_basis"], [])
+
+    def test_a_normally_created_journal_already_carries_its_duration(self):
+        """The estimate works out of the box — nobody has to author anything first.
+
+        Pins the premise the guard above depends on: Middle is 2 months and Senior is 2, so
+        a student at the start of Middle has 4 months of course left with no admin input at
+        all.
+        """
+        data = self._get()  # nothing authored by this test
+        self.assertEqual(self._track(data, "math")["months_remaining"], 4.0)
+        self.assertEqual(data["months_to_sat"], 4.0)
 
     def test_the_sat_estimate_is_the_slower_subject_never_the_sum(self):
         """One exam, both sections — a student is ready when the LATER course finishes."""
@@ -435,7 +452,11 @@ class RoadmapProgressAndSatEstimateTests(RoadmapTestBase):
         )
         self._enrol(self.student, eng)
         for level in ("junior", "middle", "senior"):
-            self._journal("ENGLISH", level)  # published, but no duration authored
+            j = self._journal("ENGLISH", level)
+            # Zeroed by hand — the only way a real journal ends up with no duration, since
+            # create_journal takes one from the curriculum map.
+            j.duration_months = 0
+            j.save(update_fields=["duration_months"])
         self._set_durations(middle=4, senior=5)
 
         data = self._get()

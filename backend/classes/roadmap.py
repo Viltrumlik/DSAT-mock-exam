@@ -223,8 +223,8 @@ def _track_progress(levels: list[dict], own_level: str | None) -> dict:
 
     Returns ``months_remaining=None`` rather than a wrong number whenever the estimate would
     be dishonest: no own level, no published journal for it, or a remaining ladder whose
-    durations are all still at the model default of 0. A missing estimate is a card the
-    dashboard hides; a confident 0 is a promise the school did not make.
+    durations have all been zeroed by hand. A missing estimate is a card the dashboard hides;
+    a confident 0 is a promise the school did not make.
     """
     if not own_level:
         return {
@@ -385,10 +385,13 @@ def build_roadmap(user) -> dict:
                     "is_own_level": is_own,
                     "journal_published": journal is not None,
                     "lesson_count": len(lessons),
-                    # How long the school says this level takes. Authored per journal on the
-                    # /ops/journals page; 0 means nobody has filled it in yet, which is why
-                    # the estimate below treats an all-zero remainder as unknown rather than
-                    # as "no time left".
+                    # How long the school says this level takes. Never blank in practice:
+                    # `journals.services.create_journal` takes it from the curriculum map in
+                    # `journals.structure` (Foundation 1 month, Junior 3, Middle 2, Senior 2),
+                    # so the SAT estimate works with no admin input at all. A zero only
+                    # appears if somebody clears the field by hand, which is why the estimate
+                    # below treats an all-zero remainder as unknown rather than as "no time
+                    # left".
                     "duration_months": int(getattr(journal, "duration_months", 0) or 0),
                     "lessons": lessons,
                 }

@@ -84,7 +84,12 @@ export const studentNav: NavSection[] = [
       { href: "/midterm", label: "Midterm", icon: FileText },
       { href: "/leaderboard", label: "Leaderboard", icon: Trophy, isNew: true },
       { href: "/shop", label: "Shop", icon: ShoppingBag, isNew: true },
-      { href: "/support", label: "Support", icon: LifeBuoy, isNew: true },
+      // Services, not Support. Support booking is one of three things the school does for a
+      // student outside lessons, so it sits inside Services alongside SAT registration and
+      // (soon) college admission. The `/support` route is untouched and still reachable —
+      // the support-invite notification links straight to it, and a URL sitting in somebody
+      // else's inbox is not one to move.
+      { href: "/services", label: "Services", icon: LifeBuoy, isNew: true },
       // Surveys and Points are reached from the header, not the sidebar: a survey only
       // exists now and then, and points are a running total worth seeing on every page
       // rather than a destination to remember.
