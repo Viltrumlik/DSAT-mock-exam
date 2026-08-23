@@ -168,8 +168,16 @@ class SupportInviteTests(TestCase):
     # ── being told ──────────────────────────────────────────────────────────
 
     def test_the_guest_is_notified(self):
-        """They did not ask for this seat, so the bell is the whole point of the feature."""
-        support_service.invite_member(self.booking, self.guest, actor=self.host)
+        """They did not ask for this seat, so the bell is the whole point of the feature.
+
+        `captureOnCommitCallbacks` is load-bearing, not boilerplate. The announcement is
+        deliberately deferred to `transaction.on_commit` — telling somebody they have a seat
+        that then rolls back is something they cannot un-read — and a `TestCase` wraps every
+        test in a transaction it never commits, so without this the callback silently never
+        runs and the assertion would be testing nothing.
+        """
+        with self.captureOnCommitCallbacks(execute=True):
+            support_service.invite_member(self.booking, self.guest, actor=self.host)
 
         note = Notification.objects.filter(recipient=self.guest).first()
         self.assertIsNotNone(note)
@@ -177,7 +185,8 @@ class SupportInviteTests(TestCase):
         self.assertEqual(note.link_url, "/support")
 
     def test_the_inviter_is_not_notified_about_their_own_click(self):
-        support_service.invite_member(self.booking, self.guest, actor=self.host)
+        with self.captureOnCommitCallbacks(execute=True):
+            support_service.invite_member(self.booking, self.guest, actor=self.host)
         self.assertFalse(Notification.objects.filter(recipient=self.host).exists())
 
     # ── the picker ──────────────────────────────────────────────────────────
