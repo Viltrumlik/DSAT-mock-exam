@@ -16,19 +16,25 @@
  * dialog should not be quietly repurposed into one.
  *
  * The wording is the school's own, taken from the registrar's Telegram message so a student
- * reads the same list in both places. Two things are deliberately NOT copied verbatim:
+ * reads the same list in both places. Three things are deliberately NOT copied verbatim:
  *
  *  - the payment card is laid out as a labelled row with a copy button rather than as a wall
  *    of digits, because a student typing 16 digits from memory into a banking app is how the
  *    money reaches the wrong account;
  *  - the password line carries a warning. The school asks for it; this at least makes sure the
- *    student is told to change it afterwards, which is the one mitigation available from here.
+ *    student is told to change it afterwards, which is the one mitigation available from here;
+ *  - the test dates are NOT a hard-coded list. They come from the same admin-managed exam
+ *    dates the profile dropdown and the dashboard countdown read, so a sitting the school
+ *    retires — or one that has simply passed — leaves this checklist on its own. A student
+ *    being told to register for a date that is gone is the failure this avoids, and it is the
+ *    one that would otherwise happen every single year. See `TestDates`.
  */
 
 import { useState } from "react";
 import { Copy, ExternalLink, MessageCircle } from "lucide-react";
-import { Alert, Button, Modal } from "@/components/ui";
+import { Alert, Button, Modal, Skeleton } from "@/components/ui";
 import { YouTubeEmbed } from "./YouTubeEmbed";
+import { formatExamDate, useExamDates } from "./servicesHooks";
 
 /**
  * Where registration actually happens — the school's registrar account.
@@ -48,7 +54,6 @@ const CARD_NUMBER = "5614681600990570";
 const CARD_HOLDER = "Abdulahad Ne'matjonov";
 
 const TEST_CENTERS = ["Presidential School in Fergana", "Ecocity"];
-const TEST_DATES = ["March 14", "May 2", "June 6"];
 
 function Step({
   n,
@@ -110,6 +115,64 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * The dates the school is currently offering, from the admin-managed list.
+ *
+ * Four branches, and the difference between the last two is the whole reason this is a
+ * component rather than three lines inline. "We could not load the dates" and "the school is
+ * offering no dates" are different instructions to a student standing in front of a
+ * registration checklist: one means try again, the other means go and ask. Collapsing them —
+ * which every other caller of this endpoint does, via `.catch(() => [])` — would tell a
+ * student the school has stopped running the SAT because their wifi dropped.
+ *
+ * Both non-happy paths still point at the registrar, so the checklist is never a dead end.
+ */
+function TestDates() {
+  const dates = useExamDates();
+
+  if (dates.isPending) {
+    return <Skeleton className="h-8 w-48 rounded-lg" />;
+  }
+
+  if (dates.isError) {
+    return (
+      <p className="text-sm font-medium text-muted-foreground">
+        Couldn&apos;t load the dates.{" "}
+        <button
+          type="button"
+          className="font-bold text-primary underline underline-offset-2"
+          onClick={() => void dates.refetch()}
+        >
+          Try again
+        </button>{" "}
+        — or just ask the registrar which are open.
+      </p>
+    );
+  }
+
+  if (dates.data.length === 0) {
+    return (
+      <p className="text-sm font-medium text-muted-foreground">
+        No dates are open just now. Ask the registrar when the next one opens.
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {dates.data.map((option) => (
+        <span
+          key={option.id}
+          className="rounded-lg bg-surface-2 px-2.5 py-1 text-sm font-bold text-foreground"
+        >
+          {formatExamDate(option)}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+
 export function RegisterForSatDialog({
   open,
   onClose,
@@ -167,16 +230,7 @@ export function RegisterForSatDialog({
           </Step>
 
           <Step n={4} title="Test date">
-            <div className="flex flex-wrap gap-1.5">
-              {TEST_DATES.map((d) => (
-                <span
-                  key={d}
-                  className="rounded-lg bg-surface-2 px-2.5 py-1 text-sm font-bold text-foreground"
-                >
-                  {d}
-                </span>
-              ))}
-            </div>
+            <TestDates />
           </Step>
 
           <Step n={5} title="A photo showing your face clearly">
