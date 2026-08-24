@@ -6,13 +6,11 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
   Field,
   IconButton,
   Input,
   Modal,
   Select,
-  Skeleton,
   Textarea,
 } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
@@ -182,31 +180,51 @@ export default function OpsShopPage() {
         }
       />
 
-      <Card className="space-y-3">
-        <h2 className="text-base font-extrabold">
-          Waiting to be handed over
+      {/* Flat bordered panel with an uppercase header strip — the idiom Users, Classrooms and
+          Exam dates use. These were shadowed `Card`s with bold headings inside, which is what
+          made this page read as belonging to a different console. */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Waiting to be handed over
+          </p>
           {orders.data && orders.data.length > 0 ? (
-            <span className="ml-2 rounded-md bg-primary-soft px-2 py-0.5 text-xs font-extrabold text-primary">
+            <span className="ml-auto text-[10px] font-bold text-primary">
               {orders.data.length}
             </span>
           ) : null}
-        </h2>
+        </div>
         {/* Four branches: loading, error, empty, data. An error rendered as an empty queue
             tells an administrator there is nothing to do, which is the worst possible lie
             for this particular screen. */}
         {orders.isPending ? (
-          <Skeleton className="h-20 rounded-xl" />
+          <div className="divide-y divide-border">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="h-4 w-48 rounded bg-muted" />
+                  <div className="h-3 w-28 rounded bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : orders.isError ? (
-          <Alert tone="danger">
-            The queue didn&apos;t load.{" "}
-            <button className="underline" onClick={() => void orders.refetch()}>
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm font-semibold text-foreground">The queue didn&apos;t load.</p>
+            <button
+              type="button"
+              onClick={() => void orders.refetch()}
+              className="mt-1 text-sm font-bold text-primary underline"
+            >
               Try again
             </button>
-          </Alert>
+          </div>
         ) : orders.data.length === 0 ? (
-          <p className="text-sm font-semibold text-muted-foreground">
-            Nothing waiting — every order has been collected.
-          </p>
+          <div className="px-5 py-10 text-center">
+            <Check className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-semibold text-foreground">Nothing waiting</p>
+            <p className="mt-1 text-sm text-muted-foreground">Every order has been collected.</p>
+          </div>
         ) : (
           // Two equally-weighted buttons on every row made a wall of blue down the card and
           // gave the destructive option the same pull as the routine one. Handing the prize
@@ -215,7 +233,7 @@ export default function OpsShopPage() {
             {orders.data.map((order) => (
               <li
                 key={order.id}
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 py-3"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-3.5"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold">
@@ -249,23 +267,52 @@ export default function OpsShopPage() {
             ))}
           </ul>
         )}
-      </Card>
+      </div>
 
-      <Card className="space-y-3">
-        <h2 className="text-base font-extrabold">Stock</h2>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Stock
+          </p>
+          {items.data && items.data.length > 0 ? (
+            <span className="ml-auto text-[10px] font-bold text-muted-foreground">
+              {items.data.length}
+            </span>
+          ) : null}
+        </div>
         {items.isPending ? (
-          <Skeleton className="h-40 rounded-xl" />
+          <div className="divide-y divide-border">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
+                <div className="h-12 w-12 shrink-0 rounded-lg bg-muted" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="h-4 w-40 rounded bg-muted" />
+                  <div className="h-3 w-24 rounded bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : items.isError ? (
-          <Alert tone="danger">
-            The item list didn&apos;t load.{" "}
-            <button className="underline" onClick={() => void items.refetch()}>
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm font-semibold text-foreground">
+              The item list didn&apos;t load.
+            </p>
+            <button
+              type="button"
+              onClick={() => void items.refetch()}
+              className="mt-1 text-sm font-bold text-primary underline"
+            >
               Try again
             </button>
-          </Alert>
+          </div>
         ) : items.data.length === 0 ? (
-          <p className="text-sm font-semibold text-muted-foreground">
-            Nothing stocked yet. Add an item and it appears in the students&apos; shop.
-          </p>
+          <div className="px-5 py-12 text-center">
+            <Package className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-semibold text-foreground">Nothing stocked yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add an item and it appears in the students&apos; shop.
+            </p>
+          </div>
         ) : (
           // A grid, not a row of flex children: fixed columns keep price, stock and the
           // controls in the same place on every line. As flex with a `flex-1` name, the
@@ -275,7 +322,7 @@ export default function OpsShopPage() {
             {items.data.map((item) => (
               <li
                 key={item.id}
-                className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 py-3 sm:grid-cols-[3rem_minmax(0,1fr)_7rem_6rem_auto]"
+                className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-3.5 sm:grid-cols-[3rem_minmax(0,1fr)_7rem_6rem_auto]"
               >
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-2 text-muted-foreground">
                   {item.image_url ? (
@@ -346,7 +393,7 @@ export default function OpsShopPage() {
             ))}
           </ul>
         )}
-      </Card>
+      </div>
 
       {editing !== undefined ? (
         <ItemForm item={editing} onClose={() => setEditing(undefined)} />

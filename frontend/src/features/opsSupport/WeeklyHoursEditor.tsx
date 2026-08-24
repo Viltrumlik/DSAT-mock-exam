@@ -8,10 +8,10 @@
  * 10–4 on Wednesdays" had to be re-entered every time the window slid forward, which meant it
  * never was, and the desk ran on an 08:00–18:00 default nobody had agreed to.
  *
- * The grid is still below this, and it is still useful — it is where you withdraw one specific
- * Thursday afternoon. But it is now the EXCEPTION layer over this rule, not the only way to
- * express the rule. The two compose in one direction: this can close an hour the grid would
- * open, never the reverse.
+ * The four-day grid that used to sit below this is gone. It answered the same question in a
+ * second, contradictory way, and two controls for one fact is how an admin ends up setting
+ * hours in one place and wondering why the other disagrees. Withdrawing a single hour is the
+ * support teacher's own job from the teacher portal, where they can see who is booked into it.
  *
  * **The whole week saves at once**, and the Save button is the only thing that writes.
  * Per-row auto-save was the obvious alternative and is wrong here: switching Tuesday off and
@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarRange, Info, TriangleAlert } from "lucide-react";
+import { Info, TriangleAlert } from "lucide-react";
 
 import { Alert, Button, Select, Skeleton, Switch } from "@/components/ui";
 import type { SupportWorkingDay } from "./opsSupportApi";
@@ -121,8 +121,8 @@ export function WeeklyHoursEditor({
           clashes.length === 0
             ? "Working hours saved. They apply from now on."
             : `Working hours saved. ${clashes.length} existing booking${clashes.length === 1 ? "" : "s"} ` +
-              `now sit outside these hours — they are still going ahead, so cancel them on the ` +
-              `grid below if they should not.`,
+              `now sit outside these hours. They are still going ahead — ${teacherName} can ` +
+              `cancel them from the teacher portal if they should not.`,
         );
       },
       onError: (e) => {
@@ -157,20 +157,18 @@ export function WeeklyHoursEditor({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="flex items-center gap-2 text-base font-extrabold">
-          <CalendarRange className="h-4 w-4 text-primary" aria-hidden /> Weekly schedule
-        </h2>
+      {/* No heading of its own: the panel this sits inside already carries one, and two
+          titles stacked on the same box is what made the old version look cluttered. */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Set once — {teacherName} is bookable at these hours every week, until you change them.
+        </p>
         {(draft ?? []).some((d) => d.is_working) ? (
           <Button size="sm" variant="secondary" onClick={applyToAll} disabled={save.isPending}>
-            Same hours every working day
+            Same hours every day
           </Button>
         ) : null}
       </div>
-
-      <p className="text-sm font-medium text-muted-foreground">
-        Set once — {teacherName} is bookable at these hours every week, until you change them.
-      </p>
 
       {/* "Nobody has set this up" and "somebody chose 08:00–18:00" look identical on screen
           and mean very different things. Say which one this is. */}
