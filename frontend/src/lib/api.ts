@@ -1011,7 +1011,10 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/`);
         return r.data;
     },
-    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; level?: string; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; teacher_id?: number; max_students?: number; is_active?: boolean }) => {
+    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; level?: string; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; teacher_id?: number; max_students?: number; is_active?: boolean;
+        /** Where the class meets. Writable on the serializer; the REGION is derived from
+         *  it server-side, so only the branch is ever sent. */
+        branch?: number }) => {
         const r = await api.post('/classes/', data);
         return r.data;
     },

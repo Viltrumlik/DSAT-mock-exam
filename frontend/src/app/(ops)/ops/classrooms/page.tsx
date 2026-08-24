@@ -5,6 +5,7 @@ import { classesApi, examsAdminApi, type ClassroomMember } from "@/lib/api";
 import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, ChevronRight, LifeBuoy, Calculator, Languages } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
+import { useBranches, useRegions } from "@/features/org/orgHooks";
 import {
   Alert,
   Avatar,
@@ -82,8 +83,12 @@ type CreateForm = {
   lesson_time: string;
   room_number: string;
   teacherId: string; // "" = assign a teacher later
+  /** Only a filter for the branch picker — a classroom stores its BRANCH, and the region is
+   *  reached through it. Kept in the form so choosing a region narrows the second select. */
+  regionId: string;
+  branchId: string;
 };
-const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "" };
+const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "", regionId: "", branchId: "" };
 
 type SubjectKey = "ENGLISH" | "MATH";
 type Group = { subject: string; level: string; count: number };
@@ -151,6 +156,11 @@ export default function OpsClassroomGovernancePage() {
   const [crumb, setCrumb] = useState<Crumb>({});
   const [groups, setGroups] = useState<Group[]>([]);
   const [supportOpts, setSupportOpts] = useState<TeacherOpt[]>([]);
+  // Where the class meets, offered at creation time. 23 of this school's 34 classrooms were
+  // created with no branch and therefore sit on no branch leaderboard — asking here is what
+  // stops that list growing, and it is cheaper than finding them again later on /ops/branches.
+  const regions = useRegions();
+  const branches = useBranches();
   const [supportModal, setSupportModal] = useState<{ row: Row } | null>(null);
   // Derived from the API function rather than restated by hand. A hand-written copy of a
   // response shape silently drops every field the server adds later — which is how the
@@ -309,9 +319,27 @@ export default function OpsClassroomGovernancePage() {
     } finally { setBusy(false); }
   }
 
+  /** Branches inside the region currently chosen in the create form. */
+  const branchOptions = useMemo(
+    () =>
+      (branches.data ?? []).filter(
+        (b) => String(b.region) === createForm.regionId && b.is_active,
+      ),
+    [branches.data, createForm.regionId],
+  );
+  /** Does the school have anywhere to put a classroom at all? */
+  const hasAnyBranch = (branches.data ?? []).some((b) => b.is_active);
+
   async function submitCreate() {
     if (!createForm.name.trim()) { setError("Give the classroom a name."); return; }
     if (!createForm.level) { setError("Choose a level for the classroom."); return; }
+    // Required only when the school actually has a branch. Blocking creation on a school
+    // that has not set up regions yet would be a dead end; requiring it once there IS a
+    // choice is what stops the \"no branch\" list growing again — it stood at 23 of 34.
+    if (hasAnyBranch && !createForm.branchId) {
+      setError("Choose the region and branch this class meets at.");
+      return;
+    }
     setBusy(true); setError(null);
     try {
       // The teacher is assigned server-side in the same request (teacher_id): the backend
@@ -324,6 +352,9 @@ export default function OpsClassroomGovernancePage() {
         lesson_time: createForm.lesson_time.trim() || undefined,
         room_number: createForm.room_number.trim() || undefined,
         teacher_id: createForm.teacherId ? Number(createForm.teacherId) : undefined,
+        // `branch` only — the region is derived from it server-side, and sending a region
+        // the branch does not belong to would be two sources of truth for one fact.
+        branch: createForm.branchId ? Number(createForm.branchId) : undefined,
       });
       const assigned = createForm.teacherId ? " Teacher assigned and added to the classroom." : "";
       setNotice(`Classroom “${createForm.name.trim()}” created.${assigned}`);
@@ -634,7 +665,7 @@ export default function OpsClassroomGovernancePage() {
           footer={
             <>
               <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
-              <Button loading={busy} disabled={!createForm.name.trim() || !createForm.level} onClick={submitCreate}>Create classroom</Button>
+              <Button loading={busy} disabled={!createForm.name.trim() || !createForm.level || (hasAnyBranch && !createForm.branchId)} onClick={submitCreate}>Create classroom</Button>
             </>
           }
         >
@@ -678,6 +709,60 @@ export default function OpsClassroomGovernancePage() {
                 <Input id="create-room" value={createForm.room_number} onChange={(e) => setCreateForm({ ...createForm, room_number: e.target.value })} placeholder="Optional" />
               </Field>
             </div>
+            {/* Where it meets. Two selects, but only ONE fact is stored: the branch. The
+                region select exists to narrow the branch list — a school with four regions
+                and a dozen branches makes a single flat picker a scrolling exercise.
+
+                Gated on `hasAnyBranch`, NOT on `branchOptions` — `branchOptions` is filtered
+                BY the chosen region, so gating on it meant the region select could never
+                appear to be chosen from. Shown only when the school has a branch at all:
+                rendering an empty pair of dropdowns on a school that has not set up regions
+                yet would make creating a classroom look blocked on something it is not. */}
+            {hasAnyBranch ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Region" htmlFor="create-region" required>
+                  <Select
+                    id="create-region"
+                    value={createForm.regionId}
+                    onChange={(e) =>
+                      // Clear the branch with the region: keeping it would leave a branch
+                      // selected that is no longer in the list the admin can see.
+                      setCreateForm({ ...createForm, regionId: e.target.value, branchId: "" })
+                    }
+                  >
+                    <option value="">— Choose region —</option>
+                    {(regions.data ?? []).map((r) => (
+                      <option key={r.id} value={String(r.id)}>{r.name}</option>
+                    ))}
+                  </Select>
+                </Field>
+                <Field
+                  label="Branch"
+                  htmlFor="create-branch"
+                  required
+                  hint={
+                    createForm.regionId && branchOptions.length === 0
+                      ? "This region has no branches yet — add one on the Branches page."
+                      : undefined
+                  }
+                >
+                  <Select
+                    id="create-branch"
+                    disabled={!createForm.regionId}
+                    value={createForm.branchId}
+                    onChange={(e) => setCreateForm({ ...createForm, branchId: e.target.value })}
+                  >
+                    <option value="">
+                      {createForm.regionId ? "— Choose branch —" : "— Pick a region first —"}
+                    </option>
+                    {branchOptions.map((b) => (
+                      <option key={b.id} value={String(b.id)}>{b.name}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+            ) : null}
+
             <Field label="Teacher" htmlFor="create-teacher">
               <Select id="create-teacher" value={createForm.teacherId} onChange={(e) => setCreateForm({ ...createForm, teacherId: e.target.value })}>
                 <option value="">— Assign a teacher later —</option>
