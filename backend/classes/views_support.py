@@ -702,3 +702,79 @@ class SupportHourView(APIView):
             **_slot_json(slot),
             "bookings_cancelled": cancelled,
         })
+
+
+class SupportWorkingHoursView(APIView):
+    """The standing weekly schedule: which weekdays a support teacher works, and when.
+
+    ``GET`` always answers with all seven days, whether or not anybody has configured them —
+    an unconfigured teacher reads back as the platform default (open every day 08:00–18:00),
+    which is what their calendar genuinely does. ``configured`` distinguishes the two so the
+    UI can label a default as a default instead of as somebody's decision.
+
+    ``PUT`` replaces the whole week in one write. Not PATCH-per-day: "Tuesday is off" and "no
+    row for Tuesday" have to keep meaning the same thing, and a per-day endpoint is how they
+    drift apart. See ``support.write_weekly_schedule``.
+
+    Same ownership rule as every other endpoint in this file — a support teacher may edit
+    their own, an admin may name someone else with ``support_teacher``. This is the endpoint
+    the school actually asked for: hours set once, from the admin console, that keep applying.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def _guard(self, request):
+        return _is_support_teacher(request.user) or _is_admin(request.user)
+
+    def get(self, request):
+        if not self._guard(request):
+            return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
+        owner, denied = _target_teacher_for_read(request)
+        if denied:
+            return denied
+        days, configured = support_service.read_weekly_schedule(owner)
+        return Response({
+            "support_teacher": {"id": owner.pk, "name": _display_name(owner)},
+            "configured": configured,
+            "open_hour": support_service.CALENDAR_OPEN_HOUR,
+            "close_hour": support_service.CALENDAR_CLOSE_HOUR,
+            "days": days,
+        })
+
+    def put(self, request):
+        if not self._guard(request):
+            return Response({"detail": "Support teachers only."}, status=http.HTTP_403_FORBIDDEN)
+        owner, denied = _target_teacher(request)
+        if denied:
+            return denied
+
+        days = request.data.get("days")
+        if not isinstance(days, list):
+            return Response({"detail": "days must be a list of seven weekdays."}, status=400)
+        try:
+            saved = support_service.write_weekly_schedule(owner, days)
+        except ValidationError as exc:
+            return Response({"detail": "; ".join(exc.messages)}, status=400)
+
+        # Bookings already made outside the new schedule are NOT cancelled here, and that is
+        # deliberate. Narrowing a week is a routine edit; silently cancelling appointments as
+        # a side effect of one would be a much bigger action than the admin asked for. The
+        # affected hours are reported instead, so the console can show them and let a human
+        # decide — withdrawing an hour explicitly is still the way to call a session off, and
+        # that path tells the student why.
+        clashes = [
+            {
+                "booking_id": b.id,
+                "student": _display_name(b.student),
+                "starts_at": b.availability.starts_at,
+            }
+            for b in support_service.bookings_outside_schedule(owner)
+        ]
+        return Response({
+            "support_teacher": {"id": owner.pk, "name": _display_name(owner)},
+            "configured": True,
+            "open_hour": support_service.CALENDAR_OPEN_HOUR,
+            "close_hour": support_service.CALENDAR_CLOSE_HOUR,
+            "days": saved,
+            "bookings_outside_schedule": clashes,
+        })

@@ -13,189 +13,12 @@
  * and must not render as one — see the error branch.
  */
 
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useState } from "react";
 import { useStoryRail } from "@/features/stories/storiesHooks";
-import type { Story } from "@/features/stories/storiesApi";
-
-function StoryViewer({
-  stories,
-  index,
-  onClose,
-  onIndex,
-}: {
-  stories: Story[];
-  index: number;
-  onClose: () => void;
-  onIndex: (i: number) => void;
-}) {
-  const story = stories[index];
-
-  // Escape closes, arrows move. A full-screen overlay that traps a keyboard user is worse
-  // than no overlay, and this one covers the whole page.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      if (e.key === "ArrowRight" && index < stories.length - 1) onIndex(index + 1);
-      if (e.key === "ArrowLeft" && index > 0) onIndex(index - 1);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [index, stories.length, onClose, onIndex]);
-
-  if (!story) return null;
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={story.title || "Story"}
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 60,
-        background: "rgba(8,10,24,.92)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
-      {/* Progress pips — which of the set you are on. The only "how many left" signal there
-          is, since nothing here tracks what a student has already seen. */}
-      <div
-        style={{
-          position: "absolute",
-          top: 16,
-          left: 16,
-          right: 16,
-          display: "flex",
-          gap: 4,
-        }}
-      >
-        {stories.map((s, i) => (
-          <span
-            key={s.id}
-            style={{
-              flex: 1,
-              height: 3,
-              borderRadius: 999,
-              background: i <= index ? "#fff" : "rgba(255,255,255,.3)",
-            }}
-          />
-        ))}
-      </div>
-
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close"
-        style={{
-          position: "absolute",
-          top: 30,
-          right: 16,
-          background: "transparent",
-          border: 0,
-          color: "#fff",
-          cursor: "pointer",
-          padding: 8,
-        }}
-      >
-        <X size={22} />
-      </button>
-
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 460, width: "100%", textAlign: "center" }}
-      >
-        {story.image_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={story.image_url}
-            alt={story.title || ""}
-            style={{
-              width: "100%",
-              maxHeight: "70vh",
-              objectFit: "contain",
-              borderRadius: 18,
-              background: "rgba(255,255,255,.06)",
-            }}
-          />
-        ) : null}
-        {story.title ? (
-          <p style={{ color: "#fff", fontWeight: 800, fontSize: 18, marginTop: 16 }}>
-            {story.title}
-          </p>
-        ) : null}
-        {story.caption ? (
-          <p style={{ color: "rgba(255,255,255,.82)", fontSize: 14, marginTop: 6 }}>
-            {story.caption}
-          </p>
-        ) : null}
-        {story.link_url ? (
-          <a
-            href={story.link_url}
-            style={{
-              display: "inline-block",
-              marginTop: 16,
-              padding: "10px 18px",
-              borderRadius: 999,
-              background: "#fff",
-              color: "#111",
-              fontWeight: 800,
-              fontSize: 14,
-              textDecoration: "none",
-            }}
-          >
-            Open
-          </a>
-        ) : null}
-
-        {/* Prev/next as real buttons rather than tap-zones: a tap-zone that is invisible is
-            undiscoverable, and this rail is not something students use every day. */}
-        <div style={{ display: "flex", justifyContent: "center", gap: 10, marginTop: 18 }}>
-          <button
-            type="button"
-            onClick={() => onIndex(index - 1)}
-            disabled={index === 0}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,.35)",
-              background: "transparent",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 13,
-              opacity: index === 0 ? 0.4 : 1,
-              cursor: index === 0 ? "default" : "pointer",
-            }}
-          >
-            Back
-          </button>
-          <button
-            type="button"
-            onClick={() => onIndex(index + 1)}
-            disabled={index >= stories.length - 1}
-            style={{
-              padding: "8px 16px",
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,.35)",
-              background: "transparent",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 13,
-              opacity: index >= stories.length - 1 ? 0.4 : 1,
-              cursor: index >= stories.length - 1 ? "default" : "pointer",
-            }}
-          >
-            Next
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// The viewer is FULL-SCREEN and lives in features/stories. It was an inline 460px
+// lightbox in this file before, which on a phone showed the picture at about a third of
+// the screen with grey around it — see the header comment there.
+import { StoryViewer } from "@/features/stories/StoryViewer";
 
 export function DashboardStories() {
   const stories = useStoryRail();
@@ -325,7 +148,10 @@ export function DashboardStories() {
           stories={stories.data}
           index={open}
           onClose={() => setOpen(null)}
-          onIndex={(i) => setOpen(Math.max(0, Math.min(stories.data.length - 1, i)))}
+          // No clamping here any more: the viewer owns its own bounds — running off the end
+          // closes it, the way a story set ends everywhere else — and a clamp on this side
+          // would silently pin it to the last slide instead.
+          onIndex={setOpen}
         />
       ) : null}
     </>

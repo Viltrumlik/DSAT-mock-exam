@@ -900,7 +900,10 @@ export interface SupportSlot {
 export interface SupportHour {
     starts_at: string;
     ends_at: string;
-    state: "open" | "mine" | "full" | "closed" | "past";
+    /** "off" = outside the teacher's standing weekly schedule. Distinct from "closed",
+     *  which is an hour they withdrew: one reads as "he cancelled", the other as
+     *  "he doesn't work then". */
+    state: "open" | "mine" | "full" | "closed" | "past" | "off";
     capacity: number;
     seats_left: number;
     note: string;
@@ -969,7 +972,7 @@ export interface SupportAllowance {
 export interface SupportTeacherHour {
     starts_at: string;
     ends_at: string;
-    state: "open" | "booked" | "closed" | "past";
+    state: "open" | "booked" | "closed" | "past" | "off";
     capacity: number;
     seats_left: number;
     note: string;

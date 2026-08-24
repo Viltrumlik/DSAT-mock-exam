@@ -27,6 +27,29 @@ export interface SupportHour {
   bookings?: { id: number; student: string; topic: string; status: string }[];
 }
 
+/** One weekday of a support teacher's standing schedule. `end_hour` is EXCLUSIVE. */
+export interface SupportWorkingDay {
+  /** 0 = Monday … 6 = Sunday, matching Python's `date.weekday()`. */
+  weekday: number;
+  label: string;
+  is_working: boolean;
+  start_hour: number;
+  end_hour: number;
+}
+
+export interface SupportWorkingHours {
+  support_teacher: { id: number; name: string };
+  /** False when nobody has set this teacher up — the days are then platform defaults, and
+   *  saying so is the difference between "open 08–18" and "somebody chose 08–18". */
+  configured: boolean;
+  open_hour: number;
+  close_hour: number;
+  days: SupportWorkingDay[];
+  /** Only on a save: appointments that now sit outside the schedule. Never auto-cancelled —
+   *  narrowing a week must not silently call off sessions students are expecting. */
+  bookings_outside_schedule?: { booking_id: number; student: string; starts_at: string }[];
+}
+
 export interface SupportWeek {
   support_teacher: { id: number; name: string };
   open_hour: number;
@@ -53,6 +76,32 @@ export const opsSupportApi = {
   async week(supportTeacherId: number): Promise<SupportWeek> {
     const { data } = await api.get<SupportWeek>("/classes/support/my-calendar/", {
       params: { support_teacher: supportTeacherId },
+    });
+    return data;
+  },
+
+  /** One teacher's standing weekly schedule. Always seven days, configured or not. */
+  async workingHours(supportTeacherId: number): Promise<SupportWorkingHours> {
+    const { data } = await api.get<SupportWorkingHours>("/classes/support/working-hours/", {
+      params: { support_teacher: supportTeacherId },
+    });
+    return data;
+  },
+
+  /** Replace the whole week. PUT, not PATCH — see the endpoint's docstring: a per-day write
+   *  is how "Tuesday is off" and "no row for Tuesday" drift into meaning different things. */
+  async setWorkingHours(
+    supportTeacherId: number,
+    days: SupportWorkingDay[],
+  ): Promise<SupportWorkingHours> {
+    const { data } = await api.put<SupportWorkingHours>("/classes/support/working-hours/", {
+      support_teacher: supportTeacherId,
+      days: days.map((d) => ({
+        weekday: d.weekday,
+        is_working: d.is_working,
+        start_hour: d.start_hour,
+        end_hour: d.end_hour,
+      })),
     });
     return data;
   },
