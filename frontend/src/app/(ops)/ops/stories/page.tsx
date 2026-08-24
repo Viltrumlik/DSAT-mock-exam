@@ -19,11 +19,9 @@ import {
   Alert,
   Badge,
   Button,
-  Card,
   Field,
   Input,
   Modal,
-  Skeleton,
   Textarea,
 } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
@@ -252,32 +250,55 @@ export default function OpsStoriesPage() {
         }
       />
 
-      <Card className="space-y-3">
-        <h2 className="text-base font-extrabold">
-          All stories
+      {/* Flat bordered panel with an uppercase header strip — the idiom Users, Classrooms and
+          Exam dates use. This was a shadowed `Card` with a bold heading inside it, which is
+          what made the page read as belonging to a different console. */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            All stories
+          </p>
           {liveCount > 0 ? (
-            <span className="ml-2 rounded-md bg-primary-soft px-2 py-0.5 text-xs font-extrabold text-primary">
+            <span className="ml-auto text-[10px] font-bold text-primary">
               {liveCount} showing
             </span>
           ) : null}
-        </h2>
+        </div>
 
         {/* Four branches: loading, error, empty, data. An error rendered as "no stories yet"
             would tell an admin their noticeboard is empty when in fact it failed to load —
             and the obvious next move, posting the notice again, is exactly the wrong one. */}
         {stories.isPending ? (
-          <Skeleton className="h-24 rounded-xl" />
+          <div className="divide-y divide-border">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
+                <div className="h-12 w-12 shrink-0 rounded-full bg-muted" />
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="h-4 w-40 rounded bg-muted" />
+                  <div className="h-3 w-24 rounded bg-muted" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : stories.isError ? (
-          <Alert tone="danger">
-            The stories didn&apos;t load.{" "}
-            <button className="underline" onClick={() => void stories.refetch()}>
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm font-semibold text-foreground">The stories didn&apos;t load.</p>
+            <button
+              type="button"
+              onClick={() => void stories.refetch()}
+              className="mt-1 text-sm font-bold text-primary underline"
+            >
               Try again
             </button>
-          </Alert>
+          </div>
         ) : stories.data.length === 0 ? (
-          <p className="text-sm font-semibold text-muted-foreground">
-            No stories yet — add one and it appears on every student&apos;s dashboard.
-          </p>
+          <div className="px-5 py-12 text-center">
+            <ImageIcon className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-semibold text-foreground">No stories yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add one and it appears on every student&apos;s dashboard.
+            </p>
+          </div>
         ) : (
           <ul className="divide-y divide-border">
             {stories.data.map((story) => {
@@ -285,7 +306,7 @@ export default function OpsStoriesPage() {
               return (
                 <li
                   key={story.id}
-                  className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 py-3"
+                  className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 px-5 py-3.5"
                 >
                   {/* A plain <img>, not next/image: these are signed R2 URLs on a host the
                       image optimiser is not configured for, and an un-optimisable remote
@@ -351,7 +372,7 @@ export default function OpsStoriesPage() {
             })}
           </ul>
         )}
-      </Card>
+      </div>
 
       {editing !== undefined ? (
         <StoryForm story={editing} onClose={() => setEditing(undefined)} />

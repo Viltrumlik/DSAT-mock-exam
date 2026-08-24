@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Building2, MapPin, Plus } from "lucide-react";
-import { Alert, Badge, Button, Card, Input, Select, Skeleton } from "@/components/ui";
+import { Alert, Badge, Button, Input, Select } from "@/components/ui";
 import {
   useBranches,
   useCreateBranch,
@@ -79,14 +79,20 @@ export default function OpsBranchesPage() {
         </Alert>
       ) : null}
 
-      <Card className="space-y-4">
-        <h2 className="flex items-center gap-2 text-base font-extrabold">
-          <MapPin className="h-4 w-4 text-primary" aria-hidden /> Regions and branches
-        </h2>
+      {/* Flat bordered panels with an uppercase header strip — the idiom Users, Classrooms
+          and Exam dates use. These were shadowed `Card`s with bold headings inside, which is
+          what made this page read as belonging to a different console. */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
+          <MapPin className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Regions and branches
+          </p>
+        </div>
 
         {/* Both add-forms on one row: they are the same act at two levels, and a region with
             no branch in it is not yet useful. */}
-        <div className="grid gap-3 lg:grid-cols-2">
+        <div className="grid gap-3 border-b border-border p-5 lg:grid-cols-2">
           <div className="rounded-xl border border-border bg-surface-2 p-3">
             <p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">
               New region
@@ -154,27 +160,33 @@ export default function OpsBranchesPage() {
         </div>
 
         {listPending ? (
-          <Skeleton className="h-32 rounded-xl" />
+          <div className="space-y-3 p-5">
+            <div className="h-24 animate-pulse rounded-xl bg-muted" />
+          </div>
         ) : listError ? (
-          <Alert tone="danger">
-            The list didn&apos;t load.{" "}
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm font-semibold text-foreground">The list didn&apos;t load.</p>
             <button
-              className="underline"
+              type="button"
               onClick={() => {
                 void regions.refetch();
                 void branches.refetch();
               }}
+              className="mt-1 text-sm font-bold text-primary underline"
             >
               Try again
             </button>
-          </Alert>
+          </div>
         ) : grouped.length === 0 ? (
-          <p className="text-sm font-semibold text-muted-foreground">
-            No regions yet. Add one, then a branch inside it — until there is a branch, no
-            student has one.
-          </p>
+          <div className="px-5 py-10 text-center">
+            <MapPin className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-semibold text-foreground">No regions yet</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add one, then a branch inside it — until there is a branch, no student has one.
+            </p>
+          </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3 p-5">
             {grouped.map(({ region, items }) => (
               <div key={region.id} className="rounded-xl border border-border">
                 <div className="flex items-center gap-2 border-b border-border px-3 py-2">
@@ -207,33 +219,51 @@ export default function OpsBranchesPage() {
             ))}
           </div>
         )}
-      </Card>
+      </div>
 
       {/* Classroom → branch */}
-      <Card className="space-y-3">
-        <div>
-          <h2 className="text-base font-extrabold">Which branch each class meets at</h2>
-          <p className="text-sm font-medium text-muted-foreground">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="border-b border-border bg-surface-2 px-5 py-2.5">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            Which branch each class meets at
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Changing this moves the whole roster onto that branch&apos;s board.
           </p>
         </div>
 
         {classrooms.isPending ? (
-          <Skeleton className="h-40 rounded-xl" />
+          <div className="divide-y divide-border">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex animate-pulse items-center gap-3 px-5 py-3.5">
+                <div className="h-4 w-48 rounded bg-muted" />
+                <div className="ml-auto h-8 w-40 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
         ) : classrooms.isError ? (
-          <Alert tone="danger">
-            Classrooms didn&apos;t load.{" "}
-            <button className="underline" onClick={() => void classrooms.refetch()}>Try again</button>
-          </Alert>
+          <div className="px-5 py-8 text-center">
+            <p className="text-sm font-semibold text-foreground">Classrooms didn&apos;t load.</p>
+            <button
+              type="button"
+              onClick={() => void classrooms.refetch()}
+              className="mt-1 text-sm font-bold text-primary underline"
+            >
+              Try again
+            </button>
+          </div>
         ) : (classrooms.data ?? []).length === 0 ? (
-          <p className="text-sm font-semibold text-muted-foreground">No classrooms yet.</p>
+          <div className="px-5 py-10 text-center">
+            <Building2 className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+            <p className="font-semibold text-foreground">No classrooms yet</p>
+          </div>
         ) : (
           <ul className="divide-y divide-border">
             {(classrooms.data ?? []).map((c) => (
               // One row per class: name on the left, the control on the right. The first
               // version stacked a label above a full-width select, which turned four classes
               // into a page of dropdowns.
-              <li key={c.id} className="flex flex-wrap items-center gap-3 py-2.5">
+              <li key={c.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-foreground">{c.name}</p>
                   <p className="text-xs font-semibold text-muted-foreground">
@@ -276,7 +306,7 @@ export default function OpsBranchesPage() {
             ))}
           </ul>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
