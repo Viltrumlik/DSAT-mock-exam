@@ -15,6 +15,7 @@ import {
   Skeleton,
   Textarea,
 } from "@/components/ui";
+import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import {
   useAdminItems,
   useAdminOrders,
@@ -168,19 +169,18 @@ export default function OpsShopPage() {
   const [editing, setEditing] = useState<ShopItem | null | undefined>(undefined);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Shop</h1>
-          <p className="text-sm font-medium text-muted-foreground">
-            Stock, prices and the collection queue.
-          </p>
-        </div>
-        <Button onClick={() => setEditing(null)}>
-          <PackagePlus className="mr-1.5 h-4 w-4" aria-hidden />
-          Add an item
-        </Button>
-      </div>
+    <div className="space-y-5">
+      <OpsPageHeader
+        section="Shop"
+        title="Shop"
+        description="Stock, prices and the collection queue."
+        actions={
+          <Button onClick={() => setEditing(null)}>
+            <PackagePlus className="mr-1.5 h-4 w-4" aria-hidden />
+            Add an item
+          </Button>
+        }
+      />
 
       <Card className="space-y-3">
         <h2 className="text-base font-extrabold">

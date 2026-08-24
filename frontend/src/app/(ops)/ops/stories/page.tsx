@@ -26,6 +26,7 @@ import {
   Skeleton,
   Textarea,
 } from "@/components/ui";
+import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { useAdminStories, useDeleteStory, useSaveStory } from "@/features/stories/storiesHooks";
 import type { BadgeVariant } from "@/components/ui";
 import type { Story } from "@/features/stories/storiesApi";
@@ -238,19 +239,18 @@ export default function OpsStoriesPage() {
   const liveCount = stories.data?.filter((s) => s.is_live).length ?? 0;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Stories</h1>
-          <p className="text-sm font-medium text-muted-foreground">
-            The ring of circles across the top of every student&apos;s dashboard.
-          </p>
-        </div>
-        <Button onClick={() => setEditing(null)}>
-          <ImagePlus className="mr-1.5 h-4 w-4" aria-hidden />
-          Add a story
-        </Button>
-      </div>
+    <div className="space-y-5">
+      <OpsPageHeader
+        section="Stories"
+        title="Stories"
+        description="The ring of circles across the top of every student's dashboard."
+        actions={
+          <Button onClick={() => setEditing(null)}>
+            <ImagePlus className="mr-1.5 h-4 w-4" aria-hidden />
+            Add a story
+          </Button>
+        }
+      />
 
       <Card className="space-y-3">
         <h2 className="text-base font-extrabold">

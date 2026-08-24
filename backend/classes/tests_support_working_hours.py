@@ -302,23 +302,31 @@ class WriteValidation(SupportWorkingHoursBase):
 
 
 class WorkingHoursEndpoint(SupportWorkingHoursBase):
+    """`force_authenticate`, matching AdminSetsHoursTests next door.
+
+    Not `force_login`: DRF answers a session-logged client 401 here, so every test in this
+    class failed for a reason that had nothing to do with the endpoint. The sibling suite
+    reaches for `force_login` only where the thing under test is Django MIDDLEWARE, which has
+    already run by the time DRF attaches a user — that is not what these check.
+    """
+
     url = "/api/classes/support/working-hours/"
 
     def test_teacher_reads_their_own(self):
-        self.client.force_login(self.support)
+        self.client.force_authenticate(self.support)
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200)
         self.assertEqual(len(res.json()["days"]), 7)
         self.assertFalse(res.json()["configured"])
 
     def test_admin_reads_somebody_elses(self):
-        self.client.force_login(self.admin)
+        self.client.force_authenticate(self.admin)
         res = self.client.get(self.url, {"support_teacher": self.support.id})
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["support_teacher"]["id"], self.support.id)
 
     def test_admin_saves_somebody_elses(self):
-        self.client.force_login(self.admin)
+        self.client.force_authenticate(self.admin)
         res = self.client.put(
             self.url,
             data={
@@ -328,7 +336,7 @@ class WorkingHoursEndpoint(SupportWorkingHoursBase):
                     for i in range(7)
                 ],
             },
-            content_type="application/json",
+            format="json",
         )
         self.assertEqual(res.status_code, 200, res.content)
         self.assertTrue(res.json()["configured"])
@@ -337,7 +345,7 @@ class WorkingHoursEndpoint(SupportWorkingHoursBase):
         self.assertEqual((row.start_hour, row.end_hour), (10, 14))
 
     def test_a_student_is_refused(self):
-        self.client.force_login(self.student)
+        self.client.force_authenticate(self.student)
         self.assertEqual(self.client.get(self.url).status_code, 403)
 
     def test_a_teacher_cannot_edit_another_teachers_hours(self):
@@ -345,14 +353,14 @@ class WorkingHoursEndpoint(SupportWorkingHoursBase):
             username="sup2", email="sup2@example.com", password="x",
             role=acc_const.ROLE_SUPPORT_TEACHER, subject="both",
         )
-        self.client.force_login(self.support)
+        self.client.force_authenticate(self.support)
         res = self.client.put(
             self.url,
             data={
                 "support_teacher": other.id,
                 "days": [{"weekday": 0, "is_working": True, "start_hour": 9, "end_hour": 12}],
             },
-            content_type="application/json",
+            format="json",
         )
         self.assertEqual(res.status_code, 403)
         self.assertEqual(
@@ -360,13 +368,13 @@ class WorkingHoursEndpoint(SupportWorkingHoursBase):
         )
 
     def test_a_bad_window_is_a_400_with_the_day_named(self):
-        self.client.force_login(self.support)
+        self.client.force_authenticate(self.support)
         res = self.client.put(
             self.url,
             data={"days": [
                 {"weekday": 0, "is_working": True, "start_hour": 15, "end_hour": 9}
             ]},
-            content_type="application/json",
+            format="json",
         )
         self.assertEqual(res.status_code, 400)
         self.assertIn("Monday", res.json()["detail"])

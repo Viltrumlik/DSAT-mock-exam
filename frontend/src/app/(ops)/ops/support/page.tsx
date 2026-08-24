@@ -10,6 +10,7 @@ import {
   useSupportWeek,
 } from "@/features/opsSupport/opsSupportHooks";
 import { WeeklyHoursEditor } from "@/features/opsSupport/WeeklyHoursEditor";
+import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import type { SupportHour } from "@/features/opsSupport/opsSupportApi";
 
 /**
@@ -122,14 +123,12 @@ export default function OpsSupportPage() {
   }, [week.data]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight">Support teaching</h1>
-        <p className="text-sm font-medium text-muted-foreground">
-          Every hour is open by default. Withdrawing one takes it off the students&apos; booking
-          calendar.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <OpsPageHeader
+        section="Support"
+        title="Support teaching"
+        description="Set each teacher's weekly hours once — they keep applying. The grid below is for withdrawing one specific hour."
+      />
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
 

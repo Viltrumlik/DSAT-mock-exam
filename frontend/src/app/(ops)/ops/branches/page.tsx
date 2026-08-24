@@ -11,6 +11,7 @@ import {
   useRegions,
   useSetClassroomBranch,
 } from "@/features/org/orgHooks";
+import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 
 /**
  * Regions, branches, and which branch each classroom sits at.
@@ -61,14 +62,12 @@ export default function OpsBranchesPage() {
   const listError = regions.isError || branches.isError;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight">Branches</h1>
-        <p className="text-sm font-medium text-muted-foreground">
-          A student&apos;s branch comes from the classroom they study in — assign a classroom
-          here and its whole roster appears on that branch&apos;s leaderboard.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <OpsPageHeader
+        section="Branches"
+        title="Branches"
+        description="A student's branch comes from the classroom they study in — assign a classroom here and its whole roster appears on that branch's leaderboard."
+      />
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {note ? <Alert tone="success">{note}</Alert> : null}

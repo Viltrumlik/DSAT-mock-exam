@@ -53,8 +53,14 @@ export function StoryViewer({
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
   const [mounted, setMounted] = useState(false);
+  // `onClose` is passed as an inline arrow, so it is a new function every render. Held in a
+  // ref and read only from the timer, so that `go` stays stable — depending on it directly
+  // would rebuild `go` each render, and the auto-advance interval below is keyed on `go`, so
+  // the countdown would restart on every render and never reach the end.
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
   // Portalled to <body>. `position: fixed` is only fixed to the VIEWPORT while no ancestor
   // has a transform, filter or backdrop-filter — any of those makes it fixed to that ancestor
