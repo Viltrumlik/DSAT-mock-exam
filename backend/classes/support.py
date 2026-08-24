@@ -57,10 +57,23 @@ BOOKING_WEEK_DAYS = 7
 
 
 def _active_student_classroom_ids(student):
+    """Classrooms this student is in, for the purpose of "may they book support here".
+
+    ``NON_REMOVED_STATUSES``, not ``STATUS_ACTIVE`` alone. This was the odd one out: the rule
+    stated on ``ClassroomMembership`` is that any query deciding whether a user may see or
+    enter a classroom excludes REMOVED and nothing else, and every other sweep in this
+    codebase follows it — ``notify_homework_due_soon`` even spells out why ("An INVITED student
+    sees the assignment, so they are owed the reminder").
+
+    So an INVITED student was shown their class, given its homework, and reminded about its
+    deadlines, but the support page told them they had no support teacher. Zero accounts are
+    in that state on production right now, which is the only reason this never surfaced as a
+    report; it is corrected here rather than left as a trap for the first one that is.
+    """
     return ClassroomMembership.objects.filter(
         user=student,
         role=ClassroomMembership.ROLE_STUDENT,
-        status=ClassroomMembership.STATUS_ACTIVE,
+        status__in=ClassroomMembership.NON_REMOVED_STATUSES,
     ).values_list("classroom_id", flat=True)
 
 

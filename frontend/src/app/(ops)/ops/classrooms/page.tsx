@@ -34,6 +34,9 @@ type Row = {
   id: number; name: string; subject?: string; level?: string; members_count?: number; student_count?: number;
   teacher_details?: TeacherDetails;
 };
+/** One assigned support teacher, exactly as `classesApi.supportTeachers` returns them.
+ *  Derived, never restated — see the note where this is used. */
+type SupportTeacherRow = Awaited<ReturnType<typeof classesApi.supportTeachers>>[number];
 type TeacherOpt = { id: number; email: string; name: string; avatar?: string | null; subject?: string | null };
 type StudentOpt = { id: number; email: string; name: string; avatar?: string | null };
 
@@ -149,7 +152,10 @@ export default function OpsClassroomGovernancePage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [supportOpts, setSupportOpts] = useState<TeacherOpt[]>([]);
   const [supportModal, setSupportModal] = useState<{ row: Row } | null>(null);
-  const [supportAssigned, setSupportAssigned] = useState<{ user_id: number; name: string; email: string; subject: string | null }[]>([]);
+  // Derived from the API function rather than restated by hand. A hand-written copy of a
+  // response shape silently drops every field the server adds later — which is how the
+  // dashboard crashed once already — and it dropped `is_bookable` here the moment it existed.
+  const [supportAssigned, setSupportAssigned] = useState<SupportTeacherRow[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [pickSupport, setPickSupport] = useState<string>("");
 
@@ -756,6 +762,16 @@ export default function OpsClassroomGovernancePage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
                           <p className="truncate text-xs text-muted-foreground">{s.email}</p>
+                          {/* An assignment that exists here and does nothing for students is
+                              the worst of both worlds — it looks done. `is_bookable === false`
+                              means the membership is right but the ACCOUNT is not a support
+                              teacher, which the roster's "Make TA" button allows. */}
+                          {s.is_bookable === false ? (
+                            <p className="mt-0.5 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                              Students can&apos;t book them — this account isn&apos;t a support
+                              teacher. Change their role in Users.
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                       <Button size="sm" variant="ghost" className="shrink-0" disabled={busy}

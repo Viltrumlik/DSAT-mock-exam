@@ -378,3 +378,73 @@ class WorkingHoursEndpoint(SupportWorkingHoursBase):
         )
         self.assertEqual(res.status_code, 400)
         self.assertIn("Monday", res.json()["detail"])
+
+
+class EligibilityConsistency(SupportWorkingHoursBase):
+    """Two places where support eligibility disagreed with the rest of the platform.
+
+    Neither had any account in the affected state on production, which is exactly why they
+    were worth closing rather than leaving: a latent rule that contradicts the documented one
+    surfaces later as "support is broken for this one student" with nothing to grep for.
+    """
+
+    def test_an_invited_student_can_still_book(self):
+        """`ClassroomMembership` states the rule: only REMOVED is excluded from "may they see
+        or enter this classroom". Support was the one query using ACTIVE alone, so an INVITED
+        student got the class, its homework and its deadline reminders — and a support page
+        telling them they had no teacher."""
+        invited = User.objects.create_user(
+            username="inv", email="inv@example.com", password="x",
+            role=acc_const.ROLE_STUDENT,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=invited,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_INVITED,
+        )
+        self.assertIn(
+            self.support.id, support_service.bookable_support_teacher_ids(invited)
+        )
+
+    def test_a_removed_student_still_cannot_book(self):
+        """The other half of the same rule — widening to NON_REMOVED must not open the door
+        to somebody who was taken off the roster."""
+        removed = User.objects.create_user(
+            username="rem", email="rem@example.com", password="x",
+            role=acc_const.ROLE_STUDENT,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=removed,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_REMOVED,
+        )
+        self.assertEqual(support_service.bookable_support_teacher_ids(removed), set())
+
+    def test_a_plain_teacher_holding_a_TA_membership_is_reported_as_unbookable(self):
+        """There are two doors onto ROLE_TA and only one checks the account role. The roster's
+        "Make TA" button lets an owner promote anybody, and `support.py` then refuses them —
+        so the admin panel would show support staff no student can see.
+
+        Reported rather than hidden: an assignment that silently vanishes is worse to debug
+        than a row that says why it does nothing.
+        """
+        impostor = User.objects.create_user(
+            username="imp", email="imp@example.com", password="x",
+            role=acc_const.ROLE_TEACHER, subject="math",
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=impostor,
+            role=ClassroomMembership.ROLE_TA, status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        # Invisible to students...
+        self.assertNotIn(
+            impostor.id, support_service.bookable_support_teacher_ids(self.student)
+        )
+        # ...but present in the admin's list, flagged.
+        self.client.force_authenticate(self.admin)
+        res = self.client.get(f"/api/classes/{self.classroom.id}/support-teachers/")
+        self.assertEqual(res.status_code, 200, res.content)
+        rows = {r["user_id"]: r for r in res.json()["support_teachers"]}
+        self.assertIn(impostor.id, rows)
+        self.assertFalse(rows[impostor.id]["is_bookable"])
+        self.assertTrue(rows[self.support.id]["is_bookable"])
