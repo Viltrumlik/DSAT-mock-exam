@@ -137,7 +137,14 @@ export function WeeklyHoursEditor({
 
   // A failed fetch must never render as "this teacher works no days" — that reads as a
   // decision somebody made, and an admin acting on it would save it as one.
-  if (schedule.isError || !draft) {
+  //
+  // Gated on having no draft, NOT on `isError` alone. React Query keeps `data` through a
+  // failed BACKGROUND refetch while still raising `isError`, so testing the flag first would
+  // replace a form the admin may be halfway through editing with an error banner and lose
+  // their edits — on a blip that changed nothing. Same lesson as the auth fix: a transient
+  // failure must not destroy working state. A stale-but-real schedule stays on screen and
+  // says so.
+  if (!draft) {
     return (
       <Alert tone="danger">
         The weekly schedule didn&apos;t load.{" "}
@@ -167,7 +174,7 @@ export function WeeklyHoursEditor({
 
       {/* "Nobody has set this up" and "somebody chose 08:00–18:00" look identical on screen
           and mean very different things. Say which one this is. */}
-      {!schedule.data.configured ? (
+      {schedule.data && !schedule.data.configured ? (
         <Alert tone="info">
           <span className="inline-flex items-start gap-2">
             <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
@@ -180,64 +187,92 @@ export function WeeklyHoursEditor({
         </Alert>
       ) : null}
 
+      {/* The form is still usable and still saveable — the last read just failed, so what is
+          on screen may be behind the server. Said plainly rather than swallowed: an admin
+          about to save needs to know they might be overwriting somebody else's edit. */}
+      {schedule.isError ? (
+        <Alert tone="warning">
+          Couldn&apos;t refresh these hours just now, so they may be out of date.{" "}
+          <button className="underline" onClick={() => void schedule.refetch()}>
+            Try again
+          </button>
+        </Alert>
+      ) : null}
+
       {error ? <Alert tone="danger">{error}</Alert> : null}
       {saved ? <Alert tone="success">{saved}</Alert> : null}
 
       <div className="overflow-hidden rounded-xl border border-border">
         {draft.map((day, i) => (
+          // A GRID, not a wrapping flex row. The controls are too wide to sit beside a day
+          // name in the console's narrow right-hand column, so a flex row wrapped them onto
+          // their own line at an unpredictable point and every row ended up a different
+          // height. Two columns from `sm` up, stacked below it, so the switches stay in one
+          // vertical line and the eye can run down the week.
           <div
             key={day.weekday}
-            className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 ${
+            className={`grid grid-cols-1 items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:grid-cols-[minmax(0,9rem)_1fr] ${
               i > 0 ? "border-t border-border" : ""
             } ${day.is_working ? "" : "bg-surface-2"}`}
           >
-            <div className="flex min-w-[9.5rem] items-center gap-2.5">
+            <div className="flex items-center gap-2.5">
+              {/* `id` + our own <label>, never the Switch's `label` prop — that prop renders
+                  as VISIBLE text, so passing it printed the day name twice. A <button> is a
+                  labelable element, so htmlFor still gives the switch its accessible name. */}
               <Switch
+                id={`workday-${day.weekday}`}
                 checked={day.is_working}
                 onCheckedChange={(next) => patch(day.weekday, { is_working: next })}
-                label={`${day.label} — working`}
                 disabled={save.isPending}
               />
-              <span
-                className={`text-sm font-bold ${
+              <label
+                htmlFor={`workday-${day.weekday}`}
+                className={`cursor-pointer text-sm font-bold ${
                   day.is_working ? "text-foreground" : "text-muted-foreground"
                 }`}
               >
                 {day.label}
-              </span>
+              </label>
             </div>
 
             {day.is_working ? (
+              /* Each Select is boxed in a fixed-width wrapper. `Select` renders its own
+                 `relative w-full` container around the element, so a width class passed to
+                 the component lands on the inner <select> and the wrapper still claims the
+                 whole row — which stacked the two dropdowns vertically and made every day
+                 three lines tall. Constraining from outside is the only thing that works. */
               <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  aria-label={`${day.label} — first hour`}
-                  className="w-[6.5rem]"
-                  value={String(day.start_hour)}
-                  disabled={save.isPending}
-                  onChange={(e) => patch(day.weekday, { start_hour: Number(e.target.value) })}
-                >
-                  {startOptions.map((h) => (
-                    <option key={h} value={String(h)}>{hourLabel(h)}</option>
-                  ))}
-                </Select>
-                <span className="text-xs font-bold text-muted-foreground">to</span>
-                <Select
-                  aria-label={`${day.label} — last hour`}
-                  className="w-[6.5rem]"
-                  value={String(day.end_hour)}
-                  disabled={save.isPending}
-                  onChange={(e) => patch(day.weekday, { end_hour: Number(e.target.value) })}
-                >
-                  {endOptions
-                    .filter((h) => h > day.start_hour)
-                    .map((h) => (
+                <div className="w-[5.75rem] shrink-0">
+                  <Select
+                    aria-label={`${day.label} — first hour`}
+                    value={String(day.start_hour)}
+                    disabled={save.isPending}
+                    onChange={(e) => patch(day.weekday, { start_hour: Number(e.target.value) })}
+                  >
+                    {startOptions.map((h) => (
                       <option key={h} value={String(h)}>{hourLabel(h)}</option>
                     ))}
-                </Select>
+                  </Select>
+                </div>
+                <span className="text-xs font-bold text-muted-foreground">to</span>
+                <div className="w-[5.75rem] shrink-0">
+                  <Select
+                    aria-label={`${day.label} — last hour`}
+                    value={String(day.end_hour)}
+                    disabled={save.isPending}
+                    onChange={(e) => patch(day.weekday, { end_hour: Number(e.target.value) })}
+                  >
+                    {endOptions
+                      .filter((h) => h > day.start_hour)
+                      .map((h) => (
+                        <option key={h} value={String(h)}>{hourLabel(h)}</option>
+                      ))}
+                  </Select>
+                </div>
                 {/* The end is exclusive, and an admin has no way to know that from two
                     dropdowns. Say what it means in sessions, which is the unit they think in. */}
-                <span className="text-[11px] font-semibold text-muted-foreground">
-                  last session starts {hourLabel(day.end_hour - 1)}
+                <span className="whitespace-nowrap text-[11px] font-semibold text-muted-foreground">
+                  last session {hourLabel(day.end_hour - 1)}
                 </span>
               </div>
             ) : (
@@ -268,7 +303,7 @@ export function WeeklyHoursEditor({
             variant="secondary"
             disabled={save.isPending}
             onClick={() => {
-              setDraft(schedule.data.days.map((d) => ({ ...d })));
+              if (schedule.data) setDraft(schedule.data.days.map((d) => ({ ...d })));
               setError(null);
               setSaved(null);
             }}
