@@ -34,8 +34,40 @@ type Row = {
   id: number; name: string; subject?: string; level?: string; members_count?: number; student_count?: number;
   teacher_details?: TeacherDetails;
 };
+/** One assigned support teacher, exactly as `classesApi.supportTeachers` returns them.
+ *  Derived, never restated — see the note where this is used. */
+type SupportTeacherRow = Awaited<ReturnType<typeof classesApi.supportTeachers>>[number];
 type TeacherOpt = { id: number; email: string; name: string; avatar?: string | null; subject?: string | null };
 type StudentOpt = { id: number; email: string; name: string; avatar?: string | null };
+
+/**
+ * Does this member of staff cover the classroom's subject?
+ *
+ * The frontend twin of `access.services.covers_domain_subject`, and it exists because the
+ * straight `staff.subject === classDomain` comparison it replaces was WRONG for the one value
+ * every support teacher on this platform actually has: **"both"**.
+ *
+ * `"both" === "math"` is false and `"both" === "english"` is false, so a both-subject support
+ * teacher was filtered out of the assign picker for every classroom in the school — all three
+ * of them, all 34 classes. The server has accepted them the whole time (its own comment warns
+ * that "a direct comparison would refuse them for every class in the school"); it was only
+ * ever this picker that hid them, so the symptom was an empty dropdown and a hint claiming no
+ * support teacher existed.
+ *
+ * A blank subject covers nothing. That is deliberate and matches the server: an account whose
+ * subject was never set is a misconfiguration, and offering it here would let an admin assign
+ * a teacher the API is about to refuse.
+ */
+function coversSubject(staffSubject: string | null | undefined, classDomain: string): boolean {
+  const s = (staffSubject ?? "").trim().toLowerCase();
+  if (!s) return false;
+  return s === "both" || s === classDomain;
+}
+
+/** "math" | "english" for a classroom, mirroring `Classroom.domain_subject` on the server. */
+function classDomainOf(subject: string | null | undefined): string {
+  return (subject ?? "").trim().toLowerCase() === "math" ? "math" : "english";
+}
 
 function memberName(m: ClassroomMember): string {
   const u = m.user;
@@ -120,7 +152,10 @@ export default function OpsClassroomGovernancePage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [supportOpts, setSupportOpts] = useState<TeacherOpt[]>([]);
   const [supportModal, setSupportModal] = useState<{ row: Row } | null>(null);
-  const [supportAssigned, setSupportAssigned] = useState<{ user_id: number; name: string; email: string; subject: string | null }[]>([]);
+  // Derived from the API function rather than restated by hand. A hand-written copy of a
+  // response shape silently drops every field the server adds later — which is how the
+  // dashboard crashed once already — and it dropped `is_bookable` here the moment it existed.
+  const [supportAssigned, setSupportAssigned] = useState<SupportTeacherRow[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [pickSupport, setPickSupport] = useState<string>("");
 
@@ -654,12 +689,14 @@ export default function OpsClassroomGovernancePage() {
       )}
 
       {supportModal && (() => {
-        // Only offer support teachers whose subject matches the class. The server refuses a
+        // Only offer support teachers who cover the class's subject. The server refuses a
         // mismatch anyway, but a picker that lists impossible choices invites the mistake.
-        const classDomain = (supportModal.row.subject ?? "").toLowerCase() === "math" ? "math" : "english";
+        // `coversSubject`, never a `===` on the raw field — see its comment: "both" is what
+        // every support teacher here is set to, and `===` hid all of them.
+        const classDomain = classDomainOf(supportModal.row.subject);
         const assignedIds = new Set(supportAssigned.map((s) => s.user_id));
         const candidates = supportOpts.filter(
-          (o) => !assignedIds.has(o.id) && (o.subject ?? "").toLowerCase() === classDomain,
+          (o) => !assignedIds.has(o.id) && coversSubject(o.subject, classDomain),
         );
         return (
           <Modal
@@ -674,9 +711,14 @@ export default function OpsClassroomGovernancePage() {
             <Field
               label="Assign a support teacher"
               htmlFor="support-pick"
-              hint={candidates.length === 0
-                ? "No unassigned " + classDomain + " support teachers. Create one in Users first — a support teacher can only cover the subject their account is set to."
-                : undefined}
+              // "None left to add" and "none exist" are different problems with different
+              // fixes, and the old copy gave the second answer to both — telling an admin to
+              // create an account when every support teacher was already assigned.
+              hint={candidates.length > 0
+                ? undefined
+                : supportOpts.some((o) => coversSubject(o.subject, classDomain))
+                  ? `Every ${classDomain} support teacher is already assigned to this class.`
+                  : `No support teacher covers ${classDomain}. Create one in Users, or set an existing account's subject to ${classDomain} or “both”.`}
             >
               <div className="flex gap-2">
                 {/* min-w-0: without it a long option label ("Name (email@…)") sets the
@@ -720,6 +762,16 @@ export default function OpsClassroomGovernancePage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-foreground">{s.name}</p>
                           <p className="truncate text-xs text-muted-foreground">{s.email}</p>
+                          {/* An assignment that exists here and does nothing for students is
+                              the worst of both worlds — it looks done. `is_bookable === false`
+                              means the membership is right but the ACCOUNT is not a support
+                              teacher, which the roster's "Make TA" button allows. */}
+                          {s.is_bookable === false ? (
+                            <p className="mt-0.5 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                              Students can&apos;t book them — this account isn&apos;t a support
+                              teacher. Change their role in Users.
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                       <Button size="sm" variant="ghost" className="shrink-0" disabled={busy}

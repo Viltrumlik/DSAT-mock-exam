@@ -7,13 +7,13 @@ import { levelsForSubject, levelLabel, type LevelKey } from "@/lib/levels";
 import { journalsApi } from "@/features/journals/api";
 import { courseMeta } from "@/features/journals/structure";
 import type { JournalListItem, JournalStatus } from "@/features/journals/types";
+import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import {
   BookOpen,
   Calculator,
   CheckCircle2,
   ChevronRight,
   Loader2,
-  NotebookText,
   Plus,
 } from "lucide-react";
 
@@ -233,17 +233,16 @@ export default function JournalsDashboardPage() {
 }
 
 function Header() {
+  // The console's shared header — see OpsPageHeader. The icon medallion that used to sit
+  // beside this title is dropped rather than kept: no other page in the console has one, and
+  // the sidebar already shows this section's icon a couple of inches to the left.
   return (
-    <div className="mb-6 flex items-center gap-3">
-      <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-        <NotebookText className="h-6 w-6" />
-      </span>
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-foreground">Journals</h1>
-        <p className="text-sm font-semibold text-muted-foreground">
-          Pre-author every homework of a course, per level.
-        </p>
-      </div>
+    <div className="mb-6">
+      <OpsPageHeader
+        section="Journals"
+        title="Journals"
+        description="Pre-author every homework of a course, per level."
+      />
     </div>
   );
 }

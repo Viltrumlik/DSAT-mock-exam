@@ -73,6 +73,10 @@ const UNAVAILABLE_REASON: Record<Exclude<SupportHour["state"], "open" | "mine">,
   full: "Fully booked",
   closed: "Not available",
   past: "Already gone",
+  // Its own wording, not folded into "Not available": a student deciding when to come in is
+  // better served by "he isn't in then" than by a flat refusal that gives them nothing to
+  // plan around.
+  off: "Not working",
 };
 
 export function SupportBookingPage() {
@@ -364,6 +368,8 @@ function TeacherCalendar({
   const [dayIndex, setDayIndex] = useState(firstLive);
   const day = teacher.days[dayIndex] ?? teacher.days[0];
   const openCount = day?.hours.filter((h) => h.state === "open").length ?? 0;
+  /** The hours worth showing: everything inside the weekly schedule. See the grid below. */
+  const bookableHours = (day?.hours ?? []).filter((h) => h.state !== "off");
   const pickedNote = picked
     ? day?.hours.find((h) => h.starts_at === picked)?.note || ""
     : "";
@@ -396,6 +402,11 @@ function TeacherCalendar({
           // A day with nothing left is usually today, running out hour by hour — calling that
           // "Full" would blame the other students for what is just the clock.
           const gone = free === 0 && d.hours.every((h) => h.state === "past" || h.state === "mine");
+          // A day the teacher does not work is not "Full" either. Three different reasons for
+          // an empty day, three different words — a student who reads "Full" on a Sunday will
+          // keep checking back for a cancellation that is never coming.
+          const notWorking = d.hours.every((h) => h.state === "off");
+          const emptyLabel = notWorking ? "Not working" : gone ? "Day over" : "Full";
           const active = i === dayIndex;
           return (
             <button
@@ -411,7 +422,7 @@ function TeacherCalendar({
               aria-pressed={active}
               // The visible text is three stacked fragments; without this a screen reader
               // reads "Today Aug 7 10 free" as one run-on and the button has no name.
-              aria-label={`${label.title}, ${label.sub}, ${free > 0 ? `${free} hours free` : gone ? "day over" : "fully booked"}`}
+              aria-label={`${label.title}, ${label.sub}, ${free > 0 ? `${free} hours free` : emptyLabel}`}
               className={cn(
                 "ds-ring cr-press min-w-[92px] shrink-0 rounded-xl border px-3 py-2 text-left transition-colors",
                 active
@@ -427,23 +438,39 @@ function TeacherCalendar({
                   free > 0 ? "text-emerald-600" : "text-muted-foreground",
                 )}
               >
-                {free > 0 ? `${free} free` : gone ? "Day over" : "Full"}
+                {free > 0 ? `${free} free` : emptyLabel}
               </span>
             </button>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-        {day?.hours.map((h) => (
-          <HourChip
-            key={h.starts_at}
-            hour={h}
-            selected={picked === h.starts_at}
-            onPick={() => onPick(h.starts_at)}
-          />
-        ))}
-      </div>
+      {/* Hours outside the teacher's weekly schedule are DROPPED, not struck through.
+          Everything else the student cannot take is still shown — "fully booked" and
+          "withdrawn" are facts about this week that they need in order to plan. "He doesn't
+          work Sunday mornings" is not: it is the shape of the timetable, and rendering it as
+          eight struck-out chips a day buries the two hours that are actually bookable. */}
+      {bookableHours.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+          <p className="text-sm font-bold text-foreground">
+            {teacher.name} isn&apos;t working on this day.
+          </p>
+          <p className="mt-1 text-[13px] font-semibold text-muted-foreground">
+            Try another day above.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+          {bookableHours.map((h) => (
+            <HourChip
+              key={h.starts_at}
+              hour={h}
+              selected={picked === h.starts_at}
+              onPick={() => onPick(h.starts_at)}
+            />
+          ))}
+        </div>
+      )}
 
       {picked ? (
         <div className="cr-rowin rounded-2xl border border-primary/30 bg-primary/[0.06] p-4">

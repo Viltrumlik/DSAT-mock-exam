@@ -15,7 +15,15 @@ an email about a support session the student never booked reads as a mistake oth
 {% block preheader %}{{ weekday_label }} {{ date_label }} at {{ start_time }} with {{ teacher_name }}.{% endblock %}
 
 {% block content %}
-  <h1 class="ms-h1 ms-ink" style="margin:0 0 8px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
+  {% comment %}
+  The eyebrow every other message in this system opens with ("NEW HOMEWORK", "MIDTERM
+  SCHEDULED"). It was the one piece missing here, and it is the piece that tells a student
+  what KIND of mail this is before they read a word of it — which matters most for the one
+  message that arrives about something they did not do themselves.
+  {% endcomment %}
+  <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;">SUPPORT SESSION</div>
+
+  <h1 class="ms-h1 ms-ink" style="margin:6px 0 8px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
     {{ inviter_name }} added you to a support session
   </h1>
 
@@ -38,7 +46,12 @@ an email about a support session the student never booked reads as a mistake oth
                 <tr>
                   <td align="center" style="background:#f4f7fc;border:1px solid #cfe0f7;border-top:0;border-radius:0 0 14px 14px;padding:8px 0 10px;">
                     <div style="font-size:34px;font-weight:800;line-height:1;color:#0f1729;">{{ day_number }}</div>
-                    <div style="margin-top:4px;font-size:11px;font-weight:700;color:#64748b;">{{ weekday_label }}</div>
+                    {% comment %}
+                    Short and uppercase, matching homework_assigned's chip. Spelled out, a long
+                    weekday ("Wednesday") overflows an 88px cell — which is exactly why the
+                    other templates abbreviate it. The full name is still in the preheader.
+                    {% endcomment %}
+                    <div style="margin-top:4px;font-size:11px;font-weight:700;letter-spacing:0.04em;color:#64748b;">{{ weekday_short }}</div>
                   </td>
                 </tr>
               </table>

@@ -10,7 +10,7 @@ import { AppShell } from "./AppShell";
 import { studentNav, reviewNavSection } from "./navConfig";
 import { StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
-import { PushOptInBanner } from "@/features/notifications/PushOptInBanner";
+import { PushOptInDialog } from "@/features/notifications/PushOptInDialog";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
 export default function StudentAppShell({ children }: { children: React.ReactNode }) {
@@ -82,8 +82,13 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
               student who never opens the bell never met it. Deliberately NOT in the immersive
               branch above: interrupting a timed assessment to ask for permission is the worst
               possible moment, and a refusal is permanent. Reviewers and staff browsing the
-              student shell are excluded for the same reason the points pill is. */}
-          {isAuthenticated && !isReviewer ? <PushOptInBanner /> : null}
+              student shell are excluded for the same reason the points pill is.
+
+              A DIALOG, not the card this used to be. The card was itself the second attempt
+              and the school reported the same failure as the first — students do not see it.
+              Production put a number on it: twelve push subscriptions in the whole school.
+              A modal interrupts once and is then remembered; see PushOptInDialog. */}
+          {isAuthenticated && !isReviewer ? <PushOptInDialog /> : null}
           {children}
         </div>
       </AppShell>

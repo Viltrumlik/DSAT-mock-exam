@@ -57,10 +57,23 @@ BOOKING_WEEK_DAYS = 7
 
 
 def _active_student_classroom_ids(student):
+    """Classrooms this student is in, for the purpose of "may they book support here".
+
+    ``NON_REMOVED_STATUSES``, not ``STATUS_ACTIVE`` alone. This was the odd one out: the rule
+    stated on ``ClassroomMembership`` is that any query deciding whether a user may see or
+    enter a classroom excludes REMOVED and nothing else, and every other sweep in this
+    codebase follows it — ``notify_homework_due_soon`` even spells out why ("An INVITED student
+    sees the assignment, so they are owed the reminder").
+
+    So an INVITED student was shown their class, given its homework, and reminded about its
+    deadlines, but the support page told them they had no support teacher. Zero accounts are
+    in that state on production right now, which is the only reason this never surfaced as a
+    report; it is corrected here rather than left as a trap for the first one that is.
+    """
     return ClassroomMembership.objects.filter(
         user=student,
         role=ClassroomMembership.ROLE_STUDENT,
-        status=ClassroomMembership.STATUS_ACTIVE,
+        status__in=ClassroomMembership.NON_REMOVED_STATUSES,
     ).values_list("classroom_id", flat=True)
 
 
@@ -202,6 +215,197 @@ def _hour_start(day, hour: int):
     )
 
 
+# ── The standing weekly schedule ──────────────────────────────────────────────
+#
+# ``SupportWorkingHours`` is the rule; ``SupportAvailability`` is the dated exception. The two
+# compose in ONE direction — the schedule can close an hour the exception would open, never
+# the reverse. See the model docstring for why.
+
+
+def weekly_hours_for(support_teacher) -> dict[int, tuple[bool, int, int]]:
+    """``{weekday: (is_working, start_hour, end_hour)}`` for one teacher.
+
+    An EMPTY dict is meaningful and is not the same as a dict of closed days: it means this
+    teacher has never been configured, and :func:`_within_working_hours` reads it as the old
+    open-all-week default so that shipping this does not empty every calendar in the school.
+    """
+    from .models_support import SupportWorkingHours
+
+    return {
+        int(row.weekday): (bool(row.is_working), int(row.start_hour), int(row.end_hour))
+        for row in SupportWorkingHours.objects.filter(support_teacher=support_teacher)
+    }
+
+
+def weekly_hours_for_many(teacher_ids) -> dict[int, dict[int, tuple[bool, int, int]]]:
+    """:func:`weekly_hours_for` for a whole calendar in one query rather than one per teacher.
+
+    The student calendar renders every support teacher they may book across four days and ten
+    hours; asking per teacher would put an N+1 on the page's hottest loop.
+
+    Teachers with no rows are absent from the result, which the per-hour check then reads as
+    "never configured" — the same meaning an empty dict carries above.
+    """
+    from .models_support import SupportWorkingHours
+
+    out: dict[int, dict[int, tuple[bool, int, int]]] = {}
+    for row in SupportWorkingHours.objects.filter(support_teacher_id__in=list(teacher_ids)):
+        out.setdefault(int(row.support_teacher_id), {})[int(row.weekday)] = (
+            bool(row.is_working), int(row.start_hour), int(row.end_hour)
+        )
+    return out
+
+
+def read_weekly_schedule(support_teacher) -> tuple[list[dict], bool]:
+    """All seven days, always — for the admin form to render. ``(days, configured)``.
+
+    A teacher who has never been configured comes back as seven working days at the platform
+    default, which is what their calendar *actually does* today. Returning three configured
+    rows and leaving the form to invent the other four is how an admin ends up saving a
+    schedule they never looked at.
+
+    ``configured`` is carried so the UI can say "these are the defaults, nobody has set this
+    yet" rather than implying a decision somebody made.
+    """
+    from .models_support import SupportWorkingHours
+
+    stored = weekly_hours_for(support_teacher)
+    configured = bool(stored)
+    out = []
+    for weekday, label in SupportWorkingHours.WEEKDAY_CHOICES:
+        is_working, start_hour, end_hour = stored.get(
+            weekday, (True, CALENDAR_OPEN_HOUR, CALENDAR_CLOSE_HOUR)
+        )
+        out.append({
+            "weekday": weekday,
+            "label": label,
+            # An unconfigured teacher is open by default; a configured one with no row for
+            # this day is not working. Mirrors `_within_working_hours` exactly — the form has
+            # to show the same answer the booking calendar will give.
+            "is_working": is_working if (not configured or weekday in stored) else False,
+            "start_hour": start_hour,
+            "end_hour": end_hour,
+        })
+    return out, configured
+
+
+@transaction.atomic
+def write_weekly_schedule(support_teacher, days) -> list[dict]:
+    """Replace a support teacher's standing schedule. All seven days in one save.
+
+    Whole-week replacement rather than per-day PATCH, because the two halves of this rule are
+    not independent: "Tuesday is off" and "no row for Tuesday" have to mean the same thing, and
+    a per-day endpoint invites exactly the partial state
+    :func:`_within_working_hours` has to fail closed on.
+
+    Validation is strict about the one thing that cannot be recovered from — an end at or
+    before the start would store a day that is silently never bookable — and lenient about
+    hours outside the desk's own 08:00–18:00 window, which are simply clamped. A school that
+    later opens at 07:00 changes two constants, and a schedule saved today should not have to
+    be re-entered when they do.
+    """
+    from .models_support import SupportWorkingHours
+
+    by_weekday = {}
+    for raw in days or []:
+        try:
+            weekday = int(raw.get("weekday"))
+        except (TypeError, ValueError):
+            raise ValidationError("Each day needs a weekday from 0 (Monday) to 6 (Sunday).")
+        if not (0 <= weekday <= 6):
+            raise ValidationError("Weekday must be 0 (Monday) to 6 (Sunday).")
+
+        is_working = bool(raw.get("is_working", True))
+        try:
+            start_hour = int(raw.get("start_hour", CALENDAR_OPEN_HOUR))
+            end_hour = int(raw.get("end_hour", CALENDAR_CLOSE_HOUR))
+        except (TypeError, ValueError):
+            raise ValidationError("Working hours must be whole hours.")
+
+        start_hour = max(0, min(23, start_hour))
+        end_hour = max(1, min(24, end_hour))
+        if end_hour <= start_hour:
+            label = dict(SupportWorkingHours.WEEKDAY_CHOICES)[weekday]
+            raise ValidationError(f"{label}: the finish time must be after the start time.")
+        by_weekday[weekday] = (is_working, start_hour, end_hour)
+
+    if not by_weekday:
+        raise ValidationError("A schedule needs at least one day.")
+
+    for weekday, (is_working, start_hour, end_hour) in by_weekday.items():
+        SupportWorkingHours.objects.update_or_create(
+            support_teacher=support_teacher,
+            weekday=weekday,
+            defaults={
+                "is_working": is_working,
+                "start_hour": start_hour,
+                "end_hour": end_hour,
+            },
+        )
+    # Days the caller did not mention are removed rather than left behind. Leaving them would
+    # make a shortened week keep hours from a schedule the teacher has replaced.
+    SupportWorkingHours.objects.filter(support_teacher=support_teacher).exclude(
+        weekday__in=by_weekday.keys()
+    ).delete()
+
+    return read_weekly_schedule(support_teacher)[0]
+
+
+def bookings_outside_schedule(support_teacher, *, now=None):
+    """Live bookings this teacher holds at hours their standing schedule no longer covers.
+
+    Narrowing a week does not cancel anything — see the note in ``SupportWorkingHoursView.put``
+    for why that is the admin's call and not a side effect. This is what lets the console
+    *show* them the appointments they have just scheduled around, which is the difference
+    between a quiet data problem and a decision somebody gets to make.
+
+    Future bookings only. A session that already happened at an hour the teacher has since
+    stopped working is not a clash, it is history.
+    """
+    now = now or timezone.now()
+    schedule = weekly_hours_for(support_teacher)
+    if not schedule:
+        return []
+    rows = (
+        SupportBooking.objects.filter(
+            availability__support_teacher=support_teacher,
+            status=SupportBooking.STATUS_BOOKED,
+            availability__starts_at__gt=now,
+        )
+        .select_related("availability", "student")
+        .order_by("availability__starts_at")
+    )
+    out = []
+    for booking in rows:
+        local = timezone.localtime(booking.availability.starts_at)
+        if not _within_working_hours(schedule, local.date(), local.hour):
+            out.append(booking)
+    return out
+
+
+def _within_working_hours(schedule: dict, day, hour: int) -> bool:
+    """Is ``hour`` on ``day`` inside this teacher's standing schedule?
+
+    ``schedule`` is one teacher's ``{weekday: (is_working, start, end)}``.
+
+    Two defaults, and they point in opposite directions on purpose:
+
+    * **No schedule at all → open.** Nobody has configured this teacher, so behave exactly as
+      the platform did before schedules existed. Failing closed here would take every support
+      teacher off the calendar on deploy day.
+    * **A schedule that omits this weekday → closed.** Once a teacher has been configured, an
+      absent day is a day they did not choose. Failing open there would put students in front
+      of an empty desk, which is the failure that actually costs somebody their afternoon.
+    """
+    if not schedule:
+        return True
+    entry = schedule.get(day.weekday())
+    if entry is None:
+        return False
+    is_working, start_hour, end_hour = entry
+    return bool(is_working) and start_hour <= hour < end_hour
+
+
 def _row_covering(candidates, hour_start, hour_end):
     """The published row that governs one hour of the calendar, if any.
 
@@ -274,10 +478,13 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
         ).values_list("availability_id", "id")
     )
 
+    schedules = weekly_hours_for_many(teacher_ids)
+
     teachers = get_user_model().objects.filter(id__in=teacher_ids).order_by("first_name", "id")
     out = []
     for teacher in teachers:
         candidates = by_teacher.get(teacher.id, [])
+        schedule = schedules.get(teacher.id, {})
         days_out = []
         for day in dates:
             hours = []
@@ -288,11 +495,21 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
                 capacity = int(row.capacity) if row else 1
                 seats_left = max(0, capacity - taken.get(row.id, 0)) if row else capacity
                 booking_id = mine.get(row.id) if row else None
+                working = _within_working_hours(schedule, day, hour)
 
                 if booking_id is not None:
+                    # Ahead of the schedule check on purpose: a teacher who narrows their
+                    # hours after a student booked must not make that student's confirmed
+                    # appointment disappear from their own calendar with no explanation.
+                    # Their booking stands until somebody cancels it deliberately.
                     state = "mine"
                 elif starts_at <= now:
                     state = "past"
+                elif not working:
+                    # Outside the standing schedule. Distinct from "closed": nobody withdrew
+                    # this hour, it was never a working hour, and the student is owed that
+                    # difference — one reads as "he cancelled", the other as "he's not in".
+                    state = "off"
                 elif row is not None and row.is_cancelled:
                     state = "closed"
                 elif seats_left <= 0:
@@ -349,6 +566,8 @@ def teacher_calendar_for(support_teacher, *, now=None, days: int = CALENDAR_DAYS
     ):
         bookings_by_row.setdefault(b.availability_id, []).append(b)
 
+    schedule = weekly_hours_for(support_teacher)
+
     out = []
     for day in dates:
         hours = []
@@ -365,11 +584,18 @@ def teacher_calendar_for(support_teacher, *, now=None, days: int = CALENDAR_DAYS
                 b for b in bookings_by_row.get(row.id, [])
                 if b.status != SupportBooking.STATUS_BOOKED
             ] if row else []
+            working = _within_working_hours(schedule, day, hour)
 
             if row is not None and row.is_cancelled:
                 state = "closed"
             elif booked or settled:
+                # Ahead of "off", though not of "closed" — the existing precedence is left
+                # exactly as it was. What matters here is that an appointment made before a
+                # schedule change stays visible to the person who has to keep it; ranking
+                # "off" above it would drop a real booking off the teacher's own day.
                 state = "booked"
+            elif not working:
+                state = "off"
             elif starts_at <= now:
                 state = "past"
             else:
@@ -412,6 +638,13 @@ def slot_for(support_teacher, starts_at, *, now=None, days: int = CALENDAR_DAYS)
     # already gone, which ``book`` would then refuse.
     if starts_at <= now:
         raise ValidationError("That hour has already started.")
+
+    # The standing schedule is enforced HERE, not only painted on the calendar. Rendering an
+    # hour as "off" and still accepting a POST for it would make the schedule advisory, and
+    # this endpoint takes a teacher id and a timestamp straight from the client — a stale tab
+    # is enough to reach an hour that stopped being a working hour this morning.
+    if not _within_working_hours(weekly_hours_for(support_teacher), local.date(), local.hour):
+        raise ValidationError("That support teacher does not work at that time.")
 
     ends_at = starts_at + timedelta(minutes=SLOT_MINUTES)
     # An hour already governed by a published block belongs to that block — including a block

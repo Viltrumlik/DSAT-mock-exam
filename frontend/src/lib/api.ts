@@ -900,7 +900,10 @@ export interface SupportSlot {
 export interface SupportHour {
     starts_at: string;
     ends_at: string;
-    state: "open" | "mine" | "full" | "closed" | "past";
+    /** "off" = outside the teacher's standing weekly schedule. Distinct from "closed",
+     *  which is an hour they withdrew: one reads as "he cancelled", the other as
+     *  "he doesn't work then". */
+    state: "open" | "mine" | "full" | "closed" | "past" | "off";
     capacity: number;
     seats_left: number;
     note: string;
@@ -969,7 +972,7 @@ export interface SupportAllowance {
 export interface SupportTeacherHour {
     starts_at: string;
     ends_at: string;
-    state: "open" | "booked" | "closed" | "past";
+    state: "open" | "booked" | "closed" | "past" | "off";
     capacity: number;
     seats_left: number;
     note: string;
@@ -1214,6 +1217,11 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/support-teachers/`);
         return (r.data?.support_teachers ?? []) as {
             user_id: number; name: string; email: string; subject: string | null;
+            /** Whether STUDENTS can actually book them — holding the TA membership is not
+             *  enough, the ACCOUNT has to be a support teacher too. The roster's "Make TA"
+             *  button does not check that, so this catches an assignment that looks right
+             *  here and is invisible on every student's calendar. */
+            is_bookable?: boolean;
         }[];
     },
     assignSupportTeacher: async (classId: number, userId: number) => {

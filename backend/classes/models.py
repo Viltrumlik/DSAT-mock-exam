@@ -1028,6 +1028,10 @@ from .models_ranking import (  # noqa: E402,F401
 from .models_analytics import StudentGoal  # noqa: E402,F401
 from .models_schedule import MidtermSchedule  # noqa: E402,F401
 from .models_certificates import MidtermCertificate  # noqa: E402,F401
-from .models_support import SupportAvailability, SupportBooking  # noqa: E402,F401
+from .models_support import (  # noqa: E402,F401
+    SupportAvailability,
+    SupportBooking,
+    SupportWorkingHours,
+)
 from .models_org import Branch, Region  # noqa: E402,F401
 

@@ -57,6 +57,9 @@ def build_context(booking: SupportBooking, inviter) -> dict:
         month_label=starts.strftime("%b").upper(),
         day_number=starts.strftime("%d").lstrip("0"),
         weekday_label=starts.strftime("%A"),
+        # The date chip is 88px wide, so it gets the short form — "WEDNESDAY" overflows
+        # it. The full name stays in the preheader and the body, where there is room.
+        weekday_short=starts.strftime("%a").upper(),
         date_label=starts.strftime("%d %B"),
         start_time=starts.strftime("%H:%M"),
         end_time=ends.strftime("%H:%M") if ends else "",

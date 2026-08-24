@@ -22,8 +22,16 @@ from celery import shared_task
 # `Assignment.notified_at` BEFORE dispatch, none of them ever retried. 20 classes' homework
 # was announced to nobody, silently, before this was noticed.
 #
+# `mail_support` then repeated the bug this comment was written about. Its task is reached
+# only from `support._announce_invitation`, which imports it inside the function — so, exactly
+# like `mail_homework` before it, the web process registered it and the worker did not.
+# Production confirmed it: `classes.mail_support.send_support_invitation_email` was absent
+# from the worker's task list entirely, so every "X added you to a support session" email was
+# published to a name nothing could execute. The bell notification landed, which is why this
+# looked like it worked. **Anything in this app with a @shared_task belongs on this line.**
+#
 # Importing them here makes registration explicit and independent of view-loading order.
-from . import mail_homework, mail_midterm  # noqa: F401  (imported for task registration)
+from . import mail_homework, mail_midterm, mail_support  # noqa: F401  (task registration)
 
 logger = logging.getLogger("classes.tasks")
 

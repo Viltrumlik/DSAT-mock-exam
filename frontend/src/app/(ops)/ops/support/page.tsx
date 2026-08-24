@@ -9,6 +9,8 @@ import {
   useSupportTeachers,
   useSupportWeek,
 } from "@/features/opsSupport/opsSupportHooks";
+import { WeeklyHoursEditor } from "@/features/opsSupport/WeeklyHoursEditor";
+import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import type { SupportHour } from "@/features/opsSupport/opsSupportApi";
 
 /**
@@ -57,18 +59,33 @@ const CELL_TONE: Record<string, string> = {
   open: "border-success/30 bg-success-soft text-success-foreground hover:border-success/60",
   closed: "border-border bg-surface-3 text-muted-foreground hover:border-muted-foreground/40",
   booked: "border-primary/30 bg-primary-soft text-primary",
+  // Outside the weekly schedule. Deliberately the flattest thing on the grid — these hours
+  // are not a decision anybody made about this week, they are simply not working time, and
+  // giving them the same visual weight as a withdrawal would make every calendar look full
+  // of cancellations.
+  off: "border-dashed border-border bg-transparent text-muted-foreground/50",
+};
+
+const CELL_LABEL: Record<string, string> = {
+  open: "Available",
+  closed: "Withdrawn",
+  booked: "Booked",
+  off: "Outside working hours",
 };
 
 function Legend() {
   return (
     <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold text-muted-foreground">
-      {(["open", "closed", "booked"] as const).map((state) => (
+      {(["open", "closed", "booked", "off"] as const).map((state) => (
         <span key={state} className="inline-flex items-center gap-1.5">
           <span className={`h-3 w-3 rounded border ${CELL_TONE[state]}`} aria-hidden />
-          {state === "open" ? "Available" : state === "closed" ? "Withdrawn" : "Booked"}
+          {CELL_LABEL[state]}
         </span>
       ))}
-      <span className="text-muted-foreground/70">· click an hour to withdraw or re-open it</span>
+      <span className="text-muted-foreground/70">
+        · click a working hour to withdraw or re-open it. To change the hours themselves, use
+        the weekly schedule above.
+      </span>
     </div>
   );
 }
@@ -106,14 +123,12 @@ export default function OpsSupportPage() {
   }, [week.data]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-extrabold tracking-tight">Support teaching</h1>
-        <p className="text-sm font-medium text-muted-foreground">
-          Every hour is open by default. Withdrawing one takes it off the students&apos; booking
-          calendar.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <OpsPageHeader
+        section="Support"
+        title="Support teaching"
+        description="Set each teacher's weekly hours once — they keep applying. The grid below is for withdrawing one specific hour."
+      />
 
       {error ? <Alert tone="danger">{error}</Alert> : null}
 
@@ -183,11 +198,29 @@ export default function OpsSupportPage() {
           )}
         </Card>
 
-        {/* When */}
+        {/* When — the standing weekly rule first, then the dated exceptions to it. In that
+            order because that is the order the two are decided in: you agree the week, and
+            only then do you withdraw a specific Thursday. */}
+        <div className="space-y-4">
+        {selected != null ? (
+          <Card>
+            <WeeklyHoursEditor
+              // Remount on teacher change. Without the key the editor keeps the previous
+              // teacher's draft in state while the new one's schedule loads, and a fast admin
+              // could save Ali's hours onto Dilafruz.
+              key={selected}
+              supportTeacherId={selected}
+              teacherName={
+                teachers.data?.find((t) => t.id === selected)?.name ?? "This teacher"
+              }
+            />
+          </Card>
+        ) : null}
+
         <Card className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-base font-extrabold">
-              <CalendarClock className="h-4 w-4 text-primary" aria-hidden /> Working hours
+              <CalendarClock className="h-4 w-4 text-primary" aria-hidden /> This week
             </h2>
             {selected != null && week.data ? (
               <div className="flex gap-2">
@@ -256,6 +289,10 @@ export default function OpsSupportPage() {
                           if (!cell) return <td key={d.date} />;
                           const booked = cell.state === "booked";
                           const closed = cell.state === "closed";
+                          // Not working time at all. Withdrawing an hour that is already
+                          // outside the schedule would write a row that changes nothing, so
+                          // the cell is inert — the weekly form above is where this moves.
+                          const off = cell.state === "off";
                           const who = (cell.bookings ?? []).map((b) => b.student).join(", ");
                           return (
                             <td key={d.date}>
@@ -264,14 +301,16 @@ export default function OpsSupportPage() {
                                 // A booked hour is somebody's appointment. Withdrawing it here
                                 // would strand a student expecting to be seen, so the control
                                 // is disabled and the settle/cancel flow owns that case.
-                                disabled={booked || setHour.isPending}
+                                disabled={booked || off || setHour.isPending}
                                 aria-label={`${dayParts(d.date).weekday} ${hour} — ${cell.state}`}
                                 title={
                                   booked
                                     ? `Booked: ${who}`
-                                    : closed
-                                      ? "Withdrawn — click to re-open"
-                                      : "Available — click to withdraw"
+                                    : off
+                                      ? "Outside working hours — change the weekly schedule above"
+                                      : closed
+                                        ? "Withdrawn — click to re-open"
+                                        : "Available — click to withdraw"
                                 }
                                 onClick={() => {
                                   setError(null);
@@ -289,7 +328,7 @@ export default function OpsSupportPage() {
                                 }}
                                 className={`ds-ring h-8 w-full rounded-md border text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-90 ${CELL_TONE[cell.state] ?? CELL_TONE.open}`}
                               >
-                                {booked ? initials(who || "?") : closed ? "—" : ""}
+                                {booked ? initials(who || "?") : closed ? "—" : off ? "·" : ""}
                               </button>
                             </td>
                           );
@@ -304,6 +343,7 @@ export default function OpsSupportPage() {
             </>
           )}
         </Card>
+        </div>
       </div>
     </div>
   );

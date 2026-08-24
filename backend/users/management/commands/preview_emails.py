@@ -83,6 +83,29 @@ SAMPLES = [
             "homework_url": "https://mastersat.uz/classes/12/assignments/340",
         },
     ),
+    (
+        # Missing from this list until now, which is why it had never actually been looked at
+        # — the comment below says every template the platform sends belongs here, and this
+        # one was the exception that proved the point.
+        "support_invitation.html",
+        {
+            # Long enough to prove the headline wraps rather than stretching the shell, and
+            # that a real student's topic does not blow the card open.
+            "inviter_name": "Dilnoza Abdurahmonova",
+            "teacher_name": "Dilafruz Ibrokhimjonova",
+            "student_name": "Javohir Toshmatov",
+            "topic": "Quadratic word problems — the ones from Module 2 I keep losing marks on",
+            "month_label": "AUG",
+            "day_number": "27",
+            "weekday_label": "Thursday",
+            "weekday_short": "THU",
+            "date_label": "27 August",
+            "start_time": "14:00",
+            "end_time": "15:00",
+            "timezone_label": "Asia/Tashkent",
+            "support_url": "https://mastersat.uz/support",
+        },
+    ),
 ]
 
 

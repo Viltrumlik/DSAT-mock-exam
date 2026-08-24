@@ -27,7 +27,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from access import constants as acc_const
-from access.services import covers_domain_subject
+from access.services import covers_domain_subject, normalized_role
 from access.engine.classroom_service import ClassroomAccessService
 from access.resources import RT_MIDTERM
 from exams.models import MockExam
@@ -320,6 +320,24 @@ class SupportTeacherAssignView(_AdminClassroomGovernanceView):
                     "name": _display_name(m.user),
                     "email": m.user.email,
                     "subject": getattr(m.user, "subject", None),
+                    # Whether STUDENTS can actually book this person, which is not the same
+                    # question as whether they hold the membership.
+                    #
+                    # There are two doors onto ROLE_TA and only one of them checks the account
+                    # role: this endpoint requires ROLE_SUPPORT_TEACHER, while the roster's
+                    # "Make TA" button lets an owner promote any member. `support.py` requires
+                    # the membership AND the account to agree (see SUPPORT_ACCOUNT_ROLE), so a
+                    # plain teacher holding a TA membership shows up here as support staff and
+                    # is invisible on every student's booking calendar.
+                    #
+                    # Zero accounts are in that state on production today. It is reported
+                    # rather than filtered precisely because of that: hiding the row would
+                    # make an admin who used the wrong button see their assignment silently
+                    # vanish, which is a worse thing to debug than a row that says why.
+                    "is_bookable": (
+                        normalized_role(m.user) == acc_const.ROLE_SUPPORT_TEACHER
+                        and m.status == ClassroomMembership.STATUS_ACTIVE
+                    ),
                 }
                 for m in self._support_membership_qs(classroom)
             ]

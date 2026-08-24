@@ -2,11 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { opsSupportApi } from "./opsSupportApi";
+import { opsSupportApi, type SupportWorkingDay } from "./opsSupportApi";
 
 const keys = {
   teachers: ["ops-support", "teachers"] as const,
   week: (id: number) => ["ops-support", "week", id] as const,
+  workingHours: (id: number) => ["ops-support", "working-hours", id] as const,
 };
 
 export function useSupportTeachers() {
@@ -18,6 +19,31 @@ export function useSupportWeek(supportTeacherId: number | null) {
     queryKey: keys.week(supportTeacherId ?? 0),
     queryFn: () => opsSupportApi.week(supportTeacherId as number),
     enabled: supportTeacherId != null,
+  });
+}
+
+export function useSupportWorkingHours(supportTeacherId: number | null) {
+  return useQuery({
+    queryKey: keys.workingHours(supportTeacherId ?? 0),
+    queryFn: () => opsSupportApi.workingHours(supportTeacherId as number),
+    enabled: supportTeacherId != null,
+  });
+}
+
+export function useSetSupportWorkingHours(supportTeacherId: number | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (days: SupportWorkingDay[]) =>
+      opsSupportApi.setWorkingHours(supportTeacherId as number, days),
+    // The dated grid below the form is DERIVED from this schedule, so it has to be re-read
+    // too — otherwise saving "Wednesdays 10–2" leaves the four-day preview still showing the
+    // old hours and the admin cannot tell whether the save took.
+    onSuccess: () => {
+      if (supportTeacherId != null) {
+        void qc.invalidateQueries({ queryKey: keys.workingHours(supportTeacherId) });
+        void qc.invalidateQueries({ queryKey: keys.week(supportTeacherId) });
+      }
+    },
   });
 }
 

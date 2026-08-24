@@ -19,6 +19,96 @@ from django.conf import settings
 from django.db import models
 
 
+class SupportWorkingHours(models.Model):
+    """One weekday of a support teacher's **standing** schedule: do they work, and when.
+
+    This is the answer to "set it once and it always applies". Everything else in this module
+    is dated — a ``SupportAvailability`` row is a specific Tuesday — which meant the only way
+    to say "I work 10–4 on Wednesdays" was to click every Wednesday hour on a rolling four-day
+    grid, forever, and to redo it as the window slid forward. Nobody was ever going to keep
+    that up, and the school didn't: the desk ran on the 08:00–18:00 default with hours nobody
+    had actually agreed to.
+
+    So the two concepts are now separated and they compose in one direction:
+
+      * **This model is the rule.** Weekly, undated, entered once.
+      * **``SupportAvailability`` is the exception**, and it can only ever *narrow* — a
+        withdrawn hour inside working hours is closed; a published row outside them does not
+        re-open them. A standing schedule that a stale dated row could silently override would
+        not be a standing schedule.
+
+    ``weekday`` is Python's own: 0 = Monday … 6 = Sunday, matching ``date.weekday()``, and
+    read from the **school's** local date rather than UTC — the desk keeps Tashkent hours and
+    a UTC weekday flips five hours early.
+
+    ``end_hour`` is EXCLUSIVE, so 8→18 means the last session starts at 17:00 and the desk
+    closes at 18:00. That matches ``CALENDAR_CLOSE_HOUR`` and the ``range()`` the calendar
+    already builds, which is the only reason to prefer it over an inclusive end: one
+    convention, not two that have to be reconciled at every call site.
+
+    **No rows at all means "never configured", and that keeps the old behaviour** — open every
+    day, 08:00–18:00. A teacher nobody has set up must not silently vanish from the students'
+    calendar the day this ships. But once a teacher has *any* row, a weekday with no row means
+    **not working**: a half-written schedule fails closed, because a student turning up to an
+    empty desk is a worse outcome than a bookable hour going unused. The admin UI writes all
+    seven rows in one save, so that state is not one anybody should reach by hand.
+    """
+
+    MONDAY = 0
+    SUNDAY = 6
+    WEEKDAY_CHOICES = [
+        (0, "Monday"), (1, "Tuesday"), (2, "Wednesday"), (3, "Thursday"),
+        (4, "Friday"), (5, "Saturday"), (6, "Sunday"),
+    ]
+
+    support_teacher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="support_working_hours",
+    )
+    weekday = models.PositiveSmallIntegerField(choices=WEEKDAY_CHOICES, db_index=True)
+    is_working = models.BooleanField(default=True)
+    #: Kept when ``is_working`` is False rather than nulled, so switching a day back on
+    #: restores the hours the teacher last chose instead of resetting them to the default.
+    start_hour = models.PositiveSmallIntegerField(default=8)
+    end_hour = models.PositiveSmallIntegerField(default=18, help_text="Exclusive.")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "support_working_hours"
+        ordering = ["support_teacher_id", "weekday"]
+        verbose_name_plural = "support working hours"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["support_teacher", "weekday"],
+                name="uniq_support_working_day_per_teacher",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_hour__gt=models.F("start_hour")),
+                name="support_working_hours_end_after_start",
+            ),
+            # 0–24 on both ends. A 25th hour is not a school day, and the calendar's
+            # `range(start, end)` would simply produce hours no date can hold.
+            models.CheckConstraint(
+                condition=models.Q(start_hour__gte=0, start_hour__lte=23),
+                name="support_working_hours_start_in_day",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_hour__gte=1, end_hour__lte=24),
+                name="support_working_hours_end_in_day",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        if not self.is_working:
+            return f"{self.support_teacher_id} {self.get_weekday_display()}: off"
+        return (
+            f"{self.support_teacher_id} {self.get_weekday_display()}: "
+            f"{self.start_hour:02d}:00–{self.end_hour:02d}:00"
+        )
+
+
 class SupportAvailability(models.Model):
     """One bookable slot published by a support teacher.
 

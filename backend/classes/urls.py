@@ -36,6 +36,7 @@ from .views_support import (
     SupportCalendarView,
     SupportDiaryView,
     SupportHourView,
+    SupportWorkingHoursView,
     SupportSlotsView,
     SupportTeacherCalendarView,
 )
@@ -153,6 +154,10 @@ urlpatterns = [
     # <str:action> is constrained to close|open inside the view; a path converter here would
     # 404 a typo instead of saying which actions exist.
     path("support/hours/<str:action>/", SupportHourView.as_view(), name="support-hour-action"),
+    # The STANDING weekly schedule, as opposed to the dated hours above it. Placed next
+    # to them because the two are read together and it must be obvious they are not the
+    # same thing: this one is entered once and keeps applying.
+    path("support/working-hours/", SupportWorkingHoursView.as_view(), name="support-working-hours"),
     path("support/diary/", SupportDiaryView.as_view(), name="support-diary"),
     path("<int:classroom_pk>/branch/", ClassroomBranchView.as_view(), name="class-branch"),
     path("<int:classroom_pk>/support-teachers/", SupportTeacherAssignView.as_view(), name="class-support-teachers"),
