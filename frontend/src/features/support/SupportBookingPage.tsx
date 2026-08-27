@@ -77,6 +77,10 @@ const UNAVAILABLE_REASON: Record<Exclude<SupportHour["state"], "open" | "mine">,
   // better served by "he isn't in then" than by a flat refusal that gives them nothing to
   // plan around.
   off: "Not working",
+  // The only reason on this list that is about the student rather than the teacher, and the
+  // only one they can do something about — so it says what they already have rather than
+  // what the desk lacks.
+  day_taken: "You have a session today",
 };
 
 export function SupportBookingPage() {
@@ -136,7 +140,7 @@ export function SupportBookingPage() {
         <PageHero
           badge="Support"
           title="Book a support session"
-          description="Pick an hour with a support teacher from one of your classes. Attending one earns you points."
+          description="Pick an hour with a support teacher from one of your classes — one session a day. Attending one earns you points."
           tiles={[
             { label: "Open hours", value: `${pad(openHour)}:00–${pad(closeHour)}:00`, icon: Clock },
             { label: "You can book", value: `${calendar.data?.days ?? 4} days ahead` },
@@ -365,10 +369,16 @@ function TeacherCalendar({
     0,
     teacher.days.findIndex((d) => d.hours.some((h) => h.state === "open" || h.state === "mine")),
   );
+  /** A day the student has already spent. Every hour on it carries the same state, so one
+   *  hour is enough to know — and the day strip says so once instead of ten times. */
+  const dayIsTaken = (d: { hours: SupportHour[] }) =>
+    d.hours.some((h) => h.state === "day_taken" || h.state === "mine");
   const [dayIndex, setDayIndex] = useState(firstLive);
   const day = teacher.days[dayIndex] ?? teacher.days[0];
   const openCount = day?.hours.filter((h) => h.state === "open").length ?? 0;
-  /** The hours worth showing: everything inside the weekly schedule. See the grid below. */
+  /** The hours worth showing: everything inside the weekly schedule. See the grid below.
+   *  A spent day keeps its hours on screen — greyed, with the reason — because hiding them
+   *  would leave the student looking at a blank day with no idea why. */
   const bookableHours = (day?.hours ?? []).filter((h) => h.state !== "off");
   const pickedNote = picked
     ? day?.hours.find((h) => h.starts_at === picked)?.note || ""
@@ -406,7 +416,16 @@ function TeacherCalendar({
           // an empty day, three different words — a student who reads "Full" on a Sunday will
           // keep checking back for a cancellation that is never coming.
           const notWorking = d.hours.every((h) => h.state === "off");
-          const emptyLabel = notWorking ? "Not working" : gone ? "Day over" : "Full";
+          // Ahead of the other three: a student who has booked Wednesday needs the strip to
+          // say so on Wednesday, not "Full" — which would send them looking for a
+          // cancellation that would not help them anyway.
+          const emptyLabel = dayIsTaken(d)
+            ? "Booked"
+            : notWorking
+              ? "Not working"
+              : gone
+                ? "Day over"
+                : "Full";
           const active = i === dayIndex;
           return (
             <button

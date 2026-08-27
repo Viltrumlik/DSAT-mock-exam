@@ -2,6 +2,25 @@ import api from "@/lib/api";
 
 export type AttendanceStatus = "PRESENT" | "ABSENT" | "LATE" | "EXCUSED";
 
+/** When a register may be written.
+ *
+ *  The rule is the school's: a teacher marks attendance during the lesson and for up to two
+ *  hours after it ends, and not afterwards. The server owns it (`classes/attendance_window`)
+ *  and refuses out-of-window writes with a 403 — this is here so the UI can say so and grey
+ *  the buttons out, rather than offering a Save that will bounce.
+ *
+ *  `state` describes the REGISTER; `can_mark` describes the viewer. They differ for a global
+ *  admin, who may correct a closed register — `is_override` is true there, and the UI says
+ *  plainly that history is being edited. */
+export interface AttendanceMarkingWindow {
+  state: "PENDING" | "OPEN" | "LOCKED";
+  opens_at: string;
+  closes_at: string;
+  can_mark: boolean;
+  is_override: boolean;
+  reason: string | null;
+}
+
 export interface AttendanceSessionBrief {
   id: number;
   date: string;
@@ -9,6 +28,8 @@ export interface AttendanceSessionBrief {
   lesson_index: number | null;
   status: "OPEN" | "FINALIZED";
   counts?: Record<string, number> | null;
+  /** Absent only against a server that predates the window. */
+  marking?: AttendanceMarkingWindow | null;
 }
 
 export interface RosterRow {

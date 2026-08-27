@@ -902,8 +902,14 @@ export interface SupportHour {
     ends_at: string;
     /** "off" = outside the teacher's standing weekly schedule. Distinct from "closed",
      *  which is an hour they withdrew: one reads as "he cancelled", the other as
-     *  "he doesn't work then". */
-    state: "open" | "mine" | "full" | "closed" | "past" | "off";
+     *  "he doesn't work then".
+     *
+     *  "day_taken" = the student already holds a session that day, so no hour on it is
+     *  bookable by them. The only state here that is about the STUDENT rather than about
+     *  the teacher's calendar, which is why it outranks the others: it applies to the whole
+     *  day at once, and the day's real reason is more use than a per-hour one they cannot
+     *  act on. Their own hour still comes back as "mine". */
+    state: "open" | "mine" | "full" | "closed" | "past" | "off" | "day_taken";
     capacity: number;
     seats_left: number;
     note: string;
@@ -964,6 +970,12 @@ export interface SupportAllowance {
     max_upcoming: number;
     this_week: number;
     max_per_week: number;
+    /** One session a day. The tightest of the three limits, so the one students meet. */
+    max_per_day: number;
+    /** Local ISO dates inside the calendar window the student already has a session on.
+     *  Bounded by that window on purpose — it drives greying-out on screen, not the
+     *  server's own refusal, which counts without a horizon. */
+    taken_days: string[];
     can_book: boolean;
 }
 

@@ -55,6 +55,20 @@ MAX_BOOKINGS_PER_WEEK = 3
 #: The rolling window MAX_BOOKINGS_PER_WEEK is counted over, ending now.
 BOOKING_WEEK_DAYS = 7
 
+#: How many hours one student may hold on any single day. The school's rule: one.
+#:
+#: Counted on the DAY THE SESSION FALLS, not on when it was booked. "You can book support
+#: once a day" is a statement about the desk's day, not about the student's clicking: a
+#: student who books Monday and Tuesday in one sitting has used two different days and has
+#: broken no rule, while one who takes 10:00 and 11:00 on Thursday has taken two hours out of
+#: one afternoon, which is the thing being prevented. Counting by ``booked_at`` — the way
+#: MAX_BOOKINGS_PER_WEEK counts — would get both of those backwards.
+#:
+#: It is the tightest of the three limits and therefore the one students will actually meet,
+#: so the calendar greys out a whole day once one hour on it is taken, rather than letting
+#: them pick a second and refusing it.
+MAX_BOOKINGS_PER_DAY = 1
+
 
 def _active_student_classroom_ids(student):
     """Classrooms this student is in, for the purpose of "may they book support here".
@@ -169,6 +183,23 @@ def booking_allowance(student, *, now=None, exclude_booking_id=None) -> dict:
     upcoming = mine.filter(
         status=SupportBooking.STATUS_BOOKED, availability__starts_at__gt=now
     ).count()
+
+    # The local dates this student already has a session on, across the calendar window and
+    # a little either side. Read in the school's timezone because MAX_BOOKINGS_PER_DAY is
+    # about a calendar day as a person experiences it, not about a UTC one.
+    #
+    # Scoped to the window the calendar can show rather than to all of history: the answer is
+    # for greying out days on screen, and a student with a year of sessions behind them
+    # should not have that whole year serialised into every calendar response.
+    horizon_start = _hour_start(calendar_dates(now)[0], 0)
+    horizon_end = horizon_start + timedelta(days=CALENDAR_DAYS + 1)
+    taken_days = sorted({
+        timezone.localdate(starts_at)
+        for starts_at in mine.filter(
+            availability__starts_at__gte=horizon_start,
+            availability__starts_at__lt=horizon_end,
+        ).values_list("availability__starts_at", flat=True)
+    })
     # Counted on when the seat was TAKEN, not when the hour falls. Counting by hour needs a
     # window with two edges and makes the answer depend on where "this week" is cut; counting
     # by ``booked_at`` is one rolling edge and says the plain thing — how many hours you have
@@ -180,15 +211,53 @@ def booking_allowance(student, *, now=None, exclude_booking_id=None) -> dict:
         "max_upcoming": MAX_UPCOMING_BOOKINGS,
         "this_week": this_week,
         "max_per_week": MAX_BOOKINGS_PER_WEEK,
+        "max_per_day": MAX_BOOKINGS_PER_DAY,
+        # ISO dates, because this crosses the API and a `date` would be serialised
+        # inconsistently by the two paths that read it.
+        "taken_days": [d.isoformat() for d in taken_days],
         "can_book": upcoming < MAX_UPCOMING_BOOKINGS and this_week < MAX_BOOKINGS_PER_WEEK,
     }
 
 
-def _check_booking_allowance(student, *, now=None, exclude_booking_id=None) -> None:
-    """Raise a student-readable ValidationError when they are at a limit."""
+def bookings_on_day(student, day, *, exclude_booking_id=None) -> int:
+    """How many live sessions this student holds on one local date.
+
+    Its own query rather than a read of ``booking_allowance``'s ``taken_days``: that list is
+    bounded by the calendar horizon so the API response stays small, and the check that
+    actually refuses a booking must not be bounded by anything.
+    """
+    mine = SupportBooking.objects.filter(student=student).exclude(
+        status=SupportBooking.STATUS_CANCELLED
+    )
+    if exclude_booking_id is not None:
+        mine = mine.exclude(pk=exclude_booking_id)
+    day_start = _hour_start(day, 0)
+    return mine.filter(
+        availability__starts_at__gte=day_start,
+        availability__starts_at__lt=day_start + timedelta(days=1),
+    ).count()
+
+
+def _check_booking_allowance(student, *, now=None, exclude_booking_id=None, for_date=None) -> None:
+    """Raise a student-readable ValidationError when they are at a limit.
+
+    ``for_date`` is the LOCAL date of the hour being claimed. Passing it adds the per-day
+    check; leaving it out asks only the standing questions, which is what a caller with no
+    particular slot in hand (a UI asking "can this student book at all") wants.
+    """
     allowance = booking_allowance(
         student, now=now, exclude_booking_id=exclude_booking_id
     )
+    # Checked first, and deliberately: it is the tightest limit, so it is the one a student
+    # will actually hit, and being told "you already have a session that day" is a more
+    # useful sentence than being told about a weekly total they are nowhere near.
+    if for_date is not None and bookings_on_day(
+        student, for_date, exclude_booking_id=exclude_booking_id
+    ) >= MAX_BOOKINGS_PER_DAY:
+        raise ValidationError(
+            "You already have a support session that day. You can book one session a day — "
+            "pick another day, or cancel the one you have."
+        )
     if allowance["upcoming"] >= MAX_UPCOMING_BOOKINGS:
         raise ValidationError(
             f"You already have {allowance['upcoming']} support "
@@ -480,6 +549,18 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
 
     schedules = weekly_hours_for_many(teacher_ids)
 
+    # Days this student has already spent, across EVERY support teacher — the per-day limit
+    # is a property of the student's day, not of one teacher's column, so it has to be
+    # resolved once here rather than inside the per-teacher loop.
+    taken_days = {
+        timezone.localdate(starts_at)
+        for starts_at in SupportBooking.objects.filter(student=student)
+        .exclude(status=SupportBooking.STATUS_CANCELLED)
+        .filter(availability__starts_at__gte=window_start - timedelta(hours=CALENDAR_OPEN_HOUR),
+                availability__starts_at__lt=window_end + timedelta(days=1))
+        .values_list("availability__starts_at", flat=True)
+    }
+
     teachers = get_user_model().objects.filter(id__in=teacher_ids).order_by("first_name", "id")
     out = []
     for teacher in teachers:
@@ -505,6 +586,14 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
                     state = "mine"
                 elif starts_at <= now:
                     state = "past"
+                elif day in taken_days:
+                    # One session a day (MAX_BOOKINGS_PER_DAY). Ranked above the teacher-side
+                    # states on purpose: the student cannot book ANY hour that day, and a day
+                    # rendered as a mixture of "he's not in" and "full" hides the one reason
+                    # that actually applies to them. The hour they do hold still shows as
+                    # "mine", so the day says plainly where their session is and why the rest
+                    # of it is shut.
+                    state = "day_taken"
                 elif not working:
                     # Outside the standing schedule. Distinct from "closed": nobody withdrew
                     # this hour, it was never a working hour, and the student is owed that
@@ -722,7 +811,10 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
     # the view so book() and book_at() cannot diverge, and so a management path gets the same
     # answer as a student clicking a chip.
     _check_booking_allowance(
-        student, now=now, exclude_booking_id=existing.pk if existing else None
+        student,
+        now=now,
+        exclude_booking_id=existing.pk if existing else None,
+        for_date=timezone.localdate(availability.starts_at),
     )
 
     taken = SupportBooking.objects.filter(
@@ -818,10 +910,13 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
 
     **The invitee's own booking limits still apply, with one exception.** The weekly cap is
     enforced: a classmate who has already had three sessions this week is not free to attend a
-    fourth just because somebody else clicked. The *upcoming* cap is not, because it exists to
-    stop one student sitting on the whole calendar, and a seat they did not ask for is not
-    them hoarding. The error names the invitee so the inviter can read it — they are the one
-    looking at the screen, and "You can book 3 sessions a week" would be nonsense to them.
+    fourth just because somebody else clicked. The per-day cap is enforced for the same
+    reason and more strongly — it is about the invitee's own afternoon, and being pulled into
+    a second hour on a day they already have one is precisely what the school asked to make
+    impossible. The *upcoming* cap is not, because it exists to stop one student sitting on
+    the whole calendar, and a seat they did not ask for is not them hoarding. The errors name
+    the invitee so the inviter can read them — they are the one looking at the screen, and
+    "You can book 3 sessions a week" would be nonsense to them.
     """
     now = now or timezone.now()
 
@@ -857,7 +952,17 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     ):
         raise ValidationError("That session has already been settled.")
 
-    # The weekly cap only — see the docstring.
+    # The per-day cap, on the invitee's own day — see the docstring.
+    if bookings_on_day(
+        invitee,
+        timezone.localdate(availability.starts_at),
+        exclude_booking_id=existing.pk if existing else None,
+    ) >= MAX_BOOKINGS_PER_DAY:
+        raise ValidationError(
+            f"{_display(invitee)} already has a support session that day."
+        )
+
+    # The weekly cap — see the docstring.
     week_start = now - timedelta(days=BOOKING_WEEK_DAYS)
     this_week = SupportBooking.objects.filter(
         student=invitee, booked_at__gte=week_start

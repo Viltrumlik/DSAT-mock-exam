@@ -142,7 +142,19 @@ function AttendanceStaff({ classroom }: { classroom: ClassroomWithRole }) {
                   className={cn("flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm",
                     activeId === s.id ? "border-primary bg-primary/5" : "border-border hover:bg-surface-2")}>
                   <span className="min-w-0 truncate">{fmtDate(s.date)}</span>
-                  {s.status === "FINALIZED" ? <Lock className="h-3.5 w-3.5 text-muted-foreground" /> : <span className="text-[10px] text-muted-foreground">draft</span>}
+                  {/* Three different things a register can be, and the old two-way split
+                      called two of them "draft". A closed register is not a draft — nobody
+                      is going to finish it — and showing it as one is how a teacher ends up
+                      clicking into a day they cannot write. */}
+                  {s.status === "FINALIZED" ? (
+                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                  ) : s.marking?.state === "LOCKED" ? (
+                    <span className="text-[10px] text-muted-foreground">closed</span>
+                  ) : s.marking?.state === "PENDING" ? (
+                    <span className="text-[10px] text-muted-foreground">soon</span>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-emerald-600">open</span>
+                  )}
                 </button>
               ))}
               {list.length === 0 && scheduleUsable && (
@@ -182,6 +194,11 @@ function RosterMarker({ classId, sessionId }: { classId: number; sessionId: numb
   if (isError || !data) return <Card><ErrorState onRetry={() => refetch()} /></Card>;
 
   const finalized = data.status === "FINALIZED";
+  // Absent `marking` means a server that predates the window, and the honest default there
+  // is the old behaviour — writable. Defaulting to locked would brick attendance for the
+  // whole school on any version skew.
+  const markWindow = data.marking ?? null;
+  const writable = markWindow ? markWindow.can_mark : true;
 
   async function save() {
     const records = Object.entries(local)
@@ -194,16 +211,40 @@ function RosterMarker({ classId, sessionId }: { classId: number; sessionId: numb
     <Card>
       <CardHeader
         title={fmtDate(data.date)}
-        description="Mark everyone, then finalize"
+        description={writable ? "Mark everyone, then finalize" : "This register is closed"}
         actions={
           <div className="flex items-center gap-2">
-            {finalized ? <Pill tone="neutral"><Lock className="h-3 w-3" /> Finalized</Pill> : <Pill tone="warning">Draft</Pill>}
+            {finalized ? (
+              <Pill tone="neutral"><Lock className="h-3 w-3" /> Finalized</Pill>
+            ) : markWindow?.state === "LOCKED" ? (
+              <Pill tone="neutral"><Lock className="h-3 w-3" /> Closed</Pill>
+            ) : markWindow?.state === "PENDING" ? (
+              <Pill tone="info">Not started</Pill>
+            ) : (
+              <Pill tone="warning">Draft</Pill>
+            )}
           </div>
         }
       />
+
+      {/* Said before the buttons, not after a refused click. An admin writing through a
+          closed register is told they are doing exactly that — the point of the override is
+          that correcting history is deliberate, so it should not feel like ordinary
+          marking. */}
+      {markWindow && markWindow.state !== "OPEN" && (
+        <div className={cn("mt-3 rounded-xl border px-3.5 py-2.5 text-xs",
+          markWindow.is_override
+            ? "border-amber-400/60 bg-amber-500/[0.07] text-foreground"
+            : "border-border bg-surface-2 text-muted-foreground")}>
+          {markWindow.is_override
+            ? `${markWindow.reason} You can still correct it because you are an administrator — the change is recorded.`
+            : markWindow.reason}
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" loading={markAll.isPending} onClick={() => markAll.mutate()}>Mark all present</Button>
-        <Button size="sm" loading={mark.isPending} disabled={!dirty} onClick={save} icon={CheckCircle2}>Save</Button>
+        <Button size="sm" variant="secondary" disabled={!writable} loading={markAll.isPending} onClick={() => markAll.mutate()}>Mark all present</Button>
+        <Button size="sm" loading={mark.isPending} disabled={!dirty || !writable} onClick={save} icon={CheckCircle2}>Save</Button>
         {!finalized && <Button size="sm" variant="ghost" loading={finalize.isPending} onClick={() => finalize.mutate()} icon={Lock}>Finalize</Button>}
       </div>
 
@@ -215,10 +256,11 @@ function RosterMarker({ classId, sessionId }: { classId: number; sessionId: numb
               {STATUSES.map((st) => {
                 const selected = local[r.student_id] === st;
                 return (
-                  <button key={st} title={META[st].label}
+                  <button key={st} title={META[st].label} disabled={!writable}
                     onClick={() => setLocal((p) => ({ ...p, [r.student_id]: st }))}
                     className={cn("h-8 w-8 rounded-lg border text-xs font-bold transition-colors",
-                      selected ? META[st].active : "border-border text-muted-foreground hover:bg-surface-2")}>
+                      selected ? META[st].active : "border-border text-muted-foreground hover:bg-surface-2",
+                      !writable && "cursor-not-allowed opacity-50 hover:bg-transparent")}>
                     {META[st].letter}
                   </button>
                 );

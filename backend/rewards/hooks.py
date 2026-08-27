@@ -34,6 +34,48 @@ _ATTENDANCE_EVENTS = {
 }
 
 
+def _enrolled_for(record) -> bool:
+    """Was this student a member of the class on the day of this lesson?
+
+    **The third and last line of defence, and the only one inside the ledger.** The two in
+    front of it are in ``classes``: the register only offers the roster as it stood on the
+    lesson's date, and a register closes two hours after its lesson ends. Both live in the
+    HTTP layer, and attendance records are not written only over HTTP — management commands,
+    the Django admin, data migrations and the test suite all reach the model directly. This
+    is the check that holds for those.
+
+    It is what stops the 2026-08-26 pattern from paying out again: a student added to a class
+    that morning, marked PRESENT across a term of back-registers, paid 5 points and 5 XP per
+    mark within seconds. Every one of those marks was for a lesson held before he had a
+    membership row, and every one of them is refused here.
+
+    **No membership at all means no payment.** A record can outlive its membership — removal
+    is a soft delete, but a hard delete of the row is not, and neither is a rebuild of a class
+    roster. Paying somebody for a class they are not in cannot be right in any of those cases.
+
+    Note the direction this does *not* work in. It compares against when the student JOINED,
+    never against whether they are still there. A student who leaves keeps everything they
+    earned while they were here — that is the school's rule about XP belonging to the student
+    and not to the group, and ``services.revoke`` is the only thing that ever takes XP back.
+    """
+    from classes.models import ClassroomMembership
+
+    joined_at = (
+        ClassroomMembership.objects.filter(
+            classroom_id=record.session.classroom_id,
+            user_id=record.student_id,
+            role=ClassroomMembership.ROLE_STUDENT,
+        )
+        .values_list("joined_at", flat=True)
+        .first()
+    )
+    if joined_at is None:
+        return False
+    from django.utils import timezone
+
+    return timezone.localdate(joined_at) <= record.session.date
+
+
 def sync_attendance_record(record, *, actor=None) -> None:
     """Bring one student's award for one lesson in line with the mark on the register.
 
@@ -64,6 +106,17 @@ def sync_attendance_record(record, *, actor=None) -> None:
     key = constants.attendance_key(record.id)
 
     event = _ATTENDANCE_EVENTS.get(record.status)
+    if event is not None and not _enrolled_for(record):
+        # The mark stands — it is the teacher's record and this is not the place to erase
+        # it — but it earns nothing, and anything it earned before comes back. See
+        # :func:`_enrolled_for`.
+        revoke(
+            key,
+            reason="attendance for a lesson before the student joined the class",
+            actor=actor,
+        )
+        return
+
     if event is None:
         # ABSENT earns nothing; EXCUSED is not a failure to attend but is not attendance
         # either. Either way, anything previously granted for this record comes back.
