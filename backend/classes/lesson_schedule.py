@@ -64,6 +64,70 @@ def parse_lesson_time(raw: str | None) -> time | None:
     return time(hour, minute)
 
 
+#: How long a lesson runs when ``lesson_time`` names only a start.
+#:
+#: Production carries 27 classrooms with a bare start ("16:00", "14:00", "10:30") and two
+#: with an explicit range, both of which are two hours ("16:00-18:00"). So a bare start is
+#: read as the same length the school writes down when it bothers to write one down, rather
+#: than inventing a second, shorter lesson for the same timetable.
+DEFAULT_LESSON_MINUTES = 120
+
+
+def parse_lesson_end_time(raw: str | None) -> time | None:
+    """The END of ``lesson_time``, or ``None`` when the start itself cannot be read.
+
+    An explicit range gives its own answer ("16:00-18:00" ends at 18:00). A bare start is
+    extended by :data:`DEFAULT_LESSON_MINUTES`.
+
+    Returns a plain ``time``, so a lesson whose end crosses midnight comes back *earlier*
+    than its start — 23:00 + 2h is 01:00, not 25:00. Callers building a real interval must
+    roll to the next day when ``end <= start``; :func:`lesson_interval` does that and is what
+    everything in this codebase should use.
+    """
+    if not raw:
+        return None
+    start = parse_lesson_time(raw)
+    if start is None:
+        return None
+
+    parts = _RANGE_SEPARATOR.split(str(raw).strip(), maxsplit=1)
+    if len(parts) == 2 and parts[1].strip():
+        # A range where the second half is garbage ("16:00 - soon") falls through to the
+        # default length rather than losing the end entirely.
+        explicit = parse_lesson_time(parts[1])
+        if explicit is not None:
+            return explicit
+
+    end_minutes = (start.hour * 60 + start.minute + DEFAULT_LESSON_MINUTES) % (24 * 60)
+    return time(end_minutes // 60, end_minutes % 60)
+
+
+def lesson_interval(classroom: Classroom, day) -> tuple[datetime, datetime] | None:
+    """``(starts_at, ends_at)`` for this classroom's lesson on ``day``, in school time.
+
+    ``None`` when ``lesson_time`` is unreadable — one production classroom has it blank, and
+    every caller has to keep working for that class rather than treating it as "no lesson".
+
+    Does **not** check that ``day`` is a lesson day: callers ask about a date they already
+    hold (a register's own date), and a session that exists for an off-schedule day still
+    needs an interval.
+    """
+    start = parse_lesson_time(classroom.lesson_time)
+    if start is None:
+        return None
+    end = parse_lesson_end_time(classroom.lesson_time) or start
+
+    tz = timezone.get_current_timezone()
+    starts_at = timezone.make_aware(datetime.combine(day, start), tz)
+    ends_at = timezone.make_aware(datetime.combine(day, end), tz)
+    if ends_at <= starts_at:
+        # Either a lesson running past midnight, or a range typed backwards. Both mean the
+        # end belongs to the following day; the alternative is a zero- or negative-length
+        # lesson, which would make every window built on it instantly closed.
+        ends_at += timedelta(days=1)
+    return starts_at, ends_at
+
+
 def lesson_weekdays(classroom: Classroom) -> frozenset[int]:
     """Weekdays this classroom meets on; empty for an unknown ``lesson_days``."""
     return LESSON_WEEKDAYS.get(classroom.lesson_days, frozenset())

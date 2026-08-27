@@ -31,9 +31,19 @@ from .lesson_schedule import lesson_days_in_range, lesson_weekdays, parse_lesson
 from .models import Classroom
 from .models_attendance import AttendanceSession
 
-#: How far back a materialisation run will reach. Long enough to cover a holiday or a week
-#: nobody opened the page; short enough that turning this on does not mint a term of drafts.
-BACKFILL_DAYS = 14
+#: How far back a materialisation run will reach.
+#:
+#: **Was 14, and had to come down.** The fortnight existed to cover a holiday or a week
+#: nobody opened the page, on the assumption that a teacher could still fill those registers
+#: in when they got to them. ``attendance_window`` ended that assumption: a register closes
+#: two hours after its lesson ends, so anything older than today is minted permanently
+#: unfillable — a list of dead drafts above the one register that can actually be marked.
+#:
+#: One day rather than zero because a lesson's grace period can outlive the lesson's own
+#: date in principle (a late class plus two hours), and because a run just after midnight
+#: should still be able to open yesterday's register while its window is closing. Nothing
+#: older can be written by anyone but a global admin, so nothing older is worth creating.
+BACKFILL_DAYS = 1
 
 
 def due_lesson_dates(classroom: Classroom, *, now=None, backfill_days: int = BACKFILL_DAYS) -> list:
