@@ -34,7 +34,7 @@ const HINTS: Partial<Record<NotificationCategory, string>> = {
   CLASSROOM: "Announcements from your class, and replies to your comments.",
   SUPPORT: "Support sessions you've booked, changed or been reminded about.",
   REWARDS: "Points you've earned and shop orders ready to collect.",
-  SYSTEM: "Occasional messages from the school itself.",
+  SYSTEM: "Occasional messages from the learning center itself.",
 };
 
 export function NotificationPreferencesCard() {

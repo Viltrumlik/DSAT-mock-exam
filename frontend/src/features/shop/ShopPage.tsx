@@ -220,7 +220,7 @@ export function ShopPage() {
             items={shop.data?.coin_items ?? []}
             onBuy={buy}
             busy={purchase.isPending}
-            emptyText="Your school hasn't stocked the coin shop yet."
+            emptyText="Your learning center hasn't stocked the coin shop yet."
           />
           <Shelf
             title="Strike shop"
@@ -228,7 +228,7 @@ export function ShopPage() {
             items={shop.data?.strike_items ?? []}
             onBuy={buy}
             busy={purchase.isPending}
-            emptyText="Your school hasn't stocked the strike shop yet."
+            emptyText="Your learning center hasn't stocked the strike shop yet."
           />
         </>
       )}
