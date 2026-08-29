@@ -40,20 +40,24 @@ CALENDAR_OPEN_HOUR = 8
 CALENDAR_CLOSE_HOUR = 18
 SLOT_MINUTES = 60
 
-#: How many hours one student may hold at once, and how many they may take in a week.
+#: How many hours one student may hold at once.
 #:
-#: Both exist because the desk is a shared, finite thing: every seat one student holds is an
+#: It exists because the desk is a shared, finite thing: every seat one student holds is an
 #: hour another cannot book, and an unlimited calendar rewards whoever clicks first rather
-#: than whoever needs it. The two limits answer different abuses — MAX_UPCOMING stops a
-#: student sitting on the whole week, MAX_PER_WEEK stops them cycling through it a session at
-#: a time as each one is settled.
+#: than whoever needs it. MAX_UPCOMING stops a student sitting on the whole week.
 #:
-#: The numbers are the school's to set; they are named here so changing them is one edit and
-#: the UI reads them off the API rather than hard-coding a second copy.
+#: There used to be a third limit here, MAX_BOOKINGS_PER_WEEK = 3, counted over a rolling
+#: seven days on ``booked_at``. **The school withdrew it.** It was never their number — it
+#: was proposed with the rest of Support v2 and carried forward unchallenged — and it turned
+#: out to be the wrong shape of rule: it charged a student for a session they had already
+#: attended, so a student who used the desk properly on Monday, Tuesday and Wednesday was
+#: locked out for the rest of the week even though they were holding nothing. The two limits
+#: that remain are about what a student is HOLDING (upcoming) and about one afternoon
+#: (per-day); neither punishes a student for having turned up.
+#:
+#: The number is the school's to set; it is named here so changing it is one edit and the UI
+#: reads it off the API rather than hard-coding a second copy.
 MAX_UPCOMING_BOOKINGS = 2
-MAX_BOOKINGS_PER_WEEK = 3
-#: The rolling window MAX_BOOKINGS_PER_WEEK is counted over, ending now.
-BOOKING_WEEK_DAYS = 7
 
 #: How many hours one student may hold on any single day. The school's rule: one.
 #:
@@ -61,10 +65,10 @@ BOOKING_WEEK_DAYS = 7
 #: once a day" is a statement about the desk's day, not about the student's clicking: a
 #: student who books Monday and Tuesday in one sitting has used two different days and has
 #: broken no rule, while one who takes 10:00 and 11:00 on Thursday has taken two hours out of
-#: one afternoon, which is the thing being prevented. Counting by ``booked_at`` — the way
-#: MAX_BOOKINGS_PER_WEEK counts — would get both of those backwards.
+#: one afternoon, which is the thing being prevented. Counting by ``booked_at`` — the way the
+#: withdrawn weekly cap counted — would get both of those backwards.
 #:
-#: It is the tightest of the three limits and therefore the one students will actually meet,
+#: It is the tighter of the two limits and therefore the one students will actually meet,
 #: so the calendar greys out a whole day once one hour on it is taken, rather than letting
 #: them pick a second and refusing it.
 MAX_BOOKINGS_PER_DAY = 1
@@ -200,22 +204,18 @@ def booking_allowance(student, *, now=None, exclude_booking_id=None) -> dict:
             availability__starts_at__lt=horizon_end,
         ).values_list("availability__starts_at", flat=True)
     })
-    # Counted on when the seat was TAKEN, not when the hour falls. Counting by hour needs a
-    # window with two edges and makes the answer depend on where "this week" is cut; counting
-    # by ``booked_at`` is one rolling edge and says the plain thing — how many hours you have
-    # claimed in the last seven days.
-    this_week = mine.filter(booked_at__gt=now - timedelta(days=BOOKING_WEEK_DAYS)).count()
-
     return {
         "upcoming": upcoming,
         "max_upcoming": MAX_UPCOMING_BOOKINGS,
-        "this_week": this_week,
-        "max_per_week": MAX_BOOKINGS_PER_WEEK,
         "max_per_day": MAX_BOOKINGS_PER_DAY,
         # ISO dates, because this crosses the API and a `date` would be serialised
         # inconsistently by the two paths that read it.
         "taken_days": [d.isoformat() for d in taken_days],
-        "can_book": upcoming < MAX_UPCOMING_BOOKINGS and this_week < MAX_BOOKINGS_PER_WEEK,
+        # ``can_book`` answers only the standing question — "may this student book at all
+        # right now". The per-day limit is deliberately NOT folded in: it is about a
+        # particular day, and a student at their day's limit on Tuesday can still book
+        # Wednesday. ``taken_days`` is what greys the days out.
+        "can_book": upcoming < MAX_UPCOMING_BOOKINGS,
     }
 
 
@@ -263,11 +263,6 @@ def _check_booking_allowance(student, *, now=None, exclude_booking_id=None, for_
             f"You already have {allowance['upcoming']} support "
             f"session{'' if allowance['upcoming'] == 1 else 's'} booked. Attend one, or "
             f"cancel it, and you can book again."
-        )
-    if allowance["this_week"] >= MAX_BOOKINGS_PER_WEEK:
-        raise ValidationError(
-            f"You can book {MAX_BOOKINGS_PER_WEEK} support sessions a week, and you have "
-            f"used them all. Your next one opens up as this week's sessions pass."
         )
 
 
@@ -908,15 +903,14 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     the reason ``invited_by`` is shown to the teacher — an hour they published as a
     one-to-one can grow, so it has to be obvious who did it and who they brought.
 
-    **The invitee's own booking limits still apply, with one exception.** The weekly cap is
-    enforced: a classmate who has already had three sessions this week is not free to attend a
-    fourth just because somebody else clicked. The per-day cap is enforced for the same
-    reason and more strongly — it is about the invitee's own afternoon, and being pulled into
-    a second hour on a day they already have one is precisely what the school asked to make
-    impossible. The *upcoming* cap is not, because it exists to stop one student sitting on
-    the whole calendar, and a seat they did not ask for is not them hoarding. The errors name
-    the invitee so the inviter can read them — they are the one looking at the screen, and
-    "You can book 3 sessions a week" would be nonsense to them.
+    **The invitee's per-day cap still applies.** It is about the invitee's own afternoon, and
+    being pulled into a second hour on a day they already have one is precisely what the
+    school asked to make impossible. The *upcoming* cap is not enforced, because it exists to
+    stop one student sitting on the whole calendar, and a seat they did not ask for is not
+    them hoarding. (A weekly cap was enforced here too until the school withdrew it — see
+    MAX_UPCOMING_BOOKINGS.) The error names the invitee so the inviter can read it — they are
+    the one looking at the screen, and "You already have a session that day" said about
+    somebody else would be nonsense to them.
     """
     now = now or timezone.now()
 
@@ -960,19 +954,6 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     ) >= MAX_BOOKINGS_PER_DAY:
         raise ValidationError(
             f"{_display(invitee)} already has a support session that day."
-        )
-
-    # The weekly cap — see the docstring.
-    week_start = now - timedelta(days=BOOKING_WEEK_DAYS)
-    this_week = SupportBooking.objects.filter(
-        student=invitee, booked_at__gte=week_start
-    ).exclude(status=SupportBooking.STATUS_CANCELLED).exclude(
-        pk=existing.pk if existing else None
-    ).count()
-    if this_week >= MAX_BOOKINGS_PER_WEEK:
-        raise ValidationError(
-            f"{_display(invitee)} has already had {MAX_BOOKINGS_PER_WEEK} support sessions "
-            "this week."
         )
 
     taken = SupportBooking.objects.filter(
