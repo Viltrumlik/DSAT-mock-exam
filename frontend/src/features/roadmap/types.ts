@@ -18,6 +18,13 @@ export type RoadmapLesson = {
   state?: RoadmapLessonState;
   assignment_id?: number | null;
   scheduled_for?: string | null;
+  /** This student's own delivery of the lesson — what the reading endpoints address.
+   *  Absent on a locked level, which has no delivery row at all. */
+  delivery_id?: number | null;
+  /** Whether there is anything to read before this lesson's homework. */
+  has_roadmap?: boolean;
+  /** Whether they have already pressed "I've finished reading". */
+  roadmap_read?: boolean;
 };
 
 /**

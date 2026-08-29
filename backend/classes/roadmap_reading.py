@@ -101,13 +101,21 @@ def read_payload(delivery: ClassroomLesson, student, request=None) -> dict:
     released = bool(delivery.homework_released_at and delivery.assignment_id)
     unlocked = has_read or not requires_confirmation
 
+    # Spelled out rather than chained: `A if x else B or C` is correct here but reads as
+    # though the fallback might apply to A, and a reader should not have to work out that
+    # `if/else` binds looser than `or`.
+    if roadmap is not None:
+        title = roadmap.display_title
+    else:
+        title = ((session.title or "").strip() if session else "") or (
+            f"Lesson {delivery.lesson_number}"
+        )
+
     return {
         "delivery_id": delivery.id,
         "classroom_id": delivery.classroom_id,
         "lesson_number": delivery.lesson_number,
-        "title": roadmap.display_title if roadmap else (
-            (session.title or "").strip() if session else ""
-        ) or f"Lesson {delivery.lesson_number}",
+        "title": title,
         "summary": roadmap.summary if roadmap else "",
         "estimated_minutes": roadmap.estimated_minutes if roadmap else 0,
         "require_read_confirmation": requires_confirmation,

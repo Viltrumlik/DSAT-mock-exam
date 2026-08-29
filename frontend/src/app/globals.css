@@ -1516,6 +1516,15 @@ mark.ts-annot {
 .rmap .rm-cta.is-grey {
   background: #cbd8e6; box-shadow: 0 5px 0 #a9bcd0; color: #6c87a2; cursor: not-allowed;
 }
+/* The quiet second action under the main one — "Read it again" on a lesson whose reading is
+   already done. Deliberately flat and unraised: the raised pill is the ONE thing to do next,
+   and two of them side by side is two next steps. */
+.rmap .rm-cta-sub {
+  width: 100%; margin-top: 8px; border: 0; background: none; cursor: pointer;
+  font-family: var(--rm-font-round); font-weight: 800; font-size: 13px;
+  color: var(--rm-ink-2); padding: 4px;
+}
+.rmap .rm-cta-sub:hover { color: var(--rm-brand); text-decoration: underline; }
 
 /* ---- locked veil + empty stage ---- */
 .rmap .rm-veil {

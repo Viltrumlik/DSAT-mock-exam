@@ -33,6 +33,8 @@ from .models import (
     JournalLesson,
     JournalLessonAssessment,
     JournalLessonAttachment,
+    JournalRoadmap,
+    JournalRoadmapSection,
 )
 from .serializers import (
     JournalClassworkSerializer,
@@ -41,6 +43,9 @@ from .serializers import (
     JournalLessonDetailSerializer,
     JournalLessonSummarySerializer,
     JournalListSerializer,
+    JournalRoadmapSectionSerializer,
+    JournalRoadmapSerializer,
+    JournalRoadmapWriteSerializer,
 )
 
 JOURNAL_PERMS = [IsAuthenticatedAndNotFrozen, CanManageJournals]
@@ -142,7 +147,8 @@ def _annotated_lessons():
     # select_related classwork/midterm_exam: the summary serializer reads both for every
     # row (classwork_ready, midterm badge) — without this the timeline is N+1.
     return (
-        JournalLesson.objects.select_related("classwork", "midterm_exam")
+        JournalLesson.objects.select_related("classwork", "roadmap", "midterm_exam")
+        .prefetch_related("roadmap__sections")
         .annotate(
             _assess_count=Count("assessments", distinct=True),
             _attach_count=Count("extra_attachments", distinct=True),
@@ -1284,3 +1290,171 @@ class LessonBulkView(APIView):
             return True, "copied"
 
         return False, f"unknown action '{action}'"
+
+
+# --------------------------------------------------------------------------- roadmap
+
+
+class RoadmapDetailView(APIView):
+    """GET/PATCH the reading a student does before a session's homework.
+
+    The PATCH is DECLARATIVE about sections: the client sends the whole ``sections`` list as
+    it should end up, and this reconciles — sections with an ``id`` are updated, ones without
+    are created, and any the list omits are deleted. One request for the whole block rather
+    than a create/update/delete/reorder API each, because reordering a reading is moving four
+    paragraphs at once and doing that as four requests leaves the page half-reordered if any
+    of them fails.
+
+    ``order`` is taken from the list POSITION, not from a field. A client that sends its own
+    numbers can send two of the same, and the resulting tie is broken by primary key — which
+    puts a paragraph the author moved to the top back at the bottom.
+
+    Files ride a separate endpoint (:class:`RoadmapSectionMediaView`): an image belongs to a
+    section that must already exist to attach it to, and mixing a multipart body into a
+    declarative JSON list means encoding which file goes with which unsaved list index.
+    """
+
+    permission_classes = JOURNAL_PERMS
+    parser_classes = [JSONParser]
+
+    _SECTION_SCALARS = ("kind", "heading", "body", "caption", "video_url")
+
+    def _get_lesson(self, journal_pk, pk):
+        return get_object_or_404(JournalLesson, pk=pk, journal_id=journal_pk)
+
+    def _guard(self, lesson):
+        """The two refusals both endpoints share. Returns a Response, or None."""
+        if lesson.journal.status == Journal.STATUS_ARCHIVED:
+            return Response(
+                {"detail": "Journal is archived (read-only)."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if lesson.is_midterm:
+            # A midterm is a sitting, not a topic. There is nothing to read beforehand, and
+            # offering the tab would suggest otherwise.
+            return Response(
+                {"detail": "Midterm sessions have no roadmap."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return None
+
+    def get(self, request, journal_pk, pk):
+        lesson = self._get_lesson(journal_pk, pk)
+        if lesson.is_midterm:
+            return Response(
+                {"detail": "Midterm sessions have no roadmap."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        roadmap = services.ensure_roadmap(lesson)
+        return Response(JournalRoadmapSerializer(roadmap, context={"request": request}).data)
+
+    @transaction.atomic
+    def patch(self, request, journal_pk, pk):
+        lesson = self._get_lesson(journal_pk, pk)
+        denied = self._guard(lesson)
+        if denied:
+            return denied
+
+        roadmap = services.ensure_roadmap(lesson)
+        write = JournalRoadmapWriteSerializer(roadmap, data=request.data, partial=True)
+        write.is_valid(raise_exception=True)
+        write.save()
+
+        sections = request.data.get("sections")
+        if isinstance(sections, list):
+            kept: list[int] = []
+            for position, raw in enumerate(sections):
+                if not isinstance(raw, dict):
+                    continue
+                fields = {
+                    key: raw[key] for key in self._SECTION_SCALARS if key in raw
+                }
+                kind = fields.get("kind")
+                if kind is not None and kind not in dict(JournalRoadmapSection.KIND_CHOICES):
+                    return Response(
+                        {"detail": f"Unknown section kind {kind!r}."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                fields["order"] = position
+                section_id = raw.get("id")
+                if section_id:
+                    updated = JournalRoadmapSection.objects.filter(
+                        pk=section_id, roadmap=roadmap
+                    ).update(**fields)
+                    if updated:
+                        kept.append(int(section_id))
+                        continue
+                    # An id that is not ours is treated as a new section rather than as an
+                    # error: the client's list is what the author sees, and refusing the
+                    # whole save over one stale id would lose everything else they wrote.
+                created = JournalRoadmapSection.objects.create(roadmap=roadmap, **fields)
+                kept.append(created.pk)
+            # Whatever the list left out is gone. Deleting a section deletes its image with
+            # the row; the file itself is left in the bucket, which is what every other
+            # delete in this app does.
+            roadmap.sections.exclude(pk__in=kept).delete()
+
+        lesson.journal.updated_by = request.user
+        lesson.journal.save(update_fields=["updated_by", "updated_at"])
+        services.log_event(
+            lesson.journal,
+            request.user,
+            "roadmap_updated",
+            {"lesson_number": lesson.lesson_number},
+            lesson=lesson,
+        )
+        roadmap.refresh_from_db()
+        return Response(JournalRoadmapSerializer(roadmap, context={"request": request}).data)
+
+
+class RoadmapSectionMediaView(APIView):
+    """``POST`` a picture or a video onto one roadmap section; ``DELETE`` to clear it.
+
+    Multipart, field name ``file``. Which column it lands in follows the section's own
+    ``kind`` rather than a parameter — an IMAGE section has nowhere to put a video, and
+    letting the caller choose would make the two disagree.
+    """
+
+    permission_classes = JOURNAL_PERMS
+    parser_classes = _WRITE_PARSERS
+
+    def _section(self, journal_pk, pk, section_id):
+        lesson = get_object_or_404(JournalLesson, pk=pk, journal_id=journal_pk)
+        roadmap = get_object_or_404(JournalRoadmap, lesson=lesson)
+        return lesson, get_object_or_404(JournalRoadmapSection, pk=section_id, roadmap=roadmap)
+
+    def post(self, request, journal_pk, pk, section_id):
+        lesson, section = self._section(journal_pk, pk, section_id)
+        if lesson.journal.status == Journal.STATUS_ARCHIVED:
+            return Response(
+                {"detail": "Journal is archived (read-only)."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        upload = request.FILES.get("file")
+        if upload is None:
+            return Response({"detail": "No file was sent."}, status=status.HTTP_400_BAD_REQUEST)
+        if section.kind == JournalRoadmapSection.KIND_IMAGE:
+            section.image = upload
+            section.save(update_fields=["image", "updated_at"])
+        elif section.kind == JournalRoadmapSection.KIND_VIDEO:
+            section.video_file = upload
+            section.save(update_fields=["video_file", "updated_at"])
+        else:
+            return Response(
+                {"detail": "A text section takes no file."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(
+            JournalRoadmapSectionSerializer(section, context={"request": request}).data
+        )
+
+    def delete(self, request, journal_pk, pk, section_id):
+        _, section = self._section(journal_pk, pk, section_id)
+        if section.image:
+            section.image = None
+        if section.video_file:
+            section.video_file = None
+        section.save(update_fields=["image", "video_file", "updated_at"])
+        return Response(
+            JournalRoadmapSectionSerializer(section, context={"request": request}).data
+        )

@@ -105,9 +105,7 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
         ).values_list("classroom_lesson_id", flat=True)
     )
 
-    sessions = list(
-        journal.lessons.prefetch_related("roadmap__sections")
-    )  # ordered (journal_id, lesson_number) by the model's Meta
+    sessions = list(journal.lessons.all())  # prefetched, ordered (journal_id, lesson_number)
 
     # Provisional dates for not-yet-delivered lessons, when the class is bound. Derived
     # straight from the schedule (session N → the N-th meeting) rather than re-deriving the
@@ -350,11 +348,13 @@ def build_roadmap(user) -> dict:
     # keys get asked for and it is built from the curriculum, not from this dict.
     from journals.models import Journal
 
+    # `lessons__roadmap__sections` rides along so `has_roadmap` on the own level costs no
+    # query per session — it reads the sections to decide whether any of them is filled in.
     journals = {
         (j.subject, j.level): j
         for j in Journal.objects.filter(
             subject__in=studied, status=Journal.STATUS_PUBLISHED
-        ).prefetch_related("lessons")
+        ).prefetch_related("lessons", "lessons__roadmap__sections")
     }
 
     tracks: list[dict] = []

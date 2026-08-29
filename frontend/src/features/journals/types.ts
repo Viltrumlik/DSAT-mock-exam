@@ -66,6 +66,7 @@ export type LessonSummary = {
   is_ready: boolean;
   homework_ready: boolean;
   classwork_ready: boolean;
+  has_roadmap: boolean;
   validation: string[];
   homework_validation: string[];
   classwork_validation: string[];
@@ -189,6 +190,7 @@ export type LessonDetail = {
   is_ready: boolean;
   homework_ready: boolean;
   classwork_ready: boolean;
+  has_roadmap: boolean;
   validation: string[];
   homework_validation: string[];
   classwork_validation: string[];
@@ -236,3 +238,33 @@ export type VocabSectionOpt = { id: number; title: string; sets: VocabSetOpt[] }
 
 /** A vocabulary bank set attached to a lesson/classwork, for display. */
 export type LessonVocab = { id: number; title: string; section_title: string; word_count: number };
+
+
+// ── Roadmap: the reading a student does before the homework ───────────────────
+
+export type RoadmapSectionKind = "TEXT" | "IMAGE" | "VIDEO";
+
+export type RoadmapSection = {
+  /** Absent on a section the author has added but not yet saved. */
+  id?: number;
+  order?: number;
+  kind: RoadmapSectionKind;
+  heading: string;
+  body: string;
+  caption: string;
+  video_url: string;
+  image_url?: string | null;
+  video_file_url?: string | null;
+  is_filled?: boolean;
+};
+
+export type Roadmap = {
+  title: string;
+  summary: string;
+  estimated_minutes: number;
+  require_read_confirmation: boolean;
+  sections: RoadmapSection[];
+  has_content: boolean;
+  is_ready: boolean;
+  validation_reasons: string[];
+};

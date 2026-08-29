@@ -303,15 +303,38 @@ class JournalLesson(models.Model):
             return ["Classwork not set up"]
         return cw.validation_reasons()
 
+    def roadmap_validation_reasons(self) -> list[str]:
+        """Why this session's ROADMAP isn't publishable. Empty list = ready.
+
+        A session with NO roadmap is ready — the reading is optional (see
+        ``JournalRoadmap.validation_reasons``). Only a roadmap that was started and left
+        half-written is reported.
+        """
+        if self.is_midterm:
+            return []
+        roadmap = getattr(self, "roadmap", None)
+        return roadmap.validation_reasons() if roadmap is not None else []
+
     def validation_reasons(self) -> list[str]:
         """Why this session can't be published. Empty list = ready.
 
         A MIDTERM session only needs its midterm exam chosen; a HOMEWORK session needs
-        both its homework brief and its in-class plan (classwork) filled in.
+        both its homework brief and its in-class plan (classwork) filled in, and must not
+        have a half-written roadmap attached.
         """
         if self.is_midterm:
             return [] if self.midterm_exam_id else ["No midterm exam selected"]
-        return self.homework_validation_reasons() + self.classwork_validation_reasons()
+        return (
+            self.homework_validation_reasons()
+            + self.classwork_validation_reasons()
+            + self.roadmap_validation_reasons()
+        )
+
+    @property
+    def has_roadmap(self) -> bool:
+        """Whether there is anything for a student to read before this session's homework."""
+        roadmap = getattr(self, "roadmap", None)
+        return bool(roadmap is not None and roadmap.has_content)
 
     @property
     def homework_ready(self) -> bool:
@@ -807,3 +830,186 @@ class ClassroomLessonGrant(models.Model):
 
     def __str__(self) -> str:
         return f"{self.resource_type}#{self.resource_id} → lesson {self.classroom_lesson_id}"
+
+
+class JournalRoadmap(models.Model):
+    """The reading a student does BEFORE the homework — one per session.
+
+    The third authored block on a session, beside the homework brief (flat on
+    ``JournalLesson``) and the in-class plan (``JournalClasswork``). Those two are written
+    for a teacher; this one is written for the STUDENT: the explanation of the topic, in
+    pictures, video and prose, that they read on their own before opening the homework.
+
+    Its content is a list of ordered SECTIONS rather than a fixed set of fields, because the
+    school asked for "images, video and long texts" in the plural — a topic is a paragraph,
+    then a diagram, then two more paragraphs, then a worked example on video, and a schema
+    with one ``body`` and one ``image`` can only ever express the first of those.
+
+    Nothing here is copied into the classroom at release time, unlike the homework brief.
+    The student reads it straight off the template through the delivery row, so an admin
+    fixing a typo fixes it for every class already reading it — the same rule
+    ``ClassroomLesson`` states for content in general.
+    """
+
+    lesson = models.OneToOneField(
+        JournalLesson, on_delete=models.CASCADE, related_name="roadmap"
+    )
+    title = models.CharField(max_length=200, blank=True, default="")
+    #: One line under the title, telling the student what this reading is for.
+    summary = models.CharField(max_length=300, blank=True, default="")
+    #: Roughly how long it takes to read. Shown before they start, so the estimate is the
+    #: author's own rather than a word count guessed from the body.
+    estimated_minutes = models.PositiveSmallIntegerField(default=0)
+    #: Whether the student must press "I've finished reading" before the homework opens.
+    #:
+    #: On by default, because that button is the ONLY signal this feature produces — without
+    #: it the roadmap is a page nobody can tell was read, and the homework is one scroll away
+    #: whether they read it or not. An author who just wants to attach reading can turn it off.
+    require_read_confirmation = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "journals_roadmap"
+
+    def __str__(self) -> str:
+        return f"roadmap(lesson={self.lesson_id})"
+
+    @property
+    def display_title(self) -> str:
+        if self.title.strip():
+            return self.title.strip()
+        lesson = self.lesson
+        return (lesson.title or "").strip() or f"Lesson {lesson.lesson_number}"
+
+    def _section_list(self):
+        # `.all()` rather than a filtered query, so a prefetch upstream is actually used.
+        return list(self.sections.all())
+
+    @property
+    def has_content(self) -> bool:
+        return any(s.is_filled for s in self._section_list())
+
+    def validation_reasons(self) -> list[str]:
+        """Why this session's roadmap isn't publishable. Empty list = ready.
+
+        An EMPTY roadmap is not a reason. Unlike the homework brief and the in-class plan,
+        the roadmap is optional: a session that is pure practice has nothing to read, and
+        refusing to publish it until somebody writes an essay would make this feature a tax
+        on every existing journal rather than an addition to it. Only a roadmap that has
+        been started and left broken is reported.
+        """
+        sections = self._section_list()
+        if not sections:
+            return []
+        reasons: list[str] = []
+        empty = [s for s in sections if not s.is_filled]
+        if empty:
+            reasons.append(
+                f"Roadmap section {empty[0].order + 1} is empty — fill it in or remove it"
+            )
+        return reasons
+
+    @property
+    def is_ready(self) -> bool:
+        return not self.validation_reasons()
+
+
+class JournalRoadmapSection(models.Model):
+    """One block of a roadmap: a passage, a picture, or a video."""
+
+    KIND_TEXT = "TEXT"
+    KIND_IMAGE = "IMAGE"
+    KIND_VIDEO = "VIDEO"
+    KIND_CHOICES = [
+        (KIND_TEXT, "Text"),
+        (KIND_IMAGE, "Image"),
+        (KIND_VIDEO, "Video"),
+    ]
+
+    roadmap = models.ForeignKey(
+        JournalRoadmap, on_delete=models.CASCADE, related_name="sections"
+    )
+    order = models.PositiveIntegerField(default=0, db_index=True)
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, default=KIND_TEXT)
+
+    #: An optional heading above the block, on any kind.
+    heading = models.CharField(max_length=200, blank=True, default="")
+    #: TEXT: the passage itself. Plain text with blank lines between paragraphs — NOT html.
+    #:
+    #: The renderer splits on blank lines and prints the parts as paragraphs. Storing HTML
+    #: would put author-supplied markup on a student's page, and this repo already carries a
+    #: `SafeHtml` component and a documented set of rules about where that is allowed; a
+    #: reading page is not a good place to add another entrance.
+    body = models.TextField(blank=True, default="")
+    #: IMAGE: the picture, plus the line under it.
+    image = models.ImageField(upload_to="journal_roadmap/", null=True, blank=True)
+    caption = models.CharField(max_length=300, blank=True, default="")
+    #: VIDEO: a link (YouTube and the like) or an uploaded file. Mirrors the lesson-video
+    #: pair already on JournalLesson, including the R2 presigned upload for the file half.
+    video_url = models.URLField(max_length=500, blank=True, default="")
+    video_file = models.FileField(
+        upload_to="journal_roadmap_videos/", max_length=500, null=True, blank=True
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "journals_roadmap_section"
+        ordering = ["order", "id"]
+        indexes = [models.Index(fields=["roadmap", "order"])]
+
+    def __str__(self) -> str:
+        return f"roadmap={self.roadmap_id} #{self.order} {self.kind}"
+
+    @property
+    def is_filled(self) -> bool:
+        """Whether this block has anything for a student to read or watch.
+
+        A heading alone does not count: a section that is only a title renders as a bare
+        line with nothing under it, which reads as a page that failed to load.
+        """
+        if self.kind == self.KIND_TEXT:
+            return bool((self.body or "").strip())
+        if self.kind == self.KIND_IMAGE:
+            return bool(self.image)
+        if self.kind == self.KIND_VIDEO:
+            return bool((self.video_url or "").strip() or self.video_file)
+        return False
+
+
+class RoadmapRead(models.Model):
+    """One student has read one classroom's copy of one session's roadmap.
+
+    Hung off ``ClassroomLesson`` rather than ``JournalRoadmap``, so the mark belongs to the
+    student's own delivery of the lesson. A journal is shared by every classroom of its
+    (subject, level); marking it read against the template would mean a student in one class
+    could unlock the homework for a student in another.
+
+    The row is the whole signal — its existence is "read", and ``read_at`` says when. There
+    is no un-read: a student who presses the button and then scrolls back up has still read
+    it, and the homework button must not disappear under them.
+    """
+
+    classroom_lesson = models.ForeignKey(
+        ClassroomLesson, on_delete=models.CASCADE, related_name="roadmap_reads"
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="roadmap_reads"
+    )
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "journals_roadmap_read"
+        ordering = ["-read_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["classroom_lesson", "student"], name="uniq_roadmap_read_per_student"
+            )
+        ]
+        indexes = [models.Index(fields=["student", "classroom_lesson"])]
+
+    def __str__(self) -> str:
+        return f"{self.student_id} read delivery {self.classroom_lesson_id}"

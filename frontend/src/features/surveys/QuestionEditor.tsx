@@ -179,7 +179,6 @@ export function QuestionEditor({
 
   const choice = isChoiceType(draft.question_type);
   const numeric = isNumericType(draft.question_type);
-  const cleanOptions = draft.options.map((o) => o.trim()).filter(Boolean);
   // The follow-up block is worth showing only once something can open it.
   const hasTrigger = numeric ? draft.follow_up_threshold != null : draft.follow_up_options.length > 0;
 
