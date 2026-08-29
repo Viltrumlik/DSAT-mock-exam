@@ -1319,6 +1319,26 @@ class RoadmapDetailView(APIView):
 
     _SECTION_SCALARS = ("kind", "heading", "body", "caption", "video_url")
 
+    @staticmethod
+    def _clean_video_url(raw) -> str:
+        """An http(s) link, or "".
+
+        Necessary because this view writes sections with ``objects.create`` /
+        ``queryset.update``, and NEITHER runs model field validation — Django only validates
+        on ``full_clean()``. So the ``URLField`` on the column is documentation here, not a
+        guard, and without this an author could store a `javascript:` URL that goes on to
+        reach a `src` attribute on a student's page. Everything else on a section is plain
+        text rendered as a React text node and needs no equivalent.
+        """
+        from urllib.parse import urlparse
+
+        value = ("" if raw is None else str(raw)).strip()
+        if not value:
+            return ""
+        if urlparse(value).scheme.lower() not in ("http", "https"):
+            raise DjangoValidationError("A video link has to start with http:// or https://.")
+        return value
+
     def _get_lesson(self, journal_pk, pk):
         return get_object_or_404(JournalLesson, pk=pk, journal_id=journal_pk)
 
@@ -1369,6 +1389,14 @@ class RoadmapDetailView(APIView):
                 fields = {
                     key: raw[key] for key in self._SECTION_SCALARS if key in raw
                 }
+                if "video_url" in fields:
+                    try:
+                        fields["video_url"] = self._clean_video_url(fields["video_url"])
+                    except DjangoValidationError as exc:
+                        return Response(
+                            {"detail": "; ".join(exc.messages)},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
                 kind = fields.get("kind")
                 if kind is not None and kind not in dict(JournalRoadmapSection.KIND_CHOICES):
                     return Response(

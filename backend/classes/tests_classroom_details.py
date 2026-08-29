@@ -238,6 +238,26 @@ class GovernanceUpdateTests(ClassroomDetailsFixture):
         r = self.patch(self.other_admin, {"level": Classroom.LEVEL_FOUNDATION})
         self.assertEqual(r.status_code, 400, r.content)
 
+    def test_a_classroom_at_a_closed_branch_is_still_editable(self):
+        """Closing a branch must not make every class still at it permanently uneditable.
+        The edit form sends `branch` on every save, so without the keep-what-you-have
+        carve-out, renaming one would 400 on a field nobody touched."""
+        Classroom.objects.filter(pk=self.classroom.pk).update(branch=self.closed_branch)
+        r = self.patch(self.other_admin, {
+            "name": "Renamed", "branch": self.closed_branch.id,
+        })
+        self.assertEqual(r.status_code, 200, r.content)
+        self.classroom.refresh_from_db()
+        self.assertEqual(self.classroom.name, "Renamed")
+        self.assertEqual(self.classroom.branch_id, self.closed_branch.id)
+
+    def test_but_it_still_cannot_be_MOVED_to_a_closed_branch(self):
+        another_closed = Branch.objects.create(
+            region=self.region, name="Also shut", is_active=False
+        )
+        r = self.patch(self.other_admin, {"branch": another_closed.id})
+        self.assertEqual(r.status_code, 400, r.content)
+
     def test_a_bad_telegram_link_is_refused_here_too(self):
         r = self.patch(self.other_admin, {"telegram_group_url": "https://example.com/x"})
         self.assertEqual(r.status_code, 400, r.content)

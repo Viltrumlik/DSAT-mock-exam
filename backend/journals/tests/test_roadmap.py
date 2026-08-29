@@ -102,6 +102,30 @@ class AuthoringTests(RoadmapTestBase):
         self.assertEqual([s["id"] for s in r.json()["sections"]], [second, first])
         self.assertEqual([s["order"] for s in r.json()["sections"]], [0, 1])
 
+    def test_a_video_link_must_be_http(self):
+        """This view writes sections with `objects.create`/`update`, and neither runs model
+        field validation — so the URLField on the column is documentation, not a guard. The
+        value ends up in a `src` attribute on a student's page."""
+        session = self._session()
+        self.client.force_authenticate(self.admin)
+        r = self.client.patch(
+            self.url(session),
+            {"sections": [{"kind": "VIDEO", "video_url": "javascript:alert(1)"}]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_an_ordinary_video_link_is_kept(self):
+        session = self._session()
+        self.client.force_authenticate(self.admin)
+        r = self.client.patch(
+            self.url(session),
+            {"sections": [{"kind": "VIDEO", "video_url": "https://youtu.be/abc123"}]},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["sections"][0]["video_url"], "https://youtu.be/abc123")
+
     def test_an_unknown_kind_is_refused(self):
         session = self._session()
         self.client.force_authenticate(self.admin)

@@ -506,6 +506,19 @@ class ChoiceFollowUpTests(SurveyFixture):
 
 
 class QuestionPictureTests(SurveyFixture):
+    #: The smallest thing Pillow will open — a 1x1 PNG. Written as bytes rather than read
+    #: from a fixture file so this test carries no external dependency.
+    PNG = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+    def _png(self, name="pic.png"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return SimpleUploadedFile(name, self.PNG, content_type="image/png")
+
     def test_a_question_with_no_picture_reports_none_rather_than_raising(self):
         """`.url` on an unset ImageField raises ValueError — the exact 500 the guarded
         helper exists to prevent."""
@@ -513,6 +526,52 @@ class QuestionPictureTests(SurveyFixture):
         payload = self.client.get(f"/api/surveys/{self.survey.id}/").json()
         self.assertIsNone(payload["image_url"])
         self.assertTrue(all(q["image_url"] is None for q in payload["questions"]))
+
+    def test_a_picture_can_be_attached_to_a_question(self):
+        """Exercises the multipart parser on the authoring base — without it every one of
+        these endpoints answers 415 the first time somebody attaches a file."""
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/",
+            {
+                "prompt": "What does this diagram show?",
+                "question_type": SurveyQuestion.TYPE_SHORT_TEXT,
+                "image": self._png(),
+            },
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertIsNotNone(r.json()["image_url"])
+
+    def test_a_picture_can_be_attached_to_the_survey_itself(self):
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.patch(
+            f"/api/surveys/admin/{self.survey.id}/",
+            {"image": self._png()},
+            format="multipart",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIsNotNone(r.json()["image_url"])
+
+    def test_the_student_sees_the_picture_the_author_attached(self):
+        self.client.force_authenticate(self.super_admin)
+        self.client.patch(
+            f"/api/surveys/admin/{self.survey.id}/", {"image": self._png()}, format="multipart"
+        )
+        self.client.force_authenticate(self.student)
+        self.assertIsNotNone(self.client.get(f"/api/surveys/{self.survey.id}/").json()["image_url"])
+
+    def test_an_image_only_patch_does_not_disturb_anything_else(self):
+        """The console sends the picture on its own with an empty patch — bundling it with
+        the text fields would re-upload it on every blur-save. A partial PATCH must not
+        blank the title on its way through."""
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.patch(
+            f"/api/surveys/admin/{self.survey.id}/", {"image": self._png()}, format="multipart"
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["title"], "How is the term going?")
+        self.assertEqual(r.json()["status"], Survey.STATUS_PUBLISHED)
 
 
 class ReorderTests(SurveyFixture):

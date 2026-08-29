@@ -219,15 +219,24 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
         raise serializers.ValidationError("Teacher must have user-management permission.")
 
     def validate_branch(self, value):
-        """A classroom may only be put at a branch that is open.
+        """A classroom may only be MOVED to a branch that is open.
 
         Checked here rather than left to the FK: ``Branch`` rows are deactivated rather than
         deleted (closing a site must not delete the classes that met there), so the FK alone
         would happily file a new class at a branch that closed last term.
+
+        **Keeping the branch it already has is always allowed**, exactly as
+        ``validate_teacher`` below allows keeping a demoted teacher. Without that carve-out,
+        closing a branch would make every classroom still at it permanently uneditable: the
+        ops edit form sends `branch` on every save, so renaming one would 400 on a field the
+        administrator never touched.
         """
-        if value is not None and not getattr(value, "is_active", True):
-            raise serializers.ValidationError("That branch is closed.")
-        return value
+        if value is None or getattr(value, "is_active", True):
+            return value
+        instance = getattr(self, "instance", None)
+        if instance is not None and instance.branch_id == value.pk:
+            return value
+        raise serializers.ValidationError("That branch is closed.")
 
     def validate_telegram_group_url(self, value):
         """Accept ``t.me/x`` by adding the scheme, refuse anything that is not Telegram.

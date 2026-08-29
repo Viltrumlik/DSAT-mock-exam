@@ -949,7 +949,14 @@ export default function OpsClassroomGovernancePage() {
         // modal does. Its own memo would be a second source of truth for one list, so it is
         // derived inline from the same `branches.data`.
         const editBranchOptions = (branches.data ?? []).filter(
-          (b) => String(b.region) === editForm.regionId && b.is_active,
+          (b) =>
+            String(b.region) === editForm.regionId &&
+            // The branch this class is ALREADY at stays in the list even once it has been
+            // closed. Dropping it would render the select blank while the form still held
+            // the old id, so an administrator renaming the class would watch the branch
+            // apparently empty itself. The server allows keeping it, and refuses a move TO
+            // a closed one — so the option is labelled rather than hidden.
+            (b.is_active || b.id === editRow.branch),
         );
         // Levels depend on the classroom's subject, which is NOT editable here — so it comes
         // off the row rather than the form.
@@ -1035,7 +1042,9 @@ export default function OpsClassroomGovernancePage() {
                         {editForm.regionId ? "— Choose branch —" : "— Pick a region first —"}
                       </option>
                       {editBranchOptions.map((b) => (
-                        <option key={b.id} value={String(b.id)}>{b.name}</option>
+                        <option key={b.id} value={String(b.id)}>
+                          {b.is_active ? b.name : `${b.name} (closed)`}
+                        </option>
                       ))}
                     </Select>
                   </Field>
