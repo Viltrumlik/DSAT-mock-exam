@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import {
   ClipboardList,
   EyeOff,
   GripVertical,
+  ImagePlus,
   Lock,
   Pencil,
   Plus,
@@ -279,10 +281,13 @@ export function SurveyBuilderPage() {
     }
   }
 
-  async function patchSurvey(patch: Parameters<typeof update.mutateAsync>[0]["patch"]) {
+  async function patchSurvey(
+    patch: Parameters<typeof update.mutateAsync>[0]["patch"],
+    image?: File | null,
+  ) {
     setPageError(null);
     try {
-      await update.mutateAsync({ patch });
+      await update.mutateAsync({ patch, image });
     } catch (e) {
       setPageError(errorText(e) ?? "That change couldn’t be saved.");
     }
@@ -564,7 +569,10 @@ function SurveyEditor({
   sensors: ReturnType<typeof useSensors>;
   onDragEnd: (e: DragEndEvent) => void;
   onShowResponses: () => void;
-  onPatch: (patch: { status?: SurveyStatus; description?: string; allow_anonymous?: boolean; closes_at?: string | null }) => void;
+  onPatch: (
+    patch: { status?: SurveyStatus; description?: string; allow_anonymous?: boolean; closes_at?: string | null },
+    image?: File | null,
+  ) => void;
   onAskDelete: () => void;
   updating: boolean;
   deleting: boolean;
@@ -646,6 +654,51 @@ function SurveyEditor({
             }}
           />
         </Field>
+        {/* The survey's own picture. The backend, the API and the student's form have all
+            carried this since it shipped; there was simply no way to set one, which is the
+            same "the function exists and cannot be reached" shape as the question editor. */}
+        <Field label="Picture" hint="Optional. Shown under the title on the student's form.">
+          <div className="space-y-2">
+            {detail.image_url && (
+              <div className="w-full max-w-sm overflow-hidden rounded-xl border border-border">
+                {/* `unoptimized`: the bucket is private, so this is a signed URL that expires
+                    in an hour and Next's optimizer would cache a 403. */}
+                <Image
+                  src={detail.image_url}
+                  alt=""
+                  width={640}
+                  height={360}
+                  unoptimized
+                  className="h-auto w-full object-contain"
+                />
+              </div>
+            )}
+            <label
+              className={cn(
+                "ds-ring inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-border",
+                "bg-card px-2.5 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-2",
+                updating && "cursor-not-allowed opacity-60",
+              )}
+            >
+              <ImagePlus className="h-3.5 w-3.5" aria-hidden />
+              {detail.image_url ? "Replace picture" : "Add a picture"}
+              <input
+                type="file"
+                accept="image/*"
+                disabled={updating}
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  // Sent on its own with an empty patch: the image rides multipart, and
+                  // bundling it with the text fields would turn every keystroke-blur save
+                  // into a re-upload of the same picture.
+                  if (file) onPatch({}, file);
+                }}
+              />
+            </label>
+          </div>
+        </Field>
+
         <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
           <Field
             label="Closes on"

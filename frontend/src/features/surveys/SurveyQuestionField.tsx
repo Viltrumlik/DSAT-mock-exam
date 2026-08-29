@@ -85,6 +85,13 @@ function RatingSlider({
         // an untouched slider still counts as unanswered rather than as a silent zero.
         value={picked ?? min}
         onChange={(e) => onChange(Number(e.target.value))}
+        // Touching it at all commits the value under the thumb, even when that value has
+        // not CHANGED. Without this the one answer a recommendation survey most needs is
+        // the one it cannot record: the thumb is parked at the minimum, so a student who
+        // wants to answer 0 drags it, no change event fires, and their score stays null.
+        // Both handlers, because a pointer and a keyboard reach the control differently.
+        onPointerUp={(e) => onChange(Number(e.currentTarget.value))}
+        onKeyUp={(e) => onChange(Number(e.currentTarget.value))}
         aria-labelledby={labelId(question)}
         aria-valuetext={picked == null ? "Not answered yet" : String(picked)}
         className={cn(
