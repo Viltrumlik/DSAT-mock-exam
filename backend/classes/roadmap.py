@@ -95,7 +95,19 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
         for d in ClassroomLesson.objects.filter(classroom=classroom).select_related("assignment")
     }
 
-    sessions = list(journal.lessons.all())  # prefetched, ordered (journal_id, lesson_number)
+    # Which of this student's deliveries they have already marked read. One query for the
+    # whole ladder rather than one per lesson — the roadmap renders every session at once.
+    from journals.models import RoadmapRead
+
+    read_delivery_ids = set(
+        RoadmapRead.objects.filter(
+            student=user, classroom_lesson_id__in=[d.id for d in delivered.values()]
+        ).values_list("classroom_lesson_id", flat=True)
+    )
+
+    sessions = list(
+        journal.lessons.prefetch_related("roadmap__sections")
+    )  # ordered (journal_id, lesson_number) by the model's Meta
 
     # Provisional dates for not-yet-delivered lessons, when the class is bound. Derived
     # straight from the schedule (session N → the N-th meeting) rather than re-deriving the
@@ -158,6 +170,15 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
                 "state": state,
                 "assignment_id": assignment_id,
                 "scheduled_for": scheduled.isoformat() if scheduled else None,
+                # ── the reading attached to this session ──────────────────────────
+                #
+                # `delivery_id` is what the reading endpoints address, and it is emitted
+                # ONLY for the own level: a locked level has no delivery row at all, so
+                # there is nothing to open and nothing to mark. That omission is the real
+                # boundary here, exactly as it is for `assignment_id` above.
+                "delivery_id": d.id if d else None,
+                "has_roadmap": session.has_roadmap,
+                "roadmap_read": bool(d and d.id in read_delivery_ids),
             }
         )
     return lessons

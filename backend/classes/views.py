@@ -970,6 +970,12 @@ class ClassroomViewSet(ModelViewSet):
         assigned = self._assign_initial_teacher(classroom, (request.data or {}).get("teacher_id"))
         if assigned is not None:
             teacher = assigned
+        # Same reasoning as the teacher above: an admin who picks support staff in the create
+        # form gets the membership written in the SAME request, rather than a second call
+        # from the browser that can fail on its own and leave a classroom half-set-up.
+        support_added = self._assign_initial_support_teachers(
+            classroom, (request.data or {}).get("support_teacher_ids")
+        )
         logger.info(
             "classroom_created id=%s subject=%s created_by_id=%s teacher_id=%s",
             classroom.pk,
@@ -978,6 +984,11 @@ class ClassroomViewSet(ModelViewSet):
             getattr(teacher, "pk", None),
         )
         out = ClassroomSerializer(classroom, context={"request": request}).data
+        # Reported rather than assumed. `_assign_initial_support_teachers` skips an id it
+        # cannot honour (wrong account role, wrong subject) instead of failing the whole
+        # creation, so the caller has to be told which ones actually landed — otherwise a
+        # subject mismatch looks exactly like success.
+        out["support_teacher_ids"] = support_added
         return Response(out, status=status.HTTP_201_CREATED)
 
     def _assign_initial_teacher(self, classroom, teacher_id):
@@ -1008,6 +1019,52 @@ class ClassroomViewSet(ModelViewSet):
             },
         )
         return teacher
+
+    def _assign_initial_support_teachers(self, classroom, user_ids) -> list[int]:
+        """Give each id an ACTIVE ``ROLE_TA`` membership. Returns the ids that took.
+
+        Repeats BOTH guards from :class:`SupportTeacherAssignView`, deliberately rather than
+        by import, because the two doors onto ROLE_TA disagree about who may walk through
+        them and this one must be the strict door:
+
+        * the ACCOUNT role must be ``support_teacher`` — the roster's "Make TA" button lets
+          an owner promote any member, and ``support.py`` requires the membership AND the
+          account to agree before a student can book them. A membership written here without
+          the check would produce support staff invisible on every booking calendar;
+        * ``covers_domain_subject``, never ``==``. Every support teacher this school has is
+          ``subject="both"``, and a direct comparison refuses all of them.
+
+        An id that fails either check is SKIPPED, not fatal: the classroom itself is the
+        thing being created, and losing it because one of three pickers was stale would be
+        the worse outcome. The ids that succeeded come back in the response.
+        """
+        if not user_ids:
+            return []
+        if not isinstance(user_ids, (list, tuple)):
+            user_ids = [user_ids]
+
+        from access.services import covers_domain_subject, normalized_role
+        from django.contrib.auth import get_user_model
+
+        added: list[int] = []
+        users = get_user_model().objects.filter(pk__in=[u for u in user_ids if u])
+        for user in users:
+            if normalized_role(user) != acc_const.ROLE_SUPPORT_TEACHER:
+                continue
+            if not covers_domain_subject(user, classroom.domain_subject):
+                continue
+            ClassroomMembership.objects.update_or_create(
+                classroom=classroom,
+                user=user,
+                defaults={
+                    "role": ClassroomMembership.ROLE_TA,
+                    "status": ClassroomMembership.STATUS_ACTIVE,
+                },
+            )
+            added.append(user.pk)
+        # Classroom.teacher is deliberately untouched — a support teacher is a membership,
+        # and routing one through the teacher FK would silently evict the real teacher.
+        return added
 
     def _ensure_class_admin(self, classroom):
         if not has_cap(self.request.user, classroom, "can_manage_class"):

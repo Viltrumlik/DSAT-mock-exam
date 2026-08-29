@@ -90,6 +90,23 @@ class Classroom(models.Model):
         help_text="The site this class meets at. Students inherit their branch from it.",
     )
     telegram_chat_id = models.CharField(max_length=100, blank=True)
+    #: The class's Telegram group, as an invite link students can follow.
+    #:
+    #: A separate field from ``telegram_chat_id`` above, which holds a numeric chat id for a
+    #: bot to post into. The two look interchangeable and are not: overloading the id field
+    #: with a URL would break whatever integration eventually reads it, and reading a chat id
+    #: as a link would put a number in an ``href``.
+    #:
+    #: ``URLField`` so a scheme is compulsory. A bare ``t.me/mygroup`` in an ``href`` is read
+    #: as a RELATIVE path, and a student clicking "Join Telegram group" would land on
+    #: ``mastersat.uz/classes/12/t.me/mygroup``. The 400 an author gets for leaving the
+    #: scheme off is the better end of that trade — and the ops form normalises it for them.
+    telegram_group_url = models.URLField(
+        max_length=300,
+        blank=True,
+        default="",
+        help_text="Invite link for the class Telegram group, e.g. https://t.me/joinchat/…",
+    )
     max_students = models.PositiveIntegerField(null=True, blank=True)
     teacher = models.ForeignKey(
         settings.AUTH_USER_MODEL,

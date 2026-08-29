@@ -26,6 +26,10 @@ export type ClassroomWithRole = Classroom & {
   student_count?: number;
   members_count?: number;
   join_code?: string;
+  /** Where the class meets, and the room. Both come off the serializer. */
+  room_number?: string;
+  /** Invite link for the class Telegram group, or "" when nobody has set one. */
+  telegram_group_url?: string;
 };
 
 /** Submission workflow states — mirror of backend classes.submission_state. */

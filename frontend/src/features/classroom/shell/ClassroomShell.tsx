@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, BookOpen, Calculator } from "lucide-react";
+import { ArrowLeft, Check, Copy, BookOpen, Calculator, Send, DoorClosed } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatLessonDaysShort } from "@/lib/classroomSchedule";
 import { Tabs } from "../ui/Tabs";
@@ -84,6 +84,11 @@ export function ClassroomShell({
   const schedule = formatLessonDaysShort((classroom as { lesson_days?: string }).lesson_days);
   const lessonTime = (classroom as { lesson_time?: string }).lesson_time;
   const joinCode = classroom.join_code;
+  const room = (classroom.room_number || "").trim();
+  // Read next to the other classroom fields, and rendered in the meta row BELOW the
+  // student/staff split further down — the group is the same group whoever is looking at it,
+  // and a button placed on the right-hand side would reach only one of the two audiences.
+  const telegram = (classroom.telegram_group_url || "").trim();
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-4 sm:px-6">
@@ -104,8 +109,25 @@ export function ClassroomShell({
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
               <Pill tone={isMath ? "info" : "primary"}>{isMath ? "Math" : "English"}</Pill>
               {schedule && <span>{schedule}{lessonTime ? ` · ${lessonTime}` : ""}</span>}
+              {room && (
+                <span className="inline-flex items-center gap-1">
+                  <DoorClosed className="h-3.5 w-3.5" aria-hidden /> {room}
+                </span>
+              )}
               {role && <span>· {ROLE_LABEL[role]}</span>}
             </div>
+            {telegram && (
+              <a
+                href={telegram}
+                target="_blank"
+                // `noopener` is the security half — a new tab must not get `window.opener`
+                // back into this app. `noreferrer` follows it because they are the pair.
+                rel="noopener noreferrer"
+                className="ds-ring mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-[#2AABEE] px-3 py-1.5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+              >
+                <Send className="h-[15px] w-[15px]" aria-hidden /> Join Telegram group
+              </a>
+            )}
           </div>
         </div>
 
