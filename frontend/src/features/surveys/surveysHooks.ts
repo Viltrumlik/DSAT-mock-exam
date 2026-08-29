@@ -1,14 +1,19 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { surveysApi, type Survey, type SurveyAnswerValue, type SurveyQuestion } from "./surveysApi";
+import {
+  surveysApi,
+  type QuestionPatch,
+  type SurveyAnswerValue,
+  type SurveyPatch,
+} from "./surveysApi";
 
 const keys = {
   open: ["surveys", "open"] as const,
   detail: (id: number) => ["surveys", "detail", id] as const,
   adminList: ["surveys", "admin", "list"] as const,
   adminDetail: (id: number) => ["surveys", "admin", "detail", id] as const,
-  responses: (id: number) => ["surveys", "admin", "responses", id] as const,
+  results: (id: number) => ["surveys", "admin", "results", id] as const,
 };
 
 // ── student ──────────────────────────────────────────────────────────────────
@@ -19,17 +24,30 @@ export function useOpenSurveys() {
 }
 
 export function useSurvey(id: number) {
+  // `Number.isInteger`, not `isFinite`: /surveys/abc gives NaN and /surveys/0 gives 0, and a
+  // DISABLED react-query v5 query reports status "pending" forever — which the page renders
+  // as a skeleton that never resolves. The route guard branches on this same predicate so
+  // the two cannot disagree.
   return useQuery({
     queryKey: keys.detail(id),
     queryFn: () => surveysApi.detail(id),
-    enabled: Number.isFinite(id) && id > 0,
+    enabled: isValidSurveyId(id),
   });
+}
+
+/** Whether `id` could name a survey at all. Shared by the route guard and the query gate. */
+export function isValidSurveyId(id: number): boolean {
+  return Number.isInteger(id) && id > 0;
 }
 
 export function useRespond(id: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (answers: Record<string, SurveyAnswerValue>) => surveysApi.respond(id, answers),
+    mutationFn: (body: {
+      answers: Record<string, SurveyAnswerValue>;
+      follow_ups?: Record<string, string>;
+      anonymous?: boolean;
+    }) => surveysApi.respond(id, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.open });
       qc.invalidateQueries({ queryKey: keys.detail(id) });
@@ -53,16 +71,16 @@ export function useAdminSurvey(id: number | null) {
   });
 }
 
-export function useSurveyResponses(id: number | null) {
+export function useSurveyResults(id: number | null) {
   return useQuery({
-    queryKey: keys.responses(id ?? 0),
-    queryFn: () => surveysApi.responses(id as number),
+    queryKey: keys.results(id ?? 0),
+    queryFn: () => surveysApi.results(id as number),
     enabled: id != null && id > 0,
   });
 }
 
-/** Every authoring mutation refreshes both the list and the open survey, since publishing
- *  changes what students can see and the counts on the list. */
+/** Every authoring mutation refreshes both the list and the survey being edited, since
+ *  publishing changes what students can see and the counts on the list. */
 function useAuthoringMutation<TVars, TData>(
   fn: (vars: TVars) => Promise<TData>,
   surveyId: number | null,
@@ -86,8 +104,8 @@ export function useCreateSurvey() {
 
 export function useUpdateSurvey(id: number | null) {
   return useAuthoringMutation(
-    (patch: Partial<Pick<Survey, "title" | "description" | "status" | "closes_at">>) =>
-      surveysApi.adminUpdate(id as number, patch),
+    (vars: { patch: SurveyPatch; image?: File | null }) =>
+      surveysApi.adminUpdate(id as number, vars.patch, vars.image),
     id,
   );
 }
@@ -98,15 +116,16 @@ export function useDeleteSurvey() {
 
 export function useAddQuestion(surveyId: number | null) {
   return useAuthoringMutation(
-    (body: Partial<SurveyQuestion>) => surveysApi.addQuestion(surveyId as number, body),
+    (vars: { body: QuestionPatch; image?: File | null }) =>
+      surveysApi.addQuestion(surveyId as number, vars.body, vars.image),
     surveyId,
   );
 }
 
 export function useUpdateQuestion(surveyId: number | null) {
   return useAuthoringMutation(
-    (vars: { questionId: number; patch: Partial<SurveyQuestion> }) =>
-      surveysApi.updateQuestion(surveyId as number, vars.questionId, vars.patch),
+    (vars: { questionId: number; patch: QuestionPatch; image?: File | null }) =>
+      surveysApi.updateQuestion(surveyId as number, vars.questionId, vars.patch, vars.image),
     surveyId,
   );
 }
@@ -116,4 +135,34 @@ export function useDeleteQuestion(surveyId: number | null) {
     (questionId: number) => surveysApi.deleteQuestion(surveyId as number, questionId),
     surveyId,
   );
+}
+
+export function useReorderQuestions(surveyId: number | null) {
+  return useAuthoringMutation(
+    (order: number[]) => surveysApi.reorderQuestions(surveyId as number, order),
+    surveyId,
+  );
+}
+
+/**
+ * Read a DRF error body into one sentence.
+ *
+ * `detail` covers the hand-written 400s; the field map covers everything a serializer
+ * raises, which is most of them. Reading only `detail` is why the console used to spin,
+ * stop, and show nothing at all when a title ran past 200 characters.
+ */
+export function errorText(error: unknown): string | undefined {
+  const data = (error as { response?: { data?: unknown } })?.response?.data;
+  if (!data) return undefined;
+  if (typeof data === "string") return data;
+  const body = data as Record<string, unknown>;
+  if (typeof body.detail === "string") return body.detail;
+  for (const [field, value] of Object.entries(body)) {
+    const first = Array.isArray(value) ? value[0] : value;
+    if (typeof first === "string") {
+      // Named, because "This field is required" alone leaves the author hunting for which.
+      return field === "non_field_errors" ? first : `${field}: ${first}`;
+    }
+  }
+  return undefined;
 }

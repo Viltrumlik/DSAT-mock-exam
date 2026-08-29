@@ -23,7 +23,7 @@ export function SurveyListPage() {
           badge="Survey"
           icon={MessageSquare}
           title="Surveys"
-          description="Tell the school what you think. Each survey you finish earns you points."
+          description="Tell the learning center what you think. Each survey you finish earns you points."
           // Only when there is something: a lone "0" in the masthead reads as a scoreboard
           // of what the student has failed to do, and the card below already says it kindly.
           tiles={
@@ -58,7 +58,7 @@ export function SurveyListPage() {
           <EmptyState
             icon={ClipboardList}
             title="Nothing to answer right now"
-            description="When the school publishes a survey, it will show up here."
+            description="When the learning center publishes a survey, it will show up here."
           />
         ) : (
           <ul className="divide-y divide-border">
@@ -77,6 +77,9 @@ export function SurveyListPage() {
                       <span className="ds-num">{s.question_count}</span>
                       {` question${s.question_count === 1 ? "" : "s"}`}
                       {s.closes_at ? ` · closes ${fmtDate(s.closes_at)}` : ""}
+                      {/* Said before they open it, not after they have typed an opinion
+                          they would rather not sign. */}
+                      {s.allow_anonymous ? " · can be anonymous" : ""}
                     </p>
                   </div>
                   <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
