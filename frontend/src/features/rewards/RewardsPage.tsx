@@ -340,7 +340,7 @@ export function RewardsPage() {
         </Card>
 
         <Card className="cr-card space-y-3">
-          <CardHeader title="How to earn" description="Served from the school's live rules" />
+          <CardHeader title="How to earn" description="Served from the learning center's live rules" />
           {rules.isPending ? (
             <div className="space-y-2">
               <Skeleton className="h-8 rounded-lg" />
@@ -358,7 +358,7 @@ export function RewardsPage() {
             <EmptyState
               icon={Sparkles}
               title="No earning rules yet"
-              description="Your school is still tuning how points are awarded — they'll show up here."
+              description="Your learning center is still tuning how points are awarded — they'll show up here."
             />
           ) : (
             <ul className="space-y-1">

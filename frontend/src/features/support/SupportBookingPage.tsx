@@ -164,14 +164,10 @@ export function SupportBookingPage() {
       {allowance && !allowance.can_book ? (
         <Card className="cr-card border-amber-400/50 bg-amber-500/[0.06]">
           <p className="text-sm font-bold text-foreground">
-            {allowance.upcoming >= allowance.max_upcoming
-              ? `You have ${allowance.upcoming} session${allowance.upcoming === 1 ? "" : "s"} booked already`
-              : `You've used this week's ${allowance.max_per_week} sessions`}
+            You have {allowance.upcoming} session{allowance.upcoming === 1 ? "" : "s"} booked already
           </p>
           <p className="mt-1 text-[13px] font-medium text-muted-foreground">
-            {allowance.upcoming >= allowance.max_upcoming
-              ? "Attend one — or cancel it if you can't make it — and you can book another."
-              : "Your next one opens up as this week's sessions pass."}
+            Attend one — or cancel it if you can&apos;t make it — and you can book another.
           </p>
         </Card>
       ) : null}

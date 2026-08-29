@@ -2,9 +2,9 @@
 
 The school's rule as given: "a student may book a support teacher once a day; booking more
 than once must be impossible." That is a statement about the DESK'S day, not about the
-student's clicking — so it is counted on the hour the session falls on, unlike
-``MAX_BOOKINGS_PER_WEEK``, which counts on ``booked_at``. Booking Monday and Tuesday in one
-sitting is two days and breaks nothing; taking 10:00 and 11:00 on Thursday is what this stops.
+student's clicking — so it is counted on the hour the session falls on, unlike the withdrawn
+weekly cap, which counted on ``booked_at``. Booking Monday and Tuesday in one sitting is two
+days and breaks nothing; taking 10:00 and 11:00 on Thursday is what this stops.
 
 Three places have to agree, and a disagreement between any two of them is the bug:
 

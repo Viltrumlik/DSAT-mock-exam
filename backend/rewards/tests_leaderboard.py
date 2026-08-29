@@ -215,7 +215,7 @@ class FilterTests(OrgFixture):
         self.assertNotIn(late.pk, {r["student_id"] for r in rows})
 
     def test_a_classroom_less_award_counts_globally_and_vanishes_under_a_filter(self):
-        """A midterm belongs to the school, not to one class — so it has no branch and no
+        """A midterm belongs to the learning center, not to one class — so it has no branch and no
         subject. This is the documented asymmetry, pinned so nobody 'fixes' it into a board
         that claims XP was earned somewhere it was not."""
         PointAward.objects.create(
@@ -235,7 +235,7 @@ class FilterTests(OrgFixture):
 
     def test_an_unfiltered_board_does_not(self):
         _, meta = self._board(self.ann, scope="GLOBAL")
-        self.assertIn("whole school", meta["scope_note"])
+        self.assertIn("whole learning center", meta["scope_note"])
 
 
 class QueryParsingTests(TestCase):

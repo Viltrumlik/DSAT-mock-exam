@@ -968,9 +968,8 @@ export interface SupportBooking {
 export interface SupportAllowance {
     upcoming: number;
     max_upcoming: number;
-    this_week: number;
-    max_per_week: number;
-    /** One session a day. The tightest of the three limits, so the one students meet. */
+    /** One session a day. The tighter of the two limits, so the one students meet.
+     *  (A weekly cap was sent here too until the school withdrew it.) */
     max_per_day: number;
     /** Local ISO dates inside the calendar window the student already has a session on.
      *  Bounded by that window on purpose — it drives greying-out on screen, not the

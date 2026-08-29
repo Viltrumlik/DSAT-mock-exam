@@ -44,14 +44,20 @@ class SupportV2Fixture(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.support, role=ClassroomMembership.ROLE_TA
         )
-        self._hour = 9
+        self._day = support_service.CALENDAR_DAYS + 3
 
     def make_slot(self, *, teacher=None, capacity=1):
-        """A future slot on the hour, each call its own hour, well past the calendar window
-        so the fixture never collides with a real calendar hour."""
-        self._hour += 1
+        """A future slot at 9am, each call its own DAY, well past the calendar window so the
+        fixture never collides with a real calendar hour.
+
+        A day apiece, not an hour apiece: MAX_BOOKINGS_PER_DAY is 1, so a fixture that hands
+        out two hours on one afternoon cannot book both — every test that takes more than one
+        seat would die on the per-day refusal rather than on the thing it is testing. (It
+        did: seven of them, from the day the per-day cap landed until this was fixed.)
+        """
+        self._day += 1
         start = support_service._hour_start(
-            timezone.localdate() + timedelta(days=support_service.CALENDAR_DAYS + 3), self._hour
+            timezone.localdate() + timedelta(days=self._day), 9
         )
         return SupportAvailability.objects.create(
             support_teacher=teacher or self.support, starts_at=start,
@@ -175,28 +181,31 @@ class BookingLimitTests(SupportV2Fixture):
         support_service.cancel(first, actor=self.student, reason="Clash")
         self.assertTrue(support_service.booking_allowance(self.student)["can_book"])
 
-    def test_attending_frees_a_slot_but_spends_the_weekly_one(self):
+    def test_attending_a_session_gives_the_allowance_straight_back(self):
+        """A session that has been HELD is behind the student, so it holds nothing.
+
+        This is the behaviour the withdrawn weekly cap took away: it charged for the
+        attended hour too, so three good sessions locked a student out for the rest of the
+        week while they were holding nothing at all.
+        """
         held = self.held()
         self.assertEqual(held.status, SupportBooking.STATUS_HELD)
         allowance = support_service.booking_allowance(self.student)
-        # No longer upcoming...
         self.assertEqual(allowance["upcoming"], 0)
-        # ...but it still counts against the week, which is the whole point of the second
-        # limit: without it a student cycles through the calendar a session at a time.
-        self.assertEqual(allowance["this_week"], 1)
+        self.assertTrue(allowance["can_book"])
 
-    def test_the_weekly_limit_bites_even_when_nothing_is_upcoming(self):
-        for _ in range(support_service.MAX_BOOKINGS_PER_WEEK):
+    def test_there_is_no_weekly_cap(self):
+        """Attending many sessions in one week is exactly the use the desk is for."""
+        for _ in range(6):
             self.held()
         allowance = support_service.booking_allowance(self.student)
         self.assertEqual(allowance["upcoming"], 0)
-        self.assertFalse(allowance["can_book"])
-        with self.assertRaises(ValidationError) as caught:
-            self.book()
-        self.assertIn("a week", "; ".join(caught.exception.messages))
+        self.assertTrue(allowance["can_book"])
+        self.assertNotIn("max_per_week", allowance)
+        self.book()  # does not raise
 
-    def test_a_cancelled_booking_costs_nothing_weekly_either(self):
-        for _ in range(support_service.MAX_BOOKINGS_PER_WEEK):
+    def test_a_cancelled_booking_costs_nothing(self):
+        for _ in range(4):
             support_service.cancel(self.book(), actor=self.student, reason="Clash")
         self.assertTrue(support_service.booking_allowance(self.student)["can_book"])
 

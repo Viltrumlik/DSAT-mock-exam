@@ -32,7 +32,7 @@ const BOARD: LeaderboardResponse = {
   subject: null,
   level: null,
   count: 2,
-  scope_note: "All the XP earned across the whole school.",
+  scope_note: "All the XP earned across the whole learning center.",
   rows: [
     {
       rank: 1, student_id: 7, name: "Bekzod", profile_image_url: null,
@@ -121,12 +121,12 @@ describe("LeaderboardPage", () => {
 
   it("renders the server's scope note verbatim", async () => {
     useLeaderboard.mockReturnValue(query({
-      data: { ...BOARD, scope_note: "Midterm XP isn't counted — a midterm belongs to the school." },
+      data: { ...BOARD, scope_note: "Midterm XP isn't counted — a midterm belongs to the learning center." },
     }));
     await render();
 
     expect(host.textContent).toContain(
-      "Midterm XP isn't counted — a midterm belongs to the school.",
+      "Midterm XP isn't counted — a midterm belongs to the learning center.",
     );
   });
 

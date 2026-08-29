@@ -152,7 +152,7 @@ export default function MockList() {
             <EmptyState
               icon={ClipboardList}
               title="No mocks available yet"
-              description="When your school publishes a full mock, it will show up here to sit whenever you like."
+              description="When your learning center publishes a full mock, it will show up here to sit whenever you like."
             />
           </Card>
         ) : (
