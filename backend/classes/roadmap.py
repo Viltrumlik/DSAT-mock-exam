@@ -64,6 +64,12 @@ _SUBJECTS = [
 ]
 
 
+def _requires_read_confirmation(session) -> bool:
+    """Whether this session's reading holds its homework until the student confirms."""
+    roadmap = getattr(session, "roadmap", None)
+    return bool(roadmap is not None and roadmap.require_read_confirmation)
+
+
 def _lesson_title(session) -> str:
     """A never-blank display title (journal titles are often left blank)."""
     title = (session.title or "").strip()
@@ -176,7 +182,17 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
                 # boundary here, exactly as it is for `assignment_id` above.
                 "delivery_id": d.id if d else None,
                 "has_roadmap": session.has_roadmap,
-                "roadmap_read": bool(d and d.id in read_delivery_ids),
+                # "Has this student got past the reading?" — NOT "did they press the button".
+                # A roadmap whose author turned the confirmation off is never marked read by
+                # anybody, so keying the ladder on the mark alone pinned its lesson on
+                # "READ FIRST" forever, even after the homework had been done.
+                "roadmap_read": bool(
+                    d
+                    and (
+                        d.id in read_delivery_ids
+                        or not _requires_read_confirmation(session)
+                    )
+                ),
             }
         )
     return lessons

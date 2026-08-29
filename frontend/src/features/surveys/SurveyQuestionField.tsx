@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import { Checkbox, Input, Textarea } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -60,6 +61,9 @@ function RatingSlider({
   const max = question.scale_max;
   const steps = Array.from({ length: max - min + 1 }, (_, i) => min + i);
   const picked = typeof value === "number" ? value : null;
+  // Whether THIS element saw the pointer go down. Without it a pointerup that merely ended a
+  // gesture begun elsewhere would count as an answer.
+  const [pressed, setPressed] = useState(false);
 
   return (
     <div className="space-y-2">
@@ -85,13 +89,25 @@ function RatingSlider({
         // an untouched slider still counts as unanswered rather than as a silent zero.
         value={picked ?? min}
         onChange={(e) => onChange(Number(e.target.value))}
-        // Touching it at all commits the value under the thumb, even when that value has
-        // not CHANGED. Without this the one answer a recommendation survey most needs is
-        // the one it cannot record: the thumb is parked at the minimum, so a student who
-        // wants to answer 0 drags it, no change event fires, and their score stays null.
-        // Both handlers, because a pointer and a keyboard reach the control differently.
-        onPointerUp={(e) => onChange(Number(e.currentTarget.value))}
-        onKeyUp={(e) => onChange(Number(e.currentTarget.value))}
+        // DRAGGING it commits the value under the thumb even when that value has not
+        // CHANGED — otherwise the one answer a recommendation survey most needs is the one
+        // it cannot record: the thumb is parked at the minimum, so a student who wants to
+        // answer 0 drags it, no change event fires, and their score stays null.
+        //
+        // `onPointerUp` only, and only after a real press. An earlier version also listened
+        // on `onKeyUp`, which silently answered the question for anybody who TABBED past it:
+        // the keyup of the Tab that moved focus HERE fires on this element, and recorded the
+        // minimum. On a 0–10 recommendation slider that is a 0 — the worst score there is —
+        // written by a student who never touched the control.
+        onPointerDown={() => setPressed(true)}
+        onPointerUp={(e) => {
+          if (!pressed) return;
+          setPressed(false);
+          onChange(Number(e.currentTarget.value));
+        }}
+        // The keyboard needs no equivalent: an arrow key on a range input CHANGES the value,
+        // so `onChange` already fires. Only the parked-at-minimum case needed help, and
+        // Home/End/arrows all move off it.
         aria-labelledby={labelId(question)}
         aria-valuetext={picked == null ? "Not answered yet" : String(picked)}
         className={cn(

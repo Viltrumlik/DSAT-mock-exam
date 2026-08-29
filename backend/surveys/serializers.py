@@ -89,6 +89,22 @@ class SurveyQuestionSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "follow_up_options": f"“{unknown[0]}” is not one of this question's options."
             })
+
+        # STORE what was validated, not what was posted. Everything above checked the
+        # cleaned lists — blanks dropped, values coerced to str, whitespace stripped — and
+        # then returned `attrs` untouched, so the raw payload went to the database and the
+        # two drifted apart:
+        #   * options=[1, 2, 3] validated fine and stored ints; the form renders 1/2/3, a
+        #     pick posts "1", and `normalize_answer`'s `str(raw) not in options` refuses it
+        #     — which, because submitting is all-or-nothing, locked EVERY student out of the
+        #     whole survey;
+        #   * options=["Yes ", "No"] with a "Yes" trigger stored the trailing space, so the
+        #     follow-up box the author configured never opened for anybody.
+        # The stored answer IS the option text, so these have to be the same strings.
+        if "options" in attrs:
+            attrs["options"] = options
+        if "follow_up_options" in attrs:
+            attrs["follow_up_options"] = triggers
         return attrs
 
 

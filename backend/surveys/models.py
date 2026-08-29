@@ -176,7 +176,17 @@ class SurveyQuestion(models.Model):
         return int(score) < int(self.follow_up_threshold)
 
     def wants_follow_up_for_choice(self, picked) -> bool:
-        """Does this choice — or any of these choices — open the follow-up box?"""
+        """Does this choice — or any of these choices — open the follow-up box?
+
+        ``picked is None`` is guarded FIRST, matching the numeric branch above. A skipped
+        optional question normalises to ``None``, and ``str(None)`` is ``"None"`` — which
+        matches an option whose text is literally "None". Without the guard, a student who
+        left "Which clubs do you attend? [Chess] [Debate] [None]" blank had their entire
+        submission refused, naming a question they had deliberately skipped and whose
+        follow-up box the form never showed them.
+        """
+        if picked is None:
+            return False
         triggers = {str(o) for o in (self.follow_up_options or [])}
         if not triggers:
             return False

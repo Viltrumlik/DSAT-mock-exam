@@ -111,8 +111,17 @@ function LevelCard({ level }: { level: ProgressLevel }) {
               label="Attendance"
               value={level.attendance?.rate ?? null}
               detail={
+                // NOT "present + late of counted" — that read as a perfect record sitting
+                // next to a percentage saying otherwise, because a late is worth half a
+                // lesson and the fraction hid it. Say what was actually marked instead.
                 level.attendance
-                  ? `${level.attendance.present + level.attendance.late} of ${level.attendance.counted}`
+                  ? [
+                      `${level.attendance.present} present`,
+                      level.attendance.late ? `${level.attendance.late} late` : null,
+                      level.attendance.absent ? `${level.attendance.absent} missed` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
                   : "not marked"
               }
               tone="teal"

@@ -1382,7 +1382,14 @@ class RoadmapDetailView(APIView):
 
         sections = request.data.get("sections")
         if isinstance(sections, list):
-            kept: list[int] = []
+            # EVERY section is validated before ANY of them is written.
+            #
+            # Returning a 400 from inside an `@transaction.atomic` block does NOT roll it
+            # back — Django only rolls back on an exception leaving the block. So rejecting
+            # the fourth section mid-loop used to COMMIT the first three, which on a reorder
+            # means the author gets an error message and a form that has silently half
+            # rearranged itself. Two passes is the whole fix.
+            cleaned: list[dict] = []
             for position, raw in enumerate(sections):
                 if not isinstance(raw, dict):
                     continue
@@ -1404,7 +1411,12 @@ class RoadmapDetailView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
                 fields["order"] = position
-                section_id = raw.get("id")
+                cleaned.append({"id": raw.get("id"), "fields": fields})
+
+            kept: list[int] = []
+            for entry in cleaned:
+                fields = entry["fields"]
+                section_id = entry["id"]
                 if section_id:
                     updated = JournalRoadmapSection.objects.filter(
                         pk=section_id, roadmap=roadmap
@@ -1477,7 +1489,15 @@ class RoadmapSectionMediaView(APIView):
         )
 
     def delete(self, request, journal_pk, pk, section_id):
-        _, section = self._section(journal_pk, pk, section_id)
+        lesson, section = self._section(journal_pk, pk, section_id)
+        # The same guard its own POST has, and that the roadmap PATCH has. Without it an
+        # archived journal — documented read-only, and refusing both of those — still let a
+        # DELETE null the picture out of a section.
+        if lesson.journal.status == Journal.STATUS_ARCHIVED:
+            return Response(
+                {"detail": "Journal is archived (read-only)."},
+                status=status.HTTP_409_CONFLICT,
+            )
         if section.image:
             section.image = None
         if section.video_file:

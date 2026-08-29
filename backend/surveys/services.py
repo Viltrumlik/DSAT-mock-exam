@@ -118,10 +118,19 @@ def submit_response(
     if not survey.is_open():
         raise ValidationError("That survey is not open.")
 
-    existing = SurveyResponse.objects.select_for_update().filter(
+    # `get_or_create`, not `select_for_update().first()`. A row lock locks a ROW, and on a
+    # first-ever submit there is no row to lock — so two clicks landing together both saw
+    # nothing, both went on to write, and the second one hit `uniq_survey_response_per_student`
+    # and came back as a 500 with a stack trace. A double-tapped Submit button is not an
+    # error condition; it is the single most likely thing a student does.
+    #
+    # After this, `existing` is real and the SELECT ... FOR UPDATE below has something to
+    # hold, so the "already completed" check is serialised the way it always meant to be.
+    SurveyResponse.objects.get_or_create(survey=survey, student=student)
+    existing = SurveyResponse.objects.select_for_update().get(
         survey=survey, student=student
-    ).first()
-    if existing is not None and existing.status == SurveyResponse.STATUS_SUBMITTED:
+    )
+    if existing.status == SurveyResponse.STATUS_SUBMITTED:
         raise ValidationError("You have already completed that survey.")
 
     questions = list(survey.questions.all())
@@ -138,7 +147,7 @@ def submit_response(
         comment = normalize_follow_up(question, value, _pick(follow_ups, question))
         normalized.append((question, value, comment))
 
-    response = existing or SurveyResponse(survey=survey, student=student)
+    response = existing
     response.status = SurveyResponse.STATUS_SUBMITTED
     # Asked for AND offered. A client that posts anonymous=true against a survey whose author
     # never turned anonymity on gets a signed response, not a 400: the flag is a preference,

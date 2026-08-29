@@ -181,6 +181,13 @@ def student_progress(student) -> dict:
     for subject_key, domain, label in _SUBJECTS:
         classrooms = by_subject.get(subject_key, {})
         offered = [lv for lv in _LEVEL_ORDER if lv in Classroom.allowed_levels_for_subject(subject_key)]
+        # The safety valve `roadmap.build_roadmap` already has, and for the same reason: a
+        # classroom MIS-TAGGED with a level its subject does not offer (an English class at
+        # `foundation`) keeps its rung anyway. Without this the student's real classroom —
+        # its attendance, its homework, its name — vanished from the payload entirely, and
+        # the page told them every English level was still ahead of them while they sat in
+        # one. A rung that should not exist is a data-entry mistake to show, not to hide.
+        offered += [lv for lv in _LEVEL_ORDER if lv in classrooms and lv not in offered]
         if not classrooms:
             # A subject the student does not study at all is left out entirely rather than
             # shown as an empty ladder. English has no Foundation rung either — `offered`
