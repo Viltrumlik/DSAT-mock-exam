@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from .models import Journal, JournalClasswork, JournalLesson
+from .models import Journal, JournalClasswork, JournalLesson, JournalRoadmap, JournalRoadmapSection
 
 
 # --------------------------------------------------------------------------- helpers
@@ -133,9 +133,11 @@ class JournalLessonSummarySerializer(serializers.Serializer):
     is_ready = serializers.BooleanField()
     homework_ready = serializers.BooleanField()
     classwork_ready = serializers.BooleanField()
+    has_roadmap = serializers.BooleanField()
     validation = serializers.SerializerMethodField()
     homework_validation = serializers.SerializerMethodField()
     classwork_validation = serializers.SerializerMethodField()
+    roadmap_validation = serializers.SerializerMethodField()
     has_files = serializers.SerializerMethodField()
     has_assessment = serializers.SerializerMethodField()
     has_pastpaper = serializers.SerializerMethodField()
@@ -152,6 +154,9 @@ class JournalLessonSummarySerializer(serializers.Serializer):
 
     def get_classwork_validation(self, obj):
         return obj.classwork_validation_reasons()
+
+    def get_roadmap_validation(self, obj):
+        return obj.roadmap_validation_reasons()
 
     def get_has_files(self, obj):
         return bool(obj.attachment_file) or obj._extra_attachment_count() > 0
@@ -443,16 +448,22 @@ class JournalLessonDetailSerializer(serializers.Serializer):
 
     # In-class plan
     classwork = serializers.SerializerMethodField()
+    roadmap = serializers.SerializerMethodField()
 
     content_count = serializers.IntegerField()
     is_ready = serializers.BooleanField()
     homework_ready = serializers.BooleanField()
     classwork_ready = serializers.BooleanField()
+    has_roadmap = serializers.BooleanField()
     validation = serializers.SerializerMethodField()
     homework_validation = serializers.SerializerMethodField()
     classwork_validation = serializers.SerializerMethodField()
+    roadmap_validation = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField()
     updated_at = serializers.DateTimeField()
+
+    def get_roadmap_validation(self, obj):
+        return obj.roadmap_validation_reasons()
 
     def get_external_urls(self, obj):
         return list(obj.external_urls or [])
@@ -505,6 +516,14 @@ class JournalLessonDetailSerializer(serializers.Serializer):
             "access_days_before": obj.midterm_access_days_before,
         }
 
+    def get_roadmap(self, obj):
+        roadmap = getattr(obj, "roadmap", None)
+        if roadmap is None:
+            # No row yet is not an error — a roadmap is optional and created on first touch.
+            # `null` says "nobody has written one", which the editor opens empty.
+            return None
+        return JournalRoadmapSerializer(roadmap, context=self.context).data
+
     def get_classwork(self, obj):
         if obj.is_midterm:
             return None
@@ -540,3 +559,67 @@ class JournalLessonWriteSerializer(serializers.ModelSerializer):
             "midterm_access_days_before",
         ]
         extra_kwargs = {f: {"required": False} for f in fields}
+
+
+# ── Roadmap: the reading a student does before the homework ───────────────────
+
+
+def _roadmap_file_url(instance, field: str, request=None):
+    """Signed URL for a section's image or video, or None.
+
+    The ``ValueError`` guard is the house pattern — ``.url`` on an unset File/ImageField
+    raises rather than returning None — and the R2 bucket is private, so every URL is
+    signed and expires within the hour. Never cache one or store it.
+    """
+    f = getattr(instance, field, None)
+    if not f:
+        return None
+    try:
+        url = f.url
+    except ValueError:
+        return None
+    return request.build_absolute_uri(url) if request and url.startswith("/") else url
+
+
+class JournalRoadmapSectionSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField()
+    video_file_url = serializers.SerializerMethodField()
+    is_filled = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = JournalRoadmapSection
+        fields = [
+            "id", "order", "kind", "heading", "body", "caption",
+            "video_url", "image_url", "video_file_url", "is_filled",
+        ]
+
+    def get_image_url(self, obj) -> str | None:
+        return _roadmap_file_url(obj, "image", self.context.get("request"))
+
+    def get_video_file_url(self, obj) -> str | None:
+        return _roadmap_file_url(obj, "video_file", self.context.get("request"))
+
+
+class JournalRoadmapSerializer(serializers.ModelSerializer):
+    sections = JournalRoadmapSectionSerializer(many=True, read_only=True)
+    has_content = serializers.BooleanField(read_only=True)
+    is_ready = serializers.BooleanField(read_only=True)
+    validation_reasons = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JournalRoadmap
+        fields = [
+            "title", "summary", "estimated_minutes", "require_read_confirmation",
+            "sections", "has_content", "is_ready", "validation_reasons",
+        ]
+
+    def get_validation_reasons(self, obj) -> list[str]:
+        return obj.validation_reasons()
+
+
+class JournalRoadmapWriteSerializer(serializers.ModelSerializer):
+    """Scalars only. Sections are reconciled in the view, like classwork's file fields."""
+
+    class Meta:
+        model = JournalRoadmap
+        fields = ["title", "summary", "estimated_minutes", "require_read_confirmation"]

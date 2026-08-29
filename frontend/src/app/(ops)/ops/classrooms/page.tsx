@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { classesApi, examsAdminApi, type ClassroomMember } from "@/lib/api";
-import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, ChevronRight, LifeBuoy, Calculator, Languages } from "lucide-react";
+import { Search, School, RefreshCw, Users, UserCog, ArrowLeftRight, Trash2, Plus, UserPlus, UserMinus, ChevronRight, LifeBuoy, Calculator, Languages, Pencil } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
 import { useBranches, useRegions } from "@/features/org/orgHooks";
@@ -15,6 +15,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  Checkbox,
   EmptyState,
   Field,
   IconButton,
@@ -34,6 +35,21 @@ type TeacherDetails = { id: number; email: string; first_name?: string; last_nam
 type Row = {
   id: number; name: string; subject?: string; level?: string; members_count?: number; student_count?: number;
   teacher_details?: TeacherDetails;
+  // Everything the edit form can change. The list endpoint has always sent these — the row
+  // type simply never declared them, so nothing could read them.
+  description?: string;
+  lesson_days?: "ODD" | "EVEN";
+  lesson_time?: string;
+  lesson_hours?: number;
+  start_date?: string | null;
+  room_number?: string;
+  branch?: number | null;
+  branch_name?: string | null;
+  region_name?: string | null;
+  telegram_group_url?: string;
+  max_students?: number | null;
+  schedule_summary?: string;
+  is_active?: boolean;
 };
 /** One assigned support teacher, exactly as `classesApi.supportTeachers` returns them.
  *  Derived, never restated — see the note where this is used. */
@@ -83,12 +99,39 @@ type CreateForm = {
   lesson_time: string;
   room_number: string;
   teacherId: string; // "" = assign a teacher later
+  /** Support staff to attach immediately. Several may serve one classroom, so this is a
+   *  list — unlike `teacherId`, which is a single FK on the classroom itself. */
+  supportIds: number[];
+  /** Invite link for the class Telegram group. Normalised and checked server-side. */
+  telegramUrl: string;
   /** Only a filter for the branch picker — a classroom stores its BRANCH, and the region is
    *  reached through it. Kept in the form so choosing a region narrows the second select. */
   regionId: string;
   branchId: string;
 };
-const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "", regionId: "", branchId: "" };
+const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "", supportIds: [], telegramUrl: "", regionId: "", branchId: "" };
+
+/** What an administrator may change after the fact.
+ *
+ *  Everything except `subject`, which the governance endpoint refuses: a classroom's subject
+ *  decides which journal binds to it and which assessments its level admits, so flipping it
+ *  on a running class strands the homework already released to those students. */
+type EditForm = {
+  name: string;
+  level: string;
+  description: string;
+  lesson_days: "ODD" | "EVEN";
+  lesson_time: string;
+  room_number: string;
+  telegramUrl: string;
+  regionId: string;
+  branchId: string;
+  is_active: boolean;
+};
+const BLANK_EDIT: EditForm = {
+  name: "", level: "", description: "", lesson_days: "ODD", lesson_time: "",
+  room_number: "", telegramUrl: "", regionId: "", branchId: "", is_active: true,
+};
 
 type SubjectKey = "ENGLISH" | "MATH";
 type Group = { subject: string; level: string; count: number };
@@ -143,6 +186,9 @@ export default function OpsClassroomGovernancePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateForm>(BLANK_CREATE);
+  /** The classroom being edited, and the form holding its edits. */
+  const [editRow, setEditRow] = useState<Row | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>(BLANK_EDIT);
   // Roster (student add/remove) modal
   const [roster, setRoster] = useState<{ row: Row } | null>(null);
   const [rosterMembers, setRosterMembers] = useState<ClassroomMember[]>([]);
@@ -344,7 +390,7 @@ export default function OpsClassroomGovernancePage() {
     try {
       // The teacher is assigned server-side in the same request (teacher_id): the backend
       // sets the classroom teacher AND auto-enrolls them as an active member atomically.
-      await classesApi.create({
+      const made = await classesApi.create({
         name: createForm.name.trim(),
         subject: createForm.subject,
         level: createForm.level,
@@ -352,16 +398,85 @@ export default function OpsClassroomGovernancePage() {
         lesson_time: createForm.lesson_time.trim() || undefined,
         room_number: createForm.room_number.trim() || undefined,
         teacher_id: createForm.teacherId ? Number(createForm.teacherId) : undefined,
+        telegram_group_url: createForm.telegramUrl.trim() || undefined,
+        support_teacher_ids: createForm.supportIds.length ? createForm.supportIds : undefined,
         // `branch` only — the region is derived from it server-side, and sending a region
         // the branch does not belong to would be two sources of truth for one fact.
         branch: createForm.branchId ? Number(createForm.branchId) : undefined,
       });
       const assigned = createForm.teacherId ? " Teacher assigned and added to the classroom." : "";
-      setNotice(`Classroom “${createForm.name.trim()}” created.${assigned}`);
+      // What the SERVER accepted, not what was asked for. An id whose account role or
+      // subject does not hold is skipped rather than failing the creation, so counting the
+      // form's own list here would report an assignment that never happened.
+      const supportCount = (made?.support_teacher_ids ?? []).length;
+      const wanted = createForm.supportIds.length;
+      const support =
+        wanted === 0
+          ? ""
+          : supportCount === wanted
+            ? ` ${supportCount} support teacher${supportCount === 1 ? "" : "s"} assigned.`
+            : ` ${supportCount} of ${wanted} support teachers assigned — the rest don’t cover this subject.`;
+      setNotice(`Classroom “${createForm.name.trim()}” created.${assigned}${support}`);
       setCreateOpen(false); setCreateForm(BLANK_CREATE); await load();
     } catch (e: unknown) {
       const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof detail === "string" ? detail : "Could not create the classroom.");
+    } finally { setBusy(false); }
+  }
+
+  /** Fill the edit form from the row, resolving its branch back to a region for the picker. */
+  function openEdit(row: Row) {
+    setError(null);
+    const branch = (branches.data ?? []).find((b) => b.id === row.branch);
+    setEditForm({
+      name: row.name ?? "",
+      level: row.level ?? "",
+      description: row.description ?? "",
+      lesson_days: row.lesson_days === "EVEN" ? "EVEN" : "ODD",
+      lesson_time: row.lesson_time ?? "",
+      room_number: row.room_number ?? "",
+      telegramUrl: row.telegram_group_url ?? "",
+      // The classroom stores only its branch; the region select is derived from it so the
+      // branch list opens already narrowed to where this class actually is.
+      regionId: branch ? String(branch.region) : "",
+      branchId: row.branch != null ? String(row.branch) : "",
+      is_active: row.is_active !== false,
+    });
+    setEditRow(row);
+  }
+
+  async function submitEdit() {
+    if (!editRow) return;
+    if (!editForm.name.trim()) { setError("Give the classroom a name."); return; }
+    setBusy(true); setError(null);
+    try {
+      await classesApi.governanceUpdate(editRow.id, {
+        name: editForm.name.trim(),
+        level: editForm.level,
+        description: editForm.description.trim(),
+        lesson_days: editForm.lesson_days,
+        lesson_time: editForm.lesson_time.trim(),
+        room_number: editForm.room_number.trim(),
+        telegram_group_url: editForm.telegramUrl.trim(),
+        // `null` clears the branch; `undefined` would leave the field out of the PATCH and
+        // silently keep the old one, which is not what an emptied select means.
+        branch: editForm.branchId ? Number(editForm.branchId) : null,
+        is_active: editForm.is_active,
+      });
+      setNotice(`Saved “${editForm.name.trim()}”.`);
+      setEditRow(null);
+      await load();
+    } catch (e: unknown) {
+      const data = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
+      // Field errors as well as `detail`: the serializer refuses a non-Telegram link and a
+      // level that does not fit the subject, and both come back keyed by field name.
+      const detail =
+        typeof data?.detail === "string"
+          ? data.detail
+          : Object.entries(data ?? {})
+              .map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`)
+              .find(Boolean);
+      setError(detail || "Could not save the classroom.");
     } finally { setBusy(false); }
   }
 
@@ -615,6 +730,7 @@ export default function OpsClassroomGovernancePage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => openEdit(c)} leftIcon={<Pencil />}>Edit</Button>
                   <Button size="sm" variant="secondary" disabled={busy} onClick={() => openRoster(c)} leftIcon={<Users />}>Students</Button>
                   <Button size="sm" variant="secondary" disabled={busy} onClick={() => openTeacherModal("assign", c)} leftIcon={<UserCog />}>Assign teacher</Button>
                   <Button size="sm" variant="secondary" disabled={busy} onClick={() => openSupport(c)} leftIcon={<LifeBuoy />}>Support</Button>
@@ -769,9 +885,194 @@ export default function OpsClassroomGovernancePage() {
                 {teachers.map((t) => <option key={t.id} value={String(t.id)}>{t.name} ({t.email})</option>)}
               </Select>
             </Field>
+
+            {/* Support staff, assignable here rather than only from the row menu afterwards.
+                Checkboxes rather than a select, because several may serve one class.
+
+                The candidate list is filtered by `coversSubject` against the subject chosen
+                IN THIS FORM, so it re-narrows when the subject changes — and never with a
+                `===`, which would hide every support teacher this school has (all three are
+                `subject="both"`). */}
+            {(() => {
+              const classDomain = classDomainOf(createForm.subject);
+              const candidates = supportOpts.filter((o) => coversSubject(o.subject, classDomain));
+              return (
+                <Field
+                  label="Support teachers"
+                  hint={
+                    candidates.length === 0
+                      ? "No support teacher covers this subject yet."
+                      : "Optional. They can grade, take attendance and be booked by these students."
+                  }
+                >
+                  {candidates.length === 0 ? null : (
+                    <div className="space-y-1.5 rounded-xl border border-border bg-surface-2 p-3">
+                      {candidates.map((o) => (
+                        <Checkbox
+                          key={o.id}
+                          label={`${o.name} (${o.email})`}
+                          checked={createForm.supportIds.includes(o.id)}
+                          onChange={(e) =>
+                            setCreateForm({
+                              ...createForm,
+                              supportIds: e.target.checked
+                                ? [...createForm.supportIds, o.id]
+                                : createForm.supportIds.filter((x) => x !== o.id),
+                            })
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                </Field>
+              );
+            })()}
+
+            <Field
+              label="Telegram group"
+              htmlFor="create-telegram"
+              hint="Optional. Students see a “Join Telegram group” button on the class page."
+            >
+              <Input
+                id="create-telegram"
+                value={createForm.telegramUrl}
+                onChange={(e) => setCreateForm({ ...createForm, telegramUrl: e.target.value })}
+                placeholder="https://t.me/joinchat/…"
+              />
+            </Field>
           </div>
         </Modal>
       )}
+
+      {editRow && (() => {
+        // The branch picker narrows by the region chosen in THIS form, exactly as the create
+        // modal does. Its own memo would be a second source of truth for one list, so it is
+        // derived inline from the same `branches.data`.
+        const editBranchOptions = (branches.data ?? []).filter(
+          (b) =>
+            String(b.region) === editForm.regionId &&
+            // The branch this class is ALREADY at stays in the list even once it has been
+            // closed. Dropping it would render the select blank while the form still held
+            // the old id, so an administrator renaming the class would watch the branch
+            // apparently empty itself. The server allows keeping it, and refuses a move TO
+            // a closed one — so the option is labelled rather than hidden.
+            (b.is_active || b.id === editRow.branch),
+        );
+        // Levels depend on the classroom's subject, which is NOT editable here — so it comes
+        // off the row rather than the form.
+        const subject = (editRow.subject === "MATH" ? "MATH" : "ENGLISH") as SubjectKey;
+        return (
+          <Modal
+            open
+            onClose={() => setEditRow(null)}
+            title={`Edit — ${editRow.name}`}
+            description="Everything except the subject. Changing a class's subject would strand the homework already released to its students; make a new classroom for that."
+            footer={
+              <>
+                <Button variant="ghost" onClick={() => setEditRow(null)}>Cancel</Button>
+                <Button loading={busy} disabled={!editForm.name.trim()} onClick={submitEdit}>Save changes</Button>
+              </>
+            }
+          >
+            <div className="space-y-4">
+              {error && <Alert tone="danger">{error}</Alert>}
+              <Field label="Class name" htmlFor="edit-name" required>
+                <Input id="edit-name" required autoFocus value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              </Field>
+              <Field label="Description" htmlFor="edit-description" hint="Shown to teachers and students on the class page.">
+                <Input id="edit-description" value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  placeholder="Optional" />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Subject" hint="Not editable — see above.">
+                  <Input value={subject === "MATH" ? "Math" : "English"} disabled readOnly />
+                </Field>
+                <Field label="Level" htmlFor="edit-level">
+                  <Select id="edit-level" value={editForm.level}
+                    onChange={(e) => setEditForm({ ...editForm, level: e.target.value })}>
+                    <option value="">— Untagged —</option>
+                    {levelsForSubject(subject).map((l) => <option key={l} value={l}>{levelLabel(l)}</option>)}
+                  </Select>
+                </Field>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Lesson days" htmlFor="edit-days">
+                  <Select id="edit-days" value={editForm.lesson_days}
+                    onChange={(e) => setEditForm({ ...editForm, lesson_days: e.target.value as EditForm["lesson_days"] })}>
+                    <option value="ODD">Odd days</option>
+                    <option value="EVEN">Even days</option>
+                  </Select>
+                </Field>
+                <Field label="Lesson time" htmlFor="edit-time">
+                  <Input id="edit-time" value={editForm.lesson_time}
+                    onChange={(e) => setEditForm({ ...editForm, lesson_time: e.target.value })}
+                    placeholder="18:00" />
+                </Field>
+                <Field label="Room" htmlFor="edit-room">
+                  <Input id="edit-room" value={editForm.room_number}
+                    onChange={(e) => setEditForm({ ...editForm, room_number: e.target.value })}
+                    placeholder="Optional" />
+                </Field>
+              </div>
+              {hasAnyBranch ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Region" htmlFor="edit-region">
+                    <Select id="edit-region" value={editForm.regionId}
+                      onChange={(e) => setEditForm({ ...editForm, regionId: e.target.value, branchId: "" })}>
+                      <option value="">— Not set —</option>
+                      {(regions.data ?? []).map((r) => (
+                        <option key={r.id} value={String(r.id)}>{r.name}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field
+                    label="Branch"
+                    htmlFor="edit-branch"
+                    hint={
+                      editForm.regionId && editBranchOptions.length === 0
+                        ? "This region has no branches yet — add one on the Branches page."
+                        : undefined
+                    }
+                  >
+                    <Select id="edit-branch" disabled={!editForm.regionId} value={editForm.branchId}
+                      onChange={(e) => setEditForm({ ...editForm, branchId: e.target.value })}>
+                      <option value="">
+                        {editForm.regionId ? "— Choose branch —" : "— Pick a region first —"}
+                      </option>
+                      {editBranchOptions.map((b) => (
+                        <option key={b.id} value={String(b.id)}>
+                          {b.is_active ? b.name : `${b.name} (closed)`}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                </div>
+              ) : null}
+              <Field
+                label="Telegram group"
+                htmlFor="edit-telegram"
+                hint="Students see a “Join Telegram group” button on the class page. Clear it to remove the button."
+              >
+                <Input id="edit-telegram" value={editForm.telegramUrl}
+                  onChange={(e) => setEditForm({ ...editForm, telegramUrl: e.target.value })}
+                  placeholder="https://t.me/joinchat/…" />
+              </Field>
+              <Checkbox
+                id="edit-active"
+                label="Active"
+                checked={editForm.is_active}
+                onChange={(e) => setEditForm({ ...editForm, is_active: e.target.checked })}
+              />
+              <p className="text-[12px] text-muted-foreground">
+                An inactive class is archived: it stops appearing to its students, and nothing
+                about it is deleted.
+              </p>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {supportModal && (() => {
         // Only offer support teachers who cover the class's subject. The server refuses a

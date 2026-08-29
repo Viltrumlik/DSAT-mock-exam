@@ -5,16 +5,22 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import JournalLessonEditor from "@/features/journals/JournalLessonEditor";
 import JournalClassworkEditor from "@/features/journals/JournalClassworkEditor";
+import JournalRoadmapEditor from "@/features/journals/JournalRoadmapEditor";
 import { journalsApi } from "@/features/journals/api";
 import type { JournalDetail, LessonDetail } from "@/features/journals/types";
 import { cn } from "@/lib/cn";
-import { ArrowLeft, ClipboardList, GraduationCap, Loader2, Presentation } from "lucide-react";
+import { ArrowLeft, BookOpenCheck, ClipboardList, GraduationCap, Loader2, Presentation } from "lucide-react";
 
-type Tab = "homework" | "classwork";
+type Tab = "homework" | "classwork" | "roadmap";
 
 /**
- * One journal session has two sides: the HOMEWORK students take away, and the
- * CLASSWORK the teacher runs in the lesson. Both are authored here.
+ * One journal session has three sides, all authored here: the HOMEWORK students take away,
+ * the CLASSWORK the teacher runs in the lesson, and the ROADMAP — the reading a student does
+ * on their own before opening the homework.
+ *
+ * The roadmap is the only optional one. Its tab says "Optional" rather than "Todo" when it
+ * is empty, because a session that is pure practice legitimately has nothing to read and an
+ * amber badge would read as unfinished work forever.
  */
 export default function JournalSessionEditorPage() {
   const params = useParams<{ journalId: string; lessonId: string }>();
@@ -116,15 +122,29 @@ export default function JournalSessionEditorPage() {
               label="Classwork"
               ok={lesson.classwork_ready}
             />
+            <TabButton
+              active={tab === "roadmap"}
+              onClick={() => setTab("roadmap")}
+              icon={BookOpenCheck}
+              label="Roadmap"
+              ok={lesson.has_roadmap}
+              optional
+            />
           </div>
 
           {tab === "homework" ? (
             <JournalLessonEditor journalId={journalId} lessonId={lessonId} />
-          ) : (
+          ) : tab === "classwork" ? (
             <JournalClassworkEditor
               journalId={journalId}
               lessonId={lessonId}
               journal={journal}
+              onSaved={() => void load()}
+            />
+          ) : (
+            <JournalRoadmapEditor
+              journalId={journalId}
+              lessonId={lessonId}
               onSaved={() => void load()}
             />
           )}
@@ -140,12 +160,16 @@ function TabButton({
   icon: Icon,
   label,
   ok,
+  optional,
 }: {
   active: boolean;
   onClick: () => void;
   icon: typeof ClipboardList;
   label: string;
   ok: boolean;
+  /** An unfilled OPTIONAL block is not outstanding work, so it does not wear the amber
+   *  "Todo" badge that would make every existing journal look unfinished. */
+  optional?: boolean;
 }) {
   return (
     <button
@@ -167,10 +191,12 @@ function TabButton({
           "rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase",
           ok
             ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
-            : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+            : optional
+              ? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+              : "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
         )}
       >
-        {ok ? "Ready" : "Todo"}
+        {ok ? "Ready" : optional ? "Optional" : "Todo"}
       </span>
     </button>
   );

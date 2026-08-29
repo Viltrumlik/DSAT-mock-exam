@@ -64,6 +64,12 @@ _SUBJECTS = [
 ]
 
 
+def _requires_read_confirmation(session) -> bool:
+    """Whether this session's reading holds its homework until the student confirms."""
+    roadmap = getattr(session, "roadmap", None)
+    return bool(roadmap is not None and roadmap.require_read_confirmation)
+
+
 def _lesson_title(session) -> str:
     """A never-blank display title (journal titles are often left blank)."""
     title = (session.title or "").strip()
@@ -94,6 +100,16 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
         d.journal_lesson_id: d
         for d in ClassroomLesson.objects.filter(classroom=classroom).select_related("assignment")
     }
+
+    # Which of this student's deliveries they have already marked read. One query for the
+    # whole ladder rather than one per lesson — the roadmap renders every session at once.
+    from journals.models import RoadmapRead
+
+    read_delivery_ids = set(
+        RoadmapRead.objects.filter(
+            student=user, classroom_lesson_id__in=[d.id for d in delivered.values()]
+        ).values_list("classroom_lesson_id", flat=True)
+    )
 
     sessions = list(journal.lessons.all())  # prefetched, ordered (journal_id, lesson_number)
 
@@ -158,6 +174,25 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
                 "state": state,
                 "assignment_id": assignment_id,
                 "scheduled_for": scheduled.isoformat() if scheduled else None,
+                # ── the reading attached to this session ──────────────────────────
+                #
+                # `delivery_id` is what the reading endpoints address, and it is emitted
+                # ONLY for the own level: a locked level has no delivery row at all, so
+                # there is nothing to open and nothing to mark. That omission is the real
+                # boundary here, exactly as it is for `assignment_id` above.
+                "delivery_id": d.id if d else None,
+                "has_roadmap": session.has_roadmap,
+                # "Has this student got past the reading?" — NOT "did they press the button".
+                # A roadmap whose author turned the confirmation off is never marked read by
+                # anybody, so keying the ladder on the mark alone pinned its lesson on
+                # "READ FIRST" forever, even after the homework had been done.
+                "roadmap_read": bool(
+                    d
+                    and (
+                        d.id in read_delivery_ids
+                        or not _requires_read_confirmation(session)
+                    )
+                ),
             }
         )
     return lessons
@@ -329,11 +364,13 @@ def build_roadmap(user) -> dict:
     # keys get asked for and it is built from the curriculum, not from this dict.
     from journals.models import Journal
 
+    # `lessons__roadmap__sections` rides along so `has_roadmap` on the own level costs no
+    # query per session — it reads the sections to decide whether any of them is filled in.
     journals = {
         (j.subject, j.level): j
         for j in Journal.objects.filter(
             subject__in=studied, status=Journal.STATUS_PUBLISHED
-        ).prefetch_related("lessons")
+        ).prefetch_related("lessons", "lessons__roadmap__sections")
     }
 
     tracks: list[dict] = []

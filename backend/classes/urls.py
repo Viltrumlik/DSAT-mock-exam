@@ -44,6 +44,7 @@ from .views_assign import (
     AssignMidtermView,
     AssignTeacherView,
     ClassroomGovernanceDeleteView,
+    ClassroomGovernanceUpdateView,
     SupportTeacherAssignView,
     TransferOwnershipView,
 )
@@ -90,7 +91,7 @@ from .views_midterm_v2 import (
 )
 from .views_roster import MemberManageView, ClassroomRosterView
 from .views_media import AssignmentVideoUploadUrlView
-from .views_roadmap import StudentRoadmapView
+from .views_roadmap import RoadmapReadingView, StudentProgressView, StudentRoadmapView
 
 
 router = DefaultRouter()
@@ -111,6 +112,14 @@ urlpatterns = [
     # Student-facing per-subject level ladder. A fixed literal, so it resolves before the
     # router's <int:pk> classroom detail and the collection routes below.
     path("roadmap/", StudentRoadmapView.as_view(), name="student-roadmap"),
+    path("progress/", StudentProgressView.as_view(), name="student-progress"),
+    # Above the router include, like every other literal segment here — the
+    # classroom detail route's <int:pk> would otherwise swallow "roadmap".
+    path(
+        "roadmap/<int:delivery_id>/reading/",
+        RoadmapReadingView.as_view(),
+        name="student-roadmap-reading",
+    ),
     path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
     path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
     path("<int:classroom_pk>/comments/", ClassCommentListCreateView.as_view(), name="class-comments"),
@@ -163,6 +172,9 @@ urlpatterns = [
     path("<int:classroom_pk>/support-teachers/", SupportTeacherAssignView.as_view(), name="class-support-teachers"),
     path("<int:classroom_pk>/support-teachers/<int:user_id>/", SupportTeacherAssignView.as_view(), name="class-support-teacher-detail"),
     path("<int:classroom_pk>/governance-delete/", ClassroomGovernanceDeleteView.as_view(), name="class-governance-delete"),
+    # Admin edits a classroom's information. Its own route because the generic detail PATCH
+    # is membership-scoped — see the view's docstring.
+    path("<int:classroom_pk>/details/", ClassroomGovernanceUpdateView.as_view(), name="class-governance-details"),
     # Classroom materials (downloadable PDF/DOCX)
     path("<int:classroom_pk>/materials/", ClassroomMaterialsView.as_view(), name="class-materials"),
     path("<int:classroom_pk>/materials/<int:material_id>/", ClassroomMaterialDetailView.as_view(), name="class-material-detail"),

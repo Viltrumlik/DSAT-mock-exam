@@ -21,6 +21,7 @@ from .models import (
     JournalClassworkAssessment,
     JournalLesson,
     JournalLessonAssessment,
+    JournalRoadmapSection,
 )
 
 
@@ -44,6 +45,19 @@ def _sync_counts(journal: Journal, actor=None) -> None:
         journal.updated_by = actor
         fields.append("updated_by")
     journal.save(update_fields=fields)
+
+
+def ensure_roadmap(lesson):
+    """The session's roadmap row, created empty on first touch.
+
+    Lazy, exactly like ``ensure_classwork``: a roadmap is optional, so creating one for
+    every session at ``add_session`` time would fill the table with empty rows and make
+    "has a roadmap" un-answerable without inspecting the sections.
+    """
+    from .models import JournalRoadmap
+
+    roadmap, _ = JournalRoadmap.objects.get_or_create(lesson=lesson)
+    return roadmap
 
 
 def ensure_classwork(lesson: JournalLesson) -> JournalClasswork | None:
@@ -296,6 +310,33 @@ def duplicate_journal(
                     assessment_set_id=link.assessment_set_id,
                     block=link.block,
                     added_by=actor,
+                )
+
+        # Roadmap — the reading. Copied field by field for the same reason the classwork
+        # above is: a duplicate that silently loses one of the three authored blocks is
+        # worse than one that fails, because nobody notices until a student opens an empty
+        # page. The section rows come across too, in order; the file FIELDS are assigned
+        # rather than re-uploaded, so both copies point at the same object in the bucket —
+        # the same thing `_dup_file`'s callers avoid at RELEASE time, where a copy really is
+        # needed because the two can then diverge. Two journal templates cannot: neither
+        # edits the file.
+        src_rm = getattr(src, "roadmap", None)
+        if src_rm is not None:
+            rm = ensure_roadmap(lesson)
+            for f in ("title", "summary", "estimated_minutes", "require_read_confirmation"):
+                setattr(rm, f, getattr(src_rm, f))
+            rm.save()
+            for section in src_rm.sections.all():
+                JournalRoadmapSection.objects.create(
+                    roadmap=rm,
+                    order=section.order,
+                    kind=section.kind,
+                    heading=section.heading,
+                    body=section.body,
+                    caption=section.caption,
+                    image=section.image,
+                    video_url=section.video_url,
+                    video_file=section.video_file,
                 )
         copied += 1
 

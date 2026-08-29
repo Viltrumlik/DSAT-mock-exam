@@ -13,11 +13,62 @@ import type {
   LessonSummary,
   LessonType,
   MidtermOption,
+  Roadmap,
+  RoadmapSection,
 } from "./types";
 
 type ListEnvelope<T> = { results: T[]; count: number };
 
 export const journalsApi = {
+  // ── Roadmap ────────────────────────────────────────────────────────────────
+  roadmap: async (journalId: number, lessonId: number): Promise<Roadmap> => {
+    const r = await api.get(`/journals/${journalId}/lessons/${lessonId}/roadmap/`);
+    return r.data;
+  },
+  /**
+   * Save the whole block. `sections` is DECLARATIVE — the list you send is the list that
+   * ends up stored, so omitting one deletes it and the order is the array order.
+   */
+  saveRoadmap: async (
+    journalId: number,
+    lessonId: number,
+    body: {
+      title?: string;
+      summary?: string;
+      estimated_minutes?: number;
+      require_read_confirmation?: boolean;
+      sections?: RoadmapSection[];
+    },
+  ): Promise<Roadmap> => {
+    const r = await api.patch(`/journals/${journalId}/lessons/${lessonId}/roadmap/`, body);
+    return r.data;
+  },
+  /** Attach a picture or a video to a section that already exists. */
+  uploadRoadmapMedia: async (
+    journalId: number,
+    lessonId: number,
+    sectionId: number,
+    file: File,
+  ): Promise<RoadmapSection> => {
+    const form = new FormData();
+    form.append("file", file);
+    // No Content-Type header — axios has to choose the multipart boundary itself.
+    const r = await api.post(
+      `/journals/${journalId}/lessons/${lessonId}/roadmap/sections/${sectionId}/media/`,
+      form,
+    );
+    return r.data;
+  },
+  clearRoadmapMedia: async (
+    journalId: number,
+    lessonId: number,
+    sectionId: number,
+  ): Promise<RoadmapSection> => {
+    const r = await api.delete(
+      `/journals/${journalId}/lessons/${lessonId}/roadmap/sections/${sectionId}/media/`,
+    );
+    return r.data;
+  },
   list: async (params?: { subject?: string; status?: string }): Promise<ListEnvelope<JournalListItem>> => {
     const r = await api.get("/journals/", { params });
     return r.data;

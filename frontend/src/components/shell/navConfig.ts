@@ -21,6 +21,7 @@ import {
   Coins,
   LifeBuoy,
   Route,
+  TrendingUp,
   Trophy,
   ShoppingBag,
   ClipboardList as ClipboardListIcon,
@@ -96,6 +97,10 @@ export const studentNav: NavSection[] = [
       { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, hiddenInSidebar: true },
       { href: "/rewards", label: "Points", icon: Coins, hiddenInSidebar: true },
       { href: "/question-bank", label: "Question Bank", icon: CircleHelp },
+      // Appended rather than slotted next to Dashboard where it arguably belongs. The
+      // sidebar's shape has been restored by the school once already, so this adds ONE leaf
+      // and moves nothing: no group is touched, no label renamed, no href re-routed.
+      { href: "/progress", label: "My Progress", icon: TrendingUp, isNew: true },
       { href: "/profile", label: "Profile", icon: UserCircle },
     ],
   },

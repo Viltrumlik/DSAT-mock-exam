@@ -77,6 +77,9 @@ export function SurveyListPage() {
                       <span className="ds-num">{s.question_count}</span>
                       {` question${s.question_count === 1 ? "" : "s"}`}
                       {s.closes_at ? ` · closes ${fmtDate(s.closes_at)}` : ""}
+                      {/* Said before they open it, not after they have typed an opinion
+                          they would rather not sign. */}
+                      {s.allow_anonymous ? " · can be anonymous" : ""}
                     </p>
                   </div>
                   <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />

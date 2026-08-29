@@ -1,174 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, ClipboardList, MessageSquare } from "lucide-react";
 import {
-  Alert,
-  Checkbox,
-  HeroPage,
-  Input,
-  PageHero,
-  Skeleton,
-  Textarea,
-} from "@/components/ui";
+  ArrowLeft,
+  CheckCircle2,
+  ClipboardList,
+  EyeOff,
+  MessageSquare,
+  UserRound,
+} from "lucide-react";
+import { Alert, HeroPage, PageHero, Skeleton, Textarea } from "@/components/ui";
 // The house devices, so a survey reads as part of the same product as the classroom.
 import { Button, buttonClassName, Card, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
+import {
+  QuestionImage,
+  SurveyQuestionField,
+  isAnswered,
+  labelId,
+  wantsFollowUp,
+} from "./SurveyQuestionField";
 import type { SurveyAnswerValue, SurveyQuestion } from "./surveysApi";
-import { useSurvey, useRespond } from "./surveysHooks";
+import { isValidSurveyId, useRespond, useSurvey } from "./surveysHooks";
 
-/** The card title is the question's visible label, so controls point at it by id. */
-const controlId = (q: SurveyQuestion) => `survey-q-${q.id}`;
-const labelId = (q: SurveyQuestion) => `survey-q-${q.id}-label`;
-
-const choiceRow =
-  "flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2 text-sm transition-colors";
-
-function QuestionField({
-  question,
-  value,
-  onChange,
-}: {
-  question: SurveyQuestion;
-  value: SurveyAnswerValue;
-  onChange: (v: SurveyAnswerValue) => void;
-}) {
-  const id = controlId(question);
-  const labelledBy = labelId(question);
-  const required = question.is_required || undefined;
-
-  switch (question.question_type) {
-    case "LONG_TEXT":
-      return (
-        <Textarea
-          id={id}
-          aria-labelledby={labelledBy}
-          aria-required={required}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-    case "DATE":
-      return (
-        <Input
-          id={id}
-          type="date"
-          aria-labelledby={labelledBy}
-          aria-required={required}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-    case "SCALE": {
-      const steps = Array.from(
-        { length: question.scale_max - question.scale_min + 1 },
-        (_, i) => question.scale_min + i,
-      );
-      return (
-        <div
-          role="radiogroup"
-          aria-labelledby={labelledBy}
-          aria-required={required}
-          className="flex flex-wrap gap-2"
-        >
-          {steps.map((n) => (
-            <button
-              key={n}
-              type="button"
-              role="radio"
-              aria-checked={value === n}
-              onClick={() => onChange(n)}
-              className={cn(
-                "ds-ring ds-num h-10 w-10 rounded-xl border text-sm font-bold transition-colors",
-                value === n
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-foreground hover:bg-surface-2",
-              )}
-            >
-              {n}
-            </button>
-          ))}
-        </div>
-      );
-    }
-    case "SINGLE_CHOICE":
-      return (
-        <div
-          role="radiogroup"
-          aria-labelledby={labelledBy}
-          aria-required={required}
-          className="space-y-1.5"
-        >
-          {question.options.map((opt) => {
-            const on = value === opt;
-            return (
-              <label
-                key={opt}
-                className={cn(
-                  choiceRow,
-                  on ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
-                )}
-              >
-                <input
-                  type="radio"
-                  name={`q${question.id}`}
-                  checked={on}
-                  onChange={() => onChange(opt)}
-                  className="ds-ring h-[18px] w-[18px] shrink-0 accent-primary"
-                />
-                <span className="min-w-0">{opt}</span>
-              </label>
-            );
-          })}
-        </div>
-      );
-    case "MULTI_CHOICE": {
-      const picked = Array.isArray(value) ? value : [];
-      return (
-        // `role="group"` does not support aria-required; the label's `*` carries it.
-        <div role="group" aria-labelledby={labelledBy} className="space-y-1.5">
-          {question.options.map((opt) => {
-            const on = picked.includes(opt);
-            return (
-              <label
-                key={opt}
-                className={cn(
-                  choiceRow,
-                  on ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
-                )}
-              >
-                <Checkbox
-                  checked={on}
-                  onChange={() =>
-                    onChange(on ? picked.filter((x) => x !== opt) : [...picked, opt])
-                  }
-                />
-                <span className="min-w-0">{opt}</span>
-              </label>
-            );
-          })}
-        </div>
-      );
-    }
-    default:
-      return (
-        <Input
-          id={id}
-          aria-labelledby={labelledBy}
-          aria-required={required}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-  }
-}
+const questionAnchor = (q: SurveyQuestion) => `survey-card-${q.id}`;
 
 export function SurveyFillPage({ surveyId }: { surveyId: number }) {
   const survey = useSurvey(surveyId);
   const respond = useRespond(surveyId);
   const [answers, setAnswers] = useState<Record<string, SurveyAnswerValue>>({});
+  const [followUps, setFollowUps] = useState<Record<string, string>>({});
+  const [anonymous, setAnonymous] = useState(false);
   const [done, setDone] = useState(false);
+  const [doneAnonymously, setDoneAnonymously] = useState(false);
+  // Set only when Submit is pressed with something missing. Until then the form stays quiet:
+  // marking a question red before the student has reached it is nagging, not help.
+  const [showMissing, setShowMissing] = useState(false);
+
+  const questions = useMemo(() => survey.data?.questions ?? [], [survey.data]);
 
   // Checkboxes need a real array from the start; everything else is fine as undefined.
   useEffect(() => {
@@ -184,14 +54,83 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
     });
   }, [survey.data]);
 
-  const missingRequired = useMemo(() => {
-    if (!survey.data) return false;
-    return survey.data.questions.some((q) => {
-      if (!q.is_required) return false;
-      const v = answers[String(q.id)];
-      return v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
-    });
-  }, [survey.data, answers]);
+  /** The questions that stand between the student and Submit, in page order. */
+  const missing = useMemo(
+    () =>
+      questions.filter((q) => {
+        const value = answers[String(q.id)] ?? null;
+        if (q.is_required && !isAnswered(value)) return true;
+        // A follow-up the author made mandatory is as blocking as the answer above it, and
+        // the server refuses the whole submission over it — so it has to be findable here.
+        if (
+          q.follow_up_required &&
+          wantsFollowUp(q, value) &&
+          !(followUps[String(q.id)] ?? "").trim()
+        ) {
+          return true;
+        }
+        return false;
+      }),
+    [questions, answers, followUps],
+  );
+
+  const setAnswer = useCallback((q: SurveyQuestion, value: SurveyAnswerValue) => {
+    setAnswers((prev) => ({ ...prev, [String(q.id)]: value }));
+  }, []);
+
+  async function submit() {
+    if (missing.length > 0) {
+      // Say WHICH, and take them there. A greyed-out button on a twenty-question form is a
+      // puzzle: the student can see they are blocked and not what by.
+      setShowMissing(true);
+      // By id rather than a ref map: the kit's Card spreads its extra props onto the DOM
+      // node but does not forward a ref, so `ref` on a <Card> is a type error and, if it
+      // compiled, would land on nothing.
+      document
+        .getElementById(questionAnchor(missing[0]))
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    try {
+      const result = await respond.mutateAsync({
+        answers,
+        follow_ups: followUps,
+        anonymous: anonymous && Boolean(survey.data?.allow_anonymous),
+      });
+      // What the SERVER recorded, not what was asked for — the two differ if the author
+      // never turned anonymity on, and the thank-you card must not claim otherwise.
+      setDoneAnonymously(Boolean(result?.is_anonymous));
+      setDone(true); // only on success — a failed submit must keep the answers on screen
+    } catch {
+      // `respond.isError` already renders the alert above; swallowing here only stops the
+      // rejection going unhandled.
+    }
+  }
+
+  // ── the four branches, in order ───────────────────────────────────────────
+  //
+  // The invalid-id branch comes FIRST and is not one of the four. A disabled react-query v5
+  // query reports status "pending" forever, so /surveys/abc used to render skeletons that
+  // never resolved — a page that looked like it was loading and never was.
+  if (!isValidSurveyId(surveyId)) {
+    return (
+      <HeroPage width="narrow">
+        <BackToSurveys />
+        <Card className="cr-card mt-4">
+          <EmptyState
+            icon={ClipboardList}
+            title="That isn't a survey link"
+            description="The address is missing a survey number. The surveys page lists everything you can answer."
+            action={
+              <Link href="/surveys" className={buttonClassName({ variant: "secondary" })}>
+                Back to surveys
+              </Link>
+            }
+          />
+        </Card>
+      </HeroPage>
+    );
+  }
 
   if (survey.isPending) {
     return (
@@ -203,6 +142,7 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
       </HeroPage>
     );
   }
+
   if (survey.isError) {
     // A 404 means the survey really is gone, closed or unpublished. Anything else means the
     // request failed, and saying "not available" there would state as fact something we do
@@ -219,7 +159,9 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
               title="Survey not available"
               description="It may have closed, or it isn't published yet."
               action={
-                <Link href="/surveys" className={buttonClassName({ variant: "secondary" })}>Back to surveys</Link>
+                <Link href="/surveys" className={buttonClassName({ variant: "secondary" })}>
+                  Back to surveys
+                </Link>
               }
             />
           ) : (
@@ -233,17 +175,24 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
       </HeroPage>
     );
   }
-  if (!survey.data) {
+
+  if (!survey.data || questions.length === 0) {
     return (
       <HeroPage width="narrow">
         <BackToSurveys />
         <Card className="cr-card mt-4">
           <EmptyState
             icon={ClipboardList}
-            title="This survey isn't open yet"
-            description="It may have closed, or it isn't published yet. The surveys page lists everything you can answer right now."
+            title={survey.data ? "This survey has no questions yet" : "This survey isn't open yet"}
+            description={
+              survey.data
+                ? "Nothing to answer here at the moment. It will appear on your surveys page once there is."
+                : "It may have closed, or it isn't published yet. The surveys page lists everything you can answer right now."
+            }
             action={
-              <Link href="/surveys" className={buttonClassName({ variant: "secondary" })}>Back to surveys</Link>
+              <Link href="/surveys" className={buttonClassName({ variant: "secondary" })}>
+                Back to surveys
+              </Link>
             }
           />
         </Card>
@@ -261,26 +210,26 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
             </span>
             <div>
               <p className="text-lg font-extrabold text-foreground">Thanks — your answers are in.</p>
-              <p className="mt-1 text-sm font-semibold text-muted-foreground">Your points have been added.</p>
+              <p className="mt-1 text-sm font-semibold text-muted-foreground">
+                Your points have been added.
+              </p>
+              {done && doneAnonymously && (
+                <p className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-[13px] font-semibold text-muted-foreground">
+                  <EyeOff className="h-3.5 w-3.5" aria-hidden /> Sent without your name
+                </p>
+              )}
             </div>
-            <Link href="/surveys" className={buttonClassName({ variant: "secondary", className: "mt-2" })}>Back to surveys</Link>
+            <Link
+              href="/surveys"
+              className={buttonClassName({ variant: "secondary", className: "mt-2" })}
+            >
+              Back to surveys
+            </Link>
           </div>
         </Card>
       </HeroPage>
     );
   }
-
-  async function submit() {
-    try {
-      await respond.mutateAsync(answers);
-      setDone(true);   // only on success — a failed submit must keep the answers on screen
-    } catch {
-      // `respond.isError` already renders the alert above; swallowing here only stops the
-      // rejection going unhandled.
-    }
-  }
-
-  const total = survey.data.questions.length;
 
   return (
     <HeroPage width="narrow" className="space-y-5">
@@ -293,10 +242,15 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
           title={survey.data.title}
           description={survey.data.description || undefined}
           tiles={[
-            { label: "Questions", value: total },
+            { label: "Questions", value: questions.length },
             { label: "Earns you", value: "Points", accent: true },
           ]}
         />
+        {survey.data.image_url && (
+          <div className="border-t border-border p-4">
+            <QuestionImage src={survey.data.image_url} alt="" />
+          </div>
+        )}
       </Card>
 
       {respond.isError && (
@@ -306,47 +260,160 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
         </Alert>
       )}
 
-      {survey.data.questions.map((q, i) => (
-        <Card key={q.id} className="cr-card space-y-3" style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}>
-          <div className="flex items-start gap-[15px]">
-            {/* The homework detail numbers its instruction steps exactly this way. */}
-            <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-primary/10 text-sm font-extrabold text-primary">
-              {i + 1}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p id={labelId(q)} className="text-[16px] font-bold text-foreground">
-                {q.prompt}
-                {/* Same required marker the kit's Field renders, and announced with the label. */}
-                {q.is_required && <span className="ml-0.5 text-rose-500">*</span>}
-              </p>
-              {q.help_text && (
-                <p className="mt-0.5 text-sm text-muted-foreground">{q.help_text}</p>
-              )}
+      {questions.map((q, i) => {
+        const value = answers[String(q.id)] ?? null;
+        const openFollowUp = wantsFollowUp(q, value);
+        const isMissing = showMissing && missing.includes(q);
+        return (
+          <Card
+            key={q.id}
+            id={questionAnchor(q)}
+            className={cn(
+              "cr-card space-y-3 scroll-mt-24",
+              isMissing && "border-rose-400/70 ring-1 ring-rose-400/40",
+            )}
+            style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}
+          >
+            <div className="flex items-start gap-[15px]">
+              {/* The homework detail numbers its instruction steps exactly this way. */}
+              <span
+                className={cn(
+                  "flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] text-sm font-extrabold",
+                  isMissing ? "bg-rose-500/10 text-rose-600" : "bg-primary/10 text-primary",
+                )}
+              >
+                {i + 1}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p id={labelId(q)} className="text-[16px] font-bold text-foreground">
+                  {q.prompt}
+                  {/* Same required marker the kit's Field renders, announced with the label. */}
+                  {q.is_required && <span className="ml-0.5 text-rose-500">*</span>}
+                </p>
+                {q.help_text && (
+                  <p className="mt-0.5 text-sm text-muted-foreground">{q.help_text}</p>
+                )}
+              </div>
             </div>
+
+            {q.image_url && <QuestionImage src={q.image_url} alt="" />}
+
+            <SurveyQuestionField question={q} value={value} onChange={(v) => setAnswer(q, v)} />
+
+            {/* Revealed by the answer above it. The placeholder is the author's own question,
+                and it clears itself the moment the student types — no JS involved. */}
+            {openFollowUp && (
+              <div className="cr-rowin space-y-1.5 rounded-xl border border-border bg-surface-2 p-3">
+                <label
+                  htmlFor={`survey-followup-${q.id}`}
+                  className="text-[13px] font-bold text-foreground"
+                >
+                  {q.follow_up_required ? "Please tell us more" : "Anything you'd like to add?"}
+                  {q.follow_up_required ? (
+                    <span className="ml-0.5 text-rose-500">*</span>
+                  ) : (
+                    <span className="ml-1.5 font-medium text-muted-foreground">Optional</span>
+                  )}
+                </label>
+                <Textarea
+                  id={`survey-followup-${q.id}`}
+                  rows={3}
+                  placeholder={q.follow_up_placeholder || undefined}
+                  value={followUps[String(q.id)] ?? ""}
+                  onChange={(e) =>
+                    setFollowUps((prev) => ({ ...prev, [String(q.id)]: e.target.value }))
+                  }
+                />
+              </div>
+            )}
+
+            {isMissing && (
+              <p className="text-[13px] font-semibold text-rose-600">
+                {q.is_required && !isAnswered(value)
+                  ? "This one still needs an answer."
+                  : "Please add a short note to go with your answer."}
+              </p>
+            )}
+          </Card>
+        );
+      })}
+
+      {survey.data.allow_anonymous && (
+        <Card className="cr-card space-y-2.5">
+          <p className="text-[15px] font-bold text-foreground">How should this be sent?</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <AnonymityChoice
+              icon={UserRound}
+              label="With my name"
+              hint="Staff can see who wrote it."
+              selected={!anonymous}
+              onSelect={() => setAnonymous(false)}
+            />
+            <AnonymityChoice
+              icon={EyeOff}
+              label="Anonymously"
+              hint="Your name is kept off the results."
+              selected={anonymous}
+              onSelect={() => setAnonymous(true)}
+            />
           </div>
-          <QuestionField
-            question={q}
-            value={answers[String(q.id)] ?? null}
-            onChange={(v) => setAnswers((prev) => ({ ...prev, [String(q.id)]: v }))}
-          />
         </Card>
-      ))}
+      )}
 
       <Card className="cr-card flex flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 text-xs font-semibold text-muted-foreground">
-          {missingRequired ? "Answer the questions marked * to finish." : "Ready to send."}
+          {missing.length === 0
+            ? "Ready to send."
+            : `${missing.length} question${missing.length === 1 ? "" : "s"} still to answer.`}
         </p>
+        {/* Deliberately NOT disabled while something is missing. A dead button explains
+            nothing; pressing it scrolls to the first gap and marks it. */}
         <Button
           className="shrink-0"
           icon={ClipboardList}
           loading={respond.isPending}
-          disabled={missingRequired}
           onClick={submit}
         >
           {respond.isPending ? "Sending…" : "Submit"}
         </Button>
       </Card>
     </HeroPage>
+  );
+}
+
+function AnonymityChoice({
+  icon: Icon,
+  label,
+  hint,
+  selected,
+  onSelect,
+}: {
+  icon: React.ElementType;
+  label: string;
+  hint: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className={cn(
+        "ds-ring flex items-start gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-colors",
+        selected ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
+      )}
+    >
+      <Icon
+        className={cn("mt-0.5 h-4 w-4 shrink-0", selected ? "text-primary" : "text-muted-foreground")}
+        aria-hidden
+      />
+      <span className="min-w-0">
+        <span className="block text-sm font-bold text-foreground">{label}</span>
+        <span className="block text-[12px] font-medium text-muted-foreground">{hint}</span>
+      </span>
+    </button>
   );
 }
 

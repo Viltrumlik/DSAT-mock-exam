@@ -5,8 +5,9 @@ Teacher (teaching team):
         interactive midterm (MockExam kind=MIDTERM) to all enrolled students.
 
 Admin (global admin) — governance only:
-  POST /api/classes/<pk>/assign-teacher/      { user_id }   set the classroom teacher
-  POST /api/classes/<pk>/transfer-ownership/  { user_id }   move the OWNER role
+  POST  /api/classes/<pk>/assign-teacher/      { user_id }   set the classroom teacher
+  POST  /api/classes/<pk>/transfer-ownership/  { user_id }   move the OWNER role
+  PATCH /api/classes/<pk>/details/             { … }         edit the classroom's information
 
 Assignment goes through the access engine's ClassroomService, whose enforcement
 write-through grants real, usable access (legacy assigned_users) in the same
@@ -406,3 +407,71 @@ class SupportTeacherAssignView(_AdminClassroomGovernanceView):
         membership.status = ClassroomMembership.STATUS_REMOVED
         membership.save(update_fields=["status"])
         return Response({"detail": "Support teacher removed.", "user_id": int(user_id)})
+
+
+class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
+    """``PATCH /api/classes/<pk>/details/`` — edit a classroom's information from the console.
+
+    **Its own endpoint rather than the ordinary ``PATCH /api/classes/<pk>/``**, for the same
+    reason the branch setter has one. ``ClassroomViewSet.get_queryset`` is membership-scoped
+    for everyone, super_admin included, so the generic detail route raises PermissionDenied
+    for any admin who is not a member of that class — which is nearly all of them, since
+    membership is only granted to the admin who happened to CREATE it. An ops console that
+    could only edit the classes its own operator made would be a governance page in name only.
+
+    ``subject`` is deliberately not editable here. A classroom's subject decides which journal
+    binds to it, which assessments its level admits and which support teachers cover it;
+    flipping it on a running class would strand released homework and leave the students
+    holding work from a course they are no longer on. Making a new classroom is the honest
+    way to change subject, and the roster tools already exist to move students into it.
+    """
+
+    #: What an administrator may change after the fact.
+    #:
+    #: `name` and `level` are here even though they are load-bearing — a mis-typed name and a
+    #: mis-tagged level are exactly the mistakes this page exists to correct, and the level
+    #: is validated against the subject by the serializer.
+    EDITABLE = (
+        "name",
+        "level",
+        "description",
+        "lesson_days",
+        "lesson_time",
+        "lesson_hours",
+        "start_date",
+        "room_number",
+        "branch",
+        "telegram_group_url",
+        "max_students",
+        "schedule_summary",
+        "is_active",
+    )
+
+    @transaction.atomic
+    def patch(self, request, classroom_pk):
+        if not self._guard(request):
+            return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
+        classroom = get_object_or_404(Classroom, pk=classroom_pk)
+
+        from .serializers import ClassroomCreateSerializer, ClassroomSerializer
+
+        payload = {k: v for k, v in (request.data or {}).items() if k in self.EDITABLE}
+        if not payload:
+            # Silence would look like success. An admin whose form sent only fields this
+            # endpoint refuses should be told, not shown a 200 and an unchanged classroom.
+            return Response(
+                {
+                    "detail": (
+                        "Nothing editable was sent. Editable fields: "
+                        + ", ".join(self.EDITABLE)
+                        + "."
+                    )
+                },
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = ClassroomCreateSerializer(classroom, data=payload, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        classroom.refresh_from_db()
+        return Response(ClassroomSerializer(classroom, context={"request": request}).data)

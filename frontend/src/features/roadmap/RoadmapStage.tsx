@@ -241,6 +241,15 @@ export function RoadmapStage({
           const isOpen = open === i;
           const cta = CTA[state];
           const openable = Boolean(lesson.assignment_id && ownClassroomId && cta.enabled);
+          // Reading comes BEFORE the homework, so a lesson with both sends the student to
+          // the reading first and the homework waits at the bottom of it. `delivery_id` is
+          // emitted only for the student's own level, so this is never offered on a locked
+          // one.
+          const hasReading = Boolean(lesson.has_roadmap && lesson.delivery_id && cta.enabled);
+          // Once they HAVE read it the main button goes back to being the homework, and the
+          // reading becomes a quiet second link. A student who has finished a lesson and taps
+          // its circle wants the work, not the explanation they have already been through.
+          const readFirst = hasReading && !lesson.roadmap_read;
 
           return (
             <div
@@ -280,6 +289,11 @@ export function RoadmapStage({
                     </h4>
                     <div className="rm-tags">
                       {lesson.is_midterm ? <span className="rm-tag">Midterm</span> : null}
+                      {lesson.has_roadmap ? (
+                        <span className="rm-tag">
+                          {lesson.roadmap_read ? "Read ✓" : "Reading"}
+                        </span>
+                      ) : null}
                       {lesson.scheduled_for ? (
                         <span className="rm-tag">
                           {new Date(lesson.scheduled_for).toLocaleDateString(undefined, {
@@ -293,8 +307,12 @@ export function RoadmapStage({
                     <button
                       type="button"
                       className={`rm-cta ${cta.cls}`}
-                      disabled={!openable}
+                      disabled={!openable && !readFirst}
                       onClick={() => {
+                        if (readFirst) {
+                          router.push(`/roadmap/${lesson.delivery_id}`);
+                          return;
+                        }
                         if (!openable) return;
                         router.push(
                           `/classes/${ownClassroomId}/assignments/${lesson.assignment_id}`,
@@ -303,9 +321,24 @@ export function RoadmapStage({
                     >
                       {/* The button says LOCKED / NOT YET when the state forbids it, but a
                           lesson that is open and simply has no assignment behind it yet is a
-                          third case — say that rather than claiming it is not their turn. */}
-                      {cta.enabled && !openable ? "NOT READY YET" : cta.label}
+                          third case — say that rather than claiming it is not their turn.
+                          A lesson with UNREAD material always has somewhere to go, even
+                          before its homework exists, so it never reaches "NOT READY YET". */}
+                      {readFirst
+                        ? "READ FIRST"
+                        : cta.enabled && !openable
+                          ? "NOT READY YET"
+                          : cta.label}
                     </button>
+                    {hasReading && !readFirst ? (
+                      <button
+                        type="button"
+                        className="rm-cta-sub"
+                        onClick={() => router.push(`/roadmap/${lesson.delivery_id}`)}
+                      >
+                        Read it again
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

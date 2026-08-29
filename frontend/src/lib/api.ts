@@ -1022,12 +1022,21 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/`);
         return r.data;
     },
-    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; level?: string; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; teacher_id?: number; max_students?: number; is_active?: boolean;
+    create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; level?: string; description?: string; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; teacher_id?: number; max_students?: number; is_active?: boolean;
         /** Where the class meets. Writable on the serializer; the REGION is derived from
          *  it server-side, so only the branch is ever sent. */
-        branch?: number }) => {
+        branch?: number;
+        /** Invite link for the class Telegram group. The server normalises a bare `t.me/x`
+         *  and refuses a link to anywhere but Telegram. */
+        telegram_group_url?: string;
+        /** Support staff to attach at creation, written server-side in the same request —
+         *  the same reasoning as `teacher_id`. Ids that fail the account-role or subject
+         *  check are skipped, and the ones that took come back as `support_teacher_ids`. */
+        support_teacher_ids?: number[] }) => {
         const r = await api.post('/classes/', data);
-        return r.data;
+        // Spread, never a hand-built object: a whitelist here is the bug class that dropped
+        // `months_to_sat` from the roadmap payload and took the dashboard down.
+        return r.data as Record<string, unknown> & { id: number; support_teacher_ids?: number[] };
     },
     update: async (classId: number, data: Record<string, unknown>) => {
         const r = await api.patch(`/classes/${classId}/`, data);
@@ -1247,6 +1256,23 @@ export const classesApi = {
     },
     governanceDelete: async (classId: number) => {
         await api.delete(`/classes/${classId}/governance-delete/`);
+    },
+    /**
+     * Edit a classroom's information from the ops console.
+     *
+     * NOT `update` above. `PATCH /classes/<id>/` is membership-scoped and 403s for any admin
+     * who is not a member of that class — which is nearly all of them. This route is the
+     * governance one; see ClassroomGovernanceUpdateView.
+     */
+    governanceUpdate: async (classId: number, data: {
+        name?: string; level?: string; description?: string;
+        lesson_days?: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number;
+        start_date?: string | null; room_number?: string; branch?: number | null;
+        telegram_group_url?: string; max_students?: number | null;
+        schedule_summary?: string; is_active?: boolean;
+    }) => {
+        const r = await api.patch(`/classes/${classId}/details/`, data);
+        return r.data;
     },
     join: async (join_code: string) => {
         const r = await api.post('/classes/join/', { join_code });

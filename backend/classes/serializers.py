@@ -113,7 +113,9 @@ class ClassroomSerializer(serializers.ModelSerializer):
             "branch",
             "branch_name",
             "region_name",
+            "description",
             "telegram_chat_id",
+            "telegram_group_url",
             "max_students",
             "teacher",
             "teacher_details",
@@ -151,6 +153,18 @@ class ClassroomSerializer(serializers.ModelSerializer):
 
 
 class ClassroomCreateSerializer(serializers.ModelSerializer):
+    #: Declared as a CharField even though the model column is a ``URLField``.
+    #:
+    #: DRF maps a model URLField to ``serializers.URLField``, whose own ``URLValidator`` runs
+    #: at FIELD level — before ``validate_telegram_group_url`` below is ever called. A bare
+    #: ``t.me/mygroup`` would be refused with "Enter a valid URL" and the normaliser that
+    #: exists precisely to repair it would never get a turn. Taking the field validator off
+    #: hands the whole question to ``validate_telegram_group_url``, which is stricter than
+    #: URLValidator anyway: it also insists the host is Telegram.
+    telegram_group_url = serializers.CharField(
+        max_length=300, required=False, allow_blank=True, trim_whitespace=True
+    )
+
     def validate_name(self, value):
         value = (value or "").strip()
         if not value:
@@ -204,6 +218,53 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
             return value
         raise serializers.ValidationError("Teacher must have user-management permission.")
 
+    def validate_branch(self, value):
+        """A classroom may only be MOVED to a branch that is open.
+
+        Checked here rather than left to the FK: ``Branch`` rows are deactivated rather than
+        deleted (closing a site must not delete the classes that met there), so the FK alone
+        would happily file a new class at a branch that closed last term.
+
+        **Keeping the branch it already has is always allowed**, exactly as
+        ``validate_teacher`` below allows keeping a demoted teacher. Without that carve-out,
+        closing a branch would make every classroom still at it permanently uneditable: the
+        ops edit form sends `branch` on every save, so renaming one would 400 on a field the
+        administrator never touched.
+        """
+        if value is None or getattr(value, "is_active", True):
+            return value
+        instance = getattr(self, "instance", None)
+        if instance is not None and instance.branch_id == value.pk:
+            return value
+        raise serializers.ValidationError("That branch is closed.")
+
+    def validate_telegram_group_url(self, value):
+        """Accept ``t.me/x`` by adding the scheme, refuse anything that is not Telegram.
+
+        Two different mistakes, two different answers. A missing scheme is a typo and is
+        repaired — an author pasting from the Telegram app gets a bare ``t.me/…`` and should
+        not have to know why that fails. A link to somewhere else entirely is not a typo: the
+        button says "Join Telegram group", and a button that says one thing and goes
+        somewhere else is worth a 400.
+        """
+        value = (value or "").strip()
+        if not value:
+            return ""
+        # Case-insensitive: a scheme is case-insensitive per RFC 3986, and a pasted
+        # "HTTPS://t.me/x" used to be treated as scheme-less and turned into
+        # "https://HTTPS://t.me/x", whose host is "https" — so a link that was already
+        # perfectly valid came back as "That is not a Telegram link".
+        if not value.lower().startswith(("http://", "https://")):
+            value = f"https://{value}"
+        from urllib.parse import urlparse
+
+        host = (urlparse(value).hostname or "").lower().removeprefix("www.")
+        if host not in ("t.me", "telegram.me", "telegram.dog"):
+            raise serializers.ValidationError(
+                "That is not a Telegram link. It should start with https://t.me/"
+            )
+        return value
+
     class Meta:
         model = Classroom
         fields = [
@@ -211,12 +272,20 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
             "name",
             "subject",
             "level",
+            "description",
             "lesson_days",
             "lesson_time",
             "lesson_hours",
             "start_date",
             "room_number",
+            # `branch` was NOT in this list, and DRF drops any request key outside it. The
+            # ops create form has sent one since the region/branch picker shipped, and every
+            # classroom made through it since has been filed at no branch at all — silently,
+            # because the 201 comes back from the *read* serializer with `branch: null` and
+            # nobody looks at that field on a create response.
+            "branch",
             "telegram_chat_id",
+            "telegram_group_url",
             "max_students",
             "teacher",
             "is_active",
