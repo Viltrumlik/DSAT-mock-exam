@@ -23,7 +23,7 @@ export function SurveyListPage() {
           badge="Survey"
           icon={MessageSquare}
           title="Surveys"
-          description="Tell the school what you think. Each survey you finish earns you points."
+          description="Tell the learning center what you think. Each survey you finish earns you points."
           // Only when there is something: a lone "0" in the masthead reads as a scoreboard
           // of what the student has failed to do, and the card below already says it kindly.
           tiles={
@@ -58,7 +58,7 @@ export function SurveyListPage() {
           <EmptyState
             icon={ClipboardList}
             title="Nothing to answer right now"
-            description="When the school publishes a survey, it will show up here."
+            description="When the learning center publishes a survey, it will show up here."
           />
         ) : (
           <ul className="divide-y divide-border">

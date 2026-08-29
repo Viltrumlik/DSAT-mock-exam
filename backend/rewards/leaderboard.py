@@ -220,8 +220,8 @@ def _scope_note(query: BoardQuery) -> str:
     }[query.window]
 
     if narrowed:
-        return f"{base} here. Midterm XP isn't counted — a midterm belongs to the school, not to one class."
-    return f"{base} across the whole school."
+        return f"{base} here. Midterm XP isn't counted — a midterm belongs to the learning center, not to one class."
+    return f"{base} across the whole learning center."
 
 
 def rank_of(student, query: BoardQuery, viewer=None):

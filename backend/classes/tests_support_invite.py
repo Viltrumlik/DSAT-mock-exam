@@ -145,12 +145,16 @@ class SupportInviteTests(TestCase):
         with self.assertRaises(ValidationError):
             support_service.invite_member(self.booking, self.guest, actor=self.host)
 
-    def test_the_weekly_cap_still_applies_to_the_guest(self):
-        """A classmate who has already had their week's sessions is not free to attend a
-        fourth just because somebody else clicked."""
-        for i in range(support_service.MAX_BOOKINGS_PER_WEEK):
+    def test_a_busy_week_does_not_block_the_guest(self):
+        """The weekly cap the school withdrew used to refuse this invitation.
+
+        The guest's sessions are all on a DIFFERENT day from the one they are being invited
+        to, so nothing about their own afternoon is disturbed — and having used the desk a
+        lot this week is not a reason to be kept out of it.
+        """
+        for i in range(4):
             start = support_service._hour_start(
-                timezone.localdate() + timedelta(days=support_service.CALENDAR_DAYS + 4), 9 + i
+                timezone.localdate() + timedelta(days=support_service.CALENDAR_DAYS + 4 + i), 9
             )
             slot = SupportAvailability.objects.create(
                 support_teacher=self.support, starts_at=start,
@@ -160,10 +164,14 @@ class SupportInviteTests(TestCase):
                 availability=slot, student=self.guest, status=SupportBooking.STATUS_BOOKED
             )
 
-        with self.assertRaises(ValidationError) as ctx:
-            support_service.invite_member(self.booking, self.guest, actor=self.host)
-        # The message is read by the INVITER, so it has to name the person it is about.
-        self.assertIn("support sessions", " ".join(ctx.exception.messages))
+        support_service.invite_member(self.booking, self.guest, actor=self.host)
+        self.assertTrue(
+            SupportBooking.objects.filter(
+                availability=self.booking.availability,
+                student=self.guest,
+                status=SupportBooking.STATUS_BOOKED,
+            ).exists()
+        )
 
     # ── being told ──────────────────────────────────────────────────────────
 
