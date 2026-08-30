@@ -66,7 +66,14 @@ def normalize_answer(question: SurveyQuestion, raw):
             raise ValidationError(f"“{question.prompt}” has no option {unknown[0]!r}.")
         # Deduplicated but order-preserving: a client that sends the same box twice is a bug,
         # not a reason to reject the whole submission.
-        return list(dict.fromkeys(picked))
+        picked = list(dict.fromkeys(picked))
+        cap = int(question.max_selections or 0)
+        if cap and len(picked) > cap:
+            raise ValidationError(
+                f"“{question.prompt}” — pick at most {cap} "
+                f"{'option' if cap == 1 else 'options'}."
+            )
+        return picked
 
     raise ValidationError(f"Unsupported question type {qt!r}.")
 
@@ -117,6 +124,12 @@ def submit_response(
     """
     if not survey.is_open():
         raise ValidationError("That survey is not open.")
+    # Enforced here, not merely filtered out of the list. `open_surveys_for` decides what a
+    # student is SHOWN; this decides what they may DO — and the two must be the same rule, or
+    # anybody who knows a survey id can POST to it directly and be paid for a survey that was
+    # never theirs.
+    if not is_in_audience(survey, student):
+        raise ValidationError("That survey was not sent to you.")
 
     # `get_or_create`, not `select_for_update().first()`. A row lock locks a ROW, and on a
     # first-ever submit there is no row to lock — so two clicks landing together both saw
@@ -173,6 +186,12 @@ def submit_response(
     # never turned anonymity on gets a signed response, not a 400: the flag is a preference,
     # and the authority for whether it can be honoured is the survey, not the request body.
     response.is_anonymous = bool(anonymous) and survey.allow_anonymous
+    # Snapshotted now, not resolved when the results are read: a student who moves up a level
+    # next term must not silently re-file this reply — and for an anonymous reply this is the
+    # ONLY route to a per-class breakdown, since the student FK must never be followed.
+    classroom, level = cohort_of(student)
+    response.classroom = classroom
+    response.level = level
     response.submitted_at = timezone.now()
     response.save()
 
@@ -183,6 +202,82 @@ def submit_response(
             defaults={"value": value, "follow_up": comment},
         )
     return response
+
+
+# ── Who a survey is for ───────────────────────────────────────────────────────
+#
+# ONE resolver, used for both questions the school asks: "may this student answer it" and
+# "who was it sent to". A second implementation of the same rule is how a response rate ends
+# up disagreeing with the list of people it is a rate over.
+
+
+def _audience_membership_qs(survey):
+    """The STUDENT memberships this survey was aimed at, or None for 'everyone'.
+
+    ``NON_REMOVED_STATUSES``, the rule every classroom-visibility query in this codebase
+    follows: an INVITED student is a member of the class and is owed the survey.
+    """
+    from classes.models import ClassroomMembership
+
+    if survey.audience_kind == Survey.AUDIENCE_ALL:
+        return None
+
+    qs = ClassroomMembership.objects.filter(
+        role=ClassroomMembership.ROLE_STUDENT,
+        status__in=ClassroomMembership.NON_REMOVED_STATUSES,
+    )
+    if survey.audience_kind == Survey.AUDIENCE_LEVEL:
+        return qs.filter(classroom__level=survey.audience_level)
+    if survey.audience_kind == Survey.AUDIENCE_CLASSROOMS:
+        return qs.filter(classroom__in=survey.audience_classrooms.all())
+    if survey.audience_kind == Survey.AUDIENCE_BRANCH:
+        return qs.filter(classroom__branch=survey.audience_branch)
+    return qs.none()
+
+
+def audience_student_ids(survey) -> set[int] | None:
+    """Every student the survey was sent to, or ``None`` meaning 'everyone'.
+
+    ``None`` rather than "all student ids" on purpose: an ALL survey has no roster to hold,
+    and materialising every student in the school to answer "is this one of them" would be a
+    query nobody needs.
+    """
+    qs = _audience_membership_qs(survey)
+    if qs is None:
+        return None
+    return set(qs.values_list("user_id", flat=True))
+
+
+def is_in_audience(survey, student) -> bool:
+    """Whether this student was sent this survey."""
+    qs = _audience_membership_qs(survey)
+    if qs is None:
+        return True
+    return qs.filter(user=student).exists()
+
+
+def cohort_of(student):
+    """``(classroom, level)`` to stamp on a reply — the most-recently-joined levelled class.
+
+    The same choice ``roadmap.build_roadmap`` makes for "the student's own level", so a
+    survey filed under Junior means the same thing as a roadmap that says Junior.
+    """
+    from classes.models import ClassroomMembership
+
+    membership = (
+        ClassroomMembership.objects.filter(
+            user=student,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status__in=ClassroomMembership.NON_REMOVED_STATUSES,
+        )
+        .exclude(classroom__level="")
+        .select_related("classroom")
+        .order_by("-joined_at", "-id")
+        .first()
+    )
+    if membership is None:
+        return None, ""
+    return membership.classroom, membership.classroom.level
 
 
 def open_surveys_for(student):
@@ -198,15 +293,181 @@ def open_surveys_for(student):
     done = SurveyResponse.objects.filter(
         student=student, status=SurveyResponse.STATUS_SUBMITTED
     ).values_list("survey_id", flat=True)
-    return (
+    candidates = (
         Survey.objects.filter(status=Survey.STATUS_PUBLISHED, questions__isnull=False)
         .exclude(id__in=done)
         .exclude(opens_at__gt=now)
         .exclude(closes_at__lt=now)
         # The join to questions multiplies the row per question.
         .distinct()
-        .order_by("-created_at", "-id")
+        .prefetch_related("audience_classrooms")
     )
+    # Audience decided in Python — the four kinds resolve through three different joins, and
+    # one query over a handful of open surveys is easier to be sure of than a compound Q.
+    #
+    # Re-narrowed into a QUERYSET rather than returned as the list: this function's return
+    # type is part of its contract, callers do `.count()` on it, and handing back a plain
+    # list turned that into `list.count() takes exactly one argument`.
+    allowed = [s.pk for s in candidates if is_in_audience(s, student)]
+    return Survey.objects.filter(pk__in=allowed).order_by("-created_at", "-id")
+
+
+@transaction.atomic
+def save_draft(survey: Survey, student, answers: dict, follow_ups: dict | None = None):
+    """Keep a half-finished survey without submitting it.
+
+    ``SurveyResponse.STATUS_IN_PROGRESS`` has existed since the app was written and NOTHING
+    ever wrote it — every answer lived in React state and vanished if the tab closed.
+
+    Deliberately lenient where ``submit_response`` is strict: a required question may be empty
+    and a half-typed answer is simply not stored yet. Refusing a draft would defeat the point
+    of having one. The real validation still happens, once, at submit.
+    """
+    if not survey.is_open() or not is_in_audience(survey, student):
+        return None
+
+    existing = SurveyResponse.objects.filter(survey=survey, student=student).first()
+    if existing is not None and existing.status == SurveyResponse.STATUS_SUBMITTED:
+        # A late autosave from a stale tab must never reopen or overwrite a submitted
+        # reply — the points are banked against it.
+        return existing
+
+    response, _ = SurveyResponse.objects.get_or_create(survey=survey, student=student)
+    follow_ups = follow_ups if isinstance(follow_ups, dict) else {}
+
+    for question in survey.questions.all():
+        raw = _pick(answers, question)
+        try:
+            value = normalize_answer(question, raw) if raw not in (None, "") else None
+        except ValidationError:
+            # Half-typed. Keep what came before rather than dropping their work mid-sentence.
+            continue
+        SurveyAnswer.objects.update_or_create(
+            response=response,
+            question=question,
+            defaults={
+                "value": value,
+                "follow_up": str(_pick(follow_ups, question) or "").strip(),
+            },
+        )
+    return response
+
+
+def draft_for(survey: Survey, student):
+    """A student's saved-but-unsubmitted answers, as ``{question_id: value}`` maps."""
+    response = (
+        SurveyResponse.objects.filter(
+            survey=survey, student=student, status=SurveyResponse.STATUS_IN_PROGRESS
+        )
+        .prefetch_related("answers")
+        .first()
+    )
+    if response is None:
+        return {"answers": {}, "follow_ups": {}, "saved_at": None}
+    return {
+        "answers": {
+            str(a.question_id): a.value for a in response.answers.all() if a.value is not None
+        },
+        "follow_ups": {
+            str(a.question_id): a.follow_up for a in response.answers.all() if a.follow_up
+        },
+        "saved_at": response.updated_at.isoformat() if response.updated_at else None,
+    }
+
+
+@transaction.atomic
+def duplicate_survey(survey: Survey, actor) -> Survey:
+    """Copy a survey and every question, as a fresh DRAFT with no replies.
+
+    The centre runs the same ten questions every term. Retyping them is how a question gets
+    reworded by accident and two terms stop being comparable.
+
+    Always a DRAFT, never inherits the window, never carries the responses — a duplicate that
+    arrived already published would send a half-checked form to the school.
+    """
+    copy = Survey.objects.create(
+        title=f"{survey.title} (copy)",
+        description=survey.description,
+        image=survey.image,
+        allow_anonymous=survey.allow_anonymous,
+        audience_kind=survey.audience_kind,
+        audience_level=survey.audience_level,
+        audience_branch=survey.audience_branch,
+        points_award=survey.points_award,
+        status=Survey.STATUS_DRAFT,
+        created_by=actor,
+    )
+    copy.audience_classrooms.set(survey.audience_classrooms.all())
+
+    # Two passes, because a display condition points at another QUESTION and the new one does
+    # not exist during the first — ids are only known after the row is written.
+    id_map: dict[int, int] = {}
+    for q in survey.questions.all():
+        new_q = SurveyQuestion.objects.create(
+            survey=copy, order=q.order, prompt=q.prompt, help_text=q.help_text,
+            question_type=q.question_type, is_required=q.is_required, image=q.image,
+            options=list(q.options or []), follow_up_options=list(q.follow_up_options or []),
+            max_selections=q.max_selections,
+            scale_min=q.scale_min, scale_max=q.scale_max,
+            scale_low_label=q.scale_low_label, scale_high_label=q.scale_high_label,
+            follow_up_threshold=q.follow_up_threshold,
+            follow_up_placeholder=q.follow_up_placeholder,
+            follow_up_required=q.follow_up_required,
+        )
+        id_map[q.id] = new_q.id
+
+    for q in survey.questions.exclude(condition_question__isnull=True):
+        SurveyQuestion.objects.filter(pk=id_map[q.id]).update(
+            # Re-pointed at the COPY's question, never the original's — otherwise editing the
+            # old survey would silently change how the new one branches.
+            condition_question_id=id_map.get(q.condition_question_id),
+            condition_operator=q.condition_operator,
+            condition_value=q.condition_value,
+        )
+    return copy
+
+
+def participation(survey: Survey) -> dict:
+    """How many were asked, how many replied, and who has not.
+
+    ``expected`` is ``None`` for an ALL survey — the honest answer, because "everyone" has no
+    roster and a made-up denominator is worse than none.
+
+    The outstanding list names students, so it is only ever read by the authoring role — and
+    it says who has NOT answered, which reveals nothing about what anybody said. That is what
+    keeps it compatible with an anonymous survey.
+    """
+    from django.contrib.auth import get_user_model
+
+    replied_ids = set(
+        survey.responses.filter(status=SurveyResponse.STATUS_SUBMITTED).values_list(
+            "student_id", flat=True
+        )
+    )
+    audience = audience_student_ids(survey)
+    if audience is None:
+        return {"expected": None, "replied": len(replied_ids), "rate": None, "outstanding": []}
+
+    missing = audience - replied_ids
+    users = get_user_model().objects.filter(pk__in=missing).order_by("first_name", "email")
+    return {
+        "expected": len(audience),
+        "replied": len(audience & replied_ids),
+        "rate": (
+            round(100.0 * len(audience & replied_ids) / len(audience), 1) if audience else None
+        ),
+        "outstanding": [
+            {
+                "id": u.pk,
+                "name": f"{u.first_name} {u.last_name}".strip() or u.email,
+                "email": u.email,
+            }
+            # Capped: the point is to chase them, and a list of 900 is not a thing anybody
+            # reads. The count above is the honest total either way.
+            for u in users[:200]
+        ],
+        "outstanding_total": len(missing),
+    }
 
 
 # ── Reading the results ───────────────────────────────────────────────────────
@@ -295,18 +556,21 @@ def _summarise_question(question: SurveyQuestion, answers: list, not_asked: int 
     return summary
 
 
-def survey_results(survey: Survey) -> dict:
+def survey_results(survey: Survey, *, classroom_id=None, level=None) -> dict:
     """Per-question summaries plus the individual responses, in one read.
 
     Both halves come off the same prefetched rows: the console shows the summary first and
     the individual replies underneath, and fetching them separately would let the two
     disagree while an answer landed between the requests.
     """
-    responses = list(
-        survey.responses.filter(status=SurveyResponse.STATUS_SUBMITTED)
-        .select_related("student")
-        .prefetch_related("answers__question")
-    )
+    qs = survey.responses.filter(status=SurveyResponse.STATUS_SUBMITTED)
+    # Narrowed on the SNAPSHOT taken when they answered, never by following the student FK —
+    # which is what makes a per-class breakdown possible on an anonymous survey at all.
+    if classroom_id:
+        qs = qs.filter(classroom_id=classroom_id)
+    if level:
+        qs = qs.filter(level=level)
+    responses = list(qs.select_related("student").prefetch_related("answers__question"))
     by_question: dict[int, list] = {}
     for response in responses:
         for answer in response.answers.all():

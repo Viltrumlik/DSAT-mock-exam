@@ -48,6 +48,50 @@ class Survey(models.Model):
     #: reading surface — the replies list, the export — will ever print who said it. Saying
     #: more than that to a student would be a promise the schema does not keep.
     allow_anonymous = models.BooleanField(default=False)
+
+    # ── Who is it for ────────────────────────────────────────────────────────
+    #
+    # Until now a published survey went to EVERY student in the centre, and that single
+    # absence was the root of four separate complaints: you cannot ask one year group about
+    # a trip, you cannot get a response RATE (no audience means no denominator), you cannot
+    # list who has not replied, and you cannot read the results per class.
+    #
+    # Modelled as a kind plus one optional narrowing, rather than a free-form rule engine:
+    # the school asks four questions — everyone, one level, some classrooms, one branch — and
+    # a query builder would be a bigger thing to get wrong for no more answers.
+    AUDIENCE_ALL = "ALL"
+    AUDIENCE_LEVEL = "LEVEL"
+    AUDIENCE_CLASSROOMS = "CLASSROOMS"
+    AUDIENCE_BRANCH = "BRANCH"
+    AUDIENCE_CHOICES = [
+        (AUDIENCE_ALL, "Everyone"),
+        (AUDIENCE_LEVEL, "One level"),
+        (AUDIENCE_CLASSROOMS, "Chosen classrooms"),
+        (AUDIENCE_BRANCH, "One branch"),
+    ]
+    audience_kind = models.CharField(
+        max_length=12, choices=AUDIENCE_CHOICES, default=AUDIENCE_ALL, db_index=True
+    )
+    #: AUDIENCE_LEVEL: the classroom level, e.g. "senior". Levels live on the CLASSROOM, never
+    #: on the student, so this resolves through membership like everything else does.
+    audience_level = models.CharField(max_length=16, blank=True, default="")
+    audience_classrooms = models.ManyToManyField(
+        "classes.Classroom", blank=True, related_name="surveys"
+    )
+    audience_branch = models.ForeignKey(
+        "classes.Branch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="surveys",
+    )
+
+    #: What finishing it pays. Per survey, because a one-question weekly pulse and a
+    #: thirty-question end-of-term evaluation were both paying exactly 40 — and a purely
+    #: administrative form ("confirm your phone number") had no way to pay nothing at all.
+    #: 0 is a legitimate value and means exactly that.
+    points_award = models.PositiveIntegerField(default=40)
+
     status = models.CharField(
         max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True
     )
@@ -133,6 +177,11 @@ class SurveyQuestion(models.Model):
     #: argues against the id layer on its own merits. A stale entry here (an option since
     #: renamed) simply never matches, which is the harmless failure.
     follow_up_options = models.JSONField(default=list, blank=True)
+    #: MULTI_CHOICE only: the most boxes a student may tick. 0 means no limit.
+    #:
+    #: "Pick your top 2 of these 5" is the whole point of a preference poll — without a cap a
+    #: student ticks everything and the counts stop meaning anything.
+    max_selections = models.PositiveSmallIntegerField(default=0)
     scale_min = models.PositiveSmallIntegerField(default=1)
     scale_max = models.PositiveSmallIntegerField(default=5)
     #: The sentences written under each end of a RATING slider. Editable, because the
@@ -327,6 +376,25 @@ class SurveyResponse(models.Model):
     #: body is not a permission. See ``Survey.allow_anonymous`` for what this does and does
     #: not promise: the row still knows who wrote it, and no reading surface prints it.
     is_anonymous = models.BooleanField(default=False)
+
+    #: The class and level this student was in WHEN THEY ANSWERED, snapshotted.
+    #:
+    #: Snapshotted rather than resolved at read time, for two reasons. A student moves up a
+    #: level mid-year, and last term's replies belong to the group that gave them — resolving
+    #: live would silently re-file history every time somebody was promoted. And it is the
+    #: only way to break results down at all for an ANONYMOUS reply, where the student FK
+    #: must never be followed.
+    #:
+    #: SET_NULL: deleting a classroom must not delete the replies of everyone who was in it.
+    classroom = models.ForeignKey(
+        "classes.Classroom",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="survey_responses",
+    )
+    level = models.CharField(max_length=16, blank=True, default="")
+
     submitted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

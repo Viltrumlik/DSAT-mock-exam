@@ -114,6 +114,11 @@ class SurveyDetailView(APIView):
         survey = get_object_or_404(Survey, pk=survey_id)
         if not survey.is_open() and not _is_super_admin(request.user):
             return Response({"detail": "That survey is not open."}, status=http.HTTP_404_NOT_FOUND)
+        # A survey aimed at one level is not visible to anybody else, even by direct link.
+        # 404 rather than 403: they should not learn it exists. The author is exempt so a
+        # targeted survey can still be previewed.
+        if not _is_super_admin(request.user) and not services.is_in_audience(survey, request.user):
+            return Response({"detail": "That survey is not open."}, status=http.HTTP_404_NOT_FOUND)
         already = SurveyResponse.objects.filter(
             survey=survey, student=request.user, status=SurveyResponse.STATUS_SUBMITTED
         ).exists()
@@ -151,6 +156,33 @@ class SurveyRespondView(APIView):
             },
             status=http.HTTP_201_CREATED,
         )
+
+
+class SurveyDraftView(APIView):
+    """``GET|PUT /api/surveys/<id>/draft/`` — keep a half-finished survey.
+
+    PUT is the autosave. It is deliberately forgiving: a required question may be empty and a
+    half-typed answer is simply not stored yet, because refusing a draft would defeat having
+    one. All the real validation still happens once, at submit.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, survey_id):
+        survey = get_object_or_404(Survey, pk=survey_id)
+        return Response(services.draft_for(survey, request.user))
+
+    def put(self, request, survey_id):
+        survey = get_object_or_404(Survey, pk=survey_id)
+        answers = request.data.get("answers")
+        if not isinstance(answers, dict):
+            return Response({"detail": "answers must be an object."}, status=400)
+        services.save_draft(
+            survey, request.user, answers, follow_ups=request.data.get("follow_ups")
+        )
+        # No body worth returning — the client already has what it just sent, and echoing it
+        # back would double the size of a request that fires every few seconds.
+        return Response(status=http.HTTP_204_NO_CONTENT)
 
 
 # ── Authoring (super_admin) ───────────────────────────────────────────────────
@@ -284,6 +316,31 @@ class SurveyQuestionDetailView(_AuthoringView):
         return Response(status=http.HTTP_204_NO_CONTENT)
 
 
+class SurveyDuplicateView(_AuthoringView):
+    """``POST /api/surveys/admin/<id>/duplicate/`` — last term's survey, ready to edit."""
+
+    def post(self, request, survey_id):
+        denied = self._guard(request)
+        if denied:
+            return denied
+        survey = get_object_or_404(Survey, pk=survey_id)
+        copy = services.duplicate_survey(survey, request.user)
+        return Response(
+            SurveySerializer(copy, context={"request": request}).data,
+            status=http.HTTP_201_CREATED,
+        )
+
+
+class SurveyParticipationView(_AuthoringView):
+    """``GET /api/surveys/admin/<id>/participation/`` — the response rate, and who to chase."""
+
+    def get(self, request, survey_id):
+        denied = self._guard(request)
+        if denied:
+            return denied
+        return Response(services.participation(get_object_or_404(Survey, pk=survey_id)))
+
+
 class SurveyQuestionReorderView(_AuthoringView):
     """``{"order": [<question_id>, …]}`` — the questions in their new sequence.
 
@@ -367,7 +424,11 @@ class SurveyResponsesView(_AuthoringView):
         if denied:
             return denied
         survey = get_object_or_404(Survey, pk=survey_id)
-        results = services.survey_results(survey)
+        results = services.survey_results(
+            survey,
+            classroom_id=request.query_params.get("classroom") or None,
+            level=request.query_params.get("level") or None,
+        )
         return Response({
             "survey": SurveyBriefSerializer(survey, context={"request": request}).data,
             "summaries": results["summaries"],

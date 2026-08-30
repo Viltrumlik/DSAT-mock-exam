@@ -666,13 +666,31 @@ def sync_survey_response(response, *, actor=None) -> None:
         revoke(key, reason="survey response withdrawn", actor=actor)
         return
 
+    # The amount is the SURVEY's, not the event's. A one-question weekly pulse and a
+    # thirty-question end-of-term evaluation were both paying the event's flat 40, and a
+    # purely administrative form ("confirm your phone number") had no way to pay nothing.
+    # `points_award` defaults to 40, so every survey that existed before keeps its price.
+    #
+    # A survey worth 0 mints no row at all: an award of nothing is not a thing to put in a
+    # student's ledger, and `award()` would otherwise write a visible 0-point entry.
+    survey = response.survey
+    amount = int(getattr(survey, "points_award", 40) or 0)
+    if amount <= 0:
+        revoke(key, reason="survey pays nothing", actor=actor)
+        return
+
     award(
         response.student,
         constants.EVENT_SURVEY,
         idempotency_key=key,
         source_type="survey_response",
         source_id=response.id,
+        points=amount,
         actor=actor,
+        # Names the survey on the ledger row. Without it a student who answered four surveys
+        # this term sees four identical "Survey completed" lines and cannot tell which one
+        # they were paid for.
+        note=survey.title[:120],
         reason="survey completed",
     )
 

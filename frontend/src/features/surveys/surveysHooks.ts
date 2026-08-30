@@ -14,6 +14,8 @@ const keys = {
   adminList: ["surveys", "admin", "list"] as const,
   adminDetail: (id: number) => ["surveys", "admin", "detail", id] as const,
   results: (id: number) => ["surveys", "admin", "results", id] as const,
+  participation: (id: number) => ["surveys", "admin", "participation", id] as const,
+  draft: (id: number) => ["surveys", "draft", id] as const,
 };
 
 // ── student ──────────────────────────────────────────────────────────────────
@@ -71,10 +73,15 @@ export function useAdminSurvey(id: number | null) {
   });
 }
 
-export function useSurveyResults(id: number | null) {
+export function useSurveyResults(
+  id: number | null,
+  filters?: { classroom?: number; level?: string },
+) {
   return useQuery({
-    queryKey: keys.results(id ?? 0),
-    queryFn: () => surveysApi.results(id as number),
+    // The filter is part of the key, or switching class would show the previous class's
+    // numbers until the refetch landed.
+    queryKey: [...keys.results(id ?? 0), filters?.classroom ?? null, filters?.level ?? null],
+    queryFn: () => surveysApi.results(id as number, filters),
     enabled: id != null && id > 0,
   });
 }
@@ -165,4 +172,49 @@ export function errorText(error: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+
+/** A student's saved-but-unsubmitted answers, fetched once when the form opens. */
+export function useSurveyDraft(id: number) {
+  return useQuery({
+    queryKey: keys.draft(id),
+    queryFn: () => surveysApi.draft(id),
+    enabled: isValidSurveyId(id),
+    // Fetched once for the life of the form. Refetching would race the autosave and could
+    // stamp a stale server copy over what the student is typing right now.
+    staleTime: Infinity,
+    gcTime: 0,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/**
+ * Autosave, debounced.
+ *
+ * Deliberately silent about failure: a dropped keystroke-save is not worth a banner, and the
+ * student still holds everything in component state — the draft is a safety net under the
+ * form, not the form itself. A real failure surfaces at Submit, which is validated properly.
+ */
+export function useSaveDraft(id: number) {
+  return useMutation({
+    mutationFn: (body: {
+      answers: Record<string, SurveyAnswerValue>;
+      follow_ups?: Record<string, string>;
+    }) => surveysApi.saveDraft(id, body),
+    retry: false,
+  });
+}
+
+export function useSurveyParticipation(id: number | null) {
+  return useQuery({
+    queryKey: keys.participation(id ?? 0),
+    queryFn: () => surveysApi.participation(id as number),
+    enabled: id != null && id > 0,
+  });
+}
+
+export function useDuplicateSurvey() {
+  return useAuthoringMutation((surveyId: number) => surveysApi.duplicate(surveyId), null);
 }

@@ -109,7 +109,19 @@ function RatingSlider({
         // so `onChange` already fires. Only the parked-at-minimum case needed help, and
         // Home/End/arrows all move off it.
         aria-labelledby={labelId(question)}
-        aria-valuetext={picked == null ? "Not answered yet" : String(picked)}
+        // Names the END the student is at, not just the number — a screen-reader user hears
+        // "7, Would recommend" instead of a bare 7 with no idea which end means what.
+        aria-valuetext={
+          picked == null
+            ? "Not answered yet"
+            : [
+                String(picked),
+                picked === min ? question.scale_low_label : null,
+                picked === max ? question.scale_high_label : null,
+              ]
+                .filter(Boolean)
+                .join(", ")
+        }
         className={cn(
           "ds-ring h-2 w-full cursor-pointer appearance-none rounded-full bg-border accent-primary",
           picked == null && "opacity-70",
@@ -121,10 +133,23 @@ function RatingSlider({
           <span className="min-w-0 text-right">{question.scale_high_label}</span>
         </div>
       )}
-      {picked == null && (
+      {picked == null ? (
         <p className="text-xs font-medium text-muted-foreground">
           Drag the slider to choose a number.
         </p>
+      ) : (
+        // The same escape hatch SINGLE_CHOICE has. An optional question that cannot be
+        // un-answered is not optional — and a slider is the easiest control in the form to
+        // nudge by accident while scrolling on a phone.
+        !question.is_required && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            className="ds-ring rounded-lg px-1 text-xs font-semibold text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Clear my answer
+          </button>
+        )
       )}
     </div>
   );
@@ -243,21 +268,35 @@ export function SurveyQuestionField({
       );
     case "MULTI_CHOICE": {
       const picked = Array.isArray(value) ? value : [];
+      const cap = question.max_selections || 0;
+      const atCap = cap > 0 && picked.length >= cap;
       return (
         // `role="group"` does not support aria-required; the label's `*` carries it.
         <div role="group" aria-labelledby={labelledBy} className="space-y-1.5">
+          {cap > 0 && (
+            <p className="text-[13px] font-semibold text-muted-foreground">
+              Pick up to {cap}
+              {atCap && <span className="ml-1.5 text-primary">— that&apos;s {cap}, unpick one to change</span>}
+            </p>
+          )}
           {question.options.map((opt) => {
             const on = picked.includes(opt);
+            // At the cap, the unpicked boxes go disabled rather than letting the student
+            // tick a sixth and be refused at Submit. The server still enforces it — this is
+            // the courtesy, not the rule.
+            const blocked = atCap && !on;
             return (
               <label
                 key={opt}
                 className={cn(
                   choiceRow,
                   on ? "border-primary bg-primary-soft" : "border-border hover:bg-surface-2",
+                  blocked && "cursor-not-allowed opacity-50 hover:bg-transparent",
                 )}
               >
                 <Checkbox
                   checked={on}
+                  disabled={blocked}
                   onChange={() =>
                     onChange(on ? picked.filter((x) => x !== opt) : [...picked, opt])
                   }
@@ -282,7 +321,13 @@ export function SurveyQuestionField({
   }
 }
 
-/** A question's picture, above its control. */
+/**
+ * A question's picture, above its control.
+ *
+ * `alt` is the author's caption when there is one. A survey that asks "which uniform do you
+ * prefer? [photo A] [photo B]" is unanswerable without sight if the photo has no description,
+ * and both call sites used to hard-code an empty alt.
+ */
 export function QuestionImage({ src, alt }: { src: string; alt: string }) {
   return (
     <div className="relative overflow-hidden rounded-xl border border-border bg-surface-2">

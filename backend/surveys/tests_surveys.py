@@ -1016,3 +1016,310 @@ class ConditionalResultsTests(SurveyFixture):
         }[self.q_rating.id]
         self.assertEqual(summary["not_asked"], 0)
         self.assertFalse(summary["is_conditional"])
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Survey v2 — audience, participation, drafts, duplication, caps, price.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+class AudienceTests(SurveyFixture):
+    """A survey no longer goes to the whole centre by default-and-only."""
+
+    def setUp(self):
+        super().setUp()
+        from classes.models import Classroom, ClassroomMembership
+
+        self.senior = Classroom.objects.create(
+            name="Senior Math", subject=Classroom.SUBJECT_MATH,
+            level=Classroom.LEVEL_SENIOR, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.super_admin,
+        )
+        self.junior = Classroom.objects.create(
+            name="Junior Math", subject=Classroom.SUBJECT_MATH,
+            level=Classroom.LEVEL_JUNIOR, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.super_admin,
+        )
+        self.senior_student = User.objects.create_user("aud_senior@t.com", "secret123")
+        self.junior_student = User.objects.create_user("aud_junior@t.com", "secret123")
+        for classroom, user in ((self.senior, self.senior_student), (self.junior, self.junior_student)):
+            ClassroomMembership.objects.create(
+                classroom=classroom, user=user,
+                role=ClassroomMembership.ROLE_STUDENT,
+                status=ClassroomMembership.STATUS_ACTIVE,
+            )
+
+    def aim_at_level(self, level):
+        Survey.objects.filter(pk=self.survey.pk).update(
+            audience_kind=Survey.AUDIENCE_LEVEL, audience_level=level
+        )
+        self.survey.refresh_from_db()
+
+    def open_ids(self, user):
+        self.client.force_authenticate(user)
+        return [s["id"] for s in self.client.get("/api/surveys/open/").json()["surveys"]]
+
+    def test_everyone_is_still_the_default(self):
+        self.assertEqual(self.survey.audience_kind, Survey.AUDIENCE_ALL)
+        self.assertIn(self.survey.id, self.open_ids(self.junior_student))
+
+    def test_a_level_survey_reaches_only_that_level(self):
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        self.assertIn(self.survey.id, self.open_ids(self.senior_student))
+        self.assertNotIn(self.survey.id, self.open_ids(self.junior_student))
+
+    def test_a_classroom_survey_reaches_only_those_classrooms(self):
+        Survey.objects.filter(pk=self.survey.pk).update(
+            audience_kind=Survey.AUDIENCE_CLASSROOMS
+        )
+        self.survey.refresh_from_db()
+        self.survey.audience_classrooms.set([self.senior])
+        self.assertIn(self.survey.id, self.open_ids(self.senior_student))
+        self.assertNotIn(self.survey.id, self.open_ids(self.junior_student))
+
+    def test_it_is_ENFORCED_not_merely_hidden(self):
+        """The one that matters: anybody who knows an id can POST directly, and must not be
+        paid for a survey that was never theirs."""
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        self.client.force_authenticate(self.junior_student)
+        r = self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("not sent to you", r.json()["detail"])
+        self.assertEqual(balance(self.junior_student), 0)
+
+    def test_the_form_itself_is_invisible_by_direct_link(self):
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        self.client.force_authenticate(self.junior_student)
+        self.assertEqual(self.client.get(f"/api/surveys/{self.survey.id}/").status_code, 404)
+
+    def test_a_reply_remembers_the_class_it_came_from(self):
+        """Snapshotted, so a student moving up a level next term does not re-file history —
+        and so an ANONYMOUS reply can still be broken down by class."""
+        self.client.force_authenticate(self.senior_student)
+        self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        response = SurveyResponse.objects.get(student=self.senior_student)
+        self.assertEqual(response.classroom_id, self.senior.id)
+        self.assertEqual(response.level, Classroom.LEVEL_SENIOR)
+
+    def test_results_can_be_narrowed_to_one_class(self):
+        for user in (self.senior_student, self.junior_student):
+            self.client.force_authenticate(user)
+            self.client.post(
+                f"/api/surveys/{self.survey.id}/respond/",
+                {"answers": self.full_answers()}, format="json",
+            )
+        self.assertEqual(len(services.survey_results(self.survey)["responses"]), 2)
+        narrowed = services.survey_results(self.survey, classroom_id=self.senior.id)
+        self.assertEqual(len(narrowed["responses"]), 1)
+
+
+class ParticipationTests(AudienceTests):
+    def test_an_everyone_survey_reports_no_denominator_rather_than_a_wrong_one(self):
+        """"Everyone" has no roster. A made-up denominator is worse than none."""
+        p = services.participation(self.survey)
+        self.assertIsNone(p["expected"])
+        self.assertIsNone(p["rate"])
+
+    def test_a_targeted_survey_reports_a_real_rate_and_who_is_missing(self):
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        other = User.objects.create_user("aud_senior2@t.com", "secret123")
+        from classes.models import ClassroomMembership
+
+        ClassroomMembership.objects.create(
+            classroom=self.senior, user=other,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        self.client.force_authenticate(self.senior_student)
+        self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        p = services.participation(self.survey)
+        self.assertEqual(p["expected"], 2)
+        self.assertEqual(p["replied"], 1)
+        self.assertEqual(p["rate"], 50.0)
+        self.assertEqual([o["id"] for o in p["outstanding"]], [other.id])
+
+    def test_the_endpoint_is_super_admin_only(self):
+        self.client.force_authenticate(self.teacher)
+        r = self.client.get(f"/api/surveys/admin/{self.survey.id}/participation/")
+        self.assertEqual(r.status_code, 403)
+
+
+class DraftTests(SurveyFixture):
+    """STATUS_IN_PROGRESS existed since the app was written and nothing ever wrote it."""
+
+    def url(self):
+        return f"/api/surveys/{self.survey.id}/draft/"
+
+    def test_a_half_finished_survey_survives(self):
+        self.client.force_authenticate(self.student)
+        r = self.client.put(
+            self.url(), {"answers": {str(self.q_text.id): "Half a thought"}}, format="json"
+        )
+        self.assertEqual(r.status_code, 204, r.content)
+        back = self.client.get(self.url()).json()
+        self.assertEqual(back["answers"][str(self.q_text.id)], "Half a thought")
+        self.assertIsNotNone(back["saved_at"])
+
+    def test_a_draft_does_not_pay_and_does_not_count_as_done(self):
+        self.client.force_authenticate(self.student)
+        self.client.put(self.url(), {"answers": {str(self.q_text.id): "x"}}, format="json")
+        self.assertEqual(balance(self.student), 0)
+        self.assertIn(
+            self.survey.id,
+            [s["id"] for s in self.client.get("/api/surveys/open/").json()["surveys"]],
+        )
+
+    def test_a_required_question_may_be_empty_in_a_draft(self):
+        """Refusing a draft would defeat the point of having one."""
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.client.put(self.url(), {"answers": {}}, format="json").status_code, 204)
+
+    def test_submitting_afterwards_still_works_and_pays_once(self):
+        self.client.force_authenticate(self.student)
+        self.client.put(self.url(), {"answers": {str(self.q_text.id): "Draft"}}, format="json")
+        r = self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(balance(self.student), 40)
+        self.assertEqual(SurveyResponse.objects.filter(student=self.student).count(), 1)
+
+    def test_a_late_autosave_cannot_reopen_a_submitted_reply(self):
+        """A stale tab must never overwrite a finished one — the points are banked."""
+        self.client.force_authenticate(self.student)
+        self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        self.client.put(self.url(), {"answers": {str(self.q_text.id): "clobber"}}, format="json")
+        response = SurveyResponse.objects.get(student=self.student)
+        self.assertEqual(response.status, SurveyResponse.STATUS_SUBMITTED)
+        self.assertEqual(
+            SurveyAnswer.objects.get(response=response, question=self.q_text).value,
+            "The classes",
+        )
+
+
+class DuplicateTests(SurveyFixture):
+    def test_a_survey_can_be_copied_with_its_questions(self):
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(f"/api/surveys/admin/{self.survey.id}/duplicate/")
+        self.assertEqual(r.status_code, 201, r.content)
+        copy = Survey.objects.get(pk=r.json()["id"])
+        self.assertEqual(copy.title, "How is the term going? (copy)")
+        self.assertEqual(copy.status, Survey.STATUS_DRAFT)
+        self.assertEqual(copy.questions.count(), self.survey.questions.count())
+
+    def test_the_copy_carries_no_replies(self):
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.client.force_authenticate(self.super_admin)
+        copy = Survey.objects.get(
+            pk=self.client.post(f"/api/surveys/admin/{self.survey.id}/duplicate/").json()["id"]
+        )
+        self.assertEqual(copy.responses.count(), 0)
+
+    def test_a_condition_is_re_pointed_at_the_COPY_not_the_original(self):
+        """Otherwise editing last term's survey would silently change how this one branches."""
+        rating = SurveyQuestion.objects.create(
+            survey=self.survey, order=3, prompt="Recommend?",
+            question_type=SurveyQuestion.TYPE_RATING, scale_min=0, scale_max=10,
+        )
+        SurveyQuestion.objects.create(
+            survey=self.survey, order=4, prompt="Why?",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+            condition_question=rating,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=8,
+        )
+        self.client.force_authenticate(self.super_admin)
+        copy = Survey.objects.get(
+            pk=self.client.post(f"/api/surveys/admin/{self.survey.id}/duplicate/").json()["id"]
+        )
+        dependent = copy.questions.get(prompt="Why?")
+        self.assertIsNotNone(dependent.condition_question_id)
+        self.assertEqual(dependent.condition_question.survey_id, copy.id)
+        self.assertNotEqual(dependent.condition_question_id, rating.id)
+
+
+class MaxSelectionsTests(SurveyFixture):
+    def setUp(self):
+        super().setUp()
+        self.q = SurveyQuestion.objects.create(
+            survey=self.survey, order=3, prompt="Pick your top 2",
+            question_type=SurveyQuestion.TYPE_MULTI_CHOICE,
+            options=["A", "B", "C", "D"], max_selections=2,
+        )
+
+    def submit(self, picked):
+        self.client.force_authenticate(self.student)
+        return self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": {**self.full_answers(), str(self.q.id): picked}}, format="json",
+        )
+
+    def test_within_the_cap_is_fine(self):
+        self.assertEqual(self.submit(["A", "B"]).status_code, 201)
+
+    def test_over_the_cap_is_refused_and_says_the_number(self):
+        r = self.submit(["A", "B", "C"])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("at most 2", r.json()["detail"])
+
+    def test_a_cap_on_a_non_checkbox_question_is_refused_at_authoring_time(self):
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/",
+            {
+                "prompt": "One", "question_type": SurveyQuestion.TYPE_SHORT_TEXT,
+                "max_selections": 2,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_a_cap_bigger_than_the_option_list_is_refused(self):
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/",
+            {
+                "prompt": "Pick", "question_type": SurveyQuestion.TYPE_MULTI_CHOICE,
+                "options": ["A", "B"], "max_selections": 5,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+
+class SurveyPriceTests(SurveyFixture):
+    def test_the_default_is_still_forty(self):
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(balance(self.student), 40)
+
+    def test_a_survey_can_set_its_own_price(self):
+        Survey.objects.filter(pk=self.survey.pk).update(points_award=5)
+        self.survey.refresh_from_db()
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(balance(self.student), 5)
+
+    def test_a_survey_worth_nothing_mints_no_row_at_all(self):
+        """An award of zero is not a thing to put in a student's ledger."""
+        Survey.objects.filter(pk=self.survey.pk).update(points_award=0)
+        self.survey.refresh_from_db()
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(balance(self.student), 0)
+        self.assertFalse(PointAward.objects.filter(student=self.student).exists())
+
+    def test_the_ledger_row_names_the_survey(self):
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(
+            PointAward.objects.get(student=self.student).note, "How is the term going?"
+        )

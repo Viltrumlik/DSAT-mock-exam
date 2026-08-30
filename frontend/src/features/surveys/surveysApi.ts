@@ -12,6 +12,25 @@ export type SurveyQuestionType =
 
 export type SurveyStatus = "DRAFT" | "PUBLISHED" | "CLOSED";
 
+export type SurveyAudienceKind = "ALL" | "LEVEL" | "CLASSROOMS" | "BRANCH";
+
+/** How many were asked, how many replied, and who to chase. */
+export interface SurveyParticipation {
+  /** Null for an "everyone" survey — it has no roster, so no honest denominator. */
+  expected: number | null;
+  replied: number;
+  rate: number | null;
+  outstanding: { id: number; name: string; email: string }[];
+  outstanding_total?: number;
+}
+
+/** A student's saved-but-unsubmitted answers. */
+export interface SurveyDraft {
+  answers: Record<string, SurveyAnswerValue>;
+  follow_ups: Record<string, string>;
+  saved_at: string | null;
+}
+
 /** Types whose answer is picked from `options`. Mirrors SurveyQuestion.CHOICE_TYPES. */
 export const CHOICE_TYPES: SurveyQuestionType[] = ["SINGLE_CHOICE", "MULTI_CHOICE"];
 /** Types whose answer is a number inside scale_min..scale_max. Mirrors NUMERIC_TYPES. */
@@ -28,6 +47,8 @@ export interface SurveyQuestion {
   question_type: SurveyQuestionType;
   is_required: boolean;
   options: string[];
+  /** MULTI_CHOICE only: most boxes a student may tick. 0 = no limit. */
+  max_selections: number;
   scale_min: number;
   scale_max: number;
   image_url: string | null;
@@ -111,6 +132,13 @@ export interface Survey {
   closes_at: string | null;
   /** Whether a respondent may ask for their name to be kept off the results. */
   allow_anonymous: boolean;
+  /** Who it was sent to. `ALL` means the whole learning center. */
+  audience_kind: SurveyAudienceKind;
+  audience_level: string;
+  audience_classrooms: number[];
+  audience_branch: number | null;
+  /** What finishing it pays. 0 mints no ledger row at all. */
+  points_award: number;
   image_url: string | null;
   created_at: string;
   updated_at: string;
@@ -139,6 +167,11 @@ export interface SurveyResponseRow {
   student_name: string;
   is_anonymous: boolean;
   submitted_at: string | null;
+  /** The cohort SNAPSHOT — safe on an anonymous reply: it says which class the answer came
+   *  from, never who wrote it. */
+  classroom: number | null;
+  classroom_name: string | null;
+  level: string;
   answers: {
     question: number;
     prompt: string;
@@ -180,7 +213,12 @@ export type SurveyAnswerValue = string | string[] | number | null;
 
 /** The fields an author may write on a survey. */
 export type SurveyPatch = Partial<
-  Pick<Survey, "title" | "description" | "status" | "opens_at" | "closes_at" | "allow_anonymous">
+  Pick<
+    Survey,
+    | "title" | "description" | "status" | "opens_at" | "closes_at" | "allow_anonymous"
+    | "audience_kind" | "audience_level" | "audience_classrooms" | "audience_branch"
+    | "points_award"
+  >
 >;
 
 /** The fields an author may write on a question. `image` is a File, so it rides multipart. */
@@ -280,11 +318,48 @@ export const surveysApi = {
     );
     return r.data.questions;
   },
-  results: async (surveyId: number) => {
+  /** Autosave. Fire-and-forget — a failed keystroke save is not worth a banner. */
+  saveDraft: async (
+    id: number,
+    body: { answers: Record<string, SurveyAnswerValue>; follow_ups?: Record<string, string> },
+  ) => {
+    await api.put(`/surveys/${id}/draft/`, body);
+  },
+  draft: async (id: number): Promise<SurveyDraft> => {
+    const r = await api.get<SurveyDraft>(`/surveys/${id}/draft/`);
+    // Spread FIRST, then default each field — the house pattern. Defaults before the
+    // spread silently lose to it, and TS flags the duplicate keys besides.
+    return {
+      ...r.data,
+      answers: r.data?.answers ?? {},
+      follow_ups: r.data?.follow_ups ?? {},
+      saved_at: r.data?.saved_at ?? null,
+    };
+  },
+  duplicate: async (surveyId: number) => {
+    const r = await api.post<Survey>(`/surveys/admin/${surveyId}/duplicate/`);
+    return r.data;
+  },
+  participation: async (surveyId: number): Promise<SurveyParticipation> => {
+    const r = await api.get<SurveyParticipation>(`/surveys/admin/${surveyId}/participation/`);
+    return {
+      ...r.data,
+      expected: r.data?.expected ?? null,
+      replied: r.data?.replied ?? 0,
+      rate: r.data?.rate ?? null,
+      outstanding: r.data?.outstanding ?? [],
+    };
+  },
+  results: async (surveyId: number, filters?: { classroom?: number; level?: string }) => {
     const r = await api.get<{
       summaries: SurveySummary[];
       responses: SurveyResponseRow[];
-    }>(`/surveys/admin/${surveyId}/responses/`);
+    }>(`/surveys/admin/${surveyId}/responses/`, {
+      params: {
+        classroom: filters?.classroom || undefined,
+        level: filters?.level || undefined,
+      },
+    });
     // Spread-with-defaults, never a field-by-field rebuild: a hand-written whitelist here is
     // what dropped `months_to_sat` from the roadmap payload and took the dashboard down.
     return {

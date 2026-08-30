@@ -5,6 +5,9 @@ from .views import (
     SurveyAdminDetailView,
     SurveyAdminListView,
     SurveyDetailView,
+    SurveyDraftView,
+    SurveyDuplicateView,
+    SurveyParticipationView,
     SurveyQuestionDetailView,
     SurveyQuestionReorderView,
     SurveyQuestionsView,
@@ -17,6 +20,12 @@ urlpatterns = [
     # Authoring routes sit above <int:survey_id> so "admin" is never read as an id.
     path("admin/", SurveyAdminListView.as_view(), name="survey-admin-list"),
     path("admin/<int:survey_id>/", SurveyAdminDetailView.as_view(), name="survey-admin-detail"),
+    path("admin/<int:survey_id>/duplicate/", SurveyDuplicateView.as_view(), name="survey-duplicate"),
+    path(
+        "admin/<int:survey_id>/participation/",
+        SurveyParticipationView.as_view(),
+        name="survey-participation",
+    ),
     path("admin/<int:survey_id>/questions/", SurveyQuestionsView.as_view(), name="survey-questions"),
     # Above <int:question_id>, or "reorder" is read as a question id.
     path(
@@ -37,5 +46,6 @@ urlpatterns = [
     ),
     path("open/", OpenSurveysView.as_view(), name="survey-open"),
     path("<int:survey_id>/", SurveyDetailView.as_view(), name="survey-detail"),
+    path("<int:survey_id>/draft/", SurveyDraftView.as_view(), name="survey-draft"),
     path("<int:survey_id>/respond/", SurveyRespondView.as_view(), name="survey-respond"),
 ]

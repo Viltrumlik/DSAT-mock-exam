@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -22,13 +22,21 @@ import {
   wantsFollowUp,
 } from "./SurveyQuestionField";
 import { isQuestionVisible, type SurveyAnswerValue, type SurveyQuestion } from "./surveysApi";
-import { isValidSurveyId, useRespond, useSurvey } from "./surveysHooks";
+import {
+  isValidSurveyId,
+  useRespond,
+  useSaveDraft,
+  useSurvey,
+  useSurveyDraft,
+} from "./surveysHooks";
 
 const questionAnchor = (q: SurveyQuestion) => `survey-card-${q.id}`;
 
 export function SurveyFillPage({ surveyId }: { surveyId: number }) {
   const survey = useSurvey(surveyId);
   const respond = useRespond(surveyId);
+  const draft = useSurveyDraft(surveyId);
+  const saveDraft = useSaveDraft(surveyId);
   const [answers, setAnswers] = useState<Record<string, SurveyAnswerValue>>({});
   const [followUps, setFollowUps] = useState<Record<string, string>>({});
   const [anonymous, setAnonymous] = useState(false);
@@ -60,6 +68,32 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
     }
     return shown;
   }, [allQuestions, answers]);
+
+  // Restore a saved draft, ONCE, when it arrives. Guarded by a ref rather than by a
+  // dependency list: the query result is stable but the effect must not re-run and stamp the
+  // server's older copy over what the student has typed since.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current || !draft.data) return;
+    restored.current = true;
+    const { answers: saved, follow_ups: savedFollowUps } = draft.data;
+    if (Object.keys(saved).length === 0 && Object.keys(savedFollowUps).length === 0) return;
+    setAnswers((prev) => ({ ...saved, ...prev }));
+    setFollowUps((prev) => ({ ...savedFollowUps, ...prev }));
+  }, [draft.data]);
+
+  // Autosave, debounced. Nothing is saved before the draft has been RESTORED, or an empty
+  // form would race the restore and wipe what was already stored.
+  useEffect(() => {
+    if (!restored.current || !survey.data?.is_open) return;
+    const handle = setTimeout(() => {
+      saveDraft.mutate({ answers, follow_ups: followUps });
+    }, 1200);
+    return () => clearTimeout(handle);
+    // `saveDraft` is a stable mutation object; including it would reset the timer on every
+    // render and the save would never fire.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, followUps, survey.data?.is_open]);
 
   // Checkboxes need a real array from the start; everything else is fine as undefined.
   useEffect(() => {
@@ -107,9 +141,15 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
       // By id rather than a ref map: the kit's Card spreads its extra props onto the DOM
       // node but does not forward a ref, so `ref` on a <Card> is a type error and, if it
       // compiled, would land on nothing.
-      document
-        .getElementById(questionAnchor(missing[0]))
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const card = document.getElementById(questionAnchor(missing[0]));
+      card?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // Scrolling alone tells a screen-reader or keyboard user NOTHING — the page moves and
+      // the caret does not, so Submit reads as a button that simply did nothing. Move focus
+      // to the first control that still needs an answer.
+      const focusable = card?.querySelector<HTMLElement>(
+        "input:not([type=hidden]), textarea, select, [role=radio], [tabindex]:not([tabindex='-1'])",
+      );
+      focusable?.focus({ preventScroll: true });
       return;
     }
     try {
@@ -272,7 +312,7 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
         />
         {survey.data.image_url && (
           <div className="border-t border-border p-4">
-            <QuestionImage src={survey.data.image_url} alt="" />
+            <QuestionImage src={survey.data.image_url} alt={survey.data.description || survey.data.title} />
           </div>
         )}
       </Card>
@@ -320,7 +360,7 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
               </div>
             </div>
 
-            {q.image_url && <QuestionImage src={q.image_url} alt="" />}
+            {q.image_url && <QuestionImage src={q.image_url} alt={q.help_text || q.prompt} />}
 
             <SurveyQuestionField question={q} value={value} onChange={(v) => setAnswer(q, v)} />
 
@@ -385,7 +425,9 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
       )}
 
       <Card className="cr-card flex flex-wrap items-center justify-between gap-3">
-        <p className="min-w-0 text-xs font-semibold text-muted-foreground">
+        {/* `role="status"` so the count is read out when it changes — a sighted student sees
+            it move, and without this nobody else does. */}
+        <p role="status" className="min-w-0 text-xs font-semibold text-muted-foreground">
           {missing.length === 0
             ? "Ready to send."
             : `${missing.length} question${missing.length === 1 ? "" : "s"} still to answer.`}

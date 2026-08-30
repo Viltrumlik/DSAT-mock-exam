@@ -30,7 +30,7 @@ class SurveyQuestionSerializer(serializers.ModelSerializer):
         model = SurveyQuestion
         fields = [
             "id", "order", "prompt", "help_text", "question_type",
-            "is_required", "options", "scale_min", "scale_max",
+            "is_required", "options", "max_selections", "scale_min", "scale_max",
             "image", "image_url",
             # The recommendation slider's two written ends.
             "scale_low_label", "scale_high_label",
@@ -140,6 +140,19 @@ class SurveyQuestionSerializer(serializers.ModelSerializer):
                 {"options": "Two options cannot have the same text."}
             )
 
+        cap = int(field("max_selections", 0) or 0)
+        if cap:
+            if qtype != SurveyQuestion.TYPE_MULTI_CHOICE:
+                raise serializers.ValidationError({
+                    "max_selections": "Only a checkbox question can cap how many are picked."
+                })
+            if cap > len(options):
+                # A cap above the number of options is not a cap; a required question with a
+                # cap of 0 would be unanswerable. Both are author mistakes worth naming.
+                raise serializers.ValidationError({
+                    "max_selections": f"There are only {len(options)} options to pick from."
+                })
+
         lo, hi = int(field("scale_min", 1) or 0), int(field("scale_max", 5) or 0)
         if qtype in SurveyQuestion.NUMERIC_TYPES and hi <= lo:
             raise serializers.ValidationError(
@@ -198,6 +211,8 @@ class SurveySerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "description", "status", "opens_at", "closes_at",
             "allow_anonymous", "image", "image_url",
+            "audience_kind", "audience_level", "audience_classrooms", "audience_branch",
+            "points_award",
             "created_at", "updated_at", "questions",
             "question_count", "response_count", "is_open",
         ]
@@ -233,7 +248,7 @@ class SurveyBriefSerializer(serializers.ModelSerializer):
         model = Survey
         fields = [
             "id", "title", "description", "closes_at", "question_count",
-            "allow_anonymous", "image_url",
+            "allow_anonymous", "image_url", "points_award",
         ]
 
     def get_image_url(self, obj) -> str | None:
@@ -256,10 +271,17 @@ class SurveyResponseSerializer(serializers.ModelSerializer):
     answers = SurveyAnswerSerializer(many=True, read_only=True)
     student_name = serializers.SerializerMethodField()
     student = serializers.SerializerMethodField()
+    classroom_name = serializers.CharField(source="classroom.name", read_only=True, default=None)
 
     class Meta:
         model = SurveyResponse
-        fields = ["id", "survey", "student", "student_name", "is_anonymous", "submitted_at", "answers"]
+        fields = [
+            "id", "survey", "student", "student_name", "is_anonymous", "submitted_at",
+            # The cohort SNAPSHOT. Safe on an anonymous reply — it says which class the
+            # answer came from, never who wrote it, which is the whole point of collecting it.
+            "classroom", "classroom_name", "level",
+            "answers",
+        ]
 
     # Anonymity is enforced HERE, on the only surface that reads a response, rather than left
     # to each client to respect. A serializer that shipped the id and asked the UI not to

@@ -67,6 +67,7 @@ export interface QuestionDraft {
   is_required: boolean;
   options: string[];
   follow_up_options: string[];
+  max_selections: number;
   scale_min: number;
   scale_max: number;
   scale_low_label: string;
@@ -86,6 +87,7 @@ export const BLANK_DRAFT: QuestionDraft = {
   is_required: false,
   options: ["", ""],
   follow_up_options: [],
+  max_selections: 0,
   scale_min: 1,
   scale_max: 5,
   scale_low_label: "",
@@ -106,6 +108,7 @@ export function draftFrom(q: SurveyQuestion): QuestionDraft {
     is_required: q.is_required,
     options: q.options.length ? [...q.options] : ["", ""],
     follow_up_options: [...(q.follow_up_options ?? [])],
+    max_selections: q.max_selections ?? 0,
     scale_min: q.scale_min,
     scale_max: q.scale_max,
     scale_low_label: q.scale_low_label,
@@ -135,6 +138,11 @@ export function patchFrom(draft: QuestionDraft): QuestionPatch {
     follow_up_options: choice
       ? draft.follow_up_options.filter((t) => options.includes(t))
       : [],
+    // Only a checkbox question can carry a cap, and never one bigger than the list.
+    max_selections:
+      draft.question_type === "MULTI_CHOICE"
+        ? Math.min(draft.max_selections || 0, options.length)
+        : 0,
     scale_min: numeric ? draft.scale_min : 1,
     scale_max: numeric ? draft.scale_max : 5,
     scale_low_label: draft.question_type === "RATING" ? draft.scale_low_label.trim() : "",
@@ -162,6 +170,11 @@ export function draftProblems(draft: QuestionDraft): string[] {
     if (new Set(options).size !== options.length) {
       problems.push("Two options have the same text — the results could not tell them apart.");
     }
+  }
+  if (draft.question_type === "MULTI_CHOICE" && draft.max_selections > options.length) {
+    problems.push(
+      `You can only pick from ${options.length} option${options.length === 1 ? "" : "s"}, so a limit of ${draft.max_selections} does nothing.`,
+    );
   }
   if (isNumericType(draft.question_type)) {
     if (draft.scale_max <= draft.scale_min) {
@@ -352,6 +365,27 @@ export function QuestionEditor({
               Add option
             </Button>
           </div>
+        </Field>
+      )}
+
+      {draft.question_type === "MULTI_CHOICE" && (
+        <Field
+          label="Most they can pick"
+          htmlFor={`${idPrefix}-cap`}
+          hint={
+            draft.max_selections
+              ? `They can tick at most ${draft.max_selections}. Leave 0 for no limit.`
+              : "0 means they can tick as many as they like."
+          }
+        >
+          <Input
+            id={`${idPrefix}-cap`}
+            type="number"
+            min={0}
+            max={draft.options.filter((o) => o.trim()).length}
+            value={draft.max_selections}
+            onChange={(e) => set("max_selections", Number(e.target.value) || 0)}
+          />
         </Field>
       )}
 
