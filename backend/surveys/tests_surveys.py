@@ -477,6 +477,27 @@ class ChoiceFollowUpTests(SurveyFixture):
         self.assertTrue(q.wants_follow_up_for_choice("Not great"))
         self.assertFalse(q.wants_follow_up_for_choice("Fine"))
 
+    def test_duplicate_option_names_are_refused_so_a_rule_can_tell_them_apart(self):
+        """The reported bug's root cause. A question whose options are all "test" cannot
+        carry a condition that distinguishes them — the stored answer IS the option text, so
+        three identical options are one answer wearing three checkboxes. The console showed
+        all three ticking together because they genuinely are the same value.
+
+        Refused at authoring time. (Rows created before this validation existed are handled
+        in the UI, which collapses duplicates and says to rename them.)
+        """
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/",
+            {
+                "prompt": "Pick one", "question_type": SurveyQuestion.TYPE_MULTI_CHOICE,
+                "options": ["test", "test", "test"],
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("options", r.json())
+
     def test_a_trigger_that_is_not_an_option_is_refused_at_authoring_time(self):
         self.client.force_authenticate(self.super_admin)
         r = self.client.post(
