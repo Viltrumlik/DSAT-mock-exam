@@ -187,6 +187,10 @@ MIDDLEWARE = [
     # Enforce CSRF for cookie-authenticated API requests (DRF APIViews are CSRF-exempt by default).
     'config.csrf_api.APICSRFEnforceMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Publishes request.user for signal receivers that have no request in scope —
+    # the roster audit is the first consumer. MUST stay after AuthenticationMiddleware
+    # or every change is recorded as a system change. See core/actor.py.
+    'core.actor.CurrentActorMiddleware',
     # Populate JWT user before host-based API guards (DRF auth runs later per-view).
     'access.middleware.JWTUserMiddleware',
     'config.auth_correlation_middleware.AuthCorrelationMiddleware',

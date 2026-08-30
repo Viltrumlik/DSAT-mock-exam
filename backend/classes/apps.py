@@ -17,6 +17,8 @@ class ClassesConfig(AppConfig):
         import classes.stream_signals  # noqa: F401
         import classes.homework_attempt_signals  # noqa: F401
         import classes.pastpaper_signals  # noqa: F401
+        # Who changed a roster, and when. See classes/membership_hooks.
+        import classes.membership_hooks  # noqa: F401
 
         from django.conf import settings
         from django.core.exceptions import ImproperlyConfigured

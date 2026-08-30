@@ -108,6 +108,13 @@ class GovernanceMatrix(TAMatrixFixture):
 
 class AttendanceMatrix(TAMatrixFixture):
     def test_ta_can_create_session(self):
-        r = self.as_(self.ta).post(f"/api/classes/{self.classroom.id}/attendance/sessions/", {"date": "2026-06-15"}, format="json")
+        # Today, not a hard-coded date. A register closes two hours after its lesson ends
+        # (classes/attendance_window), so a fixed 2026-06 date started returning 403 for the
+        # window rather than for the permission this test is actually about. The classroom
+        # has no lesson_time, so its window is the whole of its own calendar day.
+        today = timezone.localdate().isoformat()
+        r = self.as_(self.ta).post(f"/api/classes/{self.classroom.id}/attendance/sessions/", {"date": today}, format="json")
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(self.as_(self.student).post(f"/api/classes/{self.classroom.id}/attendance/sessions/", {"date": "2026-06-16"}, format="json").status_code, 403)
+        # Still 403 for the student, and still for the reason under test: the permission check
+        # runs before the window check, so this asserts the role rule, not the clock.
+        self.assertEqual(self.as_(self.student).post(f"/api/classes/{self.classroom.id}/attendance/sessions/", {"date": today}, format="json").status_code, 403)
