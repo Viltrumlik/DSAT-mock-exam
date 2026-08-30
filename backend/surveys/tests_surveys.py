@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access import constants as C
+from classes.models import Classroom, ClassroomMembership
 from rewards.models import PointAward
 from rewards.services import balance
 from surveys import services
@@ -1028,8 +1029,6 @@ class AudienceTests(SurveyFixture):
 
     def setUp(self):
         super().setUp()
-        from classes.models import Classroom, ClassroomMembership
-
         self.senior = Classroom.objects.create(
             name="Senior Math", subject=Classroom.SUBJECT_MATH,
             level=Classroom.LEVEL_SENIOR, lesson_days=Classroom.DAYS_ODD,
@@ -1129,8 +1128,6 @@ class ParticipationTests(AudienceTests):
     def test_a_targeted_survey_reports_a_real_rate_and_who_is_missing(self):
         self.aim_at_level(Classroom.LEVEL_SENIOR)
         other = User.objects.create_user("aud_senior2@t.com", "secret123")
-        from classes.models import ClassroomMembership
-
         ClassroomMembership.objects.create(
             classroom=self.senior, user=other,
             role=ClassroomMembership.ROLE_STUDENT,
