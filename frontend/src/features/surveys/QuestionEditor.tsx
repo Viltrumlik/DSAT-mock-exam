@@ -14,8 +14,6 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
-  CHOICE_CONDITIONS,
-  NUMERIC_CONDITIONS,
   isChoiceType,
   isNumericType,
   type QuestionPatch,
@@ -560,6 +558,73 @@ export function QuestionEditor({
  * makes you recommend us? [teaching] [community] [exams]" of somebody who scored 5 is what
  * it exists to stop.
  */
+/**
+ * "When should students see this question?" — in sentences, not operators.
+ *
+ * The first version of this was three dropdowns reading `[3. test] [picked any of] [☐☐☐]`.
+ * Every word in it was the schema's word rather than the school's, and the person using it
+ * runs a learning centre. It is now a list of plain choices, each of which says what it does,
+ * with one detail row and a sentence at the bottom restating the finished rule in English.
+ *
+ * The five modes map onto the same operators as before — nothing changed underneath.
+ */
+
+type ConditionMode = "ALWAYS" | "HIGH" | "LOW" | "PICKED" | "NOT_PICKED" | "ANSWERED";
+
+const MODES: { value: ConditionMode; label: string; hint: string }[] = [
+  { value: "ALWAYS", label: "Everyone sees it", hint: "The normal case." },
+  {
+    value: "HIGH",
+    label: "Only students who gave a HIGH score",
+    hint: "e.g. ask happy students what they liked.",
+  },
+  {
+    value: "LOW",
+    label: "Only students who gave a LOW score",
+    hint: "e.g. ask unhappy students what went wrong.",
+  },
+  {
+    value: "PICKED",
+    label: "Only students who chose certain answers",
+    hint: "e.g. only those who ticked “I have a suggestion”.",
+  },
+  {
+    value: "NOT_PICKED",
+    label: "Only students who did NOT choose certain answers",
+    hint: "The opposite of the one above.",
+  },
+  {
+    value: "ANSWERED",
+    label: "Only students who answered an earlier question",
+    hint: "Whatever they said, as long as they said something.",
+  },
+];
+
+const MODE_OF: Record<string, ConditionMode> = {
+  AT_LEAST: "HIGH",
+  BELOW: "LOW",
+  ANY_OF: "PICKED",
+  NONE_OF: "NOT_PICKED",
+  ANSWERED: "ANSWERED",
+};
+const OPERATOR_OF: Record<ConditionMode, SurveyConditionOperator | ""> = {
+  ALWAYS: "",
+  HIGH: "AT_LEAST",
+  LOW: "BELOW",
+  PICKED: "ANY_OF",
+  NOT_PICKED: "NONE_OF",
+  ANSWERED: "ANSWERED",
+};
+
+/** Which earlier questions a given mode can actually read. */
+function sourcesFor(mode: ConditionMode, earlier: SurveyQuestion[]): SurveyQuestion[] {
+  if (mode === "HIGH" || mode === "LOW") return earlier.filter((q) => isNumericType(q.question_type));
+  if (mode === "PICKED" || mode === "NOT_PICKED") {
+    return earlier.filter((q) => isChoiceType(q.question_type));
+  }
+  return earlier;
+}
+
 function ConditionEditor({
   draft,
   onChange,
@@ -572,151 +637,219 @@ function ConditionEditor({
   idPrefix: string;
 }) {
   const source = earlier.find((q) => q.id === draft.condition_question) ?? null;
+  const mode: ConditionMode =
+    draft.condition_question && draft.condition_operator
+      ? MODE_OF[draft.condition_operator] ?? "ALWAYS"
+      : "ALWAYS";
+  const candidates = sourcesFor(mode, earlier);
 
-  // Only the operators that can actually be true against this source's type. Offering
-  // "scored at least" on a paragraph question would be a rule that never fires.
-  const operators: { value: SurveyConditionOperator; label: string }[] = !source
-    ? []
-    : isNumericType(source.question_type)
-      ? [
-          { value: "AT_LEAST", label: "scored at least" },
-          { value: "BELOW", label: "scored below" },
-          { value: "ANSWERED", label: "answered it at all" },
-        ]
-      : isChoiceType(source.question_type)
-        ? [
-            { value: "ANY_OF", label: "picked any of" },
-            { value: "NONE_OF", label: "picked none of" },
-            { value: "ANSWERED", label: "answered it at all" },
-          ]
-        : [{ value: "ANSWERED", label: "answered it at all" }];
+  // Two options with the same TEXT are the same answer as far as the survey is concerned —
+  // the stored answer IS the text. Showing them as separate boxes is what made ticking one
+  // appear to tick all three. Collapse them, and say so, rather than drawing a control that
+  // cannot mean what it looks like.
+  const rawOptions = source?.options ?? [];
+  const options = Array.from(new Set(rawOptions.map((o) => String(o))));
+  const hasDuplicateOptions = options.length !== rawOptions.length;
 
-  function pickSource(id: number | null) {
-    const next = earlier.find((q) => q.id === id) ?? null;
+  function setMode(next: ConditionMode) {
+    if (next === "ALWAYS") {
+      onChange({ ...draft, condition_question: null, condition_operator: "", condition_value: null });
+      return;
+    }
+    // Keep the current source only if the new mode can actually read it; otherwise take the
+    // first one that fits, so the author never lands on a rule that can never be true.
+    const fits = sourcesFor(next, earlier);
+    const keep = fits.find((q) => q.id === draft.condition_question) ?? fits[0] ?? null;
     onChange({
       ...draft,
-      condition_question: id,
-      // The old operator almost certainly does not suit the new source's type, and a stale
-      // one is a rule that silently never fires. Default to the sensible one instead —
-      // and for a scale, prefill the bar from the satisfactory score the author already set,
-      // which is the number they mean nine times out of ten.
-      condition_operator: !next ? "" : isNumericType(next.question_type) ? "AT_LEAST" : "ANY_OF",
-      condition_value: !next
-        ? null
-        : isNumericType(next.question_type)
-          ? next.follow_up_threshold ?? next.scale_max
-          : [],
+      condition_operator: OPERATOR_OF[next],
+      condition_question: keep?.id ?? null,
+      condition_value: defaultValueFor(next, keep),
     });
+  }
+
+  function defaultValueFor(next: ConditionMode, q: SurveyQuestion | null | undefined) {
+    if (!q) return null;
+    if (next === "HIGH" || next === "LOW") {
+      // Prefilled from the satisfactory score the author already set on that question —
+      // the number they mean nine times out of ten.
+      return q.follow_up_threshold ?? Math.ceil((q.scale_min + q.scale_max) / 2);
+    }
+    if (next === "PICKED" || next === "NOT_PICKED") return [];
+    return null;
+  }
+
+  /** The finished rule, in one English sentence. */
+  function preview(): string | null {
+    if (mode === "ALWAYS" || !source) return null;
+    const q = `“${source.prompt.slice(0, 40)}”`;
+    const picked = Array.isArray(draft.condition_value) ? draft.condition_value : [];
+    switch (mode) {
+      case "HIGH":
+        return `Shown only to students who scored ${draft.condition_value} or more on ${q}.`;
+      case "LOW":
+        return `Shown only to students who scored less than ${draft.condition_value} on ${q}.`;
+      case "PICKED":
+        return picked.length
+          ? `Shown only to students who picked ${picked.map((p) => `“${p}”`).join(" or ")} on ${q}.`
+          : `Choose which answers on ${q} should show it.`;
+      case "NOT_PICKED":
+        return picked.length
+          ? `Shown only to students who did NOT pick ${picked.map((p) => `“${p}”`).join(" or ")} on ${q}.`
+          : `Choose which answers on ${q} should hide it.`;
+      case "ANSWERED":
+        return `Shown only to students who answered ${q}.`;
+      default:
+        return null;
+    }
   }
 
   if (earlier.length === 0) {
     return (
-      <Field label="When to show this" hint="The first question is always shown — a rule can only depend on a question above it.">
+      <Field
+        label="When to show this"
+        hint="The first question is always shown — a rule can only look at a question above it."
+      >
         <p className="text-[13px] text-muted-foreground">Nothing above this one to depend on yet.</p>
       </Field>
     );
   }
 
   return (
-    <Field
-      label="When to show this"
-      hint="Leave as “Always” for an ordinary question."
-    >
-      <div className="space-y-2.5 rounded-xl border border-border bg-surface-2 p-3.5">
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Select
-            id={`${idPrefix}-cond-q`}
-            aria-label="Depends on which question"
-            value={draft.condition_question == null ? "" : String(draft.condition_question)}
-            onChange={(e) => pickSource(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">Always show it</option>
-            {earlier.map((q, i) => (
-              <option key={q.id} value={String(q.id)}>
-                {i + 1}. {q.prompt.slice(0, 48)}
-              </option>
-            ))}
-          </Select>
-
-          {source && (
-            <Select
-              id={`${idPrefix}-cond-op`}
-              aria-label="Rule"
-              value={draft.condition_operator}
-              onChange={(e) =>
-                onChange({
-                  ...draft,
-                  condition_operator: e.target.value as SurveyConditionOperator,
-                })
-              }
-            >
-              {operators.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </Select>
-          )}
+    <Field label="When should students see this question?">
+      <div className="space-y-3 rounded-xl border border-border bg-surface-2 p-3.5">
+        <div className="space-y-1.5">
+          {MODES.map((m) => {
+            const usable = m.value === "ALWAYS" || sourcesFor(m.value, earlier).length > 0;
+            return (
+              <label
+                key={m.value}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2.5 rounded-lg px-2 py-1.5 transition-colors",
+                  mode === m.value ? "bg-primary/10" : "hover:bg-card",
+                  !usable && "cursor-not-allowed opacity-45",
+                )}
+              >
+                <input
+                  type="radio"
+                  name={`${idPrefix}-cond-mode`}
+                  className="ds-ring mt-0.5 h-[18px] w-[18px] shrink-0 accent-primary"
+                  checked={mode === m.value}
+                  disabled={!usable}
+                  onChange={() => setMode(m.value)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-foreground">{m.label}</span>
+                  <span className="block text-[12px] text-muted-foreground">
+                    {usable
+                      ? m.hint
+                      : m.value === "HIGH" || m.value === "LOW"
+                        ? "No scale or slider question above this one."
+                        : "No choice question above this one."}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
         </div>
 
-        {source && NUMERIC_CONDITIONS.includes(draft.condition_operator as SurveyConditionOperator) && (
-          <div className="space-y-1">
-            <Input
-              inputSize="sm"
-              type="number"
-              min={source.scale_min}
-              max={source.scale_max}
-              aria-label="Score to compare against"
-              value={typeof draft.condition_value === "number" ? draft.condition_value : ""}
-              onChange={(e) =>
-                onChange({
-                  ...draft,
-                  condition_value: e.target.value === "" ? null : Number(e.target.value),
-                })
-              }
-            />
-            {source.follow_up_threshold != null &&
-              draft.condition_value !== source.follow_up_threshold && (
-                // Said out loud, because the two numbers are meant to agree: the satisfactory
-                // score decides who gets asked "why not?", and this decides who gets the
-                // happy branch. Diverging silently leaves a band of students asked both, or
-                // neither.
-                <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">
-                  That question’s satisfactory score is {source.follow_up_threshold}. Using a
-                  different number here leaves a gap between the two branches.
-                </p>
-              )}
-          </div>
-        )}
+        {mode !== "ALWAYS" && (
+          <div className="space-y-2.5 border-t border-border pt-3">
+            <Field label="Based on their answer to" htmlFor={`${idPrefix}-cond-q`}>
+              <Select
+                id={`${idPrefix}-cond-q`}
+                value={draft.condition_question == null ? "" : String(draft.condition_question)}
+                onChange={(e) => {
+                  const next = earlier.find((q) => String(q.id) === e.target.value) ?? null;
+                  onChange({
+                    ...draft,
+                    condition_question: next?.id ?? null,
+                    condition_value: defaultValueFor(mode, next),
+                  });
+                }}
+              >
+                {candidates.map((q) => (
+                  <option key={q.id} value={String(q.id)}>
+                    {earlier.indexOf(q) + 1}. {q.prompt.slice(0, 48)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
 
-        {source && CHOICE_CONDITIONS.includes(draft.condition_operator as SurveyConditionOperator) && (
-          <div className="space-y-1.5">
-            {(source.options ?? []).map((opt) => {
-              const chosen = Array.isArray(draft.condition_value)
-                ? draft.condition_value.map(String)
-                : [];
-              return (
-                <Checkbox
-                  key={opt}
-                  label={opt}
-                  checked={chosen.includes(opt)}
+            {(mode === "HIGH" || mode === "LOW") && source && (
+              <Field
+                label={mode === "HIGH" ? "A high score means" : "A low score means"}
+                htmlFor={`${idPrefix}-cond-n`}
+                hint={
+                  mode === "HIGH"
+                    ? `${draft.condition_value} or more, out of ${source.scale_max}.`
+                    : `Less than ${draft.condition_value}, out of ${source.scale_max}.`
+                }
+              >
+                <Input
+                  id={`${idPrefix}-cond-n`}
+                  type="number"
+                  min={source.scale_min}
+                  max={source.scale_max}
+                  value={typeof draft.condition_value === "number" ? draft.condition_value : ""}
                   onChange={(e) =>
                     onChange({
                       ...draft,
-                      condition_value: e.target.checked
-                        ? [...chosen, opt]
-                        : chosen.filter((c) => c !== opt),
+                      condition_value: e.target.value === "" ? null : Number(e.target.value),
                     })
                   }
                 />
-              );
-            })}
-          </div>
-        )}
+              </Field>
+            )}
 
-        {source && (
-          <p className="text-[12px] font-medium text-muted-foreground">
-            Students who don’t match are never shown this question, and anything they had
-            already put in it is discarded.
-          </p>
+            {(mode === "PICKED" || mode === "NOT_PICKED") && source && (
+              <Field label={mode === "PICKED" ? "Which answers" : "Which answers to exclude"}>
+                <div className="space-y-1.5">
+                  {hasDuplicateOptions && (
+                    <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">
+                      “{source.prompt.slice(0, 30)}” has more than one option with the same
+                      name, so a rule cannot tell them apart. Rename them on that question.
+                    </p>
+                  )}
+                  {options.map((opt, i) => {
+                    const chosen = Array.isArray(draft.condition_value)
+                      ? draft.condition_value.map(String)
+                      : [];
+                    return (
+                      <Checkbox
+                        // Keyed by INDEX, not by text — two options with the same name gave
+                        // React duplicate keys and made every one of them render as ticked
+                        // the moment any single one was.
+                        key={`${opt}-${i}`}
+                        label={opt}
+                        checked={chosen.includes(opt)}
+                        onChange={(e) =>
+                          onChange({
+                            ...draft,
+                            condition_value: e.target.checked
+                              ? [...chosen, opt]
+                              : chosen.filter((c) => c !== opt),
+                          })
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              </Field>
+            )}
+
+            {/* The finished rule, restated in English. The single biggest thing that makes
+                this readable without knowing what any of the controls are called. */}
+            {preview() && (
+              <p className="rounded-lg bg-card px-3 py-2 text-[13px] font-medium text-foreground">
+                {preview()}
+              </p>
+            )}
+            <p className="text-[12px] text-muted-foreground">
+              Students who don’t match never see this question, and anything they had already
+              put in it is discarded.
+            </p>
+          </div>
         )}
       </div>
     </Field>
