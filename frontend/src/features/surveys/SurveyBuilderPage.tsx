@@ -5,6 +5,7 @@ import Image from "next/image";
 import {
   ClipboardList,
   EyeOff,
+  GitBranch,
   GripVertical,
   ImagePlus,
   Lock,
@@ -99,18 +100,38 @@ function questionSubtitle(q: SurveyQuestion): string {
   return bits.join(" · ");
 }
 
+/** How a conditional question describes its own rule, for the list. */
+function conditionSummary(q: SurveyQuestion, all: SurveyQuestion[]): string | null {
+  if (!q.condition_question || !q.condition_operator) return null;
+  const at = all.findIndex((x) => x.id === q.condition_question);
+  const source = at >= 0 ? `Q${at + 1}` : "an earlier question";
+  const value = Array.isArray(q.condition_value)
+    ? q.condition_value.join(", ")
+    : String(q.condition_value ?? "");
+  switch (q.condition_operator) {
+    case "AT_LEAST": return `only if ${source} ≥ ${value}`;
+    case "BELOW": return `only if ${source} < ${value}`;
+    case "ANY_OF": return `only if ${source} is ${value}`;
+    case "NONE_OF": return `only if ${source} is not ${value}`;
+    case "ANSWERED": return `only if ${source} was answered`;
+    default: return null;
+  }
+}
+
 function SortableQuestionRow({
   question,
   index,
   onEdit,
   onDelete,
   busy,
+  allQuestions,
 }: {
   question: SurveyQuestion;
   index: number;
   onEdit: () => void;
   onDelete: () => void;
   busy: boolean;
+  allQuestions: SurveyQuestion[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: question.id,
@@ -141,6 +162,12 @@ function SortableQuestionRow({
           {question.is_required && <span className="ml-1 text-danger">*</span>}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{questionSubtitle(question)}</p>
+        {conditionSummary(question, allQuestions) && (
+          <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-bold text-primary">
+            <GitBranch className="h-3 w-3" aria-hidden />
+            {conditionSummary(question, allQuestions)}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center">
         {/* Editing exists at last. The PATCH endpoint has always been there; nothing called
@@ -761,6 +788,7 @@ function SurveyEditor({
                   busy={deleting}
                   onEdit={() => onOpenEdit(q)}
                   onDelete={() => onDeleteQuestion(q.id)}
+                  allQuestions={detail.questions}
                 />
               ))}
             </div>
@@ -793,6 +821,17 @@ function SurveyEditor({
             onImageChange={onDraftImage}
             existingImageUrl={editingQuestion?.image_url}
             idPrefix={`q-${editing}`}
+            // Only the questions ABOVE this one — a condition may point backwards only, and
+            // offering a later question would build a rule the server refuses on save.
+            // A NEW question is appended last, so it may depend on any of them.
+            earlierQuestions={
+              editing === "new"
+                ? detail.questions
+                : detail.questions.slice(
+                    0,
+                    Math.max(0, detail.questions.findIndex((q) => q.id === editing)),
+                  )
+            }
           />
           <DraftProblems problems={problems} />
           <div className="flex flex-wrap gap-2">

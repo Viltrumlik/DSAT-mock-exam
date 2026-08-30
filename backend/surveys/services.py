@@ -141,10 +141,30 @@ def submit_response(
 
     # Validate EVERYTHING before writing anything: a half-saved response would leave the
     # student looking at a form they cannot resubmit.
+    #
+    # In ORDER, because a question's visibility can depend on an earlier answer, and the
+    # earlier answer has to be normalised before it can be read. `survey.questions` is
+    # ordered by ("order", "id") on the model's Meta, so one pass is enough — the serializer
+    # guarantees a condition only ever points backwards.
     normalized: list[tuple[SurveyQuestion, object, str]] = []
+    seen: dict[int, object] = {}
     for question in questions:
+        if not question.is_visible_given(seen):
+            # HIDDEN. Not asked, so not required — and whatever the client sent for it is
+            # DROPPED rather than stored. Both halves matter: without the first, a required
+            # question on a branch the student never saw makes the survey unsubmittable with
+            # an error naming a question that was never on screen; without the second, a
+            # stale answer from before they changed the score above pollutes the results with
+            # a reply to a question that was not asked.
+            #
+            # Recorded as None in `seen` too, so a question depending on a hidden question is
+            # itself hidden rather than reading a stale value.
+            seen[question.id] = None
+            normalized.append((question, None, ""))
+            continue
         value = normalize_answer(question, _pick(answers, question))
         comment = normalize_follow_up(question, value, _pick(follow_ups, question))
+        seen[question.id] = value
         normalized.append((question, value, comment))
 
     response = existing
@@ -192,7 +212,7 @@ def open_surveys_for(student):
 # ── Reading the results ───────────────────────────────────────────────────────
 
 
-def _summarise_question(question: SurveyQuestion, answers: list) -> dict:
+def _summarise_question(question: SurveyQuestion, answers: list, not_asked: int = 0) -> dict:
     """One question's results, shaped for the way that question is actually read.
 
     A choice question is read as a distribution ("14 of 31 picked B"); a slider is read as an
@@ -209,7 +229,14 @@ def _summarise_question(question: SurveyQuestion, answers: list) -> dict:
         "prompt": question.prompt,
         "question_type": question.question_type,
         "answered": len(given),
-        "skipped": len(answers) - len(given),
+        # SKIPPED means "was asked and chose not to answer". A question on a branch the
+        # student never reached is NOT that, and lumping the two together would make a
+        # conditional question look like mass non-response — "8 answered, 192 skipped" for a
+        # question only 12 people were ever shown. Both are stored as a NULL answer, so the
+        # difference is recovered by re-evaluating the condition against each reply.
+        "skipped": len(answers) - len(given) - not_asked,
+        "not_asked": not_asked,
+        "is_conditional": question.is_conditional,
         # Every comment written on this question, with the answer that prompted it, so a
         # reader can see "6 — the pace is too fast" as one thought rather than two columns.
         "comments": [
@@ -286,7 +313,25 @@ def survey_results(survey: Survey) -> dict:
             by_question.setdefault(answer.question_id, []).append(answer)
 
     questions = list(survey.questions.all())
+
+    # How many respondents were never SHOWN each question. Recomputed per reply from that
+    # reply's own answers, in question order — the same one-pass evaluation the submit path
+    # does, and for the same reason it is safe: a condition only ever points backwards.
+    not_asked = {q.id: 0 for q in questions}
+    for response in responses:
+        values = {a.question_id: a.value for a in response.answers.all()}
+        seen: dict[int, object] = {}
+        for q in questions:
+            if not q.is_visible_given(seen):
+                not_asked[q.id] += 1
+                seen[q.id] = None
+                continue
+            seen[q.id] = values.get(q.id)
+
     return {
         "responses": responses,
-        "summaries": [_summarise_question(q, by_question.get(q.id, [])) for q in questions],
+        "summaries": [
+            _summarise_question(q, by_question.get(q.id, []), not_asked.get(q.id, 0))
+            for q in questions
+        ],
     }

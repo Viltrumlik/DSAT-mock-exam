@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, MessageSquareText, Users, X } from "lucide-react";
+import { Download, GitBranch, MessageSquareText, Users, X } from "lucide-react";
 import {
   Alert,
   Badge,
@@ -89,15 +89,27 @@ function SummaryCard({ summary, index }: { summary: SurveySummary; index: number
         <p className="min-w-0 text-sm font-bold text-foreground">
           <span className="ds-num mr-1.5 text-muted-foreground">{index + 1}.</span>
           {summary.prompt}
+          {summary.is_conditional && (
+            <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 align-middle text-[11px] font-bold text-primary">
+              <GitBranch className="h-3 w-3" aria-hidden /> shown to some
+            </span>
+          )}
         </p>
         <span className="ds-num shrink-0 text-[11px] font-semibold text-muted-foreground">
           {summary.answered} answered
           {summary.skipped > 0 && ` · ${summary.skipped} skipped`}
+          {/* Kept apart from "skipped", which it would otherwise swamp: a question only 12
+              of 200 students were ever SHOWN is not one 188 people declined to answer. */}
+          {summary.not_asked > 0 && ` · ${summary.not_asked} not shown`}
         </span>
       </div>
 
       {summary.answered === 0 ? (
-        <p className="text-sm text-muted-foreground">Nobody has answered this one yet.</p>
+        <p className="text-sm text-muted-foreground">
+          {summary.is_conditional && summary.not_asked > 0
+            ? "Nobody who reached this question has answered it yet."
+            : "Nobody has answered this one yet."}
+        </p>
       ) : isChoiceType(summary.question_type) ? (
         <div className="space-y-2.5">
           {(summary.options ?? []).map((o) => (

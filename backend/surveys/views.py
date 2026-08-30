@@ -237,12 +237,20 @@ class SurveyQuestionsView(_AuthoringView):
         if denied:
             return denied
         survey = get_object_or_404(Survey, pk=survey_id)
-        serializer = SurveyQuestionSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
+        # The order is settled BEFORE validation, not after. A display condition may only
+        # point at an earlier question, and the serializer checks that against `order` — on a
+        # create that field is not in the payload, so validating first meant the rule was
+        # skipped for exactly the questions most likely to break it.
         order = request.data.get("order")
         if order in (None, ""):
             last = survey.questions.order_by("-order").first()
             order = (last.order + 1) if last else 0
+        payload = {**request.data.dict()} if hasattr(request.data, "dict") else {**request.data}
+        payload["order"] = int(order)
+        serializer = SurveyQuestionSerializer(
+            data=payload, context={"request": request, "survey": survey}
+        )
+        serializer.is_valid(raise_exception=True)
         question = serializer.save(survey=survey, order=int(order))
         return Response(
             SurveyQuestionSerializer(question, context={"request": request}).data,
@@ -257,7 +265,10 @@ class SurveyQuestionDetailView(_AuthoringView):
             return denied
         question = get_object_or_404(SurveyQuestion, pk=question_id, survey_id=survey_id)
         serializer = SurveyQuestionSerializer(
-            question, data=request.data, partial=True, context={"request": request}
+            question,
+            data=request.data,
+            partial=True,
+            context={"request": request, "survey": question.survey},
         )
         serializer.is_valid(raise_exception=True)
         return Response(
@@ -303,6 +314,32 @@ class SurveyQuestionReorderView(_AuthoringView):
             return Response(
                 {"detail": "That ordering does not match this survey's questions."}, status=400
             )
+
+        # A display condition may only point BACKWARDS. Dragging a question above the one it
+        # depends on would break that in a way nothing downstream could recover from: the
+        # single-pass evaluator would read the source answer before it existed and silently
+        # treat the question as hidden for everybody. Refused, naming both questions, rather
+        # than accepted-and-quietly-broken or accepted-and-condition-cleared — the author
+        # moved something on purpose and is owed the reason it did not stick.
+        position_of = {qid: i for i, qid in enumerate(wanted)}
+        for question in questions.values():
+            if not question.condition_question_id:
+                continue
+            source_at = position_of.get(question.condition_question_id)
+            if source_at is None:
+                continue
+            if source_at >= position_of[question.id]:
+                source = questions[question.condition_question_id]
+                return Response(
+                    {
+                        "detail": (
+                            f"“{question.prompt}” is only shown depending on "
+                            f"“{source.prompt}”, so it has to stay below it. "
+                            "Move that question first, or clear the rule."
+                        )
+                    },
+                    status=400,
+                )
 
         for position, question_id in enumerate(wanted):
             question = questions[question_id]

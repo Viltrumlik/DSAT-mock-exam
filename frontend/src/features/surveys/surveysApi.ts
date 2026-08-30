@@ -41,6 +41,65 @@ export interface SurveyQuestion {
   follow_up_required: boolean;
   /** Which `options` open the follow-up box when picked. */
   follow_up_options: string[];
+  /** Show this question only when an EARLIER question was answered a certain way.
+   *  Null/blank means always shown. */
+  condition_question: number | null;
+  condition_operator: SurveyConditionOperator | "";
+  /** A number for the score rules, a list of option texts for the choice rules. */
+  condition_value: number | string[] | null;
+}
+
+export type SurveyConditionOperator =
+  | "AT_LEAST"
+  | "BELOW"
+  | "ANY_OF"
+  | "NONE_OF"
+  | "ANSWERED";
+
+/** Mirrors SurveyQuestion.NUMERIC_CONDITIONS / CHOICE_CONDITIONS. */
+export const NUMERIC_CONDITIONS: SurveyConditionOperator[] = ["AT_LEAST", "BELOW"];
+export const CHOICE_CONDITIONS: SurveyConditionOperator[] = ["ANY_OF", "NONE_OF"];
+
+/**
+ * Should this question be shown, given the answers so far?
+ *
+ * The SAME rule as `SurveyQuestion.is_visible_given` on the server, and it has to be: the
+ * server drops an answer to a question its own evaluation says was hidden, so a client that
+ * showed one the server would not would let a student fill in something silently discarded.
+ * Both sides fail OPEN on a half-configured or dangling condition, for the same reason —
+ * a question nobody can see collects nothing.
+ */
+export function isQuestionVisible(
+  question: SurveyQuestion,
+  answers: Record<string, SurveyAnswerValue>,
+): boolean {
+  const { condition_question: sourceId, condition_operator: op } = question;
+  if (!sourceId || !op) return true;
+
+  const source = answers[String(sourceId)];
+  const unanswered = source === undefined || source === null || source === "" ||
+    (Array.isArray(source) && source.length === 0);
+
+  if (op === "ANSWERED") return !unanswered;
+  // A skipped source satisfies nothing else — "no answer" is not a low score.
+  if (unanswered) return false;
+
+  if (NUMERIC_CONDITIONS.includes(op)) {
+    const bar = Number(question.condition_value);
+    if (typeof source !== "number" || !Number.isFinite(bar)) return true;
+    return op === "AT_LEAST" ? source >= bar : source < bar;
+  }
+
+  if (CHOICE_CONDITIONS.includes(op)) {
+    const wanted = new Set(
+      (Array.isArray(question.condition_value) ? question.condition_value : []).map(String),
+    );
+    const picked = (Array.isArray(source) ? source : [source]).map(String);
+    const hit = picked.some((p) => wanted.has(p));
+    return op === "ANY_OF" ? hit : !hit;
+  }
+
+  return true;
 }
 
 export interface Survey {
@@ -95,7 +154,11 @@ export interface SurveySummary {
   prompt: string;
   question_type: SurveyQuestionType;
   answered: number;
+  /** Was asked and chose not to answer. */
   skipped: number;
+  /** Was never SHOWN this question — a branch they did not reach. Not the same as skipped. */
+  not_asked: number;
+  is_conditional: boolean;
   comments: { value: unknown; text: string }[];
   /** Choice questions. */
   options?: { text: string; count: number; percent: number | null }[];

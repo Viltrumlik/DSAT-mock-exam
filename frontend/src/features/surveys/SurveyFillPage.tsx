@@ -21,7 +21,7 @@ import {
   labelId,
   wantsFollowUp,
 } from "./SurveyQuestionField";
-import type { SurveyAnswerValue, SurveyQuestion } from "./surveysApi";
+import { isQuestionVisible, type SurveyAnswerValue, type SurveyQuestion } from "./surveysApi";
 import { isValidSurveyId, useRespond, useSurvey } from "./surveysHooks";
 
 const questionAnchor = (q: SurveyQuestion) => `survey-card-${q.id}`;
@@ -38,7 +38,28 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
   // marking a question red before the student has reached it is nagging, not help.
   const [showMissing, setShowMissing] = useState(false);
 
-  const questions = useMemo(() => survey.data?.questions ?? [], [survey.data]);
+  const allQuestions = useMemo(() => survey.data?.questions ?? [], [survey.data]);
+
+  /**
+   * The questions actually on screen, evaluated in order.
+   *
+   * A condition may only point BACKWARDS (the server enforces it), so one pass is enough —
+   * and a question hidden because its own source was hidden reads that source as unanswered,
+   * which is what the server does too.
+   */
+  const questions = useMemo(() => {
+    const shown: typeof allQuestions = [];
+    const seen: Record<string, SurveyAnswerValue> = {};
+    for (const q of allQuestions) {
+      if (!isQuestionVisible(q, seen)) {
+        seen[String(q.id)] = null;
+        continue;
+      }
+      seen[String(q.id)] = answers[String(q.id)] ?? null;
+      shown.push(q);
+    }
+    return shown;
+  }, [allQuestions, answers]);
 
   // Checkboxes need a real array from the start; everything else is fine as undefined.
   useEffect(() => {
@@ -176,7 +197,10 @@ export function SurveyFillPage({ surveyId }: { surveyId: number }) {
     );
   }
 
-  if (!survey.data || questions.length === 0) {
+  // Gated on the RAW count, never the filtered one — the house rule, and it bites here:
+  // `questions` is what is currently VISIBLE, so a form whose later questions are all
+  // waiting on an answer would have announced itself as having no questions at all.
+  if (!survey.data || allQuestions.length === 0) {
     return (
       <HeroPage width="narrow">
         <BackToSurveys />

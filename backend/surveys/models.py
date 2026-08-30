@@ -153,6 +153,55 @@ class SurveyQuestion(models.Model):
     #: the box to be offered, not demanded, and a required box turns a low score into a
     #: wall the student can only get past by raising the score.
     follow_up_required = models.BooleanField(default=False)
+
+    # ── Show this question only when an EARLIER question was answered a certain way ──
+    #
+    # The follow-up box above is the one-question version of this: a comment that appears
+    # under the answer that prompted it. It can only ever ask for prose, and only on the
+    # UNSATISFACTORY side. A school that asks "would you recommend us?" wants two different
+    # follow-ups — "what went wrong?" below the bar, and "what did we get right? [teaching]
+    # [community] [exams]" above it — and the second one is a whole question, with its own
+    # type and its own options, not a textarea.
+    #
+    # EARLIER, enforced: the condition may only point at a question with a lower ``order``.
+    # That is what makes cycles impossible without a graph walk, lets the form be evaluated
+    # in one pass, and stops a student being asked to satisfy a condition from a question
+    # they have not reached yet. ``SurveyQuestionReorderView`` re-checks it after a drag.
+    COND_AT_LEAST = "AT_LEAST"
+    COND_BELOW = "BELOW"
+    COND_ANY_OF = "ANY_OF"
+    COND_NONE_OF = "NONE_OF"
+    COND_ANSWERED = "ANSWERED"
+    CONDITION_CHOICES = [
+        (COND_AT_LEAST, "scored at least"),
+        (COND_BELOW, "scored below"),
+        (COND_ANY_OF, "picked any of"),
+        (COND_NONE_OF, "picked none of"),
+        (COND_ANSWERED, "answered at all"),
+    ]
+    #: Operators that read the source answer as a NUMBER, and so need a numeric source.
+    NUMERIC_CONDITIONS = (COND_AT_LEAST, COND_BELOW)
+    #: Operators that read it as a choice, and so need a choice source.
+    CHOICE_CONDITIONS = (COND_ANY_OF, COND_NONE_OF)
+
+    condition_question = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        # SET_NULL, not CASCADE: deleting the question a condition points at must not delete
+        # the dependent question and the answers already recorded against it. The dependent
+        # simply becomes unconditional again — visible to everyone, which is the safe
+        # direction to fail. CASCADE here would silently destroy data.
+        on_delete=models.SET_NULL,
+        related_name="dependent_questions",
+    )
+    condition_operator = models.CharField(
+        max_length=16, choices=CONDITION_CHOICES, blank=True, default=""
+    )
+    #: A number for the numeric operators, a list of option texts for the choice ones,
+    #: unused for ANSWERED.
+    condition_value = models.JSONField(default=None, null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -193,6 +242,53 @@ class SurveyQuestion(models.Model):
         if isinstance(picked, (list, tuple)):
             return any(str(p) in triggers for p in picked)
         return str(picked) in triggers
+
+    # ── the display condition ─────────────────────────────────────────────
+
+    @property
+    def is_conditional(self) -> bool:
+        return bool(self.condition_question_id and self.condition_operator)
+
+    def is_visible_given(self, answers_by_question_id: dict) -> bool:
+        """Should this question be shown, given the answers so far?
+
+        ``answers_by_question_id`` maps question id → the NORMALISED answer (what
+        ``normalize_answer`` returned), so ``None`` means skipped.
+
+        An unconditional question is always visible. So is one whose condition points at a
+        question that has since been deleted (``condition_question`` is SET_NULL) — failing
+        OPEN is the safe direction: a question nobody can see collects nothing and says
+        nothing, whereas one shown too often merely asks somebody something extra.
+        """
+        if not self.is_conditional:
+            return True
+        source = answers_by_question_id.get(self.condition_question_id, None)
+        op = self.condition_operator
+
+        if op == self.COND_ANSWERED:
+            return source is not None
+
+        # A skipped source satisfies nothing else. Without this, BELOW would treat "no
+        # answer" as a low score and open the unhappy branch for somebody who said nothing.
+        if source is None:
+            return False
+
+        if op in self.NUMERIC_CONDITIONS:
+            try:
+                score, bar = int(source), int(self.condition_value)
+            except (TypeError, ValueError):
+                # A condition the author left half-configured, or a source whose type was
+                # changed out from under it. Fail open, as above.
+                return True
+            return score >= bar if op == self.COND_AT_LEAST else score < bar
+
+        if op in self.CHOICE_CONDITIONS:
+            wanted = {str(v) for v in (self.condition_value or [])}
+            picked = {str(p) for p in (source if isinstance(source, list) else [source])}
+            hit = bool(wanted & picked)
+            return hit if op == self.COND_ANY_OF else not hit
+
+        return True
 
     def wants_follow_up(self, value) -> bool:
         """Whether ``value`` — already normalised — opens the follow-up box."""
