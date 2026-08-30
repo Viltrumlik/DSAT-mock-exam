@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
   ClipboardList,
+  Copy,
   EyeOff,
+  GitBranch,
   GripVertical,
   ImagePlus,
   Lock,
@@ -32,6 +34,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/cn";
 import { useMe } from "@/hooks/useMe";
+import { levelLabel } from "@/lib/levels";
 import {
   Alert,
   Badge,
@@ -44,6 +47,7 @@ import {
   IconButton,
   Input,
   Modal,
+  Select,
   Skeleton,
   SkeletonText,
   Textarea,
@@ -60,7 +64,13 @@ import {
   type QuestionDraft,
 } from "./QuestionEditor";
 import { SurveyResultsPanel } from "./SurveyResultsPanel";
-import { isNumericType, type Survey, type SurveyQuestion, type SurveyStatus } from "./surveysApi";
+import {
+  isNumericType,
+  type Survey,
+  type SurveyPatch,
+  type SurveyQuestion,
+  type SurveyStatus,
+} from "./surveysApi";
 import {
   errorText,
   useAddQuestion,
@@ -69,6 +79,7 @@ import {
   useCreateSurvey,
   useDeleteQuestion,
   useDeleteSurvey,
+  useDuplicateSurvey,
   useReorderQuestions,
   useUpdateQuestion,
   useUpdateSurvey,
@@ -99,18 +110,38 @@ function questionSubtitle(q: SurveyQuestion): string {
   return bits.join(" · ");
 }
 
+/** How a conditional question describes its own rule, for the list. */
+function conditionSummary(q: SurveyQuestion, all: SurveyQuestion[]): string | null {
+  if (!q.condition_question || !q.condition_operator) return null;
+  const at = all.findIndex((x) => x.id === q.condition_question);
+  const source = at >= 0 ? `Q${at + 1}` : "an earlier question";
+  const value = Array.isArray(q.condition_value)
+    ? q.condition_value.join(", ")
+    : String(q.condition_value ?? "");
+  switch (q.condition_operator) {
+    case "AT_LEAST": return `only if ${source} ≥ ${value}`;
+    case "BELOW": return `only if ${source} < ${value}`;
+    case "ANY_OF": return `only if ${source} is ${value}`;
+    case "NONE_OF": return `only if ${source} is not ${value}`;
+    case "ANSWERED": return `only if ${source} was answered`;
+    default: return null;
+  }
+}
+
 function SortableQuestionRow({
   question,
   index,
   onEdit,
   onDelete,
   busy,
+  allQuestions,
 }: {
   question: SurveyQuestion;
   index: number;
   onEdit: () => void;
   onDelete: () => void;
   busy: boolean;
+  allQuestions: SurveyQuestion[];
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: question.id,
@@ -141,6 +172,12 @@ function SortableQuestionRow({
           {question.is_required && <span className="ml-1 text-danger">*</span>}
         </p>
         <p className="mt-0.5 text-xs text-muted-foreground">{questionSubtitle(question)}</p>
+        {conditionSummary(question, allQuestions) && (
+          <p className="mt-1 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-bold text-primary">
+            <GitBranch className="h-3 w-3" aria-hidden />
+            {conditionSummary(question, allQuestions)}
+          </p>
+        )}
       </div>
       <div className="flex shrink-0 items-center">
         {/* Editing exists at last. The PATCH endpoint has always been there; nothing called
@@ -182,6 +219,7 @@ export function SurveyBuilderPage() {
   const updateQuestion = useUpdateQuestion(selectedId);
   const deleteQuestion = useDeleteQuestion(selectedId);
   const reorder = useReorderQuestions(selectedId);
+  const duplicate = useDuplicateSurvey();
 
   const [newTitle, setNewTitle] = useState("");
   // Which question is being written. `null` = nothing open; `"new"` = the add form; a number
@@ -213,7 +251,8 @@ export function SurveyBuilderPage() {
     errorText(addQuestion.error) ??
     errorText(updateQuestion.error) ??
     errorText(deleteQuestion.error) ??
-    errorText(reorder.error);
+    errorText(reorder.error) ??
+    errorText(duplicate.error);
 
   if (!isSuperAdmin) {
     return (
@@ -471,6 +510,17 @@ export function SurveyBuilderPage() {
                   setModalError(null);
                   setConfirmDelete(true);
                 }}
+                onDuplicate={async () => {
+                  setPageError(null);
+                  try {
+                    const copy = await duplicate.mutateAsync(detail.id);
+                    setSelectedId(copy.id);
+                    setShowResponses(false);
+                  } catch (e) {
+                    setPageError(errorText(e) ?? "That survey couldn’t be copied.");
+                  }
+                }}
+                duplicating={duplicate.isPending}
                 updating={update.isPending}
                 deleting={deleteQuestion.isPending}
                 editing={editing}
@@ -550,6 +600,8 @@ function SurveyEditor({
   onShowResponses,
   onPatch,
   onAskDelete,
+  onDuplicate,
+  duplicating,
   updating,
   deleting,
   editing,
@@ -569,11 +621,12 @@ function SurveyEditor({
   sensors: ReturnType<typeof useSensors>;
   onDragEnd: (e: DragEndEvent) => void;
   onShowResponses: () => void;
-  onPatch: (
-    patch: { status?: SurveyStatus; description?: string; allow_anonymous?: boolean; closes_at?: string | null },
-    image?: File | null,
-  ) => void;
+  // The real write surface, not an inline subset — an ad-hoc shape here is how a field the
+  // server accepts ends up with no way to send it.
+  onPatch: (patch: SurveyPatch, image?: File | null) => void;
   onAskDelete: () => void;
+  onDuplicate: () => void;
+  duplicating: boolean;
   updating: boolean;
   deleting: boolean;
   editing: number | "new" | null;
@@ -631,6 +684,30 @@ function SurveyEditor({
               Close
             </Button>
           )}
+          {/* Reopen. Closing sits one button away from Publish, and a survey closed by
+              mistake — or closed on Friday when eight students were off ill — was a dead end
+              with no way back short of the Django admin. */}
+          {detail.status === "CLOSED" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<Send aria-hidden />}
+              loading={updating}
+              onClick={() => onPatch({ status: "PUBLISHED" })}
+            >
+              Reopen
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            leftIcon={<Copy aria-hidden />}
+            loading={duplicating}
+            onClick={onDuplicate}
+            title="Copy this survey and its questions into a new draft"
+          >
+            Duplicate
+          </Button>
           <IconButton size="sm" variant="ghost" onClick={onAskDelete} aria-label="Delete survey">
             <Trash2 className="h-4 w-4 text-danger" aria-hidden />
           </IconButton>
@@ -699,7 +776,90 @@ function SurveyEditor({
           </div>
         </Field>
 
+        {/* WHO IT GOES TO. Until now every published survey went to the entire centre, and
+            that single absence was the root of four separate complaints: you could not ask
+            one year group, could not get a response RATE (no audience means no denominator),
+            could not list who had not replied, and could not read results per class. */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Who gets it" htmlFor="survey-audience">
+            <Select
+              id="survey-audience"
+              value={detail.audience_kind}
+              onChange={(e) =>
+                onPatch({
+                  audience_kind: e.target.value as Survey["audience_kind"],
+                  // The old narrowing means nothing under a new kind, and a stale level left
+                  // behind would quietly aim the survey at a group nobody chose.
+                  audience_level: "",
+                  audience_classrooms: [],
+                  audience_branch: null,
+                })
+              }
+            >
+              <option value="ALL">Everyone in the learning center</option>
+              <option value="LEVEL">One level</option>
+              <option value="CLASSROOMS">Chosen classrooms</option>
+              <option value="BRANCH">One branch</option>
+            </Select>
+          </Field>
+
+          {detail.audience_kind === "LEVEL" && (
+            <Field label="Which level" htmlFor="survey-level">
+              <Select
+                id="survey-level"
+                value={detail.audience_level}
+                onChange={(e) => onPatch({ audience_level: e.target.value })}
+              >
+                <option value="">— Choose a level —</option>
+                {["foundation", "junior", "middle", "senior"].map((l) => (
+                  <option key={l} value={l}>{levelLabel(l)}</option>
+                ))}
+              </Select>
+            </Field>
+          )}
+
+          <Field
+            label="What it pays"
+            htmlFor="survey-points"
+            hint={
+              detail.points_award === 0
+                ? "Nothing — no points row is created at all."
+                : "Points a student earns for finishing it."
+            }
+          >
+            <Input
+              id="survey-points"
+              type="number"
+              min={0}
+              max={500}
+              value={detail.points_award}
+              onChange={(e) => onPatch({ points_award: Number(e.target.value) || 0 })}
+            />
+          </Field>
+        </div>
+
+        {detail.audience_kind !== "ALL" && !detail.audience_level &&
+          detail.audience_classrooms.length === 0 && !detail.audience_branch && (
+            <Alert tone="warning" title="This survey currently reaches nobody">
+              Choose who it is for, or set it back to everyone.
+            </Alert>
+          )}
+
         <div className="grid gap-3 sm:grid-cols-2 sm:items-end">
+          <Field
+            label="Opens on"
+            htmlFor="survey-opens"
+            hint="Optional. Publish it now and it goes live on that date by itself."
+          >
+            <Input
+              id="survey-opens"
+              type="date"
+              value={detail.opens_at ? detail.opens_at.slice(0, 10) : ""}
+              onChange={(e) =>
+                onPatch({ opens_at: e.target.value ? `${e.target.value}T00:00:00` : null })
+              }
+            />
+          </Field>
           <Field
             label="Closes on"
             htmlFor="survey-closes"
@@ -761,6 +921,7 @@ function SurveyEditor({
                   busy={deleting}
                   onEdit={() => onOpenEdit(q)}
                   onDelete={() => onDeleteQuestion(q.id)}
+                  allQuestions={detail.questions}
                 />
               ))}
             </div>
@@ -793,6 +954,17 @@ function SurveyEditor({
             onImageChange={onDraftImage}
             existingImageUrl={editingQuestion?.image_url}
             idPrefix={`q-${editing}`}
+            // Only the questions ABOVE this one — a condition may point backwards only, and
+            // offering a later question would build a rule the server refuses on save.
+            // A NEW question is appended last, so it may depend on any of them.
+            earlierQuestions={
+              editing === "new"
+                ? detail.questions
+                : detail.questions.slice(
+                    0,
+                    Math.max(0, detail.questions.findIndex((q) => q.id === editing)),
+                  )
+            }
           />
           <DraftProblems problems={problems} />
           <div className="flex flex-wrap gap-2">

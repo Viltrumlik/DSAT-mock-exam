@@ -14,9 +14,12 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
+  CHOICE_CONDITIONS,
+  NUMERIC_CONDITIONS,
   isChoiceType,
   isNumericType,
   type QuestionPatch,
+  type SurveyConditionOperator,
   type SurveyQuestion,
   type SurveyQuestionType,
 } from "./surveysApi";
@@ -64,6 +67,7 @@ export interface QuestionDraft {
   is_required: boolean;
   options: string[];
   follow_up_options: string[];
+  max_selections: number;
   scale_min: number;
   scale_max: number;
   scale_low_label: string;
@@ -71,6 +75,9 @@ export interface QuestionDraft {
   follow_up_threshold: number | null;
   follow_up_placeholder: string;
   follow_up_required: boolean;
+  condition_question: number | null;
+  condition_operator: SurveyConditionOperator | "";
+  condition_value: number | string[] | null;
 }
 
 export const BLANK_DRAFT: QuestionDraft = {
@@ -80,6 +87,7 @@ export const BLANK_DRAFT: QuestionDraft = {
   is_required: false,
   options: ["", ""],
   follow_up_options: [],
+  max_selections: 0,
   scale_min: 1,
   scale_max: 5,
   scale_low_label: "",
@@ -87,6 +95,9 @@ export const BLANK_DRAFT: QuestionDraft = {
   follow_up_threshold: null,
   follow_up_placeholder: "",
   follow_up_required: false,
+  condition_question: null,
+  condition_operator: "",
+  condition_value: null,
 };
 
 export function draftFrom(q: SurveyQuestion): QuestionDraft {
@@ -97,6 +108,7 @@ export function draftFrom(q: SurveyQuestion): QuestionDraft {
     is_required: q.is_required,
     options: q.options.length ? [...q.options] : ["", ""],
     follow_up_options: [...(q.follow_up_options ?? [])],
+    max_selections: q.max_selections ?? 0,
     scale_min: q.scale_min,
     scale_max: q.scale_max,
     scale_low_label: q.scale_low_label,
@@ -104,6 +116,9 @@ export function draftFrom(q: SurveyQuestion): QuestionDraft {
     follow_up_threshold: q.follow_up_threshold,
     follow_up_placeholder: q.follow_up_placeholder,
     follow_up_required: q.follow_up_required,
+    condition_question: q.condition_question,
+    condition_operator: q.condition_operator,
+    condition_value: q.condition_value,
   };
 }
 
@@ -123,6 +138,11 @@ export function patchFrom(draft: QuestionDraft): QuestionPatch {
     follow_up_options: choice
       ? draft.follow_up_options.filter((t) => options.includes(t))
       : [],
+    // Only a checkbox question can carry a cap, and never one bigger than the list.
+    max_selections:
+      draft.question_type === "MULTI_CHOICE"
+        ? Math.min(draft.max_selections || 0, options.length)
+        : 0,
     scale_min: numeric ? draft.scale_min : 1,
     scale_max: numeric ? draft.scale_max : 5,
     scale_low_label: draft.question_type === "RATING" ? draft.scale_low_label.trim() : "",
@@ -130,6 +150,13 @@ export function patchFrom(draft: QuestionDraft): QuestionPatch {
     follow_up_threshold: numeric ? draft.follow_up_threshold : null,
     follow_up_placeholder: draft.follow_up_placeholder.trim(),
     follow_up_required: draft.follow_up_required,
+    // Both halves or neither — the server refuses half a rule, and an operator left behind
+    // when the question is cleared would be an unsaveable draft the author cannot see.
+    condition_question: draft.condition_operator ? draft.condition_question : null,
+    condition_operator: draft.condition_question ? draft.condition_operator : "",
+    condition_value: draft.condition_question && draft.condition_operator
+      ? draft.condition_value
+      : null,
   };
 }
 
@@ -143,6 +170,11 @@ export function draftProblems(draft: QuestionDraft): string[] {
     if (new Set(options).size !== options.length) {
       problems.push("Two options have the same text — the results could not tell them apart.");
     }
+  }
+  if (draft.question_type === "MULTI_CHOICE" && draft.max_selections > options.length) {
+    problems.push(
+      `You can only pick from ${options.length} option${options.length === 1 ? "" : "s"}, so a limit of ${draft.max_selections} does nothing.`,
+    );
   }
   if (isNumericType(draft.question_type)) {
     if (draft.scale_max <= draft.scale_min) {
@@ -166,6 +198,7 @@ export function QuestionEditor({
   onImageChange,
   existingImageUrl,
   idPrefix,
+  earlierQuestions = [],
 }: {
   draft: QuestionDraft;
   onChange: (next: QuestionDraft) => void;
@@ -173,6 +206,8 @@ export function QuestionEditor({
   onImageChange: (file: File | null) => void;
   existingImageUrl?: string | null;
   idPrefix: string;
+  /** Questions ABOVE this one — the only ones a condition may point at. */
+  earlierQuestions?: SurveyQuestion[];
 }) {
   const set = <K extends keyof QuestionDraft>(key: K, value: QuestionDraft[K]) =>
     onChange({ ...draft, [key]: value });
@@ -333,6 +368,27 @@ export function QuestionEditor({
         </Field>
       )}
 
+      {draft.question_type === "MULTI_CHOICE" && (
+        <Field
+          label="Most they can pick"
+          htmlFor={`${idPrefix}-cap`}
+          hint={
+            draft.max_selections
+              ? `They can tick at most ${draft.max_selections}. Leave 0 for no limit.`
+              : "0 means they can tick as many as they like."
+          }
+        >
+          <Input
+            id={`${idPrefix}-cap`}
+            type="number"
+            min={0}
+            max={draft.options.filter((o) => o.trim()).length}
+            value={draft.max_selections}
+            onChange={(e) => set("max_selections", Number(e.target.value) || 0)}
+          />
+        </Field>
+      )}
+
       {/* ── The numeric range, and the slider's two written ends ────────────── */}
       {numeric && (
         <div className="grid gap-3 sm:grid-cols-2">
@@ -444,6 +500,9 @@ export function QuestionEditor({
         </div>
       )}
 
+      {/* ── Show this only sometimes ────────────────────────────────────────── */}
+      <ConditionEditor draft={draft} onChange={onChange} earlier={earlierQuestions} idPrefix={idPrefix} />
+
       {/* ── Picture ─────────────────────────────────────────────────────────── */}
       <Field label="Picture" hint="Optional. Shown above the answer control.">
         <div className="space-y-2">
@@ -489,6 +548,178 @@ export function QuestionEditor({
         </div>
       </Field>
     </div>
+  );
+}
+
+/**
+ * "Show this question only if…" — the branch the school asked for.
+ *
+ * The follow-up box above is the one-question version of this and can only ever ask for
+ * prose on the UNSATISFACTORY side. This is the other half: a whole question, with its own
+ * type and options, shown only when an earlier answer went a particular way. Asking "what
+ * makes you recommend us? [teaching] [community] [exams]" of somebody who scored 5 is what
+ * it exists to stop.
+ */
+function ConditionEditor({
+  draft,
+  onChange,
+  earlier,
+  idPrefix,
+}: {
+  draft: QuestionDraft;
+  onChange: (next: QuestionDraft) => void;
+  earlier: SurveyQuestion[];
+  idPrefix: string;
+}) {
+  const source = earlier.find((q) => q.id === draft.condition_question) ?? null;
+
+  // Only the operators that can actually be true against this source's type. Offering
+  // "scored at least" on a paragraph question would be a rule that never fires.
+  const operators: { value: SurveyConditionOperator; label: string }[] = !source
+    ? []
+    : isNumericType(source.question_type)
+      ? [
+          { value: "AT_LEAST", label: "scored at least" },
+          { value: "BELOW", label: "scored below" },
+          { value: "ANSWERED", label: "answered it at all" },
+        ]
+      : isChoiceType(source.question_type)
+        ? [
+            { value: "ANY_OF", label: "picked any of" },
+            { value: "NONE_OF", label: "picked none of" },
+            { value: "ANSWERED", label: "answered it at all" },
+          ]
+        : [{ value: "ANSWERED", label: "answered it at all" }];
+
+  function pickSource(id: number | null) {
+    const next = earlier.find((q) => q.id === id) ?? null;
+    onChange({
+      ...draft,
+      condition_question: id,
+      // The old operator almost certainly does not suit the new source's type, and a stale
+      // one is a rule that silently never fires. Default to the sensible one instead —
+      // and for a scale, prefill the bar from the satisfactory score the author already set,
+      // which is the number they mean nine times out of ten.
+      condition_operator: !next ? "" : isNumericType(next.question_type) ? "AT_LEAST" : "ANY_OF",
+      condition_value: !next
+        ? null
+        : isNumericType(next.question_type)
+          ? next.follow_up_threshold ?? next.scale_max
+          : [],
+    });
+  }
+
+  if (earlier.length === 0) {
+    return (
+      <Field label="When to show this" hint="The first question is always shown — a rule can only depend on a question above it.">
+        <p className="text-[13px] text-muted-foreground">Nothing above this one to depend on yet.</p>
+      </Field>
+    );
+  }
+
+  return (
+    <Field
+      label="When to show this"
+      hint="Leave as “Always” for an ordinary question."
+    >
+      <div className="space-y-2.5 rounded-xl border border-border bg-surface-2 p-3.5">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Select
+            id={`${idPrefix}-cond-q`}
+            aria-label="Depends on which question"
+            value={draft.condition_question == null ? "" : String(draft.condition_question)}
+            onChange={(e) => pickSource(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">Always show it</option>
+            {earlier.map((q, i) => (
+              <option key={q.id} value={String(q.id)}>
+                {i + 1}. {q.prompt.slice(0, 48)}
+              </option>
+            ))}
+          </Select>
+
+          {source && (
+            <Select
+              id={`${idPrefix}-cond-op`}
+              aria-label="Rule"
+              value={draft.condition_operator}
+              onChange={(e) =>
+                onChange({
+                  ...draft,
+                  condition_operator: e.target.value as SurveyConditionOperator,
+                })
+              }
+            >
+              {operators.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+          )}
+        </div>
+
+        {source && NUMERIC_CONDITIONS.includes(draft.condition_operator as SurveyConditionOperator) && (
+          <div className="space-y-1">
+            <Input
+              inputSize="sm"
+              type="number"
+              min={source.scale_min}
+              max={source.scale_max}
+              aria-label="Score to compare against"
+              value={typeof draft.condition_value === "number" ? draft.condition_value : ""}
+              onChange={(e) =>
+                onChange({
+                  ...draft,
+                  condition_value: e.target.value === "" ? null : Number(e.target.value),
+                })
+              }
+            />
+            {source.follow_up_threshold != null &&
+              draft.condition_value !== source.follow_up_threshold && (
+                // Said out loud, because the two numbers are meant to agree: the satisfactory
+                // score decides who gets asked "why not?", and this decides who gets the
+                // happy branch. Diverging silently leaves a band of students asked both, or
+                // neither.
+                <p className="text-[12px] font-medium text-amber-600 dark:text-amber-400">
+                  That question’s satisfactory score is {source.follow_up_threshold}. Using a
+                  different number here leaves a gap between the two branches.
+                </p>
+              )}
+          </div>
+        )}
+
+        {source && CHOICE_CONDITIONS.includes(draft.condition_operator as SurveyConditionOperator) && (
+          <div className="space-y-1.5">
+            {(source.options ?? []).map((opt) => {
+              const chosen = Array.isArray(draft.condition_value)
+                ? draft.condition_value.map(String)
+                : [];
+              return (
+                <Checkbox
+                  key={opt}
+                  label={opt}
+                  checked={chosen.includes(opt)}
+                  onChange={(e) =>
+                    onChange({
+                      ...draft,
+                      condition_value: e.target.checked
+                        ? [...chosen, opt]
+                        : chosen.filter((c) => c !== opt),
+                    })
+                  }
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {source && (
+          <p className="text-[12px] font-medium text-muted-foreground">
+            Students who don’t match are never shown this question, and anything they had
+            already put in it is discarded.
+          </p>
+        )}
+      </div>
+    </Field>
   );
 }
 

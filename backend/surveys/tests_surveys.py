@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access import constants as C
+from classes.models import Classroom, ClassroomMembership
 from rewards.models import PointAward
 from rewards.services import balance
 from surveys import services
@@ -703,3 +704,619 @@ class EmptySurveyTests(SurveyFixture):
         self.client.force_authenticate(self.student)
         ids = [s["id"] for s in self.client.get("/api/surveys/open/").json()["surveys"]]
         self.assertEqual(ids, [self.survey.id])
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Display conditions — show a question only when an earlier one went a certain way.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+class ConditionalQuestionTests(SurveyFixture):
+    """The school's case, verbatim.
+
+    "Would you recommend us?" on a 0–10 slider with 8 as the satisfactory score. Below it,
+    the built-in follow-up box asks why. AT or ABOVE it, a WHOLE DIFFERENT QUESTION appears —
+    checkboxes for what they liked. Before this, that second question was shown to everybody,
+    so a student who scored 5 was asked what made them recommend the place.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.q_rating = SurveyQuestion.objects.create(
+            survey=self.survey, order=3, prompt="Would you recommend us?",
+            question_type=SurveyQuestion.TYPE_RATING, scale_min=0, scale_max=10,
+            follow_up_threshold=8, follow_up_placeholder="Why did you give this score?",
+        )
+        self.q_reasons = SurveyQuestion.objects.create(
+            survey=self.survey, order=4, prompt="What makes you recommend us?",
+            question_type=SurveyQuestion.TYPE_MULTI_CHOICE,
+            options=["Teacher", "Community", "Exams"],
+            condition_question=self.q_rating,
+            condition_operator=SurveyQuestion.COND_AT_LEAST,
+            condition_value=8,
+        )
+
+    def answer(self, score, reasons=None, note=None):
+        self.client.force_authenticate(self.student)
+        body = {"answers": {**self.full_answers(), str(self.q_rating.id): score}}
+        if reasons is not None:
+            body["answers"][str(self.q_reasons.id)] = reasons
+        if note is not None:
+            body["follow_ups"] = {str(self.q_rating.id): note}
+        return self.client.post(f"/api/surveys/{self.survey.id}/respond/", body, format="json")
+
+    def stored(self, question):
+        return SurveyAnswer.objects.get(question=question).value
+
+    # ── the rule itself ──────────────────────────────────────────────────
+    def test_a_satisfied_student_is_asked_what_they_liked(self):
+        self.assertTrue(self.q_reasons.is_visible_given({self.q_rating.id: 8}))
+        self.assertTrue(self.q_reasons.is_visible_given({self.q_rating.id: 10}))
+
+    def test_an_unsatisfied_student_is_not(self):
+        """The bug the school reported: a 5 and an 8 saw the same question."""
+        self.assertFalse(self.q_reasons.is_visible_given({self.q_rating.id: 5}))
+        self.assertFalse(self.q_reasons.is_visible_given({self.q_rating.id: 7}))
+
+    def test_the_bar_is_the_same_one_the_follow_up_uses(self):
+        """8 is satisfactory: it opens the reasons and does NOT open the "why?" box."""
+        self.assertTrue(self.q_reasons.is_visible_given({self.q_rating.id: 8}))
+        self.assertFalse(self.q_rating.wants_follow_up_for_score(8))
+        self.assertFalse(self.q_reasons.is_visible_given({self.q_rating.id: 7}))
+        self.assertTrue(self.q_rating.wants_follow_up_for_score(7))
+
+    def test_a_skipped_source_hides_the_dependent(self):
+        """"No answer" is not a low score and not a high one."""
+        self.assertFalse(self.q_reasons.is_visible_given({self.q_rating.id: None}))
+
+    # ── what actually gets stored ────────────────────────────────────────
+    def test_the_reasons_are_recorded_for_a_high_score(self):
+        self.assertEqual(self.answer(9, reasons=["Teacher", "Exams"]).status_code, 201)
+        self.assertEqual(self.stored(self.q_reasons), ["Teacher", "Exams"])
+
+    def test_an_answer_to_a_hidden_question_is_DROPPED(self):
+        """A stale pick from before the student lowered their score must not pollute the
+        results with a reply to a question that was never on screen."""
+        self.assertEqual(self.answer(4, reasons=["Teacher"], note="Too fast").status_code, 201)
+        self.assertIsNone(self.stored(self.q_reasons))
+        self.assertEqual(SurveyAnswer.objects.get(question=self.q_rating).follow_up, "Too fast")
+
+    def test_a_hidden_question_is_never_required(self):
+        """Otherwise a required question on a branch the student never saw makes the whole
+        survey unsubmittable, with an error naming something they were never shown."""
+        SurveyQuestion.objects.filter(pk=self.q_reasons.pk).update(is_required=True)
+        self.assertEqual(self.answer(3).status_code, 201)
+
+    def test_it_is_still_required_when_it_IS_shown(self):
+        SurveyQuestion.objects.filter(pk=self.q_reasons.pk).update(is_required=True)
+        r = self.answer(9)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("What makes you recommend us?", r.json()["detail"])
+
+    # ── the other operators ──────────────────────────────────────────────
+    def test_below_is_the_mirror(self):
+        q = SurveyQuestion.objects.create(
+            survey=self.survey, order=5, prompt="What went wrong?",
+            question_type=SurveyQuestion.TYPE_LONG_TEXT,
+            condition_question=self.q_rating,
+            condition_operator=SurveyQuestion.COND_BELOW, condition_value=8,
+        )
+        self.assertTrue(q.is_visible_given({self.q_rating.id: 5}))
+        self.assertFalse(q.is_visible_given({self.q_rating.id: 8}))
+
+    def test_any_of_reads_a_choice_answer(self):
+        q = SurveyQuestion.objects.create(
+            survey=self.survey, order=5, prompt="Which teacher?",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+            condition_question=self.q_reasons,
+            condition_operator=SurveyQuestion.COND_ANY_OF, condition_value=["Teacher"],
+        )
+        self.assertTrue(q.is_visible_given({self.q_reasons.id: ["Teacher", "Exams"]}))
+        self.assertFalse(q.is_visible_given({self.q_reasons.id: ["Community"]}))
+
+    def test_none_of_is_its_inverse(self):
+        q = SurveyQuestion.objects.create(
+            survey=self.survey, order=5, prompt="Anything else?",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+            condition_question=self.q_reasons,
+            condition_operator=SurveyQuestion.COND_NONE_OF, condition_value=["Teacher"],
+        )
+        self.assertFalse(q.is_visible_given({self.q_reasons.id: ["Teacher"]}))
+        self.assertTrue(q.is_visible_given({self.q_reasons.id: ["Community"]}))
+
+    def test_answered_only_asks_whether_they_said_anything(self):
+        q = SurveyQuestion.objects.create(
+            survey=self.survey, order=5, prompt="Follow-up",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+            condition_question=self.q_rating,
+            condition_operator=SurveyQuestion.COND_ANSWERED,
+        )
+        self.assertTrue(q.is_visible_given({self.q_rating.id: 0}))
+        self.assertFalse(q.is_visible_given({self.q_rating.id: None}))
+
+    # ── failing open ─────────────────────────────────────────────────────
+    def test_deleting_the_source_leaves_the_dependent_visible_not_orphaned(self):
+        """SET_NULL, not CASCADE: deleting the source must not delete the dependent and the
+        answers already recorded against it. It becomes unconditional — shown to everybody,
+        which is the safe direction to fail."""
+        self.answer(9, reasons=["Teacher"])
+        self.q_rating.delete()
+        self.q_reasons.refresh_from_db()
+        self.assertIsNone(self.q_reasons.condition_question_id)
+        self.assertTrue(self.q_reasons.is_visible_given({}))
+        self.assertEqual(SurveyAnswer.objects.filter(question=self.q_reasons).count(), 1)
+
+
+class ConditionAuthoringTests(SurveyFixture):
+    """The rules that keep a condition evaluable in one ordered pass."""
+
+    def setUp(self):
+        super().setUp()
+        self.q_rating = SurveyQuestion.objects.create(
+            survey=self.survey, order=3, prompt="Would you recommend us?",
+            question_type=SurveyQuestion.TYPE_RATING, scale_min=0, scale_max=10,
+        )
+        self.client.force_authenticate(self.super_admin)
+
+    def add(self, **body):
+        return self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/",
+            {"prompt": "Why?", "question_type": SurveyQuestion.TYPE_SHORT_TEXT, **body},
+            format="json",
+        )
+
+    def test_a_condition_can_be_authored_through_the_api(self):
+        r = self.add(
+            condition_question=self.q_rating.id,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=8,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["condition_question"], self.q_rating.id)
+
+    def test_half_a_condition_is_refused(self):
+        self.assertEqual(self.add(condition_question=self.q_rating.id).status_code, 400)
+        self.assertEqual(
+            self.add(condition_operator=SurveyQuestion.COND_AT_LEAST).status_code, 400
+        )
+
+    def test_it_must_point_BACKWARDS(self):
+        """The load-bearing rule — it makes cycles impossible and lets the whole form be
+        evaluated in one ordered pass.
+
+        Tested on a PATCH, which is where it can actually be broken: a CREATE appends the new
+        question last, so every existing question is already earlier than it and the rule has
+        nothing to refuse. Editing an EXISTING question is the path that can point forwards.
+        """
+        early = SurveyQuestion.objects.create(
+            survey=self.survey, order=0, prompt="First",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+        )
+        later = SurveyQuestion.objects.create(
+            survey=self.survey, order=99, prompt="Later",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+        )
+        r = self.client.patch(
+            f"/api/surveys/admin/{self.survey.id}/questions/{early.id}/",
+            {
+                "condition_question": later.id,
+                "condition_operator": SurveyQuestion.COND_ANSWERED,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("condition_question", r.json())
+        early.refresh_from_db()
+        self.assertIsNone(early.condition_question_id)
+
+    def test_a_question_cannot_depend_on_itself(self):
+        """The cycle of one."""
+        q = SurveyQuestion.objects.create(
+            survey=self.survey, order=7, prompt="Self",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+        )
+        r = self.client.patch(
+            f"/api/surveys/admin/{self.survey.id}/questions/{q.id}/",
+            {"condition_question": q.id, "condition_operator": SurveyQuestion.COND_ANSWERED},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_a_new_question_may_depend_on_any_existing_one(self):
+        """The other side of the same rule: appended last means everything is earlier."""
+        r = self.add(
+            condition_question=self.q_rating.id,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=8,
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_a_score_rule_needs_a_score_question(self):
+        r = self.add(
+            condition_question=self.q_text.id,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=8,
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("condition_operator", r.json())
+
+    def test_a_score_outside_the_scale_is_refused(self):
+        r = self.add(
+            condition_question=self.q_rating.id,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=99,
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("condition_value", r.json())
+
+    def test_an_option_rule_needs_an_option_that_exists(self):
+        r = self.add(
+            condition_question=self.q_choice.id,
+            condition_operator=SurveyQuestion.COND_ANY_OF, condition_value=["Physics"],
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("condition_value", r.json())
+
+    def test_reordering_cannot_strand_a_dependency(self):
+        dependent = SurveyQuestion.objects.create(
+            survey=self.survey, order=4, prompt="What did you like?",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+            condition_question=self.q_rating,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=8,
+        )
+        # Drag the dependent ABOVE the question it depends on.
+        order = [dependent.id, self.q_rating.id, self.q_text.id, self.q_choice.id, self.q_scale.id]
+        r = self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/reorder/",
+            {"order": order}, format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("has to stay below it", r.json()["detail"])
+        # ...and nothing moved.
+        dependent.refresh_from_db()
+        self.assertEqual(dependent.order, 4)
+
+
+class ConditionalResultsTests(SurveyFixture):
+    """A branch nobody reached is NOT mass non-response."""
+
+    def setUp(self):
+        super().setUp()
+        self.q_rating = SurveyQuestion.objects.create(
+            survey=self.survey, order=3, prompt="Would you recommend us?",
+            question_type=SurveyQuestion.TYPE_RATING, scale_min=0, scale_max=10,
+        )
+        self.q_reasons = SurveyQuestion.objects.create(
+            survey=self.survey, order=4, prompt="What makes you recommend us?",
+            question_type=SurveyQuestion.TYPE_MULTI_CHOICE,
+            options=["Teacher", "Community", "Exams"],
+            condition_question=self.q_rating,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=8,
+        )
+
+    def _reply(self, email, score, reasons=None):
+        student = User.objects.create_user(email, "secret123")
+        payload = {**self.full_answers(), str(self.q_rating.id): score}
+        if reasons is not None:
+            payload[str(self.q_reasons.id)] = reasons
+        services.submit_response(self.survey, student, payload)
+
+    def test_not_asked_is_counted_apart_from_skipped(self):
+        self._reply("c1@t.com", 9, ["Teacher"])   # asked, answered
+        self._reply("c2@t.com", 9)                # asked, skipped
+        self._reply("c3@t.com", 2)                # never asked
+        self._reply("c4@t.com", 3)                # never asked
+        summary = {
+            s["question_id"]: s for s in services.survey_results(self.survey)["summaries"]
+        }[self.q_reasons.id]
+        self.assertEqual(summary["answered"], 1)
+        self.assertEqual(summary["skipped"], 1)
+        self.assertEqual(summary["not_asked"], 2)
+        self.assertTrue(summary["is_conditional"])
+
+    def test_an_unconditional_question_reports_nobody_unasked(self):
+        self._reply("c1@t.com", 9, ["Teacher"])
+        summary = {
+            s["question_id"]: s for s in services.survey_results(self.survey)["summaries"]
+        }[self.q_rating.id]
+        self.assertEqual(summary["not_asked"], 0)
+        self.assertFalse(summary["is_conditional"])
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Survey v2 — audience, participation, drafts, duplication, caps, price.
+# ════════════════════════════════════════════════════════════════════════════
+
+
+class AudienceTests(SurveyFixture):
+    """A survey no longer goes to the whole centre by default-and-only."""
+
+    def setUp(self):
+        super().setUp()
+        self.senior = Classroom.objects.create(
+            name="Senior Math", subject=Classroom.SUBJECT_MATH,
+            level=Classroom.LEVEL_SENIOR, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.super_admin,
+        )
+        self.junior = Classroom.objects.create(
+            name="Junior Math", subject=Classroom.SUBJECT_MATH,
+            level=Classroom.LEVEL_JUNIOR, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.super_admin,
+        )
+        self.senior_student = User.objects.create_user("aud_senior@t.com", "secret123")
+        self.junior_student = User.objects.create_user("aud_junior@t.com", "secret123")
+        for classroom, user in ((self.senior, self.senior_student), (self.junior, self.junior_student)):
+            ClassroomMembership.objects.create(
+                classroom=classroom, user=user,
+                role=ClassroomMembership.ROLE_STUDENT,
+                status=ClassroomMembership.STATUS_ACTIVE,
+            )
+
+    def aim_at_level(self, level):
+        Survey.objects.filter(pk=self.survey.pk).update(
+            audience_kind=Survey.AUDIENCE_LEVEL, audience_level=level
+        )
+        self.survey.refresh_from_db()
+
+    def open_ids(self, user):
+        self.client.force_authenticate(user)
+        return [s["id"] for s in self.client.get("/api/surveys/open/").json()["surveys"]]
+
+    def test_everyone_is_still_the_default(self):
+        self.assertEqual(self.survey.audience_kind, Survey.AUDIENCE_ALL)
+        self.assertIn(self.survey.id, self.open_ids(self.junior_student))
+
+    def test_a_level_survey_reaches_only_that_level(self):
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        self.assertIn(self.survey.id, self.open_ids(self.senior_student))
+        self.assertNotIn(self.survey.id, self.open_ids(self.junior_student))
+
+    def test_a_classroom_survey_reaches_only_those_classrooms(self):
+        Survey.objects.filter(pk=self.survey.pk).update(
+            audience_kind=Survey.AUDIENCE_CLASSROOMS
+        )
+        self.survey.refresh_from_db()
+        self.survey.audience_classrooms.set([self.senior])
+        self.assertIn(self.survey.id, self.open_ids(self.senior_student))
+        self.assertNotIn(self.survey.id, self.open_ids(self.junior_student))
+
+    def test_it_is_ENFORCED_not_merely_hidden(self):
+        """The one that matters: anybody who knows an id can POST directly, and must not be
+        paid for a survey that was never theirs."""
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        self.client.force_authenticate(self.junior_student)
+        r = self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("not sent to you", r.json()["detail"])
+        self.assertEqual(balance(self.junior_student), 0)
+
+    def test_the_form_itself_is_invisible_by_direct_link(self):
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        self.client.force_authenticate(self.junior_student)
+        self.assertEqual(self.client.get(f"/api/surveys/{self.survey.id}/").status_code, 404)
+
+    def test_a_reply_remembers_the_class_it_came_from(self):
+        """Snapshotted, so a student moving up a level next term does not re-file history —
+        and so an ANONYMOUS reply can still be broken down by class."""
+        self.client.force_authenticate(self.senior_student)
+        self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        response = SurveyResponse.objects.get(student=self.senior_student)
+        self.assertEqual(response.classroom_id, self.senior.id)
+        self.assertEqual(response.level, Classroom.LEVEL_SENIOR)
+
+    def test_results_can_be_narrowed_to_one_class(self):
+        for user in (self.senior_student, self.junior_student):
+            self.client.force_authenticate(user)
+            self.client.post(
+                f"/api/surveys/{self.survey.id}/respond/",
+                {"answers": self.full_answers()}, format="json",
+            )
+        self.assertEqual(len(services.survey_results(self.survey)["responses"]), 2)
+        narrowed = services.survey_results(self.survey, classroom_id=self.senior.id)
+        self.assertEqual(len(narrowed["responses"]), 1)
+
+
+class ParticipationTests(AudienceTests):
+    def test_an_everyone_survey_reports_no_denominator_rather_than_a_wrong_one(self):
+        """"Everyone" has no roster. A made-up denominator is worse than none."""
+        p = services.participation(self.survey)
+        self.assertIsNone(p["expected"])
+        self.assertIsNone(p["rate"])
+
+    def test_a_targeted_survey_reports_a_real_rate_and_who_is_missing(self):
+        self.aim_at_level(Classroom.LEVEL_SENIOR)
+        other = User.objects.create_user("aud_senior2@t.com", "secret123")
+        ClassroomMembership.objects.create(
+            classroom=self.senior, user=other,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        self.client.force_authenticate(self.senior_student)
+        self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        p = services.participation(self.survey)
+        self.assertEqual(p["expected"], 2)
+        self.assertEqual(p["replied"], 1)
+        self.assertEqual(p["rate"], 50.0)
+        self.assertEqual([o["id"] for o in p["outstanding"]], [other.id])
+
+    def test_the_endpoint_is_super_admin_only(self):
+        self.client.force_authenticate(self.teacher)
+        r = self.client.get(f"/api/surveys/admin/{self.survey.id}/participation/")
+        self.assertEqual(r.status_code, 403)
+
+
+class DraftTests(SurveyFixture):
+    """STATUS_IN_PROGRESS existed since the app was written and nothing ever wrote it."""
+
+    def url(self):
+        return f"/api/surveys/{self.survey.id}/draft/"
+
+    def test_a_half_finished_survey_survives(self):
+        self.client.force_authenticate(self.student)
+        r = self.client.put(
+            self.url(), {"answers": {str(self.q_text.id): "Half a thought"}}, format="json"
+        )
+        self.assertEqual(r.status_code, 204, r.content)
+        back = self.client.get(self.url()).json()
+        self.assertEqual(back["answers"][str(self.q_text.id)], "Half a thought")
+        self.assertIsNotNone(back["saved_at"])
+
+    def test_a_draft_does_not_pay_and_does_not_count_as_done(self):
+        self.client.force_authenticate(self.student)
+        self.client.put(self.url(), {"answers": {str(self.q_text.id): "x"}}, format="json")
+        self.assertEqual(balance(self.student), 0)
+        self.assertIn(
+            self.survey.id,
+            [s["id"] for s in self.client.get("/api/surveys/open/").json()["surveys"]],
+        )
+
+    def test_a_required_question_may_be_empty_in_a_draft(self):
+        """Refusing a draft would defeat the point of having one."""
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.client.put(self.url(), {"answers": {}}, format="json").status_code, 204)
+
+    def test_submitting_afterwards_still_works_and_pays_once(self):
+        self.client.force_authenticate(self.student)
+        self.client.put(self.url(), {"answers": {str(self.q_text.id): "Draft"}}, format="json")
+        r = self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(balance(self.student), 40)
+        self.assertEqual(SurveyResponse.objects.filter(student=self.student).count(), 1)
+
+    def test_a_late_autosave_cannot_reopen_a_submitted_reply(self):
+        """A stale tab must never overwrite a finished one — the points are banked."""
+        self.client.force_authenticate(self.student)
+        self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": self.full_answers()}, format="json",
+        )
+        self.client.put(self.url(), {"answers": {str(self.q_text.id): "clobber"}}, format="json")
+        response = SurveyResponse.objects.get(student=self.student)
+        self.assertEqual(response.status, SurveyResponse.STATUS_SUBMITTED)
+        self.assertEqual(
+            SurveyAnswer.objects.get(response=response, question=self.q_text).value,
+            "The classes",
+        )
+
+
+class DuplicateTests(SurveyFixture):
+    def test_a_survey_can_be_copied_with_its_questions(self):
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(f"/api/surveys/admin/{self.survey.id}/duplicate/")
+        self.assertEqual(r.status_code, 201, r.content)
+        copy = Survey.objects.get(pk=r.json()["id"])
+        self.assertEqual(copy.title, "How is the term going? (copy)")
+        self.assertEqual(copy.status, Survey.STATUS_DRAFT)
+        self.assertEqual(copy.questions.count(), self.survey.questions.count())
+
+    def test_the_copy_carries_no_replies(self):
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.client.force_authenticate(self.super_admin)
+        copy = Survey.objects.get(
+            pk=self.client.post(f"/api/surveys/admin/{self.survey.id}/duplicate/").json()["id"]
+        )
+        self.assertEqual(copy.responses.count(), 0)
+
+    def test_a_condition_is_re_pointed_at_the_COPY_not_the_original(self):
+        """Otherwise editing last term's survey would silently change how this one branches."""
+        rating = SurveyQuestion.objects.create(
+            survey=self.survey, order=3, prompt="Recommend?",
+            question_type=SurveyQuestion.TYPE_RATING, scale_min=0, scale_max=10,
+        )
+        SurveyQuestion.objects.create(
+            survey=self.survey, order=4, prompt="Why?",
+            question_type=SurveyQuestion.TYPE_SHORT_TEXT,
+            condition_question=rating,
+            condition_operator=SurveyQuestion.COND_AT_LEAST, condition_value=8,
+        )
+        self.client.force_authenticate(self.super_admin)
+        copy = Survey.objects.get(
+            pk=self.client.post(f"/api/surveys/admin/{self.survey.id}/duplicate/").json()["id"]
+        )
+        dependent = copy.questions.get(prompt="Why?")
+        self.assertIsNotNone(dependent.condition_question_id)
+        self.assertEqual(dependent.condition_question.survey_id, copy.id)
+        self.assertNotEqual(dependent.condition_question_id, rating.id)
+
+
+class MaxSelectionsTests(SurveyFixture):
+    def setUp(self):
+        super().setUp()
+        self.q = SurveyQuestion.objects.create(
+            survey=self.survey, order=3, prompt="Pick your top 2",
+            question_type=SurveyQuestion.TYPE_MULTI_CHOICE,
+            options=["A", "B", "C", "D"], max_selections=2,
+        )
+
+    def submit(self, picked):
+        self.client.force_authenticate(self.student)
+        return self.client.post(
+            f"/api/surveys/{self.survey.id}/respond/",
+            {"answers": {**self.full_answers(), str(self.q.id): picked}}, format="json",
+        )
+
+    def test_within_the_cap_is_fine(self):
+        self.assertEqual(self.submit(["A", "B"]).status_code, 201)
+
+    def test_over_the_cap_is_refused_and_says_the_number(self):
+        r = self.submit(["A", "B", "C"])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("at most 2", r.json()["detail"])
+
+    def test_a_cap_on_a_non_checkbox_question_is_refused_at_authoring_time(self):
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/",
+            {
+                "prompt": "One", "question_type": SurveyQuestion.TYPE_SHORT_TEXT,
+                "max_selections": 2,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+    def test_a_cap_bigger_than_the_option_list_is_refused(self):
+        self.client.force_authenticate(self.super_admin)
+        r = self.client.post(
+            f"/api/surveys/admin/{self.survey.id}/questions/",
+            {
+                "prompt": "Pick", "question_type": SurveyQuestion.TYPE_MULTI_CHOICE,
+                "options": ["A", "B"], "max_selections": 5,
+            },
+            format="json",
+        )
+        self.assertEqual(r.status_code, 400, r.content)
+
+
+class SurveyPriceTests(SurveyFixture):
+    def test_the_default_is_still_forty(self):
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(balance(self.student), 40)
+
+    def test_a_survey_can_set_its_own_price(self):
+        Survey.objects.filter(pk=self.survey.pk).update(points_award=5)
+        self.survey.refresh_from_db()
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(balance(self.student), 5)
+
+    def test_a_survey_worth_nothing_mints_no_row_at_all(self):
+        """An award of zero is not a thing to put in a student's ledger."""
+        Survey.objects.filter(pk=self.survey.pk).update(points_award=0)
+        self.survey.refresh_from_db()
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(balance(self.student), 0)
+        self.assertFalse(PointAward.objects.filter(student=self.student).exists())
+
+    def test_the_ledger_row_names_the_survey(self):
+        services.submit_response(self.survey, self.student, self.full_answers())
+        self.assertEqual(
+            PointAward.objects.get(student=self.student).note, "How is the term going?"
+        )

@@ -114,6 +114,11 @@ class SurveyDetailView(APIView):
         survey = get_object_or_404(Survey, pk=survey_id)
         if not survey.is_open() and not _is_super_admin(request.user):
             return Response({"detail": "That survey is not open."}, status=http.HTTP_404_NOT_FOUND)
+        # A survey aimed at one level is not visible to anybody else, even by direct link.
+        # 404 rather than 403: they should not learn it exists. The author is exempt so a
+        # targeted survey can still be previewed.
+        if not _is_super_admin(request.user) and not services.is_in_audience(survey, request.user):
+            return Response({"detail": "That survey is not open."}, status=http.HTTP_404_NOT_FOUND)
         already = SurveyResponse.objects.filter(
             survey=survey, student=request.user, status=SurveyResponse.STATUS_SUBMITTED
         ).exists()
@@ -151,6 +156,33 @@ class SurveyRespondView(APIView):
             },
             status=http.HTTP_201_CREATED,
         )
+
+
+class SurveyDraftView(APIView):
+    """``GET|PUT /api/surveys/<id>/draft/`` — keep a half-finished survey.
+
+    PUT is the autosave. It is deliberately forgiving: a required question may be empty and a
+    half-typed answer is simply not stored yet, because refusing a draft would defeat having
+    one. All the real validation still happens once, at submit.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, survey_id):
+        survey = get_object_or_404(Survey, pk=survey_id)
+        return Response(services.draft_for(survey, request.user))
+
+    def put(self, request, survey_id):
+        survey = get_object_or_404(Survey, pk=survey_id)
+        answers = request.data.get("answers")
+        if not isinstance(answers, dict):
+            return Response({"detail": "answers must be an object."}, status=400)
+        services.save_draft(
+            survey, request.user, answers, follow_ups=request.data.get("follow_ups")
+        )
+        # No body worth returning — the client already has what it just sent, and echoing it
+        # back would double the size of a request that fires every few seconds.
+        return Response(status=http.HTTP_204_NO_CONTENT)
 
 
 # ── Authoring (super_admin) ───────────────────────────────────────────────────
@@ -237,12 +269,20 @@ class SurveyQuestionsView(_AuthoringView):
         if denied:
             return denied
         survey = get_object_or_404(Survey, pk=survey_id)
-        serializer = SurveyQuestionSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
+        # The order is settled BEFORE validation, not after. A display condition may only
+        # point at an earlier question, and the serializer checks that against `order` — on a
+        # create that field is not in the payload, so validating first meant the rule was
+        # skipped for exactly the questions most likely to break it.
         order = request.data.get("order")
         if order in (None, ""):
             last = survey.questions.order_by("-order").first()
             order = (last.order + 1) if last else 0
+        payload = {**request.data.dict()} if hasattr(request.data, "dict") else {**request.data}
+        payload["order"] = int(order)
+        serializer = SurveyQuestionSerializer(
+            data=payload, context={"request": request, "survey": survey}
+        )
+        serializer.is_valid(raise_exception=True)
         question = serializer.save(survey=survey, order=int(order))
         return Response(
             SurveyQuestionSerializer(question, context={"request": request}).data,
@@ -257,7 +297,10 @@ class SurveyQuestionDetailView(_AuthoringView):
             return denied
         question = get_object_or_404(SurveyQuestion, pk=question_id, survey_id=survey_id)
         serializer = SurveyQuestionSerializer(
-            question, data=request.data, partial=True, context={"request": request}
+            question,
+            data=request.data,
+            partial=True,
+            context={"request": request, "survey": question.survey},
         )
         serializer.is_valid(raise_exception=True)
         return Response(
@@ -271,6 +314,31 @@ class SurveyQuestionDetailView(_AuthoringView):
         question = get_object_or_404(SurveyQuestion, pk=question_id, survey_id=survey_id)
         question.delete()
         return Response(status=http.HTTP_204_NO_CONTENT)
+
+
+class SurveyDuplicateView(_AuthoringView):
+    """``POST /api/surveys/admin/<id>/duplicate/`` — last term's survey, ready to edit."""
+
+    def post(self, request, survey_id):
+        denied = self._guard(request)
+        if denied:
+            return denied
+        survey = get_object_or_404(Survey, pk=survey_id)
+        copy = services.duplicate_survey(survey, request.user)
+        return Response(
+            SurveySerializer(copy, context={"request": request}).data,
+            status=http.HTTP_201_CREATED,
+        )
+
+
+class SurveyParticipationView(_AuthoringView):
+    """``GET /api/surveys/admin/<id>/participation/`` — the response rate, and who to chase."""
+
+    def get(self, request, survey_id):
+        denied = self._guard(request)
+        if denied:
+            return denied
+        return Response(services.participation(get_object_or_404(Survey, pk=survey_id)))
 
 
 class SurveyQuestionReorderView(_AuthoringView):
@@ -304,6 +372,32 @@ class SurveyQuestionReorderView(_AuthoringView):
                 {"detail": "That ordering does not match this survey's questions."}, status=400
             )
 
+        # A display condition may only point BACKWARDS. Dragging a question above the one it
+        # depends on would break that in a way nothing downstream could recover from: the
+        # single-pass evaluator would read the source answer before it existed and silently
+        # treat the question as hidden for everybody. Refused, naming both questions, rather
+        # than accepted-and-quietly-broken or accepted-and-condition-cleared — the author
+        # moved something on purpose and is owed the reason it did not stick.
+        position_of = {qid: i for i, qid in enumerate(wanted)}
+        for question in questions.values():
+            if not question.condition_question_id:
+                continue
+            source_at = position_of.get(question.condition_question_id)
+            if source_at is None:
+                continue
+            if source_at >= position_of[question.id]:
+                source = questions[question.condition_question_id]
+                return Response(
+                    {
+                        "detail": (
+                            f"“{question.prompt}” is only shown depending on "
+                            f"“{source.prompt}”, so it has to stay below it. "
+                            "Move that question first, or clear the rule."
+                        )
+                    },
+                    status=400,
+                )
+
         for position, question_id in enumerate(wanted):
             question = questions[question_id]
             if question.order != position:
@@ -330,7 +424,11 @@ class SurveyResponsesView(_AuthoringView):
         if denied:
             return denied
         survey = get_object_or_404(Survey, pk=survey_id)
-        results = services.survey_results(survey)
+        results = services.survey_results(
+            survey,
+            classroom_id=request.query_params.get("classroom") or None,
+            level=request.query_params.get("level") or None,
+        )
         return Response({
             "survey": SurveyBriefSerializer(survey, context={"request": request}).data,
             "summaries": results["summaries"],

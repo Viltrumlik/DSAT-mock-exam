@@ -48,6 +48,50 @@ class Survey(models.Model):
     #: reading surface — the replies list, the export — will ever print who said it. Saying
     #: more than that to a student would be a promise the schema does not keep.
     allow_anonymous = models.BooleanField(default=False)
+
+    # ── Who is it for ────────────────────────────────────────────────────────
+    #
+    # Until now a published survey went to EVERY student in the centre, and that single
+    # absence was the root of four separate complaints: you cannot ask one year group about
+    # a trip, you cannot get a response RATE (no audience means no denominator), you cannot
+    # list who has not replied, and you cannot read the results per class.
+    #
+    # Modelled as a kind plus one optional narrowing, rather than a free-form rule engine:
+    # the school asks four questions — everyone, one level, some classrooms, one branch — and
+    # a query builder would be a bigger thing to get wrong for no more answers.
+    AUDIENCE_ALL = "ALL"
+    AUDIENCE_LEVEL = "LEVEL"
+    AUDIENCE_CLASSROOMS = "CLASSROOMS"
+    AUDIENCE_BRANCH = "BRANCH"
+    AUDIENCE_CHOICES = [
+        (AUDIENCE_ALL, "Everyone"),
+        (AUDIENCE_LEVEL, "One level"),
+        (AUDIENCE_CLASSROOMS, "Chosen classrooms"),
+        (AUDIENCE_BRANCH, "One branch"),
+    ]
+    audience_kind = models.CharField(
+        max_length=12, choices=AUDIENCE_CHOICES, default=AUDIENCE_ALL, db_index=True
+    )
+    #: AUDIENCE_LEVEL: the classroom level, e.g. "senior". Levels live on the CLASSROOM, never
+    #: on the student, so this resolves through membership like everything else does.
+    audience_level = models.CharField(max_length=16, blank=True, default="")
+    audience_classrooms = models.ManyToManyField(
+        "classes.Classroom", blank=True, related_name="surveys"
+    )
+    audience_branch = models.ForeignKey(
+        "classes.Branch",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="surveys",
+    )
+
+    #: What finishing it pays. Per survey, because a one-question weekly pulse and a
+    #: thirty-question end-of-term evaluation were both paying exactly 40 — and a purely
+    #: administrative form ("confirm your phone number") had no way to pay nothing at all.
+    #: 0 is a legitimate value and means exactly that.
+    points_award = models.PositiveIntegerField(default=40)
+
     status = models.CharField(
         max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True
     )
@@ -133,6 +177,11 @@ class SurveyQuestion(models.Model):
     #: argues against the id layer on its own merits. A stale entry here (an option since
     #: renamed) simply never matches, which is the harmless failure.
     follow_up_options = models.JSONField(default=list, blank=True)
+    #: MULTI_CHOICE only: the most boxes a student may tick. 0 means no limit.
+    #:
+    #: "Pick your top 2 of these 5" is the whole point of a preference poll — without a cap a
+    #: student ticks everything and the counts stop meaning anything.
+    max_selections = models.PositiveSmallIntegerField(default=0)
     scale_min = models.PositiveSmallIntegerField(default=1)
     scale_max = models.PositiveSmallIntegerField(default=5)
     #: The sentences written under each end of a RATING slider. Editable, because the
@@ -153,6 +202,55 @@ class SurveyQuestion(models.Model):
     #: the box to be offered, not demanded, and a required box turns a low score into a
     #: wall the student can only get past by raising the score.
     follow_up_required = models.BooleanField(default=False)
+
+    # ── Show this question only when an EARLIER question was answered a certain way ──
+    #
+    # The follow-up box above is the one-question version of this: a comment that appears
+    # under the answer that prompted it. It can only ever ask for prose, and only on the
+    # UNSATISFACTORY side. A school that asks "would you recommend us?" wants two different
+    # follow-ups — "what went wrong?" below the bar, and "what did we get right? [teaching]
+    # [community] [exams]" above it — and the second one is a whole question, with its own
+    # type and its own options, not a textarea.
+    #
+    # EARLIER, enforced: the condition may only point at a question with a lower ``order``.
+    # That is what makes cycles impossible without a graph walk, lets the form be evaluated
+    # in one pass, and stops a student being asked to satisfy a condition from a question
+    # they have not reached yet. ``SurveyQuestionReorderView`` re-checks it after a drag.
+    COND_AT_LEAST = "AT_LEAST"
+    COND_BELOW = "BELOW"
+    COND_ANY_OF = "ANY_OF"
+    COND_NONE_OF = "NONE_OF"
+    COND_ANSWERED = "ANSWERED"
+    CONDITION_CHOICES = [
+        (COND_AT_LEAST, "scored at least"),
+        (COND_BELOW, "scored below"),
+        (COND_ANY_OF, "picked any of"),
+        (COND_NONE_OF, "picked none of"),
+        (COND_ANSWERED, "answered at all"),
+    ]
+    #: Operators that read the source answer as a NUMBER, and so need a numeric source.
+    NUMERIC_CONDITIONS = (COND_AT_LEAST, COND_BELOW)
+    #: Operators that read it as a choice, and so need a choice source.
+    CHOICE_CONDITIONS = (COND_ANY_OF, COND_NONE_OF)
+
+    condition_question = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        # SET_NULL, not CASCADE: deleting the question a condition points at must not delete
+        # the dependent question and the answers already recorded against it. The dependent
+        # simply becomes unconditional again — visible to everyone, which is the safe
+        # direction to fail. CASCADE here would silently destroy data.
+        on_delete=models.SET_NULL,
+        related_name="dependent_questions",
+    )
+    condition_operator = models.CharField(
+        max_length=16, choices=CONDITION_CHOICES, blank=True, default=""
+    )
+    #: A number for the numeric operators, a list of option texts for the choice ones,
+    #: unused for ANSWERED.
+    condition_value = models.JSONField(default=None, null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -194,6 +292,53 @@ class SurveyQuestion(models.Model):
             return any(str(p) in triggers for p in picked)
         return str(picked) in triggers
 
+    # ── the display condition ─────────────────────────────────────────────
+
+    @property
+    def is_conditional(self) -> bool:
+        return bool(self.condition_question_id and self.condition_operator)
+
+    def is_visible_given(self, answers_by_question_id: dict) -> bool:
+        """Should this question be shown, given the answers so far?
+
+        ``answers_by_question_id`` maps question id → the NORMALISED answer (what
+        ``normalize_answer`` returned), so ``None`` means skipped.
+
+        An unconditional question is always visible. So is one whose condition points at a
+        question that has since been deleted (``condition_question`` is SET_NULL) — failing
+        OPEN is the safe direction: a question nobody can see collects nothing and says
+        nothing, whereas one shown too often merely asks somebody something extra.
+        """
+        if not self.is_conditional:
+            return True
+        source = answers_by_question_id.get(self.condition_question_id, None)
+        op = self.condition_operator
+
+        if op == self.COND_ANSWERED:
+            return source is not None
+
+        # A skipped source satisfies nothing else. Without this, BELOW would treat "no
+        # answer" as a low score and open the unhappy branch for somebody who said nothing.
+        if source is None:
+            return False
+
+        if op in self.NUMERIC_CONDITIONS:
+            try:
+                score, bar = int(source), int(self.condition_value)
+            except (TypeError, ValueError):
+                # A condition the author left half-configured, or a source whose type was
+                # changed out from under it. Fail open, as above.
+                return True
+            return score >= bar if op == self.COND_AT_LEAST else score < bar
+
+        if op in self.CHOICE_CONDITIONS:
+            wanted = {str(v) for v in (self.condition_value or [])}
+            picked = {str(p) for p in (source if isinstance(source, list) else [source])}
+            hit = bool(wanted & picked)
+            return hit if op == self.COND_ANY_OF else not hit
+
+        return True
+
     def wants_follow_up(self, value) -> bool:
         """Whether ``value`` — already normalised — opens the follow-up box."""
         if self.question_type in self.NUMERIC_TYPES:
@@ -231,6 +376,25 @@ class SurveyResponse(models.Model):
     #: body is not a permission. See ``Survey.allow_anonymous`` for what this does and does
     #: not promise: the row still knows who wrote it, and no reading surface prints it.
     is_anonymous = models.BooleanField(default=False)
+
+    #: The class and level this student was in WHEN THEY ANSWERED, snapshotted.
+    #:
+    #: Snapshotted rather than resolved at read time, for two reasons. A student moves up a
+    #: level mid-year, and last term's replies belong to the group that gave them — resolving
+    #: live would silently re-file history every time somebody was promoted. And it is the
+    #: only way to break results down at all for an ANONYMOUS reply, where the student FK
+    #: must never be followed.
+    #:
+    #: SET_NULL: deleting a classroom must not delete the replies of everyone who was in it.
+    classroom = models.ForeignKey(
+        "classes.Classroom",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="survey_responses",
+    )
+    level = models.CharField(max_length=16, blank=True, default="")
+
     submitted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

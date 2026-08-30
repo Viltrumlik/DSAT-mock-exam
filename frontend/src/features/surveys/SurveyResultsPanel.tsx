@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, MessageSquareText, Users, X } from "lucide-react";
+import { Download, GitBranch, MessageSquareText, Users, X } from "lucide-react";
 import {
   Alert,
   Badge,
@@ -10,11 +10,13 @@ import {
   IconButton,
   Input,
   SegmentedControl,
+  Select,
   Skeleton,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { surveysApi, isChoiceType, isNumericType, type SurveySummary } from "./surveysApi";
-import { errorText, useSurveyResults } from "./surveysHooks";
+import { errorText, useSurveyParticipation, useSurveyResults } from "./surveysHooks";
+import { levelLabel } from "@/lib/levels";
 
 /** A labelled proportion bar. One row of a choice question's distribution. */
 function ShareRow({ text, count, percent }: { text: string; count: number; percent: number | null }) {
@@ -89,15 +91,27 @@ function SummaryCard({ summary, index }: { summary: SurveySummary; index: number
         <p className="min-w-0 text-sm font-bold text-foreground">
           <span className="ds-num mr-1.5 text-muted-foreground">{index + 1}.</span>
           {summary.prompt}
+          {summary.is_conditional && (
+            <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 align-middle text-[11px] font-bold text-primary">
+              <GitBranch className="h-3 w-3" aria-hidden /> shown to some
+            </span>
+          )}
         </p>
         <span className="ds-num shrink-0 text-[11px] font-semibold text-muted-foreground">
           {summary.answered} answered
           {summary.skipped > 0 && ` · ${summary.skipped} skipped`}
+          {/* Kept apart from "skipped", which it would otherwise swamp: a question only 12
+              of 200 students were ever SHOWN is not one 188 people declined to answer. */}
+          {summary.not_asked > 0 && ` · ${summary.not_asked} not shown`}
         </span>
       </div>
 
       {summary.answered === 0 ? (
-        <p className="text-sm text-muted-foreground">Nobody has answered this one yet.</p>
+        <p className="text-sm text-muted-foreground">
+          {summary.is_conditional && summary.not_asked > 0
+            ? "Nobody who reached this question has answered it yet."
+            : "Nobody has answered this one yet."}
+        </p>
       ) : isChoiceType(summary.question_type) ? (
         <div className="space-y-2.5">
           {(summary.options ?? []).map((o) => (
@@ -170,7 +184,11 @@ export function SurveyResultsPanel({
   title: string;
   onClose: () => void;
 }) {
-  const results = useSurveyResults(surveyId);
+  // The cohort filter is part of the results query key, so switching class refetches rather
+  // than showing the previous class's numbers.
+  const [level, setLevel] = useState<string>("");
+  const results = useSurveyResults(surveyId, { level: level || undefined });
+  const participation = useSurveyParticipation(surveyId);
   const [view, setView] = useState<"summary" | "replies">("summary");
   const [search, setSearch] = useState("");
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -220,6 +238,47 @@ export function SurveyResultsPanel({
         <Alert tone="danger" title={downloadError} className="mb-3" />
       )}
 
+      {/* HOW MANY WERE ASKED. "200 replies" is unreadable without it — 200 of 210 is a
+          mandate, 200 of 900 is a self-selected minority whose complaints deserve different
+          weight. An "everyone" survey honestly reports no rate rather than inventing one. */}
+      {participation.data && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-border bg-surface-2 px-4 py-3">
+          <span className="text-sm font-bold text-foreground">
+            {participation.data.expected == null ? (
+              <>
+                {participation.data.replied} replies
+                <span className="ml-1.5 text-[12px] font-medium text-muted-foreground">
+                  (sent to everyone — no fixed roster to count against)
+                </span>
+              </>
+            ) : (
+              <>
+                {participation.data.replied} of {participation.data.expected} replied
+                <span className="ml-1.5 text-primary">{participation.data.rate}%</span>
+              </>
+            )}
+          </span>
+          {(participation.data.outstanding_total ?? 0) > 0 && (
+            <details className="min-w-0">
+              <summary className="ds-ring cursor-pointer text-[13px] font-semibold text-muted-foreground hover:text-foreground">
+                {participation.data.outstanding_total} still to answer
+              </summary>
+              <div className="mt-2 max-h-40 overflow-y-auto text-[13px] text-foreground">
+                {participation.data.outstanding.map((o) => (
+                  <p key={o.id} className="truncate">{o.name}</p>
+                ))}
+                {(participation.data.outstanding_total ?? 0) >
+                  participation.data.outstanding.length && (
+                  <p className="mt-1 text-muted-foreground">
+                    …and {(participation.data.outstanding_total ?? 0) - participation.data.outstanding.length} more
+                  </p>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+
       {/* The four branches, in order: loading → error → empty → content. */}
       {results.isPending ? (
         <div className="space-y-3">
@@ -240,20 +299,47 @@ export function SurveyResultsPanel({
         <EmptyState
           compact
           icon={Users}
-          title="No replies yet"
-          description="Answers will appear here as students finish the survey."
+          title={level ? `No replies from ${levelLabel(level)}` : "No replies yet"}
+          description={
+            level
+              ? "Other levels may still have answered — clear the filter to see everything."
+              : "Answers will appear here as students finish the survey."
+          }
+          action={
+            level ? (
+              <Button size="sm" variant="secondary" onClick={() => setLevel("")}>
+                Clear filter
+              </Button>
+            ) : undefined
+          }
         />
       ) : (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <SegmentedControl
-              value={view}
-              onChange={(v) => setView(v as "summary" | "replies")}
-              options={[
-                { value: "summary", label: "Overview" },
-                { value: "replies", label: `Each reply (${responses.length})` },
-              ]}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <SegmentedControl
+                value={view}
+                onChange={(v) => setView(v as "summary" | "replies")}
+                options={[
+                  { value: "summary", label: "Overview" },
+                  { value: "replies", label: `Each reply (${responses.length})` },
+                ]}
+              />
+              {/* Narrowed on the cohort SNAPSHOT taken when they answered — which is what
+                  makes this work on an anonymous survey at all, since the student FK must
+                  never be followed. */}
+              <Select
+                selectSize="sm"
+                aria-label="Filter by level"
+                value={level}
+                onChange={(e) => setLevel(e.target.value)}
+              >
+                <option value="">All levels</option>
+                {["foundation", "junior", "middle", "senior"].map((l) => (
+                  <option key={l} value={l}>{levelLabel(l)}</option>
+                ))}
+              </Select>
+            </div>
             {view === "replies" && (
               // The width goes on a wrapper: Input's own root is `w-full`, so a max-width on
               // the control would leave a full-width box around a narrow field.
