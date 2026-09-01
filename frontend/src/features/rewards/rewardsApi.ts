@@ -25,6 +25,9 @@ export interface RewardRule {
   event: RewardEvent;
   label: string;
   points: number;
+  /** Whether this earning also adds XP. False for SURVEY since 2026-09-01 — a checkbox the
+   *  school can tick back on, so branch on it rather than naming the event in the UI. */
+  grants_xp: boolean;
 }
 
 export interface PointAward {
@@ -43,8 +46,10 @@ export interface MyRewards {
   /** From the WALLET, not `points / rate`. Once coins are spendable the two diverge, and a
    *  derived figure keeps showing a student coins they have already spent. */
   coins: number;
-  /** Lifetime. Every event now earns XP equal to its points, so this no longer trails
-   *  `points` for lateness or surveys — the old exclusion list moved into `RewardRule`.
+  /** Lifetime. Most events earn XP equal to their points, so this tracks `points` closely —
+   *  but not exactly: a SURVEY pays points and no XP (the school's call, 2026-09-01), and
+   *  which events do is `RewardRule.grants_xp`, a checkbox rather than a constant. Never
+   *  write "XP equals points" into copy; read `grants_xp` off the rule.
    *
    *  It is a high-water mark against a *smaller* fact only: a re-grade that drops a homework
    *  percent leaves it standing (`award` keeps `max(previous_xp, …)`). A *withdrawn* fact

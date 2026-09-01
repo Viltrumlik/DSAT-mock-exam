@@ -55,12 +55,27 @@ class PointsForTests(TestCase):
         with self.assertNumQueries(1):
             self.assertEqual(pricing_for(constants.EVENT_SURVEY), (40, False))
 
-    def test_an_inactive_rule_is_absent_for_the_xp_flag_too(self):
-        """Not "worth nothing" and not "no XP" — an inactive rule means no rule at all."""
+    def test_an_inactive_rule_is_absent_and_falls_back_to_the_constants(self):
+        """An inactive rule means no rule at all — not "worth nothing", not "no XP".
+
+        Both halves fall back, and since 2026-09-01 the two constants no longer agree about
+        SURVEY: the price still lands on ``DEFAULT_POINTS`` (40, not the row's 99), while the
+        XP flag lands on ``XP_EXCLUDED_EVENTS``, which names SURVEY so that switching the row
+        off cannot quietly hand XP back. That asymmetry is the point, so it is asserted here.
+        """
         RewardRule.objects.update_or_create(
             event=constants.EVENT_SURVEY, defaults={"points": 99, "grants_xp": False, "is_active": False}
         )
-        self.assertEqual(pricing_for(constants.EVENT_SURVEY), (40, True))
+        self.assertEqual(pricing_for(constants.EVENT_SURVEY), (40, False))
+
+    def test_an_inactive_rule_still_grants_xp_for_an_ordinary_event(self):
+        """The other side of the same fallback: only SURVEY is excluded, so every other event
+        with no active rule keeps earning XP rather than being silently XP-less."""
+        RewardRule.objects.update_or_create(
+            event=constants.EVENT_MIDTERM_PASS,
+            defaults={"points": 99, "grants_xp": False, "is_active": False},
+        )
+        self.assertEqual(pricing_for(constants.EVENT_MIDTERM_PASS), (20, True))
 
 
 class AwardIdempotencyTests(TestCase):

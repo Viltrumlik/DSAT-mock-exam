@@ -1,9 +1,10 @@
-"""XP: the same earnings as points, on every event, and it never falls for doing worse.
+"""XP: what an earning is worth on the board, and why it never falls for doing worse.
 
 Two rules, and every test here is one of them:
 
-  1. XP follows points everywhere. The old ATTENDANCE_LATE / SURVEY exclusion is gone; the
-     lever that replaces it is per-rule data, ``RewardRule.grants_xp``.
+  1. XP follows points on every event **whose rule grants it**. The blanket exclusion list is
+     gone and the lever is per-rule data, ``RewardRule.grants_xp`` — currently off for SURVEY
+     alone (2026-09-01: a survey pays points, and the board is for what a student learned).
   2. XP is a high-water mark *while the earning stands*. A re-grade downwards, a correction to
      a lesser event, a season reset — none of them can lower it. A **revocation** can, and
      only a revocation: a fact that never happened takes its XP with it.
@@ -34,7 +35,7 @@ def _u(email, **kw):
 
 
 class XpFollowsPointsTests(TestCase):
-    """Every event earns XP equal to its points. The exclusion list is empty."""
+    """An event earns XP equal to its points — unless its rule says otherwise."""
 
     def setUp(self):
         self.student = _u("xp_ex@t.com")
@@ -47,14 +48,17 @@ class XpFollowsPointsTests(TestCase):
         self.assertEqual(balance(self.student), 3)
         self.assertEqual(xp_balance(self.student), 3)
 
-    def test_a_survey_earns_xp_as_well_as_points(self):
-        """Inverted deliberately, and this is the expensive one: at 40 points a single
-        questionnaire is now worth two midterm passes on the XP board. The school was told and
-        asked for it anyway; `grants_xp` is how they take it back."""
+    def test_a_survey_pays_points_and_no_xp(self):
+        """The school's call, 2026-09-01, and the reason the flag exists at all: at 40 points a
+        single questionnaire was worth two midterm passes on the board. Filling in a form is
+        worth paying for; it is not evidence of having learned anything.
+
+        Decided by migration 0009 on the live rule, NOT by this test's setup — that is the
+        point of asserting it here with nothing arranged."""
         award(self.student, constants.EVENT_SURVEY, idempotency_key="sv:1")
 
         self.assertEqual(balance(self.student), 40)
-        self.assertEqual(xp_balance(self.student), 40)
+        self.assertEqual(xp_balance(self.student), 0)
 
     def test_being_present_earns_both(self):
         award(self.student, constants.EVENT_ATTENDANCE_PRESENT, idempotency_key="att:present")
@@ -62,29 +66,47 @@ class XpFollowsPointsTests(TestCase):
         self.assertEqual(balance(self.student), 5)
         self.assertEqual(xp_balance(self.student), 5)
 
-    def test_the_two_totals_now_agree(self):
+    def test_the_two_totals_agree_except_for_the_survey(self):
+        """A student WILL notice the two numbers differ, so the gap has to be exactly one
+        thing and explainable in a sentence — which is why SURVEY is the only exception and
+        why the rewards page prints "points only" on that rule."""
         award(self.student, constants.EVENT_ATTENDANCE_PRESENT, idempotency_key="a")   # 5 / 5
         award(self.student, constants.EVENT_ATTENDANCE_LATE, idempotency_key="b")      # 3 / 3
-        award(self.student, constants.EVENT_SURVEY, idempotency_key="c")               # 40 / 40
+        award(self.student, constants.EVENT_SURVEY, idempotency_key="c")               # 40 / 0
         award(self.student, constants.EVENT_HOMEWORK, idempotency_key="d", points=15)  # 15 / 15
 
         self.assertEqual(balance(self.student), 63)
-        self.assertEqual(xp_balance(self.student), 63)
+        self.assertEqual(xp_balance(self.student), 23)
 
-    def test_a_rule_can_take_an_event_back_out_of_xp(self):
-        """The replacement for the deleted constant, and the whole reason it is a column: the
-        school can put SURVEY back outside XP from the admin, without a deploy."""
+    def test_a_rule_can_put_an_event_back_into_xp(self):
+        """The whole reason this is a column and not a constant: the decision is reversible
+        with a checkbox, in either direction, without a deploy.
+
+        An ACTIVE rule outranks ``XP_EXCLUDED_EVENTS`` — which also names SURVEY, so that
+        deactivating the rule cannot silently hand XP back. This is the proof that naming it
+        in both places did not accidentally weld the decision shut."""
         RewardRule.objects.update_or_create(
-            event=constants.EVENT_SURVEY, defaults={"points": 40, "grants_xp": False}
+            event=constants.EVENT_SURVEY, defaults={"points": 40, "grants_xp": True}
         )
         award(self.student, constants.EVENT_SURVEY, idempotency_key="sv:2")
+
+        self.assertEqual(balance(self.student), 40)
+        self.assertEqual(xp_balance(self.student), 40)
+
+    def test_deactivating_the_survey_rule_does_not_hand_xp_back(self):
+        """The trap ``XP_EXCLUDED_EVENTS`` is there to close. Both lookups require
+        ``is_active=True``, and a survey's price comes from ``Survey.points_award`` rather than
+        this row — so switching the row off is a plausible tidy-up that would otherwise have
+        quietly reversed the school's decision."""
+        RewardRule.objects.filter(event=constants.EVENT_SURVEY).update(is_active=False)
+        award(self.student, constants.EVENT_SURVEY, idempotency_key="sv:3", points=40)
 
         self.assertEqual(balance(self.student), 40)
         self.assertEqual(xp_balance(self.student), 0)
 
     def test_an_event_with_no_rule_row_still_earns_xp(self):
-        """The fallback is the empty `XP_EXCLUDED_EVENTS`, so a brand-new event is not
-        silently XP-less until somebody remembers to seed a rule for it."""
+        """A brand-new event is not silently XP-less until somebody remembers to seed a rule
+        for it: the fallback excludes SURVEY and nothing else."""
         RewardRule.objects.filter(event=constants.EVENT_MIDTERM_PASS).delete()
         award(self.student, constants.EVENT_MIDTERM_PASS, idempotency_key="mt:1")
 
@@ -215,7 +237,9 @@ class CohortReadTests(TestCase):
         result = xp_balances_for([self.a.id, self.b.id])
 
         self.assertEqual(result[self.a.id], 15)
-        self.assertEqual(result[self.b.id], 40)   # was 0 while SURVEY was excluded
+        # 0, not absent: b HAS an award, it simply carries no XP. A board that treated the two
+        # the same would render a survey-only student as "no record" rather than "nothing yet".
+        self.assertEqual(result[self.b.id], 0)
 
     def test_a_student_with_no_awards_is_absent_rather_than_zero(self):
         """Same contract as `balances_for` — a board must default them, not read a 0 that
@@ -239,8 +263,10 @@ class XpApiTests(TestCase):
 
         body = self.client.get("/api/rewards/me/").json()
 
+        # The two numbers a student sees side by side, and the gap between them is the survey:
+        # 40 points that pay nothing on the board.
         self.assertEqual(body["points"], 55)
-        self.assertEqual(body["xp"], 55)   # was 15 while SURVEY was excluded
+        self.assertEqual(body["xp"], 15)
 
 
 class BackfillTests(TestCase):

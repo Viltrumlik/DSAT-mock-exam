@@ -13,7 +13,7 @@ from rest_framework.test import APIClient
 from access import constants as C
 from classes.models import Classroom, ClassroomMembership
 from rewards.models import PointAward
-from rewards.services import balance
+from rewards.services import balance, xp_balance
 from surveys import services
 from surveys.models import Survey, SurveyAnswer, SurveyQuestion, SurveyResponse
 
@@ -191,6 +191,20 @@ class SurveyRewardTests(SurveyFixture):
     def test_completing_a_survey_earns_forty(self):
         services.submit_response(self.survey, self.student, self.full_answers())
         self.assertEqual(balance(self.student), 40)
+
+    def test_a_survey_pays_points_and_no_xp(self):
+        """The school's call, 2026-09-01 (rewards migration 0009): a survey is worth paying
+        for, but the XP board is for what a student has learned — and at 40 points one
+        questionnaire outweighed two midterm passes on it.
+
+        Asserted from the surveys side as well as the rewards side because this is the only
+        place the two meet: the invitation students now see on sign-in promises *points*, and
+        it would be promising the wrong currency if this ever flipped back unnoticed.
+        """
+        services.submit_response(self.survey, self.student, self.full_answers())
+
+        self.assertEqual(balance(self.student), 40)
+        self.assertEqual(xp_balance(self.student), 0)
 
     def test_a_survey_pays_only_once(self):
         services.submit_response(self.survey, self.student, self.full_answers())

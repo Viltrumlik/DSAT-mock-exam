@@ -102,6 +102,20 @@ class RewardRulesViewTests(TestCase):
         self.assertEqual(rules["MIDTERM_RETAKE_PASS"], 5)
         self.assertEqual(rules["HOMEWORK_FULL"], 15)
 
+    def test_says_which_earnings_do_not_add_xp(self):
+        """The rewards page prints "+40" beside a survey, and since 2026-09-01 that number no
+        longer tells the whole story — the earning pays points and no XP.
+
+        Served rather than hardcoded in React: `grants_xp` is a checkbox the school can tick
+        back on without a deploy, and a sentence in the UI would go on saying the opposite. So
+        the payload has to carry it, and this pins that it does.
+        """
+        self.client.force_authenticate(self.student)
+        rules = {r["event"]: r for r in self.client.get("/api/rewards/rules/").json()["rules"]}
+
+        self.assertFalse(rules["SURVEY"]["grants_xp"])
+        self.assertTrue(rules["ATTENDANCE_PRESENT"]["grants_xp"])
+
     def test_hides_the_manual_adjustment_row(self):
         """Not something a student can aim for."""
         self.client.force_authenticate(self.student)
