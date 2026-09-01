@@ -10,7 +10,7 @@ import { AppShell } from "./AppShell";
 import { studentNav, reviewNavSection } from "./navConfig";
 import { StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
-import { PushOptInDialog } from "@/features/notifications/PushOptInDialog";
+import { StudentPrompts } from "./StudentPrompts";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
 export default function StudentAppShell({ children }: { children: React.ReactNode }) {
@@ -78,17 +78,19 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
         notifications={isAuthenticated}
       >
         <div className={cn(globalInteractionBlockedHard && "pointer-events-none select-none")} aria-busy={globalInteractionBlockedHard || undefined}>
-          {/* The notification ask lives here rather than only inside the bell drawer, where a
-              student who never opens the bell never met it. Deliberately NOT in the immersive
-              branch above: interrupting a timed assessment to ask for permission is the worst
-              possible moment, and a refusal is permanent. Reviewers and staff browsing the
-              student shell are excluded for the same reason the points pill is.
+          {/* The prompts a student meets on the first page after signing in — the notification
+              ask and the survey invitation — sequenced so only one can ever be on screen.
+              They live here rather than only inside the bell drawer or the /surveys page,
+              where a student who never opens either never met them. Deliberately NOT in the
+              immersive branch above: interrupting a timed assessment is the worst possible
+              moment, and a push refusal is permanent. Reviewers and staff browsing the student
+              shell are excluded for the same reason the points pill is.
 
-              A DIALOG, not the card this used to be. The card was itself the second attempt
+              DIALOGS, not the cards these used to be. The card was itself the second attempt
               and the school reported the same failure as the first — students do not see it.
               Production put a number on it: twelve push subscriptions in the whole school.
-              A modal interrupts once and is then remembered; see PushOptInDialog. */}
-          {isAuthenticated && !isReviewer ? <PushOptInDialog /> : null}
+              A modal interrupts once and is then remembered; see StudentPrompts. */}
+          {isAuthenticated && !isReviewer ? <StudentPrompts /> : null}
           {children}
         </div>
       </AppShell>

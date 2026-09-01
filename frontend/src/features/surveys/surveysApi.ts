@@ -157,6 +157,12 @@ export interface SurveyBrief {
   question_count: number;
   allow_anonymous: boolean;
   image_url: string | null;
+  /**
+   * What finishing it pays, in points. Per survey — 0 is legitimate and means "this one pays
+   * nothing", so anywhere this number is shown to a student it has to be read, never assumed
+   * to be the old flat 40.
+   */
+  points_award: number;
 }
 
 export interface SurveyResponseRow {

@@ -31,13 +31,19 @@ import { BellRing, Check } from "lucide-react";
 
 import { Modal } from "@/components/ui";
 
-import { usePushOptIn } from "./usePushOptIn";
+import { usePushOptIn, type PushOptIn } from "./usePushOptIn";
 
 /** Long enough that the page has settled, short enough to still read as "on login". */
 const OPEN_DELAY_MS = 1500;
 
-export function PushOptInDialog() {
-  const { shouldAsk, state, ask, dismiss } = usePushOptIn();
+export function PushOptInDialog({ optIn }: { optIn?: PushOptIn } = {}) {
+  // The shell hands in a SHARED `usePushOptIn`, so this dialog and the survey invitation take
+  // turns instead of stacking two scrims on the same first page — see `StudentPrompts`. The
+  // hook is still called unconditionally (hooks cannot be skipped); the spare instance costs
+  // one `localStorage` read and shares its react-query subscription with the real one, and it
+  // is what keeps this component usable on its own, as its tests render it.
+  const own = usePushOptIn();
+  const { shouldAsk, state, ask, dismiss } = optIn ?? own;
   const [open, setOpen] = useState(false);
 
   useEffect(() => {

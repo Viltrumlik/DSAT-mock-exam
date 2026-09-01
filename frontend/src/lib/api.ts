@@ -17,6 +17,7 @@ import {
     broadcastLogoutToOtherTabs,
 } from "@/lib/auth/authTabSync";
 import { meQueryKey } from "@/lib/auth/meQueryKey";
+import { clearSurveyInvitePrompts } from "@/lib/surveyInvitePrompt";
 import type { TestAttempt } from "@/features/examsStudent/testAttemptSchema";
 import type { RoadmapResponse } from "@/features/roadmap/types";
 import {
@@ -654,6 +655,11 @@ export const authApi = {
         } catch {
             /* ignore */
         }
+        // The survey invitation is remembered per browser SESSION, and signing out does not end
+        // one — logout is a same-tab redirect to /login, so without this the next person to
+        // sign in on this tab (or the same student coming back) would silently inherit a
+        // "already asked" marker they never saw.
+        clearSurveyInvitePrompts();
         broadcastLogoutToOtherTabs();
         clearAuthCookiesEverywhere();
         queryClient?.removeQueries({ queryKey: [...meQueryKey] });

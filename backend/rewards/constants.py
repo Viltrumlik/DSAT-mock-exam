@@ -115,10 +115,20 @@ DEFAULT_POINTS = {
 # So the exclusion is not deleted, it is MOVED into data. ``RewardRule.grants_xp`` (default
 # True) is the same lever as a per-rule flag rather than a constant, which is what lets the
 # school put SURVEY back outside XP from the admin instead of from a deploy. This frozenset
-# is now only the fallback for an event with no rule row at all — empty, because a brand-new
-# event should earn XP unless somebody decides otherwise.
+# is only the fallback for an event with no *active* rule row.
+#
+# **2026-09-01 — the school pulled that lever for SURVEY.** They want a survey to pay its
+# points and nothing else; the board is for what a student has learned. Migration 0009 sets
+# ``grants_xp=False`` on the live rule, which is what actually decides it.
+#
+# SURVEY is named here as well, and the two are not redundant. Both lookups
+# (``services.pricing_for``, ``_rule_grants_xp``) require ``is_active=True``, so deactivating
+# the SURVEY rule — a plausible tidy-up, since a survey's price comes from
+# ``Survey.points_award`` and never from this row — would drop through to this fallback and
+# quietly hand XP back. The data lever still WINS wherever a row is active: an admin who
+# ticks ``grants_xp`` back on gets XP again without a deploy, exactly as before.
 
-XP_EXCLUDED_EVENTS = frozenset()
+XP_EXCLUDED_EVENTS = frozenset({EVENT_SURVEY})
 
 
 def xp_for(event: str, points: int, *, grants_xp: bool | None = None) -> int:

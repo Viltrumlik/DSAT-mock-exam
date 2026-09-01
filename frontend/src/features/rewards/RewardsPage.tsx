@@ -52,14 +52,24 @@ const TEACHER_PRICED_EVENTS: readonly RewardEvent[] = ["CLASSWORK_MANUAL"];
 /** What a student can actually do about a rule, where the amount alone does not say it.
  *  Homework is the one that matters: it stopped being a band and became a share. */
 function ruleHint(rule: RewardRule): string | null {
+  const lines: string[] = [];
   switch (rule.event) {
     case "HOMEWORK":
-      return `Finish it all before the deadline and the full ${rule.points} lands right away. Otherwise you're paid at the deadline for the share you've finished — only what's done by then counts, so starting early is what pays.`;
+      lines.push(
+        `Finish it all before the deadline and the full ${rule.points} lands right away. Otherwise you're paid at the deadline for the share you've finished — only what's done by then counts, so starting early is what pays.`,
+      );
+      break;
     case "CLASSWORK_MANUAL":
-      return "Your teacher decides this one, for the work you do in the lesson itself.";
-    default:
-      return null;
+      lines.push("Your teacher decides this one, for the work you do in the lesson itself.");
+      break;
   }
+  // Said on the rule itself, not only in the XP tile. A student reading "+40" beside a survey
+  // has no other way to learn that this one earning is the exception — and it is read off the
+  // rule rather than matched on the event, because it is a checkbox the school can tick back.
+  if (!rule.grants_xp) {
+    lines.push("Points only — this one doesn't add to your XP.");
+  }
+  return lines.length > 0 ? lines.join(" ") : null;
 }
 
 const PAGE_DESCRIPTION = "What you've earned for showing up and doing the work.";
@@ -170,10 +180,14 @@ export function RewardsPage() {
                     different questions and a student will notice the two disagree. The `sub`
                     says why before they have to ask.
                     It no longer says "learning only — never goes down", and neither half of
-                    that was still true: XP follows points on every event now, and `revoke`
-                    zeroes it when a fact is withdrawn (a PRESENT corrected to ABSENT). What
-                    survives is the narrower promise the school actually makes — doing worse
-                    never costs XP. */}
+                    that was still true: `revoke` zeroes XP when a fact is withdrawn (a PRESENT
+                    corrected to ABSENT). What survives is the narrower promise the school
+                    actually makes — doing worse never costs XP.
+                    Nor does it still say "Every point earns XP": a survey pays points and no
+                    XP since 2026-09-01. Rather than name the exception here — it is a
+                    `grants_xp` checkbox, so a sentence in this tile would start lying the day
+                    somebody ticks it — the tile points at the rules list, which reads the flag
+                    off each rule and cannot drift. */}
                 <WalletTile
                   media={
                     <span className="grid h-10 w-10 place-items-center rounded-full bg-white/20">
@@ -182,7 +196,7 @@ export function RewardsPage() {
                   }
                   label="XP"
                   value={xp}
-                  sub="Every point earns XP. A lower score never takes it away — only a corrected record does."
+                  sub="Most of what you earn adds XP too — each rule below says. A lower score never takes it away, only a corrected record does."
                 />
               </div>
 

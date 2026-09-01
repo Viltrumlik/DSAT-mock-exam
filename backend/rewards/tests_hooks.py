@@ -1098,20 +1098,21 @@ class SurveyHookTests(TestCase):
         self.assertIsNone(award_row.classroom_id)
         self.assertEqual(award_row.source_type, "survey_response")
 
-    def test_a_survey_now_earns_xp_too(self):
-        """SURVEY was one of the two events excluded from XP, and the exclusion is gone (§8).
+    def test_a_survey_pays_points_and_no_xp(self):
+        """SURVEY spent a while inside XP and the school took it back out (2026-09-01,
+        migration 0009): at 40 points one questionnaire was worth two midterm passes on the
+        board, and answering a form is not evidence of having learned anything.
 
-        The cost is real and is not hidden: at 40 points one questionnaire is worth two midterm
-        passes on the XP board. The lever that undoes it is ``RewardRule.grants_xp``, which is
-        data — so this test asserts the default, not a law.
+        The lever is ``RewardRule.grants_xp``, which is data — so this asserts the school's
+        current decision, not a law of the system.
         """
         self._set_status(SurveyResponse.STATUS_SUBMITTED)
 
-        self.assertEqual(_paid(self.student), (40, 40))
+        self.assertEqual(_paid(self.student), (40, 0))
 
-    def test_withdrawing_a_response_takes_back_the_points_and_the_xp(self):
+    def test_withdrawing_a_response_takes_back_the_points(self):
         self._set_status(SurveyResponse.STATUS_SUBMITTED)
-        self.assertEqual(_paid(self.student), (40, 40))
+        self.assertEqual(_paid(self.student), (40, 0))
 
         self._set_status(SurveyResponse.STATUS_IN_PROGRESS)
 
