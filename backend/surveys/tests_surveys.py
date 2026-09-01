@@ -1336,6 +1336,21 @@ class SurveyPriceTests(SurveyFixture):
         self.assertEqual(balance(self.student), 0)
         self.assertFalse(PointAward.objects.filter(student=self.student).exists())
 
+    def test_the_open_list_carries_the_price_it_will_pay(self):
+        """The sign-in prompt names this number to a student's face.
+
+        `SurveyInviteDialog` reads it straight off `/surveys/open/` rather than writing 40 into
+        the sentence, because surveys stopped being flat-priced. Dropping the field from the
+        brief serializer would not break anything loudly — the prompt would quietly stop
+        mentioning an earning at all — so the contract is pinned here, beside the price it has
+        to agree with.
+        """
+        Survey.objects.filter(pk=self.survey.pk).update(points_award=25)
+        self.client.force_authenticate(self.student)
+
+        brief = self.client.get("/api/surveys/open/").json()["surveys"][0]
+        self.assertEqual(brief["points_award"], 25)
+
     def test_the_ledger_row_names_the_survey(self):
         services.submit_response(self.survey, self.student, self.full_answers())
         self.assertEqual(

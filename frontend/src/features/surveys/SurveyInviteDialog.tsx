@@ -36,9 +36,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardList, Coins } from "lucide-react";
+import { ClipboardList } from "lucide-react";
 
 import { Modal } from "@/components/ui";
+import { RewardCoin } from "@/components/RewardCoin";
 import { useMe } from "@/hooks/useMe";
 import { markSurveyInviteShown, wasSurveyInviteShown } from "@/lib/surveyInvitePrompt";
 
@@ -135,7 +136,11 @@ export function SurveyInviteDialog() {
               the honest version of the sentence instead. */}
           {points > 0 ? (
             <p className="mt-3 flex items-center gap-2 text-sm font-bold text-foreground">
-              <Coins className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+              {/* The minted point, not a line icon of a coin. A coin is a different object in
+                  this product — a currency minted FROM points and gone once spent — so a coin
+                  beside a points sentence names the wrong thing. `xs` is the size this device
+                  documents for sitting inline beside a number. */}
+              <RewardCoin kind="point" size="xs" />
               <span>
                 Finishing it earns you <span className="ds-num">{points}</span> points.
               </span>
