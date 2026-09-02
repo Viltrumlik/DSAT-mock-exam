@@ -20,7 +20,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from access.permissions import CanManageJournals
-from classes.link_utils import clean_external_urls, first_url, resolve_links
+from classes.link_utils import clean_link_pairs, first_url, labels_for, resolve_links
 from classes.media_uploads import presign_video_put
 from users.permissions import IsAuthenticatedAndNotFrozen
 
@@ -56,17 +56,21 @@ _TRUTHY = {"1", "true", "True", "yes", "on"}
 
 # --------------------------------------------------------------------------- helpers
 
-def _links_lenient(list_raw, single_raw):
+def _links_lenient(list_raw, single_raw, labels_raw=None):
     """Best-effort link normalization for internal copy/import paths.
 
     Prefers the list payload, falls back to the legacy single value, and drops (rather
     than 400s on) an invalid URL — the caller is a trusted export/copy, not a user form.
+    Returns ``(urls, labels)``: the two lists are produced in one pass so an import that
+    carries names cannot land them on the wrong links, and an export written before names
+    existed simply yields empty names.
     """
     raw = list_raw if list_raw is not None else single_raw
     try:
-        return clean_external_urls(raw)
+        pairs = clean_link_pairs(raw, labels_raw)
     except DjangoValidationError:
-        return []
+        return [], []
+    return [u for u, _l in pairs], [l for _u, l in pairs]
 
 
 def _video_lenient(raw):
@@ -335,6 +339,7 @@ class JournalExportView(APIView):
                 "instructions": l.instructions,
                 "external_url": l.external_url,
                 "external_urls": list(l.external_urls or []),
+                "external_url_labels": labels_for(l.external_urls, l.external_url_labels),
                 "video_url": l.video_url,
                 "allow_file_upload": l.allow_file_upload,
                 "practice_scope": l.practice_scope,
@@ -361,6 +366,9 @@ class JournalExportView(APIView):
                     "new_topic_instructions": cw.new_topic_instructions,
                     "new_topic_external_url": cw.new_topic_external_url,
                     "new_topic_external_urls": list(cw.new_topic_external_urls or []),
+                    "new_topic_external_url_labels": labels_for(
+                        cw.new_topic_external_urls, cw.new_topic_external_url_labels
+                    ),
                     "new_topic_video_url": cw.new_topic_video_url,
                     "new_topic_practice_test_ids": cw.new_topic_practice_test_ids or [],
                     "new_topic_practice_test_pack_ids": cw.new_topic_practice_test_pack_ids or [],
@@ -452,8 +460,10 @@ class JournalImportView(APIView):
 
             lesson.title = row.get("title") or ""
             lesson.instructions = row.get("instructions") or ""
-            lesson.external_urls = _links_lenient(
-                row.get("external_urls"), row.get("external_url")
+            lesson.external_urls, lesson.external_url_labels = _links_lenient(
+                row.get("external_urls"),
+                row.get("external_url"),
+                row.get("external_url_labels"),
             )
             lesson.external_url = first_url(lesson.external_urls)
             lesson.video_url = _video_lenient(row.get("video_url"))
@@ -488,9 +498,13 @@ class JournalImportView(APIView):
                         setattr(cw, f, int(cw_row[f]))
                 cw.new_topic_title = cw_row.get("new_topic_title") or ""
                 cw.new_topic_instructions = cw_row.get("new_topic_instructions") or ""
-                cw.new_topic_external_urls = _links_lenient(
+                (
+                    cw.new_topic_external_urls,
+                    cw.new_topic_external_url_labels,
+                ) = _links_lenient(
                     cw_row.get("new_topic_external_urls"),
                     cw_row.get("new_topic_external_url"),
+                    cw_row.get("new_topic_external_url_labels"),
                 )
                 cw.new_topic_external_url = first_url(cw.new_topic_external_urls)
                 cw.new_topic_video_url = _video_lenient(cw_row.get("new_topic_video_url"))
@@ -889,8 +903,15 @@ class LessonDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if resolved is not None:
-            lesson.external_urls, lesson.external_url = resolved
-            lesson.save(update_fields=["external_urls", "external_url", "updated_at"])
+            lesson.external_urls, lesson.external_url, lesson.external_url_labels = resolved
+            lesson.save(
+                update_fields=[
+                    "external_urls",
+                    "external_url",
+                    "external_url_labels",
+                    "updated_at",
+                ]
+            )
 
         try:
             vchanged = apply_journal_video(
@@ -1027,6 +1048,7 @@ class ClassworkDetailView(APIView):
                 request.data,
                 list_key="new_topic_external_urls",
                 single_key="new_topic_external_url",
+                label_key="new_topic_external_url_labels",
             )
         except DjangoValidationError as e:
             return Response(
@@ -1034,7 +1056,11 @@ class ClassworkDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if resolved is not None:
-            cw.new_topic_external_urls, cw.new_topic_external_url = resolved
+            (
+                cw.new_topic_external_urls,
+                cw.new_topic_external_url,
+                cw.new_topic_external_url_labels,
+            ) = resolved
 
         try:
             apply_journal_video(
@@ -1218,6 +1244,7 @@ class LessonBulkView(APIView):
             lesson.instructions = ""
             lesson.external_url = ""
             lesson.external_urls = []
+            lesson.external_url_labels = []
             lesson.video_url = ""
             lesson.allow_file_upload = False
             lesson.practice_test_ids = None
@@ -1266,6 +1293,7 @@ class LessonBulkView(APIView):
             lesson.title = src.title
             lesson.instructions = src.instructions
             lesson.external_urls = list(src.external_urls or [])
+            lesson.external_url_labels = labels_for(src.external_urls, src.external_url_labels)
             lesson.external_url = src.external_url
             lesson.video_url = src.video_url
             lesson.allow_file_upload = src.allow_file_upload

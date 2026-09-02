@@ -60,12 +60,93 @@ class LinkUtilsTests(TestCase):
 
         self.assertEqual(
             resolve_links({"external_urls": '["a.com"]', "external_url": "b.com"}),
-            (["https://a.com"], "https://a.com"),
+            (["https://a.com"], "https://a.com", [""]),
         )
         self.assertEqual(
-            resolve_links({"external_url": "b.com"}), (["https://b.com"], "https://b.com")
+            resolve_links({"external_url": "b.com"}),
+            (["https://b.com"], "https://b.com", [""]),
         )
         self.assertIsNone(resolve_links({"title": "x"}))
+
+
+class LinkNameTests(TestCase):
+    """A link may carry a NAME. The names ride in a parallel, index-aligned list."""
+
+    def test_names_arrive_alongside_the_links(self):
+        from classes.link_utils import clean_link_pairs
+
+        self.assertEqual(
+            clean_link_pairs(["youtube.com", "b.com"], ["Youtube", ""]),
+            [("https://youtube.com", "Youtube"), ("https://b.com", "")],
+        )
+
+    def test_object_form_is_accepted_too(self):
+        from classes.link_utils import clean_link_pairs
+
+        self.assertEqual(
+            clean_link_pairs([{"url": "youtube.com", "label": "Youtube"}]),
+            [("https://youtube.com", "Youtube")],
+        )
+
+    def test_a_dropped_blank_row_does_not_shift_the_names(self):
+        """The killer case for a positional list: a blank link in the middle of the form."""
+        from classes.link_utils import clean_link_pairs
+
+        self.assertEqual(
+            clean_link_pairs(["a.com", "   ", "c.com"], ["A", "ignored", "C"]),
+            [("https://a.com", "A"), ("https://c.com", "C")],
+        )
+
+    def test_a_dedupe_keeps_the_first_name_but_fills_a_blank_one(self):
+        from classes.link_utils import clean_link_pairs
+
+        self.assertEqual(
+            clean_link_pairs(["a.com", "a.com"], ["First", "Second"]),
+            [("https://a.com", "First")],
+        )
+        self.assertEqual(
+            clean_link_pairs(["a.com", "a.com"], ["", "Second"]),
+            [("https://a.com", "Second")],
+        )
+
+    def test_reading_pads_a_short_or_missing_name_list(self):
+        from classes.link_utils import labels_for, link_text
+
+        self.assertEqual(labels_for(["a", "b", "c"], ["A"]), ["A", "", ""])
+        self.assertEqual(labels_for(["a"], ["A", "B", "C"]), ["A"])
+        self.assertEqual(labels_for(["a"], None), [""])
+        self.assertEqual(link_text("https://a.com", ""), "https://a.com")
+        self.assertEqual(link_text("https://a.com", " A "), "A")
+
+    def test_names_alone_never_wipe_the_links(self):
+        """A payload with only names is not a link edit — there is nothing to align to."""
+        from classes.link_utils import resolve_links
+
+        self.assertIsNone(resolve_links({"external_url_labels": ["A"]}))
+
+    def test_patch_saves_a_name_per_link(self):
+        admin = _admin("j_linknames@test.com")
+        client = APIClient()
+        client.force_authenticate(admin)
+        journal, _ = services.create_journal(
+            subject="MATH", level="foundation", actor=admin
+        )
+        lesson = services.add_session(journal, actor=admin)
+        resp = client.patch(
+            f"/api/journals/{journal.id}/lessons/{lesson.id}/",
+            {
+                "instructions": "watch these",
+                "external_urls": ["youtube.com", "khanacademy.org"],
+                "external_url_labels": ["Youtube", ""],
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        lesson.refresh_from_db()
+        self.assertEqual(
+            lesson.external_urls, ["https://youtube.com", "https://khanacademy.org"]
+        )
+        self.assertEqual(lesson.external_url_labels, ["Youtube", ""])
 
 
 class LessonLinkApiTests(TestCase):
@@ -198,6 +279,7 @@ class ReleaseCopiesLinksTests(TestCase):
         self.lesson = services.add_session(self.journal, actor=self.admin)
         self.lesson.instructions = "do it"
         self.lesson.external_urls = ["https://a.com/1", "https://b.com/2"]
+        self.lesson.external_url_labels = ["Slides", ""]
         self.lesson.external_url = "https://a.com/1"
         self.lesson.save()
 
@@ -213,3 +295,13 @@ class ReleaseCopiesLinksTests(TestCase):
             row.assignment.external_urls, ["https://a.com/1", "https://b.com/2"]
         )
         self.assertEqual(row.assignment.external_url, "https://a.com/1")
+
+    def test_release_carries_each_links_name(self):
+        """A name is part of the link. Losing it in the copy would show students a raw URL
+        where their teacher wrote "Slides"."""
+        from journals import delivery
+
+        row, _created, _ = delivery.release_homework(
+            self.classroom, self.lesson, actor=self.admin
+        )
+        self.assertEqual(row.assignment.external_url_labels, ["Slides", ""])

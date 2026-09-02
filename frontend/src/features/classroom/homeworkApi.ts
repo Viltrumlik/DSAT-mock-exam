@@ -36,6 +36,8 @@ export interface AssignmentDetail {
   }[] | null;
   external_url?: string | null;
   external_urls?: string[] | null;
+  /** Each link's optional name, index-aligned with `external_urls`. Blank = show the link. */
+  external_url_labels?: string[] | null;
   video_url?: string | null;
   video_file_url?: string | null;
   attachment_file_url?: string | null;

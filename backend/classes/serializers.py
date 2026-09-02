@@ -358,6 +358,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
     # JSON string) or the legacy singular `external_url`, kept mirrored so old and new
     # clients both work; represented read-only so there is no ambiguous multipart parsing.
     external_urls = serializers.JSONField(read_only=True)
+    # Each link's optional NAME, index-aligned with `external_urls`. Same write path, same
+    # read-only representation — the two lists are only ever produced together.
+    external_url_labels = serializers.JSONField(read_only=True)
     # Optional lesson video — normalized (bare domain → https) in validate_video_url.
     video_url = serializers.CharField(required=False, allow_blank=True, max_length=500)
     mock_exam = serializers.PrimaryKeyRelatedField(
@@ -431,6 +434,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "module",
             "external_url",
             "external_urls",
+            "external_url_labels",
             "video_url",
             "video_file_url",
             "allow_file_upload",
@@ -1197,7 +1201,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
         except DjangoValidationError as e:
             raise serializers.ValidationError({"external_urls": list(e.messages)})
         if resolved is not None:
-            attrs["external_urls"], attrs["external_url"] = resolved
+            attrs["external_urls"], attrs["external_url"], attrs["external_url_labels"] = resolved
 
         # Only bank sets are assignable. A custom set belongs to one student, so handing
         # it to a classroom would show the rest of the class a set they cannot open.

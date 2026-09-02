@@ -30,7 +30,7 @@ import {
   crTextareaClass,
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import MultiLinkInput from "@/components/MultiLinkInput";
+import MultiLinkInput, { fromLinkRows, toLinkRows, type LinkRow } from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
 import VocabPicker from "@/features/journals/VocabPicker";
 import {
@@ -73,7 +73,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   // form state
   const [title, setTitle] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [links, setLinks] = useState<string[]>([]);
+  const [links, setLinks] = useState<LinkRow[]>([]);
   const [videoUrl, setVideoUrl] = useState("");
   const [videoKey, setVideoKey] = useState<string | null>(null);
   const [videoRemoved, setVideoRemoved] = useState(false);
@@ -109,7 +109,11 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
         setTitle(l.title || "");
         setInstructions(l.instructions || "");
         setLinks(
-          l.external_urls?.length ? l.external_urls : l.external_url ? [l.external_url] : [],
+          l.external_urls?.length
+            ? toLinkRows(l.external_urls, l.external_url_labels)
+            : l.external_url
+              ? [{ url: l.external_url, label: "" }]
+              : [],
         );
         setVideoUrl(l.video_file_url ? "" : l.video_url || "");
         setVideoKey(null);
@@ -222,7 +226,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
     selectedVocabIds.size > 0 ||
     allowFileUpload ||
     files.length > 0 ||
-    links.some((s) => s.trim().length > 0) ||
+    links.some((l) => l.url.trim().length > 0) ||
     (lesson?.attachment_urls.length ?? 0) > 0;
   const ready = hasInstructions && hasContent;
 
@@ -233,7 +237,8 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
       const body: Record<string, unknown> = {
         title: title.trim(),
         instructions,
-        external_urls: links.map((s) => s.trim()).filter(Boolean),
+        external_urls: fromLinkRows(links).urls,
+        external_url_labels: fromLinkRows(links).labels,
         video_url: videoUrl.trim(),
         ...(videoKey ? { video_key: videoKey } : {}),
         ...(videoRemoved && !videoKey && !videoUrl.trim() ? { remove_video: true } : {}),

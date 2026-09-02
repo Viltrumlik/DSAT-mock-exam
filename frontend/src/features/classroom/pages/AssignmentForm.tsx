@@ -22,7 +22,7 @@ import {
   crTextareaClass,
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
-import MultiLinkInput from "@/components/MultiLinkInput";
+import MultiLinkInput, { fromLinkRows, toLinkRows, type LinkRow } from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
@@ -173,7 +173,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
 
   const [newAsg, setNewAsg] = useState({ title: "", instructions: "" });
   // Several external links per homework (was a single string). Raw rows; trimmed on save.
-  const [links, setLinks] = useState<string[]>([]);
+  const [links, setLinks] = useState<LinkRow[]>([]);
   // Optional lesson video: a link OR an uploaded file (videoKey = freshly uploaded R2 key).
   const [videoUrl, setVideoUrl] = useState("");
   const [videoKey, setVideoKey] = useState<string | null>(null);
@@ -394,12 +394,20 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
       instructions: instrValue,
     });
     // Prefer the multi `external_urls` list; fall back to the legacy single `external_url`.
+    // Names ride in the index-aligned `external_url_labels`; a homework saved before names
+    // existed simply has none, and every row then shows its link.
     const rawLinks = editingAssignment.external_urls;
     if (Array.isArray(rawLinks) && rawLinks.length > 0) {
-      setLinks(rawLinks.map((u) => String(u)));
+      const rawLabels = editingAssignment.external_url_labels;
+      setLinks(
+        toLinkRows(
+          rawLinks.map((u) => String(u)),
+          Array.isArray(rawLabels) ? rawLabels.map((l) => String(l ?? "")) : [],
+        ),
+      );
     } else {
       const single = String(editingAssignment.external_url ?? "").trim();
-      setLinks(single ? [single] : []);
+      setLinks(single ? [{ url: single, label: "" }] : []);
     }
     // An uploaded video shows as "current video"; only a saved link goes into the input.
     setVideoUrl(editingAssignment.video_file_url ? "" : String(editingAssignment.video_url ?? ""));
@@ -510,7 +518,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
           title: newAsg.title.trim(),
           instructions: newAsg.instructions,
           // Always send the full list (even empty) so the backend can add AND clear links.
-          external_urls: links.map((s) => s.trim()).filter(Boolean),
+          external_urls: fromLinkRows(links).urls,
+          external_url_labels: fromLinkRows(links).labels,
           video_url: videoUrl.trim(),
           ...(videoKey ? { video_key: videoKey } : {}),
           ...(videoRemoved && !videoKey && !videoUrl.trim() ? { remove_video: true } : {}),
@@ -548,8 +557,11 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
       const fd = new FormData();
       fd.append("title", newAsg.title.trim());
       fd.append("instructions", newAsg.instructions);
-      const cleanLinks = links.map((s) => s.trim()).filter(Boolean);
-      if (cleanLinks.length > 0) fd.append("external_urls", JSON.stringify(cleanLinks));
+      const cleanLinks = fromLinkRows(links);
+      if (cleanLinks.urls.length > 0) {
+        fd.append("external_urls", JSON.stringify(cleanLinks.urls));
+        fd.append("external_url_labels", JSON.stringify(cleanLinks.labels));
+      }
       if (videoKey) fd.append("video_key", videoKey);
       else if (videoUrl.trim()) fd.append("video_url", videoUrl.trim());
 
@@ -722,7 +734,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     ? "Add a title to get started."
     : !hasInstructions
       ? "Add instructions for students."
-      : cartItems.length === 0 && !allowFileUpload && !links.some((s) => s.trim()) && asgFiles.length === 0
+      : cartItems.length === 0 && !allowFileUpload && !links.some((l) => l.url.trim()) && asgFiles.length === 0
         ? "Add content, a file upload, or a link — then publish."
         : "Ready to publish.";
 

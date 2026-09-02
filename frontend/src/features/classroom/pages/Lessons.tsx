@@ -54,21 +54,40 @@ function LessonVideo({ url }: { url?: string }) {
   );
 }
 
-function LessonLinks({ urls, single }: { urls?: string[]; single?: string }) {
-  const list = urls?.length ? urls : single ? [single] : [];
+/**
+ * A link shows its NAME when the author gave it one ("Youtube"), and the raw URL when they
+ * did not — which is every link authored before names existed, so the fallback is the
+ * common case rather than an edge one. The `title` keeps the real destination reachable on
+ * hover for a named link.
+ */
+function LessonLinks({
+  urls,
+  labels,
+  single,
+}: {
+  urls?: string[];
+  labels?: string[];
+  single?: string;
+}) {
+  const list = urls?.length
+    ? urls.map((url, i) => ({ url, label: labels?.[i] ?? "" }))
+    : single
+      ? [{ url: single, label: "" }]
+      : [];
   if (list.length === 0) return null;
   return (
     <ul className="mt-3 space-y-1.5">
-      {list.map((url, i) => (
+      {list.map((link, i) => (
         <li key={i}>
           <a
-            href={url}
+            href={link.url}
             target="_blank"
             rel="noreferrer"
+            title={link.label ? link.url : undefined}
             className="inline-flex max-w-full items-center gap-2 text-sm text-primary hover:underline"
           >
             <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
-            <span className="truncate">{url}</span>
+            <span className="truncate">{link.label || link.url}</span>
           </a>
         </li>
       ))}
@@ -244,7 +263,11 @@ function ClassworkPanel({
             {cw.new_topic.instructions}
           </p>
         )}
-        <LessonLinks urls={cw.new_topic.external_urls} single={cw.new_topic.external_url} />
+        <LessonLinks
+          urls={cw.new_topic.external_urls}
+          labels={cw.new_topic.external_url_labels}
+          single={cw.new_topic.external_url}
+        />
         <LessonVideo url={cw.new_topic.video_file_url || cw.new_topic.video_url} />
         {cw.new_topic.items.length > 0 ? (
           <ul className="mt-3 divide-y divide-border">
@@ -360,7 +383,7 @@ function HomeworkPanel({
         ) : (
           <p className="mt-2 text-sm text-muted-foreground">No instructions written.</p>
         )}
-        <LessonLinks urls={hw.external_urls} single={hw.external_url} />
+        <LessonLinks urls={hw.external_urls} labels={hw.external_url_labels} single={hw.external_url} />
         <LessonVideo url={hw.video_file_url || hw.video_url} />
         <ConfirmDialog
           open={confirmUnapproved}

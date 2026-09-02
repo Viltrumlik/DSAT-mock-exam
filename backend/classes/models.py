@@ -346,6 +346,11 @@ class Assignment(models.Model):
     # classes.link_utils.resolve_links — the two are always written together.
     external_url = models.URLField(blank=True)
     external_urls = models.JSONField(default=list, blank=True)
+    # Optional NAME per link ("Chapter 3 worksheet"), index-aligned with ``external_urls``.
+    # A parallel list rather than objects inside ``external_urls`` because that field is a
+    # list[str] to the student serializer, the homework email and the iOS client. Blank
+    # entries are normal — an unnamed link renders as the link. See link_utils.link_pairs.
+    external_url_labels = models.JSONField(default=list, blank=True)
     # Optional lesson video (YouTube/Vimeo/Loom/Drive link or a direct video URL). Lets a
     # student who missed the lesson watch it; rendered as a big player on the homework page.
     video_url = models.URLField(max_length=500, blank=True, default="")

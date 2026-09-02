@@ -95,16 +95,18 @@ function ClassworkCard({ row, classBase, isStudent }: { row: StudentClasswork; c
 
       {row.external_urls.length > 0 && (
         <ul className="mt-3 space-y-1.5">
+          {/* The author's name for the link, or the link itself when they gave it none. */}
           {row.external_urls.map((url, i) => (
             <li key={i}>
               <a
                 href={url}
                 target="_blank"
                 rel="noreferrer"
+                title={row.external_url_labels[i] ? url : undefined}
                 className="inline-flex max-w-full items-center gap-2 text-sm text-primary hover:underline"
               >
                 <ExternalLink className="h-4 w-4 shrink-0" aria-hidden />
-                <span className="truncate">{url}</span>
+                <span className="truncate">{row.external_url_labels[i] || url}</span>
               </a>
             </li>
           ))}

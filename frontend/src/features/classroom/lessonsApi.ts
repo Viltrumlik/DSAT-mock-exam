@@ -65,6 +65,8 @@ export interface LessonDetail extends LessonRow {
     instructions: string;
     external_url: string;
     external_urls: string[];
+    /** Each link's optional name, index-aligned with `external_urls`. Blank = show the link. */
+    external_url_labels: string[];
     video_url: string;
     video_file_url: string | null;
     allow_file_upload: boolean;
@@ -77,7 +79,7 @@ export interface LessonDetail extends LessonRow {
   classwork?: {
     timetable: { key: string; label: string; minutes: number }[];
     total_minutes: number;
-    new_topic: { title: string; instructions: string; external_url: string; external_urls: string[]; video_url: string; video_file_url: string | null; minutes: number; items: LessonItem[] };
+    new_topic: { title: string; instructions: string; external_url: string; external_urls: string[]; external_url_labels: string[]; video_url: string; video_file_url: string | null; minutes: number; items: LessonItem[] };
     exercises: { minutes: number; items: LessonItem[] };
     homework_review_minutes: number;
     break_minutes: number;

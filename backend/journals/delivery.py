@@ -34,6 +34,8 @@ import os.path
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from classes.link_utils import labels_for
+
 from .models import (
     ClassroomJournal,
     ClassroomLesson,
@@ -301,6 +303,7 @@ def release_homework(
         instructions=session.instructions,
         external_url=session.external_url,
         external_urls=list(session.external_urls or []),
+        external_url_labels=labels_for(session.external_urls, session.external_url_labels),
         video_url=session.video_url,
         # Alias the same R2 object key (a 2GB video is never re-copied). Safe: Django never
         # auto-deletes storage files, so the shared key stays valid for both rows.
@@ -446,6 +449,10 @@ def _classwork_assignment(delivery: ClassroomLesson, session: JournalLesson, *, 
         instructions=_authored("new_topic_instructions"),
         external_url=_authored("new_topic_external_url"),
         external_urls=list(_authored("new_topic_external_urls", [])),
+        external_url_labels=labels_for(
+            _authored("new_topic_external_urls", []),
+            _authored("new_topic_external_url_labels", []),
+        ),
         video_url=_authored("new_topic_video_url"),
         # Alias the same R2 object key rather than re-copying a 2GB video — the same
         # trade release_homework makes, and safe for the same reason: Django never
