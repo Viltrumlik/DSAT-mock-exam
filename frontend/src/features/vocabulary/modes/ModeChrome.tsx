@@ -459,7 +459,12 @@ export function ModeOutcome({
   celebrate,
   children,
 }: ModeOutcomeProps) {
-  const partying = Boolean(celebrate) || Boolean(session.summary?.set_completed);
+  // The set being MASTERED is the biggest thing that can happen on this screen, so it
+  // celebrates even when the round itself was not the clean one that did it.
+  const partying =
+    Boolean(celebrate) ||
+    Boolean(session.summary?.mode_mastered) ||
+    Boolean(session.summary?.mastery?.is_mastered);
   const backHref = useSetHref(setId);
 
   return (
@@ -497,10 +502,27 @@ export function ModeOutcome({
               Retry save
             </Button>
           </span>
-        ) : session.summary?.set_completed ? (
+        ) : session.summary?.mastery?.is_mastered ? (
           <Badge variant="success" className="cr-pillin">
-            <Sparkles className="h-3 w-3" aria-hidden /> Set complete
+            <Sparkles className="h-3 w-3" aria-hidden /> Set mastered — all four games
           </Badge>
+        ) : session.summary?.mode_mastered ? (
+          <Badge variant="success" className="cr-pillin">
+            <Sparkles className="h-3 w-3" aria-hidden /> Game mastered ·{" "}
+            <span className="ds-num">
+              {session.summary.mastery.mastered_modes}/{session.summary.mastery.total_modes}
+            </span>
+          </Badge>
+        ) : session.summary ? (
+          // Not mastered is not a failure, and it is not silence either: the student
+          // should leave knowing exactly what the clean run they need looks like.
+          <span className="text-[13px] font-semibold text-muted-foreground">
+            Every word right in one round masters this game —{" "}
+            <span className="ds-num font-bold text-foreground">
+              {session.summary.mastery.mastered_modes}/{session.summary.mastery.total_modes}
+            </span>{" "}
+            so far.
+          </span>
         ) : null}
       </div>
 

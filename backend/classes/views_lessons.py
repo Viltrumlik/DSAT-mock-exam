@@ -25,6 +25,7 @@ from journals import delivery
 from journals.models import ClassroomLessonGrant, JournalLesson
 
 from .capabilities import classroom_capabilities
+from .link_utils import labels_for
 from .models import ClassroomMembership
 from .views_rankings import _ClassroomScopedView
 
@@ -226,6 +227,7 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
         "instructions": session.instructions,
         "external_url": session.external_url,
         "external_urls": list(session.external_urls or []),
+        "external_url_labels": labels_for(session.external_urls, session.external_url_labels),
         "video_url": session.video_url,
         "video_file_url": _media_url(session.video_file),
         "allow_file_upload": session.allow_file_upload,
@@ -289,6 +291,9 @@ def _lesson_row(entry, *, detail: bool = False) -> dict:
                 "instructions": cw.new_topic_instructions,
                 "external_url": cw.new_topic_external_url,
                 "external_urls": list(cw.new_topic_external_urls or []),
+                "external_url_labels": labels_for(
+                    cw.new_topic_external_urls, cw.new_topic_external_url_labels
+                ),
                 "video_url": cw.new_topic_video_url,
                 "video_file_url": _media_url(cw.new_topic_video_file),
                 "minutes": cw.new_topic_minutes,

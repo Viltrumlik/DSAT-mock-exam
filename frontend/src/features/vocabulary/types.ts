@@ -3,20 +3,47 @@
  * study modes. Mirrors `backend/vocabulary/serializers.py`.
  */
 
-export type WordStatus = "new" | "learning" | "mastered";
+/**
+ * Two buckets, not three. A word is mastered once it has been answered correctly in ALL
+ * FOUR games — the per-word form of the rule that masters the set — and until then it is
+ * simply not mastered yet. The old middle bucket ("learning", three-correct-in-a-row) is
+ * gone: it measured how warm a word was, which is a different question from whether the
+ * student has proved it.
+ */
+export type WordStatus = "new" | "mastered";
 
 export type StudyMode = "flashcard" | "matching" | "speed" | "test";
 
 export const STUDY_MODES: StudyMode[] = ["flashcard", "matching", "speed", "test"];
 
-/** The All/New/Learning/Mastered control on a set's word list. */
+/** The All/New/Mastered control on a set's word list. */
 export type WordFilter = "all" | WordStatus;
 
 export interface ProgressCounts {
   new: number;
-  learning: number;
   mastered: number;
   total: number;
+}
+
+/**
+ * One set's progress bar: the four games, and which of them have been played CLEAN —
+ * every word in the set answered, none of them wrong. Each one is a quarter of the bar,
+ * and there is no partial credit inside a game.
+ */
+export interface SetMastery {
+  modes: Record<StudyMode, boolean>;
+  mastered_modes: number;
+  total_modes: number;
+  /** Whole games only: 0, 25, 50, 75 or 100. */
+  percent: number;
+  is_mastered: boolean;
+}
+
+/** A section's bar rolls up its sets, so it asks the same question one scale up. */
+export interface SectionMastery {
+  mastered_sets: number;
+  total_sets: number;
+  percent: number;
 }
 
 export interface VocabWord {
@@ -47,6 +74,7 @@ export interface VocabSectionSummary {
   set_count: number;
   word_count: number;
   progress: ProgressCounts;
+  mastery: SectionMastery;
 }
 
 export interface VocabSetSummary {
@@ -54,8 +82,10 @@ export interface VocabSetSummary {
   title: string;
   order: number;
   word_count: number;
+  /** True once ANY one game has been finished here — weaker than mastery, and not the bar. */
   completed: boolean;
   progress: ProgressCounts;
+  mastery: SetMastery;
 }
 
 export interface VocabSectionDetail {
@@ -71,6 +101,8 @@ export interface VocabSectionDetail {
   word_count: number;
   /** Section-level buckets over those distinct words. */
   progress: ProgressCounts;
+  /** Derived from the very set cards below, so header and grid cannot disagree. */
+  mastery: SectionMastery;
   sets: VocabSetSummary[];
 }
 
@@ -81,6 +113,7 @@ export interface VocabSetDetail {
   section: { id: number; title: string } | null;
   word_count: number;
   completed: boolean;
+  mastery: SetMastery;
   words: VocabWord[];
 }
 
@@ -89,6 +122,7 @@ export interface CustomSetSummary {
   title: string;
   word_count: number;
   completed: boolean;
+  mastery: SetMastery;
   created_at: string;
 }
 
@@ -98,6 +132,7 @@ export interface VocabHomeworkSet {
   section_title: string;
   word_count: number;
   completed: boolean;
+  mastery: SetMastery;
 }
 
 export interface VocabHomeworkGroup {
@@ -162,12 +197,15 @@ export interface SessionSummary {
   duration_ms: number;
   /** True once ANY one mode has been finished for this set — the completion rule. */
   set_completed: boolean;
+  /** Did THIS run master its game? A clean sweep: every word answered, none wrong. */
+  mode_mastered: boolean;
+  /** The set's four-game bar as it stands after this run. */
+  mastery: SetMastery;
   progress: ProgressCounts;
 }
 
 export const WORD_STATUS_LABEL: Record<WordStatus, string> = {
   new: "New",
-  learning: "Learning",
   mastered: "Mastered",
 };
 

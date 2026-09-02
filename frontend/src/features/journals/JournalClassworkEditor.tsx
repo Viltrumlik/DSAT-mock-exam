@@ -10,7 +10,7 @@ import {
   crInputClass,
   crTextareaClass,
 } from "@/components/classroom";
-import MultiLinkInput from "@/components/MultiLinkInput";
+import MultiLinkInput, { fromLinkRows, toLinkRows, type LinkRow } from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
 import VocabPicker from "@/features/journals/VocabPicker";
 import { cn } from "@/lib/cn";
@@ -72,7 +72,7 @@ export default function JournalClassworkEditor({
   // New topic
   const [topicTitle, setTopicTitle] = useState("");
   const [topicInstructions, setTopicInstructions] = useState("");
-  const [topicLinks, setTopicLinks] = useState<string[]>([]);
+  const [topicLinks, setTopicLinks] = useState<LinkRow[]>([]);
   const [topicVideoUrl, setTopicVideoUrl] = useState("");
   const [topicVideoKey, setTopicVideoKey] = useState<string | null>(null);
   const [topicVideoRemoved, setTopicVideoRemoved] = useState(false);
@@ -107,9 +107,9 @@ export default function JournalClassworkEditor({
       setTopicInstructions(data.new_topic_instructions || "");
       setTopicLinks(
         data.new_topic_external_urls?.length
-          ? data.new_topic_external_urls
+          ? toLinkRows(data.new_topic_external_urls, data.new_topic_external_url_labels)
           : data.new_topic_external_url
-            ? [data.new_topic_external_url]
+            ? [{ url: data.new_topic_external_url, label: "" }]
             : [],
       );
       setTopicVideoUrl(data.new_topic_video_file_url ? "" : data.new_topic_video_url || "");
@@ -140,7 +140,8 @@ export default function JournalClassworkEditor({
         ...mins,
         new_topic_title: topicTitle.trim(),
         new_topic_instructions: topicInstructions,
-        new_topic_external_urls: topicLinks.map((s) => s.trim()).filter(Boolean),
+        new_topic_external_urls: fromLinkRows(topicLinks).urls,
+        new_topic_external_url_labels: fromLinkRows(topicLinks).labels,
         video_url: topicVideoUrl.trim(),
         ...(topicVideoKey ? { video_key: topicVideoKey } : {}),
         ...(topicVideoRemoved && !topicVideoKey && !topicVideoUrl.trim() ? { remove_video: true } : {}),
@@ -271,12 +272,18 @@ export default function JournalClassworkEditor({
                 <ReviewItem key={`f-${i}`} icon={FileText} label={f.name} kind="File" href={f.url} />
               ))}
               {(review.external_urls?.length
-                ? review.external_urls
+                ? toLinkRows(review.external_urls, review.external_url_labels)
                 : review.external_url
-                  ? [review.external_url]
+                  ? [{ url: review.external_url, label: "" }]
                   : []
-              ).map((url, i) => (
-                <ReviewItem key={`l-${i}`} icon={ExternalLink} label={url} kind="Link" href={url} />
+              ).map((l, i) => (
+                <ReviewItem
+                  key={`l-${i}`}
+                  icon={ExternalLink}
+                  label={l.label || l.url}
+                  kind="Link"
+                  href={l.url}
+                />
               ))}
             </ul>
             {review.assessments.length === 0 &&
@@ -323,7 +330,7 @@ export default function JournalClassworkEditor({
               className={crTextareaClass}
             />
           </ClassroomField>
-          <ClassroomField label="External links">
+          <ClassroomField label="External links" hint="Give a link a name and students see the name instead of the address.">
             <MultiLinkInput
               value={topicLinks}
               onChange={setTopicLinks}

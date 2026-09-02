@@ -11,10 +11,11 @@ Write payloads go through small ``Serializer`` classes so no view hand-validates
 
 from __future__ import annotations
 
-from django.db.models import Count
+from django.db.models import Count, F
 from rest_framework import serializers
 
 from .models import (
+    STUDY_MODES,
     VocabSet,
     VocabSetItem,
     VocabStudySession,
@@ -27,7 +28,7 @@ from .models import (
 
 
 def empty_progress() -> dict:
-    return {"new": 0, "learning": 0, "mastered": 0, "total": 0}
+    return {"new": 0, "mastered": 0, "total": 0}
 
 
 def progress_status_map(user, word_ids) -> dict[int, str]:
@@ -47,7 +48,7 @@ def progress_status_map(user, word_ids) -> dict[int, str]:
 
 
 def progress_buckets(word_ids, status_map: dict[int, str]) -> dict:
-    """New/Learning/Mastered counts over an explicit word list."""
+    """New/Mastered counts over an explicit word list."""
     counts = empty_progress()
     for wid in word_ids:
         counts[status_map.get(wid, VocabWordProgress.STATUS_NEW)] += 1
@@ -61,7 +62,7 @@ def section_progress_buckets(user, section_ids, word_totals: dict[int, int]) -> 
 
     A section can hold thousands of words, so this counts by status in SQL instead of
     pulling every word id back to derive ``new`` — which is simply "everything the
-    student has not touched yet".
+    student has not mastered yet".
     """
     buckets = {sid: empty_progress() for sid in section_ids}
     for sid, total in word_totals.items():
@@ -80,7 +81,7 @@ def section_progress_buckets(user, section_ids, word_totals: dict[int, int]) -> 
         if bucket is not None and row["status"] in bucket:
             bucket[row["status"]] += row["n"]
     for bucket in buckets.values():
-        bucket["new"] = max(0, bucket["total"] - bucket["learning"] - bucket["mastered"])
+        bucket["new"] = max(0, bucket["total"] - bucket["mastered"])
     return buckets
 
 
@@ -114,8 +115,81 @@ def set_progress_buckets(user, vocab_set_ids, word_totals: dict[int, int]) -> di
         if bucket is not None and row["status"] in bucket:
             bucket[row["status"]] += row["n"]
     for bucket in buckets.values():
-        bucket["new"] = max(0, bucket["total"] - bucket["learning"] - bucket["mastered"])
+        bucket["new"] = max(0, bucket["total"] - bucket["mastered"])
     return buckets
+
+
+# --------------------------------------------------------------------------- mastery
+
+
+def empty_mastery() -> dict:
+    return mastery_out(set(), word_count=0)
+
+
+def mastery_out(modes, *, word_count: int) -> dict:
+    """One set's mastery, as the progress bar and the per-game 0/1 badges read it.
+
+    ``percent`` is whole games, never a partial one: a quarter of the bar appears the
+    moment a game is mastered and not a pixel before, which is the whole point of the
+    rule — 80% of the way through Speed is not 20% of Speed.
+    """
+    earned = [m for m in STUDY_MODES if m in set(modes or ())]
+    total = len(STUDY_MODES)
+    return {
+        "modes": {m: (m in earned) for m in STUDY_MODES},
+        "mastered_modes": len(earned),
+        "total_modes": total,
+        "percent": round((len(earned) / total) * 100) if total else 0,
+        # An empty set has nothing to master; without this guard a set with no words would
+        # report itself mastered the moment it had no games left to fail.
+        "is_mastered": bool(word_count) and len(earned) == total,
+    }
+
+
+def mastered_modes_by_set(user, vocab_set_ids, word_totals: dict[int, int]) -> dict[int, set[str]]:
+    """``{set_id: {games mastered}}`` for many sets in ONE query.
+
+    A game is mastered by a single clean run of it — every word in the set answered, none
+    of them wrong — and once earned it stays earned. It is deliberately not "the first
+    run", the rule the homework score used to apply to accuracy: a student who muddles
+    their first Speed round can go back and race it properly, which is the behaviour the
+    word "mastered" promises.
+
+    The perfect-run test is pushed into SQL as far as it goes (``correct_count`` equals
+    ``total_count``, and the run answered something); only the per-set coverage comparison
+    is left to Python, because its denominator differs per row.
+    """
+    out: dict[int, set[str]] = {sid: set() for sid in vocab_set_ids}
+    if not vocab_set_ids:
+        return out
+    rows = (
+        VocabStudySession.objects.filter(
+            user=user,
+            vocab_set_id__in=vocab_set_ids,
+            completed_at__isnull=False,
+            total_count__gt=0,
+            correct_count=F("total_count"),
+        )
+        .values_list("vocab_set_id", "mode", "distinct_words")
+    )
+    for sid, mode, distinct in rows:
+        size = word_totals.get(sid, 0)
+        if size and distinct >= size and sid in out:
+            out[sid].add(mode)
+    return out
+
+
+def section_mastery(mastered_sets: int, total_sets: int) -> dict:
+    """A section's own bar: how many of its sets are fully mastered.
+
+    The section rolls up the SETS rather than re-counting words so that every bar in the
+    feature answers the same question — "how much of this is finished" — at its own scale.
+    """
+    return {
+        "mastered_sets": mastered_sets,
+        "total_sets": total_sets,
+        "percent": round((mastered_sets / total_sets) * 100) if total_sets else 0,
+    }
 
 
 # --------------------------------------------------------------------------- counts
@@ -213,6 +287,12 @@ def word_search_out(word: VocabWord) -> dict:
     }
 
 
+def set_mastery(user, vocab_set: VocabSet, word_count: int) -> dict:
+    """One set's mastery block. The single-set form of :func:`mastered_modes_by_set`."""
+    modes = mastered_modes_by_set(user, [vocab_set.pk], {vocab_set.pk: word_count})
+    return mastery_out(modes.get(vocab_set.pk, set()), word_count=word_count)
+
+
 def set_detail_out(vocab_set: VocabSet, *, user, words: list[VocabWord] | None = None) -> dict:
     """Full set payload — words in study order, each tagged with the student's status."""
     if words is None:
@@ -229,7 +309,11 @@ def set_detail_out(vocab_set: VocabSet, *, user, words: list[VocabWord] | None =
             else None
         ),
         "word_count": len(words),
+        # ``completed`` and ``mastery`` answer two different questions and both are shown:
+        # completed is "this student has finished a game here at all", mastery is "which
+        # games have been played clean". A set can be completed and 0% mastered.
         "completed": vocab_set.is_completed_by(user),
+        "mastery": set_mastery(user, vocab_set, len(words)),
         "words": [
             word_out(w, status_map.get(w.id, VocabWordProgress.STATUS_NEW)) for w in words
         ],
@@ -248,8 +332,8 @@ def session_out(session: VocabStudySession) -> dict:
 def session_summary_out(session: VocabStudySession, *, user) -> dict:
     """
     The finish payload. ``progress`` is recomputed over the SET's words so the client can
-    repaint the New/Learning/Mastered filter without a second round trip — and so an
-    idempotent replay reports the same numbers as the original call.
+    repaint the New/Mastered filter without a second round trip — and so an idempotent
+    replay reports the same numbers as the original call.
     """
     word_ids = list(
         VocabSetItem.objects.filter(vocab_set_id=session.vocab_set_id)
@@ -270,6 +354,11 @@ def session_summary_out(session: VocabStudySession, *, user) -> dict:
         "coverage": round(session.coverage(len(word_ids)), 4),
         "duration_ms": session.duration_ms,
         "set_completed": session.vocab_set.is_completed_by(user),
+        # Whether THIS run mastered its game, so the end-of-round screen can say so without
+        # re-deriving the rule client-side. Recomputed from the stored row rather than from
+        # what the client just sent, so a replayed finish reports the same verdict.
+        "mode_mastered": session.is_perfect(len(word_ids)),
+        "mastery": set_mastery(user, session.vocab_set, len(word_ids)),
         "progress": progress_buckets(word_ids, status_map),
     }
 

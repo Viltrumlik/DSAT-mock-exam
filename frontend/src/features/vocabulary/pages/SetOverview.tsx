@@ -5,19 +5,19 @@
  * student's own custom set; only the breadcrumb and the "edit words" affordance
  * differ.
  *
- * The set payload carries per-word status but no aggregate, so the hero tiles
- * and the meter are derived here from the word list — one fewer field for the
- * API to keep in sync with the filter that sits right below it.
+ * The hero meter is the SET's four-game mastery, straight off the payload: a quarter of
+ * the bar per game played clean. The word tiles beside it are derived from the word list
+ * instead — one fewer field for the API to keep in sync with the filter right below it.
  */
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, CheckCircle2, Circle, Pencil, Sparkles, TrendingUp, Type } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle2, Circle, Gamepad2, Pencil, Sparkles, Type } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import { Alert, Card, Skeleton } from "@/components/ui";
 
-import { masteredPercent } from "../components/MasteryBar";
+import { masteryPercent } from "../components/MasteryBar";
 import { StudyModeCard } from "../components/StudyModeCard";
 import { VocabErrorState, VocabRowsSkeleton } from "../components/VocabStates";
 import { WordList } from "../components/WordList";
@@ -40,7 +40,7 @@ export function SetOverview({ setId }: { setId: number }) {
   const assignmentId = useLaunchAssignmentId();
 
   const progress = useMemo<ProgressCounts>(() => {
-    const counts: ProgressCounts = { new: 0, learning: 0, mastered: 0, total: 0 };
+    const counts: ProgressCounts = { new: 0, mastered: 0, total: 0 };
     for (const w of set?.words ?? []) {
       counts[w.status] += 1;
       counts.total += 1;
@@ -81,16 +81,17 @@ export function SetOverview({ setId }: { setId: number }) {
   }
 
   const empty = set.words.length === 0;
-  const pct = masteredPercent(progress);
-  const share = (n: number) => (progress.total > 0 ? (n / progress.total) * 100 : 0);
+  const mastery = set.mastery;
+  const pct = masteryPercent(mastery);
 
   // Same label/icon vocabulary as the hub hero, so the two heroes read as one
-  // component with different numbers in it.
-  const tiles: { label: string; icon: LucideIcon; value: number }[] = [
-    { label: "Words", icon: Type, value: set.word_count },
-    { label: "Mastered", icon: CheckCircle2, value: progress.mastered },
-    { label: "Learning", icon: TrendingUp, value: progress.learning },
-    { label: "New", icon: Circle, value: progress.new },
+  // component with different numbers in it. "Games" leads: it is what the bar below
+  // measures and what the homework is paid on.
+  const tiles: { label: string; icon: LucideIcon; value: string }[] = [
+    { label: "Games mastered", icon: Gamepad2, value: `${mastery.mastered_modes}/${mastery.total_modes}` },
+    { label: "Words", icon: Type, value: String(set.word_count) },
+    { label: "Mastered", icon: CheckCircle2, value: String(progress.mastered) },
+    { label: "New", icon: Circle, value: String(progress.new) },
   ];
 
   return (
@@ -109,9 +110,9 @@ export function SetOverview({ setId }: { setId: number }) {
               {set.section ? <BookOpen className="h-3.5 w-3.5" aria-hidden /> : <Sparkles className="h-3.5 w-3.5" aria-hidden />}
               {set.section ? set.section.title : "My set"}
             </span>
-            {set.completed ? (
+            {mastery.is_mastered ? (
               <span className="inline-flex items-center gap-1.5 rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold">
-                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Completed
+                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Mastered
               </span>
             ) : null}
             {set.is_custom ? (
@@ -140,17 +141,25 @@ export function SetOverview({ setId }: { setId: number }) {
             ))}
           </div>
 
-          {/* Mastery meter — mastered then learning; the track is "new", so an
-              untouched set reads as an empty bar. Numbers live in the tiles
-              above, so the bar itself is decorative to a screen reader. */}
+          {/* Mastery meter — ONE SEGMENT PER GAME, filled when that game has been played
+              clean. Four separated blocks rather than a sliding fill because the rule is
+              discrete: a quarter appears the moment a game is mastered and never sits
+              anywhere in between. Numbers live in the tiles above, so the bar itself is
+              decorative to a screen reader. */}
           <div className="relative mt-6 max-w-md">
             <div className="flex items-center justify-between text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">
               <span>Mastery</span>
               <span className="ds-num">{pct}%</span>
             </div>
-            <div aria-hidden className="mt-2 flex h-2 w-full overflow-hidden rounded-full bg-white/20">
-              <div className="cr-bar h-full bg-white" style={{ width: `${share(progress.mastered)}%` }} />
-              <div className="cr-bar h-full bg-white/55" style={{ width: `${share(progress.learning)}%` }} />
+            <div aria-hidden className="mt-2 flex h-2 w-full gap-1">
+              {STUDY_MODES.map((mode) => (
+                <span
+                  key={mode}
+                  className={`cr-bar h-full flex-1 rounded-full transition-colors duration-500 ${
+                    mastery.modes[mode] ? "bg-white" : "bg-white/20"
+                  }`}
+                />
+              ))}
             </div>
           </div>
         </div>
@@ -160,7 +169,10 @@ export function SetOverview({ setId }: { setId: number }) {
       <section className="flex flex-col gap-3">
         <div>
           <h2 className="ds-h3">Study this set</h2>
-          <p className="ds-small mt-0.5">Finishing any one mode marks the set complete.</p>
+          <p className="ds-small mt-0.5">
+            Play a game with every word right and it is mastered — a quarter of the bar
+            each. All four, and the set is done.
+          </p>
         </div>
         {empty ? (
           <Alert tone="warning" title="Nothing to study yet">
@@ -171,7 +183,13 @@ export function SetOverview({ setId }: { setId: number }) {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {STUDY_MODES.map((mode, i) => (
             <div key={mode} className="cr-pop h-full" style={{ animationDelay: `${i * 70}ms` }}>
-              <StudyModeCard mode={mode} setId={set.id} disabled={empty} assignmentId={assignmentId} />
+              <StudyModeCard
+                mode={mode}
+                setId={set.id}
+                disabled={empty}
+                mastered={mastery.modes[mode]}
+                assignmentId={assignmentId}
+              />
             </div>
           ))}
         </div>

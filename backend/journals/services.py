@@ -263,6 +263,7 @@ def duplicate_journal(
         lesson.instructions = src.instructions
         lesson.external_url = src.external_url
         lesson.external_urls = list(src.external_urls or [])
+        lesson.external_url_labels = list(src.external_url_labels or [])
         lesson.video_url = src.video_url
         lesson.video_file = src.video_file.name or ""  # alias the same R2 object key
         lesson.allow_file_upload = src.allow_file_upload
@@ -292,6 +293,7 @@ def duplicate_journal(
                 "new_topic_instructions",
                 "new_topic_external_url",
                 "new_topic_external_urls",
+                "new_topic_external_url_labels",
                 "new_topic_video_url",
                 "new_topic_video_file",
                 "new_topic_practice_test_ids",

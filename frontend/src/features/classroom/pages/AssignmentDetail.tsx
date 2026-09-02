@@ -303,17 +303,22 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
         <Card className="cr-card">
           <CardHeader title="Materials" />
           <div className="mt-3 space-y-2">
-            {/* Prefer the multi `external_urls` list; fall back to the legacy single link. */}
+            {/* Prefer the multi `external_urls` list; fall back to the legacy single link.
+                Each link shows the name its teacher gave it, or the URL when unnamed. */}
             {(assignment.external_urls?.length
-              ? assignment.external_urls
+              ? assignment.external_urls.map((url, i) => ({
+                  url,
+                  label: assignment.external_url_labels?.[i] ?? "",
+                }))
               : assignment.external_url
-                ? [assignment.external_url]
+                ? [{ url: assignment.external_url, label: "" }]
                 : []
-            ).map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noreferrer"
+            ).map((link, i) => (
+              <a key={i} href={link.url} target="_blank" rel="noreferrer"
+                title={link.label ? link.url : undefined}
                 className="flex items-center gap-2 text-sm text-primary hover:underline">
                 <ExternalLink className="h-4 w-4 shrink-0" />
-                <span className="truncate">{url}</span>
+                <span className="truncate">{link.label || link.url}</span>
               </a>
             ))}
             {(assignment.attachment_urls ?? []).map((f, i) => {

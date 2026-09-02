@@ -5,15 +5,19 @@ import { Card, CardContent, ProgressRing } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import type { VocabSectionSummary } from "../types";
-import { MasteryBar, masteredPercent } from "./MasteryBar";
+import { SectionMasteryBar } from "./MasteryBar";
 
 /**
- * One published bank section on the hub. Icon square + ring + segmented mastery
- * bar, in the classroom-card idiom; `index` only drives the entrance stagger.
+ * One published bank section on the hub. Icon square + ring + mastery bar, in the
+ * classroom-card idiom; `index` only drives the entrance stagger.
+ *
+ * The ring counts SETS mastered, not words: it is the roll-up of the very bars on the set
+ * cards one click away, so a student never sees the section claim one number and its
+ * contents another.
  */
 export function SectionCard({ section, index = 0 }: { section: VocabSectionSummary; index?: number }) {
-  const pct = masteredPercent(section.progress);
-  const done = pct >= 100 && section.word_count > 0;
+  const pct = section.mastery?.percent ?? 0;
+  const done = pct >= 100 && section.set_count > 0;
 
   return (
     <Link href={`/vocabulary/sections/${section.id}`} className="ds-ring block rounded-2xl">
@@ -56,7 +60,7 @@ export function SectionCard({ section, index = 0 }: { section: VocabSectionSumma
             />
           </div>
 
-          <MasteryBar progress={section.progress} legend className="mt-auto" />
+          <SectionMasteryBar mastery={section.mastery} className="mt-auto" />
 
           <span className="inline-flex items-center gap-1 text-[13px] font-semibold text-primary">
             Open section

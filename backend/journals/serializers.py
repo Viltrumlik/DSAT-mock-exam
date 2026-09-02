@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from classes.link_utils import labels_for
+
 from .models import Journal, JournalClasswork, JournalLesson, JournalRoadmap, JournalRoadmapSection
 
 
@@ -250,6 +252,7 @@ class JournalClassworkSerializer(serializers.Serializer):
     new_topic_instructions = serializers.CharField()
     new_topic_external_url = serializers.CharField()
     new_topic_external_urls = serializers.SerializerMethodField()
+    new_topic_external_url_labels = serializers.SerializerMethodField()
     new_topic_video_url = serializers.CharField()
     new_topic_video_file_url = serializers.SerializerMethodField()
     new_topic_practice_test_ids = serializers.SerializerMethodField()
@@ -278,6 +281,9 @@ class JournalClassworkSerializer(serializers.Serializer):
 
     def get_new_topic_external_urls(self, obj):
         return list(obj.new_topic_external_urls or [])
+
+    def get_new_topic_external_url_labels(self, obj):
+        return labels_for(obj.new_topic_external_urls, obj.new_topic_external_url_labels)
 
     def get_new_topic_video_file_url(self, obj):
         return _abs_url(self.context.get("request"), obj.new_topic_video_file)
@@ -383,6 +389,7 @@ class JournalClassworkSerializer(serializers.Serializer):
             "instructions": prev.instructions,
             "external_url": prev.external_url,
             "external_urls": list(prev.external_urls or []),
+            "external_url_labels": labels_for(prev.external_urls, prev.external_url_labels),
             "video_url": prev.video_url,
             "video_file_url": _abs_url(request, prev.video_file),
             "assessments": _assessment_rows(prev.assessments.all()),
@@ -430,6 +437,7 @@ class JournalLessonDetailSerializer(serializers.Serializer):
     instructions = serializers.CharField()
     external_url = serializers.CharField()
     external_urls = serializers.SerializerMethodField()
+    external_url_labels = serializers.SerializerMethodField()
     video_url = serializers.CharField()
     video_file_url = serializers.SerializerMethodField()
     allow_file_upload = serializers.BooleanField()
@@ -467,6 +475,9 @@ class JournalLessonDetailSerializer(serializers.Serializer):
 
     def get_external_urls(self, obj):
         return list(obj.external_urls or [])
+
+    def get_external_url_labels(self, obj):
+        return labels_for(obj.external_urls, obj.external_url_labels)
 
     def get_video_file_url(self, obj):
         return _abs_url(self.context.get("request"), obj.video_file)

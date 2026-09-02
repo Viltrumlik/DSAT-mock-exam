@@ -1035,10 +1035,12 @@ class AntiFarmingTests(BundleFixture):
 
 
 class VocabularyScoringTests(BundleFixture):
-    """§4 — per game, by accuracy, discounted by coverage.
+    """§4 — a quarter of the set per game MASTERED, and a game is mastered by one clean run.
 
-    The retired rule was "100 if any one mode was completed", which is what made a 30-second
-    speed run worth a whole homework item.
+    Two retired rules sit behind this. The first was "100 if any one mode was completed",
+    which made a 30-second speed run worth a whole homework item. The second graded each
+    game by ``accuracy × coverage`` on its FIRST completed run, which made a muddled opening
+    round a permanent cap the student could not practise off.
     """
 
     def test_one_mode_of_four_is_a_quarter_of_the_set(self):
@@ -1053,21 +1055,27 @@ class VocabularyScoringTests(BundleFixture):
 
         self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 100.0)
 
-    def test_a_modes_accuracy_scales_its_quarter(self):
+    def test_a_game_played_with_a_mistake_in_it_is_not_mastered(self):
+        """There is no partial credit inside a game: 60% of Test is Test not mastered yet."""
         vocab = self.add_vocab()
         self.play_vocab(vocab, VocabStudySession.MODE_TEST, accuracy=60.0)
 
-        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 15.0)
+        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 0.0)
 
-    def test_speed_accuracy_is_discounted_by_the_words_it_never_reached(self):
+    def test_a_speed_run_that_never_reached_the_whole_set_is_not_mastered(self):
         """Speed reports only the prompts answered before its 60-second clock expires, so two of
-        twenty answered correctly stores ``accuracy = 100``. Coverage is what makes that
-        worth 10% of the mode rather than all of it."""
+        twenty answered correctly stores ``accuracy = 100``. Requiring every word is what stops
+        that being a quarter of the homework for 5 seconds' work."""
         vocab = self.add_vocab("Big", words=20)
         self.play_vocab(vocab, VocabStudySession.MODE_SPEED, accuracy=100.0, distinct=2)
 
-        # accuracy 100 × coverage 0.1 = 10 for the mode; one mode of four = 2.5% of the set.
-        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 2.5)
+        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 0.0)
+
+    def test_clearing_the_whole_speed_round_clean_masters_it(self):
+        vocab = self.add_vocab("Big", words=20)
+        self.play_vocab(vocab, VocabStudySession.MODE_SPEED, accuracy=100.0)
+
+        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 25.0)
 
     def test_flashcard_redrills_cannot_push_coverage_over_the_whole_set(self):
         """Flashcards re-drill the missed pile into the same run and report every verdict, so
@@ -1081,13 +1089,19 @@ class VocabularyScoringTests(BundleFixture):
 
         self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 25.0)
 
-    def test_the_first_run_of_a_mode_counts_and_a_replay_does_not(self):
-        """Matching the assessment rule. A replay mints a new row, and a re-run is practice."""
+    def test_a_muddled_first_run_can_be_practised_off(self):
+        """Mastery is "once, ever", NOT "the first run" — the rule an assessment attempt uses.
+
+        Under the first-run rule this scored 10%: a bad opening round capped that quarter of
+        the set for ever, and the deadline sweep re-priced the homework at the capped number
+        every ten minutes for seven days. A game the student went back and played clean is a
+        game they have mastered.
+        """
         vocab = self.add_vocab()
         self.play_vocab(vocab, VocabStudySession.MODE_MATCHING, accuracy=40.0)
         self.play_vocab(vocab, VocabStudySession.MODE_MATCHING, accuracy=100.0)
 
-        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 10.0)
+        self.assertAlmostEqual(bundle_percent(self.assignment, self.student), 25.0)
 
     def test_an_unfinished_run_scores_nothing_for_its_mode(self):
         vocab = self.add_vocab()

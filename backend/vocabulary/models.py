@@ -4,6 +4,27 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+#: The four study games, and the order every "n of 4" reads in. Module-level because BOTH
+#: ``VocabWordProgress`` (a word is mastered once it has been answered correctly in every
+#: game) and ``VocabStudySession`` (which game a run was) are defined against them, and the
+#: session class is declared last.
+STUDY_MODE_FLASHCARD = "flashcard"
+STUDY_MODE_MATCHING = "matching"
+STUDY_MODE_SPEED = "speed"
+STUDY_MODE_TEST = "test"
+STUDY_MODES: tuple[str, ...] = (
+    STUDY_MODE_FLASHCARD,
+    STUDY_MODE_MATCHING,
+    STUDY_MODE_SPEED,
+    STUDY_MODE_TEST,
+)
+STUDY_MODE_LABELS = {
+    STUDY_MODE_FLASHCARD: "Flashcard",
+    STUDY_MODE_MATCHING: "Matching",
+    STUDY_MODE_SPEED: "Speed",
+    STUDY_MODE_TEST: "Test",
+}
+
 
 class VocabSection(models.Model):
     """
@@ -165,24 +186,27 @@ class VocabSetItem(models.Model):
 
 class VocabWordProgress(models.Model):
     """
-    One row per (user, word). Drives the All / New / Learning / Mastered filter.
+    One row per (user, word). Drives the All / New / Mastered filter.
 
-    Mastery is streak-based on purpose: the previous generation gated mastery on
-    a cumulative ``wrong_count`` that only ever grew, so a word could become
-    permanently unmasterable. Here any wrong answer resets the streak and demotes
-    to Learning, and three consecutive correct answers master it again.
+    **Mastery is per-GAME.** A word is mastered once the student has answered it correctly
+    in every one of the four study modes — the per-word form of the rule that masters the
+    set itself (all four games played clean). Getting it wrong in a game takes that game
+    back off the list, so the word has to be re-earned in the game it was missed in, not
+    everywhere.
+
+    This replaces a "three correct in a row" streak, and the middle *Learning* bucket went
+    with it. A streak answers "how warm is this word right now", which is a different
+    question from "have I proved I know it", and having two competing definitions of
+    mastered on one screen — a streak here, a clean sweep on the progress bar — is what
+    made the old filter unreadable. Two buckets now: not yet, and proven in all four games.
     """
 
     STATUS_NEW = "new"
-    STATUS_LEARNING = "learning"
     STATUS_MASTERED = "mastered"
     STATUS_CHOICES = (
         (STATUS_NEW, "New"),
-        (STATUS_LEARNING, "Learning"),
         (STATUS_MASTERED, "Mastered"),
     )
-
-    MASTERY_STREAK = 3
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -193,7 +217,11 @@ class VocabWordProgress(models.Model):
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_NEW, db_index=True)
     correct_count = models.PositiveIntegerField(default=0)
     wrong_count = models.PositiveIntegerField(default=0)
-    streak = models.PositiveIntegerField(default=0)
+    #: The games this word has been answered correctly in, from :data:`STUDY_MODES`. The
+    #: word is mastered once all four are present. A list rather than four booleans so a
+    #: fifth game costs no migration — the same reason the homework score divides by the
+    #: number of modes the model declares instead of by a literal 4.
+    correct_modes = models.JSONField(default=list, blank=True)
     last_reviewed_at = models.DateTimeField(null=True, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -210,19 +238,40 @@ class VocabWordProgress(models.Model):
     def __str__(self) -> str:
         return f"{self.user_id}:{self.word_id} ({self.status})"
 
-    def record(self, *, correct: bool, at=None) -> None:
-        """Apply one graded answer. Caller saves."""
+    #: Written together by record(); handed to save(update_fields=...) by callers.
+    RECORD_FIELDS = (
+        "status",
+        "correct_count",
+        "wrong_count",
+        "correct_modes",
+        "last_reviewed_at",
+        "updated_at",
+    )
+
+    def record(self, *, correct: bool, mode: str, at=None) -> None:
+        """Apply one graded answer from one game. Caller saves.
+
+        ``mode`` is required rather than optional: without it an answer cannot say which
+        game it proves, and a caller that forgets it would silently stop the word ever
+        reaching mastered.
+        """
         self.last_reviewed_at = at or timezone.now()
+        earned = [m for m in (self.correct_modes or []) if m in STUDY_MODES]
         if correct:
             self.correct_count += 1
-            self.streak += 1
-            self.status = (
-                self.STATUS_MASTERED if self.streak >= self.MASTERY_STREAK else self.STATUS_LEARNING
-            )
+            if mode in STUDY_MODES and mode not in earned:
+                earned.append(mode)
         else:
             self.wrong_count += 1
-            self.streak = 0
-            self.status = self.STATUS_LEARNING
+            # Only THIS game is given up. A word missed in Speed has not stopped being
+            # known in Flashcards, and wiping the lot would make one slip cost four games.
+            earned = [m for m in earned if m != mode]
+        # Stored in the canonical game order so two rows that earned the same games compare
+        # equal and the column is diffable.
+        self.correct_modes = [m for m in STUDY_MODES if m in earned]
+        self.status = (
+            self.STATUS_MASTERED if len(self.correct_modes) == len(STUDY_MODES) else self.STATUS_NEW
+        )
 
 
 class VocabHomework(models.Model):
@@ -275,16 +324,13 @@ class VocabStudySession(models.Model):
     self-study on a bank set or on a student's own custom set is not homework.
     """
 
-    MODE_FLASHCARD = "flashcard"
-    MODE_MATCHING = "matching"
-    MODE_SPEED = "speed"
-    MODE_TEST = "test"
-    MODE_CHOICES = (
-        (MODE_FLASHCARD, "Flashcard"),
-        (MODE_MATCHING, "Matching"),
-        (MODE_SPEED, "Speed"),
-        (MODE_TEST, "Test"),
-    )
+    # Kept as class constants for every existing caller (``VocabStudySession.MODE_TEST``);
+    # the values live at module level so VocabWordProgress can name the same four games.
+    MODE_FLASHCARD = STUDY_MODE_FLASHCARD
+    MODE_MATCHING = STUDY_MODE_MATCHING
+    MODE_SPEED = STUDY_MODE_SPEED
+    MODE_TEST = STUDY_MODE_TEST
+    MODE_CHOICES = tuple((m, STUDY_MODE_LABELS[m]) for m in STUDY_MODES)
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -389,6 +435,28 @@ class VocabStudySession(models.Model):
     def scaled_accuracy(self, set_size: int) -> float:
         """This run's homework percent: ``accuracy`` (0..100) discounted by :meth:`coverage`."""
         return self.accuracy * self.coverage(set_size)
+
+    def is_perfect(self, set_size: int) -> bool:
+        """Did this run MASTER its game? Every word in the set answered, none of them wrong.
+
+        Both halves are load-bearing. Without "none wrong" it is not mastery; without
+        "every word" it is farmable outright — Speed reports only what was answered before
+        its sixty seconds expire, so one correct answer and a expired clock stores
+        ``accuracy = 100`` over a single word. Flashcards re-drill what was missed into the
+        same run and report every verdict, so a clean sweep there means clean on the FIRST
+        pass, which is the bar the word deserves.
+
+        Counted on the raw counters rather than on ``accuracy``: that column is a rounded
+        float, and "did the student get everything right" is an equality question about two
+        integers, not a comparison against 100.0.
+        """
+        return (
+            self.completed_at is not None
+            and self.total_count > 0
+            and self.correct_count == self.total_count
+            and set_size > 0
+            and self.distinct_words >= set_size
+        )
 
     def complete(self, at=None) -> None:
         """

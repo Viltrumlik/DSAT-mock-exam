@@ -177,6 +177,9 @@ class JournalLesson(models.Model):
     # ``external_url`` mirrors the first so has_content / release / clients keep working.
     external_url = models.URLField(blank=True, default="")
     external_urls = models.JSONField(default=list, blank=True)
+    # Optional NAME per link, index-aligned with ``external_urls`` — see
+    # classes.Assignment.external_url_labels for why the names sit beside the list.
+    external_url_labels = models.JSONField(default=list, blank=True)
     # Optional lesson video (link or direct URL) — copied onto the released homework so a
     # student who missed the lesson can watch it. See classes.Assignment.video_url.
     video_url = models.URLField(max_length=500, blank=True, default="")
@@ -399,6 +402,7 @@ class JournalClasswork(models.Model):
     # Several links on the new-topic block; singular field mirrors the first (see above).
     new_topic_external_url = models.URLField(blank=True, default="")
     new_topic_external_urls = models.JSONField(default=list, blank=True)
+    new_topic_external_url_labels = models.JSONField(default=list, blank=True)
     # Optional lesson video for the in-class plan (shown to the teacher in the panel).
     new_topic_video_url = models.URLField(max_length=500, blank=True, default="")
     new_topic_video_file = models.FileField(upload_to="journal_videos/", max_length=500, null=True, blank=True)

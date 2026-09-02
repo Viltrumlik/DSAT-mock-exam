@@ -50,6 +50,8 @@ export interface StudentClasswork {
   instructions: string;
   assigned_at: string | null;
   external_urls: string[];
+  /** Each link's optional name, index-aligned with `external_urls`. Blank = show the link. */
+  external_url_labels: string[];
   video_url: string;
   files: ClassworkFile[];
   contents: ClassworkContent[];
@@ -73,6 +75,17 @@ const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v)
 
 const strList = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+
+/**
+ * Link NAMES, kept positional. `strList` drops blanks, which is right for links and wrong
+ * for their names: a name is optional per link, so dropping the empty ones would slide
+ * every later name onto the wrong URL.
+ */
+const labelList = (v: unknown, len: number): string[] =>
+  Array.from({ length: len }, (_, i) => {
+    const raw = Array.isArray(v) ? v[i] : undefined;
+    return typeof raw === "string" ? raw : "";
+  });
 
 const rowList = (v: unknown): Row[] =>
   Array.isArray(v) ? v.map(asRow).filter((r): r is Row => r != null) : [];
@@ -119,6 +132,8 @@ export function classworkFromAssignments(items: readonly unknown[]): StudentClas
       // The multi-link list is the source of truth; the singular field is the legacy
       // fallback for rows authored before it existed.
       external_urls: links.length > 0 ? links : single ? [single] : [],
+      external_url_labels:
+        links.length > 0 ? labelList(r.external_url_labels, links.length) : single ? [""] : [],
       video_url: str(r.video_file_url) || str(r.video_url),
       files: files.length > 0 ? files : primary ? [{ url: primary, file_name: "Lesson file" }] : [],
       contents: rowList(r.contents).map((c) => ({
