@@ -209,21 +209,29 @@ def _scoring_cutoff(assignment, as_of):
 
 
 def _vocab_items(assignment, student, as_of=None) -> list[BundleItem]:
-    """One item per attached vocabulary set, scored **per game**.
+    """One item per attached vocabulary set, scored **per game mastered**.
 
-        set_percent  = Σ over the four modes of game_percent / 4
-        game_percent = accuracy × coverage   (0 for a mode never completed)
+        set_percent = 100 × games mastered / 4
+        a game is mastered by ONE clean run of it: every word in the set answered,
+        none of them wrong
 
-    So each of flashcard / matching / speed / test is a quarter of the set, and skipping one
-    costs a quarter of it.
+    So each of flashcard / matching / speed / test is a quarter of the set: skipping one
+    costs a quarter, and a set is worth full marks only when all four have been played
+    clean. There is no partial credit inside a game — 19 of 20 words right in Speed is not
+    95% of Speed, it is Speed not mastered yet, and the student can race it again.
 
-    **Coverage is not a refinement of accuracy, it is what makes accuracy mean anything.**
-    Raw accuracy is not comparable across the four games and is farmable in seconds: Speed
-    only ever reports the prompts answered before its 60-second clock expires, so two of
-    twenty words answered correctly stores ``accuracy = 100``. See ``VocabStudySession.coverage``.
+    **This is a pass/fail bar per game, replacing a graded one** (``accuracy × coverage``,
+    first completed run only). Two things drove the change. It is the rule the product now
+    states to the student — a full progress bar means four clean games and pays 100% — and
+    a graded first-run rule quietly made a bad first attempt permanent: a muddled opening
+    Speed round capped a quarter of the set for ever, on a sweep that re-priced the
+    homework every ten minutes for seven days. Mastery is "once, ever" instead, so practice
+    can always fix it.
 
-    The FIRST completed session per (set, mode) counts, matching the assessment rule — a
-    replay mints a new row, and a re-run is practice, not a second earning.
+    **Both halves of the clean-run test are load-bearing.** "None wrong" alone is not
+    mastery of the SET, and it is farmable in seconds: Speed only ever reports the prompts
+    answered before its 60-second clock expires, so two of twenty words answered correctly
+    stores ``accuracy = 100``. See ``VocabStudySession.is_perfect``.
     """
     from django.db.models import Q
 
@@ -323,19 +331,22 @@ def _vocab_items(assignment, student, as_of=None) -> list[BundleItem]:
         if as_of is not None:
             qs = qs.filter(completed_at__lte=as_of)
 
-        first_by_mode: dict[str, VocabStudySession] = {}
-        for session in qs.order_by("completed_at", "id"):
-            first_by_mode.setdefault(session.mode, session)
-
-        earned = 0.0
-        for mode in modes:
-            session = first_by_mode.get(mode)
-            if session is not None:
-                earned += session.scaled_accuracy(_set_size_when_played(times, session))
+        # Every completed run is looked at, not just the first per mode: a game is mastered
+        # the first time it is played CLEAN, whenever that happens.
+        mastered_modes = {
+            session.mode
+            for session in qs
+            if session.mode in modes
+            and session.is_perfect(_set_size_when_played(times, session))
+        }
         # Divided by the number of modes the model declares, not by a literal 4: adding a
         # fifth game would then re-split the set instead of letting a student reach 125%.
         items.append(
-            BundleItem("vocab", f"vocab:{link.vocab_set_id}", earned / len(modes))
+            BundleItem(
+                "vocab",
+                f"vocab:{link.vocab_set_id}",
+                100.0 * len(mastered_modes) / len(modes),
+            )
         )
     return items
 

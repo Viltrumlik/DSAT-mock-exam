@@ -56,7 +56,7 @@ class VocabSetAdmin(admin.ModelAdmin):
 
 @admin.register(VocabWordProgress)
 class VocabWordProgressAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "word", "status", "streak", "last_reviewed_at")
+    list_display = ("id", "user", "word", "status", "correct_modes", "last_reviewed_at")
     list_filter = ("status",)
     search_fields = ("user__email", "word__word")
     raw_id_fields = ("user", "word")

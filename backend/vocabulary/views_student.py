@@ -36,7 +36,10 @@ from .serializers import (
     SessionStartSerializer,
     completed_set_ids,
     empty_progress,
+    mastered_modes_by_set,
+    mastery_out,
     section_counts,
+    section_mastery,
     section_progress_buckets,
     session_out,
     session_summary_out,
@@ -127,6 +130,28 @@ def _validate_bank_word_ids(word_ids: list[int]) -> tuple[list[int], Response | 
     return word_ids, None
 
 
+def _mastered_set_counts_by_section(user, section_ids) -> dict[int, int]:
+    """``{section_id: how many of its sets this student has fully mastered}``.
+
+    Two grouped queries for the whole hub rather than one per section: the set ids and
+    their word counts come back together, and :func:`mastered_modes_by_set` answers every
+    set in a single pass.
+    """
+    if not section_ids:
+        return {}
+    rows = list(
+        VocabSet.objects.filter(section_id__in=section_ids).values_list("id", "section_id")
+    )
+    set_ids = [sid for sid, _ in rows]
+    counts = set_word_counts(set_ids)
+    modes = mastered_modes_by_set(user, set_ids, counts)
+    out = {sid: 0 for sid in section_ids}
+    for set_id, section_id in rows:
+        if mastery_out(modes.get(set_id, set()), word_count=counts.get(set_id, 0))["is_mastered"]:
+            out[section_id] = out.get(section_id, 0) + 1
+    return out
+
+
 # --------------------------------------------------------------------------- sections
 
 
@@ -140,6 +165,7 @@ class SectionListView(APIView):
         ids = [s.id for s in sections]
         set_counts, word_counts = section_counts(ids)
         buckets = section_progress_buckets(request.user, ids, word_counts)
+        mastered_by_section = _mastered_set_counts_by_section(request.user, ids)
         return Response(
             [
                 {
@@ -150,6 +176,10 @@ class SectionListView(APIView):
                     "set_count": set_counts.get(s.id, 0),
                     "word_count": word_counts.get(s.id, 0),
                     "progress": buckets.get(s.id, empty_progress()),
+                    # The section's own bar: how many of its sets are fully mastered.
+                    "mastery": section_mastery(
+                        mastered_by_section.get(s.id, 0), set_counts.get(s.id, 0)
+                    ),
                 }
                 for s in sections
             ]
@@ -176,6 +206,11 @@ class SectionDetailView(APIView):
         counts = set_word_counts(set_ids)
         buckets = set_progress_buckets(request.user, set_ids, counts)
         done = completed_set_ids(request.user, set_ids)
+        modes = mastered_modes_by_set(request.user, set_ids, counts)
+        mastery = {
+            s.id: mastery_out(modes.get(s.id, set()), word_count=counts.get(s.id, 0))
+            for s in sets
+        }
         _set_counts, word_counts = section_counts([section.id])
         section_buckets = section_progress_buckets(request.user, [section.id], word_counts)
         return Response(
@@ -186,6 +221,11 @@ class SectionDetailView(APIView):
                 "description": section.description,
                 "word_count": word_counts.get(section.id, 0),
                 "progress": section_buckets.get(section.id, empty_progress()),
+                # Derived from the very set cards below, so the header and the grid can
+                # never disagree about how many sets are done.
+                "mastery": section_mastery(
+                    sum(1 for m in mastery.values() if m["is_mastered"]), len(sets)
+                ),
                 "sets": [
                     {
                         "id": s.id,
@@ -194,6 +234,7 @@ class SectionDetailView(APIView):
                         "word_count": counts.get(s.id, 0),
                         "completed": s.id in done,
                         "progress": buckets.get(s.id, empty_progress()),
+                        "mastery": mastery[s.id],
                     }
                     for s in sets
                 ],
@@ -245,6 +286,7 @@ class MySetListCreateView(APIView):
         set_ids = [s.id for s in sets]
         counts = set_word_counts(set_ids)
         done = completed_set_ids(request.user, set_ids)
+        modes = mastered_modes_by_set(request.user, set_ids, counts)
         return Response(
             [
                 {
@@ -252,6 +294,9 @@ class MySetListCreateView(APIView):
                     "title": s.title,
                     "word_count": counts.get(s.id, 0),
                     "completed": s.id in done,
+                    "mastery": mastery_out(
+                        modes.get(s.id, set()), word_count=counts.get(s.id, 0)
+                    ),
                     "created_at": s.created_at,
                 }
                 for s in sets
@@ -337,6 +382,7 @@ class HomeworkListView(APIView):
         set_ids = [l.vocab_set_id for l in links]
         counts = set_word_counts(set_ids)
         done = completed_set_ids(request.user, set_ids)
+        modes = mastered_modes_by_set(request.user, set_ids, counts)
 
         groups: dict[int, dict] = {}
         for link in links:
@@ -361,6 +407,12 @@ class HomeworkListView(APIView):
                     ),
                     "word_count": counts.get(link.vocab_set_id, 0),
                     "completed": link.vocab_set_id in done,
+                    # The same block the set page shows, so a student can see from the
+                    # homework card how many of the four games are still owed.
+                    "mastery": mastery_out(
+                        modes.get(link.vocab_set_id, set()),
+                        word_count=counts.get(link.vocab_set_id, 0),
+                    ),
                 }
             )
         return Response(list(groups.values()))
@@ -543,18 +595,9 @@ class SessionFinishView(APIView):
                         user=request.user, word_id=entry["word_id"]
                     )
                     rows[entry["word_id"]] = progress
-                progress.record(correct=entry["correct"], at=now)
+                progress.record(correct=entry["correct"], mode=session.mode, at=now)
             for progress in rows.values():
-                progress.save(
-                    update_fields=[
-                        "status",
-                        "correct_count",
-                        "wrong_count",
-                        "streak",
-                        "last_reviewed_at",
-                        "updated_at",
-                    ]
-                )
+                progress.save(update_fields=list(VocabWordProgress.RECORD_FIELDS))
 
             locked.record_batch(
                 correct=sum(1 for r in graded if r["correct"]),

@@ -2,8 +2,9 @@
 Vocabulary student + builder API.
 
 The load-bearing behaviours here are the ones a study mode depends on: a word's status
-defaults to "new" with no progress row, mastery is streak-based (and a wrong answer
-demotes it back), finishing a session twice must not double-count, and a student's custom
+defaults to "new" with no progress row, mastery is per-GAME (a word is mastered once it
+has been answered correctly in all four study modes; a set is mastered once all four have
+been played clean), finishing a session twice must not double-count, and a student's custom
 sets are invisible to everyone else — including the builder console.
 """
 
@@ -137,25 +138,28 @@ class SectionListTests(VocabFixture):
         self.assertEqual(body[0]["set_count"], 1)
         self.assertEqual(body[0]["word_count"], 3)
         # Nothing studied yet — every word is New.
-        self.assertEqual(
-            body[0]["progress"], {"new": 3, "learning": 0, "mastered": 0, "total": 3}
-        )
+        self.assertEqual(body[0]["progress"], {"new": 3, "mastered": 0, "total": 3})
+        # Nothing mastered either: no game has been played clean.
+        self.assertEqual(body[0]["mastery"], {"mastered_sets": 0, "total_sets": 1, "percent": 0})
 
     def test_progress_reflects_recorded_answers(self):
         VocabWordProgress.objects.create(
             user=self.student, word=self.words[0], status=VocabWordProgress.STATUS_MASTERED
         )
+        # A word answered but not yet proven in all four games is still New — there is no
+        # bucket in between any more.
         VocabWordProgress.objects.create(
-            user=self.student, word=self.words[1], status=VocabWordProgress.STATUS_LEARNING
+            user=self.student,
+            word=self.words[1],
+            status=VocabWordProgress.STATUS_NEW,
+            correct_modes=["flashcard"],
         )
         # Another student's progress must not leak into this student's buckets.
         VocabWordProgress.objects.create(
             user=self.other, word=self.words[2], status=VocabWordProgress.STATUS_MASTERED
         )
         body = self.client.get("/api/vocabulary/sections/").json()
-        self.assertEqual(
-            body[0]["progress"], {"new": 1, "learning": 1, "mastered": 1, "total": 3}
-        )
+        self.assertEqual(body[0]["progress"], {"new": 2, "mastered": 1, "total": 3})
 
     def test_frozen_student_is_blocked(self):
         frozen = User.objects.create_user("vocab_frozen@t.com", is_frozen=True)
@@ -481,28 +485,43 @@ class SessionTests(VocabFixture):
         self.assertEqual(body["total_count"], 2)
         self.assertEqual(body["accuracy"], 50.0)
         self.assertTrue(body["set_completed"])
-        self.assertEqual(
-            body["progress"], {"new": 1, "learning": 2, "mastered": 0, "total": 3}
-        )
+        # Nothing is mastered by one mixed round: a word needs all four games, and no
+        # bucket sits between New and Mastered any more.
+        self.assertEqual(body["progress"], {"new": 3, "mastered": 0, "total": 3})
 
-    def test_three_correct_in_a_row_masters_a_word_and_a_miss_demotes_it(self):
+    def test_a_word_is_mastered_once_every_game_has_had_it_right(self):
         word = self.words[0]
-        for _ in range(3):
-            session_id = self._start().json()["id"]
+        for mode in ("flashcard", "matching", "speed"):
+            session_id = self._start(mode=mode).json()["id"]
+            self._finish(session_id, [{"word_id": word.id, "correct": True}])
+        progress = VocabWordProgress.objects.get(user=self.student, word=word)
+        self.assertEqual(progress.correct_modes, ["flashcard", "matching", "speed"])
+        self.assertEqual(progress.status, VocabWordProgress.STATUS_NEW, "three of four is not it")
+
+        session_id = self._start(mode="test").json()["id"]
+        self._finish(session_id, [{"word_id": word.id, "correct": True}])
+        progress.refresh_from_db()
+        self.assertEqual(progress.status, VocabWordProgress.STATUS_MASTERED)
+
+    def test_missing_a_word_gives_up_only_the_game_it_was_missed_in(self):
+        """One slip must not cost four games' work — the word is re-earned where it fell."""
+        word = self.words[0]
+        for mode in ("flashcard", "matching", "speed", "test"):
+            session_id = self._start(mode=mode).json()["id"]
             self._finish(session_id, [{"word_id": word.id, "correct": True}])
         progress = VocabWordProgress.objects.get(user=self.student, word=word)
         self.assertEqual(progress.status, VocabWordProgress.STATUS_MASTERED)
-        self.assertEqual(progress.streak, 3)
 
-        session_id = self._start().json()["id"]
+        session_id = self._start(mode="speed").json()["id"]
         self._finish(session_id, [{"word_id": word.id, "correct": False}])
         progress.refresh_from_db()
-        self.assertEqual(progress.status, VocabWordProgress.STATUS_LEARNING)
-        self.assertEqual(progress.streak, 0)
+        self.assertEqual(progress.status, VocabWordProgress.STATUS_NEW)
+        self.assertEqual(progress.correct_modes, ["flashcard", "matching", "test"])
         self.assertEqual(progress.wrong_count, 1)
 
-    def test_streak_is_applied_in_answer_order_within_one_session(self):
-        # Wrong then right must leave the word Learning with a streak of 1 — not Mastered.
+    def test_answers_apply_in_order_within_one_session(self):
+        """Flashcards re-drill what was missed into the same run: wrong then right in one
+        game leaves the word credited in that game, and both counters moved."""
         word = self.words[0]
         session_id = self._start().json()["id"]
         self._finish(
@@ -513,9 +532,22 @@ class SessionTests(VocabFixture):
             ],
         )
         progress = VocabWordProgress.objects.get(user=self.student, word=word)
-        self.assertEqual(progress.status, VocabWordProgress.STATUS_LEARNING)
-        self.assertEqual(progress.streak, 1)
+        self.assertEqual(progress.correct_modes, ["flashcard"])
+        self.assertEqual(progress.status, VocabWordProgress.STATUS_NEW)
         self.assertEqual((progress.correct_count, progress.wrong_count), (1, 1))
+
+    def test_the_reverse_order_gives_the_game_up_again(self):
+        word = self.words[0]
+        session_id = self._start().json()["id"]
+        self._finish(
+            session_id,
+            [
+                {"word_id": word.id, "correct": True},
+                {"word_id": word.id, "correct": False},
+            ],
+        )
+        progress = VocabWordProgress.objects.get(user=self.student, word=word)
+        self.assertEqual(progress.correct_modes, [])
 
     def test_finish_is_idempotent(self):
         session_id = self._start().json()["id"]
@@ -526,7 +558,7 @@ class SessionTests(VocabFixture):
         self.assertEqual(first["total_count"], second["total_count"])
         progress = VocabWordProgress.objects.get(user=self.student, word=self.words[0])
         self.assertEqual(progress.correct_count, 1)  # not double-applied
-        self.assertEqual(progress.streak, 1)
+        self.assertEqual(progress.correct_modes, ["flashcard"])
 
     def test_words_outside_the_set_are_ignored(self):
         stray = VocabWord.objects.create(
@@ -559,6 +591,107 @@ class SessionTests(VocabFixture):
         self._finish(session_id, [{"word_id": self.words[0].id, "correct": True}])
         body = self.client.get(f"/api/vocabulary/sections/{self.section.id}/").json()
         self.assertTrue(body["sets"][0]["completed"])
+
+
+class SetMasteryTests(VocabFixture):
+    """A set is mastered one GAME at a time, and only by a clean run of it.
+
+    Clean means both things at once: every word in the set answered, and none of them
+    wrong. Either half alone is worthless — "no mistakes" over two of twenty words is what
+    a Speed round looks like five seconds in.
+    """
+
+    def _mastery(self):
+        return self.client.get(f"/api/vocabulary/sets/{self.vset.id}/").json()["mastery"]
+
+    def _play_clean(self, mode):
+        session_id = self._start(mode=mode).json()["id"]
+        return self._finish(
+            session_id, [{"word_id": w.id, "correct": True} for w in self.words]
+        ).json()
+
+    def test_an_untouched_set_has_no_game_mastered(self):
+        self.assertEqual(
+            self._mastery(),
+            {
+                "modes": {"flashcard": False, "matching": False, "speed": False, "test": False},
+                "mastered_modes": 0,
+                "total_modes": 4,
+                "percent": 0,
+                "is_mastered": False,
+            },
+        )
+
+    def test_each_clean_game_is_a_quarter_of_the_bar(self):
+        for n, mode in enumerate(("flashcard", "matching", "speed", "test"), start=1):
+            self._play_clean(mode)
+            mastery = self._mastery()
+            self.assertEqual(mastery["mastered_modes"], n)
+            self.assertEqual(mastery["percent"], n * 25)
+            self.assertEqual(mastery["is_mastered"], n == 4)
+
+    def test_one_wrong_answer_means_the_game_is_not_mastered(self):
+        session_id = self._start().json()["id"]
+        results = [{"word_id": w.id, "correct": True} for w in self.words]
+        results[-1]["correct"] = False
+        body = self._finish(session_id, results).json()
+        self.assertFalse(body["mode_mastered"])
+        self.assertEqual(self._mastery()["percent"], 0)
+
+    def test_a_run_that_never_reached_the_whole_set_is_not_mastered(self):
+        """Speed's clock expires mid-round: two of three words, both right, is not the set."""
+        session_id = self._start(mode="speed").json()["id"]
+        body = self._finish(
+            session_id, [{"word_id": w.id, "correct": True} for w in self.words[:2]]
+        ).json()
+        self.assertEqual(body["accuracy"], 100.0)
+        self.assertFalse(body["mode_mastered"])
+        self.assertEqual(self._mastery()["percent"], 0)
+
+    def test_a_game_can_be_practised_until_it_is_clean(self):
+        """Mastery is "once, ever" — a muddled first attempt is not a permanent cap."""
+        session_id = self._start().json()["id"]
+        self._finish(session_id, [{"word_id": w.id, "correct": False} for w in self.words])
+        self.assertEqual(self._mastery()["percent"], 0)
+
+        self._play_clean("flashcard")
+        self.assertEqual(self._mastery()["percent"], 25)
+
+    def test_the_finish_payload_says_whether_this_run_mastered_its_game(self):
+        body = self._play_clean("matching")
+        self.assertTrue(body["mode_mastered"])
+        self.assertEqual(body["mastery"]["modes"]["matching"], True)
+        self.assertEqual(body["mastery"]["percent"], 25)
+
+    def test_a_partial_flush_never_masters_a_game(self):
+        """Quitting halfway records the answers; it does not complete the run."""
+        session_id = self._start().json()["id"]
+        body = self._finish(
+            session_id,
+            [{"word_id": w.id, "correct": True} for w in self.words],
+            partial=True,
+        ).json()
+        self.assertFalse(body["mode_mastered"])
+        self.assertEqual(self._mastery()["percent"], 0)
+
+    def test_an_empty_set_is_never_mastered(self):
+        empty = VocabSet.objects.create(section=self.section, title="Empty", order=9)
+        body = self.client.get(f"/api/vocabulary/sets/{empty.id}/").json()
+        self.assertEqual(body["mastery"]["percent"], 0)
+        self.assertFalse(body["mastery"]["is_mastered"])
+
+    def test_a_section_counts_the_sets_that_are_fully_mastered(self):
+        for mode in ("flashcard", "matching", "speed", "test"):
+            self._play_clean(mode)
+        hub = next(
+            s
+            for s in self.client.get("/api/vocabulary/sections/").json()
+            if s["id"] == self.section.id
+        )
+        self.assertEqual(hub["mastery"], {"mastered_sets": 1, "total_sets": 1, "percent": 100})
+        detail = self.client.get(f"/api/vocabulary/sections/{self.section.id}/").json()
+        self.assertEqual(detail["mastery"], hub["mastery"])
+        self.assertTrue(detail["sets"][0]["mastery"]["is_mastered"])
 
 
 class PartialFlushTests(VocabFixture):
@@ -640,8 +773,13 @@ class PartialFlushTests(VocabFixture):
         body = self.client.get(f"/api/vocabulary/sections/{self.section.id}/").json()
         card = next(s for s in body["sets"] if s["id"] == self.big.id)
         self.assertFalse(card["completed"])
-        self.assertEqual(card["progress"]["learning"], 10)
-        self.assertEqual(card["progress"]["new"], 15)
+        # The answers are banked as "right in Flashcards" for those ten words. None of them
+        # is Mastered — that takes all four games — and the set has mastered no game either,
+        # because a partial flush never completes the run.
+        rows = VocabWordProgress.objects.filter(user=self.student)
+        self.assertEqual([r.correct_modes for r in rows], [["flashcard"]] * 10)
+        self.assertEqual(card["progress"], {"new": 25, "mastered": 0, "total": 25})
+        self.assertEqual(card["mastery"]["mastered_modes"], 0)
 
     def test_the_running_clock_never_goes_backwards(self):
         session_id = self._start(set_id=self.big.id).json()["id"]
@@ -667,9 +805,7 @@ class SectionDetailCountTests(VocabFixture):
     def test_section_totals_are_word_level_and_match_the_hub(self):
         body = self.client.get(f"/api/vocabulary/sections/{self.section.id}/").json()
         self.assertEqual(body["word_count"], 3)
-        self.assertEqual(
-            body["progress"], {"new": 3, "learning": 0, "mastered": 0, "total": 3}
-        )
+        self.assertEqual(body["progress"], {"new": 3, "mastered": 0, "total": 3})
         self.assertEqual([s["word_count"] for s in body["sets"]], [3, 1])
 
         hub = next(
@@ -681,19 +817,16 @@ class SectionDetailCountTests(VocabFixture):
         self.assertEqual(hub["progress"], body["progress"])
 
     def test_a_shared_word_shows_in_every_card_that_holds_it(self):
-        session_id = self._start().json()["id"]
-        self._finish(session_id, [{"word_id": self.words[0].id, "correct": True}])
+        # All four games, so the word actually reaches Mastered and there is something to
+        # see on both cards.
+        for mode in ("flashcard", "matching", "speed", "test"):
+            session_id = self._start(mode=mode).json()["id"]
+            self._finish(session_id, [{"word_id": self.words[0].id, "correct": True}])
         body = self.client.get(f"/api/vocabulary/sections/{self.section.id}/").json()
         cards = {s["id"]: s["progress"] for s in body["sets"]}
-        self.assertEqual(
-            cards[self.vset.id], {"new": 2, "learning": 1, "mastered": 0, "total": 3}
-        )
-        self.assertEqual(
-            cards[self.second.id], {"new": 0, "learning": 1, "mastered": 0, "total": 1}
-        )
-        self.assertEqual(
-            body["progress"], {"new": 2, "learning": 1, "mastered": 0, "total": 3}
-        )
+        self.assertEqual(cards[self.vset.id], {"new": 2, "mastered": 1, "total": 3})
+        self.assertEqual(cards[self.second.id], {"new": 0, "mastered": 1, "total": 1})
+        self.assertEqual(body["progress"], {"new": 2, "mastered": 1, "total": 3})
 
     def test_the_query_count_does_not_grow_with_the_section(self):
         # Grouped counts only: the page must never materialize the section's words.
@@ -708,9 +841,9 @@ class SectionDetailCountTests(VocabFixture):
         with self.assertNumQueries(self.SECTION_DETAIL_QUERIES):
             self.client.get(f"/api/vocabulary/sections/{self.section.id}/")
 
-    # section + sets + set counts + set buckets + completed + section counts (x2)
-    # + section buckets. Flat in the number of sets AND of words.
-    SECTION_DETAIL_QUERIES = 8
+    # section + sets + set counts + set buckets + completed + set mastery
+    # + section counts (x2) + section buckets. Flat in the number of sets AND of words.
+    SECTION_DETAIL_QUERIES = 9
 
 
 # --------------------------------------------------------------------------- builder
