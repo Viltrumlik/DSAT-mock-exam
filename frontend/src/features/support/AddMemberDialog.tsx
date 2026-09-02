@@ -16,6 +16,12 @@ import { useInvitableClassmates, useInviteMember } from "./supportHooks";
  * one-to-one hour it creates one — the teacher published that hour expecting one student. So
  * the dialog says plainly that the classmate will be told, and it says it before the button,
  * not in a toast afterwards.
+ *
+ * **And that it pays.** A support hour earns per head and the rate climbs with the group
+ * (``rewards.constants.support_session_points``), which is the whole reason inviting exists —
+ * but the student pressing this button is the one it was invisible to. Said without the
+ * numbers on purpose: the school retunes the bottom rung from the admin, and a figure typed
+ * here would go on quoting the old one. The rewards page states the ladder, from the rule.
  */
 export function AddMemberDialog({
   open,
@@ -55,6 +61,10 @@ export function AddMemberDialog({
         <p className="text-sm font-semibold text-muted-foreground">
           {when} with {teacherName}. Whoever you pick gets their own seat, and we&apos;ll tell
           them — in the app and by email.
+        </p>
+        <p className="text-sm font-semibold text-muted-foreground">
+          You&apos;ll both earn more points for the session than either of you would sitting it
+          alone.
         </p>
 
         {errorText ? <Alert tone="danger">{errorText}</Alert> : null}
