@@ -12,7 +12,7 @@ import { AnnotationToolbar } from "@/features/testing-simulation/tools/highlight
 import { WORD_STATUS_LABEL, type VocabWord, type WordFilter } from "../types";
 import { WordStatusPill } from "./WordStatusPill";
 
-const FILTER_ORDER: WordFilter[] = ["all", "new", "learning", "mastered"];
+const FILTER_ORDER: WordFilter[] = ["all", "new", "mastered"];
 
 /** Rows enter in sequence, but a 200-word set shouldn't wait 8s for the tail. */
 const STAGGER_MS = 40;
@@ -38,7 +38,7 @@ export function WordList({ words, setId }: { words: VocabWord[]; setId: number }
   const [highlighterActive, setHighlighterActive] = useState(false);
 
   const counts = useMemo(() => {
-    const c: Record<WordFilter, number> = { all: words.length, new: 0, learning: 0, mastered: 0 };
+    const c: Record<WordFilter, number> = { all: words.length, new: 0, mastered: 0 };
     for (const w of words) c[w.status] += 1;
     return c;
   }, [words]);
@@ -139,7 +139,7 @@ export function WordList({ words, setId }: { words: VocabWord[]; setId: number }
             description={
               words.length === 0
                 ? "Words appear here once this set has been filled in."
-                : "Study a mode and the words will move between New, Learning and Mastered."
+                : "A word is mastered once every game has had it right."
             }
           />
         ) : (

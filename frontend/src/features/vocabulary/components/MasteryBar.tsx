@@ -1,80 +1,104 @@
 import { cn } from "@/lib/cn";
 
-import type { ProgressCounts } from "../types";
+import { STUDY_MODES, STUDY_MODE_LABEL, type SectionMastery, type SetMastery } from "../types";
 
-const EMPTY: ProgressCounts = { new: 0, learning: 0, mastered: 0, total: 0 };
+const EMPTY: SetMastery = {
+  modes: { flashcard: false, matching: false, speed: false, test: false },
+  mastered_modes: 0,
+  total_modes: STUDY_MODES.length,
+  percent: 0,
+  is_mastered: false,
+};
 
-/** Share of the words this student has mastered — what the ring and the "N%" copy show. */
-export function masteredPercent(progress?: ProgressCounts | null): number {
-  const total = progress?.total ?? 0;
-  if (!total) return 0;
-  return Math.round((progress!.mastered / total) * 100);
+/** How full a set's bar is — whole games only, so 0 / 25 / 50 / 75 / 100. */
+export function masteryPercent(mastery?: SetMastery | null): number {
+  return mastery?.percent ?? 0;
 }
 
 /**
- * New / Learning / Mastered breakdown as ONE segmented bar: three coloured
- * segments sharing a single track, so a glance reads the whole split rather
- * than just "how far along". An untouched set is all-neutral; a finished one is
- * all-green. Segments after a non-empty neighbour carry a 1px card-coloured
- * inset so the boundary stays legible when two tones sit side by side.
+ * A set's progress bar: **one segment per game**, filled when that game has been played
+ * clean. Four separated segments rather than one sliding fill, because the rule itself is
+ * discrete — a quarter appears the moment a game is mastered and never moves between
+ * those five positions, and a continuous bar would promise partial credit that does not
+ * exist. The gaps are what make "three of four" legible at a glance.
  */
 export function MasteryBar({
-  progress,
+  mastery,
   legend,
   className,
 }: {
-  progress?: ProgressCounts | null;
-  /** Show the per-status counts under the bar. */
+  mastery?: SetMastery | null;
+  /** Name the games under the bar. Off on a dense card, on where there is room. */
   legend?: boolean;
   className?: string;
 }) {
-  const p = progress ?? EMPTY;
-  const total = p.total || 0;
-  const share = (n: number) => (total > 0 ? (n / total) * 100 : 0);
-
-  const segments = [
-    { key: "mastered", fill: "bg-success", value: p.mastered },
-    { key: "learning", fill: "bg-warning", value: p.learning },
-    { key: "new", fill: "bg-border-strong", value: p.new },
-  ];
+  const m = mastery ?? EMPTY;
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <div
-        className="flex h-2.5 w-full overflow-hidden rounded-full bg-surface-3"
+        className="flex h-2.5 w-full gap-1"
         role="img"
-        aria-label={`${p.mastered} mastered, ${p.learning} learning, ${p.new} new`}
+        aria-label={`${m.mastered_modes} of ${m.total_modes} games mastered`}
       >
-        {segments.map((s, i) => (
+        {STUDY_MODES.map((mode, i) => (
           <span
-            key={s.key}
+            key={mode}
             className={cn(
-              "cr-bar h-full transition-[width] duration-500 ease-out",
-              s.fill,
-              // Hairline separator only when something actually precedes it.
-              i > 0 && segments[i - 1].value > 0 && s.value > 0 && "shadow-[inset_1px_0_0_var(--card)]",
+              "cr-bar h-full flex-1 rounded-full transition-colors duration-500 ease-out",
+              m.modes?.[mode] ? "bg-success" : "bg-surface-3",
             )}
-            style={{ width: `${share(s.value)}%`, animationDelay: `${i * 90}ms` }}
+            style={{ animationDelay: `${i * 90}ms` }}
           />
         ))}
       </div>
       {legend ? (
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-semibold text-muted-foreground">
-          <LegendDot dotClass="bg-success" label="Mastered" value={p.mastered} />
-          <LegendDot dotClass="bg-warning" label="Learning" value={p.learning} />
-          <LegendDot dotClass="bg-border-strong" label="New" value={p.new} />
+          {STUDY_MODES.map((mode) => (
+            <span key={mode} className="inline-flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  m.modes?.[mode] ? "bg-success" : "bg-border-strong",
+                )}
+              />
+              {STUDY_MODE_LABEL[mode]}
+            </span>
+          ))}
         </div>
       ) : null}
     </div>
   );
 }
 
-function LegendDot({ dotClass, label, value }: { dotClass: string; label: string; value: number }) {
+/**
+ * A section's bar. One scale up and therefore continuous: a section is "how many of my
+ * sets are finished", which moves a set at a time and has no fixed number of steps.
+ */
+export function SectionMasteryBar({
+  mastery,
+  className,
+}: {
+  mastery?: SectionMastery | null;
+  className?: string;
+}) {
+  const done = mastery?.mastered_sets ?? 0;
+  const total = mastery?.total_sets ?? 0;
+  const pct = mastery?.percent ?? 0;
+
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className={cn("h-2 w-2 rounded-full", dotClass)} />
-      {label}
-      <span className="ds-num font-bold text-foreground">{value}</span>
-    </span>
+    <div className={cn("flex flex-col gap-2", className)}>
+      <div
+        className="h-2.5 w-full overflow-hidden rounded-full bg-surface-3"
+        role="img"
+        aria-label={`${done} of ${total} sets mastered`}
+      >
+        <div className="cr-bar h-full rounded-full bg-success transition-[width] duration-500 ease-out" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="text-[12px] font-semibold text-muted-foreground">
+        <span className="ds-num font-bold text-foreground">{done}</span> of{" "}
+        <span className="ds-num">{total}</span> {total === 1 ? "set" : "sets"} mastered
+      </div>
+    </div>
   );
 }

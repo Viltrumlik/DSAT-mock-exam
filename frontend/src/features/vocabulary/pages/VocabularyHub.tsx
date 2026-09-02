@@ -24,7 +24,7 @@ import {
   Plus,
   Sparkles,
   Trash2,
-  TrendingUp,
+  Trophy,
   Type,
   Users,
 } from "lucide-react";
@@ -71,9 +71,12 @@ export function VocabularyHub() {
   const mySets = useMySets();
   const homework = useVocabHomework();
 
+  // Outstanding = not yet MASTERED. A homework set is owed until all four games are clean,
+  // so counting the ones merely "started" would tell a student they were finished when the
+  // homework still scores three quarters.
   const homeworkOutstanding = useMemo(() => {
     const groups = homework.data ?? [];
-    return groups.reduce((n, g) => n + g.sets.filter((s) => !s.completed).length, 0);
+    return groups.reduce((n, g) => n + g.sets.filter((s) => !s.mastery?.is_mastered).length, 0);
   }, [homework.data]);
 
   /** Hero meta tiles — real aggregates summed across every published section. */
@@ -83,19 +86,19 @@ export function VocabularyHub() {
       (acc, s) => ({
         words: acc.words + s.word_count,
         sets: acc.sets + s.set_count,
-        mastered: acc.mastered + s.progress.mastered,
-        learning: acc.learning + s.progress.learning,
+        masteredWords: acc.masteredWords + s.progress.mastered,
+        masteredSets: acc.masteredSets + (s.mastery?.mastered_sets ?? 0),
       }),
-      { words: 0, sets: 0, mastered: 0, learning: 0 },
+      { words: 0, sets: 0, masteredWords: 0, masteredSets: 0 },
     );
   }, [sections.data]);
 
   const heroReady = Boolean(sections.data);
   const tiles = [
     { label: "Words", icon: Type, value: totals.words },
-    { label: "Mastered", icon: CheckCircle2, value: totals.mastered },
-    { label: "Learning", icon: TrendingUp, value: totals.learning },
+    { label: "Words mastered", icon: CheckCircle2, value: totals.masteredWords },
     { label: "Sets", icon: Layers, value: totals.sets },
+    { label: "Sets mastered", icon: Trophy, value: totals.masteredSets },
   ];
 
   // The house tab bar takes a plain count and renders the chip itself, so the local
@@ -131,7 +134,7 @@ export function VocabularyHub() {
                 Build your word bank
               </h1>
               <p className="mt-3 max-w-xl text-sm font-medium leading-relaxed opacity-[0.78]">
-                Four ways to study every set — flashcards, matching, speed and a full test. Any one of them counts as done.
+                Four ways to study every set — flashcards, matching, speed and a full test. Play one with every word right and it is mastered; all four masters the set.
               </p>
             </div>
             <Link href="/vocabulary/new-set" className="ds-ring rounded-xl">
@@ -258,6 +261,7 @@ function MySetsTab({ query }: { query: ReturnType<typeof useMySets> }) {
               href={`/vocabulary/sets/${s.id}`}
               wordCount={s.word_count}
               completed={s.completed}
+              mastery={s.mastery}
               subtitle={`Created ${shortDate(s.created_at)}`}
               trailing={
                 <IconButton
@@ -393,6 +397,7 @@ function HomeworkGroupCard({ group, index }: { group: VocabHomeworkGroup; index:
               href={withLaunchAssignment(`/vocabulary/sets/${s.id}`, group.assignment_id)}
               wordCount={s.word_count}
               completed={s.completed}
+              mastery={s.mastery}
               subtitle={s.section_title}
               actionLabel="Start"
             />

@@ -1221,7 +1221,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
               </div>
 
               {/* External links */}
-              <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles.">
+              <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles. Give a link a name and students see the name instead of the address.">
                 <MultiLinkInput value={links} onChange={setLinks} inputClassName={crInputClass} idPrefix="asg-url" />
               </ClassroomField>
 

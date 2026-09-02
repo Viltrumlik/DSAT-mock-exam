@@ -21,15 +21,16 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
   const q = useVocabSection(sectionId);
 
   const sets = q.data?.sets ?? [];
-  // Words and Mastered come from the SECTION's own aggregates, the same ones the
-  // hub card shows. Summing the sets would count a word that appears in two of
-  // them twice, so the hub said 25 and this page said 50 one click later.
+  // Words comes from the SECTION's own aggregate, the same one the hub card shows. Summing
+  // the sets would count a word that appears in two of them twice, so the hub said 25 and
+  // this page said 50 one click later.
   const wordCount = q.data?.word_count ?? 0;
-  const mastered = q.data?.progress.mastered ?? 0;
+  // The ring counts SETS mastered, matching the hub card and the bars on the cards below.
+  const masteredSets = q.data?.mastery?.mastered_sets ?? 0;
 
   const valid = Number.isFinite(sectionId) && sectionId > 0;
-  const masteredPct = wordCount > 0 ? Math.round((mastered / wordCount) * 100) : 0;
-  const allDone = sets.length > 0 && sets.every((s) => s.completed);
+  const masteredPct = q.data?.mastery?.percent ?? 0;
+  const allDone = sets.length > 0 && sets.every((s) => s.mastery?.is_mastered);
 
   return (
     <div
@@ -68,7 +69,7 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
                     <Badge variant="primary">Question bank</Badge>
                     {allDone ? (
                       <Badge variant="success">
-                        <CheckCircle2 className="h-3 w-3" /> All sets done
+                        <CheckCircle2 className="h-3 w-3" /> Every set mastered
                       </Badge>
                     ) : null}
                   </div>
@@ -88,7 +89,13 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
               <div className="grid gap-3 sm:grid-cols-3">
                 <StatTile icon={Layers} label="Sets" value={sets.length} index={0} />
                 <StatTile icon={Type} label="Words" value={wordCount} index={1} />
-                <StatTile icon={CheckCircle2} label="Mastered" value={mastered} index={2} tone="success" />
+                <StatTile
+                  icon={CheckCircle2}
+                  label="Sets mastered"
+                  value={masteredSets}
+                  index={2}
+                  tone="success"
+                />
               </div>
             </CardContent>
           </Card>
@@ -110,7 +117,7 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
                   href={`/vocabulary/sets/${s.id}`}
                   wordCount={s.word_count}
                   completed={s.completed}
-                  progress={s.progress}
+                  mastery={s.mastery}
                 />
               ))}
             </div>

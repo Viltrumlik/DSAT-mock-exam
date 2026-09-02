@@ -330,7 +330,7 @@ export default function JournalClassworkEditor({
               className={crTextareaClass}
             />
           </ClassroomField>
-          <ClassroomField label="External links">
+          <ClassroomField label="External links" hint="Give a link a name and students see the name instead of the address.">
             <MultiLinkInput
               value={topicLinks}
               onChange={setTopicLinks}
