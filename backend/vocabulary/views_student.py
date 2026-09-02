@@ -133,21 +133,39 @@ def _validate_bank_word_ids(word_ids: list[int]) -> tuple[list[int], Response | 
 def _mastered_set_counts_by_section(user, section_ids) -> dict[int, int]:
     """``{section_id: how many of its sets this student has fully mastered}``.
 
-    Two grouped queries for the whole hub rather than one per section: the set ids and
-    their word counts come back together, and :func:`mastered_modes_by_set` answers every
-    set in a single pass.
+    Two queries for the whole hub, and both scale with **the student's own clean runs**
+    rather than with the bank. Starting from the sets instead — every set in every
+    published section, then their word counts, then their sessions — is the obvious shape
+    and the wrong one: the bank holds thousands of sets and a student has played a handful,
+    so it would build a thousand-id ``IN`` clause to answer "none of them" for almost all
+    of them. A perfect run is rare, so the sessions are the small side of this join.
     """
-    if not section_ids:
-        return {}
-    rows = list(
-        VocabSet.objects.filter(section_id__in=section_ids).values_list("id", "section_id")
-    )
-    set_ids = [sid for sid, _ in rows]
-    counts = set_word_counts(set_ids)
-    modes = mastered_modes_by_set(user, set_ids, counts)
     out = {sid: 0 for sid in section_ids}
-    for set_id, section_id in rows:
-        if mastery_out(modes.get(set_id, set()), word_count=counts.get(set_id, 0))["is_mastered"]:
+    if not section_ids:
+        return out
+    rows = list(
+        VocabStudySession.objects.filter(
+            user=user,
+            vocab_set__section_id__in=section_ids,
+            completed_at__isnull=False,
+            total_count__gt=0,
+            correct_count=F("total_count"),
+        ).values_list("vocab_set_id", "vocab_set__section_id", "mode", "distinct_words")
+    )
+    if not rows:
+        return out
+    # Only the sets a clean run actually touched need their size looking up.
+    counts = set_word_counts(sorted({r[0] for r in rows}))
+    section_of: dict[int, int] = {}
+    modes_by_set: dict[int, set[str]] = {}
+    for set_id, section_id, mode, distinct in rows:
+        size = counts.get(set_id, 0)
+        if size and distinct >= size:
+            section_of[set_id] = section_id
+            modes_by_set.setdefault(set_id, set()).add(mode)
+    for set_id, modes in modes_by_set.items():
+        if mastery_out(modes, word_count=counts.get(set_id, 0))["is_mastered"]:
+            section_id = section_of[set_id]
             out[section_id] = out.get(section_id, 0) + 1
     return out
 

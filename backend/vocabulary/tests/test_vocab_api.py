@@ -680,6 +680,27 @@ class SetMasteryTests(VocabFixture):
         self.assertEqual(body["mastery"]["percent"], 0)
         self.assertFalse(body["mastery"]["is_mastered"])
 
+    def test_the_hub_costs_the_same_however_big_the_bank_gets(self):
+        """The roll-up has to scale with the student's own clean runs, not with the bank.
+
+        Starting from the sets — every set in every published section, then their sizes,
+        then their sessions — is the obvious shape and would put a thousand-id IN clause on
+        the hub to answer "none of them" for almost all of them.
+        """
+        self._play_clean("flashcard")
+        with self.assertNumQueries(self.HUB_QUERIES):
+            self.client.get("/api/vocabulary/sections/")
+        for n in range(6):
+            other = make_section(f"Bank {n}", slug=f"bank-{n}")
+            for k in range(5):
+                make_set(other, title=f"S{k}", words=tuple(f"b{n}_{k}_{i}" for i in range(10)))
+        with self.assertNumQueries(self.HUB_QUERIES):
+            self.client.get("/api/vocabulary/sections/")
+
+    # sections + section counts (x2) + section buckets + the student's clean runs
+    # + the sizes of the sets those runs touched.
+    HUB_QUERIES = 6
+
     def test_a_section_counts_the_sets_that_are_fully_mastered(self):
         for mode in ("flashcard", "matching", "speed", "test"):
             self._play_clean(mode)
