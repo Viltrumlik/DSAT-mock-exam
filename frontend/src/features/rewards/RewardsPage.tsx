@@ -62,6 +62,18 @@ function ruleHint(rule: RewardRule): string | null {
     case "CLASSWORK_MANUAL":
       lines.push("Your teacher decides this one, for the work you do in the lesson itself.");
       break;
+    case "SUPPORT_SESSION": {
+      // The amount beside this rule is what you earn ALONE, which is the smallest thing it
+      // can be — and a student who reads only that has no reason to invite anybody. The rungs
+      // come off the rule so they cannot drift from what the hour actually pays.
+      const [alone, pair, trio] = rule.group_points ?? [];
+      if (alone != null && pair != null && trio != null) {
+        lines.push(
+          `Bring a classmate and you both earn more: ${alone} on your own, ${pair} each if two of you go, ${trio} each if three do. You're paid once the teacher marks the session as held.`,
+        );
+      }
+      break;
+    }
   }
   // Said on the rule itself, not only in the XP tile. A student reading "+40" beside a survey
   // has no other way to learn that this one earning is the exception — and it is read off the
@@ -70,6 +82,16 @@ function ruleHint(rule: RewardRule): string | null {
     lines.push("Points only — this one doesn't add to your XP.");
   }
   return lines.length > 0 ? lines.join(" ") : null;
+}
+
+/** The headline amount: a single figure, or `10–20` for a rule whose price climbs with the
+ *  group. Reads the rungs off the rule so a retune moves both ends. */
+function ruleRange(rule: RewardRule): string {
+  const ladder = rule.group_points;
+  if (!ladder || ladder.length === 0) return String(rule.points);
+  const low = ladder[0];
+  const high = ladder[ladder.length - 1];
+  return low === high ? String(low) : `${low}\u2013${high}`;
 }
 
 const PAGE_DESCRIPTION = "What you've earned for showing up and doing the work.";
@@ -393,7 +415,11 @@ export function RewardsPage() {
                         </span>
                       ) : (
                         <span className="ds-num shrink-0 font-extrabold text-foreground">
-                          +{rule.points}
+                          {/* A range, not a figure, where the rule has a ladder. A support
+                              hour's `points` is what it pays a student sitting it ALONE —
+                              the smallest thing it can be — and printing that as the headline
+                              undersells the earning the invite button exists to create. */}
+                          +{ruleRange(rule)}
                         </span>
                       )}
                     </div>

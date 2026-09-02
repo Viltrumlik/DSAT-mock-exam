@@ -1,5 +1,6 @@
 from django.contrib import admin
 
+from . import constants
 from .models import PointAward, PointAwardAudit, RewardRule, RewardSeason
 
 
@@ -15,9 +16,22 @@ class RewardRuleAdmin(admin.ModelAdmin):
     # `grants_xp` is editable here on purpose: it is the school's undo for "XP follows points
     # everywhere", and the whole reason it is a column rather than a constant is so taking an
     # event back out of XP costs a checkbox instead of a deploy.
-    list_display = ("event", "points", "grants_xp", "is_active", "updated_at")
+    list_display = ("event", "points", "group_rate", "grants_xp", "is_active", "updated_at")
     list_filter = ("is_active", "grants_xp")
     list_editable = ("points", "grants_xp", "is_active")
+
+    @admin.display(description="Per head, 1 / 2 / 3 students")
+    def group_rate(self, rule):
+        """What SUPPORT_SESSION's price actually produces once the group ladder is applied.
+
+        Its `points` is the bottom rung, not the whole rule: an hour pays more per head the
+        more students share it. Without this column somebody retuning 10 → 15 in this table
+        would be quietly setting the pair rate to 20 and the trio rate to 25, with nothing on
+        the screen saying so.
+        """
+        if rule.event != constants.EVENT_SUPPORT_SESSION:
+            return "—"
+        return " / ".join(str(n) for n in constants.support_session_ladder(int(rule.points)))
 
 
 class PointAwardAuditInline(admin.TabularInline):

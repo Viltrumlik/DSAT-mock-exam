@@ -21,7 +21,7 @@ from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
 from . import constants
-from .services import award, revoke
+from .services import award, points_for, revoke
 
 logger = logging.getLogger(__name__)
 
@@ -611,34 +611,72 @@ def _on_submission_saved(sender, instance, **kwargs):
         logger.exception("reward_hook_failed submission=%s", instance.pk)
 
 
-# ── Support teacher: 10 for a session that actually happened ──────────────────
+# ── Support teacher: a ladder for a session that actually happened ────────────
 
 def sync_support_booking(booking, *, actor=None) -> None:
-    """Award the student for a support session the teacher confirmed as held.
+    """Price every booking in this booking's hour, and award the students who turned up.
 
     On HELD, not on booking. A student who books and never turns up has not been helped, and
     paying at booking time would make the calendar the cheapest points on the platform.
 
     Revokes on anything else, because a booking can move backwards: a teacher who settles the
     wrong row can correct it to NO_SHOW, and the points have to follow.
+
+    **The whole hour is re-priced, not just this row.** A support session pays per head and
+    the rate climbs with the group (``constants.support_session_points``), so what one student
+    earns depends on how many of their classmates were also settled HELD. A teacher settles
+    those one at a time: the first HELD is momentarily a party of one, and the second has to
+    go back and raise the first. So this reads the whole slot, counts the HELD bookings once,
+    and applies that count to all of them — which also walks the ladder back down when a
+    settlement is corrected to NO_SHOW.
+
+    The fan-out is over sibling bookings only and never saves one, so the ``post_save``
+    receiver below cannot re-enter it. Slots hold a handful of rows at most.
     """
     from classes.models_support import SupportBooking
 
-    key = constants.support_session_key(booking.id)
-    if booking.status != SupportBooking.STATUS_HELD:
-        revoke(key, reason=f"support session {booking.status.lower()}", actor=actor)
-        return
-
-    award(
-        booking.student,
-        constants.EVENT_SUPPORT_SESSION,
-        idempotency_key=key,
-        classroom=booking.classroom,
-        source_type="support_booking",
-        source_id=booking.id,
-        actor=actor,
-        reason="support session held",
+    siblings = list(
+        SupportBooking.objects
+        .filter(availability_id=booking.availability_id)
+        .select_related("student", "classroom")
     )
+    # The instance we were handed is the truth for its own row: inside a post_save the DB
+    # agrees, but a caller settling in memory may not have written yet. An unsaved row is
+    # dropped rather than trusted — it has no id, so it has no idempotency key to award to.
+    if booking.pk is not None:
+        siblings = [booking if b.pk == booking.pk else b for b in siblings]
+        if not any(b.pk == booking.pk for b in siblings):
+            siblings.append(booking)
+
+    held = [b for b in siblings if b.status == SupportBooking.STATUS_HELD]
+    # Priced ONCE for the hour, from the live rule, then passed explicitly to every award.
+    # Explicitly, because `award` otherwise freezes an earning at the price it was first
+    # granted at — which is right for a homework re-grade and wrong here: the second student
+    # being settled is precisely the event that must move the first student's number.
+    points = constants.support_session_points(
+        points_for(constants.EVENT_SUPPORT_SESSION), len(held)
+    )
+
+    for row in siblings:
+        key = constants.support_session_key(row.id)
+        if row.status != SupportBooking.STATUS_HELD:
+            revoke(key, reason=f"support session {row.status.lower()}", actor=actor)
+            continue
+        award(
+            row.student,
+            constants.EVENT_SUPPORT_SESSION,
+            idempotency_key=key,
+            classroom=row.classroom,
+            source_type="support_booking",
+            source_id=row.id,
+            points=points,
+            actor=actor,
+            reason=(
+                "support session held"
+                if len(held) == 1
+                else f"support session held, group of {len(held)}"
+            ),
+        )
 
 
 @receiver(post_save, sender="classes.SupportBooking", dispatch_uid="rewards_support_booking")

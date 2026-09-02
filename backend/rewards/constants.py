@@ -235,3 +235,50 @@ def survey_key(response_id: int) -> str:
 
 def support_session_key(session_id: int) -> str:
     return f"support:{session_id}"
+
+
+# ── Support session: the group ladder ─────────────────────────────────────────
+#
+# A support hour pays MORE PER HEAD the more students sit in it, rather than the flat rate it
+# paid before. The school's numbers, 2026-09-02:
+#
+#     alone      10   (the SUPPORT_SESSION rule's own price)
+#     two        15   each
+#     three      20   each
+#
+# It is a deliberate lever, not a discount for the teacher's time. Inviting a classmate into
+# your hour is the single cheapest way to get another student in front of a support teacher,
+# and under a flat rate the inviter was paid nothing for doing it — so the student with the
+# problem came alone and the one who was too unsure to book at all stayed home. Paying the
+# whole group more makes bringing somebody worth the invite to *both* of them.
+#
+# The ladder is per-head and additive over the RULE's price, so the school retunes all three
+# rungs from one admin field. ``SUPPORT_GROUP_STEP`` is what each extra head adds and
+# ``SUPPORT_GROUP_MAX`` is where it stops climbing: an hour is capacity 1 by default and every
+# invitation widens it by a seat (``classes.support.invite_member``), with no ceiling of its
+# own, so without a cap here a student could bring nine friends and mint 55 points apiece for
+# an hour that helps nobody. Three is where the school says a session is still a session.
+SUPPORT_GROUP_STEP = 5
+SUPPORT_GROUP_MAX = 3
+
+
+def support_session_points(base: int, attendees: int) -> int:
+    """What ONE student earns from a support hour that ``attendees`` students turned up to.
+
+    ``attendees`` counts the bookings settled HELD in that slot, so a booked-and-missed
+    classmate does not pay their group a bonus. Zero attendees earns nothing — nobody was
+    helped — and the caller revokes rather than awarding it.
+    """
+    if attendees <= 0:
+        return 0
+    extra_heads = min(int(attendees), SUPPORT_GROUP_MAX) - 1
+    return max(0, int(base) + SUPPORT_GROUP_STEP * extra_heads)
+
+
+def support_session_ladder(base: int) -> list[int]:
+    """The whole ladder, ``[alone, two, three]`` — what the rewards page shows a student.
+
+    Served from here rather than written into React so the three numbers cannot drift from
+    what the hook actually pays when the school retunes the rule.
+    """
+    return [support_session_points(base, n) for n in range(1, SUPPORT_GROUP_MAX + 1)]

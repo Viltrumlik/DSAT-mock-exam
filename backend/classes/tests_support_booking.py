@@ -356,3 +356,128 @@ class ApiTests(SupportFixture):
 
         self.assertEqual(len(body["bookings"]), 1)
         self.assertEqual(body["bookings"][0]["student_id"], self.student.id)
+
+
+class GroupRewardTests(SupportFixture):
+    """An hour pays per head, and the rate climbs with the group: 10 alone, 15 each in a pair,
+    20 each in a three (the school's decision, 2026-09-02).
+
+    The lever is the invitation. Under the flat rate the student who brought a classmate along
+    earned exactly what they would have earned sitting the hour alone, so the feature built to
+    get a second student in front of a support teacher paid nobody for using it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.mate = User.objects.create_user("sb_mate@t.com", "secret123")
+        self.third = User.objects.create_user("sb_third@t.com", "secret123")
+        for user in (self.mate, self.third):
+            ClassroomMembership.objects.create(
+                classroom=self.classroom, user=user, role=ClassroomMembership.ROLE_STUDENT
+            )
+
+    def _held_group(self, size):
+        """A slot with ``size`` students, every one of them settled HELD."""
+        booking = support_service.book(self.student, self.slot)
+        bookings = [booking]
+        for invitee in (self.mate, self.third)[: size - 1]:
+            bookings.append(support_service.invite_member(booking, invitee, actor=self.student))
+        for row in bookings:
+            support_service.settle(row, SupportBooking.STATUS_HELD, actor=self.support)
+        return bookings
+
+    def test_alone_earns_ten(self):
+        self._held_group(1)
+        self.assertEqual(balance(self.student), 10)
+
+    def test_a_pair_earns_fifteen_each(self):
+        self._held_group(2)
+        self.assertEqual(balance(self.student), 15)
+        self.assertEqual(balance(self.mate), 15)
+
+    def test_a_three_earns_twenty_each(self):
+        self._held_group(3)
+        self.assertEqual(balance(self.student), 20)
+        self.assertEqual(balance(self.mate), 20)
+        self.assertEqual(balance(self.third), 20)
+
+    def test_the_second_settlement_raises_the_first_students_award(self):
+        """The teacher settles one row at a time, so the first HELD is momentarily a party of
+        one. Without re-pricing the whole hour the student who did the inviting would be paid
+        the solo rate and the classmate they brought would out-earn them."""
+        booking = support_service.book(self.student, self.slot)
+        guest = support_service.invite_member(booking, self.mate, actor=self.student)
+
+        support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
+        self.assertEqual(balance(self.student), 10)
+
+        support_service.settle(guest, SupportBooking.STATUS_HELD, actor=self.support)
+        self.assertEqual(balance(self.student), 15)
+        self.assertEqual(balance(self.mate), 15)
+
+    def test_a_classmate_who_does_not_turn_up_does_not_pay_a_bonus(self):
+        """Booked is not attended. Otherwise the invite button is a points machine: add two
+        names, come alone, collect twenty."""
+        booking = support_service.book(self.student, self.slot)
+        guest = support_service.invite_member(booking, self.mate, actor=self.student)
+
+        support_service.settle(guest, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+        support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
+
+        self.assertEqual(balance(self.student), 10)
+        self.assertEqual(balance(self.mate), 0)
+
+    def test_correcting_a_settlement_walks_the_group_back_down(self):
+        """A teacher who settles the wrong row can fix it, and the whole hour has to follow —
+        not just the row they touched."""
+        booking, guest = self._held_group(2)
+        self.assertEqual(balance(self.student), 15)
+
+        support_service.settle(guest, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+
+        self.assertEqual(balance(self.student), 10)
+        self.assertEqual(balance(self.mate), 0)
+
+    def test_the_ladder_stops_climbing_after_three(self):
+        """An invitation widens the hour by a seat with no ceiling of its own, so without a cap
+        a student could bring nine friends and mint 55 points apiece for an hour that helps
+        nobody."""
+        from rewards import constants as reward_constants
+
+        self.assertEqual(reward_constants.support_session_points(10, 4), 20)
+        self.assertEqual(reward_constants.support_session_points(10, 9), 20)
+
+    def test_the_ladder_is_built_on_the_rules_price(self):
+        """The school retunes all three rungs from the one admin field, so a raised bottom rung
+        raises the group rates with it rather than leaving them where they were."""
+        from rewards import constants as reward_constants
+
+        self.assertEqual(reward_constants.support_session_ladder(10), [10, 15, 20])
+        self.assertEqual(reward_constants.support_session_ladder(20), [20, 25, 30])
+
+    def test_settling_the_same_group_repeatedly_pays_once_each(self):
+        booking, guest = self._held_group(2)
+        for _ in range(3):
+            support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
+            support_service.settle(guest, SupportBooking.STATUS_HELD, actor=self.support)
+
+        self.assertEqual(balance(self.student), 15)
+        self.assertEqual(balance(self.mate), 15)
+        self.assertEqual(PointAward.objects.filter(event="SUPPORT_SESSION").count(), 2)
+
+    def test_a_second_hour_is_priced_on_its_own_group(self):
+        """The count is per slot. A student in a pair on Monday and alone on Tuesday earns 15
+        and then 10, not 15 twice."""
+        self._held_group(2)
+        # The NEXT day: a student may hold only one support session per day, so a second slot
+        # from `make_slot` — which walks the hour, not the date — could not be booked at all.
+        start = support_service._hour_start(
+            timezone.localdate() + timedelta(days=self.SLOT_DAYS_OUT + 1), self.FIRST_SLOT_HOUR
+        )
+        other_slot = SupportAvailability.objects.create(
+            support_teacher=self.support, starts_at=start, ends_at=start + timedelta(hours=1),
+        )
+        solo = support_service.book(self.student, other_slot)
+        support_service.settle(solo, SupportBooking.STATUS_HELD, actor=self.support)
+
+        self.assertEqual(balance(self.student), 25)

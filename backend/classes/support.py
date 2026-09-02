@@ -894,7 +894,9 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     Returns the invitee's own ``SupportBooking``. They get a real seat with their own row,
     their own cancellation and their own rating — not a passenger on the inviter's booking.
     That matters at settle time: the teacher marks each student HELD or NO_SHOW separately,
-    and the 10-point award is per student.
+    and the award is per student — at a rate that climbs with how many of them were settled
+    HELD (``rewards.constants.support_session_points``), so bringing somebody pays the whole
+    group, the inviter included.
 
     **An invitation widens the hour by one seat.** A support hour is capacity 1 by default and
     only staff may change that, so an invite to a one-to-one has to either fail or make room.
