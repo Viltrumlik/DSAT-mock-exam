@@ -843,3 +843,63 @@ class BotDirectMessageTests(TelegramGroupBase):
     def test_start_in_a_group_is_ignored(self):
         self._start(int(CHAT), chat_type="supergroup")
         self.assertEqual(self.tg.messages, [])
+
+
+class HtmlEscapingTests(TelegramGroupBase):
+    """Every DM goes out with parse_mode=HTML, and Telegram rejects the WHOLE message when
+    the markup does not parse. Nothing checks the result of a courtesy message, so an
+    unescaped ampersand does not fail loudly — it just stops that person's DMs for ever."""
+
+    def test_a_class_name_with_markup_characters_is_escaped(self):
+        self.classroom.name = "Junior <G15> & Math"
+        self.classroom.save(update_fields=["name"])
+        self.issue_for(self.student)
+        body = self.tg.messages[-1][1]
+        self.assertIn("Junior &lt;G15&gt; &amp; Math", body)
+        self.assertNotIn("<G15>", body)
+
+    def test_a_removal_notice_escapes_the_class_name(self):
+        self.classroom.name = "R&W <Senior>"
+        self.classroom.save(update_fields=["name"])
+        link = self.issue_for(self.student)
+        self.tg.join(1001)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1001}, invite_link=link)
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+        body = self.tg.messages[-1][1]
+        self.assertIn("R&amp;W &lt;Senior&gt;", body)
+
+    def test_a_students_name_is_escaped_in_the_greeting(self):
+        self.student.first_name = "A<b>z</b>iz & Co"
+        self.student.save(update_fields=["first_name"])
+        self.client.post(
+            "/api/classes/telegram/webhook/",
+            {
+                "message": {
+                    "chat": {"id": 1001, "type": "private"},
+                    "from": {"id": 1001},
+                    "text": "/start",
+                }
+            },
+            format="json",
+            HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN="s3cr3t",
+        )
+        body = self.tg.messages[-1][1]
+        self.assertIn("A&lt;b&gt;z&lt;/b&gt;iz &amp; Co", body)
+
+    def test_a_group_title_is_escaped_in_the_chatid_reply(self):
+        self.client.post(
+            "/api/classes/telegram/webhook/",
+            {
+                "message": {
+                    "chat": {"id": -100555, "type": "supergroup", "title": "G15 <eng> & math"},
+                    "text": "/chatid",
+                }
+            },
+            format="json",
+            HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN="s3cr3t",
+        )
+        self.assertIn("G15 &lt;eng&gt; &amp; math", self.tg.messages[-1][1])

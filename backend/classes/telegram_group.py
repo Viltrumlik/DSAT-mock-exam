@@ -324,7 +324,7 @@ def issue_invite(*, user, classroom: Classroom) -> dict:
     # showing them the same link on screen, so a failure here costs nothing.
     api.send_message(
         int(telegram_id),
-        f"Your one-time invite to <b>{classroom.name}</b>:\n{link}\n\n"
+        f"Your one-time invite to <b>{api.esc(classroom.name)}</b>:\n{link}\n\n"
         f"It works once, for this account only, and expires in {invite_ttl_minutes()} minutes.",
     )
 
@@ -397,7 +397,7 @@ def _notify_removed(user, classroom: Classroom, reason: str) -> None:
     )
     telegram_id = getattr(user, "telegram_id", None)
     if telegram_id:
-        api.send_message(int(telegram_id), f"<b>{classroom.name}</b>\n{body}")
+        api.send_message(int(telegram_id), f"<b>{api.esc(classroom.name)}</b>\n{body}")
 
 
 def remove_member(

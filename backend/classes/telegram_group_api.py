@@ -14,6 +14,7 @@ nothing here hides *why* either.
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import urllib.error
@@ -198,6 +199,20 @@ def kick_chat_member(chat_id: str, telegram_user_id: int) -> TgResult:
             chat_id, telegram_user_id, unban.description,
         )
     return banned
+
+
+def esc(value) -> str:
+    """Escape a value for interpolation into an HTML-parse-mode message.
+
+    Every message this integration sends goes out with ``parse_mode=HTML``, and Telegram
+    REJECTS the whole message — 400, "can't parse entities" — if the markup does not parse.
+    So a classroom called "Junior <G15> & Math", or a student whose Telegram first name
+    contains an ampersand, silently stops receiving every DM the feature sends. Silently,
+    because nothing checks the result of a courtesy message.
+
+    Anything dynamic that lands in a message body goes through here.
+    """
+    return html.escape(str(value or ""), quote=False)
 
 
 def send_message(chat_id: str | int, text: str) -> TgResult:

@@ -227,7 +227,7 @@ class ClassroomTelegramWebhookView(APIView):
 
         if is_group:
             body = (
-                f"<b>{str(chat.get('title') or '')}</b>\nChat id: <code>{chat_id}</code>\n\n"
+                f"<b>{tg.api.esc(chat.get('title'))}</b>\nChat id: <code>{chat_id}</code>\n\n"
                 "Paste this into the class's Telegram chat id field in the MasterSAT ops "
                 "console, and make sure this bot is an administrator here with the right to "
                 "invite and to remove members."
@@ -262,7 +262,7 @@ class ClassroomTelegramWebhookView(APIView):
                 "Connect Telegram). After that, open your class and press "
                 "<b>Join Telegram group</b> to get your invite."
             )
-        name = (user.first_name or user.username or "").strip()
+        name = tg.api.esc((user.first_name or user.username or "").strip())
         return (
             f"👋 Hello{' ' + name if name else ''} — your Telegram is connected to MasterSAT.\n\n"
             "Open your class on the website and press <b>Join Telegram group</b> for a "
