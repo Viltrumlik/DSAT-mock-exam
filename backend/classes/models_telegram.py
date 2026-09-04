@@ -81,8 +81,16 @@ class ClassroomTelegramMember(models.Model):
         blank=True,
         related_name="classroom_telegram_members",
     )
-    #: Who actually joined, as Telegram numbers them. Set from the join update, so it is the
-    #: observed identity rather than the expected one — the whole point of the check.
+    #: The Telegram account this row is about, as Telegram numbers them. Stamped as soon as
+    #: a ticket is cut (from the student's linked account) and confirmed by the join update.
+    #:
+    #: Stamped early ON PURPOSE, even though it then records an expectation before an
+    #: observation: it is what stops one person ending up with two rows — an anonymous
+    #: sighting keyed on the Telegram id, and their own row keyed on the user — which the
+    #: unique constraints below make impossible to reconcile after the fact.
+    #:
+    #: It is NOT what the identity check compares against. That check reads
+    #: ``ticket.user.telegram_id``, the account the student proved they control.
     telegram_user_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     telegram_username = models.CharField(max_length=64, blank=True, default="")
     telegram_display_name = models.CharField(max_length=200, blank=True, default="")

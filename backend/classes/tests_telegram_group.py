@@ -953,3 +953,83 @@ class DeletedAccountTests(TelegramGroupBase):
         ghost = next(r for r in rows["members"] if r["telegram_user_id"] == 4242)
         self.assertTrue(ghost["unmanaged"])
         self.assertEqual(ghost["telegram_username"], "ghost")
+
+
+class SplitIdentityTests(TelegramGroupBase):
+    """One person, two rows — the ordinary path when a class is switched to a managed group
+    while students are still walking in through the old static link.
+
+    The site ends up holding an anonymous sighting (Telegram id, no user) and the student's
+    own row (user, no Telegram id). Putting the Telegram id on the second collides with the
+    first under `uniq_classroom_telegram_member_tg`, and the join endpoint 500s.
+    """
+
+    def _sighting(self, telegram_id=1001, username="aziz_t"):
+        """A join the bot saw before it could match the account to anybody."""
+        ClassroomTelegramMember.objects.create(
+            classroom=self.classroom, user=None, telegram_user_id=telegram_id,
+            telegram_username=username, status=ClassroomTelegramMember.STATUS_JOINED,
+            joined_at=timezone.now(),
+        )
+        self.tg.join(telegram_id)
+
+    def test_pressing_join_after_an_anonymous_sighting_does_not_crash(self):
+        self._sighting()
+        self.client.force_authenticate(user=self.student)
+        r = self.client.post(self.join_url(), {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["already_member"])
+
+    def test_the_two_rows_become_one(self):
+        self._sighting()
+        self.client.force_authenticate(user=self.student)
+        self.client.post(self.join_url(), {}, format="json")
+
+        rows = ClassroomTelegramMember.objects.filter(classroom=self.classroom)
+        self.assertEqual(rows.count(), 1)
+        row = rows.first()
+        self.assertEqual(row.user_id, self.student.pk)
+        self.assertEqual(row.telegram_user_id, 1001)
+        # The observation survives the merge — it is the half the site could not have known.
+        self.assertEqual(row.telegram_username, "aziz_t")
+        self.assertEqual(row.status, ClassroomTelegramMember.STATUS_JOINED)
+
+    def test_a_ticket_stamps_the_telegram_id_so_the_split_cannot_form(self):
+        """The other half of the fix: the row claims the account the moment a link is cut,
+        so a later sighting finds that row instead of starting a rival one."""
+        self.issue_for(self.student)
+        self.assertEqual(self.row(self.student).telegram_user_id, 1001)
+
+        self.tg.join(1001)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1001, "username": "aziz_t"})
+        )
+        self.assertEqual(
+            ClassroomTelegramMember.objects.filter(classroom=self.classroom).count(), 1
+        )
+
+    def test_two_standing_rows_are_folded_together(self):
+        """`_claim_row` directly: no code path can still produce this pair, but a row written
+        before the stamping fix can, and the constraints make it unwritable until merged."""
+        sighting = ClassroomTelegramMember.objects.create(
+            classroom=self.classroom, user=None, telegram_user_id=1001,
+            telegram_username="aziz_t", status=ClassroomTelegramMember.STATUS_JOINED,
+            joined_at=timezone.now(),
+        )
+        own = ClassroomTelegramMember.objects.create(
+            classroom=self.classroom, user=self.student,
+            status=ClassroomTelegramMember.STATUS_PENDING,
+        )
+
+        merged = tg._claim_row(self.classroom, user=self.student, telegram_user_id=1001)
+
+        self.assertEqual(merged.pk, own.pk)
+        self.assertEqual(merged.telegram_user_id, 1001)
+        self.assertEqual(merged.telegram_username, "aziz_t")
+        self.assertEqual(merged.status, ClassroomTelegramMember.STATUS_JOINED)
+        self.assertFalse(ClassroomTelegramMember.objects.filter(pk=sighting.pk).exists())
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(
+                action=ClassroomTelegramEvent.ACTION_RECONCILED, user=self.student
+            ).exists()
+        )

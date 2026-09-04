@@ -206,8 +206,75 @@ def log_event(
 # ── Rows ─────────────────────────────────────────────────────────────────────
 
 
+def _claim_row(
+    classroom: Classroom, *, user=None, telegram_user_id: Optional[int] = None
+) -> ClassroomTelegramMember:
+    """The single row for one person in one class group, merging a split identity.
+
+    One person can end up with **two** rows, and the unique constraints then make it
+    impossible to write either: the bot sees somebody arrive before they have linked their
+    account (a row with a Telegram id and no user), and later the same person links up and
+    presses Join (a row with a user and no Telegram id). The moment the site tries to put the
+    Telegram id on the second row it collides with the first, and the join endpoint 500s.
+
+    This is not a hypothetical — it is the ordinary path for a class that is switched to a
+    managed group while students are already walking in through the old static link.
+
+    So the two are reconciled here: the row carrying the site identity wins, the sighting's
+    observations are folded into it, and the duplicate is dropped.
+    """
+    by_tg = (
+        ClassroomTelegramMember.objects.filter(
+            classroom=classroom, telegram_user_id=int(telegram_user_id)
+        ).first()
+        if telegram_user_id
+        else None
+    )
+    by_user = (
+        ClassroomTelegramMember.objects.filter(classroom=classroom, user=user).first()
+        if user is not None
+        else None
+    )
+
+    if by_tg is not None and by_user is not None and by_tg.pk != by_user.pk:
+        keep, drop = by_user, by_tg
+        keep.joined_at = keep.joined_at or drop.joined_at
+        keep.telegram_username = drop.telegram_username or keep.telegram_username
+        keep.telegram_display_name = drop.telegram_display_name or keep.telegram_display_name
+        if drop.status == ClassroomTelegramMember.STATUS_JOINED:
+            keep.status = ClassroomTelegramMember.STATUS_JOINED
+            keep.removed_reason = ""
+            keep.removed_at = None
+        # Dropped first: it is what frees the (classroom, telegram_user_id) slot the keeper
+        # is about to take.
+        drop.delete()
+        keep.telegram_user_id = int(telegram_user_id)
+        keep.save()
+        log_event(
+            classroom=classroom,
+            action=ClassroomTelegramEvent.ACTION_RECONCILED,
+            user=user,
+            telegram_user_id=int(telegram_user_id),
+            detail="merged an unrecognised sighting into this student's row",
+        )
+        return keep
+
+    row = by_tg or by_user
+    if row is None:
+        row = ClassroomTelegramMember(classroom=classroom, user=user)
+    if user is not None and row.user_id is None:
+        row.user = user
+    if telegram_user_id:
+        row.telegram_user_id = int(telegram_user_id)
+    return row
+
+
 def _row_for_user(classroom: Classroom, user) -> ClassroomTelegramMember:
-    row, _ = ClassroomTelegramMember.objects.get_or_create(classroom=classroom, user=user)
+    row = _claim_row(
+        classroom, user=user, telegram_user_id=getattr(user, "telegram_id", None)
+    )
+    if row.pk is None:
+        row.save()
     return row
 
 
@@ -550,23 +617,11 @@ def classroom_for_chat(chat_id: str) -> Optional[Classroom]:
 def _upsert_observed(
     classroom: Classroom, tg_user: dict, *, user=None
 ) -> ClassroomTelegramMember:
-    """Find (or start) the row for a Telegram account seen in a class group.
-
-    Matching is by ``telegram_user_id`` first because that is what the group actually
-    reports. Falling back to the site user keeps the PENDING row a student already has from
-    turning into a second, duplicate row the moment they arrive.
-    """
+    """Find (or start) the row for a Telegram account seen in a class group, and stamp it
+    with the handle Telegram reported. Identity resolution — including the case where the
+    same person already has two rows — lives in :func:`_claim_row`."""
     tg_id = int(tg_user.get("id") or 0)
-    row = ClassroomTelegramMember.objects.filter(
-        classroom=classroom, telegram_user_id=tg_id
-    ).first()
-    if row is None and user is not None:
-        row = ClassroomTelegramMember.objects.filter(classroom=classroom, user=user).first()
-    if row is None:
-        row = ClassroomTelegramMember(classroom=classroom, user=user)
-    if user is not None and row.user_id is None:
-        row.user = user
-    row.telegram_user_id = tg_id
+    row = _claim_row(classroom, user=user, telegram_user_id=tg_id)
     row.telegram_username = str(tg_user.get("username") or "")[:64]
     row.telegram_display_name = (
         f"{tg_user.get('first_name') or ''} {tg_user.get('last_name') or ''}".strip()[:200]
