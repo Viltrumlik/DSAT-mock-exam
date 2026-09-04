@@ -619,3 +619,112 @@ class StaffViewTests(TelegramGroupBase):
         self.client.force_authenticate(user=self.student)
         r = self.client.get(self.url())
         self.assertEqual(r.status_code, 403)
+
+
+class SharedGroupTests(TelegramGroupBase):
+    """One Telegram group, two classes — ``telegram_chat_id`` is not unique and never was.
+
+    A teacher who takes two classes may well run a single group for both. Reading the chat as
+    one classroom checks each arrival against the wrong roster, and removes students who
+    belong there.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.second = Classroom.objects.create(
+            name="Middle G20 English",
+            subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_EVEN,
+            created_by=self.admin,
+            teacher=self.teacher,
+            telegram_chat_id=CHAT,  # the same group
+        )
+        self.second_student = User.objects.create_user(
+            "tg_s3@t.com", "secret123", telegram_id=1003
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.second, user=self.second_student,
+            role=ClassroomMembership.ROLE_STUDENT,
+        )
+
+    def test_a_student_of_the_other_class_is_not_thrown_out(self):
+        self.tg.join(1003)
+        outcome = tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1003, "first_name": "Sardor"})
+        )
+        self.assertEqual(outcome, "adopted")
+        self.assertEqual(self.tg.kicked, [])
+        row = ClassroomTelegramMember.objects.get(
+            classroom=self.second, user=self.second_student
+        )
+        self.assertEqual(row.status, ClassroomTelegramMember.STATUS_JOINED)
+
+    def test_a_ticket_is_honoured_whichever_class_it_came_from(self):
+        self.client.force_authenticate(user=self.second_student)
+        r = self.client.post(f"/api/classes/{self.second.pk}/telegram/join/", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        link = r.json()["invite_link"]
+
+        self.tg.join(1003)
+        outcome = tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1003}, invite_link=link)
+        )
+        self.assertEqual(outcome, "joined")
+        self.assertEqual(self.tg.kicked, [])
+
+    def test_leaving_the_group_leaves_both_classes(self):
+        for user, tg_id, classroom in (
+            (self.student, 1001, self.classroom),
+            (self.second_student, 1003, self.second),
+        ):
+            ClassroomTelegramMember.objects.update_or_create(
+                classroom=classroom, user=user,
+                defaults={
+                    "telegram_user_id": tg_id,
+                    "status": ClassroomTelegramMember.STATUS_JOINED,
+                },
+            )
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1003}, old="member", new="left")
+        )
+        self.assertEqual(
+            ClassroomTelegramMember.objects.get(
+                classroom=self.second, user=self.second_student
+            ).status,
+            ClassroomTelegramMember.STATUS_LEFT,
+        )
+
+
+class AdoptionTicketTests(TelegramGroupBase):
+    def test_joining_another_way_retires_the_outstanding_link(self):
+        """They hold a live single-use link and walk in some other way.
+
+        The link is still a working credential for a group they are now inside, so it has to
+        be revoked — otherwise the one person it could still admit is somebody it was not cut
+        for, who would then be removed for it.
+        """
+        link = self.issue_for(self.student)
+        self.tg.join(1001)
+        outcome = tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1001, "first_name": "Aziz"})
+        )
+        self.assertEqual(outcome, "adopted")
+        self.assertIn(link, self.tg.revoked)
+        self.assertEqual(self.row(self.student).invite_link, "")
+
+    def test_a_teacher_who_walks_in_is_recorded_as_known_not_a_stranger(self):
+        self.teacher.telegram_id = 2001
+        self.teacher.save(update_fields=["telegram_id"])
+        ClassroomMembership.objects.filter(
+            classroom=self.classroom, user=self.teacher
+        ).update(status=ClassroomMembership.STATUS_REMOVED)
+        self.tg.join(2001, status="administrator")
+        outcome = tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 2001}, new="administrator")
+        )
+        self.assertEqual(outcome, "left_in_place")
+        self.assertFalse(
+            ClassroomTelegramEvent.objects.filter(
+                action=ClassroomTelegramEvent.ACTION_UNMANAGED_JOIN
+            ).exists()
+        )

@@ -181,11 +181,12 @@ class ClassroomTelegramWebhookView(APIView):
         chat_id = str(chat.get("id") or "")
         new = update.get("new_chat_member") if isinstance(update.get("new_chat_member"), dict) else {}
         status_now = str(new.get("status") or "")
-        classroom = tg.classroom_for_chat(chat_id)
         logger.info("telegram_group bot status chat=%s -> %s", chat_id, status_now)
-        if classroom is None:
+        if status_now in ("administrator", "creator"):
             return
-        if status_now not in ("administrator", "creator"):
+        # Every class that meets there, not just the first: a demotion breaks the integration
+        # for all of them, and an event on only one is a trail that stops halfway.
+        for classroom in tg.classrooms_for_chat(chat_id):
             tg.log_event(
                 classroom=classroom,
                 action=ClassroomTelegramEvent.ACTION_CONFIG_ERROR,

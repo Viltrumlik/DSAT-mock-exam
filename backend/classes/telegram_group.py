@@ -510,10 +510,23 @@ def enforce_for_user(user, *, reason: str) -> dict:
 # ── Inbound updates ──────────────────────────────────────────────────────────
 
 
-def classroom_for_chat(chat_id: str) -> Optional[Classroom]:
+def classrooms_for_chat(chat_id: str) -> list[Classroom]:
+    """Every class that meets in this Telegram group.
+
+    Plural, because ``telegram_chat_id`` is not unique and was never meant to be: a teacher
+    who takes two classes may well run one group for both. Treating a chat as one classroom
+    would then check the arriving student against the wrong roster and remove somebody who
+    belongs there — the one outcome this whole design is supposed to prevent.
+    """
     if not chat_id:
-        return None
-    return Classroom.objects.filter(telegram_chat_id=str(chat_id)).first()
+        return []
+    return list(Classroom.objects.filter(telegram_chat_id=str(chat_id)).order_by("pk"))
+
+
+def classroom_for_chat(chat_id: str) -> Optional[Classroom]:
+    """The first class meeting in this group. For callers that only need a label."""
+    found = classrooms_for_chat(chat_id)
+    return found[0] if found else None
 
 
 def _upsert_observed(
@@ -546,8 +559,8 @@ def _upsert_observed(
 def handle_chat_member_update(update: dict) -> str:
     """Process one ``chat_member`` update. Returns a short outcome tag (for tests and logs)."""
     chat = update.get("chat") if isinstance(update.get("chat"), dict) else {}
-    classroom = classroom_for_chat(str(chat.get("id") or ""))
-    if classroom is None:
+    classrooms = classrooms_for_chat(str(chat.get("id") or ""))
+    if not classrooms:
         return "unknown_chat"
 
     new = update.get("new_chat_member") if isinstance(update.get("new_chat_member"), dict) else {}
@@ -568,60 +581,71 @@ def handle_chat_member_update(update: dict) -> str:
     site_user = User.objects.filter(telegram_id=tg_id).first()
 
     if was_in and not is_in:
-        return _handle_departure(classroom, tg_user, site_user)
+        return _handle_departure(classrooms, tg_user)
     if not was_in and is_in:
-        return _handle_arrival(classroom, tg_user, site_user, update, new_status)
+        return _handle_arrival(classrooms, tg_user, site_user, update, new_status)
     return "no_change"
 
 
-def _handle_departure(classroom: Classroom, tg_user: dict, site_user) -> str:
-    row = ClassroomTelegramMember.objects.filter(
-        classroom=classroom, telegram_user_id=int(tg_user.get("id") or 0)
-    ).first()
-    if row is None:
+def _handle_departure(classrooms: list[Classroom], tg_user: dict) -> str:
+    """One person walked out of the group, so they are out of every class that meets there."""
+    rows = list(
+        ClassroomTelegramMember.objects.filter(
+            classroom__in=classrooms, telegram_user_id=int(tg_user.get("id") or 0)
+        ).select_related("classroom", "user")
+    )
+    if not rows:
         return "unknown_member"
 
-    # A removal WE just performed also arrives here as a departure. Overwriting it with
-    # "left of their own accord" would erase the only record of why they are outside, which
-    # is precisely the question the student will ask.
-    recently_removed = (
-        row.status == ClassroomTelegramMember.STATUS_REMOVED
-        and row.removed_at is not None
-        and (timezone.now() - row.removed_at) < timedelta(minutes=10)
-    )
-    if recently_removed:
-        return "already_removed"
+    outcome = "unknown_member"
+    for row in rows:
+        # A removal WE just performed also arrives here as a departure. Overwriting it with
+        # "left of their own accord" would erase the only record of why they are outside,
+        # which is precisely the question the student will ask.
+        recently_removed = (
+            row.status == ClassroomTelegramMember.STATUS_REMOVED
+            and row.removed_at is not None
+            and (timezone.now() - row.removed_at) < timedelta(minutes=10)
+        )
+        if recently_removed:
+            outcome = "already_removed" if outcome == "unknown_member" else outcome
+            continue
 
-    row.status = ClassroomTelegramMember.STATUS_LEFT
-    row.left_at = timezone.now()
-    _clear_ticket(row, revoke=False)
-    row.save()
-    log_event(
-        classroom=classroom,
-        action=ClassroomTelegramEvent.ACTION_LEFT,
-        user=row.user,
-        telegram_user_id=row.telegram_user_id,
-    )
-    return "left"
+        row.status = ClassroomTelegramMember.STATUS_LEFT
+        row.left_at = timezone.now()
+        _clear_ticket(row, revoke=False)
+        row.save()
+        log_event(
+            classroom=row.classroom,
+            action=ClassroomTelegramEvent.ACTION_LEFT,
+            user=row.user,
+            telegram_user_id=row.telegram_user_id,
+        )
+        outcome = "left"
+    return outcome
 
 
 def _handle_arrival(
-    classroom: Classroom, tg_user: dict, site_user, update: dict, new_status: str
+    classrooms: list[Classroom], tg_user: dict, site_user, update: dict, new_status: str
 ) -> str:
     tg_id = int(tg_user.get("id") or 0)
     invite = update.get("invite_link") if isinstance(update.get("invite_link"), dict) else {}
     link_url = str(invite.get("invite_link") or "")
 
+    # Looked up by the link alone, across every class: Telegram's invite URLs are unique, and
+    # scoping the lookup to one of several classes sharing the group would lose the ticket
+    # and treat a legitimate arrival as a stranger.
     ticket = (
-        ClassroomTelegramMember.objects.filter(
-            classroom=classroom, invite_link=link_url
-        ).select_related("user").first()
+        ClassroomTelegramMember.objects.filter(invite_link=link_url)
+        .select_related("user", "classroom")
+        .first()
         if link_url
         else None
     )
 
     # ── Someone used a ticket cut for somebody else ──────────────────────────
     if ticket is not None and ticket.user_id is not None:
+        classroom = ticket.classroom
         expected_tg = getattr(ticket.user, "telegram_id", None)
         if expected_tg is None or int(expected_tg) != tg_id:
             _reject_join(classroom, tg_user, ticket, new_status)
@@ -647,18 +671,26 @@ def _handle_arrival(
         return "joined"
 
     # ── No ticket: the static link, or somebody added by hand ────────────────
-    row = _upsert_observed(classroom, tg_user, user=site_user)
-    verdict = eligibility(site_user, classroom) if site_user else Eligibility(False, "", "")
-
-    if site_user is not None and verdict.allowed:
+    #
+    # Pick the class they actually belong to, not simply the first that meets here — with a
+    # shared group those are different questions and only the second one has a wrong answer.
+    home = next(
+        (c for c in classrooms if site_user is not None and eligibility(site_user, c).allowed),
+        None,
+    )
+    if home is not None:
+        row = _upsert_observed(home, tg_user, user=site_user)
         row.status = ClassroomTelegramMember.STATUS_JOINED
         row.joined_at = timezone.now()
         row.removed_reason = ""
         row.removed_at = None
         row.last_checked_at = timezone.now()
+        # They came in some other way, so any link the site had cut for them is still live.
+        # It is a working credential for a group they are now inside — retire it.
+        _clear_ticket(row)
         row.save()
         log_event(
-            classroom=classroom,
+            classroom=home,
             action=ClassroomTelegramEvent.ACTION_JOINED,
             user=site_user,
             telegram_user_id=tg_id,
@@ -666,21 +698,37 @@ def _handle_arrival(
         )
         return "adopted"
 
+    classroom = classrooms[0]
+    row = _upsert_observed(classroom, tg_user, user=site_user)
+    verdict = eligibility(site_user, classroom) if site_user else Eligibility(False, "", "")
+
     if may_enforce_against(site_user, new_status):
         row.save()
         remove_member(row, reason=verdict.reason or ClassroomTelegramMember.REASON_NOT_IN_CLASS,
                       chat_status=new_status)
         return "removed_ineligible"
 
-    # Rule 1: an account we cannot account for is recorded, not kicked.
+    # Rule 1: an account we cannot account for is recorded, not kicked. A KNOWN account we
+    # are simply not allowed to touch — a teacher, an admin, the chat's owner — is a
+    # different fact and gets a different name, so the report of "strangers in the group"
+    # stays a report of actual strangers.
     row.status = ClassroomTelegramMember.STATUS_JOINED
     row.joined_at = timezone.now()
     row.last_checked_at = timezone.now()
     row.save()
+    if site_user is not None:
+        log_event(
+            classroom=classroom,
+            action=ClassroomTelegramEvent.ACTION_RECONCILED,
+            user=site_user,
+            telegram_user_id=tg_id,
+            detail=f"joined and left in place ({new_status}): not a student, or a chat admin",
+        )
+        return "left_in_place"
+
     log_event(
         classroom=classroom,
         action=ClassroomTelegramEvent.ACTION_UNMANAGED_JOIN,
-        user=site_user,
         telegram_user_id=tg_id,
         detail=f"@{row.telegram_username or '?'} joined; no matching student account",
     )
