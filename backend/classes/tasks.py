@@ -89,3 +89,65 @@ def recompute_classroom_rankings(classroom_id: int | None = None) -> dict:
     stats = {"classrooms": ranked, "failed": failed}
     logger.info("recompute_classroom_rankings %s", stats)
     return stats
+
+
+# ── Class Telegram groups ────────────────────────────────────────────────────
+
+
+@shared_task(name="classes.tasks.enforce_telegram_group_for_user")
+def enforce_telegram_group_for_user(user_id: int, reason: str) -> dict:
+    """Take one account out of every class Telegram group it is in. Raised by a freeze."""
+    from django.contrib.auth import get_user_model
+
+    from . import telegram_group as tg
+
+    user = get_user_model().objects.filter(pk=user_id).first()
+    if user is None:
+        return {"status": "noop", "reason": "missing_user", "user_id": user_id}
+    if not tg.api.is_configured():
+        return {"status": "noop", "reason": "no_token", "user_id": user_id}
+    result = tg.enforce_for_user(user, reason=reason)
+    logger.info("telegram_group enforce user=%s reason=%s -> %s", user_id, reason, result)
+    return {"status": "ok", "user_id": user_id, **result}
+
+
+@shared_task(name="classes.tasks.enforce_telegram_group_membership")
+def enforce_telegram_group_membership(classroom_id: int, user_id: int, reason: str) -> dict:
+    """Take one account out of ONE class group. Raised by a removal from the class."""
+    from . import telegram_group as tg
+    from .models_telegram import ClassroomTelegramMember
+
+    if not tg.api.is_configured():
+        return {"status": "noop", "reason": "no_token"}
+    row = (
+        ClassroomTelegramMember.objects.select_related("classroom", "user")
+        .filter(classroom_id=classroom_id, user_id=user_id)
+        .exclude(status=ClassroomTelegramMember.STATUS_REMOVED)
+        .first()
+    )
+    if row is None:
+        return {"status": "noop", "reason": "not_in_group"}
+    removed = tg.remove_member(row, reason=reason)
+    return {"status": "ok", "removed": bool(removed), "classroom_id": classroom_id}
+
+
+@shared_task(name="classes.tasks.audit_classroom_telegram_groups")
+def audit_classroom_telegram_groups() -> dict:
+    """The half-hourly sweep: reconcile every class group with what the site believes.
+
+    The webhook is the fast path and covers the ordinary join and leave. This exists for
+    everything the webhook cannot tell us — an update dropped during a deploy, a student
+    frozen while the worker was down, a roster edited straight in the Django admin.
+    """
+    from django.conf import settings as dj_settings
+
+    from . import telegram_group as tg
+
+    if not tg.api.is_configured():
+        return {"status": "noop", "reason": "no_token"}
+    batch = int(getattr(dj_settings, "CLASSROOM_TELEGRAM_AUDIT_BATCH", 60) or 60)
+    result = tg.audit_all(max_classrooms=batch)
+    if result.get("problems"):
+        logger.warning("telegram_group audit problems: %s", result["problems"])
+    logger.info("telegram_group audit -> %s", result)
+    return {"status": "ok", **result}

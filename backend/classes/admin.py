@@ -13,6 +13,8 @@ from .models import (
     StaleStorageBlob,
     ClassroomStreamItem,
     ClassComment,
+    ClassroomTelegramEvent,
+    ClassroomTelegramMember,
     Region,
 )
 
@@ -130,3 +132,32 @@ class ClassCommentAdmin(admin.ModelAdmin):
     list_filter = ("target_type", "created_at")
     search_fields = ("content", "author__email", "classroom__name")
 
+
+
+@admin.register(ClassroomTelegramMember)
+class ClassroomTelegramMemberAdmin(admin.ModelAdmin):
+    list_display = (
+        "id", "classroom", "user", "telegram_username", "status", "removed_reason",
+        "joined_at", "last_checked_at",
+    )
+    list_filter = ("status", "removed_reason")
+    search_fields = (
+        "classroom__name", "user__email", "user__username", "telegram_username",
+        "telegram_user_id",
+    )
+    # Read-only throughout: every field here is a fact reported by Telegram or written by
+    # the bot. Editing one by hand would make the row disagree with the group without
+    # changing the group, which is worse than leaving it wrong.
+    readonly_fields = tuple(f.name for f in ClassroomTelegramMember._meta.fields)
+    ordering = ("-updated_at",)
+
+
+@admin.register(ClassroomTelegramEvent)
+class ClassroomTelegramEventAdmin(admin.ModelAdmin):
+    list_display = (
+        "id", "created_at", "action", "classroom_name", "user_name", "telegram_user_id", "reason",
+    )
+    list_filter = ("action", "reason", "created_at")
+    search_fields = ("classroom_name", "user_name", "telegram_user_id", "detail")
+    readonly_fields = tuple(f.name for f in ClassroomTelegramEvent._meta.fields)
+    ordering = ("-created_at",)
