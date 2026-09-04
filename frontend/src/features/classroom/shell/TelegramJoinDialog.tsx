@@ -130,13 +130,18 @@ export function TelegramJoinDialog({
       }
       description="Read this first — the invite you get is yours alone."
     >
-      {isLoading && (
+      {/* Four branches, and they are exclusive. A refetch that fails while cached state is
+          still on screen must NOT paint "could not load the group" over a dialog that is
+          showing a perfectly good invite — the student would read the error and abandon a
+          link that works. Failure with nothing to show is the error state; failure with
+          something to show is a line saying the screen may be out of date. */}
+      {isLoading && !state && (
         <div className="flex justify-center py-8">
           <Spinner className="h-6 w-6 text-primary" />
         </div>
       )}
 
-      {isError && (
+      {isError && !state && (
         <ErrorState
           title="Could not load the group"
           message="Something went wrong reading this class's Telegram group."
@@ -145,7 +150,15 @@ export function TelegramJoinDialog({
       )}
 
       {state && (
-        <div className="space-y-4">
+        // The rules run to six lines and the action sits under them, so on a phone the
+        // button would be below the fold — and the Dialog locks body scroll, which would
+        // leave it unreachable rather than merely awkward.
+        <div className="max-h-[58vh] space-y-4 overflow-y-auto pr-1">
+          {isError && (
+            <p className="text-[12px] text-muted-foreground">
+              Could not refresh just now — this is the last state we know of.
+            </p>
+          )}
           <Rules rules={state.rules} />
 
           {/* Not eligible — frozen, or no longer in the class. Say why, offer nothing. */}
