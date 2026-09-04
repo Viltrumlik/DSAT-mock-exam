@@ -903,3 +903,53 @@ class HtmlEscapingTests(TelegramGroupBase):
             HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN="s3cr3t",
         )
         self.assertIn("G15 &lt;eng&gt; &amp; math", self.tg.messages[-1][1])
+
+
+class DeletedAccountTests(TelegramGroupBase):
+    """Deleting an account does not delete the person out of the Telegram group."""
+
+    def test_the_group_record_outlives_the_account(self):
+        link = self.issue_for(self.student)
+        self.tg.join(1001)
+        tg.handle_chat_member_update(
+            chat_member_update(
+                telegram_user={"id": 1001, "username": "aziz_t"}, invite_link=link
+            )
+        )
+        self.student.delete()
+
+        row = ClassroomTelegramMember.objects.get(
+            classroom=self.classroom, telegram_user_id=1001
+        )
+        self.assertIsNone(row.user_id)
+        self.assertEqual(row.telegram_username, "aziz_t")
+        # Rule 1: after the delete the bot genuinely cannot account for them, so it reports
+        # rather than removes. The handle is what lets a person do it by hand.
+        self.assertEqual(self.tg.kicked, [])
+
+    def test_the_sweep_leaves_an_orphaned_row_alone_and_quietly(self):
+        ClassroomTelegramMember.objects.create(
+            classroom=self.classroom, user=None, telegram_user_id=4242,
+            status=ClassroomTelegramMember.STATUS_JOINED,
+        )
+        self.tg.join(4242)
+        before = ClassroomTelegramEvent.objects.count()
+
+        result = tg.audit_classroom(self.classroom, sleep=0)
+
+        self.assertEqual(result["removed"], 0)
+        self.assertEqual(self.tg.kicked, [])
+        # And no event per pass: a half-hourly sweep that logged one of these for ever would
+        # bury the events that matter.
+        self.assertEqual(ClassroomTelegramEvent.objects.count(), before)
+
+    def test_staff_see_the_orphan_as_unmanaged(self):
+        ClassroomTelegramMember.objects.create(
+            classroom=self.classroom, user=None, telegram_user_id=4242,
+            telegram_username="ghost", status=ClassroomTelegramMember.STATUS_JOINED,
+        )
+        self.client.force_authenticate(user=self.teacher)
+        rows = self.client.get(f"/api/classes/{self.classroom.pk}/telegram/members/").json()
+        ghost = next(r for r in rows["members"] if r["telegram_user_id"] == 4242)
+        self.assertTrue(ghost["unmanaged"])
+        self.assertEqual(ghost["telegram_username"], "ghost")

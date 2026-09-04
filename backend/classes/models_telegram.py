@@ -65,9 +65,18 @@ class ClassroomTelegramMember(models.Model):
     )
     #: Null for a Telegram account the bot has seen in the group but cannot match to anyone
     #: here. Those rows are reported, never acted on — see ``classes.telegram_group``.
+    #:
+    #: SET_NULL rather than CASCADE, which is the opposite of ``ClassroomMembership`` next
+    #: door and deliberately so. Deleting an account does not delete that person out of a
+    #: Telegram group — they are still sitting in it. Cascading would destroy the only record
+    #: that they are there, and since the Bot API cannot list a group's members the site
+    #: would have no way of ever noticing them again. Left as a null-user row they show up in
+    #: the staff roster as an unrecognised account, with their Telegram handle, for somebody
+    #: to remove by hand. The bot will not remove them itself: after the delete it genuinely
+    #: cannot account for them, and that is exactly the case rule 1 exists for.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="classroom_telegram_members",

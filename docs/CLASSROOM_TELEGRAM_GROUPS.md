@@ -34,8 +34,14 @@ account which walked through the door is that one.
 | Removed from the class | student removed | (that *is* the change) |
 | Someone else uses a link | that person removed, ticket burned | unchanged |
 | A stranger joins some other way | recorded and reported, **not** removed | — |
+| Account deleted | stays in the group; the record survives as an unrecognised member | (the account is gone) |
 
 Unfreezing deliberately does not re-invite anybody. The student presses the button again.
+
+Deleting an account is the one case that needs a person. The bot will not remove somebody it
+can no longer identify (rule 1 below), so the row is kept with its Telegram handle and shows
+in the staff roster as unrecognised — remove them from the group by hand. Freeze rather than
+delete if you want the group to look after itself.
 
 ## The two safety rules
 

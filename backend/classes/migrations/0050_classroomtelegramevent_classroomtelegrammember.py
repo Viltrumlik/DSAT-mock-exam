@@ -52,7 +52,7 @@ class Migration(migrations.Migration):
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('classroom', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='telegram_members', to='classes.classroom')),
-                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name='classroom_telegram_members', to=settings.AUTH_USER_MODEL)),
+                ('user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='classroom_telegram_members', to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 'db_table': 'classroom_telegram_members',
