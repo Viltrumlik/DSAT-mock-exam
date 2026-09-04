@@ -455,8 +455,34 @@ def remove_member(
         row.save(update_fields=["last_checked_at", "updated_at"])
         return False
 
-    kicked = api.kick_chat_member(chat, int(telegram_id))
+    # Burn the credential BEFORE the kick is attempted. The two are independent: a link that
+    # survives a failed removal is a live way back into a group the student has been told
+    # they are out of.
     _clear_ticket(row)
+
+    kicked = api.kick_chat_member(chat, int(telegram_id))
+    if not kicked.ok:
+        # The row stays JOINED, and that is the point. Marking it REMOVED would take it out
+        # of the sweep's sight — the sweep only re-checks people it believes are in the
+        # group — so a rights problem or a Telegram blip would leave that student in the
+        # group for ever, with the site quietly insisting they are not. Left as it is, the
+        # next pass tries again.
+        row.last_checked_at = timezone.now()
+        row.save()
+        logger.warning(
+            "telegram_group kick failed class=%s tg=%s: %s",
+            classroom.pk, telegram_id, kicked.description,
+        )
+        log_event(
+            classroom=classroom,
+            action=ClassroomTelegramEvent.ACTION_CONFIG_ERROR,
+            user=row.user,
+            telegram_user_id=int(telegram_id),
+            reason=reason,
+            detail=f"could not remove: {kicked.description}",
+        )
+        return False
+
     row.status = ClassroomTelegramMember.STATUS_REMOVED
     row.removed_reason = reason
     row.removed_at = timezone.now()
@@ -469,15 +495,7 @@ def remove_member(
         user=row.user,
         telegram_user_id=int(telegram_id),
         reason=reason,
-        detail="" if kicked.ok else kicked.description,
     )
-    if not kicked.ok:
-        logger.warning(
-            "telegram_group kick failed class=%s tg=%s: %s",
-            classroom.pk, telegram_id, kicked.description,
-        )
-        return False
-
     if notify_student:
         _notify_removed(row.user, classroom, reason)
     return True
@@ -835,7 +853,9 @@ def group_health(classroom: Classroom) -> GroupHealth:
     if count.ok and isinstance(count.result, int):
         health.member_count = count.result
 
-    if status not in api.CHAT_ADMIN_STATUSES:
+    if status in api.OUT_OF_CHAT_STATUSES:
+        health.problem = "The bot is not in the group any more. Add it back as an administrator."
+    elif status not in api.CHAT_ADMIN_STATUSES:
         health.problem = "The bot is in the group but is not an administrator."
     elif not can_invite:
         health.problem = "The bot cannot invite members. Give it the 'Invite users' right."

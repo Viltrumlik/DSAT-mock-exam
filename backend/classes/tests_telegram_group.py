@@ -728,3 +728,75 @@ class AdoptionTicketTests(TelegramGroupBase):
                 action=ClassroomTelegramEvent.ACTION_UNMANAGED_JOIN
             ).exists()
         )
+
+
+class FailedRemovalTests(TelegramGroupBase):
+    """A kick that Telegram refuses must stay visible to the next sweep."""
+
+    def setUp(self):
+        super().setUp()
+        link = self.issue_for(self.student)
+        self.tg.join(1001)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1001}, invite_link=link)
+        )
+
+    def _refuse_kicks(self):
+        def refuse(chat_id, user_id):
+            return tg.api.TgResult(False, error_code=400, description="not enough rights")
+
+        return mock.patch("classes.telegram_group_api.kick_chat_member", refuse)
+
+    def test_a_refused_kick_leaves_the_row_joined(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+        with self._refuse_kicks():
+            result = tg.audit_classroom(self.classroom, sleep=0)
+
+        self.assertEqual(result["removed"], 0)
+        row = self.row(self.student)
+        # Still JOINED, because they still ARE in the group. Marking them removed would take
+        # the row out of the sweep's sight and strand them there for ever.
+        self.assertEqual(row.status, ClassroomTelegramMember.STATUS_JOINED)
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(
+                action=ClassroomTelegramEvent.ACTION_CONFIG_ERROR
+            ).exists()
+        )
+
+    def test_the_next_sweep_tries_again_and_succeeds(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+        with self._refuse_kicks():
+            tg.audit_classroom(self.classroom, sleep=0)
+
+        result = tg.audit_classroom(self.classroom, sleep=0)
+        self.assertEqual(result["removed"], 1)
+        self.assertEqual(self.tg.kicked, [(CHAT, 1001)])
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_REMOVED)
+
+    def test_the_link_is_burned_even_when_the_kick_fails(self):
+        # The row is put into this state by hand because no ordinary path produces it — the
+        # invariant being proved is precisely that a removal burns the credential before it
+        # tries the kick, so the two cannot come apart if one of them fails.
+        row = self.row(self.student)
+        row.invite_link = "https://t.me/+leftover"
+        row.invite_expires_at = timezone.now() + timedelta(minutes=10)
+        row.save(update_fields=["invite_link", "invite_expires_at"])
+
+        with self._refuse_kicks():
+            removed = tg.remove_member(
+                self.row(self.student), reason=ClassroomTelegramMember.REASON_FROZEN
+            )
+
+        self.assertFalse(removed)
+        self.assertIn("https://t.me/+leftover", self.tg.revoked)
+        self.assertEqual(self.row(self.student).invite_link, "")
+
+    def test_the_student_is_not_told_they_are_out_when_they_are_not(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+        with self._refuse_kicks():
+            tg.audit_classroom(self.classroom, sleep=0)
+        self.assertFalse(
+            Notification.objects.filter(
+                recipient=self.student, event="TELEGRAM_GROUP"
+            ).exists()
+        )
