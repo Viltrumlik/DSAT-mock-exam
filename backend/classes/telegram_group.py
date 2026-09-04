@@ -71,11 +71,11 @@ class TelegramGroupError(Exception):
 # should be surprised to find themselves outside the group.
 JOIN_RULES = [
     "Connect your Telegram account to MasterSAT first — the invite is issued to that account and no other.",
-    "Your invite link is personal and works once. Do not forward it: whoever opens it first uses it up.",
-    "Join with the same Telegram account you connected. Anyone else who opens your link is removed from the group automatically.",
-    "If your account is frozen, the bot removes you from the class group. You stay in the class here — your homework, points and results are untouched.",
-    "Once your account is active again, come back to this page and press the button for a new link.",
-    "If you leave the class, you are removed from the group as well.",
+    "Your invite link is personal and works once. Keep it to yourself: whoever opens it first uses it up.",
+    "Join with the same Telegram account you connected. If anyone else opens your link they are taken back out, and you will need a new one.",
+    "While your account is frozen you are out of the class group. You stay in the class here — your homework, points and results are exactly where you left them.",
+    "As soon as your account is active again, come back to this page and press the button for a fresh link.",
+    "If you move out of this class, you come out of its group too.",
 ]
 
 
@@ -140,9 +140,9 @@ def eligibility(user, classroom: Classroom) -> Eligibility:
         return Eligibility(
             False,
             ClassroomTelegramMember.REASON_FROZEN,
-            "Your account is frozen, so you cannot be in the class Telegram group at the "
-            "moment. You are still in the class — speak to the front desk, and once your "
-            "account is active again come back here and join.",
+            "While your account is frozen you cannot join the class Telegram group. You are "
+            "still in the class — speak to the front desk, and once your account is active "
+            "again come back here and join.",
         )
 
     membership = ClassroomMembership.objects.filter(classroom=classroom, user=user).first()
@@ -371,13 +371,13 @@ def _notify_removed(user, classroom: Classroom, reason: str) -> None:
         return
     if reason == ClassroomTelegramMember.REASON_FROZEN:
         body = (
-            "Your account is frozen, so the bot removed you from the class Telegram group. "
-            "You are still in the class here — nothing you have done is lost. When your "
-            "account is active again, open the class and press Join Telegram group for a "
-            "new link."
+            "While your account is frozen you are out of the class Telegram group. You are "
+            "still in the class here — your homework, points and results are exactly where "
+            "you left them. As soon as your account is active again, open the class and "
+            "press Join Telegram group for a new link."
         )
     elif reason == ClassroomTelegramMember.REASON_NOT_IN_CLASS:
-        body = "You are no longer in this class, so you were removed from its Telegram group."
+        body = "You have moved out of this class, so you have come out of its Telegram group too."
     elif reason == ClassroomTelegramMember.REASON_IDENTITY_MISMATCH:
         body = (
             "Someone else opened your one-time invite link, so it was used up and they were "

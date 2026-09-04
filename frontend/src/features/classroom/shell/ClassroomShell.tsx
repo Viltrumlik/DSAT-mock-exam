@@ -9,7 +9,9 @@ import { Tabs } from "../ui/Tabs";
 import { Pill } from "../ui/Pill";
 import { capabilitiesFor, ROLE_LABEL, normalizeRole } from "../capabilities";
 import { useRankings } from "../rankingsHooks";
+import { useTelegramGroup } from "../telegramHooks";
 import type { ClassroomWithRole } from "../types";
+import { TelegramJoinDialog } from "./TelegramJoinDialog";
 import { visibleTabs, type ClassroomTabId } from "./tabs";
 
 function fmtPts(n: number | null | undefined): string {
@@ -89,6 +91,14 @@ export function ClassroomShell({
   // student/staff split further down — the group is the same group whoever is looking at it,
   // and a button placed on the right-hand side would reach only one of the two audiences.
   const telegram = (classroom.telegram_group_url || "").trim();
+  // A managed group is one the bot administers: the button opens the join dialog and the
+  // student leaves with a single-use invite. A class with only the old static link keeps the
+  // old behaviour — a plain anchor — so nothing regresses for the classes nobody has set up
+  // yet. A failed lookup lands in that same branch, which is the right way to fail: the
+  // legacy link still works, and the dialog explains itself properly if they get that far.
+  const { data: tgState } = useTelegramGroup(classId);
+  const tgManaged = Boolean(tgState?.managed);
+  const [tgOpen, setTgOpen] = useState(false);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-4 sm:px-6">
@@ -116,17 +126,28 @@ export function ClassroomShell({
               )}
               {role && <span>· {ROLE_LABEL[role]}</span>}
             </div>
-            {telegram && (
-              <a
-                href={telegram}
-                target="_blank"
-                // `noopener` is the security half — a new tab must not get `window.opener`
-                // back into this app. `noreferrer` follows it because they are the pair.
-                rel="noopener noreferrer"
+            {tgManaged ? (
+              <button
+                type="button"
+                onClick={() => setTgOpen(true)}
                 className="ds-ring mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-[#2AABEE] px-3 py-1.5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
               >
-                <Send className="h-[15px] w-[15px]" aria-hidden /> Join Telegram group
-              </a>
+                <Send className="h-[15px] w-[15px]" aria-hidden />
+                {tgState?.status === "JOINED" ? "Telegram group" : "Join Telegram group"}
+              </button>
+            ) : (
+              telegram && (
+                <a
+                  href={telegram}
+                  target="_blank"
+                  // `noopener` is the security half — a new tab must not get `window.opener`
+                  // back into this app. `noreferrer` follows it because they are the pair.
+                  rel="noopener noreferrer"
+                  className="ds-ring mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-[#2AABEE] px-3 py-1.5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+                >
+                  <Send className="h-[15px] w-[15px]" aria-hidden /> Join Telegram group
+                </a>
+              )
             )}
           </div>
         </div>
@@ -162,6 +183,18 @@ export function ClassroomShell({
       </div>
 
       <div className="mt-6">{children}</div>
+
+      {/* Mounted only once the button has been pressed: the dialog fetches the Telegram
+          sign-in config on open, and a classroom page should not make that call for the
+          many visits where nobody touches the group. */}
+      {tgOpen && (
+        <TelegramJoinDialog
+          open={tgOpen}
+          onClose={() => setTgOpen(false)}
+          classId={classId}
+          className={classroom.name}
+        />
+      )}
     </div>
   );
 }

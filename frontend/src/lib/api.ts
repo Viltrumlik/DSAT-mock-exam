@@ -1274,7 +1274,7 @@ export const classesApi = {
         name?: string; level?: string; description?: string;
         lesson_days?: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number;
         start_date?: string | null; room_number?: string; branch?: number | null;
-        telegram_group_url?: string; max_students?: number | null;
+        telegram_group_url?: string; telegram_chat_id?: string; max_students?: number | null;
         schedule_summary?: string; is_active?: boolean;
     }) => {
         const r = await api.patch(`/classes/${classId}/details/`, data);

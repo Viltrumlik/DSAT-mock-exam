@@ -47,6 +47,7 @@ type Row = {
   branch_name?: string | null;
   region_name?: string | null;
   telegram_group_url?: string;
+  telegram_chat_id?: string;
   max_students?: number | null;
   schedule_summary?: string;
   is_active?: boolean;
@@ -104,12 +105,13 @@ type CreateForm = {
   supportIds: number[];
   /** Invite link for the class Telegram group. Normalised and checked server-side. */
   telegramUrl: string;
+  telegramChatId: string;
   /** Only a filter for the branch picker — a classroom stores its BRANCH, and the region is
    *  reached through it. Kept in the form so choosing a region narrows the second select. */
   regionId: string;
   branchId: string;
 };
-const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "", supportIds: [], telegramUrl: "", regionId: "", branchId: "" };
+const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "", supportIds: [], telegramUrl: "", telegramChatId: "", regionId: "", branchId: "" };
 
 /** What an administrator may change after the fact.
  *
@@ -124,13 +126,14 @@ type EditForm = {
   lesson_time: string;
   room_number: string;
   telegramUrl: string;
+  telegramChatId: string;
   regionId: string;
   branchId: string;
   is_active: boolean;
 };
 const BLANK_EDIT: EditForm = {
   name: "", level: "", description: "", lesson_days: "ODD", lesson_time: "",
-  room_number: "", telegramUrl: "", regionId: "", branchId: "", is_active: true,
+  room_number: "", telegramUrl: "", telegramChatId: "", regionId: "", branchId: "", is_active: true,
 };
 
 type SubjectKey = "ENGLISH" | "MATH";
@@ -399,6 +402,7 @@ export default function OpsClassroomGovernancePage() {
         room_number: createForm.room_number.trim() || undefined,
         teacher_id: createForm.teacherId ? Number(createForm.teacherId) : undefined,
         telegram_group_url: createForm.telegramUrl.trim() || undefined,
+        telegram_chat_id: createForm.telegramChatId.trim() || undefined,
         support_teacher_ids: createForm.supportIds.length ? createForm.supportIds : undefined,
         // `branch` only — the region is derived from it server-side, and sending a region
         // the branch does not belong to would be two sources of truth for one fact.
@@ -436,6 +440,7 @@ export default function OpsClassroomGovernancePage() {
       lesson_time: row.lesson_time ?? "",
       room_number: row.room_number ?? "",
       telegramUrl: row.telegram_group_url ?? "",
+      telegramChatId: row.telegram_chat_id ?? "",
       // The classroom stores only its branch; the region select is derived from it so the
       // branch list opens already narrowed to where this class actually is.
       regionId: branch ? String(branch.region) : "",
@@ -458,6 +463,7 @@ export default function OpsClassroomGovernancePage() {
         lesson_time: editForm.lesson_time.trim(),
         room_number: editForm.room_number.trim(),
         telegram_group_url: editForm.telegramUrl.trim(),
+        telegram_chat_id: editForm.telegramChatId.trim(),
         // `null` clears the branch; `undefined` would leave the field out of the PATCH and
         // silently keep the old one, which is not what an emptied select means.
         branch: editForm.branchId ? Number(editForm.branchId) : null,
@@ -940,6 +946,19 @@ export default function OpsClassroomGovernancePage() {
                 placeholder="https://t.me/joinchat/…"
               />
             </Field>
+
+            <Field
+              label="Telegram chat id"
+              htmlFor="create-telegram-chat"
+              hint="Fill this in and the bot takes over the group: each student gets a single-use invite, and a frozen account is taken out automatically. Add the bot to the group as an administrator (invite + ban rights), then send /chatid there to read the id."
+            >
+              <Input
+                id="create-telegram-chat"
+                value={createForm.telegramChatId}
+                onChange={(e) => setCreateForm({ ...createForm, telegramChatId: e.target.value })}
+                placeholder="-1001234567890"
+              />
+            </Field>
           </div>
         </Modal>
       )}
@@ -1058,6 +1077,15 @@ export default function OpsClassroomGovernancePage() {
                 <Input id="edit-telegram" value={editForm.telegramUrl}
                   onChange={(e) => setEditForm({ ...editForm, telegramUrl: e.target.value })}
                   placeholder="https://t.me/joinchat/…" />
+              </Field>
+              <Field
+                label="Telegram chat id"
+                htmlFor="edit-telegram-chat"
+                hint="Set this and the bot manages the group: single-use invites per student, and a frozen account taken out automatically. Add the bot as an administrator (invite + ban rights), then send /chatid in the group to read the id. Clear it to go back to a plain link."
+              >
+                <Input id="edit-telegram-chat" value={editForm.telegramChatId}
+                  onChange={(e) => setEditForm({ ...editForm, telegramChatId: e.target.value })}
+                  placeholder="-1001234567890" />
               </Field>
               <Checkbox
                 id="edit-active"
