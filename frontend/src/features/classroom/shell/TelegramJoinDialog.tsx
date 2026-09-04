@@ -94,26 +94,33 @@ export function TelegramJoinDialog({
 }) {
   const { data: state, isLoading, isError, refetch } = useTelegramGroup(classId, open);
   const join = useJoinTelegramGroup(classId);
-  const [startUrl, setStartUrl] = useState<string | null>(null);
+  const [cfg, setCfg] = useState<{ startUrl: string | null; botUsername: string | null } | null>(
+    null,
+  );
 
-  // Only fetched once the student is actually looking at a class whose group needs it, and
-  // only when they have not already connected — this is a network call to learn a button's
-  // href, not something to do on every classroom render.
+  // Fetched when the dialog opens, not on every classroom render: it is a network call to
+  // learn a button's href and a bot's @name, and most visits to a class never touch this.
   useEffect(() => {
-    if (!open || !state || state.telegram_linked || startUrl) return;
+    if (!open || cfg) return;
     let cancelled = false;
     usersApi
       .getTelegramWidgetConfig()
-      .then((cfg) => {
-        if (!cancelled) setStartUrl(cfg.enabled ? cfg.start_url : null);
+      .then((c) => {
+        if (cancelled) return;
+        setCfg({
+          startUrl: c.enabled ? c.start_url : null,
+          botUsername: (c.bot_username || "").replace(/^@/, "") || null,
+        });
       })
       .catch(() => {
-        if (!cancelled) setStartUrl(null);
+        if (!cancelled) setCfg({ startUrl: null, botUsername: null });
       });
     return () => {
       cancelled = true;
     };
-  }, [open, state, startUrl]);
+  }, [open, cfg]);
+  const startUrl = cfg?.startUrl ?? null;
+  const botUsername = cfg?.botUsername ?? null;
 
   const joinError = join.error as { response?: { data?: { detail?: string } } } | null;
   const errorMessage = joinError?.response?.data?.detail ?? "";
@@ -206,6 +213,23 @@ export function TelegramJoinDialog({
                   ? "You are already in the group. Get a new link only if you have left it."
                   : "Press below and the bot will cut you a single-use invite."}
               </p>
+              {/* A bot may only message somebody who has messaged it first, so until the
+                  student opens this chat every DM we send them — their invite, the note
+                  explaining why they came out of the group — silently fails. */}
+              {botUsername && (
+                <p className="mt-1.5 text-[12px] text-muted-foreground">
+                  Say hello to{" "}
+                  <a
+                    href={`https://t.me/${botUsername}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-semibold text-primary underline-offset-2 hover:underline"
+                  >
+                    @{botUsername}
+                  </a>{" "}
+                  once and it can send your invites and group news to Telegram as well.
+                </p>
+              )}
               <div className="mt-3">
                 <Button
                   variant="primary"

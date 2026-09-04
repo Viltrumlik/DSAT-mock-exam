@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from rest_framework import status as http
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
@@ -194,24 +195,39 @@ class ClassroomTelegramWebhookView(APIView):
             )
 
     def _handle_message(self, message: dict) -> None:
-        """One command, ``/chatid``, and only in a group.
+        """Two commands: ``/chatid`` for staff setting a class up, ``/start`` for students.
 
-        Setting a class up means pasting the group's numeric chat id into the classroom
-        settings, and there is no way to read that id from the Telegram client. Without this
-        the instruction is "forward a message to a third-party bot", which is both awkward
-        and a thing we should not be telling staff to do.
+        ``/chatid`` exists because setting a class up means pasting the group's numeric chat
+        id into the classroom settings, and there is no way to read that id from the Telegram
+        client. Without it the instruction is "forward a message to a third-party bot", which
+        is both awkward and a thing we should not be telling staff to do.
+
+        ``/start`` is not decoration. **A bot may only message somebody who has messaged it
+        first**, so until a student opens this chat every DM the integration would send —
+        their invite link, the note explaining why they came out of the group — silently
+        fails. Answering /start is what opens that channel. Everything sent by DM is a
+        courtesy copy of something the site already says on screen, so this improves
+        delivery rather than being load-bearing.
         """
         chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
         chat_id = chat.get("id")
         text = str(message.get("text") or "").strip()
         command = (text.split()[0].lower().split("@", 1)[0]) if text else ""
-        if command != "/chatid" or chat_id is None:
+        if chat_id is None or command not in ("/chatid", "/start"):
             return
+
         chat_type = str(chat.get("type") or "")
-        title = str(chat.get("title") or "")
-        if chat_type in ("group", "supergroup"):
+        is_group = chat_type in ("group", "supergroup")
+
+        if command == "/start":
+            if is_group:
+                return  # /start in a group is noise; nobody is opening a DM channel there.
+            tg.api.send_message(chat_id, self._start_body(message))
+            return
+
+        if is_group:
             body = (
-                f"<b>{title}</b>\nChat id: <code>{chat_id}</code>\n\n"
+                f"<b>{str(chat.get('title') or '')}</b>\nChat id: <code>{chat_id}</code>\n\n"
                 "Paste this into the class's Telegram chat id field in the MasterSAT ops "
                 "console, and make sure this bot is an administrator here with the right to "
                 "invite and to remove members."
@@ -219,3 +235,36 @@ class ClassroomTelegramWebhookView(APIView):
         else:
             body = f"Chat id: <code>{chat_id}</code>"
         tg.api.send_message(chat_id, body)
+
+    @staticmethod
+    def _start_body(message: dict) -> str:
+        """Greet by name when the account is known, and never invite anyone from here.
+
+        Joining is a decision made on the classroom page, where the rules are shown and the
+        student's eligibility is checked. A bot that handed out links on request would be a
+        second door into the same room with none of the checks on it.
+        """
+        frm = message.get("from") if isinstance(message.get("from"), dict) else {}
+        try:
+            telegram_id = int(frm.get("id") or 0)
+        except (TypeError, ValueError):
+            telegram_id = 0
+
+        user = (
+            get_user_model().objects.filter(telegram_id=telegram_id).first()
+            if telegram_id
+            else None
+        )
+        if user is None:
+            return (
+                "👋 This is the MasterSAT class bot.\n\n"
+                "Connect your Telegram account on the MasterSAT website first (Profile → "
+                "Connect Telegram). After that, open your class and press "
+                "<b>Join Telegram group</b> to get your invite."
+            )
+        name = (user.first_name or user.username or "").strip()
+        return (
+            f"👋 Hello{' ' + name if name else ''} — your Telegram is connected to MasterSAT.\n\n"
+            "Open your class on the website and press <b>Join Telegram group</b> for a "
+            "single-use invite. I will send your invites and any group news here."
+        )

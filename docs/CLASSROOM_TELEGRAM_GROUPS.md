@@ -17,8 +17,11 @@ account which walked through the door is that one.
    (`/api/users/telegram/start/`, the same flow as the profile page). They land back on the
    classroom.
 3. **Get my invite link** mints a link that admits one person and expires in 30 minutes
-   (`CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES`). It is shown on screen and also DM'd, if the
-   student has ever opened a chat with the bot.
+   (`CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES`). It is shown on screen, and also DM'd if the
+   student has ever opened a chat with the bot — **a bot may only message somebody who has
+   messaged it first**, which is why the dialog nudges them to say hello to it and why the
+   bot answers `/start`. Every DM is a courtesy copy of something the site already shows, so
+   a student who never opens that chat loses nothing.
 4. Opening the link puts them in the group. If somebody else opens it, that person is removed
    and the ticket is spent — the student comes back for a new one.
 

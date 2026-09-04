@@ -800,3 +800,46 @@ class FailedRemovalTests(TelegramGroupBase):
                 recipient=self.student, event="TELEGRAM_GROUP"
             ).exists()
         )
+
+
+class BotDirectMessageTests(TelegramGroupBase):
+    """`/start` is what opens the DM channel — a bot may not message anyone first."""
+
+    URL = "/api/classes/telegram/webhook/"
+
+    def _start(self, telegram_id, chat_type="private"):
+        return self.client.post(
+            self.URL,
+            {
+                "message": {
+                    "chat": {"id": telegram_id, "type": chat_type},
+                    "from": {"id": telegram_id, "first_name": "Aziz"},
+                    "text": "/start",
+                }
+            },
+            format="json",
+            HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN="s3cr3t",
+        )
+
+    def test_a_connected_student_is_greeted_by_name(self):
+        self.student.first_name = "Aziz"
+        self.student.save(update_fields=["first_name"])
+        self._start(1001)
+        self.assertTrue(self.tg.messages)
+        body = self.tg.messages[-1][1]
+        self.assertIn("Aziz", body)
+        self.assertIn("Join Telegram group", body)
+
+    def test_an_unknown_account_is_told_to_connect_first(self):
+        self._start(987654)
+        self.assertIn("Connect your Telegram", self.tg.messages[-1][1])
+
+    def test_the_bot_never_hands_out_a_link_over_dm(self):
+        """Joining is decided on the classroom page, where the checks are."""
+        self._start(1001)
+        self.assertNotIn("t.me/+", self.tg.messages[-1][1])
+        self.assertEqual(self.tg.links, [])
+
+    def test_start_in_a_group_is_ignored(self):
+        self._start(int(CHAT), chat_type="supergroup")
+        self.assertEqual(self.tg.messages, [])
