@@ -124,6 +124,21 @@ QUESTION_REPORT_TELEGRAM_CHAT_ID = os.getenv('QUESTION_REPORT_TELEGRAM_CHAT_ID',
 QUESTION_REPORT_TELEGRAM_TOPIC_ID = os.getenv('QUESTION_REPORT_TELEGRAM_TOPIC_ID', '').strip()
 # Shared secret echoed by Telegram as X-Telegram-Bot-Api-Secret-Token on the inbound webhook.
 QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET = os.getenv('QUESTION_REPORT_TELEGRAM_WEBHOOK_SECRET', '').strip()
+
+# ── Class Telegram groups (classes.telegram_group) ───────────────────────────
+# The bot that administers the per-class Telegram groups. Blank means "use
+# TELEGRAM_BOT_TOKEN" — the same bot students already link their account through, which is
+# the deployment that needs no new secret. Set this only when that bot's single webhook slot
+# is already spoken for and a second bot is required.
+CLASSROOM_TELEGRAM_BOT_TOKEN = os.getenv('CLASSROOM_TELEGRAM_BOT_TOKEN', '').strip()
+# Telegram echoes this back in the X-Telegram-Bot-Api-Secret-Token header. The webhook fails
+# closed without it: an unauthenticated update stream would let anyone forge a join.
+CLASSROOM_TELEGRAM_WEBHOOK_SECRET = os.getenv('CLASSROOM_TELEGRAM_WEBHOOK_SECRET', '').strip()
+# How long a single-use invite stays usable. The link IS the credential.
+CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES = int(os.getenv('CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES', '30'))
+# Classrooms per sweep. A cap, not a target: the sweep is polite to the Bot API and a school
+# with hundreds of groups should spread the work over several runs rather than one long one.
+CLASSROOM_TELEGRAM_AUDIT_BATCH = int(os.getenv('CLASSROOM_TELEGRAM_AUDIT_BATCH', '60'))
 # Optional passcode to gate /start (empty = anyone who messages the bot can subscribe).
 QUESTION_REPORT_BOT_JOIN_CODE = os.getenv('QUESTION_REPORT_BOT_JOIN_CODE', '').strip()
 
@@ -445,6 +460,15 @@ CELERY_BEAT_SCHEDULE = {
         "task": "notifications.prune_push_subscriptions",
         "schedule": crontab(hour=4, minute=25),
     },
+    # Reconcile every class Telegram group with the site. The webhook is the fast path and
+    # handles the ordinary join and leave; this is what catches everything the webhook could
+    # not tell us — an update dropped while the app was deploying, a student frozen while the
+    # worker was down, somebody removed from a class by hand. Half-hourly because the thing
+    # being enforced (a frozen account is out of the group) is measured in minutes, not days.
+    "classroom-telegram-audit": {
+        "task": "classes.tasks.audit_classroom_telegram_groups",
+        "schedule": crontab(minute="*/30"),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.
@@ -751,6 +775,8 @@ REST_FRAMEWORK = {
         'email_verify_user': os.getenv('EMAIL_VERIFY_USER_THROTTLE', '10/hour'),
         'email_verify_confirm': os.getenv('EMAIL_VERIFY_CONFIRM_THROTTLE', '20/hour'),
         'homework_submit': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_THROTTLE', '120/hour'),
+        # Minting a class-group invite: one Bot API call and one live credential each.
+        'telegram_group_join': os.getenv('CLASSROOM_TELEGRAM_JOIN_THROTTLE', '10/hour'),
         'homework_submit_global': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_GLOBAL_THROTTLE', '5000/hour'),
         'homework_submit_class': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_PER_CLASS_THROTTLE', '800/hour'),
         # Assessments: per-attempt answer writes.

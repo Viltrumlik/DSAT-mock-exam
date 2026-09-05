@@ -19,6 +19,9 @@ class ClassesConfig(AppConfig):
         import classes.pastpaper_signals  # noqa: F401
         # Who changed a roster, and when. See classes/membership_hooks.
         import classes.membership_hooks  # noqa: F401
+        # Freeze an account or drop a student from a class -> out of the class
+        # Telegram group. See classes/telegram_group_hooks.
+        import classes.telegram_group_hooks  # noqa: F401
 
         from django.conf import settings
         from django.core.exceptions import ImproperlyConfigured

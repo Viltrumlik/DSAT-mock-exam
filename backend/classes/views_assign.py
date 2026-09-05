@@ -442,6 +442,12 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
         "room_number",
         "branch",
         "telegram_group_url",
+        # The numeric chat id, which is what switches the class group from a static link
+        # into one the bot administers. It has to be listed: this whitelist is the exact
+        # mechanism that silently dropped `branch` from every classroom made through the
+        # ops form, and a chat id that never lands reads as "the integration is broken"
+        # rather than "the field was discarded".
+        "telegram_chat_id",
         "max_students",
         "schedule_summary",
         "is_active",

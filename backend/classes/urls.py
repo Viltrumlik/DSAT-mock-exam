@@ -23,6 +23,12 @@ from .views_attendance import (
     AttendanceStudentView,
 )
 from .views_analytics import AnalyticsClassView, AnalyticsMeView, AnalyticsStudentView
+from .views_telegram import (
+    ClassroomTelegramJoinView,
+    ClassroomTelegramMembersView,
+    ClassroomTelegramView,
+    ClassroomTelegramWebhookView,
+)
 from .views_gradebook import GradebookOverviewView, GradebookAssignmentView
 from .views_materials import ClassroomMaterialsView, ClassroomMaterialDetailView
 from .views_support import (
@@ -120,8 +126,19 @@ urlpatterns = [
         RoadmapReadingView.as_view(),
         name="student-roadmap-reading",
     ),
+    # Telegram's own callback. A literal segment, so it resolves ahead of the router's
+    # <int:pk> classroom detail — "telegram" is not an int, but keeping it up here with
+    # the other literals is the convention this file already follows.
+    path(
+        "telegram/webhook/",
+        ClassroomTelegramWebhookView.as_view(),
+        name="classroom-telegram-webhook",
+    ),
     path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
     path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
+    path("<int:classroom_pk>/telegram/", ClassroomTelegramView.as_view(), name="class-telegram"),
+    path("<int:classroom_pk>/telegram/join/", ClassroomTelegramJoinView.as_view(), name="class-telegram-join"),
+    path("<int:classroom_pk>/telegram/members/", ClassroomTelegramMembersView.as_view(), name="class-telegram-members"),
     path("<int:classroom_pk>/comments/", ClassCommentListCreateView.as_view(), name="class-comments"),
     path("<int:classroom_pk>/members/", ClassroomRosterView.as_view(), name="class-roster"),
     path("<int:classroom_pk>/members/<int:user_id>/", MemberManageView.as_view(), name="class-member-manage"),
