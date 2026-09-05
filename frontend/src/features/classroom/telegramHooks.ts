@@ -19,6 +19,17 @@ export function useTelegramGroup(classId: number, enabled = true) {
   });
 }
 
+/**
+ * The deep link that introduces this student to the bot, fetched once the dialog knows they
+ * need one. A mutation rather than a query because each call spends the previous token: two
+ * live links mean two accounts could bind, and only one of them is holding the screen.
+ */
+export function useTelegramBotLink(classId: number) {
+  return useMutation({
+    mutationFn: () => telegramGroupApi.botLink(classId),
+  });
+}
+
 export function useJoinTelegramGroup(classId: number) {
   const qc = useQueryClient();
   return useMutation({

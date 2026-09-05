@@ -13,17 +13,36 @@ account which walked through the door is that one.
 1. **Join Telegram group** in the classroom header opens a dialog listing the rules. The
    rules come from the server (`classes.telegram_group.JOIN_RULES`), so the page and the bot
    cannot drift apart.
-2. If their Telegram is not connected yet, step one is the existing account link
-   (`/api/users/telegram/start/`, the same flow as the profile page). They land back on the
-   classroom.
-3. **Get my invite link** mints a link that admits one person and expires in 30 minutes
-   (`CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES`). It is shown on screen, and also DM'd if the
-   student has ever opened a chat with the bot — **a bot may only message somebody who has
-   messaged it first**, which is why the dialog nudges them to say hello to it and why the
-   bot answers `/start`. Every DM is a courtesy copy of something the site already shows, so
-   a student who never opens that chat loses nothing.
+2. If the bot has never met them, the dialog's one button is **Open the bot** — a
+   `https://t.me/<bot>?start=<token>` deep link cut for their account and good for an hour
+   (`TelegramStartToken`). They press Start in Telegram, and that single update carries the
+   token *and* their Bot API user id: the introduction, made by the person themselves. The
+   bot binds the two, then mints and sends their invite in the same chat.
+3. Once bound, **Get my invite link** on the page mints a link that admits one person and
+   expires in 30 minutes (`CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES`). It is shown on screen
+   and DM'd, which now works — a bot may only message somebody who has messaged it first,
+   and pressing Start is that message.
 4. Opening the link puts them in the group. If somebody else opens it, that person is removed
    and the ticket is spent — the student comes back for a new one.
+
+## Two Telegram ids, and only one of them is the bot's
+
+This is the trap, and it cost a production evening. A `User` carries **two** Telegram
+numbers and they are not interchangeable:
+
+| Column | Where it comes from | Shape |
+|---|---|---|
+| `telegram_id` | the subject of an `oauth.telegram.org` **sign-in** | 17-19 digits |
+| `telegram_bot_user_id` | the `from.id` of a **Bot API** update | 9-11 digits |
+
+They are different numbers for the same human. The first version of this feature checked
+arrivals against `telegram_id`, so every genuine join was rejected as an identity mismatch
+and every DM went to an id that does not exist. Read the bot one through
+`telegram_group.bot_id_for(user)` and never off the model, so the next person to touch this
+has to notice which one they are asking for.
+
+Signing in with Telegram does **not** connect a student to the bot. Only pressing Start on
+their own `/start` link does.
 
 ## What happens without anybody clicking
 

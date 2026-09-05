@@ -35,6 +35,7 @@ by hand if the school wants that.
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 from dataclasses import dataclass
 from datetime import timedelta
@@ -49,7 +50,11 @@ from notifications.services import notify
 
 from . import telegram_group_api as api
 from .models import Classroom, ClassroomMembership
-from .models_telegram import ClassroomTelegramEvent, ClassroomTelegramMember
+from .models_telegram import (
+    ClassroomTelegramEvent,
+    ClassroomTelegramMember,
+    TelegramStartToken,
+)
 
 logger = logging.getLogger("classes.telegram_group")
 
@@ -165,6 +170,52 @@ def eligibility(user, classroom: Classroom) -> Eligibility:
             "You are not a member of this class.",
         )
     return Eligibility(True)
+
+
+#: How long a ``/start`` deep link stays usable. Longer than an invite: opening Telegram,
+#: finding the bot and pressing Start is a slower errand than tapping a link that is already
+#: in the chat, and this token binds an account rather than opening a door.
+START_TOKEN_TTL_MINUTES = 60
+
+
+def bot_id_for(user) -> Optional[int]:
+    """This person as the **Bot API** numbers them, or ``None`` if the bot has never met them.
+
+    Read through this rather than off the model, because the neighbouring ``telegram_id`` is
+    the OIDC subject from Telegram sign-in and is a different number for the same human —
+    17-19 digits against 9-11. Comparing one to the other rejected every genuine join the
+    feature ever saw.
+    """
+    raw = getattr(user, "telegram_bot_user_id", None)
+    try:
+        return int(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def start_link(*, user, classroom: Optional[Classroom] = None) -> str:
+    """Cut this person a single-use ``/start`` link, and return the URL to put in front of
+    them. Empty when the bot cannot be reached, which the caller must show as "not now"
+    rather than as a broken button.
+
+    Any older open token for the same user and class is spent first: two live links means
+    two accounts can bind, and only one of them is the person holding the screen.
+    """
+    username = api.bot_username()
+    if not username:
+        return ""
+    now = timezone.now()
+    TelegramStartToken.objects.filter(
+        user=user, classroom=classroom, used_at__isnull=True
+    ).update(used_at=now)
+    token = secrets.token_urlsafe(24)  # 32 chars — Telegram allows 64
+    TelegramStartToken.objects.create(
+        token=token,
+        user=user,
+        classroom=classroom,
+        expires_at=now + timedelta(minutes=START_TOKEN_TTL_MINUTES),
+    )
+    return f"https://t.me/{username}?start={token}"
 
 
 def may_enforce_against(user, chat_status: str) -> bool:
@@ -299,9 +350,7 @@ def _claim_row(
 
 
 def _row_for_user(classroom: Classroom, user) -> ClassroomTelegramMember:
-    row = _claim_row(
-        classroom, user=user, telegram_user_id=getattr(user, "telegram_id", None)
-    )
+    row = _claim_row(classroom, user=user, telegram_user_id=bot_id_for(user))
     if row.pk is None:
         row.save()
     return row
@@ -343,11 +392,15 @@ def issue_invite(*, user, classroom: Classroom) -> dict:
             status=409,
         )
 
-    telegram_id = getattr(user, "telegram_id", None)
+    telegram_id = bot_id_for(user)
     if not telegram_id:
+        # Not a failure — the step before this one. The bot has never met this person, so
+        # there is no account to issue an invite *to*; `views_telegram` turns this into the
+        # deep link that introduces them.
         raise TelegramGroupError(
             "telegram_not_linked",
-            "Connect your Telegram account first — the invite is issued to that account.",
+            "Open the MasterSAT bot from the button above first — your invite is issued to "
+            "the Telegram account that presses Start.",
             status=409,
         )
 
@@ -465,7 +518,9 @@ def student_state(*, user, classroom: Classroom) -> dict:
     return {
         "managed": is_managed(classroom),
         "group_url": (getattr(classroom, "telegram_group_url", "") or "").strip(),
-        "telegram_linked": bool(getattr(user, "telegram_id", None)),
+        # Linked means the BOT knows them. A Telegram sign-in does not put the person in
+        # front of the bot, and it is the bot that has to recognise them at the door.
+        "telegram_linked": bool(bot_id_for(user)),
         "status": row.status if row else "NONE",
         "removed_reason": (row.removed_reason if row else "") or "",
         "eligible": verdict.allowed,
@@ -510,7 +565,7 @@ def _notify_removed(user, classroom: Classroom, reason: str) -> None:
         link_url=f"/classes/{classroom.pk}",
         dedupe_key=f"tg-group:{classroom.pk}:{user.pk}:{reason}",
     )
-    telegram_id = getattr(user, "telegram_id", None)
+    telegram_id = bot_id_for(user)
     if telegram_id:
         api.send_message(int(telegram_id), f"<b>{api.esc(classroom.name)}</b>\n{body}")
 
@@ -532,7 +587,7 @@ def remove_member(
     if not chat:
         return False
 
-    telegram_id = row.telegram_user_id or getattr(row.user, "telegram_id", None)
+    telegram_id = row.telegram_user_id or bot_id_for(row.user)
     if not telegram_id:
         # Nothing to remove: we have never seen this person inside the group. Still worth
         # burning any live ticket, which is the half of the job that does apply.
@@ -664,6 +719,85 @@ def enforce_for_user(user, *, reason: str) -> dict:
     return {"removed": removed, "tickets_revoked": revoked}
 
 
+# ── Being introduced to somebody ─────────────────────────────────────────────
+
+
+def handle_start_token(token_value: str, tg_user: dict) -> str:
+    """A ``/start <token>`` arrived. Bind the account, then hand over the invite.
+
+    Returns the HTML body to reply with — always something, because a student who has just
+    tapped a button and been met with silence has no way to tell a broken bot from a slow
+    one.
+
+    The binding is the point of the whole exchange: this update is the first and only place
+    the site ever learns a person's Bot API id, and it learns it from the person, on a token
+    that was shown to nobody else.
+    """
+    tg_id = int(tg_user.get("id") or 0)
+    row = (
+        TelegramStartToken.objects.select_related("user", "classroom")
+        .filter(token=token_value)
+        .first()
+    )
+    if row is None or not row.is_open():
+        return (
+            "That link has already been used, or it has expired.\n\n"
+            "Open your class on MasterSAT and press <b>Join Telegram group</b> for a new one."
+        )
+
+    now = timezone.now()
+    taken = (
+        User.objects.filter(telegram_bot_user_id=tg_id).exclude(pk=row.user_id).first()
+        if tg_id
+        else None
+    )
+    if taken is not None:
+        # Recorded, not bound. `telegram_bot_user_id` is unique, so the alternative is a
+        # crash on save — and the honest reading is that somebody is holding the wrong
+        # phone, which a person needs to sort out rather than a retry.
+        row.telegram_user_id = tg_id
+        row.save(update_fields=["telegram_user_id"])
+        logger.warning(
+            "telegram_group start token for user=%s opened by tg=%s already held by user=%s",
+            row.user_id, tg_id, taken.pk,
+        )
+        return (
+            "This Telegram account is already connected to a different MasterSAT account.\n\n"
+            "Sign in as that student, or ask the front desk to sort it out."
+        )
+
+    user = row.user
+    first_time = bot_id_for(user) != tg_id
+    user.telegram_bot_user_id = tg_id
+    user.save(update_fields=["telegram_bot_user_id"])
+    row.used_at = now
+    row.telegram_user_id = tg_id
+    row.save(update_fields=["used_at", "telegram_user_id"])
+
+    greeting = (
+        f"Hello {api.esc(_display_name(user))} — your Telegram is connected to MasterSAT."
+        if first_time
+        else f"Hello {api.esc(_display_name(user))}."
+    )
+    classroom = row.classroom
+    if classroom is None:
+        return greeting + "\n\nOpen a class on MasterSAT and press Join Telegram group."
+
+    try:
+        issued = issue_invite(user=user, classroom=classroom)
+    except TelegramGroupError as exc:
+        return f"{greeting}\n\n<b>{api.esc(classroom.name)}</b>\n{api.esc(exc.message)}"
+
+    if issued["already_member"]:
+        return (
+            f"{greeting}\n\nYou are already in the <b>{api.esc(classroom.name)}</b> group — "
+            "nothing else to do."
+        )
+    # `issue_invite` has already sent the link to this same chat, and it is the only copy
+    # that matters: saying it twice reads as two invites.
+    return greeting
+
+
 # ── Inbound updates ──────────────────────────────────────────────────────────
 
 
@@ -731,7 +865,7 @@ def handle_chat_member_update(update: dict) -> str:
     was_in = old_status in api.IN_CHAT_STATUSES
     is_in = new_status in api.IN_CHAT_STATUSES
 
-    site_user = User.objects.filter(telegram_id=tg_id).first()
+    site_user = User.objects.filter(telegram_bot_user_id=tg_id).first()
 
     if was_in and not is_in:
         return _handle_departure(classrooms, tg_user)
@@ -799,7 +933,7 @@ def _handle_arrival(
     # ── Someone used a ticket cut for somebody else ──────────────────────────
     if ticket is not None and ticket.user_id is not None:
         classroom = ticket.classroom
-        expected_tg = getattr(ticket.user, "telegram_id", None)
+        expected_tg = bot_id_for(ticket.user)
         if expected_tg is None or int(expected_tg) != tg_id:
             _reject_join(classroom, tg_user, ticket, new_status)
             return "rejected_identity_mismatch"
