@@ -103,15 +103,13 @@ type CreateForm = {
   /** Support staff to attach immediately. Several may serve one classroom, so this is a
    *  list — unlike `teacherId`, which is a single FK on the classroom itself. */
   supportIds: number[];
-  /** Invite link for the class Telegram group. Normalised and checked server-side. */
-  telegramUrl: string;
   telegramChatId: string;
   /** Only a filter for the branch picker — a classroom stores its BRANCH, and the region is
    *  reached through it. Kept in the form so choosing a region narrows the second select. */
   regionId: string;
   branchId: string;
 };
-const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "", supportIds: [], telegramUrl: "", telegramChatId: "", regionId: "", branchId: "" };
+const BLANK_CREATE: CreateForm = { name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", teacherId: "", supportIds: [], telegramChatId: "", regionId: "", branchId: "" };
 
 /** What an administrator may change after the fact.
  *
@@ -125,7 +123,6 @@ type EditForm = {
   lesson_days: "ODD" | "EVEN";
   lesson_time: string;
   room_number: string;
-  telegramUrl: string;
   telegramChatId: string;
   regionId: string;
   branchId: string;
@@ -133,7 +130,7 @@ type EditForm = {
 };
 const BLANK_EDIT: EditForm = {
   name: "", level: "", description: "", lesson_days: "ODD", lesson_time: "",
-  room_number: "", telegramUrl: "", telegramChatId: "", regionId: "", branchId: "", is_active: true,
+  room_number: "", telegramChatId: "", regionId: "", branchId: "", is_active: true,
 };
 
 type SubjectKey = "ENGLISH" | "MATH";
@@ -401,7 +398,6 @@ export default function OpsClassroomGovernancePage() {
         lesson_time: createForm.lesson_time.trim() || undefined,
         room_number: createForm.room_number.trim() || undefined,
         teacher_id: createForm.teacherId ? Number(createForm.teacherId) : undefined,
-        telegram_group_url: createForm.telegramUrl.trim() || undefined,
         telegram_chat_id: createForm.telegramChatId.trim() || undefined,
         support_teacher_ids: createForm.supportIds.length ? createForm.supportIds : undefined,
         // `branch` only — the region is derived from it server-side, and sending a region
@@ -439,7 +435,6 @@ export default function OpsClassroomGovernancePage() {
       lesson_days: row.lesson_days === "EVEN" ? "EVEN" : "ODD",
       lesson_time: row.lesson_time ?? "",
       room_number: row.room_number ?? "",
-      telegramUrl: row.telegram_group_url ?? "",
       telegramChatId: row.telegram_chat_id ?? "",
       // The classroom stores only its branch; the region select is derived from it so the
       // branch list opens already narrowed to where this class actually is.
@@ -462,7 +457,6 @@ export default function OpsClassroomGovernancePage() {
         lesson_days: editForm.lesson_days,
         lesson_time: editForm.lesson_time.trim(),
         room_number: editForm.room_number.trim(),
-        telegram_group_url: editForm.telegramUrl.trim(),
         telegram_chat_id: editForm.telegramChatId.trim(),
         // `null` clears the branch; `undefined` would leave the field out of the PATCH and
         // silently keep the old one, which is not what an emptied select means.
@@ -936,21 +930,8 @@ export default function OpsClassroomGovernancePage() {
 
             <Field
               label="Telegram group"
-              htmlFor="create-telegram"
-              hint="Optional. Students see a “Join Telegram group” button on the class page."
-            >
-              <Input
-                id="create-telegram"
-                value={createForm.telegramUrl}
-                onChange={(e) => setCreateForm({ ...createForm, telegramUrl: e.target.value })}
-                placeholder="https://t.me/joinchat/…"
-              />
-            </Field>
-
-            <Field
-              label="Telegram chat id"
               htmlFor="create-telegram-chat"
-              hint="Fill this in and the bot takes over the group: each student gets a single-use invite, and a frozen account is taken out automatically. Add the bot to the group as an administrator (invite + ban rights), then send /chatid there to read the id."
+              hint="Optional, and the only way to attach a group. Add the bot to it as an administrator (invite + ban rights), send /chatid there, and paste the number here. Each student then gets their own single-use invite from the class page, and a frozen account is taken out automatically."
             >
               <Input
                 id="create-telegram-chat"
@@ -1071,17 +1052,8 @@ export default function OpsClassroomGovernancePage() {
               ) : null}
               <Field
                 label="Telegram group"
-                htmlFor="edit-telegram"
-                hint="Students see a “Join Telegram group” button on the class page. Clear it to remove the button."
-              >
-                <Input id="edit-telegram" value={editForm.telegramUrl}
-                  onChange={(e) => setEditForm({ ...editForm, telegramUrl: e.target.value })}
-                  placeholder="https://t.me/joinchat/…" />
-              </Field>
-              <Field
-                label="Telegram chat id"
                 htmlFor="edit-telegram-chat"
-                hint="Set this and the bot manages the group: single-use invites per student, and a frozen account taken out automatically. Add the bot as an administrator (invite + ban rights), then send /chatid in the group to read the id. Clear it to go back to a plain link."
+                hint="The bot manages the group: single-use invites per student, and a frozen account taken out automatically. Add the bot as an administrator (invite + ban rights), then send /chatid in the group to read the id. Clearing it detaches the group and stops the button."
               >
                 <Input id="edit-telegram-chat" value={editForm.telegramChatId}
                   onChange={(e) => setEditForm({ ...editForm, telegramChatId: e.target.value })}
