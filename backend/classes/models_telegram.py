@@ -11,6 +11,12 @@ classroom, records which account it was minted for, and when Telegram reports th
 checks that the Telegram account which walked through the door is the one the ticket was cut
 for. Anyone else is removed on the spot.
 
+A group that already has people in it when a class is switched over is not disturbed. The
+bot never watched those accounts arrive, so it does not act on them at all — it does not
+even know they are there. Watching begins at the first join it sees. If one of them leaves
+and comes back, *that* arrival is watched, and from then on they are managed like anybody
+else. ``observed_arrival_at`` below is the whole of that mechanism.
+
 Two models:
 
 ``ClassroomTelegramMember`` is current state — one row per person per class group, the
@@ -110,6 +116,17 @@ class ClassroomTelegramMember(models.Model):
     #: are worth being able to see.
     invite_issued_count = models.PositiveIntegerField(default=0)
 
+    #: When the bot **watched** this account walk into the group: a ``chat_member`` update it
+    #: received, not a conclusion it drew. Null means the site has never seen them arrive —
+    #: they were in the group before the bot began watching it — and rule 3 leaves those
+    #: people alone for good.
+    #:
+    #: Deliberately not the same fact as ``joined_at``, which is the softer "we believe they
+    #: are in the group" and gets filled in from a ``getChatMember`` probe as well. A probe
+    #: can tell you somebody is inside; it cannot tell you they came in on your watch. Only
+    #: an observed arrival writes this field, which is what makes it safe to enforce on.
+    observed_arrival_at = models.DateTimeField(null=True, blank=True)
+
     joined_at = models.DateTimeField(null=True, blank=True)
     left_at = models.DateTimeField(null=True, blank=True)
     removed_at = models.DateTimeField(null=True, blank=True)
@@ -149,6 +166,11 @@ class ClassroomTelegramMember(models.Model):
     @property
     def is_in_group(self) -> bool:
         return self.status == self.STATUS_JOINED
+
+    @property
+    def is_watched(self) -> bool:
+        """Did the bot see this account come in? Nobody else is ever removed."""
+        return self.observed_arrival_at is not None
 
 
 class ClassroomTelegramEvent(models.Model):

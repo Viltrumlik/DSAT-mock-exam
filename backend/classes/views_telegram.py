@@ -120,6 +120,12 @@ class ClassroomTelegramMembersView(_TelegramClassroomView):
                         #: not place. Surfaced rather than acted on — see the rules in
                         #: ``classes.telegram_group``.
                         "unmanaged": r.user_id is None,
+                        #: False means the bot never watched this account arrive: they were
+                        #: in the group before it started watching, and rule 3 means nothing
+                        #: here will ever take them out. Shown because it is the answer to
+                        #: "why is this frozen student still in the group?", and because
+                        #: removing them by hand is then a decision for the school.
+                        "watched": r.is_watched,
                     }
                     for r in rows
                 ],

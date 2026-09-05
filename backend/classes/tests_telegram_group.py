@@ -450,6 +450,9 @@ class FreezeTests(TelegramGroupBase):
         ClassroomTelegramMember.objects.create(
             classroom=self.classroom, user=self.teacher, telegram_user_id=2001,
             status=ClassroomTelegramMember.STATUS_JOINED,
+            # Watched in, so rule 3 lets this get as far as rule 2 — otherwise the test
+            # passes whether or not the rule it is named after still exists.
+            observed_arrival_at=timezone.now(),
         )
         self.tg.join(2001)
         with self.captureOnCommitCallbacks(execute=True):
@@ -470,6 +473,154 @@ class FreezeTests(TelegramGroupBase):
             self.row(self.student).removed_reason,
             ClassroomTelegramMember.REASON_NOT_IN_CLASS,
         )
+
+
+class MembersFromBeforeTheBotTests(TelegramGroupBase):
+    """Rule 3: a class group is switched on with people already in it, and those people are
+    not the bot's to remove.
+
+    It never watched them arrive; the Bot API cannot even list them. The one way across the
+    line is the one a person takes on their own — leave, and come back.
+    """
+
+    def _already_inside(self, user, telegram_id):
+        """In the group since before the bot: no ``chat_member`` update ever mentioned them.
+
+        They then press Join on the site, which is what gives the site a row at all — a
+        ``getChatMember`` probe says they are inside, and that is precisely the evidence
+        rule 3 refuses to act on.
+        """
+        self.tg.join(telegram_id)
+        self.client.force_authenticate(user=user)
+        r = self.client.post(self.join_url(), {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["already_member"])
+        row = self.row(user)
+        self.assertEqual(row.status, ClassroomTelegramMember.STATUS_JOINED)
+        self.assertFalse(row.is_watched)
+        return row
+
+    def test_freezing_leaves_a_member_from_before_where_they_are(self):
+        self._already_inside(self.student, 1001)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+
+        self.assertEqual(self.tg.kicked, [])
+        # And the row still says what is true: they are in the group.
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_JOINED)
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(
+                action=ClassroomTelegramEvent.ACTION_RECONCILED,
+                user=self.student,
+                detail__contains="before the bot began watching",
+            ).exists()
+        )
+
+    def test_they_are_not_told_they_were_removed(self):
+        """The freeze notification says "you are out of the group". Sending it to somebody
+        who is still in it would be a lie the student can see through in one tap."""
+        self._already_inside(self.student, 1001)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+        self.assertFalse(
+            Notification.objects.filter(recipient=self.student, event="TELEGRAM_GROUP").exists()
+        )
+
+    def test_an_outstanding_ticket_is_still_burned(self):
+        """The half of "remove" that does not depend on having watched them arrive. They
+        walked in unseen while a link of theirs was still live; the link must not stay live.
+        """
+        link = self.issue_for(self.student)
+        self.tg.join(1001)  # in, with no update to say so
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+
+        self.assertEqual(self.tg.kicked, [])
+        self.assertIn(link, self.tg.revoked)
+        self.assertEqual(self.row(self.student).invite_link, "")
+
+    def test_leaving_the_class_does_not_pull_them_out_of_the_group(self):
+        self._already_inside(self.student, 1001)
+        membership = ClassroomMembership.objects.get(
+            classroom=self.classroom, user=self.student
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            membership.status = ClassroomMembership.STATUS_REMOVED
+            membership.save(update_fields=["status"])
+        self.assertEqual(self.tg.kicked, [])
+
+    def test_the_sweep_walks_past_them_without_a_word(self):
+        self._already_inside(self.student, 1001)
+        self.student.is_frozen = True
+        # Straight to the column: the freeze hook has its own test above, and this one is
+        # about what the half-hourly pass does with a row it finds already ineligible.
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+        before = ClassroomTelegramEvent.objects.count()
+
+        result = tg.audit_classroom(self.classroom, sleep=0)
+
+        self.assertEqual(result["removed"], 0)
+        self.assertEqual(self.tg.kicked, [])
+        # Forty-eight passes a day: a rule that logged every time it declined would bury the
+        # events somebody actually needs to read.
+        self.assertEqual(ClassroomTelegramEvent.objects.count(), before)
+
+    def test_leaving_and_coming_back_puts_them_under_the_bot(self):
+        """The one crossing there is. They go out of the door themselves, and the way back
+        in is the door everybody else uses — which the bot is watching."""
+        self._already_inside(self.student, 1001)
+
+        # Out, of their own accord.
+        self.tg.members.pop((CHAT, 1001), None)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1001}, old="member", new="left")
+        )
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_LEFT)
+
+        # And back in, on a ticket.
+        link = self.issue_for(self.student)
+        self.tg.join(1001)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1001}, invite_link=link)
+        )
+        row = self.row(self.student)
+        self.assertEqual(row.status, ClassroomTelegramMember.STATUS_JOINED)
+        self.assertTrue(row.is_watched)
+
+        # From here they are managed like anybody else.
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+        self.assertEqual(self.tg.kicked, [(CHAT, 1001)])
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_REMOVED)
+
+    def test_coming_back_through_the_old_static_link_counts_too(self):
+        """Watched is watched. The bot saw the arrival; how they were let in is a different
+        question, and the adopted path already answers it."""
+        self._already_inside(self.other, 1002)
+        self.tg.members.pop((CHAT, 1002), None)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1002}, old="member", new="left")
+        )
+        self.tg.join(1002)
+        tg.handle_chat_member_update(chat_member_update(telegram_user={"id": 1002}))
+
+        row = self.row(self.other)
+        self.assertEqual(row.status, ClassroomTelegramMember.STATUS_JOINED)
+        self.assertTrue(row.is_watched)
+
+    def test_staff_can_see_who_the_bot_will_not_act_on(self):
+        self._already_inside(self.student, 1001)
+        self.client.force_authenticate(user=self.teacher)
+        body = self.client.get(f"/api/classes/{self.classroom.pk}/telegram/members/").json()
+        mine = next(r for r in body["members"] if r["user_id"] == self.student.pk)
+        self.assertFalse(mine["watched"])
+        self.assertFalse(mine["unmanaged"])  # known account — just not one the bot let in
 
 
 class AuditSweepTests(TelegramGroupBase):
@@ -969,7 +1120,7 @@ class SplitIdentityTests(TelegramGroupBase):
         ClassroomTelegramMember.objects.create(
             classroom=self.classroom, user=None, telegram_user_id=telegram_id,
             telegram_username=username, status=ClassroomTelegramMember.STATUS_JOINED,
-            joined_at=timezone.now(),
+            joined_at=timezone.now(), observed_arrival_at=timezone.now(),
         )
         self.tg.join(telegram_id)
 

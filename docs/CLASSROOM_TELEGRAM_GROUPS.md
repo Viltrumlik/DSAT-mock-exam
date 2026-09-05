@@ -35,6 +35,7 @@ account which walked through the door is that one.
 | Someone else uses a link | that person removed, ticket burned | unchanged |
 | A stranger joins some other way | recorded and reported, **not** removed | — |
 | Account deleted | stays in the group; the record survives as an unrecognised member | (the account is gone) |
+| **Anything at all, to somebody who was in the group before the bot** | nothing | as above |
 
 Unfreezing deliberately does not re-invite anybody. The student presses the button again.
 
@@ -43,7 +44,7 @@ can no longer identify (rule 1 below), so the row is kept with its Telegram hand
 in the staff roster as unrecognised — remove them from the group by hand. Freeze rather than
 delete if you want the group to look after itself.
 
-## The two safety rules
+## The three safety rules
 
 The automation is allowed to run unattended because it will not act outside these:
 
@@ -51,6 +52,32 @@ The automation is allowed to run unattended because it will not act outside thes
    second account, a parent, the owner of the centre — recorded, reported, left alone. The
    single exception is somebody who walked in on a ticket cut for a different person.
 2. **It never removes a chat administrator**, whatever the site believes.
+3. **It never removes somebody it did not watch arrive.** See below — this is the rule that
+   makes switching an existing group over a safe thing to do.
+
+## Switching on a group that already has people in it
+
+Every class group already has people in it, and none of them are the bot's to remove. It was
+not there when they came in, and the Bot API cannot list them, so it does not know they are
+there at all.
+
+**Watching starts at the first join the bot sees.** From that moment every arrival is
+checked, recorded and managed. Everyone from before is left exactly where they are — for
+good, until they do something about it themselves:
+
+> A student from before who **leaves the group and comes back** has arrived on the watch.
+> From that moment they are managed like anybody else.
+
+Pressing **Join Telegram group** on the site does *not* count. The site probes Telegram,
+sees they are already inside, tells them so and mints nothing — but "they are inside" is not
+"we saw them come in", and only the second one lets the bot act.
+
+What this costs, and it is worth being plain about it: **freezing a student who has been in
+the group since before the bot does not take them out of it.** Nothing here will. The
+roster (`GET /api/classes/<id>/telegram/members/`) flags every such person with
+`"watched": false`, and the Django admin has an *observed arrival* filter for the same
+question — remove them by hand if the school wants them out. Over a term the group empties
+of these people on its own, one departure at a time.
 
 ## Setting a class up
 

@@ -138,9 +138,12 @@ class ClassCommentAdmin(admin.ModelAdmin):
 class ClassroomTelegramMemberAdmin(admin.ModelAdmin):
     list_display = (
         "id", "classroom", "user", "telegram_username", "status", "removed_reason",
-        "joined_at", "last_checked_at",
+        "joined_at", "observed_arrival_at", "last_checked_at",
     )
-    list_filter = ("status", "removed_reason")
+    # ``observed_arrival_at`` is null for everybody who was in the group before the bot
+    # started watching it, and the bot never removes those people. Filterable because
+    # "show me the ones nothing will act on" is the question staff actually arrive with.
+    list_filter = ("status", "removed_reason", ("observed_arrival_at", admin.EmptyFieldListFilter))
     search_fields = (
         "classroom__name", "user__email", "user__username", "telegram_username",
         "telegram_user_id",

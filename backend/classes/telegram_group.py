@@ -9,8 +9,8 @@ class here, because being frozen is a pause, not an expulsion. When they are unf
 nothing happens automatically: they come back to the classroom page and press the button
 again, and get a fresh link.
 
-Two rules govern everything below, and both exist to make the automation safe to leave
-running:
+Three rules govern everything below, and all three exist to make the automation safe to
+leave running:
 
 1. **The bot never removes anyone it cannot account for.** A Telegram account that matches
    no student here — a teacher's second account, a parent, the owner of the centre — is
@@ -18,6 +18,18 @@ running:
    ticket cut for a different person, which is the specific abuse this design exists to stop.
 2. **The bot never removes a chat administrator.** Whatever the site believes, an admin of
    the group is somebody the school put there on purpose.
+3. **The bot never removes somebody it did not watch arrive.** A class group is switched to
+   this system with people already in it, and those people are none of the bot's business:
+   it was not there when they came in, the Bot API cannot list them, and a class that opts
+   in must not turn into a room being emptied. Watching starts at the first join the bot
+   sees. Somebody from before who leaves and comes back arrives *on the watch*, and from
+   that moment is managed like anybody else — which is the only way anyone ever crosses
+   from one side of this rule to the other.
+
+The third rule is the reason a freeze can be a no-op: a frozen student who has been in the
+group since before the bot cannot be taken out of it by anything here. Staff can see who
+those people are — ``GET /api/classes/<id>/telegram/members/`` flags them — and remove them
+by hand if the school wants that.
 """
 
 from __future__ import annotations
@@ -156,16 +168,30 @@ def eligibility(user, classroom: Classroom) -> Eligibility:
 
 
 def may_enforce_against(user, chat_status: str) -> bool:
-    """Both safety rules from the module docstring, in one place.
+    """The two *identity* rules from the module docstring, in one place.
 
-    Anything that removes somebody goes through here first. A ``False`` is not an error —
-    it is the integration declining to touch a person it has no business touching.
+    A ``False`` is not an error — it is the integration declining to touch a person it has
+    no business touching. Rule 3 is about the row rather than the person and lives in
+    :func:`may_remove` below; callers holding a row should use that one.
     """
     if chat_status in api.CHAT_ADMIN_STATUSES:
         return False
     if user is None:
         return False
     return str(getattr(user, "role", "") or "").strip().lower() == "student"
+
+
+def may_remove(row: ClassroomTelegramMember, chat_status: str) -> bool:
+    """All three rules, for a row we are about to act on.
+
+    Rule 3 first, because it is the one that holds even when the person is unambiguously a
+    student who unambiguously should not be there: if the bot never saw them come in, this
+    is a member of a group that existed before it, and the group was not handed over to be
+    emptied. They are left alone until they leave and come back of their own accord.
+    """
+    if not row.is_watched:
+        return False
+    return may_enforce_against(row.user, chat_status)
 
 
 # ── Audit trail ──────────────────────────────────────────────────────────────
@@ -239,6 +265,9 @@ def _claim_row(
     if by_tg is not None and by_user is not None and by_tg.pk != by_user.pk:
         keep, drop = by_user, by_tg
         keep.joined_at = keep.joined_at or drop.joined_at
+        # The sighting is usually the half that carries this, and losing it in the merge
+        # would quietly move somebody the bot *did* watch arrive back out of its reach.
+        keep.observed_arrival_at = keep.observed_arrival_at or drop.observed_arrival_at
         keep.telegram_username = drop.telegram_username or keep.telegram_username
         keep.telegram_display_name = drop.telegram_display_name or keep.telegram_display_name
         if drop.status == ClassroomTelegramMember.STATUS_JOINED:
@@ -332,12 +361,31 @@ def issue_invite(*, user, classroom: Classroom) -> dict:
     # spare ticket lying around for them to give away.
     probe = api.get_chat_member(chat, int(telegram_id))
     if probe.ok and str((probe.result or {}).get("status") or "") in api.IN_CHAT_STATUSES:
+        first_sighting = not row.is_in_group
         _clear_ticket(row)
         row.telegram_user_id = int(telegram_id)
         row.status = ClassroomTelegramMember.STATUS_JOINED
         row.joined_at = row.joined_at or timezone.now()
         row.last_checked_at = timezone.now()
+        # ``observed_arrival_at`` is pointedly NOT set here. A probe answers "are they in the
+        # group", which is the wrong question for rule 3 — the right one is "did we watch
+        # them come in", and pressing a button on the site months later is not that. A
+        # student who was in the group before the bot stays outside its reach until they
+        # leave and come back, however many times they press this.
         row.save()
+        if first_sighting:
+            log_event(
+                classroom=classroom,
+                action=ClassroomTelegramEvent.ACTION_RECONCILED,
+                user=user,
+                telegram_user_id=int(telegram_id),
+                detail=(
+                    "already in the group; joined before the bot began watching, so it will "
+                    "not act on them"
+                    if not row.is_watched
+                    else "already in the group"
+                ),
+            )
         return {"already_member": True, "invite_link": "", "expires_at": None}
     if probe.is_forbidden:
         raise TelegramGroupError("telegram_error", _friendly(probe), status=409)
@@ -509,6 +557,30 @@ def remove_member(
         row.save()
         return False
 
+    if not row.is_watched:
+        # Rule 3, and it is not a judgement about this person: it is the bot declining to
+        # act on a group it joined late. They were inside before it was watching, so being
+        # inside now tells us nothing it is entitled to act on.
+        #
+        # The *ticket* half of the job still applies. A link minted for somebody who should
+        # no longer have one is a live credential whatever else is true, and burning it is
+        # the part of "remove" that does not depend on having watched them arrive.
+        _clear_ticket(row)
+        log_event(
+            classroom=classroom,
+            action=ClassroomTelegramEvent.ACTION_RECONCILED,
+            user=row.user,
+            telegram_user_id=int(telegram_id),
+            reason=reason,
+            detail=(
+                f"left in place ({chat_status or 'unknown'}): in the group from before the "
+                f"bot began watching it"
+            ),
+        )
+        row.last_checked_at = timezone.now()
+        row.save()
+        return False
+
     if not may_enforce_against(row.user, chat_status):
         log_event(
             classroom=classroom,
@@ -619,9 +691,17 @@ def _upsert_observed(
 ) -> ClassroomTelegramMember:
     """Find (or start) the row for a Telegram account seen in a class group, and stamp it
     with the handle Telegram reported. Identity resolution — including the case where the
-    same person already has two rows — lives in :func:`_claim_row`."""
+    same person already has two rows — lives in :func:`_claim_row`.
+
+    This is also the one place ``observed_arrival_at`` is written, and it is written here
+    precisely because every caller is an arrival the bot watched happen. Rule 3 is that
+    field: a row that has never been through this function is a person from before the
+    bot's time, and nothing removes them."""
     tg_id = int(tg_user.get("id") or 0)
     row = _claim_row(classroom, user=user, telegram_user_id=tg_id)
+    # First sighting, not the latest: the question the rule asks is "have we ever seen this
+    # account come in", and re-stamping it on every rejoin would lose the answer's age.
+    row.observed_arrival_at = row.observed_arrival_at or timezone.now()
     row.telegram_username = str(tg_user.get("username") or "")[:64]
     row.telegram_display_name = (
         f"{tg_user.get('first_name') or ''} {tg_user.get('last_name') or ''}".strip()[:200]
@@ -994,7 +1074,11 @@ def audit_classroom(classroom: Classroom, *, sleep: float = PROBE_INTERVAL_SECON
             continue
 
         verdict = eligibility(row.user, classroom) if row.user_id else Eligibility(True)
-        if not verdict.allowed and may_enforce_against(row.user, chat_status):
+        # ``may_remove`` rather than ``may_enforce_against``: the sweep is the one caller
+        # that sees every row every half hour, so a row it cannot act on must be skipped
+        # here rather than fall into ``remove_member`` and write the same "left in place"
+        # line into the trail forty-eight times a day.
+        if not verdict.allowed and may_remove(row, chat_status):
             if remove_member(row, reason=verdict.reason, chat_status=chat_status):
                 summary["removed"] += 1
             continue
