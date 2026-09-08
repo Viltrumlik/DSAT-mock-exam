@@ -26,6 +26,28 @@ SEPTEMBER = timezone.make_aware(timezone.datetime(2026, 9, 10, 9, 0))
 OCTOBER = timezone.make_aware(timezone.datetime(2026, 10, 12, 9, 0))
 
 
+def month_offset(offset: int):
+    """09:00 on the 10th of the month ``offset`` months from now, in the school's own zone.
+
+    Anything that asserts on "future" or "the default month" has to be anchored to the real
+    clock rather than to a literal, or the test silently changes meaning the moment the wall
+    clock passes it — which is exactly how a September fixture came to be asserting that the
+    page may open on an October nobody has sat.
+    """
+    now = timezone.localtime(timezone.now())
+    total = now.year * 12 + (now.month - 1) + offset
+    year, month = divmod(total, 12)
+    return timezone.make_aware(timezone.datetime(year, month + 1, 10, 9, 0))
+
+
+LAST_MONTH_AT = month_offset(-1)
+THIS_MONTH_AT = month_offset(0)
+NEXT_MONTH_AT = month_offset(1)
+LAST_MONTH = LAST_MONTH_AT.strftime(stats.MONTH_FMT)
+THIS_MONTH = THIS_MONTH_AT.strftime(stats.MONTH_FMT)
+NEXT_MONTH = NEXT_MONTH_AT.strftime(stats.MONTH_FMT)
+
+
 def make_midterm(title, *, midterm_type=Midterm.TYPE_MIDTERM, retake_of=None, pass_mark=500):
     """A published, question-less midterm. Statistics read verdicts, never question rows."""
     return Midterm.objects.create(
@@ -212,6 +234,82 @@ class ClassroomTallyTests(TestCase):
         self.assertEqual(tally.retake_taken, 3)
         self.assertEqual(tally.retake_passed, 2)
         self.assertEqual(tally.retake_failed, 1)
+
+    def test_an_absentee_the_retake_rescued_is_a_pass_not_a_failure(self):
+        """The cohort the retake exists for. ``midterms.access`` grants a retake to failers
+        AND absentees — *"a student who was ill that morning"* — so a class in which every
+        student holds a pass must read 100%, not 80% with two of them still marked absent.
+        """
+        retake = make_midterm("Midterm 12 Retake", midterm_type=Midterm.TYPE_RETAKE, retake_of=self.midterm)
+        for student in self.students[:7]:
+            sit(self.midterm, student, score=800)
+        sit(self.midterm, self.students[7], score=200)          # sat it and failed
+        # students[8] and students[9] never turned up to the parent at all.
+        sit(retake, self.students[7], score=800)
+        sit(retake, self.students[8], score=800)
+        sit(retake, self.students[9], score=800)
+
+        tally = stats.classroom_midterm_tally(self.classroom, self.midterm)
+        self.assertEqual(tally.passed_first, 7)
+        self.assertEqual(tally.passed_retake, 3)
+        self.assertEqual(tally.failed, 0)
+        self.assertEqual(tally.absent, 0)
+        self.assertEqual(tally.attended, 8)      # attendance is the PARENT's, and stays 8
+        self.assertEqual(tally.pass_rate, 100.0)
+        self.assertEqual(tally.retake_taken, 3)
+        self.assertEqual(tally.retake_passed, 3)
+
+    def test_an_absentee_who_never_sat_the_retake_either_is_still_absent(self):
+        """The other side of the same branch: a retake existing does not excuse anybody."""
+        make_midterm("Midterm 12 Retake", midterm_type=Midterm.TYPE_RETAKE, retake_of=self.midterm)
+        for student in self.students[:9]:
+            sit(self.midterm, student, score=800)
+        tally = stats.classroom_midterm_tally(self.classroom, self.midterm)
+        self.assertEqual(tally.absent, 1)
+        self.assertEqual(tally.passed_retake, 0)
+        self.assertEqual(tally.pass_rate, 90.0)
+
+    def test_the_evidence_table_agrees_about_a_rescued_absentee(self):
+        """The headline said 100%; the per-student table must not still say ABSENT."""
+        from midterms.admin_report import build_midterm_rows, retakes_for
+
+        retake = make_midterm("Midterm 12 Retake", midterm_type=Midterm.TYPE_RETAKE, retake_of=self.midterm)
+        for student in self.students[:9]:
+            sit(self.midterm, student, score=800)
+        sit(retake, self.students[9], score=800)   # absent from the parent, passed the retake
+
+        rows, summary = build_midterm_rows(self.classroom, self.midterm, list(retakes_for(self.midterm)))
+        rescued = next(r for r in rows if r["student_id"] == self.students[9].id)
+        self.assertEqual(rescued["final_status"], "PASSED_ON_RETAKE")
+        self.assertTrue(rescued["retake_eligible"])
+        self.assertEqual(rescued["retake_score"], 800)
+        self.assertEqual(summary["passed"], 10)
+        self.assertEqual(summary["absent"], 0)
+
+        tally = stats.classroom_midterm_tally(self.classroom, self.midterm)
+        self.assertEqual(tally.passed, summary["passed"])
+        self.assertEqual(tally.absent, summary["absent"])
+
+    def test_the_evidence_table_reads_the_retake_that_rescued_the_student(self):
+        """``retake_for`` returns the FIRST retake only, so a student rescued by the second
+        appeared in the table as a failure while the headline counted them as a pass."""
+        from midterms.admin_report import build_midterm_rows, retakes_for
+
+        make_midterm("Retake A", midterm_type=Midterm.TYPE_RETAKE, retake_of=self.midterm)
+        second = make_midterm("Retake B", midterm_type=Midterm.TYPE_RETAKE, retake_of=self.midterm)
+        for student in self.students:
+            sit(self.midterm, student, score=200)
+        sit(second, self.students[0], score=800)
+
+        rows, summary = build_midterm_rows(self.classroom, self.midterm, list(retakes_for(self.midterm)))
+        rescued = next(r for r in rows if r["student_id"] == self.students[0].id)
+        self.assertEqual(rescued["final_status"], "PASSED_ON_RETAKE")
+        self.assertEqual(rescued["retake_score"], 800)
+        self.assertEqual(summary["passed"], 1)
+
+        tally = stats.classroom_midterm_tally(self.classroom, self.midterm)
+        self.assertEqual(tally.passed, summary["passed"])
+        self.assertEqual(tally.failed, summary["failed"])
 
     def test_an_empty_roster_reports_none(self):
         empty = make_classroom("Nobody Yet", self.admin, teacher=self.teacher)
@@ -526,3 +624,257 @@ class SchoolMonthStatsTests(TestCase):
         payload = stats.school_month_stats("2026-09")
         self.assertEqual(payload["totals"]["roster"], 17)
         self.assertEqual(payload["totals"]["distinct_students"], 16)
+
+
+class FutureMonthTests(TestCase):
+    """A month the school has not reached yet is a plan, not a result.
+
+    ``MidtermSchedule.starts_at`` is mandatory on every teacher assign path, so a midterm
+    assigned for next month already carries next month. Left unbounded, the newest month is
+    that one, the default lands on it, and every student on the roster reads as absent — an
+    admin opening the page is told the school scored 0%.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.classroom = make_classroom("Math Senior A", self.admin)
+        self.students = students("s", 10)
+        enrol(self.classroom, *self.students)
+
+        self.sat = make_midterm("Midterm 12")
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.sat, starts_at=THIS_MONTH_AT
+        )
+        for student in self.students[:9]:
+            sit(self.sat, student, score=800, when=THIS_MONTH_AT)
+        sit(self.sat, self.students[9], score=200, when=THIS_MONTH_AT)
+
+        self.planned = make_midterm("Midterm 13")
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.planned, starts_at=NEXT_MONTH_AT
+        )
+
+    def test_the_default_month_is_never_one_the_school_has_not_reached(self):
+        months = stats.available_months()
+        self.assertEqual(months, [NEXT_MONTH, THIS_MONTH])   # both are real, and offered
+        self.assertEqual(stats.default_month(months), THIS_MONTH)
+        self.assertEqual(stats.future_months(months), [NEXT_MONTH])
+        self.assertTrue(stats.is_future_month(NEXT_MONTH))
+        self.assertFalse(stats.is_future_month(THIS_MONTH))
+        self.assertFalse(stats.is_future_month(LAST_MONTH))
+
+    def test_a_scheduled_month_still_reads_as_scheduled_when_it_is_asked_for(self):
+        """Selectable, because who is booked for what is real information — but the numbers
+        under it are a roster nobody has sat, and the payload has to say so."""
+        payload = stats.school_month_stats(NEXT_MONTH)
+        self.assertEqual(payload["totals"]["absent"], 10)
+        self.assertEqual(payload["totals"]["pass_rate"], 0.0)
+        self.assertTrue(stats.is_future_month(payload["month"]))
+
+    def test_a_school_with_only_scheduled_months_has_no_default(self):
+        """Nothing has been sat anywhere, so there is no month to open on — and saying so
+        beats opening on a plan and calling it 0%."""
+        MidtermSchedule.objects.filter(midterm=self.sat).update(starts_at=NEXT_MONTH_AT)
+        MidtermAttempt.objects.all().delete()
+        months = stats.available_months()
+        self.assertEqual(months, [NEXT_MONTH])
+        self.assertIsNone(stats.default_month(months))
+
+    def test_the_default_is_the_newest_month_already_reached_not_merely_this_one(self):
+        MidtermSchedule.objects.filter(midterm=self.sat).update(starts_at=LAST_MONTH_AT)
+        months = stats.available_months()
+        self.assertEqual(months, [NEXT_MONTH, LAST_MONTH])
+        self.assertEqual(stats.default_month(months), LAST_MONTH)
+
+    def test_a_classrooms_own_months_are_bounded_the_same_way(self):
+        months = stats.classroom_months(self.classroom.id)
+        self.assertEqual(months, [NEXT_MONTH, THIS_MONTH])
+        self.assertEqual(stats.default_month(months), THIS_MONTH)
+
+
+class OrphanRetakeTests(TestCase):
+    """A RETAKE with a NULL ``retake_of``: excluded from the numbers, and disclosed.
+
+    The builder's parent picker offers "— No parent midterm —" as its initial value, the
+    serializer accepts it and ``midterms.sync`` produces it, so this is an ordinary authoring
+    mistake rather than an exotic one. Counted as a paper in its own right it puts the whole
+    roster in the denominator for a paper only the failers were ever offered, which halves
+    the month — and it pools into branch, department, teacher and school totals.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.classroom = make_classroom("Math Senior A", self.admin)
+        self.students = students("s", 10)
+        enrol(self.classroom, *self.students)
+
+        self.midterm = make_midterm("Midterm 12")
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.midterm, starts_at=SEPTEMBER
+        )
+        for student in self.students[:9]:
+            sit(self.midterm, student, score=800, when=SEPTEMBER)
+        sit(self.midterm, self.students[9], score=200, when=SEPTEMBER)
+
+        # The authoring mistake: a RETAKE that names no parent.
+        self.orphan = make_midterm("Midterm 12 Retake", midterm_type=Midterm.TYPE_RETAKE)
+        self.assertIsNone(self.orphan.retake_of_id)
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.orphan, starts_at=SEPTEMBER
+        )
+        sit(self.orphan, self.students[9], score=800, when=SEPTEMBER)
+
+    def test_a_retake_is_never_a_countable_unit_parent_or_no_parent(self):
+        self.assertFalse(stats.is_countable_unit(self.orphan))
+        parented = make_midterm("With parent", midterm_type=Midterm.TYPE_RETAKE, retake_of=self.midterm)
+        self.assertFalse(stats.is_countable_unit(parented))
+        self.assertTrue(stats.is_countable_unit(self.midterm))
+        # Type and parentage each exclude on their own: a paper typed MIDTERM that names a
+        # parent is still folded into it, so counting it here too would double its passes.
+        mistyped = make_midterm("Typed a midterm", retake_of=self.midterm)
+        self.assertEqual(mistyped.midterm_type, Midterm.TYPE_MIDTERM)
+        self.assertFalse(stats.is_countable_unit(mistyped))
+        self.assertNotIn(mistyped.id, stats.countable_midterm_ids())
+        # …and it is not an orphan either, so it raises no warning it does not deserve.
+        self.assertFalse(stats.is_orphan_retake(mistyped))
+
+    def test_a_paper_typed_midterm_that_names_a_parent_is_folded_not_counted_twice(self):
+        mistyped = make_midterm("Second chance, mistyped", retake_of=self.midterm)
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=mistyped, starts_at=SEPTEMBER
+        )
+        sit(mistyped, self.students[9], score=800, when=SEPTEMBER)
+
+        rows, summary, orphans = stats.classroom_month(self.classroom, "2026-09")
+        self.assertEqual([r["title"] for r in rows], ["Midterm 12"])
+        self.assertEqual(summary["roster"], 10)          # not 20
+        self.assertEqual(rows[0]["passed_retake"], 1)    # folded into its parent
+        self.assertEqual(orphans, [{"id": self.orphan.id, "title": "Midterm 12 Retake"}])
+
+    def test_it_is_not_a_row_of_its_own_and_does_not_halve_the_month(self):
+        rows, summary, orphans = stats.classroom_month(self.classroom, "2026-09")
+        self.assertEqual([r["title"] for r in rows], ["Midterm 12"])
+        self.assertEqual(summary["roster"], 10)          # not 20
+        self.assertEqual(summary["midterms"], 1)
+        self.assertEqual(summary["pass_rate"], 90.0)     # not 50.0
+        self.assertEqual(orphans, [{"id": self.orphan.id, "title": "Midterm 12 Retake"}])
+
+    def test_the_school_roll_up_excludes_it_and_names_it(self):
+        payload = stats.school_month_stats("2026-09")
+        self.assertEqual(payload["totals"]["roster"], 10)
+        self.assertEqual(payload["totals"]["midterms"], 1)
+        self.assertEqual(payload["totals"]["pass_rate"], 90.0)
+        self.assertEqual([r["pass_rate"] for r in payload["classrooms"]], [90.0])
+        # Excluded is not the same as dropped: the page has to be able to say why a paper
+        # somebody can see in the builder is missing from the table.
+        self.assertEqual(
+            payload["orphan_retakes"], [{"id": self.orphan.id, "title": "Midterm 12 Retake"}]
+        )
+
+    def test_a_month_with_nothing_but_an_orphan_still_discloses_it(self):
+        MidtermSchedule.objects.filter(midterm=self.midterm).update(starts_at=OCTOBER)
+        payload = stats.school_month_stats("2026-09")
+        self.assertEqual(payload["classrooms"], [])
+        self.assertIsNone(payload["totals"]["pass_rate"])
+        self.assertEqual(
+            payload["orphan_retakes"], [{"id": self.orphan.id, "title": "Midterm 12 Retake"}]
+        )
+
+    def test_a_properly_parented_retake_raises_no_warning(self):
+        self.orphan.retake_of = self.midterm
+        self.orphan.save(update_fields=["retake_of"])
+        payload = stats.school_month_stats("2026-09")
+        self.assertEqual(payload["orphan_retakes"], [])
+        self.assertEqual(payload["totals"]["pass_rate"], 100.0)   # the failer was rescued
+        _rows, _summary, orphans = stats.classroom_month(self.classroom, "2026-09")
+        self.assertEqual(orphans, [])
+
+
+class MonthKeyValidationTests(TestCase):
+    """``strptime("2026-9", "%Y-%m")`` SUCCEEDS, and every month key in the index is padded.
+
+    So an unpadded month passed validation, matched nothing, and the page said "No midterms
+    in this month" for a month with a full set of results — the one thing the page's own
+    error handling refuses to do for a failed request.
+    """
+
+    def test_an_unpadded_month_is_rejected(self):
+        self.assertFalse(stats.is_month_key("2026-9"))
+        self.assertFalse(stats.is_month_key("2026-009"))
+        self.assertFalse(stats.is_month_key("26-09"))
+        self.assertFalse(stats.is_month_key(" 2026-09"))
+        self.assertFalse(stats.is_month_key("2026-09-01"))
+
+    def test_a_well_formed_month_is_accepted(self):
+        self.assertTrue(stats.is_month_key("2026-09"))
+        self.assertTrue(stats.is_month_key("2026-01"))
+        self.assertTrue(stats.is_month_key("2026-12"))
+
+    def test_a_month_out_of_range_is_still_rejected(self):
+        self.assertFalse(stats.is_month_key("2026-13"))
+        self.assertFalse(stats.is_month_key("2026-00"))
+        self.assertFalse(stats.is_month_key("September"))
+        self.assertFalse(stats.is_month_key(None))
+        self.assertFalse(stats.is_month_key(202609))
+
+    def test_every_key_the_index_produces_passes_its_own_validator(self):
+        admin = User.objects.create(username="adm", role="admin")
+        classroom = make_classroom("Math Senior A", admin)
+        enrol(classroom, *students("s", 2))
+        midterm = make_midterm("Midterm 12")
+        MidtermSchedule.objects.create(
+            classroom=classroom, midterm=midterm,
+            starts_at=timezone.make_aware(timezone.datetime(2026, 1, 5, 9, 0)),
+        )
+        months = stats.available_months()
+        self.assertEqual(months, ["2026-01"])
+        self.assertTrue(all(stats.is_month_key(m) for m in months))
+
+
+class ScopedMonthTests(TestCase):
+    """The picker has to offer the months the CURRENT scope has data for, not the school's."""
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.nodir = User.objects.create(username="t1", role="teacher", first_name="Nodir", last_name="T")
+        self.aziza = User.objects.create(username="t2", role="teacher", first_name="Aziza", last_name="B")
+        self.region = Region.objects.create(name="Tashkent")
+        self.chilonzor = Branch.objects.create(region=self.region, name="Chilonzor")
+        self.yunusobod = Branch.objects.create(region=self.region, name="Yunusobod")
+
+        self.september_class = make_classroom(
+            "Math Senior A", self.admin, teacher=self.nodir, branch=self.chilonzor
+        )
+        self.october_class = make_classroom(
+            "English Senior B", self.admin, subject=Classroom.SUBJECT_ENGLISH,
+            teacher=self.aziza, branch=self.yunusobod,
+        )
+        enrol(self.september_class, *students("a", 2))
+        enrol(self.october_class, *students("b", 2))
+
+        september = make_midterm("Midterm 12")
+        october = make_midterm("Midterm 13")
+        MidtermSchedule.objects.create(
+            classroom=self.september_class, midterm=september, starts_at=SEPTEMBER
+        )
+        MidtermSchedule.objects.create(
+            classroom=self.october_class, midterm=october, starts_at=OCTOBER
+        )
+
+    def test_the_school_sees_both_months(self):
+        self.assertEqual(stats.available_months(), ["2026-10", "2026-09"])
+
+    def test_a_branch_sees_only_its_own(self):
+        self.assertEqual(stats.available_months(branch_id=self.chilonzor.id), ["2026-09"])
+        self.assertEqual(stats.available_months(branch_id=self.yunusobod.id), ["2026-10"])
+
+    def test_a_teacher_and_a_department_see_only_their_own(self):
+        self.assertEqual(stats.available_months(teacher_id=self.nodir.id), ["2026-09"])
+        self.assertEqual(
+            stats.available_months(subject=Classroom.SUBJECT_ENGLISH), ["2026-10"]
+        )
+        # The other subject vocabulary names the same department.
+        self.assertEqual(stats.available_months(subject="READING_WRITING"), ["2026-10"])
+
+    def test_a_scope_with_no_classrooms_at_all_has_no_months(self):
+        self.assertEqual(stats.available_months(teacher_id=999999), [])

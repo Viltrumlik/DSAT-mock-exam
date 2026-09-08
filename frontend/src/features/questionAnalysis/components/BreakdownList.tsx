@@ -1,7 +1,8 @@
 import { cn } from "@/lib/cn";
-import { Card, CardHeader, Pill } from "@/features/classroom/ui";
+import { Card, CardHeader } from "@/features/classroom/ui";
 import { barWidth, formatCount, plural } from "../format";
 import { RateValue } from "./Rate";
+import { Tag } from "./Tag";
 
 /** One normalised breakdown row, whichever endpoint it came from. */
 export interface BreakdownRow {
@@ -20,6 +21,38 @@ export interface BreakdownRow {
    */
   isUntagged: boolean;
 }
+
+/**
+ * The track every bar on the page is drawn in.
+ *
+ * Fixed width, not `w-full`. When the track was the card's width and one card spanned two
+ * grid columns, a 63% bar rendered ~410px beside a 65% bar at ~185px — the longer bar was
+ * the smaller number, in a section whose only job is comparison. A fixed track means a
+ * percentage is the same length wherever it appears, and it is the reason the cards no
+ * longer need to be the same width to be comparable.
+ *
+ * `max-w-full` so the narrowest phone still clips nothing.
+ */
+export const BAR_TRACK_CLASS = "h-1.5 w-40 max-w-full overflow-hidden rounded-full bg-surface-2";
+
+/**
+ * The grid these cards sit in.
+ *
+ * `auto-fit` over a `lg:grid-cols-3` breakpoint because the breakpoint measured the WRONG
+ * box: `lg:` fires at a 1024px viewport, but the teacher shell's sidebar leaves the page
+ * about 752px, so three columns arrived ~110px wide and truncated skill names like
+ * "Cross-Text Connections". This tracks the container instead of the window, so the column
+ * count follows the space the cards actually have. `min(100%, 18rem)` keeps a single column
+ * from overflowing a phone.
+ *
+ * `align-items: start` is the other half: stretched rows gave "Question type" and "Format"
+ * 250–350px of dead space each, because a grid row is as tall as its tallest card.
+ */
+export const BREAKDOWN_GRID_STYLE: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+  alignItems: "start",
+};
 
 /**
  * A ranked list with an inline bar — the compact form of a by-type breakdown.
@@ -67,19 +100,22 @@ export function BreakdownList({
             return (
               <li key={row.id} className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-3">
-                  <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    {/* Wraps rather than truncates: the skill name is the answer this row
+                        exists to give, and half of "Cross-Text Connect…" is not it. */}
                     <span
+                      data-breakdown-label
                       className={cn(
-                        "truncate text-sm font-medium",
+                        "text-sm font-medium",
                         row.isUntagged ? "text-muted-foreground" : "text-foreground",
                       )}
                     >
                       {row.label}
                     </span>
                     {row.isUntagged && (
-                      <Pill tone="neutral" className="shrink-0">
+                      <Tag tone="neutral" className="shrink-0">
                         No tag
-                      </Pill>
+                      </Tag>
                     )}
                   </span>
                   <RateValue
@@ -88,7 +124,7 @@ export function BreakdownList({
                     className="shrink-0 text-sm font-bold"
                   />
                 </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
+                <div data-bar-track className={BAR_TRACK_CLASS}>
                   {width ? (
                     <div
                       className={cn(

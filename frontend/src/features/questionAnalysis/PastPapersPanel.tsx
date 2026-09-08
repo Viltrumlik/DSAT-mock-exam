@@ -10,7 +10,6 @@ import {
   ErrorState,
   Field,
   LoadingState,
-  Pill,
   Select,
   StatCard,
 } from "@/features/classroom/ui";
@@ -30,10 +29,15 @@ import type {
   PastpaperBreakdown,
   PastpaperItemRow,
 } from "./types";
-import { BreakdownList, type BreakdownRow } from "./components/BreakdownList";
+import {
+  BREAKDOWN_GRID_STYLE,
+  BreakdownList,
+  type BreakdownRow,
+} from "./components/BreakdownList";
 import { Caveats, type Caveat } from "./components/Caveats";
 import { Collapsible } from "./components/Collapsible";
 import { RateValue } from "./components/Rate";
+import { Tag } from "./components/Tag";
 import { useQueryErrorToast } from "./useQueryErrorToast";
 
 /** `key === null` is the untagged bucket on every past-paper breakdown. */
@@ -94,20 +98,24 @@ function FlaggedCard({ row }: { row: PastpaperItemRow }) {
             <span className="rounded-lg bg-surface-2 px-2 py-0.5 text-xs font-bold tabular-nums text-foreground">
               Q{row.number}
             </span>
-            <Pill tone="neutral">{row.module_label}</Pill>
-            <Pill tone="neutral">{row.format_label}</Pill>
-            <Pill tone="neutral">{row.question_type_label}</Pill>
+            <Tag tone="neutral">{row.module_label}</Tag>
+            <Tag tone="neutral">{row.format_label}</Tag>
+            <Tag tone="neutral">{row.question_type_label}</Tag>
             {row.suspect_key && (
-              <Pill tone="danger">
+              <Tag tone="danger">
                 <KeyRound className="h-3 w-3" aria-hidden />
                 Check the answer key
-              </Pill>
+              </Tag>
             )}
           </div>
           <p className="mt-2 text-sm leading-relaxed text-foreground">
             {row.stem || (
+              // No route reaches a past-paper question from the teacher portal — the module
+              // editor is admin-only and on the questions console — so this says where the
+              // question is instead of sending a teacher after a link that is not there.
               <span className="text-muted-foreground">
-                This question has no text stem — open the paper to see it.
+                This question has no text stem saved — it is Q{row.number}, {row.module_label}, on
+                the paper itself.
               </span>
             )}
           </p>
@@ -120,7 +128,7 @@ function FlaggedCard({ row }: { row: PastpaperItemRow }) {
             </p>
           )}
           {row.suspect_key && (
-            <p className="mt-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs leading-relaxed text-rose-600 dark:text-rose-300">
+            <p className="mt-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs leading-relaxed text-rose-700 dark:text-rose-300">
               At {SUSPECT_KEY_THRESHOLD}% or above, a wrong answer key is a likelier explanation
               than a hard question. Read the recorded key
               {row.correct_answer ? ` (“${row.correct_answer}”)` : ""} against the paper before
@@ -128,9 +136,15 @@ function FlaggedCard({ row }: { row: PastpaperItemRow }) {
             </p>
           )}
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {row.skill_id != null && <Pill tone="info">{row.skill}</Pill>}
-            {row.domain_id != null && <Pill tone="neutral">{row.domain}</Pill>}
-            {row.difficulty != null && <Pill tone="neutral">{row.difficulty_label}</Pill>}
+            {/* An untagged question says so. Rendering nothing made a missing skill look like
+                a chip that failed to load rather than a question nobody tagged. */}
+            {row.skill_id != null ? (
+              <Tag tone="info">{row.skill}</Tag>
+            ) : (
+              <Tag tone="neutral">Untagged</Tag>
+            )}
+            {row.domain_id != null && <Tag tone="neutral">{row.domain}</Tag>}
+            {row.difficulty != null && <Tag tone="neutral">{row.difficulty_label}</Tag>}
             {row.correct_answer && !row.suspect_key && (
               <span className="text-xs text-muted-foreground">Key: {row.correct_answer}</span>
             )}
@@ -300,6 +314,12 @@ export function PastPapersPanel({
         )} ${agree(dq.suspect_key_questions, "is", "are")} at ${SUSPECT_KEY_THRESHOLD}% or above. That is far more often a wrong answer key than a hard question — check the key before putting it on a lesson plan.`,
       });
     }
+    caveats.push({
+      id: "cohort",
+      tone: "info",
+      text:
+        "This tab counts only students on the class roster as it stands today. The Assessments tab counts everyone who was given a set, including students who have since left the class, so the two tabs can report different class sizes for the same class.",
+    });
     if (data.unclassified_total > 0) {
       caveats.push({
         id: "untagged",
@@ -413,7 +433,7 @@ export function PastPapersPanel({
             <StatCard
               label="Students counted"
               value={data.data_quality.students_counted}
-              sub={`of ${formatCount(data.data_quality.roster)} on the roster`}
+              sub={`of ${formatCount(data.data_quality.roster)} on the roster today`}
             />
             <StatCard
               label="Questions"
@@ -421,6 +441,16 @@ export function PastPapersPanel({
               sub={`${formatCount(data.totals.omitted)} answers left blank`}
             />
           </div>
+
+          {/* The two tabs scope their cohort differently for the same class, and a teacher
+              comparing them sees two class sizes with no explanation. One line names this tab's
+              cohort; the full cross-tab difference is the "cohort" note in the fold below. */}
+          <p className="px-1 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">Who is counted:</span> the{" "}
+            {plural(data.data_quality.roster, "student")} on this class&apos;s roster today —{" "}
+            {formatCount(data.data_quality.students_counted)} have a counted sitting. Students who
+            have left the class are not here.
+          </p>
 
           <Caveats items={caveats} />
 
@@ -436,7 +466,7 @@ export function PastPapersPanel({
                 description="No single question tripped the threshold for this class. The full list below still shows how they did on every question, blanks included."
               />
             ) : (
-              <ul className="space-y-3">
+              <ul data-flagged-list className="space-y-3">
                 {data.needs_analysis.map((row) => (
                   <FlaggedCard key={row.question_id} row={row} />
                 ))}
@@ -448,7 +478,7 @@ export function PastPapersPanel({
             <h3 className="mb-3 text-sm font-bold text-foreground">
               Statistics by question type
             </h3>
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="gap-4" style={BREAKDOWN_GRID_STYLE}>
               <BreakdownList
                 title="Question type"
                 description="Math, Reading or Writing. Every question carries one."
@@ -471,6 +501,8 @@ export function PastPapersPanel({
                 note={coverageNote("difficulty", breakdowns?.difficulty)}
                 emptyMessage="No difficulty breakdown for this paper."
               />
+              {/* No column span. It used to take two, which drew a 63% bar wider than a 65%
+                  one in the card beside it — see BAR_TRACK_CLASS. */}
               <BreakdownList
                 title="SAT skill"
                 description="The finest grain the paper carries — this is the topic question."
@@ -478,7 +510,6 @@ export function PastPapersPanel({
                 denominatorNoun="answers"
                 note={coverageNote("skill", breakdowns?.skill)}
                 emptyMessage="No skill breakdown for this paper."
-                className="lg:col-span-2"
               />
               <BreakdownList
                 title="Domain"

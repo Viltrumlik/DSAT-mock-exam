@@ -15,11 +15,18 @@ differently, so each is written down rather than left to be inferred from an exp
   A class where half the students never sat the paper has not scored 100%, and a report
   that said so would be the one number a head teacher must not be able to game.
 * **A retake pass is a pass**, and it lands in the numerator of the PARENT midterm. That is
-  why a retake paper is never a row of its own here (:func:`is_countable_unit`): counting it
-  separately would put the same roster in the denominator twice and would additionally show
-  the retake itself at a dismal rate, since only the failers ever sit one. Of the passers,
-  ``first_try_share`` says how many needed no second chance — a share of PASSERS, never of
-  the roster.
+  why a retake paper is never a row of its own here (:func:`is_countable_unit`) — *no*
+  retake, parent or no parent: counting one separately would put the same roster in the
+  denominator twice and would additionally show the retake itself at a dismal rate, since
+  only the students who did not pass ever sit one. A retake with no parent has nothing to
+  fold into, so it is excluded and **named** in ``orphan_retakes`` rather than silently
+  dropped. Of the passers, ``first_try_share`` says how many needed no second chance — a
+  share of PASSERS, never of the roster.
+* **A month the school has not reached is a plan, not a result.** Every teacher assign path
+  writes ``MidtermSchedule.starts_at``, so a paper booked for next month already dates into
+  next month. Such a month is offered (who is booked for what is real information) but is
+  never the DEFAULT — see :func:`default_month` / :func:`is_future_month` — because its whole
+  roster is "absent", and absent counts as failed, so it reads as the school scoring 0%.
 * **Roll-ups are pooled**: a teacher's, a department's or a branch's rate is
   ``sum(passed) / sum(roster)``, never the mean of its classrooms' percentages. A mean of
   means lets a 4-student group outweigh a 30-student one.
@@ -50,6 +57,7 @@ Pure aggregation — no views, no DRF. The HTTP surface is ``midterms.views_stat
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, fields
 from datetime import datetime
 
@@ -70,6 +78,7 @@ from .admin_report import (
     final_status_for,
     midterm_ids_by_resource_id,
     pick_sitting,
+    resolve_retake,
     retakes_for,
     sitting_for,
 )
@@ -81,6 +90,12 @@ from .views_report import display_name
 #: 1st, but one sat at 01:00 on the 1st is stored in the PREVIOUS month, and a report that
 #: put a September midterm in August would be argued with for the rest of the term.
 MONTH_FMT = "%Y-%m"
+
+#: A month key, zero-padded. ``strptime`` is NOT enough on its own: ``strptime("2026-9",
+#: "%Y-%m")`` succeeds, so an unpadded month passed validation, matched none of the padded
+#: keys the index produces, fell through to the empty shell, and the page announced "No
+#: midterms in this month" for a month with a full set of results.
+MONTH_RE = re.compile(r"\d{4}-\d{2}")
 
 #: Which authority gave a ``(classroom, midterm)`` pair its month, in the order they are
 #: consulted. Reported alongside the month in the manner of ``classes.progress``'s ``basis``
@@ -122,6 +137,10 @@ DEFINITION = {
         "else the earliest completed sitting"
     ),
     "empty_denominator": "null, never 0",
+    "default_month": (
+        "the most recent month the school has actually reached; a month scheduled ahead is "
+        "offered but never opened on, because nobody has sat it yet"
+    ),
 }
 
 
@@ -236,15 +255,46 @@ def _rate(numerator: int, denominator: int) -> float | None:
     return round(100.0 * numerator / denominator, 1)
 
 
+#: The paper types that are a unit of assessment in their own right — everything graded that
+#: is not somebody's second chance. Derived from ``GRADED_TYPES`` rather than written out, so
+#: a graded type added later is counted rather than silently dropped.
+COUNTABLE_TYPES = tuple(t for t in Midterm.GRADED_TYPES if t != Midterm.TYPE_RETAKE)
+
+
 def is_countable_unit(midterm) -> bool:
     """Whether ``midterm`` is a unit of assessment in its own right.
 
     A paper counts unless it is somebody else's second chance. That excludes pre-midterms
-    (never graded) and every RETAKE that names a parent, whose passes are folded into that
-    parent instead. A RETAKE with a NULL ``retake_of`` is an orphan with nothing to fold it
-    into, so it stands on its own rather than vanishing from the school's totals.
+    (never graded) and **every** RETAKE — parent or no parent.
+
+    The parentless case is the one that had to be decided rather than assumed. A RETAKE with
+    a NULL ``retake_of`` is an ordinary authoring mistake, not an exotic one: the builder's
+    parent picker offers "— No parent midterm —" as its initial value, ``exams.serializers``
+    accepts it, ``midterms.sync`` produces it whenever the parent's mirror does not exist
+    yet, and ``midterms.access`` already treats it as a known mistake. Standing it on its own
+    put the WHOLE roster in the denominator of a paper only the students who did not pass
+    were ever offered, which halved the month for every class that had one and pooled up into
+    branch, department, teacher and school totals.
+
+    It cannot be folded either, because there is no parent to fold it into — so it is
+    excluded and disclosed, never silently dropped. See :func:`is_orphan_retake` and the
+    ``orphan_retakes`` list every payload carries.
+
+    ``retake_of_id`` is still consulted alongside the type, and not as a leftover: a paper
+    that names a parent IS folded into it (``retakes_by_parent`` groups on ``retake_of_id``
+    without looking at the type), so counting it here as well would put its passes in the
+    numerator twice. Type and parentage each exclude on their own.
     """
-    return bool(midterm.is_graded) and midterm.retake_of_id is None
+    return (
+        bool(midterm.is_graded)
+        and midterm.midterm_type != Midterm.TYPE_RETAKE
+        and midterm.retake_of_id is None
+    )
+
+
+def is_orphan_retake(midterm) -> bool:
+    """A RETAKE with no parent: excluded from every number, and named in the payload."""
+    return midterm.midterm_type == Midterm.TYPE_RETAKE and midterm.retake_of_id is None
 
 
 # ── month resolution ─────────────────────────────────────────────────────────
@@ -312,19 +362,40 @@ def month_key_for(classroom_id: int, midterm_id: int) -> str | None:
     return month_for(classroom_id, midterm_id)[0]
 
 
-def _unit_pairs(classroom_ids=None) -> dict[tuple[int, int], object]:
-    """``{(classroom_id, midterm_id): starts_at|None}`` for every countable pair.
+def countable_midterm_ids() -> set[int]:
+    """Every paper that is a unit of assessment in its own right. See :func:`is_countable_unit`.
+
+    The two conditions here are that function's, in SQL. Keep them in step: a paper this
+    query returns but ``is_countable_unit`` rejects becomes a month with no rows in it.
+    """
+    return set(
+        Midterm.objects.filter(
+            midterm_type__in=COUNTABLE_TYPES, retake_of__isnull=True
+        ).values_list("id", flat=True)
+    )
+
+
+def orphan_retake_ids() -> set[int]:
+    """Every RETAKE that names no parent. See :func:`is_orphan_retake`."""
+    return set(
+        Midterm.objects.filter(
+            midterm_type=Midterm.TYPE_RETAKE, retake_of__isnull=True
+        ).values_list("id", flat=True)
+    )
+
+
+def _unit_pairs(classroom_ids=None, units=None) -> dict[tuple[int, int], object]:
+    """``{(classroom_id, midterm_id): starts_at|None}`` for every pair in ``units``.
 
     Both legs ``classroom_midterm_ids`` uses — scheduled there, or granted classroom-scoped
     — but resolved for the whole school in a handful of queries rather than two per
     classroom. Grant status is deliberately unfiltered, for the reason stated on
     ``classroom_midterm_ids``: a report is history, not an access check.
+
+    ``units`` defaults to the countable papers; the orphan-retake disclosure passes its own
+    set through the same dating machinery rather than growing a second copy of it.
     """
-    units = set(
-        Midterm.objects.filter(
-            midterm_type__in=Midterm.GRADED_TYPES, retake_of__isnull=True
-        ).values_list("id", flat=True)
-    )
+    units = countable_midterm_ids() if units is None else set(units)
     if not units:
         return {}
 
@@ -353,7 +424,7 @@ def _unit_pairs(classroom_ids=None) -> dict[tuple[int, int], object]:
     return pairs
 
 
-def month_index(classroom_ids=None) -> dict[tuple[int, int], tuple[str, str]]:
+def month_index(classroom_ids=None, units=None) -> dict[tuple[int, int], tuple[str, str]]:
     """``{(classroom_id, midterm_id): (month_key, basis)}`` for every countable pair.
 
     The workhorse behind :func:`available_months` and :func:`school_month_stats`. Bounded in
@@ -361,7 +432,7 @@ def month_index(classroom_ids=None) -> dict[tuple[int, int], tuple[str, str]]:
     leftovers — a midterm reached through a grant, or scheduled with a NULL ``starts_at`` —
     pay for a roster and an attempt lookup. Pairs that resolve to nothing are simply absent.
     """
-    pairs = _unit_pairs(classroom_ids)
+    pairs = _unit_pairs(classroom_ids, units)
     if not pairs:
         return {}
 
@@ -424,9 +495,42 @@ def month_index(classroom_ids=None) -> dict[tuple[int, int], tuple[str, str]]:
     return index
 
 
-def available_months() -> list[str]:
-    """Every month the school has midterm data for, newest first."""
-    return sorted({month for month, _basis in month_index().values()}, reverse=True)
+def _scoped_classrooms(*, branch_id=None, subject=None, teacher_id=None):
+    """``(queryset, classroom_ids)`` for a filtered request; ``ids`` is ``None`` unfiltered.
+
+    One place, because the month PICKER and the numbers under it have to agree about which
+    classrooms they are looking at. They did not: the picker was built from the school-wide
+    month list whatever the filter said, so choosing a branch offered months that branch has
+    no data for — and an omitted ``month`` then defaulted to one of them, opening a filtered
+    page on a month its own scope is empty in.
+    """
+    classrooms = Classroom.objects.select_related("teacher", "branch", "branch__region")
+    filtered = False
+    if branch_id is not None:
+        classrooms, filtered = classrooms.filter(branch_id=branch_id), True
+    if subject:
+        classrooms = classrooms.filter(subject=SUBJECT_ALIASES.get(subject, subject))
+        filtered = True
+    if teacher_id is not None:
+        classrooms, filtered = classrooms.filter(teacher_id=teacher_id), True
+    scoped_ids = list(classrooms.values_list("id", flat=True)) if filtered else None
+    return classrooms, scoped_ids
+
+
+def available_months(*, branch_id=None, subject=None, teacher_id=None) -> list[str]:
+    """Every month a scope has midterm data for, newest first.
+
+    Unfiltered that is the whole school. Filtered it is that branch's / department's /
+    teacher's own months — the list the picker may offer for the page the caller is actually
+    looking at. Future months are INCLUDED: a paper booked for next month is real information
+    and the picker may offer it. It must simply never be the default — :func:`default_month`.
+    """
+    _classrooms, scoped_ids = _scoped_classrooms(
+        branch_id=branch_id, subject=subject, teacher_id=teacher_id
+    )
+    if scoped_ids is not None and not scoped_ids:
+        return []
+    return sorted({month for month, _basis in month_index(scoped_ids).values()}, reverse=True)
 
 
 def classroom_months(classroom_id: int) -> list[str]:
@@ -436,9 +540,64 @@ def classroom_months(classroom_id: int) -> list[str]:
     )
 
 
+def current_month_key() -> str:
+    """The month the school is in now, in ``TIME_ZONE`` — never the server's or a browser's."""
+    return timezone.localtime(timezone.now()).strftime(MONTH_FMT)
+
+
+def is_future_month(month) -> bool:
+    """Whether ``month`` is after the current one — a plan rather than a result.
+
+    A plain string compare, which is why every key in this module is zero-padded and why
+    :func:`is_month_key` now insists on it: ``"2026-9" > "2026-10"`` lexicographically, and
+    an unpadded key sneaking in here would answer this question backwards.
+    """
+    return bool(month) and str(month) > current_month_key()
+
+
+def default_month(months) -> str | None:
+    """The month a page should OPEN on, given a descending list: the newest already reached.
+
+    Not simply ``months[0]``. ``MidtermSchedule.starts_at`` is mandatory on every teacher
+    assign path, so a midterm assigned for next month already carries next month, and that
+    month sorts first. Opening on it showed a full roster of absentees — and absent counts
+    as failed — so an admin was told the school had scored 0.0% on a paper nobody had sat.
+    The empty-state branch does not catch it either: the month HAS a midterm in it.
+
+    ``None`` when every month a scope has is still ahead of it. That is an honest "no results
+    yet" rather than a plan reported as a score; the caller carries ``future_months`` beside
+    it so the page can say what is coming instead of merely showing nothing.
+    """
+    now = current_month_key()
+    for month in months:
+        if month <= now:
+            return month
+    return None
+
+
+def future_months(months) -> list[str]:
+    """The subset of ``months`` the school has not reached — scheduled, never scored.
+
+    Computed here rather than in the browser: the month is the school's local month
+    (Asia/Tashkent) and a reader's device may be on any other date entirely.
+    """
+    now = current_month_key()
+    return [month for month in months if month > now]
+
+
 def is_month_key(value) -> bool:
-    """Whether ``value`` is a well-formed ``"YYYY-MM"``. Used to reject a bad query param."""
+    """Whether ``value`` is a well-formed, zero-padded ``"YYYY-MM"``.
+
+    Both halves are load-bearing. ``strptime("2026-9", "%Y-%m")`` SUCCEEDS, so the format
+    string alone let an unpadded month through validation; it then matched none of the padded
+    keys the index produces, fell past ``if not pairs`` and rendered "No midterms in this
+    month" over a month with a full set of results — the exact lie the page's own error
+    handling refuses to tell for a failed request. ``strptime`` still runs after the regex,
+    because a padded ``"2026-13"`` is well-formed and is still not a month.
+    """
     if not isinstance(value, str):
+        return False
+    if MONTH_RE.fullmatch(value) is None:
         return False
     try:
         datetime.strptime(value, MONTH_FMT)
@@ -497,22 +656,14 @@ def _tally_from(midterm, roster_ids, retakes, attempts, outcomes) -> Tally:
         if attempt is not None and attempt.is_completed:
             attended += 1
 
-        # Every retake of this parent, unioned. ``retake_for`` returns only the first, which
-        # is right for a report with one retake column and wrong for a statistic: a student
-        # rescued by the second retake passed just as much as one rescued by the first.
-        best_retake = None
-        for retake in retakes:
-            r_attempts = attempts.get(retake.id, {})
-            r_sitting = sitting_for(retake, student_id, r_attempts, outcomes.get(retake.id, {}))
-            r_attempt = r_attempts.get(student_id)
-            if r_attempt is not None and r_attempt.is_completed:
-                retake_taken.add(student_id)
-            if r_sitting["passed"] is True:
-                retake_passed.add(student_id)
-                best_retake = r_sitting
-                break
-            if best_retake is None and r_sitting["state"] != STATE_ABSENT:
-                best_retake = r_sitting
+        # Every retake of this parent, unioned — and by exactly the rule the per-student
+        # evidence table now applies, so the headline and the table underneath it cannot
+        # disagree about which second chance decided a student's fate.
+        best_retake, took_one, rescued = resolve_retake(retakes, student_id, attempts, outcomes)
+        if took_one:
+            retake_taken.add(student_id)
+        if rescued:
+            retake_passed.add(student_id)
 
         status = final_status_for(sitting, best_retake)
         if status == STATUS_PASSED:
@@ -532,6 +683,7 @@ def _tally_from(midterm, roster_ids, retakes, attempts, outcomes) -> Tally:
 
     # A frozen verdict is proof of a sitting even where the attempt row has since gone, and
     # without this a passer with no attempt row would give a negative ``retake_failed``.
+    # ``resolve_retake`` already reports a pass as a sitting; belt and braces.
     retake_taken |= retake_passed
     return Tally(
         roster=len(roster_ids),
@@ -650,19 +802,51 @@ def _classroom_month_summary(rows: list[dict], tally: Tally, classroom) -> dict:
     }
 
 
-def classroom_month(classroom, month) -> tuple[list[dict], dict]:
-    """One classroom's month: a row per countable midterm, plus the pooled summary over them.
+def orphan_retakes_in(month, classroom_ids=None) -> list[dict]:
+    """``[{id, title}]`` for every parentless RETAKE that dates into ``month``, oldest first.
+
+    The disclosure half of :func:`is_countable_unit`'s exclusion. Such a paper cannot be
+    counted (its denominator would be a roster it was never offered to) and cannot be folded
+    (there is no parent to fold it into), so the only honest thing left is to leave it out
+    and SAY SO — "1 retake paper has no parent midterm and was left out" — rather than let a
+    paper somebody can see in the builder go missing from the table with no explanation.
+
+    Dated through the same :func:`month_index` ladder as the countable papers, so a warning
+    never lands in a different month from the sitting it describes.
+    """
+    if not month:
+        return []
+    ids = orphan_retake_ids()
+    if not ids:
+        return []
+    hits = {
+        midterm_id
+        for (_cid, midterm_id), (key, _basis) in month_index(classroom_ids, ids).items()
+        if key == month
+    }
+    if not hits:
+        return []
+    return [
+        {"id": m.id, "title": m.title}
+        for m in Midterm.objects.filter(id__in=hits).order_by("id")
+    ]
+
+
+def classroom_month(classroom, month) -> tuple[list[dict], dict, list[dict]]:
+    """One classroom's month: rows per countable midterm, the pooled summary, the warnings.
 
     Which midterms belong to the classroom is ``classroom_midterm_ids`` — the same union of
     schedule rows and classroom-scoped grants the existing ops report walks, so the two
     surfaces list the same papers.
 
-    Returned as a pair because the detail page needs both halves and they cost the same
+    Returned as a triple because the detail page needs all three and they cost the same
     queries; :func:`classroom_month_rows` and :func:`classroom_month_summary` are the
-    single-answer views onto it.
+    single-answer views onto it. The third member is ``orphan_retakes`` — papers deliberately
+    left out of the rows above, named so the page can account for their absence.
     """
+    orphans = orphan_retakes_in(month, [classroom.id])
     if not month:
-        return [], _classroom_month_summary([], EMPTY_TALLY, classroom)
+        return [], _classroom_month_summary([], EMPTY_TALLY, classroom), orphans
 
     candidates = [
         m
@@ -675,7 +859,7 @@ def classroom_month(classroom, month) -> tuple[list[dict], dict]:
         if key == month
     ]
     if not scoped:
-        return [], _classroom_month_summary([], EMPTY_TALLY, classroom)
+        return [], _classroom_month_summary([], EMPTY_TALLY, classroom), orphans
 
     midterm_ids = [m.id for m, _ in scoped]
     retakes_by_parent: dict[int, list[Midterm]] = {}
@@ -702,7 +886,7 @@ def classroom_month(classroom, month) -> tuple[list[dict], dict]:
             }
         )
     rows = _sort_rows(rows, name_key="title")
-    return rows, _classroom_month_summary(rows, total, classroom)
+    return rows, _classroom_month_summary(rows, total, classroom), orphans
 
 
 def classroom_month_rows(classroom, month) -> list[dict]:
@@ -724,42 +908,45 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
     ``subject`` accepts either subject vocabulary (see :data:`SUBJECT_ALIASES`) and filters
     on the CLASSROOM's, because a department is a ``Classroom.subject``.
     """
-    shell = {
-        "month": month,
-        "definition": dict(DEFINITION),
-        "totals": {**EMPTY_TALLY.as_dict(), "classrooms": 0, "midterms": 0, "distinct_students": 0},
-        "branches": [],
-        "departments": [],
-        "teachers": [],
-        "classrooms": [],
-    }
-    if not month:
-        return shell
+    def shell(orphans=()):
+        return {
+            "month": month,
+            "definition": dict(DEFINITION),
+            "totals": {
+                **EMPTY_TALLY.as_dict(), "classrooms": 0, "midterms": 0, "distinct_students": 0
+            },
+            "branches": [],
+            "departments": [],
+            "teachers": [],
+            "classrooms": [],
+            # Always present, empty or not: a page that reads the key only when it is there
+            # cannot tell "no warnings" from "an older backend that never sent any".
+            "orphan_retakes": list(orphans),
+        }
 
-    classrooms = Classroom.objects.select_related("teacher", "branch", "branch__region")
-    filtered = False
-    if branch_id is not None:
-        classrooms, filtered = classrooms.filter(branch_id=branch_id), True
-    if subject:
-        classrooms = classrooms.filter(subject=SUBJECT_ALIASES.get(subject, subject))
-        filtered = True
-    if teacher_id is not None:
-        classrooms, filtered = classrooms.filter(teacher_id=teacher_id), True
+    if not month:
+        return shell()
 
     # A filtered request resolves months for its own classrooms only, rather than dating
     # every pair in the school and throwing away all but one branch's worth.
-    scoped_ids = list(classrooms.values_list("id", flat=True)) if filtered else None
-    if filtered and not scoped_ids:
-        return shell
+    classrooms, scoped_ids = _scoped_classrooms(
+        branch_id=branch_id, subject=subject, teacher_id=teacher_id
+    )
+    if scoped_ids is not None and not scoped_ids:
+        return shell()
+
+    # Resolved before the early returns: a month whose only paper is an orphan retake has no
+    # statistics at all, and that is exactly the month whose emptiness needs explaining.
+    orphans = orphan_retakes_in(month, scoped_ids)
 
     pairs = [pair for pair, (key, _basis) in month_index(scoped_ids).items() if key == month]
     if not pairs:
-        return shell
+        return shell(orphans)
 
     by_id = {c.id: c for c in classrooms.filter(id__in={cid for cid, _ in pairs})}
     pairs = [(cid, mid) for cid, mid in pairs if cid in by_id]
     if not pairs:
-        return shell
+        return shell(orphans)
 
     midterm_ids = {mid for _, mid in pairs}
     midterms = {m.id: m for m in Midterm.objects.filter(id__in=midterm_ids)}
@@ -858,4 +1045,5 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
         "departments": _sort_rows(department_rows),
         "teachers": _sort_rows(teacher_rows),
         "classrooms": _sort_rows(classroom_rows),
+        "orphan_retakes": orphans,
     }

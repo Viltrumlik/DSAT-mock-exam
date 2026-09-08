@@ -127,6 +127,50 @@ describe("BranchTable", () => {
     const out = render(<BranchTable rows={[]} />);
     expect(out).toContain("No branches to rank");
   });
+
+  it("names both denominators on a row that has two, and reconciles them under the table", () => {
+    // 112 of 226 students hold two active memberships, so a branch whose classes overlap
+    // has roster > headcount in production. The row used to print "58 students" beside
+    // "52 of 76" and explain neither number.
+    const out = render(
+      <BranchTable rows={[branch({ roster: 76, distinct_students: 58, passed: 52, pass_rate: 68 })]} />,
+    );
+    expect(out).toContain("2 classes · 58 students · 76 roster places");
+    expect(out).toContain("52 of 76");
+    expect(out).toContain("Rates are over roster places");
+    expect(out).toContain("counts once per paper");
+    expect(out).toContain("on both rosters");
+  });
+
+  it("says nothing about denominators when every row agrees with itself", () => {
+    const out = render(<BranchTable rows={[branch()]} />);
+    expect(out).toContain("2 classes · 10 students");
+    expect(out).not.toContain("roster places");
+  });
+
+  it("draws NO bar for an unmeasured rate — an empty track is a picture of 0%", () => {
+    render(
+      <BranchTable
+        rows={[
+          branch({
+            id: 2,
+            name: "Yunusobod",
+            roster: 0,
+            passed: 0,
+            pass_rate: null,
+            distinct_students: 0,
+          }),
+        ]}
+      />,
+    );
+    // The only decorative span in the rate cell is the bar; with no rate there is none.
+    expect(container?.querySelectorAll("tbody [aria-hidden] .bg-primary")).toHaveLength(0);
+  });
+
+  it("draws a bar for a rate that exists", () => {
+    render(<BranchTable rows={[branch()]} />);
+    expect(container?.querySelectorAll("tbody [aria-hidden] .bg-primary").length).toBeGreaterThan(0);
+  });
 });
 
 describe("TeacherTable", () => {
@@ -216,5 +260,26 @@ describe("HeadlineStats", () => {
   it("flags the students who are still awaiting a verdict", () => {
     const out = render(<HeadlineStats stats={stats({ pending: 3 })} />);
     expect(out).toContain("3 still awaiting a result");
+  });
+
+  it("puts the HEADCOUNT under the word Students, not the roster-place total", () => {
+    // `roster` is summed once per (classroom, paper) pair, so a class of 20 sitting two
+    // papers contributes 40. Under a tile labelled "Students" that is simply a wrong number,
+    // and it used to be the big one — with the real headcount as 12px detail beneath it.
+    const out = render(
+      <HeadlineStats stats={stats({ roster: 117, distinct_students: 99, classrooms: 6, midterms: 7 })} />,
+    );
+    const tile = [...(container?.querySelectorAll("div.rounded-2xl") ?? [])].find((d) =>
+      d.textContent?.startsWith("Students"),
+    );
+    expect(tile?.textContent).toBe(
+      "Students996 classes · 7 papers117 roster places — every rate is over these.",
+    );
+    expect(out).not.toContain("Students117");
+  });
+
+  it("drops the roster line entirely when it would say the same thing twice", () => {
+    const out = render(<HeadlineStats stats={stats({ roster: 10, distinct_students: 10 })} />);
+    expect(out).not.toContain("roster places — every rate is over these");
   });
 });

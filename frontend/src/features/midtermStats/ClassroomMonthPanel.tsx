@@ -199,8 +199,10 @@ export function ClassroomMonthPanel({
                   </>
                 }
               />
+              {/* "SAT THE PAPER" in caps, in an SAT-prep product, reads as "SAT the paper".
+                  The figure is an attendance rate; call it that. */}
               <Figure
-                label="Sat the paper"
+                label="Attendance"
                 value={
                   <span className="flex items-center gap-2">
                     <RateFigure
@@ -363,15 +365,15 @@ function PaperRow({
         </div>
       </div>
 
+      {/* The label, then the note — and nothing between them. There used to be a hardcoded
+          "this paper was never timetabled for this class, so its month was inferred" here,
+          immediately ahead of MONTH_BASIS_NOTE, which opens with the same clause. The
+          sentence printed twice in a row and read as a rendering bug. */}
       {inferred && basis && (
-        <p
-          className="flex items-start gap-1.5 px-5 pb-3 text-[12px] text-muted-foreground"
-          title={MONTH_BASIS_NOTE[basis]}
-        >
+        <p className="flex items-start gap-1.5 px-5 pb-3 text-[12px] text-muted-foreground">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>
-            <span className="font-bold">{MONTH_BASIS_LABEL[basis]}</span> — this paper was never
-            timetabled for this class, so its month was inferred. {MONTH_BASIS_NOTE[basis]}
+            <span className="font-bold">{MONTH_BASIS_LABEL[basis]}</span> · {MONTH_BASIS_NOTE[basis]}
           </span>
         </p>
       )}

@@ -10,18 +10,30 @@ answering with the whole school under a heading that says otherwise.
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 from rest_framework.test import APIClient
 
 from classes.models import Branch, Classroom, ClassroomMembership, Region
 from classes.models_schedule import MidtermSchedule
 from midterms.models import Midterm
-from midterms.tests_stats import enrol, make_classroom, make_midterm, sit, students
+from midterms.tests_stats import (
+    LAST_MONTH,
+    LAST_MONTH_AT,
+    NEXT_MONTH,
+    NEXT_MONTH_AT,
+    THIS_MONTH,
+    THIS_MONTH_AT,
+    enrol,
+    make_classroom,
+    make_midterm,
+    sit,
+    students,
+)
 
 User = get_user_model()
 
-SEPTEMBER = timezone.make_aware(timezone.datetime(2026, 9, 10, 9, 0))
-OCTOBER = timezone.make_aware(timezone.datetime(2026, 10, 12, 9, 0))
+# Anchored to the real clock, never to a literal. Half of what this module asserts is which
+# month the page OPENS on, and "the newest month with data" and "the newest month the school
+# has actually reached" are the same answer only until a fixture month slips into the future.
 
 MONTHS_URL = "/api/midterms/admin/stats/months/"
 MONTHLY_URL = "/api/midterms/admin/stats/monthly/"
@@ -49,20 +61,20 @@ class StatsApiTests(TestCase):
         enrol(self.classroom, *self.students)
         enrol(self.english, *students("e", 2))
 
-        self.september = make_midterm("Midterm 12")
-        self.october = make_midterm("Midterm 13")
+        self.earlier = make_midterm("Midterm 12")
+        self.recent = make_midterm("Midterm 13")
         MidtermSchedule.objects.create(
-            classroom=self.classroom, midterm=self.september, starts_at=SEPTEMBER
+            classroom=self.classroom, midterm=self.earlier, starts_at=LAST_MONTH_AT
         )
         MidtermSchedule.objects.create(
-            classroom=self.classroom, midterm=self.october, starts_at=OCTOBER
+            classroom=self.classroom, midterm=self.recent, starts_at=THIS_MONTH_AT
         )
         MidtermSchedule.objects.create(
-            classroom=self.english, midterm=self.september, starts_at=SEPTEMBER
+            classroom=self.english, midterm=self.earlier, starts_at=LAST_MONTH_AT
         )
         for student in self.students[:3]:
-            sit(self.september, student, score=800, when=SEPTEMBER)
-        sit(self.september, self.students[3], score=200, when=SEPTEMBER)
+            sit(self.earlier, student, score=800, when=LAST_MONTH_AT)
+        sit(self.earlier, self.students[3], score=200, when=LAST_MONTH_AT)
 
     def classroom_url(self, classroom=None):
         return f"/api/midterms/admin/stats/classrooms/{(classroom or self.classroom).id}/"
@@ -86,8 +98,8 @@ class StatsApiTests(TestCase):
     # ── months ───────────────────────────────────────────────────────────────
     def test_months_are_newest_first_and_name_a_current_one(self):
         body = self.c.get(MONTHS_URL).json()
-        self.assertEqual(body["months"], ["2026-10", "2026-09"])
-        self.assertEqual(body["current"], "2026-10")
+        self.assertEqual(body["months"], [THIS_MONTH, LAST_MONTH])
+        self.assertEqual(body["current"], THIS_MONTH)
 
     def test_months_is_empty_rather_than_absent_when_there_is_no_data(self):
         Midterm.objects.all().delete()
@@ -98,12 +110,12 @@ class StatsApiTests(TestCase):
     # ── the monthly roll-up ──────────────────────────────────────────────────
     def test_an_omitted_month_opens_on_the_newest_one_with_data(self):
         body = self.c.get(MONTHLY_URL).json()
-        self.assertEqual(body["month"], "2026-10")
-        self.assertEqual(body["months"], ["2026-10", "2026-09"])
+        self.assertEqual(body["month"], THIS_MONTH)
+        self.assertEqual(body["months"], [THIS_MONTH, LAST_MONTH])
 
     def test_a_named_month_carries_the_pooled_numbers_and_the_definition(self):
-        body = self.c.get(MONTHLY_URL, {"month": "2026-09"}).json()
-        self.assertEqual(body["month"], "2026-09")
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        self.assertEqual(body["month"], LAST_MONTH)
         self.assertEqual(body["totals"]["roster"], 6)      # 4 + the 2-student English class
         self.assertEqual(body["totals"]["passed"], 3)
         self.assertEqual(body["totals"]["pass_rate"], 50.0)
@@ -124,16 +136,16 @@ class StatsApiTests(TestCase):
         self.assertIsNone(body["totals"]["pass_rate"])
 
     def test_filters_are_applied_and_echoed(self):
-        body = self.c.get(MONTHLY_URL, {"month": "2026-09", "teacher": self.teacher.id}).json()
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH, "teacher": self.teacher.id}).json()
         self.assertEqual(body["totals"]["roster"], 4)
         self.assertEqual(body["filters"]["teacher"], self.teacher.id)
 
-        body = self.c.get(MONTHLY_URL, {"month": "2026-09", "branch": self.branch.id}).json()
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH, "branch": self.branch.id}).json()
         self.assertEqual(body["totals"]["roster"], 4)
 
         # Either subject vocabulary names the same department.
         for spelling in ("ENGLISH", "READING_WRITING", "english"):
-            body = self.c.get(MONTHLY_URL, {"month": "2026-09", "subject": spelling}).json()
+            body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH, "subject": spelling}).json()
             self.assertEqual(body["totals"]["roster"], 2, spelling)
             self.assertEqual(body["filters"]["subject"], Classroom.SUBJECT_ENGLISH)
 
@@ -161,8 +173,8 @@ class StatsApiTests(TestCase):
 
     # ── one classroom ────────────────────────────────────────────────────────
     def test_a_classroom_month_lists_its_midterms(self):
-        body = self.c.get(self.classroom_url(), {"month": "2026-09"}).json()
-        self.assertEqual(body["month"], "2026-09")
+        body = self.c.get(self.classroom_url(), {"month": LAST_MONTH}).json()
+        self.assertEqual(body["month"], LAST_MONTH)
         self.assertEqual(body["classroom"]["name"], "Math Senior A")
         self.assertEqual(body["classroom"]["subject_label"], "Math")
         self.assertEqual(body["classroom"]["teacher"]["name"], "Nodir T")
@@ -176,8 +188,8 @@ class StatsApiTests(TestCase):
 
     def test_a_classroom_defaults_to_its_own_newest_month(self):
         body = self.c.get(self.classroom_url()).json()
-        self.assertEqual(body["month"], "2026-10")
-        self.assertEqual(body["months"], ["2026-10", "2026-09"])
+        self.assertEqual(body["month"], THIS_MONTH)
+        self.assertEqual(body["months"], [THIS_MONTH, LAST_MONTH])
         # October's paper was scheduled but never sat: absent counts as failed.
         self.assertEqual(body["summary"]["absent"], 4)
         self.assertEqual(body["summary"]["pass_rate"], 0.0)
@@ -222,15 +234,15 @@ class RemovedStudentTests(TestCase):
         enrol(classroom, gone, status=ClassroomMembership.STATUS_REMOVED)
 
         midterm = make_midterm("Midterm 12")
-        MidtermSchedule.objects.create(classroom=classroom, midterm=midterm, starts_at=SEPTEMBER)
+        MidtermSchedule.objects.create(classroom=classroom, midterm=midterm, starts_at=LAST_MONTH_AT)
         for student in roster:
-            sit(midterm, student, score=800, when=SEPTEMBER)
+            sit(midterm, student, score=800, when=LAST_MONTH_AT)
         # The removed student sat it before they left; the verdict exists but they are off
         # the roster, so they raise neither the numerator nor the denominator.
-        sit(midterm, gone, score=200, when=SEPTEMBER)
+        sit(midterm, gone, score=200, when=LAST_MONTH_AT)
 
         body = client.get(
-            f"/api/midterms/admin/stats/classrooms/{classroom.id}/", {"month": "2026-09"}
+            f"/api/midterms/admin/stats/classrooms/{classroom.id}/", {"month": LAST_MONTH}
         ).json()
         self.assertEqual(body["summary"]["roster"], 3)
         self.assertEqual(body["summary"]["pass_rate"], 100.0)
@@ -239,3 +251,225 @@ class RemovedStudentTests(TestCase):
             f"/api/midterms/admin/reports/classrooms/{classroom.id}/midterms/{midterm.id}/"
         ).json()
         self.assertEqual(body["summary"]["roster"], report["summary"]["students"])
+
+
+class DefaultMonthTests(TestCase):
+    """The page must never open on a month the school has not reached.
+
+    ``MidtermSchedule.starts_at`` is mandatory on every teacher assign path, so a midterm
+    assigned for next month already carries next month; unbounded, that becomes the newest
+    month, becomes the default, and reads as a full roster of absentees. An admin opening the
+    page is told the school scored 0% — and the page's own empty branch does not catch it,
+    because ``totals.midterms`` is 1, so the tile, the tables and the chart all render as
+    real data.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.c = APIClient()
+        self.c.force_authenticate(self.admin)
+        self.classroom = make_classroom("Math Senior A", self.admin)
+        self.students = students("s", 10)
+        enrol(self.classroom, *self.students)
+
+        self.sat = make_midterm("Midterm 12")
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.sat, starts_at=THIS_MONTH_AT
+        )
+        for student in self.students[:9]:
+            sit(self.sat, student, score=800, when=THIS_MONTH_AT)
+        sit(self.sat, self.students[9], score=200, when=THIS_MONTH_AT)
+
+        self.planned = make_midterm("Midterm 13")
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.planned, starts_at=NEXT_MONTH_AT
+        )
+
+    def test_the_months_endpoint_does_not_hand_back_a_future_default(self):
+        body = self.c.get(MONTHS_URL).json()
+        self.assertEqual(body["months"], [NEXT_MONTH, THIS_MONTH])
+        self.assertEqual(body["current"], THIS_MONTH)
+        self.assertEqual(body["this_month"], THIS_MONTH)
+        self.assertEqual(body["future_months"], [NEXT_MONTH])
+
+    def test_an_omitted_month_opens_on_the_newest_month_actually_sat(self):
+        body = self.c.get(MONTHLY_URL).json()
+        self.assertEqual(body["month"], THIS_MONTH)
+        self.assertFalse(body["is_future"])
+        self.assertEqual(body["totals"]["pass_rate"], 90.0)
+
+    def test_a_future_month_may_be_asked_for_but_says_it_is_only_scheduled(self):
+        body = self.c.get(MONTHLY_URL, {"month": NEXT_MONTH}).json()
+        self.assertEqual(body["month"], NEXT_MONTH)
+        self.assertTrue(body["is_future"])
+        self.assertEqual(body["future_months"], [NEXT_MONTH])
+        self.assertEqual(body["totals"]["absent"], 10)
+
+    def test_a_classroom_opens_on_the_newest_month_it_actually_sat(self):
+        url = f"/api/midterms/admin/stats/classrooms/{self.classroom.id}/"
+        body = self.c.get(url).json()
+        self.assertEqual(body["month"], THIS_MONTH)
+        self.assertFalse(body["is_future"])
+        self.assertEqual(body["months"], [NEXT_MONTH, THIS_MONTH])
+        self.assertEqual(body["future_months"], [NEXT_MONTH])
+        self.assertEqual(body["summary"]["pass_rate"], 90.0)
+
+    def test_a_classroom_that_has_only_a_scheduled_month_opens_on_nothing(self):
+        MidtermSchedule.objects.filter(midterm=self.sat).update(starts_at=NEXT_MONTH_AT)
+        body = self.c.get(f"/api/midterms/admin/stats/classrooms/{self.classroom.id}/").json()
+        self.assertIsNone(body["month"])
+        self.assertEqual(body["months"], [NEXT_MONTH])
+        self.assertEqual(body["future_months"], [NEXT_MONTH])
+        self.assertFalse(body["is_future"])
+        self.assertEqual(body["rows"], [])
+
+
+class UnpaddedMonthTests(TestCase):
+    """``strptime("2026-9", "%Y-%m")`` succeeds, and no key in the index is unpadded."""
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.c = APIClient()
+        self.c.force_authenticate(self.admin)
+        self.classroom = make_classroom("Math Senior A", self.admin)
+        roster = students("s", 4)
+        enrol(self.classroom, *roster)
+        midterm = make_midterm("Midterm 12")
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=midterm, starts_at=LAST_MONTH_AT
+        )
+        for student in roster:
+            sit(midterm, student, score=800, when=LAST_MONTH_AT)
+
+    def _unpadded(self, month_key):
+        year, month = month_key.split("-")
+        return f"{year}-{int(month)}"
+
+    def test_an_unpadded_month_is_a_400_rather_than_an_empty_page(self):
+        """It matched no zero-padded key, fell through to the empty shell, and the page said
+        "No midterms in this month" for a month with a full set of results."""
+        padded = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        self.assertEqual(padded["totals"]["roster"], 4)
+
+        r = self.c.get(MONTHLY_URL, {"month": self._unpadded(LAST_MONTH)})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("YYYY-MM", r.json()["detail"])
+
+    def test_an_unpadded_month_on_a_classroom_is_a_400_too(self):
+        url = f"/api/midterms/admin/stats/classrooms/{self.classroom.id}/"
+        r = self.c.get(url, {"month": self._unpadded(LAST_MONTH)})
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("YYYY-MM", r.json()["detail"])
+
+
+class ScopedMonthPickerTests(TestCase):
+    """A filtered request gets its own month list, and its own default."""
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.c = APIClient()
+        self.c.force_authenticate(self.admin)
+        self.region = Region.objects.create(name="Tashkent")
+        self.chilonzor = Branch.objects.create(region=self.region, name="Chilonzor")
+        self.yunusobod = Branch.objects.create(region=self.region, name="Yunusobod")
+        self.nodir = User.objects.create(
+            username="t1", role="teacher", first_name="Nodir", last_name="T"
+        )
+
+        self.old_class = make_classroom(
+            "Math Senior A", self.admin, teacher=self.nodir, branch=self.chilonzor
+        )
+        self.new_class = make_classroom("Math Senior B", self.admin, branch=self.yunusobod)
+        old_roster = students("a", 4)
+        new_roster = students("b", 4)
+        enrol(self.old_class, *old_roster)
+        enrol(self.new_class, *new_roster)
+
+        old_paper = make_midterm("Midterm 12")
+        new_paper = make_midterm("Midterm 13")
+        MidtermSchedule.objects.create(
+            classroom=self.old_class, midterm=old_paper, starts_at=LAST_MONTH_AT
+        )
+        MidtermSchedule.objects.create(
+            classroom=self.new_class, midterm=new_paper, starts_at=THIS_MONTH_AT
+        )
+        for student in old_roster:
+            sit(old_paper, student, score=800, when=LAST_MONTH_AT)
+        for student in new_roster:
+            sit(new_paper, student, score=800, when=THIS_MONTH_AT)
+
+    def test_the_picker_offers_only_the_months_the_filtered_scope_has(self):
+        """Unscoped it offered both, so choosing Chilonzor and then this month produced an
+        empty table under a month the picker itself had just offered."""
+        body = self.c.get(MONTHLY_URL, {"branch": self.chilonzor.id}).json()
+        self.assertEqual(body["months"], [LAST_MONTH])
+        body = self.c.get(MONTHLY_URL, {"branch": self.yunusobod.id}).json()
+        self.assertEqual(body["months"], [THIS_MONTH])
+
+    def test_a_filtered_request_with_no_month_opens_on_a_month_it_has_data_for(self):
+        body = self.c.get(MONTHLY_URL, {"branch": self.chilonzor.id}).json()
+        self.assertEqual(body["month"], LAST_MONTH)
+        self.assertEqual(body["totals"]["roster"], 4)
+        self.assertEqual(body["totals"]["pass_rate"], 100.0)
+
+        body = self.c.get(MONTHLY_URL, {"teacher": self.nodir.id}).json()
+        self.assertEqual(body["month"], LAST_MONTH)
+        self.assertEqual(body["totals"]["roster"], 4)
+
+    def test_a_filter_that_matches_no_classroom_offers_no_months(self):
+        body = self.c.get(MONTHLY_URL, {"teacher": 999999}).json()
+        self.assertEqual(body["months"], [])
+        self.assertIsNone(body["month"])
+        self.assertIsNone(body["totals"]["pass_rate"])
+        self.assertEqual(body["filters"]["teacher"], 999999)
+
+
+class OrphanRetakeApiTests(TestCase):
+    """A parentless RETAKE is left out of every number, and the payload names it."""
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.c = APIClient()
+        self.c.force_authenticate(self.admin)
+        self.classroom = make_classroom("Math Senior A", self.admin)
+        self.students = students("s", 10)
+        enrol(self.classroom, *self.students)
+
+        self.midterm = make_midterm("Midterm 12")
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.midterm, starts_at=LAST_MONTH_AT
+        )
+        for student in self.students[:9]:
+            sit(self.midterm, student, score=800, when=LAST_MONTH_AT)
+        sit(self.midterm, self.students[9], score=200, when=LAST_MONTH_AT)
+
+        self.orphan = make_midterm("Midterm 12 Retake", midterm_type=Midterm.TYPE_RETAKE)
+        MidtermSchedule.objects.create(
+            classroom=self.classroom, midterm=self.orphan, starts_at=LAST_MONTH_AT
+        )
+        sit(self.orphan, self.students[9], score=800, when=LAST_MONTH_AT)
+
+    def test_the_monthly_payload_excludes_it_and_discloses_it(self):
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        self.assertEqual(body["totals"]["roster"], 10)      # not 20
+        self.assertEqual(body["totals"]["pass_rate"], 90.0)  # not 50.0
+        self.assertEqual(body["totals"]["midterms"], 1)
+        self.assertEqual(
+            body["orphan_retakes"], [{"id": self.orphan.id, "title": "Midterm 12 Retake"}]
+        )
+
+    def test_the_classroom_payload_excludes_it_and_discloses_it(self):
+        url = f"/api/midterms/admin/stats/classrooms/{self.classroom.id}/"
+        body = self.c.get(url, {"month": LAST_MONTH}).json()
+        self.assertEqual([row["title"] for row in body["rows"]], ["Midterm 12"])
+        self.assertEqual(body["summary"]["pass_rate"], 90.0)
+        self.assertEqual(
+            body["orphan_retakes"], [{"id": self.orphan.id, "title": "Midterm 12 Retake"}]
+        )
+
+    def test_a_clean_month_carries_an_empty_warning_list_rather_than_no_key(self):
+        self.orphan.retake_of = self.midterm
+        self.orphan.save(update_fields=["retake_of"])
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        self.assertEqual(body["orphan_retakes"], [])
+        self.assertEqual(body["totals"]["pass_rate"], 100.0)

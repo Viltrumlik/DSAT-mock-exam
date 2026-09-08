@@ -156,12 +156,15 @@ export default function MidtermStatsPage() {
           <HeadlineStats stats={stats} />
           <DefinitionNote definition={stats.definition} />
 
+          {/* `pending` counts roster places — (student, paper) pairs — not students, so a
+              student awaiting two verdicts is two of them. Naming them "students" here made
+              the same mistake the Students tile used to make, one altitude down. */}
           {stats.totals.pending > 0 && (
             <Note>
-              {plural(stats.totals.pending, "student")} in {monthLabel(shownMonth)} are still
-              awaiting a result. They are in the denominator and not in the numerator, so every
-              rate on this page is a floor for this month — it can only go up as those verdicts
-              land.
+              {plural(stats.totals.pending, "roster place")} in {monthLabel(shownMonth)}{" "}
+              {stats.totals.pending === 1 ? "is" : "are"} still awaiting a result. They are in
+              the denominator and not in the numerator, so every rate on this page is a floor
+              for this month — it can only go up as those verdicts land.
             </Note>
           )}
 

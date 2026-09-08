@@ -16,7 +16,7 @@ import { levelLabel } from "@/lib/levels";
 import { errText, midtermReportsApi } from "./api";
 import { MidtermEvidence } from "./MidtermEvidence";
 import { CountChip } from "./StatusPill";
-import { classroomSubjectLabel, formatWhen, isGraded } from "./status";
+import { classroomSubjectLabel, formatWhen, isGraded, retakeCountOf } from "./status";
 import type { ClassroomDetail, ClassroomListRow, ClassroomMidtermRow } from "./types";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -56,7 +56,11 @@ export default function MidtermRecordsBrowser() {
       // Land on something useful instead of an empty right-hand panel.
       setSelectedId((prev) => prev ?? rows[0]?.id ?? null);
     } catch (e) {
-      setClassrooms([]);
+      // NEVER an empty array here. `[]` is a claim — "this school has never given a midterm"
+      // — and the sidebar below reads exactly that claim off `classrooms.length === 0`. A
+      // 500 from the list endpoint used to print it as a fact under the red banner. `null`
+      // is the honest value: we do not know, so nothing states otherwise.
+      setClassrooms(null);
       setListError(errText(e, "Could not load classrooms (administrators only)."));
     }
   }, []);
@@ -123,7 +127,7 @@ export default function MidtermRecordsBrowser() {
         </button>
       </div>
 
-      {listError && <ErrorBox message={listError} />}
+      {listError && <ErrorBox message={listError} onRetry={() => void loadClassrooms()} />}
 
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         {/* Classroom list */}
@@ -142,7 +146,18 @@ export default function MidtermRecordsBrowser() {
             />
           </div>
 
-          {classrooms == null ? (
+          {/* Four branches, and the first two are the ones that get confused: a failed list
+              is not an empty list. The error branch comes first so a 500 can never fall
+              through to the "No midterm activity" copy below it. */}
+          {listError ? (
+            <div className="px-2 py-8 text-center">
+              <AlertTriangle className="mx-auto mb-2 h-6 w-6 text-danger" aria-hidden />
+              <p className="text-sm font-bold text-foreground">Classroom list unavailable</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                This is not an empty school — the list could not be loaded. Retry above.
+              </p>
+            </div>
+          ) : classrooms == null ? (
             <div className="space-y-1.5">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="h-14 animate-pulse rounded-xl bg-surface-2" />
@@ -202,13 +217,27 @@ export default function MidtermRecordsBrowser() {
           ) : detailLoading || (selectedId != null && !detail) ? (
             <div className="h-40 animate-pulse rounded-2xl border border-border bg-card" />
           ) : !detail ? (
-            <div className="rounded-2xl border border-border bg-card p-10 text-center">
-              <FileText className="mx-auto mb-3 h-7 w-7 text-muted-foreground" aria-hidden />
-              <p className="font-bold text-foreground">Pick a classroom</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Select a classroom on the left to see its midterms.
-              </p>
-            </div>
+            /* "Pick a classroom" is an invitation, and it is only honest when there IS a
+               list to pick from. With the list request failed there is nothing on the left,
+               and the invitation reads as "we found nothing for you". */
+            listError ? (
+              <div className="rounded-2xl border border-danger/25 bg-danger-soft p-10 text-center text-danger-foreground">
+                <AlertTriangle className="mx-auto mb-3 h-7 w-7" aria-hidden />
+                <p className="font-bold">Nothing could be listed</p>
+                <p className="mt-1 text-sm font-semibold opacity-90">
+                  The classroom list failed to load, so there is nothing to pick. Nothing here
+                  says this school has no midterms — retry above.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-border bg-card p-10 text-center">
+                <FileText className="mx-auto mb-3 h-7 w-7 text-muted-foreground" aria-hidden />
+                <p className="font-bold text-foreground">Pick a classroom</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Select a classroom on the left to see its midterms.
+                </p>
+              </div>
+            )
           ) : (
             <>
               <div className="rounded-2xl border border-border bg-card px-5 py-4">
@@ -336,21 +365,42 @@ function MidtermCard({
 
       {expanded && (
         <div id={panelId} className="border-t border-border px-4 py-4">
-          <MidtermEvidence classroomId={classroomId} midtermId={midterm.id} />
+          {/* `null` when this endpoint does not say how many retakes the paper has — which
+              today is always. Passing it explicitly rather than omitting it keeps the two
+              states of knowledge visible at the call site. */}
+          <MidtermEvidence
+            classroomId={classroomId}
+            midtermId={midterm.id}
+            retakeCount={retakeCountOf(midterm)}
+          />
         </div>
       )}
     </div>
   );
 }
 
-function ErrorBox({ message }: { message: string }) {
+function ErrorBox({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div
       role="alert"
-      className="flex items-start gap-2 rounded-2xl border border-danger/25 bg-danger-soft p-3 text-sm font-semibold text-danger-foreground"
+      className="flex flex-wrap items-start gap-3 rounded-2xl border border-danger/25 bg-danger-soft p-3 text-sm font-semibold text-danger-foreground"
     >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      {message}
+      <span className="min-w-0 flex-1">
+        {message}
+        <span className="mt-0.5 block text-xs font-normal opacity-90">
+          Nothing below is empty — it is unknown.
+        </span>
+      </span>
+      {onRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="ds-ring shrink-0 rounded-lg border border-danger/30 px-2.5 py-1 text-xs font-bold hover:bg-danger/10"
+        >
+          Try again
+        </button>
+      ) : null}
     </div>
   );
 }

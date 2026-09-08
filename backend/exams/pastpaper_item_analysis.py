@@ -50,13 +50,30 @@ wants the harsher reading can have it without recomputing anything.
 Two more, for weight and for trust:
 
 **One sitting per student.** A student who sat the paper three times must not carry triple
-weight, so only the first completed sitting counts, ordered by ``completed_at`` then ``id``.
-The later ones are excluded as ``repeat_sitting`` and counted in the payload.
+weight, so only *one* completed sitting counts, ordered by ``completed_at`` then ``id``. It is
+the first sitting that is actually **countable**, not simply the first recorded: a student
+whose first sitting carries the COPIED signature falls through to their next clean one. The
+two rules meet in exactly the population the copy bug created — 51 distinct students — and
+consuming a student's one slot on a record nobody trusts would reject their good re-sit as a
+repeat, silently shrinking the denominator of every question on the paper. Once a sitting is
+counted the later ones are excluded as ``repeat_sitting``; a student whose every sitting is
+copied is excluded entirely and disclosed in ``excluded.copied``. The ledger balances:
+``attempts_considered == attempts_counted + copied + repeat_sitting``.
 
 **``suspect_key``.** A wrong answer key manufactures a ~100% error rate, and this school has a
 known paper with 17 of 29 keys wrong that was never corrected. Any question at or above 90%
 is flagged rather than hidden — the row is real evidence, but of a broken key rather than a
 misunderstood topic, and only a human can tell those apart.
+
+**…and a suspect row is held out of every rate that is read as a topic result.** Flagging the
+question and then pooling it into "Math — 50%" would put the argument above into the report
+and the contradiction of it in the same payload: a breakdown row exists to be read as a
+statement about a topic, and one broken key is enough to make that statement false. So every
+group row, and ``totals.error_rate``, divide over the questions whose key is trustworthy, and
+each says how many it held out (``suspect_key_count`` per group, ``totals.analysed`` for the
+paper). Held out, never deleted: the group keeps its full ``questions`` count, a group that is
+entirely suspect stays visible with an empty rate rather than vanishing, and the flagged list
+itself is untouched — a suspect question is exactly the one a teacher must look at.
 
 ## Taxonomy
 
@@ -161,11 +178,23 @@ class _Item:
 
 @dataclass
 class _Group:
-    """One row of a by-type breakdown."""
+    """One row of a by-type breakdown — a statement about a topic, so a broken key stays out.
+
+    ``questions`` counts every question in the group, including the suspect ones, so a group
+    that is entirely suspect is visible as such instead of vanishing from the breakdown.
+    Everything the rate is read against — ``seen``/``answered``/``wrong`` and ``error_rate``
+    — is pooled over the ``analysed_questions`` only, so the caption a page prints beside the
+    rate ("0 wrong of 12 answers") describes the same population the rate does.
+
+    ``needs_analysis_count`` is deliberately the other way round: it counts every flagged
+    question in the group, suspect included, because that list is the teacher's work queue and
+    a suspect key is the first thing on it.
+    """
 
     key: object
     label: str
     questions: int = 0
+    suspect_key_count: int = 0
     seen: int = 0
     answered: int = 0
     wrong: int = 0
@@ -176,9 +205,14 @@ class _Group:
             "key": self.key,
             "label": self.label,
             "questions": self.questions,
+            # Held out of the rate below — flagged for a human, not folded into a topic result.
+            "suspect_key_count": self.suspect_key_count,
+            "analysed_questions": self.questions - self.suspect_key_count,
             "seen": self.seen,
             "answered": self.answered,
             "wrong": self.wrong,
+            # None when every question in the group is suspect: an em dash, never a 0% that
+            # would read as "this class aced a topic nobody could answer".
             "error_rate": _percent(self.wrong, self.answered),
             "needs_analysis_count": self.needs_analysis_count,
         }
@@ -224,15 +258,22 @@ def looks_copied(answers: dict, modules: list, module_question_ids: dict) -> boo
 
 
 def _select_attempts(practice_test, student_ids, modules, module_question_ids) -> _Selection:
-    """One query for the cohort's completed sittings, then first-clean-sitting per student.
+    """One query for the cohort's completed sittings, then the first *countable* one each.
 
     Ordered ``completed_at`` then ``id`` per the contract, with NULLs last so the ordering is
     the same on Postgres and SQLite rather than backend-dependent — a legacy attempt with no
     ``completed_at`` must not silently become somebody's "first" sitting.
 
-    Repeat sittings are set aside before the corruption check, so ``excluded.copied`` counts
-    the sittings that would otherwise have been analysed rather than every copied row ever
-    recorded.
+    A student is marked as counted only when their sitting is actually counted, never when it
+    is discarded. The copy bug is the very reason a student would sit the paper again, so a
+    corrupt first sitting has to fall through to the next one; marking them "seen" on the way
+    past would spend their single slot on the discarded record and then reject the good re-sit
+    as a repeat. A student whose every sitting is copied contributes nothing and is disclosed
+    once per discarded sitting.
+
+    Repeat sittings are still set aside without inspection, so ``excluded.copied`` counts the
+    sittings that would otherwise have been analysed rather than every copied row ever
+    recorded, and the ledger balances: considered == counted + copied + repeat_sitting.
     """
     selection = _Selection()
     if not student_ids:
@@ -249,13 +290,12 @@ def _select_attempts(practice_test, student_ids, modules, module_question_ids) -
         .values("id", "student_id", "module_answers")
     )
 
-    seen_students: set[int] = set()
+    counted_students: set[int] = set()
     for row in rows:
         selection.considered += 1
-        if row["student_id"] in seen_students:
+        if row["student_id"] in counted_students:
             selection.repeat_sitting += 1
             continue
-        seen_students.add(row["student_id"])
 
         answers = row["module_answers"] or {}
         if not isinstance(answers, dict):
@@ -264,6 +304,8 @@ def _select_attempts(practice_test, student_ids, modules, module_question_ids) -
             selection.copied += 1
             continue
 
+        # Only now is the student's one slot spent.
+        counted_students.add(row["student_id"])
         selection.answer_blobs.append(answers)
 
     selection.students = len(selection.answer_blobs)
@@ -351,9 +393,14 @@ def _collect(items: list, resolver, threshold: int) -> dict:
         if group is None:
             group = groups[key] = _Group(key=key, label=label)
         group.questions += 1
-        group.seen += item.seen
-        group.answered += item.answered
-        group.wrong += item.wrong
+        if item.suspect_key:
+            # Counted in the group, held out of its rate: a ~100% row is evidence about the
+            # answer key, and pooling it would state something false about the topic.
+            group.suspect_key_count += 1
+        else:
+            group.seen += item.seen
+            group.answered += item.answered
+            group.wrong += item.wrong
         if item.needs_analysis(threshold):
             group.needs_analysis_count += 1
 
@@ -454,6 +501,16 @@ def build_pastpaper_item_analysis(practice_test, student_ids, *, threshold: int 
     totals_answered = sum(item.answered for item in items)
     totals_wrong = sum(item.wrong for item in items)
 
+    # The paper's headline rate is read the same way a breakdown row is — as a statement about
+    # how the class did — so the questions whose key cannot be trusted are held out of it. The
+    # raw tallies above stay whole: they describe the sitting as recorded, and the page prints
+    # them beside other captions ("N answers left blank"). ``analysed`` names, in the payload,
+    # exactly what ``error_rate`` divided, so the two can never be mistaken for each other.
+    analysed = [item for item in items if not item.suspect_key]
+    analysed_seen = sum(item.seen for item in analysed)
+    analysed_answered = sum(item.answered for item in analysed)
+    analysed_wrong = sum(item.wrong for item in analysed)
+
     return {
         "practice_test": {
             "id": practice_test.pk,
@@ -466,7 +523,9 @@ def build_pastpaper_item_analysis(practice_test, student_ids, *, threshold: int 
         # Stated, not implied: the headline rate divides by the students who answered, and
         # one sitting per student is what "students" means anywhere in this payload.
         "denominator": DENOMINATOR,
-        "attempt_selection": "first_completed_sitting_per_student",
+        # "Clean", not merely "first": a sitting carrying the COPIED signature is discarded and
+        # the student's next sitting is considered, because that bug is why they sat it again.
+        "attempt_selection": "first_clean_completed_sitting_per_student",
         # First — this is the list the rule is about.
         "needs_analysis": flagged,
         "questions": rows,
@@ -477,7 +536,14 @@ def build_pastpaper_item_analysis(practice_test, student_ids, *, threshold: int 
             "omitted": sum(item.omitted for item in items),
             "correct": sum(item.correct for item in items),
             "wrong": totals_wrong,
-            "error_rate": _percent(totals_wrong, totals_answered),
+            # Over the trustworthy questions only — see ``analysed`` for what that was.
+            "error_rate": _percent(analysed_wrong, analysed_answered),
+            "analysed": {
+                "questions": len(analysed),
+                "seen": analysed_seen,
+                "answered": analysed_answered,
+                "wrong": analysed_wrong,
+            },
             "needs_analysis": len(flagged),
             "suspect_key": sum(1 for row in rows if row["suspect_key"]),
         },

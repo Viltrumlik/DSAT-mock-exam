@@ -126,11 +126,23 @@ describe("ClassroomMonthPanel", () => {
     expect(classroomCall).toHaveBeenCalledWith(11, "2026-09");
   });
 
-  it("says when a paper's month was inferred rather than timetabled", async () => {
+  it("says when a paper's month was inferred rather than timetabled — once", async () => {
     classroomCall.mockResolvedValue(detail({ rows: [paper({ month_basis: "first_sitting" })] }));
     const out = await render();
     expect(out).toContain("From the first sitting");
     expect(out).toContain("never timetabled for this class");
+    // The row used to print a hardcoded "this paper was never timetabled for this class, so
+    // its month was inferred" and then append MONTH_BASIS_NOTE, which opens with the same
+    // clause. The sentence appeared twice in a row and read as a rendering bug.
+    expect(out.split("never timetabled for this class")).toHaveLength(2);
+  });
+
+  it("calls the attendance figure attendance, not SAT THE PAPER", async () => {
+    classroomCall.mockResolvedValue(detail());
+    const out = await render();
+    // Uppercased in an SAT-prep product, "SAT THE PAPER" reads as "SAT the paper".
+    expect(out).toContain("Attendance");
+    expect(out).not.toContain("Sat the paper");
   });
 
   it("says nothing about the basis when the paper WAS timetabled", async () => {

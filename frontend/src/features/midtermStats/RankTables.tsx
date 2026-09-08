@@ -5,11 +5,13 @@ import {
   UNASSIGNED_BRANCH_NOTE,
   UNASSIGNED_TEACHER_NOTE,
   formatShare,
+  groupSubline,
   isUnassigned,
   plural,
   rateReason,
+  rosterNote,
 } from "./format";
-import { EmptyPanel, GapMarker, Num, RankedTable, RateCell, Rank } from "./StatsUI";
+import { EmptyPanel, GapMarker, Note, Num, RankedTable, RateCell, Rank } from "./StatsUI";
 import type { RankedColumn } from "./StatsUI";
 import type {
   BranchRow,
@@ -36,12 +38,16 @@ function tallyColumns<T extends GroupTally>(showPending: boolean): RankedColumn<
       key: "rate",
       header: "Pass rate",
       align: "right",
-      className: "w-[150px]",
+      // Wide enough for a bar that can be read. The ops tables were leaving ~240px of dead
+      // space between the name block and this column; the bar spends it.
+      className: "w-[260px]",
       cell: (row) => (
         <RateCell
           rate={row.pass_rate}
           reason={rateReason("pass", row.roster)}
           detail={formatShare(row.passed, row.roster)}
+          // "150 of 210" beside "180 students" is two denominators on one row. Say why.
+          title={rosterNote(row.roster, row.distinct_students) ?? undefined}
         />
       ),
     },
@@ -89,6 +95,32 @@ function tallyColumns<T extends GroupTally>(showPending: boolean): RankedColumn<
 
 const anyPending = (rows: GroupTally[]) => rows.some((r) => r.pending > 0);
 
+/**
+ * The note under a table whose rows show two different denominators.
+ *
+ * Not a caveat about accuracy — both numbers are right — but about which one the rate is
+ * over. `ClassroomMonthPanel` already explains exactly this on the drill-down; the ranked
+ * tables above it said nothing, so a reader who noticed "12 classes · 180 students" beside
+ * "150 of 210" had no way to tell which figure to distrust. Rendered only when at least one
+ * row actually disagrees with itself.
+ */
+function DenominatorNote({ rows }: { rows: GroupTally[] }) {
+  const split = rows.some((r) => r.roster !== r.distinct_students);
+  if (!split) return null;
+  return (
+    <div className="border-t border-border px-5 py-3">
+      {/* One line, under each table rather than once on the page: these four are read
+          independently, and a reader who lands on Teachers should not have to scroll back to
+          Branches for the rule. The full reconciliation is on each rate cell's own title. */}
+      <Note>
+        Rates are over <strong className="font-bold">roster places</strong>, not the headcount
+        beside the name: a class that sat two papers counts once per paper, and a student in
+        two of these classes is on both rosters.
+      </Note>
+    </div>
+  );
+}
+
 function NameCell({
   name,
   sub,
@@ -118,7 +150,7 @@ export function BranchTable({ rows }: { rows: BranchRow[] }) {
       cell: (row) => (
         <NameCell
           name={row.name}
-          sub={`${plural(row.classrooms, "class", "classes")} · ${plural(row.distinct_students, "student")}`}
+          sub={groupSubline(row)}
           gap={isUnassigned(row) ? UNASSIGNED_BRANCH_NOTE : undefined}
         />
       ),
@@ -126,17 +158,20 @@ export function BranchTable({ rows }: { rows: BranchRow[] }) {
     ...tallyColumns<BranchRow>(anyPending(rows)),
   ];
   return (
-    <RankedTable
-      columns={columns}
-      rows={rows}
-      rowKey={(row) => row.id ?? "unassigned"}
-      empty={
-        <EmptyPanel
-          title="No branches to rank"
-          body="No classroom sat a midterm this month, so there is nothing to group by branch."
-        />
-      }
-    />
+    <>
+      <RankedTable
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.id ?? "unassigned"}
+        empty={
+          <EmptyPanel
+            title="No branches to rank"
+            body="No classroom sat a midterm this month, so there is nothing to group by branch."
+          />
+        }
+      />
+      <DenominatorNote rows={rows} />
+    </>
   );
 }
 
@@ -147,26 +182,26 @@ export function DepartmentTable({ rows }: { rows: DepartmentRow[] }) {
       key: "name",
       header: "Department",
       cell: (row) => (
-        <NameCell
-          name={row.label}
-          sub={`${plural(row.classrooms, "class", "classes")} · ${plural(row.distinct_students, "student")}`}
-        />
+        <NameCell name={row.label} sub={groupSubline(row)} />
       ),
     },
     ...tallyColumns<DepartmentRow>(anyPending(rows)),
   ];
   return (
-    <RankedTable
-      columns={columns}
-      rows={rows}
-      rowKey={(row) => row.subject}
-      empty={
-        <EmptyPanel
-          title="No departments to rank"
-          body="No classroom sat a midterm this month, so neither department has a figure."
-        />
-      }
-    />
+    <>
+      <RankedTable
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.subject}
+        empty={
+          <EmptyPanel
+            title="No departments to rank"
+            body="No classroom sat a midterm this month, so neither department has a figure."
+          />
+        }
+      />
+      <DenominatorNote rows={rows} />
+    </>
   );
 }
 
@@ -196,18 +231,21 @@ export function TeacherTable({ rows }: { rows: TeacherRow[] }) {
     },
   ];
   return (
-    <RankedTable
-      columns={columns}
-      rows={rows}
-      rowKey={(row) => row.id ?? "unassigned"}
-      minWidthClass="min-w-[780px]"
-      empty={
-        <EmptyPanel
-          title="No teachers to rank"
-          body="No classroom sat a midterm this month, so no teacher has a figure for it."
-        />
-      }
-    />
+    <>
+      <RankedTable
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.id ?? "unassigned"}
+        minWidthClass="min-w-[860px]"
+        empty={
+          <EmptyPanel
+            title="No teachers to rank"
+            body="No classroom sat a midterm this month, so no teacher has a figure for it."
+          />
+        }
+      />
+      <DenominatorNote rows={rows} />
+    </>
   );
 }
 
@@ -265,17 +303,20 @@ export function ClassroomTable({
     },
   ];
   return (
-    <RankedTable
-      columns={columns}
-      rows={rows}
-      rowKey={(row) => row.id}
-      minWidthClass="min-w-[820px]"
-      empty={
-        <EmptyPanel
-          title="No classes sat a midterm this month"
-          body="Pick another month above. A class appears here in the month its paper was timetabled for, or — when it was never timetabled — the month somebody first sat it."
-        />
-      }
-    />
+    <>
+      <RankedTable
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.id}
+        minWidthClass="min-w-[900px]"
+        empty={
+          <EmptyPanel
+            title="No classes sat a midterm this month"
+            body="Pick another month above. A class appears here in the month its paper was timetabled for, or — when it was never timetabled — the month somebody first sat it."
+          />
+        }
+      />
+      <DenominatorNote rows={rows} />
+    </>
   );
 }

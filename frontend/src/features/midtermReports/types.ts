@@ -8,11 +8,20 @@
 /**
  * A student's state on one midterm. All but ABSENT are `MidtermAttempt.current_state`;
  * ABSENT is synthesized by the report for a roster member with no attempt row at all.
+ *
+ * This endpoint sends the RAW DB state (`admin_report.sitting_for` returns
+ * `attempt.current_state` untouched — WIRE_STATE is not applied here), so the vocabulary is
+ * `midterms/state_machine.py`'s, MODULE_2_ACTIVE included. It was missing, and a student
+ * halfway through module 2 therefore read as "No score recorded" — which says the paper came
+ * back empty rather than that they are still sitting it. Every consumer nonetheless goes
+ * through a fallback, because the type can only ever describe the states that existed when
+ * it was written.
  */
 export type MidtermState =
   | "ABSENT"
   | "NOT_STARTED"
   | "ACTIVE"
+  | "MODULE_2_ACTIVE"
   | "SCORING"
   | "COMPLETED"
   | "ABANDONED";
@@ -62,10 +71,24 @@ export type MidtermBrief = {
 
 export type Counts = { passed: number; failed: number; absent: number; pending: number };
 
+export type RetakeBrief = { id: number; title: string };
+
 export type ClassroomMidtermRow = MidtermBrief & {
   scheduled_at: string | null;
   counts: Counts;
-  retake: { id: number; title: string } | null;
+  /**
+   * The FIRST retake of this paper, which is the only one the per-student report reads.
+   * A paper can have more than one (`admin_report.retakes_for`), and the monthly statistics
+   * count a pass on any of them — so this single object is not enough to tell a reader
+   * whether the two surfaces should agree.
+   */
+  retake: RetakeBrief | null;
+  /**
+   * Every retake, when the backend sends them. Optional because this endpoint does not yet:
+   * `ReportClassroomDetailView` still serialises `retake_for(m)` alone. Read it through
+   * {@link retakeCountOf}, which returns `null` — "unknown", never 0 — when it is absent.
+   */
+  retakes?: RetakeBrief[];
 };
 
 export type ClassroomDetail = { classroom: ClassroomBrief; midterms: ClassroomMidtermRow[] };

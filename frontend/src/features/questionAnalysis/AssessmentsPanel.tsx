@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ClipboardCheck, ListChecks } from "lucide-react";
+import { ArrowUpRight, ClipboardCheck, ListChecks } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -10,7 +11,6 @@ import {
   ErrorState,
   Field,
   LoadingState,
-  Pill,
   Select,
   StatCard,
 } from "@/features/classroom/ui";
@@ -18,10 +18,15 @@ import { normalizeApiError } from "@/lib/apiError";
 import { questionAnalysisApi, questionAnalysisKeys } from "./api";
 import { agree, assessmentWrongLine, flaggedHeading, formatCount, plural } from "./format";
 import type { AssessmentGroupRow, AssessmentItemRow, AssessmentSetRef } from "./types";
-import { BreakdownList, type BreakdownRow } from "./components/BreakdownList";
+import {
+  BREAKDOWN_GRID_STYLE,
+  BreakdownList,
+  type BreakdownRow,
+} from "./components/BreakdownList";
 import { Caveats, type Caveat } from "./components/Caveats";
 import { Collapsible } from "./components/Collapsible";
 import { RateValue } from "./components/Rate";
+import { Tag } from "./components/Tag";
 import { useQueryErrorToast } from "./useQueryErrorToast";
 
 /** The same set can be assigned twice; the picker should offer it once. */
@@ -45,6 +50,20 @@ function toBreakdownRows(groups: AssessmentGroupRow[]): BreakdownRow[] {
   }));
 }
 
+/**
+ * Where a teacher can actually read a flagged question.
+ *
+ * `/teacher/assessments/[setId]/practice` renders every question in the set the way a
+ * student sees it, with the recorded answer and explanation, and it is guarded by a plain
+ * `AuthGuard` — a teacher can open it. The builder's set editor cannot be used here: it is
+ * `adminOnly` and lives on the questions console, not the teacher portal.
+ *
+ * It has no per-question segment, so this lands on question 1 of the set; the link says so.
+ */
+export function setPracticeHref(setId: number): string {
+  return `/teacher/assessments/${setId}/practice`;
+}
+
 function FlaggedCard({ row }: { row: AssessmentItemRow }) {
   return (
     <li className="rounded-2xl border border-border bg-card p-4">
@@ -57,25 +76,33 @@ function FlaggedCard({ row }: { row: AssessmentItemRow }) {
             <span className="min-w-0 truncate text-xs font-semibold text-muted-foreground">
               {row.set.title}
             </span>
-            <Pill tone="neutral">{row.question_type_label}</Pill>
+            <Tag tone="neutral">{row.question_type_label}</Tag>
             {row.ungraded > 0 && (
-              <Pill tone="warning">{plural(row.ungraded, "answer")} not graded yet</Pill>
+              <Tag tone="warning">{plural(row.ungraded, "answer")} not graded yet</Tag>
             )}
           </div>
           <p className="mt-2 text-sm leading-relaxed text-foreground">
             {row.prompt || (
               <span className="text-muted-foreground">
-                This question has no text prompt — open it in the builder to see it.
+                This question has no text prompt saved — open the set below to read it.
               </span>
             )}
           </p>
           <p className="mt-2 text-xs text-muted-foreground">{assessmentWrongLine(row)}</p>
-          {(row.skill || row.domain) && (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {row.skill && <Pill tone="info">{row.skill}</Pill>}
-              {row.domain && <Pill tone="neutral">{row.domain}</Pill>}
-            </div>
-          )}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {/* An untagged question says so. Rendering nothing here made a missing skill look
+                like a chip that failed to load rather than a question nobody tagged. */}
+            {row.skill ? <Tag tone="info">{row.skill}</Tag> : <Tag tone="neutral">Untagged</Tag>}
+            {row.domain && <Tag tone="neutral">{row.domain}</Tag>}
+          </div>
+          <Link
+            href={setPracticeHref(row.set.id)}
+            title={`Opens “${row.set.title}” in teacher practice at question 1 — use the question map at the bottom to jump to Q${row.position}.`}
+            className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+          >
+            Open the set to read Q{row.position}
+            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+          </Link>
         </div>
         <div className="shrink-0 text-right">
           <RateValue value={row.error_rate} flagged className="text-2xl font-black leading-none" />
@@ -183,6 +210,12 @@ export function AssessmentsPanel({
       tone: "info",
       text: `Each student is counted once — ${data.counting_rule}. A retry serves back exactly the questions they got wrong, so later attempts would bias this list.`,
     });
+    caveats.push({
+      id: "cohort",
+      tone: "info",
+      text:
+        "This tab counts every student who was given a set, including students who have since left the class. The Past papers tab filters to the class roster as it stands today, so the two tabs can report different class sizes for the same class.",
+    });
     if (data.summary.questions_awaiting_grading > 0) {
       caveats.push({
         id: "awaiting",
@@ -262,7 +295,7 @@ export function AssessmentsPanel({
             <StatCard
               label="Students counted"
               value={data.summary.students_counted}
-              sub={`across ${plural(data.summary.sets, "set")}`}
+              sub={`given ${plural(data.summary.sets, "set")}, roster or not`}
             />
             <StatCard
               label="Awaiting grading"
@@ -270,6 +303,16 @@ export function AssessmentsPanel({
               sub="no verdict back yet"
             />
           </div>
+
+          {/* The two tabs scope their cohort differently for the same class, and a teacher
+              comparing them sees two class sizes with no explanation. One line names this tab's
+              cohort; the full cross-tab difference is the "cohort" note in the fold below. */}
+          <p className="px-1 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">Who is counted:</span>{" "}
+            {plural(data.summary.students_counted, "student")} — everyone given{" "}
+            {agree(data.summary.sets, "this set", "these sets")}, including any who have since left
+            the class.
+          </p>
 
           <Caveats items={caveats} />
 
@@ -285,7 +328,7 @@ export function AssessmentsPanel({
                 description="No single question tripped the threshold on the work that has been graded so far. The full list below shows how the class did on every question."
               />
             ) : (
-              <ul className="space-y-3">
+              <ul data-flagged-list className="space-y-3">
                 {data.needs_analysis.map((row) => (
                   <FlaggedCard key={row.question_id} row={row} />
                 ))}
@@ -293,30 +336,39 @@ export function AssessmentsPanel({
             )}
           </Card>
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <BreakdownList
-              title="By question type"
-              description="Pooled across the questions in each type — never an average of their percentages."
-              rows={typeRows}
-              denominatorNoun="graded answers"
-              emptyMessage="No graded answers to break down yet."
-            />
-            <BreakdownList
-              title="By SAT skill"
-              description="Only questions linked to the question bank carry a skill."
-              rows={skillRows}
-              denominatorNoun="graded answers"
-              note={data.taxonomy_coverage.note || null}
-              emptyMessage="There is no skill breakdown for this class — see the note above."
-            />
-            <BreakdownList
-              title="By domain"
-              description="The skill's parent domain, where one is recorded."
-              rows={domainRows}
-              denominatorNoun="graded answers"
-              note={data.taxonomy_coverage.note || null}
-              emptyMessage="There is no domain breakdown for this class — see the note above."
-            />
+          <div>
+            <h3 className="mb-3 text-sm font-bold text-foreground">Statistics by question type</h3>
+            {/* One coverage note for the whole section. Skill and domain share the same
+                disclosure — it is the same sentence about the same question-bank linkage —
+                and printing it inside both cards printed it verbatim twice. */}
+            {data.taxonomy_coverage.note ? (
+              <p className="mb-3 rounded-xl bg-surface-2 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                {data.taxonomy_coverage.note}
+              </p>
+            ) : null}
+            <div className="gap-4" style={BREAKDOWN_GRID_STYLE}>
+              <BreakdownList
+                title="By question type"
+                description="Pooled across the questions in each type — never an average of their percentages."
+                rows={typeRows}
+                denominatorNoun="graded answers"
+                emptyMessage="No graded answers to break down yet."
+              />
+              <BreakdownList
+                title="By SAT skill"
+                description="Only questions linked to the question bank carry a skill."
+                rows={skillRows}
+                denominatorNoun="graded answers"
+                emptyMessage="There is no skill breakdown for this class — see the note above."
+              />
+              <BreakdownList
+                title="By domain"
+                description="The skill's parent domain, where one is recorded."
+                rows={domainRows}
+                denominatorNoun="graded answers"
+                emptyMessage="There is no domain breakdown for this class — see the note above."
+              />
+            </div>
           </div>
 
           <Collapsible

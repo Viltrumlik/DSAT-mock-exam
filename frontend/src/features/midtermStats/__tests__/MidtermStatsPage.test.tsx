@@ -175,7 +175,25 @@ describe("MidtermStatsPage", () => {
       payload({ totals: { ...tally, pending: 4, midterms: 1 } }),
     );
     const out = await render();
-    expect(out).toContain("4 students in September 2026 are still awaiting a result");
+    // `pending` counts roster places, not students — a student awaiting two verdicts is two
+    // of them. Calling them students overstated the headcount, which is the mistake the
+    // Students tile used to make one altitude up.
+    expect(out).toContain("4 roster places in September 2026 are still awaiting a result");
+    expect(out).not.toContain("4 students in September 2026");
     expect(out).toContain("can only go up");
+  });
+
+  it("never calls roster places students, at any altitude", async () => {
+    // A class of 5 sitting two papers: 10 roster places, 5 human beings.
+    monthly.mockResolvedValue(
+      payload({
+        totals: { ...tally, roster: 10, distinct_students: 5, classrooms: 1, midterms: 2 },
+      }),
+    );
+    const out = await render();
+    expect(out).toContain("10 roster places — every rate is over these.");
+    // The headline tile leads with the 5 human beings, not the 10 roster places.
+    expect(out).toContain("Students51 class · 2 papers");
+    expect(out).not.toContain("Students101 class");
   });
 });

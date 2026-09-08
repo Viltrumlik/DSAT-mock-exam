@@ -80,12 +80,24 @@ export function RateFigure({
  *
  * Deliberately one neutral colour at every value: a red/amber/green ramp would invent
  * pass-rate thresholds the school has never set, and these rows are teachers.
+ *
+ * **A null rate draws no bar at all** — not an empty track. An empty track beside an em dash
+ * is a picture of 0%, which is exactly the claim the dash exists to avoid: an unassigned
+ * bucket with nobody on its roster looked like a group that failed everyone. `barWidth()` in
+ * `questionAnalysis` already gets this right; this matches it.
+ *
+ * Wide enough to be read rather than decorate: at the old 56px, 68% and 63% differed by three
+ * pixels and the bar carried no information a reader could actually use.
  */
-export function RateBar({ rate }: { rate: number | null }) {
-  const width = rate == null ? 0 : Math.max(0, Math.min(100, rate));
+export function RateBar({ rate, className }: { rate: number | null; className?: string }) {
+  if (rate == null) return null;
+  const width = Math.max(0, Math.min(100, rate));
   return (
     <span
-      className="inline-block h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-surface-2 align-middle"
+      className={cn(
+        "inline-block h-2 w-28 shrink-0 overflow-hidden rounded-full bg-surface-2 align-middle",
+        className,
+      )}
       aria-hidden
     >
       <span className="block h-full rounded-full bg-primary" style={{ width: `${width}%` }} />
@@ -93,24 +105,36 @@ export function RateBar({ rate }: { rate: number | null }) {
   );
 }
 
-/** A rate with its bar and the counts it is made of — the whole cell, in one place. */
+/**
+ * A rate with its bar and the counts it is made of — the whole cell, in one place.
+ *
+ * The bar sits to the LEFT of the number so the number lands on the column's right edge,
+ * under the right-aligned "Pass rate" header. With the bar last, the header lined up with the
+ * end of a bar and the percentage floated somewhere in the middle of its own column.
+ */
 export function RateCell({
   rate,
   reason,
   detail,
+  title,
 }: {
   rate: number | null;
   reason: string;
   /** "9 of 10" — always shown, so a reader can see the fraction behind the percentage. */
   detail: string;
+  /**
+   * Why this denominator is not the headcount printed beside the row's name, when the two
+   * differ. Every ranked row shows both numbers; without this it reconciles neither.
+   */
+  title?: string;
 }) {
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center justify-end gap-3" title={title}>
+      <RateBar rate={rate} />
       <span className="text-right">
         <RateFigure rate={rate} reason={reason} className="font-bold text-foreground" />
         <span className="block text-[11px] tabular-nums text-muted-foreground">{detail}</span>
       </span>
-      <RateBar rate={rate} />
     </div>
   );
 }

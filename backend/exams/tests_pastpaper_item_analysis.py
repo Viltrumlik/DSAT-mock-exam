@@ -107,6 +107,10 @@ class PastpaperFixture(TestCase):
     def row(payload, question):
         return next(r for r in payload["questions"] if r["question_id"] == question.pk)
 
+    @staticmethod
+    def group(payload, name, label):
+        return next(g for g in payload["groups"][name]["groups"] if g["label"] == label)
+
 
 class TheOwnersRuleTests(PastpaperFixture):
     """25% or more of the class wrong ⇒ the question is on the analysis list."""
@@ -222,6 +226,101 @@ class CorruptRecordTests(PastpaperFixture):
         self.assertEqual((m2_row["seen"], m2_row["omitted"], m2_row["answered"]), (1, 1, 0))
         self.assertIsNone(m2_row["error_rate"])
         self.assertEqual(m2_row["miss_rate"], 100.0)
+
+    def test_a_clean_resit_after_a_copied_first_sitting_is_counted(self):
+        """The copy bug is *why* a student sits the paper again, so the re-sit must survive.
+
+        Marking the student "seen" while discarding their copied first sitting spends their
+        one slot on a record nobody trusts and then rejects the good sitting as a repeat —
+        silently shrinking the denominator of every question on the paper for the 51 students
+        the bug actually hit.
+        """
+        student = self.enrol("resit_after_copy@t.com")
+        earlier = timezone.now() - timedelta(days=3)
+        self.sit(student, {
+            str(self.m1.id): {str(self.q1.pk): "a"},
+            # Module 1's id under the Module 2 key — the signature.
+            str(self.m2.id): {str(self.q1.pk): "a"},
+        }, completed_at=earlier)
+        self.sit(student, {
+            str(self.m1.id): {str(self.q1.pk): "a"},
+            str(self.m2.id): {str(self.q2.pk): "b"},
+        })
+
+        payload = self.report()
+        quality = payload["data_quality"]
+        self.assertEqual(quality["attempts_considered"], 2)
+        self.assertEqual(quality["attempts_counted"], 1)
+        self.assertEqual(quality["students_counted"], 1)
+        self.assertEqual(quality["excluded"], {"copied": 1, "repeat_sitting": 0})
+
+        # The clean sitting is the one that counts, on both modules.
+        self.assertEqual(self.row(payload, self.q1)["correct"], 1)
+        m2_row = self.row(payload, self.q2)
+        self.assertEqual((m2_row["seen"], m2_row["answered"], m2_row["wrong"]), (1, 1, 1))
+
+    def test_a_student_whose_every_sitting_is_copied_is_still_excluded(self):
+        """Falling through to the next sitting must not become a way in for a copied one."""
+        student = self.enrol("all_copied@t.com")
+        earlier = timezone.now() - timedelta(days=3)
+        for completed_at in (earlier, timezone.now()):
+            self.sit(student, {
+                str(self.m1.id): {str(self.q1.pk): "a"},
+                str(self.m2.id): {str(self.q1.pk): "a"},
+            }, completed_at=completed_at)
+
+        payload = self.report()
+        quality = payload["data_quality"]
+        self.assertEqual(quality["attempts_counted"], 0)
+        self.assertEqual(quality["students_counted"], 0)
+        self.assertEqual(quality["excluded"]["copied"], 2)
+        self.assertEqual(self.row(payload, self.q1)["seen"], 0)
+
+    def test_the_exclusion_ledger_adds_up(self):
+        """considered == counted + copied + repeat_sitting, whatever order the sittings came in."""
+        student = self.enrol("ledger@t.com")
+        base = timezone.now() - timedelta(days=5)
+        # Copied, then the clean re-sit, then a third sitting that is a genuine repeat.
+        self.sit(student, {
+            str(self.m1.id): {str(self.q1.pk): "a"},
+            str(self.m2.id): {str(self.q1.pk): "a"},
+        }, completed_at=base)
+        self.sit(student, {str(self.m1.id): {str(self.q1.pk): "b"}}, completed_at=base + timedelta(days=1))
+        self.sit(student, {str(self.m1.id): {str(self.q1.pk): "a"}}, completed_at=base + timedelta(days=2))
+
+        quality = self.report()["data_quality"]
+        self.assertEqual(quality["excluded"], {"copied": 1, "repeat_sitting": 1})
+        self.assertEqual(
+            quality["attempts_considered"],
+            quality["attempts_counted"]
+            + quality["excluded"]["copied"]
+            + quality["excluded"]["repeat_sitting"],
+        )
+        # The clean re-sit is the one counted — the wrong answer, not the third sitting's right one.
+        self.assertEqual(self.row(self.report(), self.q1)["wrong"], 1)
+
+    def test_a_re_imported_answer_key_is_not_mistaken_for_a_copy(self):
+        """A builder edit that recreates *some* Module 2 questions leaves overlap, so the
+        COPIED signature — keys **entirely** foreign to Module 2 — does not trip.
+
+        Measured rather than assumed, because a false COPIED verdict would throw away a real
+        sitting: the detection here is the audit command's, and both require zero overlap.
+        """
+        student = self.enrol("reimport@t.com")
+        survivor = self.q2
+        recreated = self.mc(self.m2, order=1, answer="a")
+        stale_id = str(recreated.pk + 10_000)  # a question id the re-import deleted
+        self.sit(student, {
+            str(self.m1.id): {str(self.q1.pk): "a"},
+            str(self.m2.id): {str(survivor.pk): "a", stale_id: "b"},
+        })
+
+        payload = self.report()
+        self.assertEqual(payload["data_quality"]["excluded"]["copied"], 0)
+        self.assertEqual(payload["data_quality"]["attempts_counted"], 1)
+        # The stale id counts for nothing; the surviving question is scored normally.
+        self.assertEqual(self.row(payload, survivor)["correct"], 1)
+        self.assertEqual(self.row(payload, recreated)["omitted"], 1)
 
     def test_only_the_first_sitting_of_a_paper_counts(self):
         """A student who sits a paper three times must not carry triple weight."""
@@ -340,6 +439,113 @@ class SuspectKeyTests(PastpaperFixture):
         self.assertFalse(row["suspect_key"])
 
 
+class SuspectKeyContaminationTests(PastpaperFixture):
+    """A row the module says not to trust must not be pooled into a topic result.
+
+    The measured scenario: a two-question Math paper, 12 students, one question whose answer
+    key is broken. Every student answers the good question correctly and cannot answer the
+    broken one correctly at all. Pooling both prints "Math — 50%" under *Statistics by
+    question type* when the class's real Math error rate is 0% — and the same contamination
+    lands on the skill and domain rows, which are the ones a department acts on.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.domain = BankDomain.objects.create(subject="MATH", name="Algebra", code="sk-algebra")
+        self.skill = BankSkill.objects.create(
+            domain=self.domain, name="Linear Functions", code="sk-linear"
+        )
+        self.good = self.mc(self.m1, order=0, answer="a", skill=self.skill)
+        # The stored key is "99"; the paper's real answer is 7. Nobody can be right.
+        self.broken = self.grid_in(self.m1, order=1, answer="99", skill=self.skill)
+        for i in range(12):
+            self.sit(self.enrol(f"sk_s{i}@t.com"), {
+                str(self.m1.id): {str(self.good.pk): "a", str(self.broken.pk): "7"},
+            })
+
+    def test_the_flagged_question_list_is_untouched(self):
+        """A suspect key still needs a human to look at it — the row is never hidden."""
+        payload = self.report()
+        row = self.row(payload, self.broken)
+        self.assertEqual(row["error_rate"], 100.0)
+        self.assertTrue(row["suspect_key"])
+        self.assertTrue(row["needs_analysis"])
+        self.assertIn(self.broken.pk, [r["question_id"] for r in payload["needs_analysis"]])
+        self.assertEqual(payload["data_quality"]["suspect_key_questions"], 1)
+
+    def test_the_question_type_row_reads_as_a_topic_result(self):
+        math = self.group(self.report(), "question_type", "Math")
+        # Nothing vanished: the group still owns both questions, and says which it held out.
+        self.assertEqual(math["questions"], 2)
+        self.assertEqual(math["suspect_key_count"], 1)
+        self.assertEqual(math["analysed_questions"], 1)
+        # The counts beside the rate describe the same population as the rate.
+        self.assertEqual((math["seen"], math["answered"], math["wrong"]), (12, 12, 0))
+        self.assertEqual(math["error_rate"], 0.0)
+        # The teacher's list is a different question from the topic rate.
+        self.assertEqual(math["needs_analysis_count"], 1)
+
+    def test_a_group_that_is_entirely_suspect_is_visible_not_vanished(self):
+        """Grid-in holds only the broken question: an em dash and a reason, never 0%."""
+        grid = self.group(self.report(), "format", "Grid-in")
+        self.assertEqual(grid["questions"], 1)
+        self.assertEqual(grid["suspect_key_count"], 1)
+        self.assertEqual(grid["analysed_questions"], 0)
+        self.assertEqual((grid["seen"], grid["answered"], grid["wrong"]), (0, 0, 0))
+        self.assertIsNone(grid["error_rate"])
+        self.assertEqual(grid["needs_analysis_count"], 1)
+        # And the trustworthy half of the paper is still readable next to it.
+        self.assertEqual(self.group(self.report(), "format", "Multiple choice")["error_rate"], 0.0)
+
+    def test_the_skill_and_domain_rows_a_department_acts_on_are_clean_too(self):
+        payload = self.report()
+        skill = self.group(payload, "skill", "Linear Functions")
+        self.assertEqual((skill["questions"], skill["suspect_key_count"]), (2, 1))
+        self.assertEqual(skill["error_rate"], 0.0)
+        domain = self.group(payload, "domain", "Algebra")
+        self.assertEqual((domain["questions"], domain["suspect_key_count"]), (2, 1))
+        self.assertEqual(domain["error_rate"], 0.0)
+
+    def test_the_totals_rate_holds_the_suspect_row_out_and_names_what_it_divided(self):
+        totals = self.report()["totals"]
+        # The paper as recorded is unchanged — these are the sitting's own tallies.
+        self.assertEqual((totals["questions"], totals["answered"], totals["wrong"]), (2, 24, 12))
+        self.assertEqual(totals["suspect_key"], 1)
+        # The headline rate is the topic reading, and says exactly what produced it.
+        self.assertEqual(totals["error_rate"], 0.0)
+        self.assertEqual(
+            totals["analysed"], {"questions": 1, "seen": 12, "answered": 12, "wrong": 0}
+        )
+
+    def test_a_paper_whose_every_key_is_suspect_has_no_rate_at_all(self):
+        """Holding every row out leaves an empty denominator — null, never 0%."""
+        paper = PracticeTest.objects.create(subject="MATH", title="Every key broken")
+        module = paper.modules.get(module_order=1)
+        question = Question.objects.create(
+            module=module, question_type="MATH", question_text="Broken key",
+            option_a="A", option_b="B", correct_answers="zzz", order=0,
+        )
+        for i in range(4):
+            self.sit(
+                self.enrol(f"all_broken_s{i}@t.com"),
+                {str(module.id): {str(question.pk): "a"}},
+                paper=paper,
+            )
+
+        payload = build_pastpaper_item_analysis(paper, self.roster())
+        self.assertIsNone(payload["totals"]["error_rate"])
+        self.assertEqual(
+            payload["totals"]["analysed"],
+            {"questions": 0, "seen": 0, "answered": 0, "wrong": 0},
+        )
+        math = next(
+            g for g in payload["groups"]["question_type"]["groups"] if g["label"] == "Math"
+        )
+        self.assertEqual((math["questions"], math["suspect_key_count"]), (1, 1))
+        self.assertIsNone(math["error_rate"])
+        self.assertEqual(math["needs_analysis_count"], 1)
+
+
 class TaxonomyTests(PastpaperFixture):
     """The by-type statistics the owner asked for, and the honesty of their coverage."""
 
@@ -353,7 +559,9 @@ class TaxonomyTests(PastpaperFixture):
             qb_id="QB-MATH-000001", subject="MATH", question_type="MULTIPLE_CHOICE",
             question_text="Bank source", difficulty="HARD",
         )
-        # Tagged, and everybody gets it wrong.
+        # Tagged, and three of the four get it wrong. Three rather than four on purpose: at
+        # 100% the question would be held out of every breakdown as a suspect key, and these
+        # cases are about how a *trustworthy* row is grouped.
         self.tagged = self.mc(self.m1, order=0, answer="a", skill=self.skill,
                               bank_question=self.bank_question)
         # Untagged legacy question — no skill, no bank link.
@@ -361,12 +569,11 @@ class TaxonomyTests(PastpaperFixture):
 
         for i in range(4):
             self.sit(self.enrol(f"tax_s{i}@t.com"), {
-                str(self.m1.id): {str(self.tagged.pk): "b", str(self.untagged.pk): "7"},
+                str(self.m1.id): {
+                    str(self.tagged.pk): "b" if i < 3 else "a",
+                    str(self.untagged.pk): "7",
+                },
             })
-
-    @staticmethod
-    def group(payload, name, label):
-        return next(g for g in payload["groups"][name]["groups"] if g["label"] == label)
 
     def test_question_type_and_format_always_group(self):
         payload = self.report()
@@ -375,11 +582,12 @@ class TaxonomyTests(PastpaperFixture):
 
         math = self.group(payload, "question_type", "Math")
         self.assertEqual(math["questions"], 2)
-        self.assertEqual(math["wrong"], 4)
-        self.assertEqual(math["error_rate"], 50.0)  # 4 wrong of 8 answered
+        self.assertEqual(math["suspect_key_count"], 0)
+        self.assertEqual(math["wrong"], 3)
+        self.assertEqual(math["error_rate"], 37.5)  # 3 wrong of 8 answered
         self.assertEqual(math["needs_analysis_count"], 1)
 
-        self.assertEqual(self.group(payload, "format", "Multiple choice")["error_rate"], 100.0)
+        self.assertEqual(self.group(payload, "format", "Multiple choice")["error_rate"], 75.0)
         self.assertEqual(self.group(payload, "format", "Grid-in")["error_rate"], 0.0)
 
     def test_the_untagged_bucket_is_separate_and_never_folded_into_a_skill(self):
@@ -403,9 +611,9 @@ class TaxonomyTests(PastpaperFixture):
     def test_domain_comes_from_the_skill_and_difficulty_from_the_bank(self):
         payload = self.report()
         self.assertEqual(payload["groups"]["domain"]["coverage"], {"tagged": 1, "total": 2})
-        self.assertEqual(self.group(payload, "domain", "Algebra")["wrong"], 4)
+        self.assertEqual(self.group(payload, "domain", "Algebra")["wrong"], 3)
         self.assertEqual(payload["groups"]["difficulty"]["coverage"], {"tagged": 1, "total": 2})
-        self.assertEqual(self.group(payload, "difficulty", "Hard")["error_rate"], 100.0)
+        self.assertEqual(self.group(payload, "difficulty", "Hard")["error_rate"], 75.0)
 
     def test_a_question_row_carries_what_a_teacher_needs_to_act(self):
         row = self.row(self.report(), self.tagged)

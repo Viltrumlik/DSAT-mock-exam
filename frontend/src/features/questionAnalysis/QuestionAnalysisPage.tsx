@@ -64,7 +64,9 @@ export function QuestionAnalysisPage() {
     <div className="mx-auto w-full max-w-6xl px-4 pb-16 pt-6 sm:px-6">
       <PageHeader
         title="Question analysis"
-        description="The questions your class got wrong often enough to be worth a lesson. The school's rule: a question a quarter or more of them missed is one to go back over — here it is, ranked worst first, for assessments and past papers."
+        // One line, not three: the school's rule is restated beside the threshold control and
+        // again over the flagged list, and every line here pushed the work list further down.
+        description="The questions your class missed often enough to be worth a lesson."
       />
 
       <Card className="space-y-4">

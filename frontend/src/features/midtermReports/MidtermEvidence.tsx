@@ -21,12 +21,15 @@ import type { MidtermReport } from "./types";
 export function MidtermEvidence({
   classroomId,
   midtermId,
-  /** How many retake papers this midterm has, when the caller knows. See the note below. */
+  /**
+   * How many retake papers this midterm has — `null`/omitted when the caller cannot tell.
+   * The two are genuinely different caveats; see the note near the bottom of this file.
+   */
   retakeCount,
 }: {
   classroomId: number;
   midtermId: number;
-  retakeCount?: number;
+  retakeCount?: number | null;
 }) {
   const [report, setReport] = useState<MidtermReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,13 +126,28 @@ export function MidtermEvidence({
       )}
 
       {/* The report endpoint reads only the FIRST retake of a paper; the statistics count a
-          pass on any of them. Say so rather than let the two surfaces disagree in silence. */}
-      {retakeCount != null && retakeCount > 1 && (
+          pass on ANY of them, so on a paper with two retakes this table says "1 passed, 2
+          failed" where the Statistics tab says 2 passed — the same paper, the same page.
+          Never let the two disagree in silence.
+
+          Two caveats, because there are two states of knowledge. A caller that knows the
+          count (the statistics drill-down, which is given `retakes`) states the fact. A
+          caller that does not — the Records tab, whose endpoint still sends only
+          `retake_for()`, a single object — must not pretend the count is 1: it says what it
+          cannot rule out instead. This branch disappears on its own the day
+          `ReportClassroomDetailView` sends every retake. */}
+      {retakeCount != null && retakeCount > 1 ? (
         <p className="rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-xs font-semibold text-warning-foreground">
           This paper has {retakeCount} retakes. The table below shows the first one only, while
           the pass rate above counts a student who passed any of them.
         </p>
-      )}
+      ) : retakeCount == null && report.retake != null ? (
+        <p className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
+          The retake column below is this paper&rsquo;s first retake. A paper can be given more
+          than one, and the Statistics tab counts a student who passed any of them — so if this
+          one has a second retake, its pass count there will be the higher of the two.
+        </p>
+      ) : null}
 
       <MidtermResultsTable report={report} />
     </div>

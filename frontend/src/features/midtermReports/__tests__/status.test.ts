@@ -4,9 +4,12 @@ import {
   filterRows,
   formatScore,
   isGraded,
+  isInProgress,
   legendFor,
   outcomeFor,
+  retakeCountOf,
   scoreText,
+  stateDetail,
 } from "@/features/midtermReports/status";
 import type { FinalStatus, MidtermState, ReportRow } from "@/features/midtermReports/types";
 
@@ -59,6 +62,11 @@ describe("outcomeFor", () => {
     const cases: [MidtermState, string][] = [
       ["NOT_STARTED", "not started"],
       ["ACTIVE", "in progress"],
+      // A two-module paper spends its whole second half here. This endpoint sends the RAW
+      // DB state (WIRE_STATE is not applied by `admin_report.sitting_for`), and the value
+      // was missing from both the type and this map — so the lookup returned `undefined`
+      // and a student halfway through module 2 had no detail at all.
+      ["MODULE_2_ACTIVE", "in progress, on module 2"],
       ["SCORING", "being scored"],
       ["ABANDONED", "abandoned mid-sitting"],
       ["COMPLETED", "sat, no verdict recorded"],
@@ -69,6 +77,41 @@ describe("outcomeFor", () => {
       expect(outcome.tone).toBe("waiting");
       expect(outcome.detail).toBe(detail);
     }
+  });
+
+  it("covers every state the midterm state machine can produce", () => {
+    // `midterms/state_machine.py` STATE_CHOICES, plus the report's synthesized ABSENT. If
+    // the backend grows a state, this list is where the omission has to be noticed — the
+    // type alone cannot catch it, because a value missing from the union is also a value
+    // tsc never sees on the wire.
+    const machine: MidtermState[] = [
+      "NOT_STARTED",
+      "ACTIVE",
+      "MODULE_2_ACTIVE",
+      "SCORING",
+      "COMPLETED",
+      "ABANDONED",
+      "ABSENT",
+    ];
+    for (const state of machine) {
+      expect(stateDetail(state)).toBeTruthy();
+    }
+  });
+
+  it("names a state it has never heard of instead of implying a missing result", () => {
+    // A future backend state must not silently become "no detail" — and must not reach the
+    // screen shouting its raw enum either.
+    const detail = stateDetail("PROCTOR_HOLD" as MidtermState);
+    expect(detail).toContain("proctor hold");
+    expect(detail).not.toContain("PROCTOR_HOLD");
+    expect(stateDetail(null)).toBeUndefined();
+
+    const outcome = outcomeFor(
+      row({ final_status: "PENDING", midterm_state: "PROCTOR_HOLD" as MidtermState }),
+      true,
+    );
+    expect(outcome.label).toBe("Awaiting result");
+    expect(outcome.detail).toContain("proctor hold");
   });
 
   it("separates an absent student from one whose verdict has not arrived", () => {
@@ -132,6 +175,44 @@ describe("scoreText", () => {
     expect(scoreText(null, 800, "ACTIVE")).toBe("In progress");
     expect(scoreText(null, 800, "ABANDONED")).toBe("Abandoned");
     expect(scoreText(null, 800, "COMPLETED")).toBe("No score recorded");
+  });
+
+  it("does not tell an admin a student mid-module-2 came back with nothing", () => {
+    // MODULE_2_ACTIVE fell past every branch and landed on "No score recorded", which reads
+    // as "handed in, and nothing came back" — the opposite of what is happening. A student
+    // sitting module 2 right now is in progress, on both halves of a two-module paper.
+    expect(scoreText(null, 800, "MODULE_2_ACTIVE")).toBe("In progress");
+    expect(isInProgress("MODULE_2_ACTIVE")).toBe(true);
+    expect(isInProgress("ACTIVE")).toBe(true);
+    expect(isInProgress("COMPLETED")).toBe(false);
+  });
+
+  it("claims nothing it cannot know about a state it has never heard of", () => {
+    expect(scoreText(null, 800, "PROCTOR_HOLD" as MidtermState)).toBe("No score yet");
+  });
+});
+
+describe("retakeCountOf", () => {
+  it("returns null — unknown, never 0 — when the payload does not list the retakes", () => {
+    // `ReportClassroomDetailView` still sends only `retake_for(m)`, a single object. Reading
+    // that as "one retake" would let the Records tab claim its counts must agree with the
+    // Statistics tab, which counts a pass on ANY retake.
+    expect(retakeCountOf({ retake: { id: 8, title: "R" } })).toBeNull();
+    expect(retakeCountOf({ retake: null })).toBeNull();
+  });
+
+  it("counts them when the payload does list them", () => {
+    expect(retakeCountOf({ retake: null, retakes: [] })).toBe(0);
+    expect(retakeCountOf({ retake: { id: 8, title: "R" }, retakes: [{ id: 8, title: "R" }] })).toBe(1);
+    expect(
+      retakeCountOf({
+        retake: { id: 8, title: "R1" },
+        retakes: [
+          { id: 8, title: "R1" },
+          { id: 9, title: "R2" },
+        ],
+      }),
+    ).toBe(2);
   });
 });
 

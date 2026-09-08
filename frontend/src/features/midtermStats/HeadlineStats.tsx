@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import { monthLabel, passerSplit, plural, rateReason } from "./format";
+import { monthLabel, passerSplit, plural, rateReason, rosterNote } from "./format";
 import { RateFigure } from "./StatsUI";
 import type { MonthlyStats } from "./types";
 
@@ -30,14 +30,20 @@ function Tile({
   return (
     <div
       className={cn(
-        "rounded-2xl border p-4",
+        "flex flex-col rounded-2xl border p-4",
         emphasis ? "border-primary/25 bg-primary-soft" : "border-border bg-card",
       )}
     >
+      {/* Two lines' worth of height whether or not the label needs them. A label that wraps
+          used to push its own value ~18px below the other four, and a row of headline
+          figures that do not share a baseline reads as a layout accident. */}
       <p
         className={cn(
-          "text-[11px] font-bold uppercase tracking-wide",
-          emphasis ? "text-primary" : "text-muted-foreground",
+          "min-h-[2.2em] text-[11px] font-bold uppercase leading-[1.1] tracking-wide",
+          // On the tinted surface `text-primary` measures 3.02:1 in dark — under AA for an
+          // 11px bold label. Fixed here rather than by moving the app-wide token: this is
+          // the only place a small label sits on primary-soft.
+          emphasis ? "text-foreground" : "text-muted-foreground",
         )}
       >
         {label}
@@ -45,7 +51,9 @@ function Tile({
       <p
         className={cn(
           "mt-1 font-extrabold tracking-tight tabular-nums",
-          emphasis ? "text-3xl text-primary" : "text-2xl text-foreground",
+          // Large text, so AA asks 3:1 — which the dark `--primary` (2.85:1 on its own soft
+          // tint) misses and `--primary-hover` clears at 4.18:1.
+          emphasis ? "text-3xl text-primary dark:text-primary-hover" : "text-2xl text-foreground",
         )}
       >
         {value}
@@ -79,20 +87,22 @@ export function HeadlineStats({ stats }: { stats: MonthlyStats }) {
         }
       />
 
+      {/* The big number under "Students" is the HEADCOUNT. It used to be `roster`, which is
+          summed once per (classroom, paper) pair — so a class of 20 sitting two papers made
+          this tile say 40 students — and the real headcount was 12px detail text below it,
+          with the clarifying line appearing only when the two differed. That is: the small
+          print showed up exactly when the big number did not mean its label. The roster count
+          is still here, named as roster places, because it is the denominator of every rate
+          on this page; it is no longer wearing the word "Students". */}
       <Tile
         label="Students"
-        value={t.roster}
+        value={t.distinct_students}
         detail={
           <>
-            {t.distinct_students === t.roster
-              ? `${plural(t.classrooms, "class", "classes")} · ${plural(t.midterms, "paper")}`
-              : `${plural(t.distinct_students, "student")} across ${plural(t.classrooms, "class", "classes")} · ${plural(t.midterms, "paper")}`}
-            {t.distinct_students !== t.roster ? (
-              <span
-                className="block"
-                title="A class that sat two papers this month has its roster counted twice, and a student enrolled in two classes counts in both. That is what the pooled rule asks for; the distinct headcount is shown so the difference is visible."
-              >
-                Roster places, counted once per paper.
+            {`${plural(t.classrooms, "class", "classes")} · ${plural(t.midterms, "paper")}`}
+            {t.roster !== t.distinct_students ? (
+              <span className="block" title={rosterNote(t.roster, t.distinct_students) ?? undefined}>
+                {plural(t.roster, "roster place")} — every rate is over these.
               </span>
             ) : null}
           </>
@@ -121,7 +131,7 @@ export function HeadlineStats({ stats }: { stats: MonthlyStats }) {
       />
 
       <Tile
-        label="How the passers got through"
+        label="How passers got through"
         value={
           <RateFigure
             rate={split ? t.first_try_share : null}

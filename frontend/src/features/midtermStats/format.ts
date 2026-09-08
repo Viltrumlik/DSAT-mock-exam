@@ -59,6 +59,47 @@ export function formatShare(numerator: number, denominator: number): string {
   return `${numerator} of ${denominator}`;
 }
 
+/**
+ * Why a row's headcount and its rate's denominator are different numbers.
+ *
+ * Every ranked row prints both — "12 classes · 180 students" beside "150 of 210" — and they
+ * disagree for two ordinary reasons: a class that sat two papers this month is on the roster
+ * twice, and 112 of the school's 226 students hold two active memberships, so a student in
+ * two of the pooled classes is counted in both. Neither is a bug, and neither is obvious.
+ * A row that shows two denominators and reconciles neither is read as one of them being
+ * wrong.
+ *
+ * `null` when they agree, so nothing is explained that needs no explaining.
+ */
+export function rosterNote(roster: number, distinctStudents: number): string | null {
+  if (roster === distinctStudents) return null;
+  return (
+    `Two different counts, both correct: ${plural(distinctStudents, "student")} sat under ` +
+    `this row, filling ${plural(roster, "roster place")}. A student in two of these classes ` +
+    `is on two rosters, and a class that sat two papers is counted once per paper — every ` +
+    `rate here is over roster places, which is what pooling asks for.`
+  );
+}
+
+/**
+ * The sub-line under a ranked row's name: what the row is pooled over.
+ *
+ * Names the roster count too whenever it differs from the headcount, so the rate's
+ * denominator is never a number that appears nowhere else on the row.
+ */
+export function groupSubline(row: {
+  classrooms: number;
+  distinct_students: number;
+  roster: number;
+}): string {
+  const parts = [
+    plural(row.classrooms, "class", "classes"),
+    plural(row.distinct_students, "student"),
+  ];
+  if (row.roster !== row.distinct_students) parts.push(plural(row.roster, "roster place"));
+  return parts.join(" · ");
+}
+
 const MONTH_NAMES = [
   "January",
   "February",
@@ -236,4 +277,42 @@ export const UNASSIGNED_TEACHER_NOTE =
 /** "1 paper" / "3 papers", and the same for students and classes. */
 export function plural(count: number, singular: string, pluralForm?: string): string {
   return `${count} ${count === 1 ? singular : (pluralForm ?? `${singular}s`)}`;
+}
+
+/* ── what the one chart is allowed to plot ──────────────────────────────────────────── */
+
+/**
+ * The fewest groups worth drawing a chart of.
+ *
+ * Two bars are a sentence, not a chart: the ranked table beside them already says which is
+ * higher and by how much, in numbers, with the counts attached. Three is where the shape of
+ * a distribution starts carrying information a column of percentages does not.
+ */
+export const MIN_CHART_GROUPS = 3;
+
+export type ChartBar = { name: string; rate: number };
+
+/**
+ * The bars, and only the bars that mean what a bar means.
+ *
+ * Two exclusions, and the second is the one that mattered. A row with no rate cannot be
+ * plotted at all. And the **"Unassigned" bucket is a hole in the record, not a group** —
+ * classrooms created since the branch field was dropped from the create form carry
+ * `branch = NULL` and were never backfilled, so plotting them alongside Chilonzor and
+ * Yunusobod puts "Unassigned 62%" in a chart titled *Pass rate by branch* and invites a
+ * director to read a failing branch where there is a data-entry gap spanning every branch.
+ * The ranked table keeps the row and marks it as the gap it is; the chart must not average
+ * it in among real ones.
+ */
+export function chartBars<T extends { id: number | null; name: string; pass_rate: number | null }>(
+  rows: T[],
+  max: number,
+): { bars: ChartBar[]; unrated: number; gaps: number; truncated: number } {
+  const gaps = rows.filter(isUnassigned).length;
+  const plottable = rows.filter((r) => !isUnassigned(r) && r.pass_rate != null);
+  const unrated = rows.length - gaps - plottable.length;
+  const bars = plottable
+    .slice(0, max)
+    .map((r) => ({ name: r.name, rate: r.pass_rate as number }));
+  return { bars, unrated, gaps, truncated: plottable.length - bars.length };
 }

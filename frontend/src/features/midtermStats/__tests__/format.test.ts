@@ -4,9 +4,14 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  MIN_CHART_GROUPS,
   MONTH_BASIS_LABEL,
+  MONTH_BASIS_NOTE,
   NO_VALUE,
+  chartBars,
   definitionEntries,
+  groupSubline,
+  rosterNote,
   definitionLine,
   formatPassMark,
   formatRate,
@@ -158,5 +163,83 @@ describe("small helpers", () => {
   it("treats a null id as the Unassigned bucket", () => {
     expect(isUnassigned({ id: null, name: "Unassigned" })).toBe(true);
     expect(isUnassigned({ id: 4, name: "Chilonzor" })).toBe(false);
+  });
+});
+
+describe("rosterNote / groupSubline", () => {
+  it("says nothing when the headcount and the denominator agree", () => {
+    expect(rosterNote(10, 10)).toBeNull();
+    expect(groupSubline({ classrooms: 2, distinct_students: 10, roster: 10 })).toBe(
+      "2 classes · 10 students",
+    );
+  });
+
+  it("names the roster count too when a row carries two different denominators", () => {
+    // 112 of 226 students hold two active memberships, so roster > headcount is ordinary.
+    expect(groupSubline({ classrooms: 12, distinct_students: 180, roster: 210 })).toBe(
+      "12 classes · 180 students · 210 roster places",
+    );
+    const note = rosterNote(210, 180);
+    expect(note).toContain("180 students");
+    expect(note).toContain("210 roster places");
+    expect(note).toContain("two of these classes");
+  });
+});
+
+describe("chartBars", () => {
+  const row = (id: number | null, name: string, pass_rate: number | null) => ({
+    id,
+    name,
+    pass_rate,
+  });
+
+  it("never plots the Unassigned bucket as if it were a group", () => {
+    // Classrooms created since #154 carry branch = NULL and were never backfilled, so this
+    // bucket is large in production. Drawn as a bar in "Pass rate by branch" it reads as a
+    // failing branch, where it is a record-keeping hole spanning every branch.
+    const out = chartBars(
+      [
+        row(1, "Chilonzor", 91),
+        row(2, "Yunusobod", 84),
+        row(null, "Unassigned", 62),
+        row(3, "Sergeli", 77),
+      ],
+      12,
+    );
+    expect(out.bars.map((b) => b.name)).toEqual(["Chilonzor", "Yunusobod", "Sergeli"]);
+    expect(out.gaps).toBe(1);
+    // It is excluded from the chart, not silently forgotten — the caption counts it.
+    expect(out.unrated).toBe(0);
+  });
+
+  it("counts a group with no rate separately from the data gap", () => {
+    const out = chartBars([row(1, "A", 91), row(2, "B", null), row(null, "Unassigned", 40)], 12);
+    expect(out.bars).toHaveLength(1);
+    expect(out.unrated).toBe(1);
+    expect(out.gaps).toBe(1);
+  });
+
+  it("reports what it truncated so the caption can point at the table", () => {
+    const rows = [1, 2, 3, 4].map((i) => row(i, `B${i}`, 50 + i));
+    const out = chartBars(rows, 2);
+    expect(out.bars).toHaveLength(2);
+    expect(out.truncated).toBe(2);
+  });
+
+  it("holds a floor of three, so one real group plus a gap is not a comparison", () => {
+    expect(MIN_CHART_GROUPS).toBe(3);
+    const out = chartBars([row(1, "Chilonzor", 91), row(null, "Unassigned", 62)], 12);
+    expect(out.bars.length).toBeLessThan(MIN_CHART_GROUPS);
+  });
+});
+
+describe("MONTH_BASIS_NOTE", () => {
+  it("is a whole sentence, so no caller has to prepend one", () => {
+    // The panel used to print a hardcoded "this paper was never timetabled…" clause AND
+    // then this note, which opens with the same clause. The sentence appeared twice.
+    for (const basis of ["first_sitting", "published", "created"] as const) {
+      expect(MONTH_BASIS_NOTE[basis]).toContain("never timetabled for this class");
+    }
+    expect(MONTH_BASIS_NOTE.schedule).not.toContain("never timetabled");
   });
 });
