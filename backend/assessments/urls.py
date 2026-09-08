@@ -37,6 +37,10 @@ from .views import (
     AdminGovernanceEventListView,
     AdminFailedAttemptsListView,
 )
+# Imported straight from its module rather than through the ``views`` aggregator: the
+# aggregator is a re-export shim and this endpoint has no legacy ``from .views import`` callers
+# to keep working.
+from .views_item_analysis import TeacherItemAnalysisView
 
 
 urlpatterns = [
@@ -96,5 +100,7 @@ urlpatterns = [
     path("homework/<int:assignment_id>/my-result/", MyAssessmentResultForAssignmentView.as_view(), name="assessment-homework-my-result"),
     # Student result (by homework id — unambiguous for bundles with many assessments)
     path("homework/by-homework/<int:homework_id>/my-result/", MyAssessmentResultForHomeworkView.as_view(), name="assessment-homework-my-result-by-hw"),
+    # Teacher item analysis — which questions a class got wrong often enough to analyse
+    path("teacher/item-analysis/", TeacherItemAnalysisView.as_view(), name="assessment-teacher-item-analysis"),
 ]
 
