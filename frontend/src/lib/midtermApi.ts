@@ -98,6 +98,11 @@ export interface StandaloneResultRow {
   resit_open: boolean;
 }
 
+export interface StandaloneResults {
+  midterm: MidtermCatalogItem;
+  students: StandaloneResultRow[];
+}
+
 export const midtermApi = {
   // ── student ──────────────────────────────────────────────────────────────
   async myMidterms(): Promise<MidtermRow[]> {
@@ -176,9 +181,9 @@ export const midtermApi = {
     const r = await api.post(`/midterms/teacher/midterms/${midtermId}/revoke/`, { user_ids: userIds });
     return r.data;
   },
-  async standaloneResults(midtermId: number): Promise<{ midterm: MidtermCatalogItem; students: StandaloneResultRow[] }> {
+  async standaloneResults(midtermId: number): Promise<StandaloneResults> {
     const r = await api.get(`/midterms/teacher/midterms/${midtermId}/results/`);
-    return r.data;
+    return r.data as StandaloneResults;
   },
 
   // ── teacher: classroom (v2) flavor ─────────────────────────────────────────
@@ -295,3 +300,182 @@ export interface VersionAssignData extends VersionPreviewData {
 
 export const scaleMax = (scale: string, ceiling?: number) => ceiling ?? (scale === "SCALE_800" ? 800 : 100);
 export const subjectLabel = (subject: string) => (subject === "MATH" ? "Mathematics" : "Reading & Writing");
+
+/** "SCALE_800" → "Scored out of 800". A bare "/800" is not a label. */
+export const scoringScaleLabel = (scale: string, ceiling?: number) => `Scored out of ${scaleMax(scale, ceiling)}`;
+
+/** Difficulty tier code → a word. "" (untagged) → null, so callers can omit the chip. */
+export function midtermLevelLabel(level: string | null | undefined): string | null {
+  const key = (level ?? "").trim().toLowerCase();
+  if (!key) return null;
+  const known: Record<string, string> = {
+    foundation: "Foundation",
+    junior: "Junior",
+    middle: "Middle",
+    senior: "Senior",
+  };
+  return known[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+/**
+ * Every attempt state, spelled for a human. Covers BOTH spellings of the module-1 state:
+ * the exam-runner contract puts MODULE_1_ACTIVE on the wire, while the teacher catalog
+ * endpoints hand back `attempt.current_state` unmapped, which is the raw DB value ACTIVE.
+ * The full vocabulary is `backend/midterms/state_machine.py`; keep the two in step.
+ */
+export const MIDTERM_STATE_LABELS: Record<string, string> = {
+  NOT_STARTED: "Not started",
+  ACTIVE: "Module 1 in progress",
+  MODULE_1_ACTIVE: "Module 1 in progress",
+  MODULE_2_ACTIVE: "Module 2 in progress",
+  SCORING: "Scoring",
+  COMPLETED: "Completed",
+  ABANDONED: "Voided",
+};
+
+/**
+ * Never let a raw enum reach the screen. An unmapped state (a new one added to the state
+ * machine before this map catches up) is humanised rather than printed as SCREAMING_SNAKE.
+ */
+export function midtermStateLabel(state: string | null | undefined): string {
+  const key = (state ?? "").trim().toUpperCase();
+  if (!key) return "Not started";
+  const known = MIDTERM_STATE_LABELS[key];
+  if (known) return known;
+  const words = key.toLowerCase().replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Coarse buckets the teacher surfaces filter and count by. */
+export type MidtermProgress = "not_started" | "in_progress" | "scoring" | "completed" | "voided";
+
+export function midtermProgress(row: Pick<StandaloneResultRow, "state" | "submitted">): MidtermProgress {
+  if (row.submitted) return "completed";
+  switch ((row.state ?? "").trim().toUpperCase()) {
+    case "ACTIVE":
+    case "MODULE_1_ACTIVE":
+    case "MODULE_2_ACTIVE":
+      return "in_progress";
+    case "SCORING":
+      return "scoring";
+    case "COMPLETED":
+      return "completed";
+    case "ABANDONED":
+      return "voided";
+    default:
+      return "not_started";
+  }
+}
+
+/** What the standalone grants on one midterm currently add up to. */
+export interface StandaloneSummary {
+  granted: number;
+  not_started: number;
+  in_progress: number;
+  scoring: number;
+  submitted: number;
+  voided: number;
+  resit_open: number;
+  /** Everyone who has not handed it in yet — the "still to sit it" number. */
+  outstanding: number;
+  /** Mean of the finished scores; null when nobody has finished (NOT zero). */
+  average_score: number | null;
+  score_ceiling: number;
+}
+
+export function summarizeStandalone(rows: StandaloneResultRow[], ceiling: number): StandaloneSummary {
+  const s: StandaloneSummary = {
+    granted: rows.length,
+    not_started: 0,
+    in_progress: 0,
+    scoring: 0,
+    submitted: 0,
+    voided: 0,
+    resit_open: 0,
+    outstanding: 0,
+    average_score: null,
+    score_ceiling: ceiling,
+  };
+  let scoreTotal = 0;
+  let scored = 0;
+  for (const r of rows) {
+    if (r.resit_open) s.resit_open += 1;
+    switch (midtermProgress(r)) {
+      case "completed":
+        s.submitted += 1;
+        break;
+      case "in_progress":
+        s.in_progress += 1;
+        break;
+      case "scoring":
+        s.scoring += 1;
+        break;
+      case "voided":
+        s.voided += 1;
+        break;
+      default:
+        s.not_started += 1;
+    }
+    if (r.submitted && typeof r.score === "number") {
+      scoreTotal += r.score;
+      scored += 1;
+    }
+  }
+  s.outstanding = s.granted - s.submitted;
+  // An empty denominator is "we do not know", never 0 — the caller renders null as an em dash.
+  s.average_score = scored > 0 ? Math.round((scoreTotal / scored) * 10) / 10 : null;
+  return s;
+}
+
+/**
+ * One published midterm plus its standalone picture.
+ *
+ * `summary`/`students` are null ONLY when that midterm's request failed. A failed check is
+ * not an empty midterm, and the two must never be rendered the same way.
+ */
+export interface StandaloneOverviewRow {
+  midterm: MidtermCatalogItem;
+  summary: StandaloneSummary | null;
+  students: StandaloneResultRow[] | null;
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let cursor = 0;
+  const runner = async () => {
+    for (;;) {
+      const i = cursor++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, runner));
+  return out;
+}
+
+/**
+ * Answer "which of these midterms have I actually given out?".
+ *
+ * There is no server-side roll-up for the standalone area, so this asks each midterm's own
+ * results endpoint. Concurrency is bounded because the published catalog can run to dozens
+ * of papers, and one failure is recorded as a failure rather than dropped — a page that
+ * quietly shows a smaller total is worse than one that says it could not check.
+ */
+export async function fetchStandaloneOverview(
+  items: MidtermCatalogItem[],
+  opts: { concurrency?: number } = {},
+): Promise<StandaloneOverviewRow[]> {
+  return mapWithConcurrency(items, opts.concurrency ?? 6, async (m) => {
+    try {
+      const res = await midtermApi.standaloneResults(m.id);
+      const students = res.students ?? [];
+      return {
+        midterm: res.midterm ?? m,
+        students,
+        summary: summarizeStandalone(students, (res.midterm ?? m).score_ceiling),
+      };
+    } catch {
+      return { midterm: m, students: null, summary: null };
+    }
+  });
+}

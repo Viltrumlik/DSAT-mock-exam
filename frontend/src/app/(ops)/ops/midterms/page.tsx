@@ -1,5 +1,5 @@
-import MidtermReportsPage from "@/features/midtermReports/MidtermReportsPage";
+import MidtermStatsPage from "@/features/midtermStats/MidtermStatsPage";
 
-export default function OpsMidtermReportsRoute() {
-  return <MidtermReportsPage />;
+export default function OpsMidtermStatsRoute() {
+  return <MidtermStatsPage />;
 }

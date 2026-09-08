@@ -1,0 +1,172 @@
+/**
+ * Wire types for the admin midterm statistics API.
+ *
+ * Backend: `midterms/stats.py` (the aggregation) and `midterms/views_stats.py` (the three
+ * endpoints). Every field here is one the backend actually emits — the keys are asserted in
+ * `midterms/tests_stats_api.py`, so this file is a transcription, not a guess.
+ *
+ * Kept out of `features/midtermReports/types.ts` on purpose: that module describes the
+ * per-student evidence table (one classroom, one paper, one row per student) and shares no
+ * shape with these pooled monthly roll-ups.
+ */
+
+/** `"YYYY-MM"`, resolved in the school's local time by the backend. */
+export type MonthKey = string;
+
+/**
+ * The counts every rate on this page is computed from — `stats.Tally.as_dict()` on the wire.
+ *
+ * `roster == passed_first + passed_retake + failed + absent + pending` always holds, which is
+ * what makes the pooled roll-up legitimate: adding two rows adds two numerators and two
+ * denominators.
+ *
+ * Every rate is `number | null`. **`null` means "we cannot know" — an empty denominator —
+ * and must never be rendered as 0%.**
+ */
+export type Tally = {
+  /** The denominator: every non-removed student membership, whether or not they sat. */
+  roster: number;
+  attended: number;
+  passed_first: number;
+  passed_retake: number;
+  failed: number;
+  /** Absent counts as not passed. It is in the denominator and not the numerator. */
+  absent: number;
+  /** Still in flight or awaiting a verdict. Also in the denominator, not the numerator. */
+  pending: number;
+  retake_taken: number;
+  retake_passed: number;
+  retake_failed: number;
+  /** `passed_first + passed_retake`. */
+  passed: number;
+  /** THE number: passed / roster. `null` when the roster is empty. */
+  pass_rate: number | null;
+  attendance_rate: number | null;
+  /** Of the PASSERS (not the roster), the share who needed no retake. */
+  first_try_share: number | null;
+  /** `100 - first_try_share`, so the pair always sums to exactly 100. */
+  retake_share: number | null;
+};
+
+/** A pooled bucket: a tally plus what it was pooled over. */
+export type GroupTally = Tally & {
+  classrooms: number;
+  /**
+   * The deduped student count behind `roster`. Lower than `roster` whenever a student sits
+   * in two of the pooled classrooms, or a class sat two papers in the month — both are
+   * expected, and the page shows the pair rather than letting a reader infer a bug.
+   */
+  distinct_students: number;
+};
+
+/**
+ * The keys of the `definition` block, in the order the page states them.
+ *
+ * Listed rather than typed as an open record so the page renders a known vocabulary in a
+ * deliberate order; an unknown key a future backend adds is simply not shown, and a key it
+ * drops leaves a gap rather than the string "undefined".
+ */
+export const DEFINITION_KEYS = [
+  "pass_rate",
+  "absent_counts_as",
+  "rollup",
+  "denominator",
+  "first_try_share",
+  "excluded",
+  "month",
+  "empty_denominator",
+] as const;
+
+export type DefinitionKey = (typeof DEFINITION_KEYS)[number];
+
+/** What the numbers mean, carried in every payload so the page can state its own rule. */
+export type StatsDefinition = Partial<Record<DefinitionKey, string>>;
+
+export type TeacherBrief = { id: number; name: string };
+
+export type BranchBrief = { id: number; name: string; region: string | null };
+
+export type ClassroomBrief = {
+  id: number;
+  name: string;
+  /** Raw `Classroom.subject` (ENGLISH / MATH) — render `subject_label` instead. */
+  subject: string;
+  subject_label: string;
+  level: string;
+  level_label: string;
+  teacher: TeacherBrief | null;
+  /** null for the classrooms a create-form regression left with no branch. */
+  branch: BranchBrief | null;
+};
+
+/** `id: null` is the explicit "Unassigned" bucket, not a missing row. */
+export type BranchRow = GroupTally & { id: number | null; name: string };
+
+export type DepartmentRow = GroupTally & {
+  subject: string;
+  label: string;
+  /** Same as `label`; the backend duplicates it so one sort key serves every table. */
+  name: string;
+};
+
+export type TeacherRow = GroupTally & {
+  id: number | null;
+  name: string;
+  /** null when this teacher holds classes of more than one subject. */
+  subject: string | null;
+  subject_label: string | null;
+  /** null when this teacher holds classes at more than one branch, or at none. */
+  branch: string | null;
+};
+
+export type ClassroomRow = ClassroomBrief & GroupTally & { midterms: number };
+
+export type MonthlyStats = {
+  month: MonthKey | null;
+  definition: StatsDefinition;
+  totals: GroupTally & { midterms: number };
+  branches: BranchRow[];
+  departments: DepartmentRow[];
+  teachers: TeacherRow[];
+  classrooms: ClassroomRow[];
+  /** The picker's options, newest first — carried so one response draws the whole page. */
+  months: MonthKey[];
+  filters: { branch: number | null; subject: string | null; teacher: number | null };
+};
+
+/**
+ * Which authority gave a `(classroom, paper)` pair its month.
+ *
+ * Rendered, not swallowed: a month read off a schedule is a stronger fact than one inferred
+ * from whenever the paper happened to be created, and a reader comparing two classrooms
+ * deserves to know which they are looking at.
+ */
+export type MonthBasis = "schedule" | "first_sitting" | "published" | "created";
+
+export type MidtermType = "PRE_MIDTERM" | "MIDTERM" | "RETAKE";
+
+export type RetakeBrief = { id: number; title: string };
+
+export type ClassroomMidtermRow = Tally & {
+  id: number;
+  title: string;
+  /** Raw `Midterm.subject` (READING_WRITING / MATH) — no label comes with it. */
+  subject: string;
+  midterm_type: MidtermType;
+  /** null when the paper is not pass/fail graded at all. */
+  pass_mark: number | null;
+  score_ceiling: number;
+  month: MonthKey;
+  month_basis: MonthBasis | null;
+  /** Every retake of this paper. Statistics union them all; the evidence table shows one. */
+  retakes: RetakeBrief[];
+};
+
+export type ClassroomMonth = {
+  classroom: ClassroomBrief;
+  month: MonthKey | null;
+  months: MonthKey[];
+  definition: StatsDefinition;
+  summary: Tally & { midterms: number; distinct_students: number };
+  rows: ClassroomMidtermRow[];
+};

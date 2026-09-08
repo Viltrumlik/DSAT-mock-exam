@@ -5,9 +5,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  Download,
   FileText,
-  Filter,
   RefreshCw,
   School,
   Search,
@@ -16,10 +14,10 @@ import {
 import { cn } from "@/lib/cn";
 import { levelLabel } from "@/lib/levels";
 import { errText, midtermReportsApi } from "./api";
-import { MidtermResultsTable } from "./MidtermResultsTable";
+import { MidtermEvidence } from "./MidtermEvidence";
 import { CountChip } from "./StatusPill";
-import { formatWhen, isGraded } from "./status";
-import type { ClassroomDetail, ClassroomListRow, ClassroomMidtermRow, MidtermReport } from "./types";
+import { classroomSubjectLabel, formatWhen, isGraded } from "./status";
+import type { ClassroomDetail, ClassroomListRow, ClassroomMidtermRow } from "./types";
 
 const TYPE_LABELS: Record<string, string> = {
   PRE_MIDTERM: "Pre-midterm",
@@ -28,11 +26,17 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 /**
- * Admin midterm reports: classroom → its midterms → who passed, who failed, who the retake
- * rescued. Read-only; every number here comes from the frozen outcome the student was given,
- * so nothing on this page can change a verdict.
+ * The record, classroom by classroom: every paper a class has ever been given, and who passed.
+ *
+ * The statistics page answers "how did this month go"; this answers "show me this class",
+ * including the classes that sat nothing in the month currently selected there and so appear
+ * in no roll-up at all. It is the second tab of `/ops/midterms`, not a page of its own — the
+ * header, and the console's idea of where you are, belong to the statistics page.
+ *
+ * Read-only. Every verdict comes from the record frozen when each student was scored, so
+ * nothing here can change one.
  */
-export default function MidtermReportsPage() {
+export default function MidtermRecordsBrowser() {
   const [classrooms, setClassrooms] = useState<ClassroomListRow[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -43,14 +47,6 @@ export default function MidtermReportsPage() {
   const [detailError, setDetailError] = useState<string | null>(null);
 
   const [expanded, setExpanded] = useState<number | null>(null);
-  // Reports are cached per midterm so collapsing and re-expanding does not re-fetch.
-  const [reports, setReports] = useState<Record<number, MidtermReport>>({});
-  const [reportBusy, setReportBusy] = useState<Record<number, boolean>>({});
-  const [reportError, setReportError] = useState<Record<number, string>>({});
-
-  const [onlyFailed, setOnlyFailed] = useState(false);
-  const [pdfBusy, setPdfBusy] = useState<number | null>(null);
-  const [pdfError, setPdfError] = useState<string | null>(null);
 
   const loadClassrooms = useCallback(async () => {
     setListError(null);
@@ -85,42 +81,8 @@ export default function MidtermReportsPage() {
   useEffect(() => {
     if (selectedId == null) return;
     setExpanded(null);
-    setReports({});
-    setReportError({});
     void loadDetail(selectedId);
   }, [selectedId, loadDetail]);
-
-  const toggleMidterm = async (midtermId: number) => {
-    if (expanded === midtermId) {
-      setExpanded(null);
-      return;
-    }
-    setExpanded(midtermId);
-    if (selectedId == null || reports[midtermId]) return;
-    setReportBusy((p) => ({ ...p, [midtermId]: true }));
-    setReportError((p) => ({ ...p, [midtermId]: "" }));
-    try {
-      const report = await midtermReportsApi.midterm(selectedId, midtermId);
-      setReports((p) => ({ ...p, [midtermId]: report }));
-    } catch (e) {
-      setReportError((p) => ({ ...p, [midtermId]: errText(e, "Could not load the results table.") }));
-    } finally {
-      setReportBusy((p) => ({ ...p, [midtermId]: false }));
-    }
-  };
-
-  const exportPdf = async (midtermId: number) => {
-    if (selectedId == null) return;
-    setPdfBusy(midtermId);
-    setPdfError(null);
-    try {
-      await midtermReportsApi.downloadPdf(selectedId, midtermId);
-    } catch (e) {
-      setPdfError(errText(e, "Could not generate the PDF."));
-    } finally {
-      setPdfBusy(null);
-    }
-  };
 
   const filteredClassrooms = useMemo(() => {
     const rows = classrooms ?? [];
@@ -130,7 +92,7 @@ export default function MidtermReportsPage() {
       (c) =>
         c.name.toLowerCase().includes(t) ||
         c.teacher_name.toLowerCase().includes(t) ||
-        c.subject.toLowerCase().includes(t),
+        classroomSubjectLabel(c.subject).toLowerCase().includes(t),
     );
   }, [classrooms, search]);
 
@@ -140,54 +102,28 @@ export default function MidtermReportsPage() {
   );
 
   const refreshAll = () => {
-    setReports({});
-    setReportError({});
     void loadClassrooms();
     if (selectedId != null) void loadDetail(selectedId);
   };
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-primary">
-            Admin console · Midterms
-          </p>
-          <h1 className="text-xl font-bold tracking-tight text-foreground">Midterm reports</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Pass/fail results per classroom, including who the retake rescued. Verdicts are read
-            from the record frozen when each student was scored — nothing here re-grades anyone.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setOnlyFailed((v) => !v)}
-            aria-pressed={onlyFailed}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-bold transition-colors",
-              onlyFailed
-                ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                : "border-border bg-card text-foreground hover:bg-surface-2",
-            )}
-          >
-            <Filter className="h-4 w-4" aria-hidden />
-            Only failed
-          </button>
-          <button
-            type="button"
-            onClick={refreshAll}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
-          >
-            <RefreshCw className="h-4 w-4" aria-hidden />
-            Refresh
-          </button>
-        </div>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Every classroom that has ever been given a midterm, whichever month it was sat in.
+          Pass/fail results come from the record frozen when each student was scored.
+        </p>
+        <button
+          type="button"
+          onClick={refreshAll}
+          className="ds-ring inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
+        >
+          <RefreshCw className="h-4 w-4" aria-hidden />
+          Refresh
+        </button>
       </div>
 
       {listError && <ErrorBox message={listError} />}
-      {pdfError && <ErrorBox message={pdfError} />}
 
       <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
         {/* Classroom list */}
@@ -235,7 +171,7 @@ export default function MidtermReportsPage() {
                     onClick={() => setSelectedId(c.id)}
                     aria-current={active ? "true" : undefined}
                     className={cn(
-                      "rounded-xl px-3 py-2 text-left transition-colors",
+                      "ds-ring rounded-xl px-3 py-2 text-left transition-colors",
                       active ? "bg-surface-2" : "hover:bg-surface-2",
                     )}
                   >
@@ -248,7 +184,7 @@ export default function MidtermReportsPage() {
                       {c.name}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {c.teacher_name || "Unassigned"} · {c.student_count} student
+                      {c.teacher_name || "No teacher assigned"} · {c.student_count} student
                       {c.student_count === 1 ? "" : "s"} · {c.midterm_count} midterm
                       {c.midterm_count === 1 ? "" : "s"}
                     </p>
@@ -276,13 +212,14 @@ export default function MidtermReportsPage() {
           ) : (
             <>
               <div className="rounded-2xl border border-border bg-card px-5 py-4">
-                <h2 className="text-lg font-extrabold tracking-tight text-foreground">
+                <h3 className="text-lg font-extrabold tracking-tight text-foreground">
                   {detail.classroom.name}
-                </h2>
+                </h3>
                 <p className="mt-0.5 text-sm text-muted-foreground">
                   {[
                     detail.classroom.teacher_name || "No teacher assigned",
-                    detail.classroom.subject,
+                    // Never the raw enum: the API sends ENGLISH / MATH here.
+                    classroomSubjectLabel(detail.classroom.subject),
                     levelLabel(detail.classroom.level),
                   ]
                     .filter(Boolean)
@@ -302,16 +239,11 @@ export default function MidtermReportsPage() {
                 detail.midterms.map((m) => (
                   <MidtermCard
                     key={m.id}
+                    classroomId={detail.classroom.id}
                     midterm={m}
                     rosterSize={selectedClassroom?.student_count}
                     expanded={expanded === m.id}
-                    onToggle={() => void toggleMidterm(m.id)}
-                    onExport={() => void exportPdf(m.id)}
-                    exporting={pdfBusy === m.id}
-                    report={reports[m.id]}
-                    loading={!!reportBusy[m.id]}
-                    error={reportError[m.id] || null}
-                    onlyFailed={onlyFailed}
+                    onToggle={() => setExpanded((prev) => (prev === m.id ? null : m.id))}
                   />
                 ))
               )}
@@ -324,27 +256,17 @@ export default function MidtermReportsPage() {
 }
 
 function MidtermCard({
+  classroomId,
   midterm,
   rosterSize,
   expanded,
   onToggle,
-  onExport,
-  exporting,
-  report,
-  loading,
-  error,
-  onlyFailed,
 }: {
+  classroomId: number;
   midterm: ClassroomMidtermRow;
   rosterSize?: number;
   expanded: boolean;
   onToggle: () => void;
-  onExport: () => void;
-  exporting: boolean;
-  report?: MidtermReport;
-  loading: boolean;
-  error: string | null;
-  onlyFailed: boolean;
 }) {
   const graded = isGraded(midterm);
   const { counts } = midterm;
@@ -357,76 +279,64 @@ function MidtermCard({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-card">
-      <div className="flex flex-wrap items-start gap-3 px-4 py-3">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={panelId}
-          className="-mx-2 min-w-0 flex-1 rounded-xl px-2 py-1 text-left transition-colors hover:bg-surface-2"
-        >
-          <div className="flex items-center gap-2">
-            {expanded ? (
-              <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            ) : (
-              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-            )}
-            <span className="truncate font-bold text-foreground">{midterm.title}</span>
-            <span className="shrink-0 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
-              {TYPE_LABELS[midterm.midterm_type] ?? midterm.midterm_type}
-            </span>
-          </div>
-          <p className="ml-6 mt-0.5 text-xs text-muted-foreground">
-            {midterm.subject_label} · {formatWhen(midterm.scheduled_at)}
-            {midterm.retake ? " · has a retake" : ""}
-          </p>
-          {/* The tally is the point of the collapsed row: what needs attention must be
-              readable without opening anything. */}
-          <div className="ml-6 mt-2 flex flex-wrap items-center gap-1.5">
-            {graded ? (
-              <>
-                <CountChip tone="pass" count={counts.passed} label="passed" />
-                <CountChip tone="fail" count={counts.failed} label="failed" />
-              </>
-            ) : (
-              <>
-                <span className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs font-bold text-muted-foreground">
-                  Not graded
-                </span>
-                {scored != null && <CountChip tone="ungraded" count={scored} label="scored" />}
-              </>
-            )}
-            <CountChip tone="absent" count={counts.absent} label="absent" />
-            {counts.pending > 0 && (
-              <CountChip tone="waiting" count={counts.pending} label="pending" />
-            )}
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={exporting}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2 disabled:opacity-50"
-        >
-          <Download className={cn("h-4 w-4", exporting && "animate-pulse")} aria-hidden />
-          {exporting ? "Preparing…" : "Export PDF"}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        className="ds-ring w-full px-4 py-3 text-left transition-colors hover:bg-surface-2"
+      >
+        <span className="flex items-center gap-2">
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          ) : (
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          )}
+          <span className="truncate font-bold text-foreground">{midterm.title}</span>
+          <span className="shrink-0 rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-muted-foreground">
+            {TYPE_LABELS[midterm.midterm_type] ?? midterm.midterm_type}
+          </span>
+        </span>
+        <span className="ml-6 mt-0.5 block text-xs text-muted-foreground">
+          {midterm.subject_label} · {formatWhen(midterm.scheduled_at)}
+          {midterm.retake ? " · has a retake" : ""}
+        </span>
+        {/* The tally is the point of the collapsed row: what needs attention must be
+            readable without opening anything. */}
+        <span className="ml-6 mt-2 flex flex-wrap items-center gap-1.5">
+          {graded ? (
+            <>
+              <CountChip tone="pass" count={counts.passed} label="passed" />
+              <CountChip tone="fail" count={counts.failed} label="failed" />
+            </>
+          ) : (
+            <>
+              <span className="inline-flex items-center rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs font-bold text-muted-foreground">
+                Not graded
+              </span>
+              {scored != null && <CountChip tone="ungraded" count={scored} label="scored" />}
+            </>
+          )}
+          <CountChip
+            tone="absent"
+            count={counts.absent}
+            label="absent"
+            title="On the roster and never sat it. Counts as not passed."
+          />
+          {counts.pending > 0 && (
+            <CountChip
+              tone="waiting"
+              count={counts.pending}
+              label="awaiting a result"
+              title="Sat, or still sitting, with no verdict recorded yet."
+            />
+          )}
+        </span>
+      </button>
 
       {expanded && (
         <div id={panelId} className="border-t border-border px-4 py-4">
-          {loading ? (
-            <div className="space-y-2">
-              {[0, 1, 2].map((i) => (
-                <div key={i} className="h-9 animate-pulse rounded-lg bg-surface-2" />
-              ))}
-            </div>
-          ) : error ? (
-            <ErrorBox message={error} />
-          ) : report ? (
-            <MidtermResultsTable report={report} onlyFailed={onlyFailed} />
-          ) : null}
+          <MidtermEvidence classroomId={classroomId} midtermId={midterm.id} />
         </div>
       )}
     </div>
@@ -435,7 +345,10 @@ function MidtermCard({
 
 function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+    <div
+      role="alert"
+      className="flex items-start gap-2 rounded-2xl border border-danger/25 bg-danger-soft p-3 text-sm font-semibold text-danger-foreground"
+    >
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
       {message}
     </div>
