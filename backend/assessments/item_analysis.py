@@ -10,20 +10,22 @@ it wrong, and the rate.
 
 Five counting rules, none of them obvious, all of them load-bearing.
 
-**The denominator is "answered", not "assigned".** A skipped question leaves NO
+**The denominator is "graded", not "assigned".** A skipped question leaves NO
 ``AssessmentAnswer`` row at all — the runner writes a row when a student answers, never when
 they merely see the question. There is no stored difference between "saw it and skipped it"
 and "ran out of time before reaching it", and manufacturing one by counting the roster would
 turn a class that ran short of time into a class that got the question wrong. The payload
-says ``denominator: "answered"`` out loud so nothing downstream has to guess.
+says ``denominator: "graded"`` out loud so nothing downstream has to guess.
 
-**Ungraded is its own number, never a wrong answer.** ``AssessmentAnswer.is_correct`` is
-nullable: ``True`` correct, ``False`` wrong, ``NULL`` not scored yet — grading runs in a
-Celery worker (``grading_service.grade_attempt``), so a queued or failed job leaves NULLs
-behind. Folding NULL into wrong would mint error rates out of a stuck worker. It does stay
-inside ``students_answered``, which is the formula this contract fixes, so a question still
-awaiting grading reads as a LOW error rate rather than a high one — and ``ungraded`` sits on
-the same row so a teacher can see why.
+**Ungraded is its own number — neither a wrong answer nor part of the denominator.**
+``AssessmentAnswer.is_correct`` is nullable: ``True`` correct, ``False`` wrong, ``NULL`` not
+scored yet — grading runs in a Celery worker (``grading_service.grade_attempt``), so a queued
+or failed job leaves NULLs behind. Folding NULL into wrong would mint error rates out of a
+stuck worker. Leaving it in the denominator is the subtler mistake and was the first thing
+this module got wrong: it dilutes the rate downwards, and this rate exists to trip a 25%
+threshold, so a question the class genuinely failed could sit under the line and never be
+flagged. Both ``students_answered`` (everyone who wrote something) and ``ungraded`` stay on
+the row, so a rate resting on thin grading is visible instead of merely correct.
 
 **One verdict per student, taken from their FIRST counted attempt.** The unique constraint on
 ``AssessmentAttempt`` is partial (IN_PROGRESS only), so a student can hold several
@@ -145,8 +147,9 @@ def teacher_classroom_ids(user) -> set[int] | None:
 class ItemTally:
     """One question's verdicts, counted once per student.
 
-    ``ungraded`` is deliberately inside ``students_answered`` — see the module docstring;
-    it is reported alongside the rate so the dilution is visible rather than mysterious.
+    ``students_answered`` counts everyone who wrote something; ``students_graded`` counts
+    the ones a verdict actually came back for. The rate is over the second, and both are
+    reported, so a question resting on half-graded work says so.
     """
 
     correct: int = 0
@@ -158,16 +161,29 @@ class ItemTally:
         return self.correct + self.wrong + self.ungraded
 
     @property
+    def students_graded(self) -> int:
+        return self.correct + self.wrong
+
+    @property
     def error_rate(self) -> float | None:
-        """Percent of answering students who got it wrong, or ``None`` when nobody has.
+        """Percent of GRADED answers that were wrong, or ``None`` when none are graded yet.
+
+        The denominator excludes ``ungraded`` on purpose. Grading is asynchronous — a
+        submitted attempt waits on Celery, and a broker outage leaves ``is_correct`` NULL for
+        as long as it lasts. Dividing a real wrong-count by a partly-imaginary cohort errs in
+        one direction only: downwards. That matters more here than it would anywhere else,
+        because this number exists to trip a 25% threshold — a question the class genuinely
+        failed would slip under the line and never be flagged, which is the exact failure
+        this report was built to prevent. ``students_answered`` and ``ungraded`` both stay in
+        the payload, so a rate resting on thin grading is visible rather than merely correct.
 
         ``None``, never ``0.0``. An empty denominator is "we do not know yet", and a question
         nobody has reached is not a question everybody got right.
         """
-        answered = self.students_answered
-        if not answered:
+        graded = self.students_graded
+        if not graded:
             return None
-        return round(100.0 * self.wrong / answered, 1)
+        return round(100.0 * self.wrong / graded, 1)
 
     def needs_analysis(self, threshold: float) -> bool:
         rate = self.error_rate
@@ -182,6 +198,7 @@ class _Group:
     label: str
     questions: int = 0
     students_answered: int = 0
+    students_graded: int = 0
     students_wrong: int = 0
     needs_analysis_count: int = 0
     #: Untagged sorts last whatever its rate: it is a disclosure, not a thing to go and teach.
@@ -190,15 +207,18 @@ class _Group:
     def add(self, tally: ItemTally, flagged: bool) -> None:
         self.questions += 1
         self.students_answered += tally.students_answered
+        self.students_graded += tally.students_graded
         self.students_wrong += tally.wrong
         if flagged:
             self.needs_analysis_count += 1
 
     @property
     def error_rate(self) -> float | None:
-        if not self.students_answered:
+        """Pooled over the bucket's graded answers — the same denominator ``ItemTally`` uses,
+        for the same reason, and never a mean of the questions' percentages."""
+        if not self.students_graded:
             return None
-        return round(100.0 * self.students_wrong / self.students_answered, 1)
+        return round(100.0 * self.students_wrong / self.students_graded, 1)
 
     def as_dict(self) -> dict:
         return {
@@ -206,6 +226,7 @@ class _Group:
             "label": self.label,
             "questions": self.questions,
             "students_answered": self.students_answered,
+            "students_graded": self.students_graded,
             "students_wrong": self.students_wrong,
             "error_rate": self.error_rate,
             "needs_analysis_count": self.needs_analysis_count,
@@ -407,6 +428,7 @@ def build_item_analysis(
                     "subject": aset.subject,
                 },
                 "students_answered": tally.students_answered,
+                "students_graded": tally.students_graded,
                 "students_correct": tally.correct,
                 "students_wrong": tally.wrong,
                 "ungraded": tally.ungraded,
@@ -446,13 +468,18 @@ def build_item_analysis(
             "level_label": _LEVEL_LABELS.get(classroom.level) if classroom.level else None,
         },
         "threshold": threshold,
-        # What ``error_rate`` is a percentage OF. A skipped question writes no answer row, so
-        # a student who never reached a question is in no denominator anywhere here.
-        "denominator": "answered",
+        # What ``error_rate`` is a percentage OF: answers with a verdict back. A skipped
+        # question writes no answer row, so a student who never reached one is in no
+        # denominator here; an answer still queued for grading is in none either.
+        "denominator": "graded",
         "counting_rule": "first submitted or graded attempt per student, counted once",
         "summary": {
             "questions_total": len(questions),
-            "questions_analysed": sum(1 for r in rows if r["students_answered"] > 0),
+            # A question with answers but no verdicts yet is NOT analysed — it has no rate.
+            "questions_analysed": sum(1 for r in rows if r["students_graded"] > 0),
+            "questions_awaiting_grading": sum(
+                1 for r in rows if r["students_graded"] == 0 and r["ungraded"] > 0
+            ),
             "questions_flagged": len(flagged_rows),
             "students_counted": len(set(attempt_students.values())),
             "attempts_counted": len(attempt_students),

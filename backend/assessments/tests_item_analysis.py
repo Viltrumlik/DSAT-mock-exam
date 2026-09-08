@@ -172,10 +172,15 @@ class ItemAnalysisCountingTests(TestCase):
         self.assertEqual(row["students_answered"], 2)
         self.assertEqual(row["students_wrong"], 1)
         self.assertEqual(row["error_rate"], 50.0)
-        self.assertEqual(self._analyse()["denominator"], "answered")
+        self.assertEqual(self._analyse()["denominator"], "graded")
 
-    def test_ungraded_is_its_own_number_never_wrong(self):
-        """A stuck grading worker must not manufacture an error rate."""
+    def test_ungraded_is_neither_wrong_nor_in_the_denominator(self):
+        """A stuck grading worker must neither manufacture an error rate nor hide one.
+
+        Two students have verdicts, two are still queued. The rate is over the two we know
+        about, not over all four — see ``ItemTally.error_rate``. Both counts stay on the row
+        so the thinness of the sample is visible.
+        """
         self.fx.sit(self.students[0], {self.q_bad: False})
         self.fx.sit(self.students[1], {self.q_bad: None})
         self.fx.sit(self.students[2], {self.q_bad: None})
@@ -186,7 +191,41 @@ class ItemAnalysisCountingTests(TestCase):
         self.assertEqual(row["students_wrong"], 1)
         self.assertEqual(row["students_correct"], 1)
         self.assertEqual(row["students_answered"], 4)
-        self.assertEqual(row["error_rate"], 25.0)
+        self.assertEqual(row["students_graded"], 2)
+        self.assertEqual(row["error_rate"], 50.0)
+
+    def test_pending_grading_cannot_hide_a_question_under_the_threshold(self):
+        """The regression this denominator exists for.
+
+        One student of five got it wrong and three are still queued. Counting the queued rows
+        in the denominator reads 20% — under the school's 25% line, so the question is never
+        flagged and nobody looks at it. Over graded work it is 50%, and it is flagged.
+        """
+        self.fx.sit(self.students[0], {self.q_bad: False})
+        self.fx.sit(self.students[1], {self.q_bad: True})
+        for student in self.students[2:] + [_student("s4@example.com")]:
+            self.fx.sit(student, {self.q_bad: None})
+
+        payload = self._analyse()
+        row = {r["question_id"]: r for r in payload["questions"]}[self.q_bad.id]
+        self.assertEqual(row["students_answered"], 5)
+        self.assertEqual(row["students_graded"], 2)
+        self.assertEqual(row["error_rate"], 50.0)
+        self.assertTrue(row["needs_analysis"])
+        self.assertIn(self.q_bad.id, {r["question_id"] for r in payload["needs_analysis"]})
+
+    def test_a_question_with_no_verdicts_yet_has_no_rate(self):
+        """Answered by everyone, graded for nobody: no rate, and not counted as analysed."""
+        for student in self.students[:4]:
+            self.fx.sit(student, {self.q_bad: None})
+
+        payload = self._analyse()
+        row = {r["question_id"]: r for r in payload["questions"]}[self.q_bad.id]
+        self.assertEqual(row["students_answered"], 4)
+        self.assertEqual(row["students_graded"], 0)
+        self.assertIsNone(row["error_rate"])
+        self.assertFalse(row["needs_analysis"])
+        self.assertEqual(payload["summary"]["questions_awaiting_grading"], 1)
 
     def test_a_retry_is_not_a_second_student(self):
         """The retry path re-serves the questions they got WRONG — the first sitting is the

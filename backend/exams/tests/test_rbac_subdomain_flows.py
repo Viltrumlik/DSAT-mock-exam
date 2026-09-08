@@ -104,6 +104,41 @@ class RBACSubdomainFlowsTests(TestCase):
         self.assertIsNot(post_resp, sentinel)
         self.assertEqual(post_resp.status_code, 403)
 
+    def test_teacher_hostguard_allows_the_teacher_scoped_assessment_reads(self):
+        """``/api/assessments/teacher/`` must reach the teacher console.
+
+        Two endpoints live under it — the submission queue and the item analysis that flags
+        a question a quarter of the class got wrong. Both are read-only and both scope
+        themselves to the caller's own classrooms inside the view, so the guard has nothing
+        to add. Without this entry they fall through to the namespace's catch-all 403 and the
+        page renders an error on the one console it was built for. Everything else under
+        ``/api/assessments/`` must stay blocked — that is what makes this a prefix rather
+        than an opening of the whole namespace.
+        """
+        from django.test import RequestFactory
+
+        from access.host_guard import SubdomainAPIGuardMiddleware
+
+        rf = RequestFactory()
+        teacher = User(role=acc_const.ROLE_TEACHER)
+        sentinel = object()
+        mw = SubdomainAPIGuardMiddleware(lambda req: sentinel)
+
+        for path in (
+            "/api/assessments/teacher/item-analysis/",
+            "/api/assessments/teacher/submission-queue/",
+        ):
+            req = rf.get(path, HTTP_HOST="teacher.mastersat.uz")
+            req.user = teacher
+            self.assertIs(mw(req), sentinel, f"{path} should pass the teacher host guard")
+
+        # The namespace itself is still closed: a sibling path is not swept in.
+        blocked = rf.get("/api/assessments/attempts/1/", HTTP_HOST="teacher.mastersat.uz")
+        blocked.user = teacher
+        resp = mw(blocked)
+        self.assertIsNot(resp, sentinel)
+        self.assertEqual(resp.status_code, 403)
+
     def test_questions_host_public_practice_catalog_is_reachable(self):
         """``questions.*`` allows ``GET /api/exams/`` (see ``SubdomainAPIGuardMiddleware``)."""
         self.client.force_authenticate(user=self.test_admin)
