@@ -22,7 +22,8 @@ def _student(email):
 
 
 class AcademicServiceTests(TestCase):
-    """Academic is a projection of the reward ledger — the points earned in THIS classroom.
+    """Academic is a projection of the reward ledger — the XP this class's students earned
+    studying it, here or in the same-subject group they moved here from.
 
     It was the sum of raw assessment ``score_points`` until the rewards cutover. Nothing about
     a point is decided here now: attendance, homework bundles, support sessions and midterms
@@ -92,7 +93,10 @@ class AcademicServiceTests(TestCase):
         self.assertEqual(partial.rank, 2)
 
     def test_the_board_is_scoped_to_this_classroom(self):
-        # Points earned elsewhere belong on the student's own Points page, not on this board.
+        # Points earned in a class this student was never a member of belong on their own
+        # Points page, not on this board. Carry-over is driven by membership — see
+        # `test_xp_from_a_group_the_student_left_follows_them_here` for the case that does
+        # reach this board, and why an award's classroom alone is not enough to admit it.
         self._award(self.partial, 500, "hw-part-elsewhere", classroom=self.other_classroom)
         service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
         partial = RankingSnapshot.objects.get(
@@ -100,6 +104,66 @@ class AcademicServiceTests(TestCase):
             period_key="p1", student=self.partial)
         self.assertEqual(float(partial.score), 10.0)
         self.assertEqual(partial.rank, 2)
+
+    def test_xp_from_a_group_the_student_left_follows_them_here(self):
+        """The bug the school reported. A student who changed group arrived on the new board
+        with 0 and last place, because every earning they had was tagged to the group they came
+        from. What they earned studying this subject is theirs — see
+        `rewards.services.board_classroom_ids`."""
+        mover = _student("a_mover@t.com")
+        ClassroomMembership.objects.create(
+            classroom=self.other_classroom, user=mover,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_REMOVED,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=mover, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self._award(mover, 30, "hw-mover-old", classroom=self.other_classroom)
+
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+
+        snap = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=mover)
+        self.assertEqual(float(snap.score), 30.0)
+        self.assertEqual(snap.rank, 1)          # ahead of `full` on 20
+
+    def test_a_group_the_student_is_still_in_does_not_inflate_this_board(self):
+        """A concurrent class is not a class they left. Counting it would show one total on
+        both boards, which is a bigger lie than the one being fixed."""
+        ClassroomMembership.objects.create(
+            classroom=self.other_classroom, user=self.partial,
+            role=ClassroomMembership.ROLE_STUDENT,
+        )
+        self._award(self.partial, 500, "hw-part-concurrent", classroom=self.other_classroom)
+
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+
+        partial = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.partial)
+        self.assertEqual(float(partial.score), 10.0)
+
+    def test_a_left_group_in_another_subject_stays_off_this_board(self):
+        """Students study English and Math in different groups. A move between subjects is not
+        a continuation, and merging them would make one board out of two."""
+        math = Classroom.objects.create(
+            name="Math A", subject=Classroom.SUBJECT_MATH,
+            lesson_days=Classroom.DAYS_ODD, created_by=self.owner,
+        )
+        ClassroomMembership.objects.create(
+            classroom=math, user=self.partial, role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_REMOVED,
+        )
+        self._award(self.partial, 500, "math-part", classroom=math)
+
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+
+        partial = RankingSnapshot.objects.get(
+            classroom=self.classroom, kind=RankingSnapshot.KIND_ACADEMIC,
+            period_key="p1", student=self.partial)
+        self.assertEqual(float(partial.score), 10.0)
 
     def test_a_classroom_less_award_counts_for_no_board(self):
         # Surveys and midterms carry no classroom. The school's stated default is that they

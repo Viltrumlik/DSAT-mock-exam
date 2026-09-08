@@ -89,7 +89,8 @@ def recompute_classroom(classroom, *, kinds=("ACADEMIC",), period_key=None, now=
 
 
 def _recompute_academic(classroom, student_ids, period_key, now) -> int:
-    """Rank on **XP earned in this classroom** — a projection of the reward ledger.
+    """Rank on **the XP this class's students have earned studying it** — a projection of
+    the reward ledger.
 
     The currency has changed twice. It used to be the sum of raw ``AssessmentResult``
     score_points, re-derived here every 20 minutes; the rewards cutover replaced that with
@@ -103,8 +104,13 @@ def _recompute_academic(classroom, student_ids, period_key, now) -> int:
     and neither is evidence of learning, so both earn points and neither earns XP. They still
     show on the student's Points page and still buy coins.
 
-    Scoped to awards carrying this classroom, so the board answers "earned in this class".
-    Classroom-less earnings — surveys, midterms — count toward the student's global XP on
+    Which awards count is ``rewards.services.board_classroom_ids``: this class, plus every
+    same-subject class the student has left. That last clause is the whole reason it is a
+    function — reading only the awards tagged with this classroom meant a student who changed
+    group arrived here with 0 and last place, having left every earning behind in the group
+    they came from. Do not "simplify" it back to ``filter(classroom=classroom)``.
+
+    Classroom-less earnings — surveys, midterms — still count toward the student's global XP on
     their Points page but toward no single class board. That is the school's stated default and
     the reason every award carries a nullable classroom; if they later want midterms on the
     class board, awards need a home-classroom rule rather than a change here.

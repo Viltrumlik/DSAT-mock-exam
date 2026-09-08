@@ -360,3 +360,117 @@ class LeaderboardApiTests(OrgFixture):
     def test_a_student_with_no_branch_gets_a_null_my_branch(self):
         self.client.force_authenticate(_u("lb_nb@t.com"))
         self.assertIsNone(self.client.get("/api/rewards/leaderboard/filters/").json()["my_branch"])
+
+
+class GroupBoardFollowsTheStudentTests(OrgFixture):
+    """A group change must not cost a student the XP they earned before it.
+
+    The school reported this in the students' own words: they moved to a new group and their
+    points became 0. The board was reading the awards *tagged with* the classroom, and every
+    earning of somebody who moves is tagged to the group they came from — so "My Group" showed
+    them an empty row under their own name.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # A second English group at the same branch: where `ann` moves to.
+        self.eng_north_two = self._classroom("Eng North II", self.north, Classroom.SUBJECT_ENGLISH)
+
+    def _join(self, student, classroom, status=ClassroomMembership.STATUS_ACTIVE):
+        return ClassroomMembership.objects.create(
+            classroom=classroom, user=student,
+            role=ClassroomMembership.ROLE_STUDENT, status=status,
+        )
+
+    def _move(self, student, source, target):
+        """How a move actually happens: the old membership is soft-removed, a new one is made."""
+        ClassroomMembership.objects.filter(classroom=source, user=student).update(
+            status=ClassroomMembership.STATUS_REMOVED
+        )
+        return self._join(student, target)
+
+    def test_xp_earned_in_the_old_group_ranks_them_in_the_new_one(self):
+        self._move(self.ann, self.eng_north, self.eng_north_two)
+
+        rows, _meta = self._board(self.ann, scope="GROUP")
+
+        self.assertEqual([(r["student_id"], r["xp"]) for r in rows], [(self.ann.pk, 100)])
+
+    def test_their_own_rank_agrees_with_the_board_beside_it(self):
+        """`rank_of` is computed separately so a student below the visible limit still sees
+        where they stand. The two must never disagree about the same student."""
+        self._move(self.ann, self.eng_north, self.eng_north_two)
+
+        mine = leaderboard.rank_of(
+            self.ann, leaderboard.BoardQuery.from_params({"scope": "GROUP"}), viewer=self.ann
+        )
+
+        self.assertEqual((mine["xp"], mine["rank"]), (100, 1))
+
+    def test_the_group_they_left_stops_ranking_them(self):
+        """The other half of a move, and the reason this board is built from the roster. Ranking
+        somebody in a class they are no longer in is how a teacher ends up asking why a name
+        they removed is still on their board."""
+        self._move(self.ann, self.eng_north, self.eng_north_two)
+
+        rows, _meta = self._board(self.bob, scope="GROUP")
+
+        self.assertEqual([r["student_id"] for r in rows], [self.bob.pk])
+
+    def test_a_group_they_are_still_in_is_not_counted_twice(self):
+        """Half of this school's students are in more than one class at a time. Counting a
+        *concurrent* class would put the same total on both boards and inflate every one of
+        them — fixing one complaint by raising a louder one."""
+        self._join(self.ann, self.eng_north_two)
+        self._earn(self.ann, self.eng_north_two, 7, "a-two")
+
+        first, _meta = self._board(self.ann, scope="GROUP", classroom=self.eng_north.pk)
+        second, _meta = self._board(self.ann, scope="GROUP", classroom=self.eng_north_two.pk)
+
+        self.assertEqual([(r["student_id"], r["xp"]) for r in first],
+                         [(self.ann.pk, 100), (self.bob.pk, 50)])
+        self.assertEqual([(r["student_id"], r["xp"]) for r in second], [(self.ann.pk, 7)])
+
+    def test_a_move_between_subjects_carries_nothing(self):
+        """Moving from Math to English is not a continuation of the same studies. Letting Math
+        XP rank an English class would make the two boards one board."""
+        self._move(self.cal, self.math_south, self.eng_north_two)
+
+        rows, _meta = self._board(self.cal, scope="GROUP")
+
+        self.assertEqual(rows, [])
+
+    def test_xp_earned_in_a_class_they_were_never_in_is_still_ignored(self):
+        """The carry-over is driven by *membership*, not by the classroom on the row. An award
+        pointing at a class the student never joined is a data oddity, not a continuation."""
+        self._earn(self.ann, self.eng_north_two, 500, "a-never-joined")
+
+        rows, _meta = self._board(self.ann, scope="GROUP", classroom=self.eng_north.pk)
+
+        self.assertEqual([(r["student_id"], r["xp"]) for r in rows],
+                         [(self.ann.pk, 100), (self.bob.pk, 50)])
+
+    def test_carried_xp_still_honours_the_time_window(self):
+        """Carry-over changes *which* classes count, never *when*. A 30-day board that quietly
+        counted a year-old earning because it came from another group would be a new bug."""
+        self._earn(self.ann, self.eng_north, 40, "a-old",
+                   when=timezone.now() - timedelta(days=90))
+        self._move(self.ann, self.eng_north, self.eng_north_two)
+
+        rows, _meta = self._board(self.ann, scope="GROUP", window="MONTH")
+
+        self.assertEqual([(r["student_id"], r["xp"]) for r in rows], [(self.ann.pk, 100)])
+
+    def test_a_student_who_has_earned_nothing_is_not_ranked(self):
+        """Unchanged by the rework: this board lists earners. A roster-driven board must not
+        start padding itself with zeroes — that is the class Rankings page's job, not this one."""
+        newcomer = self._student("lb_newcomer@t.com", self.eng_north)
+
+        rows, _meta = self._board(newcomer, scope="GROUP")
+
+        self.assertNotIn(newcomer.pk, [r["student_id"] for r in rows])
+        self.assertIsNone(
+            leaderboard.rank_of(
+                newcomer, leaderboard.BoardQuery.from_params({"scope": "GROUP"}), viewer=newcomer
+            )
+        )
