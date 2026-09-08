@@ -50,6 +50,23 @@ function assertShape<T extends { questions?: unknown; needs_analysis?: unknown }
   return payload;
 }
 
+/**
+ * The past paper's extra requirement: `totals.analysed`.
+ *
+ * `totals.error_rate` divides over the questions whose answer key is trustworthy, while
+ * `totals.wrong` / `totals.answered` stay whole — so without `analysed` the page cannot say
+ * which population the headline percentage describes, and would print a rate beside counts
+ * that do not reconcile. A server too old to send it is a shape this page does not understand,
+ * and the honest outcome is the error branch, not a quietly mislabelled number.
+ */
+function assertPastpaperShape(payload: PastpaperItemAnalysis, endpoint: string) {
+  const analysed = assertShape(payload, endpoint).totals?.analysed;
+  if (!analysed || typeof analysed.answered !== "number") {
+    throw new MalformedAnalysisError(endpoint);
+  }
+  return payload;
+}
+
 export interface AssessmentAnalysisParams {
   classroom: number;
   /** One assessment set assigned to that classroom; omitted means every set. */
@@ -85,7 +102,7 @@ export const questionAnalysisApi = {
         threshold: params.threshold,
       },
     });
-    return assertShape(data, PASTPAPER_ITEM_ANALYSIS);
+    return assertPastpaperShape(data, PASTPAPER_ITEM_ANALYSIS);
   },
 
   /** Classrooms this teacher is a member of — the picker at the top of the page. */

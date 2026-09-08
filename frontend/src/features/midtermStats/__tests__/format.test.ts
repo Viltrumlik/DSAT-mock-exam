@@ -8,8 +8,13 @@ import {
   MONTH_BASIS_LABEL,
   MONTH_BASIS_NOTE,
   NO_VALUE,
+  SCHEDULED,
   chartBars,
   definitionEntries,
+  isScheduledMonth,
+  latestSatMonth,
+  monthOptionLabel,
+  titleList,
   groupSubline,
   rosterNote,
   definitionLine,
@@ -146,6 +151,58 @@ describe("definitionEntries", () => {
     expect(entries[0].label).toBe("Pass rate");
     expect(definitionEntries(undefined)).toEqual([]);
     expect(definitionEntries({})).toEqual([]);
+  });
+
+  it("explains how the default month is chosen, which is not simply the newest", () => {
+    // The key was on the wire and invisible: an unlisted key is silently dropped, so the one
+    // rule a reader cannot infer from the picker — why it does not open on the top option —
+    // went unstated.
+    const entries = definitionEntries({
+      default_month:
+        "the most recent month the school has actually reached; a month scheduled ahead is offered but never opened on",
+    });
+    expect(entries.map((e) => e.key)).toEqual(["default_month"]);
+    expect(entries[0].label).toBe("Which month this page opens on");
+  });
+});
+
+describe("a month nobody has sat", () => {
+  it("is the payload's own list that decides, never the browser's clock", () => {
+    // The month is the school's (Asia/Tashkent). A reader's device may be on any other date.
+    expect(isScheduledMonth("2026-10", ["2026-10"])).toBe(true);
+    expect(isScheduledMonth("2026-09", ["2026-10"])).toBe(false);
+    expect(isScheduledMonth("2026-10", [])).toBe(false);
+    expect(isScheduledMonth("2026-10", undefined)).toBe(false);
+    expect(isScheduledMonth(null, ["2026-10"])).toBe(false);
+  });
+
+  it("says so in the picker's own option text", () => {
+    expect(monthOptionLabel("2026-10", ["2026-10"])).toBe("October 2026 (scheduled)");
+    expect(monthOptionLabel("2026-09", ["2026-10"])).toBe("September 2026");
+  });
+
+  it("is not the em dash: the two absences of a number mean different things", () => {
+    // NO_VALUE is "there was nothing to divide by"; a scheduled month has a known roster and
+    // no answer yet.
+    expect(SCHEDULED).not.toBe(NO_VALUE);
+    expect(SCHEDULED).toBe("Scheduled");
+  });
+
+  it("finds the newest month actually sat, to offer somewhere real to go", () => {
+    expect(latestSatMonth(["2026-10", "2026-09", "2026-08"], ["2026-10"])).toBe("2026-09");
+    // Every month still ahead: there is nowhere to send the reader, and saying so is the job.
+    expect(latestSatMonth(["2026-10"], ["2026-10"])).toBeNull();
+    expect(latestSatMonth([], [])).toBeNull();
+    expect(latestSatMonth(undefined, undefined)).toBeNull();
+  });
+});
+
+describe("titleList", () => {
+  it("names papers in a sentence rather than as an array", () => {
+    expect(titleList(["A"])).toBe("A");
+    expect(titleList(["A", "B"])).toBe("A and B");
+    expect(titleList(["A", "B", "C"])).toBe("A, B and C");
+    expect(titleList([])).toBe("");
   });
 });
 

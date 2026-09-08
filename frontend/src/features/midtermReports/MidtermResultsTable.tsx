@@ -52,6 +52,26 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
     retake.score_ceiling != null &&
     retake.score_ceiling !== midterm.score_ceiling;
 
+  /**
+   * The ceilings the retake column's scores could be out of.
+   *
+   * A row's retake score is resolved across EVERY retake (`admin_report.resolve_retake`) but
+   * the wire does not say which one produced it, and the column is headed by the oldest. With
+   * two retakes scored out of different totals, printing "84 / 800" against the header's
+   * ceiling invents a denominator: that 84 was out of 100. Now that `retakes[]` is on the
+   * wire the ambiguity is at least VISIBLE, so the score is shown bare instead of under a
+   * total it may not belong to.
+   */
+  const retakeCeilings = [
+    ...new Set((report.retakes ?? []).map((r) => r.score_ceiling).filter((c) => c != null)),
+  ];
+  const ambiguousRetakeScale = retakeCeilings.length > 1;
+  const retakeCeilingLabel = ambiguousRetakeScale
+    ? retakeCeilings.join(" or ")
+    : String(retake?.score_ceiling ?? "");
+  const AMBIGUOUS_SCORE_REASON =
+    "This paper has retakes scored out of different totals, and the record does not say which one this score came from — read it against that paper's own pass mark.";
+
   return (
     <div className="space-y-3">
       {/* What the numbers in this table are out of. */}
@@ -160,7 +180,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                         <th scope="col" className="px-3 py-2 text-right">
                           Retake score
                           <span className="block font-semibold normal-case tracking-normal">
-                            out of {retake.score_ceiling}
+                            out of {retakeCeilingLabel}
                           </span>
                         </th>
                       )}
@@ -206,8 +226,14 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                                   {scoreText(null, retake.score_ceiling, row.retake_state)}
                                 </span>
                               ) : (
-                                <span className="text-foreground">
-                                  {formatScore(row.retake_score, retake.score_ceiling)}
+                                <span
+                                  className="text-foreground"
+                                  title={ambiguousRetakeScale ? AMBIGUOUS_SCORE_REASON : undefined}
+                                >
+                                  {formatScore(
+                                    row.retake_score,
+                                    ambiguousRetakeScale ? null : retake.score_ceiling,
+                                  )}
                                 </span>
                               )}
                             </td>

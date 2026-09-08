@@ -154,11 +154,25 @@ export interface PastpaperItemRow {
 export interface PastpaperGroupRow {
   key: GroupKey;
   label: string;
+  /** Every question in the group, the held-out ones included — nothing vanishes from a count. */
   questions: number;
+  /**
+   * Of those, the ones at 90%+ whose answer key is likelier broken than the topic is hard.
+   * They are held out of `seen`/`answered`/`wrong`/`error_rate` below, because a breakdown row
+   * is read as a statement about a topic and one broken key makes that statement false.
+   */
+  suspect_key_count: number;
+  /** `questions - suspect_key_count`: the population every field under this one describes. */
+  analysed_questions: number;
   seen: number;
   answered: number;
   wrong: number;
+  /** `null` when every question in the group was held out — an em dash, never a 0%. */
   error_rate: number | null;
+  /**
+   * The teacher's work queue for this group, counted the other way round: suspect questions
+   * are included, because a broken key is the first thing on it.
+   */
   needs_analysis_count: number;
 }
 
@@ -180,17 +194,34 @@ export interface PastpaperItemAnalysis {
   threshold: number;
   /** Always `"answered"`. */
   denominator: string;
+  /**
+   * `"first_clean_completed_sitting_per_student"` — a machine tag, never rendered. "Clean",
+   * not merely "first": a sitting carrying the July-2026 copy signature is discarded and the
+   * student's *next* sitting is considered, rather than the student being dropped. The page
+   * says this in the "Only one sitting counts" note, in words.
+   */
   attempt_selection: string;
   needs_analysis: PastpaperItemRow[];
   questions: PastpaperItemRow[];
   totals: {
+    /** The paper as recorded. These five are whole-paper tallies, suspect rows included. */
     questions: number;
     seen: number;
     answered: number;
     omitted: number;
     correct: number;
     wrong: number;
+    /**
+     * Read as a statement about the class, so it divides over `analysed`, NOT over the raw
+     * tallies above it. `null` when every key on the paper is suspect.
+     */
     error_rate: number | null;
+    /**
+     * Exactly what `error_rate` divided. Named in the payload so the rate and the raw tallies
+     * beside it can never be mistaken for each other — they describe different populations
+     * whenever the paper carries a suspect key.
+     */
+    analysed: { questions: number; seen: number; answered: number; wrong: number };
     needs_analysis: number;
     suspect_key: number;
   };

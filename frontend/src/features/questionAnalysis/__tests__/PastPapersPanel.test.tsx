@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   PastPaperOption,
   PastpaperBreakdown,
+  PastpaperGroupRow,
   PastpaperItemAnalysis,
   PastpaperItemRow,
 } from "../types";
@@ -73,18 +74,25 @@ const item = (over: Partial<PastpaperItemRow> = {}): PastpaperItemRow => ({
   ...over,
 });
 
-const breakdown = (label: string, rate: number): PastpaperBreakdown => ({
+const breakdown = (
+  label: string,
+  rate: number | null,
+  over: Partial<PastpaperGroupRow> = {},
+): PastpaperBreakdown => ({
   coverage: { tagged: 10, total: 12 },
   groups: [
     {
       key: 1,
       label,
       questions: 1,
+      suspect_key_count: 0,
+      analysed_questions: 1,
       seen: 21,
       answered: 19,
       wrong: 12,
       error_rate: rate,
       needs_analysis_count: 1,
+      ...over,
     },
   ],
 });
@@ -102,7 +110,7 @@ function payload(over: Partial<PastpaperItemAnalysis> = {}): PastpaperItemAnalys
     classroom: { id: 3, name: "Chilonzor 12-A", subject: "ENGLISH", subject_label: "English" },
     threshold: 25,
     denominator: "answered",
-    attempt_selection: "first completed sitting",
+    attempt_selection: "first_clean_completed_sitting_per_student",
     needs_analysis: rows,
     questions: rows,
     totals: {
@@ -112,7 +120,9 @@ function payload(over: Partial<PastpaperItemAnalysis> = {}): PastpaperItemAnalys
       omitted: 12,
       correct: 137,
       wrong: 78,
-      error_rate: 36,
+      // Over the 11 trustworthy questions, not over the 215 raw answers beside it.
+      error_rate: 30.6,
+      analysed: { questions: 11, seen: 219, answered: 196, wrong: 60 },
       needs_analysis: rows.length,
       suspect_key: 1,
     },
@@ -269,6 +279,94 @@ describe("PastPapersPanel", () => {
     const details = host.querySelector("details[data-caveat-notes]");
     expect(details!.textContent).toContain("roster as it stands today");
     expect(details!.textContent).toContain("different class sizes");
+  });
+
+  it("prints the paper's rate beside the population it divided, not the raw tallies", async () => {
+    // `totals.error_rate` holds the suspect answer keys out; `totals.wrong`/`answered` do
+    // not. Showing the percentage without `totals.analysed` puts a rate and a set of counts
+    // that cannot be reconciled on the same screen.
+    await renderWithPaperChosen(payload());
+    const line = host.querySelector("[data-paper-rate]")!;
+    expect(line.textContent).toContain("30.6%");
+    expect(line.textContent).toContain("60 wrong of 196 answers");
+    expect(line.textContent).toContain("11 of 12 questions whose answer key looks sound");
+    expect(line.textContent).toContain("1 question at 90% or above is held out");
+    // And the paper as recorded is still there, under its own words.
+    expect(line.textContent).toContain("The paper as recorded: 78 wrong of 215 answers");
+  });
+
+  it("says on the row how many questions a breakdown rate had to leave out", async () => {
+    await renderWithPaperChosen(
+      payload({
+        groups: {
+          ...payload().groups,
+          question_type: breakdown("Math", 0, {
+            questions: 2,
+            suspect_key_count: 1,
+            analysed_questions: 1,
+            seen: 12,
+            answered: 12,
+            wrong: 0,
+          }),
+        },
+      }),
+    );
+    const counts = [...host.querySelectorAll("[data-breakdown-counts]")].map((p) => p.textContent);
+    expect(counts.join(" ")).toContain("2 questions (1 held out)");
+
+    const note = host.querySelector("[data-held-out-note]");
+    expect(note?.textContent).toContain("held out as a likely broken answer key");
+    expect(note?.textContent).toContain("the rate above is over the other 1 question");
+  });
+
+  it("makes an all-suspect group explain its dash rather than look like missing data", async () => {
+    // The measured case: Grid-in holds only the question whose key is broken. The em dash is
+    // correct — there is nothing trustworthy to average — but on its own it reads as a
+    // rendering fault or an empty class.
+    await renderWithPaperChosen(
+      payload({
+        groups: {
+          ...payload().groups,
+          format: breakdown("Grid-in", null, {
+            questions: 1,
+            suspect_key_count: 1,
+            analysed_questions: 0,
+            seen: 0,
+            answered: 0,
+            wrong: 0,
+          }),
+        },
+      }),
+    );
+    const counts = [...host.querySelectorAll("[data-breakdown-counts]")].map((p) => p.textContent);
+    // Never "0 wrong of 0 answers", which reads as a class that answered nothing.
+    expect(counts.join(" ")).toContain("1 question (1 held out) · nothing left to average");
+    expect(counts.join(" ")).not.toContain("0 wrong of 0 answers");
+
+    const note = host.querySelector("[data-held-out-note]");
+    expect(note?.textContent).toContain("The one question here is at 90% or above");
+    expect(note?.textContent).toContain("that dash is not a zero, and nothing is missing");
+  });
+
+  it("keeps the selection rule's raw tag off the screen, and its meaning on it", async () => {
+    // `attempt_selection` is a machine tag, and the rule it names changed: a student whose
+    // first sitting was corrupt is no longer dropped, only that sitting is.
+    await renderWithPaperChosen(payload());
+    expect(host.textContent).not.toContain("first_clean_completed_sitting_per_student");
+    const details = host.querySelector("details[data-caveat-notes]")!;
+    expect(details.textContent).toContain("their next clean sitting counts instead");
+  });
+
+  it("says a corrupt sitting cost the sitting, not the student", async () => {
+    await renderWithPaperChosen(payload());
+    const visible = Array.from(host.querySelectorAll("[data-caveat-tone]"))
+      .filter((el) => !el.closest("details"))
+      .map((el) => el.textContent)
+      .join(" ");
+    expect(visible).toContain("it is the sitting that was discarded, not the student");
+    // And the suspect-key warning now discloses the hold-out, which is what changed the
+    // meaning of every rate on the page.
+    expect(visible).toContain("held out of the paper's rate and of every statistic below");
   });
 
   it("still refuses to render a failed fetch as a clean paper", async () => {

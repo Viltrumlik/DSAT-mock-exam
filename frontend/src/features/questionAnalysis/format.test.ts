@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_THRESHOLD,
   EM_DASH,
+  analysedTotalsLine,
   assessmentWrongLine,
   barWidth,
   clampThreshold,
   formatPercent,
+  heldOutNote,
   humanEnum,
   paperLabel,
   pastpaperWrongLine,
@@ -131,5 +133,80 @@ describe("pastpaperWrongLine", () => {
     expect(pastpaperWrongLine({ wrong: 0, answered: 0, omitted: 0, seen: 0 })).toBe(
       "Nobody reached this question",
     );
+  });
+});
+
+/**
+ * The disclosure half of the contamination fix. The backend now holds a question whose answer
+ * key is likelier broken than its topic is hard out of every group rate and out of the paper's
+ * own rate — measured: a paper whose real Math error rate was 0% used to report "Math — 50%".
+ * These two sentences are what stops that correction from silently changing what the page
+ * means.
+ */
+describe("heldOutNote", () => {
+  it("stays quiet when nothing was held out", () => {
+    expect(heldOutNote(0, 4)).toBeNull();
+  });
+
+  it("names the shortfall and what the rate does cover", () => {
+    const note = heldOutNote(1, 1)!;
+    expect(note).toContain("1 question here is at 90% or above");
+    expect(note).toContain("the rate above is over the other 1 question");
+  });
+
+  it("agrees with itself in the plural", () => {
+    const note = heldOutNote(3, 5)!;
+    expect(note).toContain("3 questions here are at 90% or above");
+    expect(note).toContain("the other 5 questions");
+    expect(note).toContain("They are still on the list");
+  });
+
+  it("tells an all-suspect group's dash apart from missing data", () => {
+    // The em dash is correct here — there is nothing trustworthy to average — but on its own
+    // it reads as a class that never sat the paper.
+    const one = heldOutNote(1, 0)!;
+    expect(one).toContain("The one question here is at 90% or above");
+    expect(one).toContain("that dash is not a zero, and nothing is missing");
+    expect(heldOutNote(4, 0)!).toContain("All 4 questions here are at 90% or above");
+  });
+});
+
+describe("analysedTotalsLine", () => {
+  const totals = (over: Partial<Parameters<typeof analysedTotalsLine>[0]> = {}) => ({
+    questions: 12,
+    answered: 215,
+    wrong: 78,
+    analysed: { questions: 11, seen: 219, answered: 196, wrong: 60 },
+    ...over,
+  });
+
+  it("divides the rate over the analysed population and says the paper's own tallies too", () => {
+    const line = analysedTotalsLine(totals());
+    expect(line).toContain("60 wrong of 196 answers");
+    expect(line).toContain("23 more left blank");
+    expect(line).toContain("11 of 12 questions whose answer key looks sound");
+    expect(line).toContain("1 question at 90% or above is held out");
+    expect(line).toContain("The paper as recorded: 78 wrong of 215 answers");
+  });
+
+  it("adds no hold-out clause to a paper that held nothing out", () => {
+    const line = analysedTotalsLine(
+      totals({ analysed: { questions: 12, seen: 240, answered: 215, wrong: 78 } }),
+    );
+    expect(line).toBe("78 wrong of 215 answers, across every one of the 12 questions on this paper.");
+    expect(line).not.toContain("held out");
+  });
+
+  it("refuses to state a rate for a paper whose every key is suspect", () => {
+    const line = analysedTotalsLine(
+      totals({
+        questions: 1,
+        answered: 4,
+        wrong: 4,
+        analysed: { questions: 0, seen: 0, answered: 0, wrong: 0 },
+      }),
+    );
+    expect(line).toContain("there is no trustworthy rate for this paper");
+    expect(line).toContain("read the answer key before you read that");
   });
 });

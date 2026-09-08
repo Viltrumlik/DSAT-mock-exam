@@ -22,8 +22,8 @@ export function MidtermEvidence({
   classroomId,
   midtermId,
   /**
-   * How many retake papers this midterm has — `null`/omitted when the caller cannot tell.
-   * The two are genuinely different caveats; see the note near the bottom of this file.
+   * How many retake papers this midterm has, from the caller's own payload. A fallback only:
+   * this component's own response now carries `retakes[]`, which is the authority.
    */
   retakeCount,
 }: {
@@ -98,6 +98,16 @@ export function MidtermEvidence({
     );
   }
 
+  // This response is the authority on its own paper: the caller's count is a fallback for a
+  // server too old to send the list. `?? 0` only after both have been asked — a caveat that
+  // cannot count is not a caveat that counted one.
+  const retakes = Array.isArray(report.retakes) ? report.retakes.length : (retakeCount ?? 0);
+  // Two retakes scored out of different totals put two scales in one column. The table's own
+  // mixed-scale warning compares the parent against the FIRST retake only, so it cannot see
+  // this.
+  const mixedRetakeScales =
+    new Set((report.retakes ?? []).map((r) => r.score_ceiling)).size > 1;
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -125,27 +135,23 @@ export function MidtermEvidence({
         </p>
       )}
 
-      {/* The report endpoint reads only the FIRST retake of a paper; the statistics count a
-          pass on ANY of them, so on a paper with two retakes this table says "1 passed, 2
-          failed" where the Statistics tab says 2 passed — the same paper, the same page.
-          Never let the two disagree in silence.
+      {/* ONE caveat now, and it states a fact rather than what it cannot rule out.
+          `/reports/classrooms/<cid>/midterms/<mid>/` sends every retake, so this component
+          counts them from its own response — the hedged version that used to run whenever the
+          Records tab could not tell how many there were has nothing left to hedge about.
 
-          Two caveats, because there are two states of knowledge. A caller that knows the
-          count (the statistics drill-down, which is given `retakes`) states the fact. A
-          caller that does not — the Records tab, whose endpoint still sends only
-          `retake_for()`, a single object — must not pretend the count is 1: it says what it
-          cannot rule out instead. This branch disappears on its own the day
-          `ReportClassroomDetailView` sends every retake. */}
-      {retakeCount != null && retakeCount > 1 ? (
+          What remains true with two or more: the rows below already resolve across ALL of them
+          (`admin_report.resolve_retake` takes the first pass), but the column has one header
+          and it names the oldest paper, ceiling included. So a cell can hold a score from a
+          different paper than the one the column is titled after. */}
+      {retakes > 1 ? (
         <p className="rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-xs font-semibold text-warning-foreground">
-          This paper has {retakeCount} retakes. The table below shows the first one only, while
-          the pass rate above counts a student who passed any of them.
-        </p>
-      ) : retakeCount == null && report.retake != null ? (
-        <p className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
-          The retake column below is this paper&rsquo;s first retake. A paper can be given more
-          than one, and the Statistics tab counts a student who passed any of them — so if this
-          one has a second retake, its pass count there will be the higher of the two.
+          This paper has {retakes} retakes{report.retake ? `, headed below by ${report.retake.title}` : ""}.
+          A student&rsquo;s retake score is whichever of the {retakes} decided their result, and
+          the outcome counts a pass on any of them.
+          {mixedRetakeScales
+            ? " Those papers are not all scored out of the same total, so read a retake score against its own pass mark rather than against the column header."
+            : ""}
         </p>
       ) : null}
 

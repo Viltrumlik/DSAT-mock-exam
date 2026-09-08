@@ -16,8 +16,10 @@ import {
 import { normalizeApiError } from "@/lib/apiError";
 import { questionAnalysisApi, questionAnalysisKeys } from "./api";
 import {
+  HELD_OUT_RATE_TITLE,
   SUSPECT_KEY_THRESHOLD,
   agree,
+  analysedTotalsLine,
   flaggedHeading,
   formatCount,
   paperLabel,
@@ -50,6 +52,10 @@ function toBreakdownRows(breakdown: PastpaperBreakdown | undefined): BreakdownRo
     denominator: group.answered,
     errorRate: group.error_rate,
     flagged: group.needs_analysis_count,
+    // The rate, the counts beside it and the bar all describe `analysed_questions`, not
+    // `questions`. Carrying both across is what lets the row say so out loud.
+    heldOut: group.suspect_key_count,
+    analysedQuestions: group.analysed_questions,
     isUntagged: group.key === null,
   }));
 }
@@ -280,7 +286,11 @@ export function PastPapersPanel({
     caveats.push({
       id: "selection",
       tone: "info",
-      text: `Only the first completed sitting of this paper counts for each student, so a student who sat it three times does not carry triple weight. ${formatCount(
+      // The rule is "first *countable*", not "first recorded", and the difference is a real
+      // population: a student whose first sitting carried the copy bug used to be dropped
+      // from the paper entirely. Now only that sitting is discarded and their clean re-sit
+      // counts — which is the whole reason they sat it again.
+      text: `Each student's first completed sitting is the one that counts, so a student who sat this paper three times does not carry triple weight. If that first sitting was corrupted by the July 2026 submit bug it is discarded and their next clean sitting counts instead — the bug is exactly why a student would have sat the paper again. ${formatCount(
         dq.students_counted,
       )} of ${plural(dq.roster, "student")} on the roster have a counted sitting.`,
     });
@@ -291,7 +301,7 @@ export function PastPapersPanel({
         text: `${plural(
           dq.excluded.copied,
           "sitting",
-        )} ${agree(dq.excluded.copied, "was", "were")} excluded as corrupt: the Module 2 answers were recorded under Module 1's question ids by a submit bug fixed in July 2026. That work was not analysed and is in none of the numbers here.`,
+        )} ${agree(dq.excluded.copied, "was", "were")} excluded as corrupt: the Module 2 answers were recorded under Module 1's question ids by a submit bug fixed in July 2026. That work is in none of the numbers here — but it is the sitting that was discarded, not the student. Anyone who sat this paper again cleanly is counted on that sitting.`,
       });
     }
     if (dq.excluded.repeat_sitting > 0) {
@@ -301,7 +311,7 @@ export function PastPapersPanel({
         text: `${plural(
           dq.excluded.repeat_sitting,
           "repeat sitting",
-        )} of this paper ${agree(dq.excluded.repeat_sitting, "was", "were")} set aside — only each student's first one counts.`,
+        )} of this paper ${agree(dq.excluded.repeat_sitting, "was", "were")} set aside — once a student has one counted sitting, their later ones do not count again.`,
       });
     }
     if (dq.suspect_key_questions > 0) {
@@ -311,7 +321,15 @@ export function PastPapersPanel({
         text: `${plural(
           dq.suspect_key_questions,
           "question",
-        )} ${agree(dq.suspect_key_questions, "is", "are")} at ${SUSPECT_KEY_THRESHOLD}% or above. That is far more often a wrong answer key than a hard question — check the key before putting it on a lesson plan.`,
+        )} ${agree(dq.suspect_key_questions, "is", "are")} at ${SUSPECT_KEY_THRESHOLD}% or above. That is far more often a wrong answer key than a hard question — check the key before putting it on a lesson plan. ${agree(
+          dq.suspect_key_questions,
+          "It is",
+          "They are",
+        )} held out of the paper's rate and of every statistic below, so one broken key cannot make a topic look worse than the class is; ${agree(
+          dq.suspect_key_questions,
+          "it stays",
+          "they stay",
+        )} on the list to go over, because that is where a person has to look.`,
       });
     }
     caveats.push({
@@ -441,6 +459,27 @@ export function PastPapersPanel({
               sub={`${formatCount(data.totals.omitted)} answers left blank`}
             />
           </div>
+
+          {/* The paper's own rate, and the population it divided.
+              `totals.error_rate` holds the suspect answer keys out; `totals.wrong` /
+              `totals.answered` / the "answers left blank" card above do not, because they
+              describe the sitting as recorded. Both readings are right and they are not the
+              same number, so the page prints the rate next to the counts that produced it
+              rather than leaving a teacher to reconcile a percentage against tallies it never
+              divided. */}
+          <p data-paper-rate className="px-1 text-xs leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">Error rate for this paper:</span>{" "}
+            <RateValue
+              value={data.totals.error_rate}
+              emptyTitle={
+                data.totals.analysed.questions === 0 && data.totals.questions > 0
+                  ? HELD_OUT_RATE_TITLE
+                  : undefined
+              }
+              className="font-semibold"
+            />{" "}
+            — {analysedTotalsLine(data.totals)}
+          </p>
 
           {/* The two tabs scope their cohort differently for the same class, and a teacher
               comparing them sees two class sizes with no explanation. One line names this tab's

@@ -58,6 +58,12 @@ const payload = (over: Partial<MonthlyStats> = {}): MonthlyStats => ({
     absent_counts_as: "failed",
     rollup: "pooled",
   },
+  // The time block every payload carries: what month it is, what is still ahead, and whether
+  // the month on screen is one of those.
+  is_future: false,
+  future_months: [],
+  this_month: "2026-09",
+  orphan_retakes: [],
   totals: { ...tally, midterms: 1 },
   branches: [{ id: 1, name: "Chilonzor", ...tally }],
   departments: [{ subject: "MATH", label: "Math", name: "Math", ...tally }],
@@ -181,6 +187,195 @@ describe("MidtermStatsPage", () => {
     expect(out).toContain("4 roster places in September 2026 are still awaiting a result");
     expect(out).not.toContain("4 students in September 2026");
     expect(out).toContain("can only go up");
+  });
+
+  /**
+   * The worst reading this page can produce, and the reason `is_future` is on the wire.
+   *
+   * A midterm booked for next month dates into next month, its roster has sat nothing, absent
+   * counts as not passed — and the pooled formula answers 0.0%. Nothing in the shape of that
+   * answer says it is a plan. The backend stopped such a month being the DEFAULT; the picker
+   * still offers it, so everything below has to say what it is.
+   */
+  describe("a month the school has not reached", () => {
+    const scheduled = () =>
+      payload({
+        month: "2026-10",
+        is_future: true,
+        future_months: ["2026-10"],
+        this_month: "2026-09",
+        months: ["2026-10", "2026-09", "2026-08"],
+        totals: {
+          ...tally,
+          attended: 0,
+          passed_first: 0,
+          passed_retake: 0,
+          passed: 0,
+          failed: 0,
+          absent: 10,
+          retake_taken: 0,
+          retake_passed: 0,
+          // The formula's honest answer over a roster nobody has sat: zero, not null.
+          pass_rate: 0,
+          attendance_rate: 0,
+          first_try_share: null,
+          retake_share: null,
+          midterms: 1,
+        },
+      });
+
+    it("reports it as scheduled and prints no pass rate at all", async () => {
+      monthly.mockResolvedValue(scheduled());
+      const out = await render();
+
+      expect(out).toContain("October 2026 is scheduled — nobody has sat these papers yet");
+      expect(out).toContain("it is September 2026 now");
+      expect(out).toContain("Scheduled");
+      // The whole point: the 0% the backend computed never reaches the screen.
+      expect(out).not.toContain("0%");
+      expect(out).not.toContain("0 of 10 roster places passed");
+      // Nor the verdict tiles that are only zero because nothing has happened.
+      expect(out).not.toContain("Did not pass");
+      expect(out).toContain("Papers scheduled");
+    });
+
+    it("shows what is booked instead of ranking classes that have sat nothing", async () => {
+      monthly.mockResolvedValue(scheduled());
+      const out = await render();
+
+      expect(out).toContain("Booked for October 2026");
+      expect(out).toContain("Papers booked");
+      expect(out).toContain("Math Senior A");
+      // A league table of a plan: the order alone would be read as a finding.
+      for (const heading of ["Branches", "Departments", "Teachers"]) {
+        expect(out).not.toContain(heading);
+      }
+      expect(out).not.toContain("Pass rate by");
+    });
+
+    it("offers the newest month actually sat as the way out", async () => {
+      monthly.mockResolvedValue(scheduled());
+      await render();
+      const back = [...(container?.querySelectorAll("button") ?? [])].find((b) =>
+        b.textContent?.includes("Show September 2026 instead"),
+      ) as HTMLElement;
+      expect(back).toBeTruthy();
+
+      monthly.mockResolvedValue(payload());
+      await act(async () => {
+        back.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      expect(monthly).toHaveBeenLastCalledWith("2026-09");
+    });
+
+    it("marks a scheduled month in the picker, so choosing one is a choice", async () => {
+      monthly.mockResolvedValue(scheduled());
+      await render();
+      const options = [...(container?.querySelectorAll("option") ?? [])].map((o) => o.textContent);
+      expect(options).toContain("October 2026 (scheduled)");
+      expect(options).toContain("September 2026");
+    });
+
+    it("says there are no results yet when there is no month to open on", async () => {
+      // `/stats/months/` answers `current: null` in exactly this case, and the monthly payload
+      // answers `month: null`. An empty school it is not.
+      monthly.mockResolvedValue(
+        payload({
+          month: null,
+          is_future: false,
+          future_months: ["2026-10"],
+          this_month: "2026-09",
+          months: ["2026-10"],
+          totals: {
+            ...tally,
+            roster: 0,
+            attended: 0,
+            passed: 0,
+            passed_first: 0,
+            passed_retake: 0,
+            failed: 0,
+            absent: 0,
+            retake_taken: 0,
+            retake_passed: 0,
+            pass_rate: null,
+            attendance_rate: null,
+            first_try_share: null,
+            retake_share: null,
+            classrooms: 0,
+            distinct_students: 0,
+            midterms: 0,
+          },
+          branches: [],
+          departments: [],
+          teachers: [],
+          classrooms: [],
+        }),
+      );
+      const out = await render();
+
+      expect(out).toContain("No results yet");
+      expect(out).toContain("Every month it has is still ahead: October 2026");
+      expect(out).not.toContain("No midterms in");
+      expect(out).not.toContain("Could not load");
+      // And the picker does not sit blank with nothing selected.
+      expect(out).toContain("No month with results");
+      // No month was chosen, so nothing is on screen wearing the word "Passed" over a zero.
+      expect(out).not.toContain("Did not pass");
+      expect(out).not.toContain("How passers got through");
+    });
+  });
+
+  describe("orphan retakes", () => {
+    const orphans = [{ id: 44, title: "Midterm 12 Retake" }];
+
+    it("names the papers left out of every figure", async () => {
+      monthly.mockResolvedValue(payload({ orphan_retakes: orphans }));
+      const out = await render();
+
+      expect(out).toContain("1 retake paper left out of every figure for September 2026");
+      expect(out).toContain("Midterm 12 Retake");
+      expect(out).toContain("no parent midterm");
+      // Still a month with data: the tables are untouched.
+      expect(out).toContain("Branches");
+    });
+
+    it("explains an empty month whose only paper was an orphan retake", async () => {
+      monthly.mockResolvedValue(
+        payload({
+          month: "2026-01",
+          orphan_retakes: orphans,
+          totals: {
+            ...tally,
+            roster: 0,
+            attended: 0,
+            passed: 0,
+            passed_first: 0,
+            passed_retake: 0,
+            failed: 0,
+            absent: 0,
+            retake_taken: 0,
+            retake_passed: 0,
+            pass_rate: null,
+            attendance_rate: null,
+            first_try_share: null,
+            retake_share: null,
+            classrooms: 0,
+            distinct_students: 0,
+            midterms: 0,
+          },
+          branches: [],
+          departments: [],
+          teachers: [],
+          classrooms: [],
+        }),
+      );
+      const out = await render();
+
+      expect(out).toContain("No countable midterms in January 2026");
+      expect(out).toContain("is a retake with no parent midterm — Midterm 12 Retake");
+      // The generic copy would have left the reader hunting for a paper they can see.
+      expect(out).not.toContain("No class sat a countable paper in this month");
+    });
   });
 
   it("never calls roster places students, at any altitude", async () => {

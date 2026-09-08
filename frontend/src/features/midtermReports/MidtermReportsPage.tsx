@@ -300,6 +300,9 @@ function MidtermCard({
   const graded = isGraded(midterm);
   const { counts } = midterm;
   const panelId = `midterm-report-${midterm.id}`;
+  // Exact now that the list endpoint sends every retake. "has a retake" was true of a paper
+  // with three, and the number changes how the table under it must be read.
+  const retakes = retakeCountOf(midterm);
   // An ungraded midterm produces no passed/failed tally at all, so the collapsed row would
   // otherwise show only its absentees and hide the class that actually sat it. The rest of
   // the roster is exactly the students who have a score and no verdict.
@@ -328,7 +331,13 @@ function MidtermCard({
         </span>
         <span className="ml-6 mt-0.5 block text-xs text-muted-foreground">
           {midterm.subject_label} · {formatWhen(midterm.scheduled_at)}
-          {midterm.retake ? " · has a retake" : ""}
+          {retakes == null
+            ? midterm.retake
+              ? " · has a retake"
+              : ""
+            : retakes > 0
+              ? ` · ${retakes} retake paper${retakes === 1 ? "" : "s"}`
+              : ""}
         </span>
         {/* The tally is the point of the collapsed row: what needs attention must be
             readable without opening anything. */}
@@ -365,13 +374,12 @@ function MidtermCard({
 
       {expanded && (
         <div id={panelId} className="border-t border-border px-4 py-4">
-          {/* `null` when this endpoint does not say how many retakes the paper has — which
-              today is always. Passing it explicitly rather than omitting it keeps the two
-              states of knowledge visible at the call site. */}
+          {/* The exact count from this list's own payload. `MidtermEvidence` re-counts from
+              its own response and prefers that; this is what it falls back to. */}
           <MidtermEvidence
             classroomId={classroomId}
             midtermId={midterm.id}
-            retakeCount={retakeCountOf(midterm)}
+            retakeCount={retakes}
           />
         </div>
       )}

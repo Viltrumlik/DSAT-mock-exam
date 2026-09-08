@@ -22,17 +22,25 @@ export const FLAGGED_RATE_CLASS = "text-rose-700 dark:text-rose-300";
 export function RateValue({
   value,
   flagged,
+  emptyTitle,
   className,
 }: {
   value: number | null | undefined;
   /** At or above the teacher's threshold — worth a lesson. */
   flagged?: boolean;
+  /**
+   * Why *this* denominator is empty, when the default is the wrong reason. A past-paper
+   * breakdown whose every question was held out as a likely broken answer key is not waiting
+   * on answers — it has them, and cannot trust them — and telling a teacher otherwise sends
+   * them to wait for a sitting that already happened.
+   */
+  emptyTitle?: string;
   className?: string;
 }) {
   if (value == null) {
     return (
       <span
-        title={UNKNOWN_RATE_TITLE}
+        title={emptyTitle ?? UNKNOWN_RATE_TITLE}
         className={cn("cursor-help text-muted-foreground", className)}
       >
         {EM_DASH}

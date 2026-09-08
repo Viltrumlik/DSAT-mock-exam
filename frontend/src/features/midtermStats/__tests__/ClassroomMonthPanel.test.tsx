@@ -72,6 +72,10 @@ const detail = (over: Partial<ClassroomMonth> = {}): ClassroomMonth => ({
   month: "2026-09",
   months: ["2026-09"],
   definition: { pass_rate: "passed / roster", rollup: "pooled" },
+  is_future: false,
+  future_months: [],
+  this_month: "2026-09",
+  orphan_retakes: [],
   summary: { ...tally, midterms: 1, distinct_students: 4 },
   rows: [paper()],
   ...over,
@@ -198,6 +202,100 @@ describe("ClassroomMonthPanel", () => {
     const out = await render();
     expect(out).toContain("This class has never sat a midterm");
     expect(out).not.toContain("Could not load");
+  });
+
+  it("reports a month this class has not reached as booked, never as a rate", async () => {
+    classroomCall.mockResolvedValue(
+      detail({
+        month: "2026-10",
+        months: ["2026-10", "2026-09"],
+        is_future: true,
+        future_months: ["2026-10"],
+        this_month: "2026-09",
+        summary: {
+          ...tally,
+          attended: 0,
+          passed: 0,
+          passed_first: 0,
+          passed_retake: 0,
+          failed: 0,
+          absent: 4,
+          retake_taken: 0,
+          retake_passed: 0,
+          pass_rate: 0,
+          attendance_rate: 0,
+          first_try_share: null,
+          retake_share: null,
+          midterms: 1,
+          distinct_students: 4,
+        },
+        rows: [paper({ month: "2026-10", pass_rate: 0, passed: 0, absent: 4, attended: 0 })],
+      }),
+    );
+    const out = await render();
+
+    expect(out).toContain("October 2026 is scheduled — nobody has sat these papers yet");
+    expect(out).toContain("Booked for October 2026");
+    expect(out).toContain("Papers booked for this month");
+    expect(out).toContain("4 students on the roster · not sat yet");
+    expect(out).toContain("Scheduled");
+    // Neither the summary nor the paper row prints the 0% the formula returns.
+    expect(out).not.toContain("0%");
+    expect(out).not.toContain("0 of 4 roster places");
+    expect(out).not.toContain("4 absent");
+  });
+
+  it("does not tell a class with a paper booked that nothing was ever timetabled for it", async () => {
+    // `month: null` with months still ahead. The old copy said the opposite of the truth.
+    classroomCall.mockResolvedValue(
+      detail({
+        month: null,
+        months: ["2026-10"],
+        is_future: false,
+        future_months: ["2026-10"],
+        this_month: "2026-09",
+        rows: [],
+        summary: {
+          ...tally,
+          roster: 0,
+          attended: 0,
+          passed: 0,
+          passed_first: 0,
+          passed_retake: 0,
+          failed: 0,
+          absent: 0,
+          retake_taken: 0,
+          retake_passed: 0,
+          pass_rate: null,
+          attendance_rate: null,
+          first_try_share: null,
+          retake_share: null,
+          midterms: 0,
+          distinct_students: 0,
+        },
+      }),
+    );
+    const out = await render();
+
+    expect(out).toContain("No results for this class yet");
+    expect(out).toContain("timetabled for October 2026");
+    expect(out).not.toContain("No paper has been timetabled for it");
+  });
+
+  it("names a retake paper that no figure counts, and explains an empty month it caused", async () => {
+    classroomCall.mockResolvedValue(
+      detail({
+        rows: [],
+        orphan_retakes: [{ id: 44, title: "Midterm 12 Retake" }],
+        summary: { ...tally, midterms: 0, distinct_students: 4 },
+      }),
+    );
+    const out = await render();
+
+    expect(out).toContain("1 retake paper left out of every figure for September 2026");
+    expect(out).toContain("Midterm 12 Retake");
+    expect(out).toContain("is a retake with no parent midterm");
+    expect(out).not.toContain("Pre-midterms and retake papers are not counted as units");
   });
 
   it("opens the per-student evidence for a paper on request, not before", async () => {

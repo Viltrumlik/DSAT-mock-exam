@@ -77,18 +77,18 @@ export type ClassroomMidtermRow = MidtermBrief & {
   scheduled_at: string | null;
   counts: Counts;
   /**
-   * The FIRST retake of this paper, which is the only one the per-student report reads.
-   * A paper can have more than one (`admin_report.retakes_for`), and the monthly statistics
-   * count a pass on any of them — so this single object is not enough to tell a reader
-   * whether the two surfaces should agree.
+   * The OLDEST retake of this paper — the one the per-student table heads its retake column
+   * with. Kept beside `retakes` for the single-retake reader; it is a name for a column, not
+   * a count of anything.
    */
   retake: RetakeBrief | null;
   /**
-   * Every retake, when the backend sends them. Optional because this endpoint does not yet:
-   * `ReportClassroomDetailView` still serialises `retake_for(m)` alone. Read it through
-   * {@link retakeCountOf}, which returns `null` — "unknown", never 0 — when it is absent.
+   * Every retake of this paper, oldest first. `ReportClassroomDetailView` sends it beside
+   * `retake`, so a reader can state the count exactly instead of hedging about what it cannot
+   * see. Still read through {@link retakeCountOf}, which answers `null` — "unknown", never 0 —
+   * if an older server ever omits it.
    */
-  retakes?: RetakeBrief[];
+  retakes: RetakeBrief[];
 };
 
 export type ClassroomDetail = { classroom: ClassroomBrief; midterms: ClassroomMidtermRow[] };
@@ -117,7 +117,15 @@ export type ReportSummary = Counts & {
 export type MidtermReport = {
   classroom: ClassroomBrief;
   midterm: MidtermBrief;
+  /**
+   * The paper the retake COLUMN is headed by: the oldest retake, and its score ceiling is the
+   * "out of N" printed in that header. A row's cell may nonetheless come from any of
+   * {@link MidtermReport.retakes} — `admin_report.resolve_retake` takes the first pass across
+   * all of them — which is precisely why both are on the wire.
+   */
   retake: MidtermBrief | null;
+  /** Every retake of this paper, oldest first. The rows are resolved across all of them. */
+  retakes: MidtermBrief[];
   summary: ReportSummary;
   rows: ReportRow[];
 };

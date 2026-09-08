@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { monthLabel, passerSplit, plural, rateReason, rosterNote } from "./format";
-import { RateFigure } from "./StatsUI";
+import { RateFigure, ScheduledFigure } from "./StatsUI";
 import type { MonthlyStats } from "./types";
 
 /**
@@ -63,10 +63,44 @@ function Tile({
   );
 }
 
+/**
+ * The same row for a month nobody has sat yet: what is BOOKED, and not one rate.
+ *
+ * The verdict tiles are gone rather than zeroed. "Passed 0 · Did not pass 117" is arithmetically
+ * true of a scheduled month and is a lie about a school, and a tile is exactly the thing a
+ * reader quotes without the banner above it.
+ */
+function ScheduledHeadline({ stats }: { stats: MonthlyStats }) {
+  const t = stats.totals;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <Tile
+        label="Pass rate"
+        value={<ScheduledFigure className="text-2xl font-extrabold" />}
+        detail={`Nobody has sat ${monthLabel(stats.month) || "this month"} yet, so there is no rate to compute — not a rate of zero.`}
+      />
+      <Tile
+        label="Papers scheduled"
+        value={t.midterms}
+        detail={`${plural(t.classrooms, "class", "classes")} with a paper booked in this month.`}
+      />
+      <Tile
+        label="Students"
+        value={t.distinct_students}
+        detail={`${plural(t.roster, "roster place")} are waiting on these papers. None of them is an absence yet.`}
+      />
+    </div>
+  );
+}
+
 export function HeadlineStats({ stats }: { stats: MonthlyStats }) {
   const t = stats.totals;
   const notPassed = t.failed + t.absent;
   const split = passerSplit(t);
+
+  // Decided here rather than by the caller: this component is the one that puts a percentage
+  // in 30px type, so it is the one that must never do so for a paper nobody has sat.
+  if (stats.is_future) return <ScheduledHeadline stats={stats} />;
 
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

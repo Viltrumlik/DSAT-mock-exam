@@ -1,9 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { AlertTriangle, Info } from "lucide-react";
+import { AlertTriangle, CalendarClock, Info } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { NO_VALUE, formatRate } from "./format";
+import { NO_VALUE, SCHEDULED, formatRate, monthLabel, plural, titleList } from "./format";
+import type { MonthKey, RetakeBrief } from "./types";
 
 /**
  * The presentation atoms the statistics page is built from.
@@ -258,6 +259,123 @@ export function Note({ children, className }: { children: ReactNode; className?:
       <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
       <span>{children}</span>
     </p>
+  );
+}
+
+/**
+ * The banner over a month nobody has sat yet.
+ *
+ * This is the rendered half of `is_future`, and it exists because of a specific misreading a
+ * director could not have detected: every teacher assign path writes a `starts_at`, so a paper
+ * booked for next month dates into next month, its whole roster is absent, absent counts as
+ * not passed — and the pooled formula returns a flawless **0.0%** for work nobody has done.
+ * Nothing in the shape of that answer says it is a plan. The backend stopped such a month
+ * being the default; the picker still offers it, so this says what it is.
+ *
+ * Loud on purpose (`role="note"`, warning tone, top of the page): the figures under it are
+ * about to look exactly like results, and a reader who scrolls past a quiet line is left with
+ * the school's own console telling them a class scored nothing.
+ */
+export function ScheduledBanner({
+  month,
+  thisMonth,
+  latestMonth,
+  onOpenLatest,
+  detail,
+}: {
+  month: MonthKey;
+  /** The school's own current month — the payload computes it; the browser must not. */
+  thisMonth?: MonthKey | null;
+  /** The newest month actually sat, offered as somewhere real to go. */
+  latestMonth?: MonthKey | null;
+  onOpenLatest?: () => void;
+  /** What IS known about the month: how many papers, for how many classes. */
+  detail?: ReactNode;
+}) {
+  return (
+    <div
+      role="note"
+      className="flex flex-wrap items-start gap-3 rounded-2xl border border-warning/25 bg-warning-soft p-4 text-sm text-warning-foreground"
+    >
+      <CalendarClock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="font-bold">
+          {monthLabel(month)} is scheduled — nobody has sat these papers yet
+        </p>
+        <p className="mt-0.5 font-semibold">
+          There are no results for a month the school has not reached
+          {thisMonth ? `; it is ${monthLabel(thisMonth)} now` : ""}. Every student on these
+          rosters is still counted absent, and absent counts as not passed — so a pass rate
+          here would come out at zero for work nobody has done. Nothing on this page is a
+          score for {monthLabel(month)}.
+        </p>
+        {detail ? <p className="mt-1 text-[13px] font-normal opacity-90">{detail}</p> : null}
+      </div>
+      {onOpenLatest && latestMonth ? (
+        <button
+          type="button"
+          onClick={onOpenLatest}
+          className="ds-ring shrink-0 rounded-lg border border-warning/30 px-3 py-1.5 text-[13px] font-bold hover:bg-warning/10"
+        >
+          Show {monthLabel(latestMonth)} instead
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Where a rate would go in a scheduled month: the word, not a percentage.
+ *
+ * The alternative — printing the real 0% in a muted colour — still leaves a number on the page
+ * that a reader can quote, screenshot or paste into a message with the caveat left behind.
+ */
+export function ScheduledFigure({ className }: { className?: string }) {
+  return (
+    <span className={cn("text-muted-foreground", className)}>
+      {SCHEDULED}
+      <span className="sr-only"> — nobody has sat this yet, so there is no rate</span>
+    </span>
+  );
+}
+
+/**
+ * The retake papers left out of every figure, named.
+ *
+ * A parentless RETAKE is excluded from the whole aggregation: it cannot be counted (only
+ * students who did not pass are ever given one, so its denominator would be a class it was
+ * never offered to) and it cannot be folded into a parent that does not exist. Silence was the
+ * bug — a paper somebody can see in the builder simply went missing from the table.
+ */
+export function OrphanRetakeNote({
+  month,
+  papers,
+}: {
+  month: MonthKey | null;
+  papers: RetakeBrief[];
+}) {
+  if (papers.length === 0) return null;
+  const one = papers.length === 1;
+  return (
+    <div
+      role="note"
+      className="rounded-2xl border border-warning/25 bg-warning-soft px-4 py-3 text-[13px] text-warning-foreground"
+    >
+      <p className="flex items-start gap-2 font-bold">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>
+          {plural(papers.length, "retake paper")} left out of every figure
+          {month ? ` for ${monthLabel(month)}` : ""}
+        </span>
+      </p>
+      <p className="mt-1 pl-[22px] font-normal">
+        {titleList(papers.map((p) => p.title))} {one ? "has" : "have"} no parent midterm.{" "}
+        {one ? "It is" : "They are"} counted nowhere here: only a student who did not pass is
+        given a retake, so standing one on its own would measure a whole class against a paper
+        most of them were never offered. Give {one ? "it" : "each"} a parent midterm in the
+        builder and {one ? "it folds" : "they fold"} into that paper&rsquo;s numbers.
+      </p>
+    </div>
   );
 }
 

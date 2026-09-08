@@ -22,6 +22,17 @@ export const EM_DASH = "—";
 export const UNKNOWN_RATE_TITLE =
   "No answers to divide by yet, so there is no rate — this is not 0%.";
 
+/**
+ * The *other* reason a past-paper rate is empty, and the two must never be confused.
+ *
+ * "Nobody has answered" and "everything here was held out as a likely broken answer key" both
+ * arrive as `null`, but they ask a teacher to do opposite things: wait, versus go and read the
+ * answer key. Handing the second one the first one's tooltip would tell a teacher their class
+ * never sat a paper they in fact all sat.
+ */
+export const HELD_OUT_RATE_TITLE =
+  "No rate: every question here was held out as a likely broken answer key. This is not 0%, and it is not missing data.";
+
 /** The school owner's rule, and the bounds the backend clamps to. */
 export const DEFAULT_THRESHOLD = 25;
 export const MIN_THRESHOLD = 1;
@@ -146,6 +157,84 @@ export function assessmentWrongLine(row: {
   return row.ungraded > 0
     ? `${base} · ${plural(row.ungraded, "more answer")} still waiting on a score`
     : base;
+}
+
+/**
+ * Why a breakdown row's rate covers fewer questions than the row counts — or covers none.
+ *
+ * The backend holds a question at 90%+ out of every group rate, because a row like
+ * "Math — 50%" is read as a statement about Math, and one broken answer key is enough to make
+ * that statement false. (Measured: a paper whose real Math error rate was 0% reported 50%.)
+ * The hold-out is right, but silent: the row prints a rate over fewer questions than its own
+ * count implies, and a group that is *entirely* suspect prints an em dash that looks exactly
+ * like missing data. This sentence is the difference between a page that changed meaning and
+ * a page that says so.
+ *
+ * `null` when nothing was held out, which is the ordinary case — no note, no noise.
+ */
+export function heldOutNote(heldOut: number, analysedQuestions: number): string | null {
+  if (heldOut <= 0) return null;
+  if (analysedQuestions <= 0) {
+    return (
+      `${
+        heldOut === 1
+          ? "The one question here is"
+          : `All ${formatCount(heldOut)} questions here are`
+      } at ${SUSPECT_KEY_THRESHOLD}% or above, which is far more often a wrong answer key ` +
+      `than a hard topic. ${agree(heldOut, "It is", "They are")} held out rather than averaged ` +
+      "in, so this row has no rate to show — that dash is not a zero, and nothing is missing."
+    );
+  }
+  return (
+    `${plural(heldOut, "question")} here ${agree(heldOut, "is", "are")} at ` +
+    `${SUSPECT_KEY_THRESHOLD}% or above and held out as a likely broken answer key, so the ` +
+    `rate above is over the other ${plural(analysedQuestions, "question")}. ` +
+    `${agree(heldOut, "It is", "They are")} still on the list to go over — read the key first.`
+  );
+}
+
+/**
+ * The sentence beside the paper's headline rate, naming the population that rate divided.
+ *
+ * `totals.error_rate` is read the same way a breakdown row is, so it too holds the suspect
+ * keys out — while `totals.wrong` / `totals.answered` stay whole, because they describe the
+ * sitting as it was recorded. Printing the rate beside the raw tallies without saying so
+ * shows a percentage and a set of counts that do not reconcile, and invites a teacher to
+ * check the arithmetic of a page that is in fact correct.
+ */
+export function analysedTotalsLine(totals: {
+  questions: number;
+  answered: number;
+  wrong: number;
+  analysed: { questions: number; seen: number; answered: number; wrong: number };
+}): string {
+  const { analysed } = totals;
+  const heldOut = Math.max(0, totals.questions - analysed.questions);
+  const blank = Math.max(0, analysed.seen - analysed.answered);
+
+  if (heldOut === 0) {
+    return (
+      `${formatCount(totals.wrong)} wrong of ${plural(totals.answered, "answer")}, across ` +
+      `every one of the ${plural(totals.questions, "question")} on this paper.`
+    );
+  }
+  if (analysed.questions === 0) {
+    return (
+      `there is no trustworthy rate for this paper — every one of its ` +
+      `${plural(totals.questions, "question")} is at ${SUSPECT_KEY_THRESHOLD}% or above, so ` +
+      `all of them are held out as likely broken answer keys. As recorded, the class got ` +
+      `${formatCount(totals.wrong)} of ${plural(totals.answered, "answer")} wrong; read the ` +
+      "answer key before you read that."
+    );
+  }
+  return (
+    `${formatCount(analysed.wrong)} wrong of ${plural(analysed.answered, "answer")}` +
+    `${blank > 0 ? `, with ${formatCount(blank)} more left blank` : ""}, over the ` +
+    `${formatCount(analysed.questions)} of ${plural(totals.questions, "question")} whose ` +
+    `answer key looks sound. ${plural(heldOut, "question")} at ${SUSPECT_KEY_THRESHOLD}% or ` +
+    `above ${agree(heldOut, "is", "are")} held out of it. The paper as recorded: ` +
+    `${formatCount(totals.wrong)} wrong of ${plural(totals.answered, "answer")}.`
+  );
 }
 
 /**

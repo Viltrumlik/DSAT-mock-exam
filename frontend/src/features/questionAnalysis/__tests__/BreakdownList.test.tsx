@@ -107,6 +107,63 @@ describe("BreakdownList bars", () => {
   });
 });
 
+/**
+ * A suspect answer key is held out of the rate on this row — the fix for a paper whose real
+ * Math error rate was 0% and which reported "Math — 50%". The hold-out is right; a hold-out
+ * nobody can see is not, because the row then prints a rate over fewer questions than its own
+ * count implies and says nothing about it.
+ */
+describe("BreakdownList hold-outs", () => {
+  it("puts the held-out count next to the count it was held out of", () => {
+    render([row({ questions: 2, heldOut: 1, analysedQuestions: 1, wrong: 0, denominator: 12, errorRate: 0 })]);
+    const counts = host.querySelector("[data-breakdown-counts]");
+    expect(counts?.textContent).toContain("2 questions (1 held out)");
+    // The counts beside the rate describe the same population the rate does.
+    expect(counts?.textContent).toContain("0 wrong of 12 answers");
+  });
+
+  it("explains what the rate covers instead of leaving the shortfall to arithmetic", () => {
+    render([row({ questions: 2, heldOut: 1, analysedQuestions: 1, errorRate: 0 })]);
+    const note = host.querySelector("[data-held-out-note]");
+    expect(note?.textContent).toContain("1 question here is at 90% or above");
+    expect(note?.textContent).toContain("the rate above is over the other 1 question");
+    expect(note?.textContent).toContain("still on the list to go over");
+  });
+
+  it("makes an all-suspect row explain its dash rather than read as missing data", () => {
+    render([
+      row({ questions: 1, heldOut: 1, analysedQuestions: 0, wrong: 0, denominator: 0, errorRate: null }),
+    ]);
+    expect(host.textContent).toContain("—");
+    // "0 wrong of 0 answers" would say the class answered nothing. It answered everything.
+    const counts = host.querySelector("[data-breakdown-counts]");
+    expect(counts?.textContent).toContain("1 question (1 held out) · nothing left to average");
+    expect(counts?.textContent).not.toContain("0 wrong of 0 answers");
+
+    const note = host.querySelector("[data-held-out-note]");
+    expect(note?.textContent).toContain("The one question here is at 90% or above");
+    expect(note?.textContent).toContain("that dash is not a zero, and nothing is missing");
+  });
+
+  it("gives that dash the right reason, not the empty-denominator one", () => {
+    // Both reasons arrive as `null` and ask for opposite actions: wait for answers, versus go
+    // and read the answer key. The tooltip is the only place the row can tell them apart.
+    render([row({ questions: 1, heldOut: 1, analysedQuestions: 0, errorRate: null })]);
+    const dash = [...host.querySelectorAll("span")].find((el) => el.textContent === "—");
+    expect(dash?.getAttribute("title")).toContain("held out as a likely broken answer key");
+    expect(dash?.getAttribute("title")).not.toContain("No answers to divide by yet");
+  });
+
+  it("leaves a row with nothing held out exactly as it was", () => {
+    // The assessments endpoint has no hold-out concept and passes neither field.
+    render([row()]);
+    expect(host.querySelector("[data-held-out-note]")).toBeNull();
+    expect(host.querySelector("[data-breakdown-counts]")?.textContent).toBe(
+      "1 question · 6 wrong of 16 answers · 1 to go over",
+    );
+  });
+});
+
 describe("BREAKDOWN_GRID_STYLE", () => {
   it("tracks the container, not the viewport", () => {
     // `lg:grid-cols-3` fired at a 1024px VIEWPORT while the teacher shell left the page

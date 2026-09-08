@@ -14,6 +14,11 @@ const BASE = "/midterms/admin/stats";
  * There is a fourth endpoint, `GET .../stats/months/`, and nothing here calls it on purpose:
  * the monthly payload already carries the same `months` list, so the page draws its picker
  * and its tables from one response instead of racing two.
+ *
+ * Its `current` — the month to open on — reaches this feature as the monthly payload's own
+ * `month`, and both are `null` under exactly the same condition: every month the scope has is
+ * still ahead of it, so there is no month with results to default to. `null` there is never an
+ * empty school; `future_months` beside it says what is coming, and the page says so.
  */
 export const midtermStatsApi = {
   /**

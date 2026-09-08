@@ -13,7 +13,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ClassroomDetail, ClassroomListRow } from "../types";
+import type { ClassroomDetail, ClassroomListRow, ClassroomMidtermRow } from "../types";
 
 const classroomsCall = vi.fn();
 const classroomCall = vi.fn();
@@ -42,6 +42,22 @@ const listRow = (over: Partial<ClassroomListRow> = {}): ClassroomListRow => ({
   teacher_name: "Nodira Yusupova",
   student_count: 18,
   midterm_count: 2,
+  ...over,
+});
+
+const paper = (over: Partial<ClassroomMidtermRow> = {}): ClassroomMidtermRow => ({
+  id: 7,
+  title: "Midterm 12",
+  subject: "MATH",
+  subject_label: "Math",
+  midterm_type: "MIDTERM",
+  pass_mark: 500,
+  score_ceiling: 800,
+  scoring_scale: "SCALE_800",
+  scheduled_at: null,
+  counts: { passed: 12, failed: 4, absent: 2, pending: 0 },
+  retake: { id: 8, title: "Midterm 12 Retake" },
+  retakes: [{ id: 8, title: "Midterm 12 Retake" }],
   ...over,
 });
 
@@ -140,6 +156,29 @@ describe("MidtermRecordsBrowser", () => {
 
     expect(container?.textContent).toContain("No match");
     expect(container?.textContent).not.toContain("No midterm activity");
+  });
+
+  it("says how many retake papers a midterm has, now that the list endpoint counts them", async () => {
+    // "has a retake" was equally true of a paper with three, and the number changes how the
+    // table underneath has to be read.
+    classroomsCall.mockResolvedValue([listRow()]);
+    classroomCall.mockResolvedValue(
+      detail({
+        midterms: [
+          paper({
+            retakes: [
+              { id: 8, title: "Midterm 12 Retake" },
+              { id: 9, title: "Midterm 12 Retake B" },
+            ],
+          }),
+          paper({ id: 10, title: "Midterm 13", retake: null, retakes: [] }),
+        ],
+      }),
+    );
+    const out = await render();
+
+    expect(out).toContain("2 retake papers");
+    expect(out).not.toContain("has a retake");
   });
 
   it("renders a failed DETAIL request as a failure, not as a classroom with no papers", async () => {

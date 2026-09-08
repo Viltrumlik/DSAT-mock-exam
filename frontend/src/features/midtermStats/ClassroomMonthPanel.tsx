@@ -14,18 +14,24 @@ import {
   formatShare,
   hasMixedScales,
   isInferredMonth,
+  latestSatMonth,
   midtermSubjectLabel,
   midtermTypeLabel,
   monthLabel,
+  monthOptionLabel,
   plural,
   rateReason,
+  titleList,
 } from "./format";
 import {
   EmptyPanel,
   ErrorPanel,
   Note,
+  OrphanRetakeNote,
   RateBar,
   RateFigure,
+  ScheduledBanner,
+  ScheduledFigure,
   SectionCard,
   TableSkeleton,
 } from "./StatsUI";
@@ -92,6 +98,16 @@ export function ClassroomMonthPanel({
       : shownMonth && !data.months.includes(shownMonth)
         ? [shownMonth, ...data.months]
         : data.months;
+  const futureMonths = data?.future_months ?? [];
+  /** This class's selected month is booked, not sat: no rate here is a result. */
+  const scheduled = data?.is_future === true;
+  const orphans = data?.orphan_retakes ?? [];
+  /**
+   * No month to open on, but months still to come. "Never sat a midterm" is true; "no paper
+   * has been timetabled for it" is exactly the opposite of true, and it is the sentence a
+   * teacher would be judged by.
+   */
+  const nothingSatYet = data != null && data.month == null && futureMonths.length > 0;
 
   return (
     <div className="space-y-4">
@@ -130,16 +146,18 @@ export function ClassroomMonthPanel({
             <label className="flex shrink-0 items-center gap-2 text-xs font-bold text-muted-foreground">
               <CalendarClock className="h-4 w-4" aria-hidden />
               <span className="sr-only sm:not-sr-only">Month</span>
-              <span className="w-44">
+              {/* Room for the "(scheduled)" marker while the control is closed. */}
+              <span className="w-60">
                 <Select
                   selectSize="sm"
                   value={shownMonth}
                   onChange={(e) => setMonth(e.target.value || null)}
                   aria-label="Month for this class"
                 >
+                  {shownMonth ? null : <option value="">No month with results</option>}
                   {monthOptions.map((m) => (
                     <option key={m} value={m}>
-                      {monthLabel(m)}
+                      {monthOptionLabel(m, futureMonths)}
                     </option>
                   ))}
                 </Select>
@@ -158,18 +176,64 @@ export function ClassroomMonthPanel({
       ) : data.month == null ? (
         <SectionCard>
           <div className="p-5">
-            <EmptyPanel
-              title="This class has never sat a midterm"
-              body="No paper has been timetabled for it and none has been granted to it, so there is no month to show."
-            />
+            {nothingSatYet ? (
+              /* Its papers are booked, not missing. The old copy — "no paper has been
+                 timetabled for it" — was the exact opposite of the truth for this class, and
+                 it is the sentence its teacher would be judged by. */
+              <EmptyPanel
+                title="No results for this class yet"
+                body={`This class has not sat a midterm. Its first ${plural(futureMonths.length, "paper is", "papers are")} timetabled for ${titleList(futureMonths.map(monthLabel))} — pick that month above, marked "scheduled", to see what is coming.`}
+              />
+            ) : (
+              <EmptyPanel
+                title="This class has never sat a midterm"
+                body="No paper has been timetabled for it and none has been granted to it, so there is no month to show."
+              />
+            )}
+            <div className="mt-4">
+              <OrphanRetakeNote month={null} papers={orphans} />
+            </div>
           </div>
         </SectionCard>
       ) : (
         <>
+          {scheduled ? (
+            <ScheduledBanner
+              month={data.month}
+              thisMonth={data.this_month}
+              latestMonth={latestSatMonth(data.months, futureMonths)}
+              onOpenLatest={() => setMonth(latestSatMonth(data.months, futureMonths))}
+              detail={`${plural(summary.midterms, "paper")} booked for ${plural(summary.distinct_students, "student")} on this roster.`}
+            />
+          ) : null}
+
           <SectionCard
-            title={`${monthLabel(data.month)} summary`}
+            title={
+              scheduled
+                ? `Booked for ${monthLabel(data.month)}`
+                : `${monthLabel(data.month)} summary`
+            }
             description={`${plural(summary.midterms, "paper")} · ${plural(summary.distinct_students, "student")} on the roster`}
           >
+            {scheduled ? (
+              <div className="grid gap-x-6 gap-y-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
+                <Figure
+                  label="Pass rate"
+                  value={<ScheduledFigure />}
+                  detail="Nobody has sat these papers, so there is no rate — not a rate of zero."
+                />
+                <Figure
+                  label="Papers booked"
+                  value={String(summary.midterms)}
+                  detail={`Timetabled for ${monthLabel(data.month)} and not yet sat.`}
+                />
+                <Figure
+                  label="Students"
+                  value={String(summary.distinct_students)}
+                  detail={`${plural(summary.roster, "roster place")} waiting on these papers.`}
+                />
+              </div>
+            ) : (
             <div className="grid gap-x-6 gap-y-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
               <Figure
                 label="Pass rate"
@@ -214,8 +278,9 @@ export function ClassroomMonthPanel({
                 detail={`${formatShare(summary.attended, summary.roster)} · ${summary.retake_taken} sat a retake, ${summary.retake_passed} passed it`}
               />
             </div>
+            )}
 
-            {summary.roster !== summary.distinct_students && summary.midterms > 1 && (
+            {!scheduled && summary.roster !== summary.distinct_students && summary.midterms > 1 && (
               <div className="border-t border-border px-5 py-3">
                 <Note>
                   This class sat {plural(summary.midterms, "paper")} this month, so its{" "}
@@ -225,7 +290,7 @@ export function ClassroomMonthPanel({
               </div>
             )}
 
-            {hasMixedScales(rows) && (
+            {!scheduled && hasMixedScales(rows) && (
               <div className="border-t border-border px-5 py-3">
                 <Note>
                   The papers below are not all scored out of the same total. Their pass rates are
@@ -235,18 +300,32 @@ export function ClassroomMonthPanel({
             )}
           </SectionCard>
 
+          {/* Papers this class has in this month that no figure above counts. */}
+          <OrphanRetakeNote month={data.month} papers={orphans} />
+
           <DefinitionNote definition={data.definition} />
 
           <SectionCard
-            title="Papers sat this month"
-            description="Open a paper to see the students behind its numbers."
+            title={scheduled ? "Papers booked for this month" : "Papers sat this month"}
+            description={
+              scheduled
+                ? "Nothing here has been sat. Open a paper to see who is on its roster."
+                : "Open a paper to see the students behind its numbers."
+            }
           >
             {rows.length === 0 ? (
               <div className="p-5">
-                <EmptyPanel
-                  title="No countable papers in this month"
-                  body="Pre-midterms and retake papers are not counted as units of their own, so a month that held only those shows nothing here."
-                />
+                {orphans.length > 0 ? (
+                  <EmptyPanel
+                    title="No countable papers in this month"
+                    body={`The only ${orphans.length === 1 ? "paper" : plural(orphans.length, "paper")} dating into this month for this class ${orphans.length === 1 ? "is a retake" : "are retakes"} with no parent midterm — ${titleList(orphans.map((p) => p.title))} — and a parentless retake is never a row of its own.`}
+                  />
+                ) : (
+                  <EmptyPanel
+                    title="No countable papers in this month"
+                    body="Pre-midterms and retake papers are not counted as units of their own, so a month that held only those shows nothing here."
+                  />
+                )}
               </div>
             ) : (
               <ul className="divide-y divide-border">
@@ -255,6 +334,7 @@ export function ClassroomMonthPanel({
                     key={row.id}
                     row={row}
                     classroomId={classroomId}
+                    scheduled={scheduled}
                     open={openPaper === row.id}
                     onToggle={() => setOpenPaper((prev) => (prev === row.id ? null : row.id))}
                   />
@@ -291,11 +371,14 @@ function Figure({
 function PaperRow({
   row,
   classroomId,
+  scheduled,
   open,
   onToggle,
 }: {
   row: ClassroomMidtermRow;
   classroomId: number;
+  /** The month this paper sits in is still ahead: it has a roster, not results. */
+  scheduled?: boolean;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -336,32 +419,51 @@ function PaperRow({
               .join(" · ")}
           </span>
           <span className="ml-6 mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span className="font-bold text-foreground">
-              {row.passed} passed
-              <span className="font-normal text-muted-foreground">
-                {" "}
-                ({row.passed_first} first · {row.passed_retake} retake)
-              </span>
-            </span>
-            <span>{row.failed} failed</span>
-            <span>{row.absent} absent</span>
-            {row.pending > 0 && <span>{row.pending} awaiting a result</span>}
-            {row.retake_taken > 0 && (
+            {/* In a scheduled month every one of these counts is the same fact — nobody has
+                sat it — dressed as five findings, and "N absent" is the worst of them: it
+                reads as a class that failed to turn up for a paper that has not happened. */}
+            {scheduled ? (
               <span>
-                {row.retake_taken} sat a retake, {row.retake_passed} passed it
+                {plural(row.roster, "student")} on the roster · not sat yet
               </span>
+            ) : (
+              <>
+                <span className="font-bold text-foreground">
+                  {row.passed} passed
+                  <span className="font-normal text-muted-foreground">
+                    {" "}
+                    ({row.passed_first} first · {row.passed_retake} retake)
+                  </span>
+                </span>
+                <span>{row.failed} failed</span>
+                <span>{row.absent} absent</span>
+                {row.pending > 0 && <span>{row.pending} awaiting a result</span>}
+                {row.retake_taken > 0 && (
+                  <span>
+                    {row.retake_taken} sat a retake, {row.retake_passed} passed it
+                  </span>
+                )}
+              </>
             )}
           </span>
         </button>
 
         <div className="shrink-0 text-right">
-          <p className="text-lg font-extrabold tracking-tight text-foreground">
-            <RateFigure rate={row.pass_rate} reason={rateReason("pass", row.roster)} />
-          </p>
-          <p className="text-[11px] tabular-nums text-muted-foreground">
-            {formatShare(row.passed, row.roster)}
-          </p>
-          <RateBar rate={row.pass_rate} />
+          {scheduled ? (
+            <p className="text-lg font-extrabold tracking-tight">
+              <ScheduledFigure />
+            </p>
+          ) : (
+            <>
+              <p className="text-lg font-extrabold tracking-tight text-foreground">
+                <RateFigure rate={row.pass_rate} reason={rateReason("pass", row.roster)} />
+              </p>
+              <p className="text-[11px] tabular-nums text-muted-foreground">
+                {formatShare(row.passed, row.roster)}
+              </p>
+              <RateBar rate={row.pass_rate} />
+            </>
+          )}
         </div>
       </div>
 

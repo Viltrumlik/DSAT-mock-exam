@@ -249,6 +249,98 @@ export function TeacherTable({ rows }: { rows: TeacherRow[] }) {
   );
 }
 
+/** The class's name and where it sits, as the button that opens its month. */
+function ClassroomNameButton({
+  row,
+  onSelect,
+}: {
+  row: ClassroomRow;
+  onSelect: (row: ClassroomRow) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(row)}
+      className="ds-ring group -mx-1 flex w-full min-w-0 items-center gap-2 rounded-lg px-1 py-0.5 text-left"
+    >
+      <span className="min-w-0">
+        <span className="flex items-center gap-2 truncate font-bold text-foreground group-hover:text-primary">
+          {row.name}
+          <ChevronRight
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary"
+            aria-hidden
+          />
+        </span>
+        <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
+          {[
+            row.level_label,
+            row.subject_label,
+            row.teacher?.name ?? "No teacher assigned",
+            row.branch?.name ?? "No branch set",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </span>
+      <span className="sr-only">Open this class&rsquo;s month in detail</span>
+    </button>
+  );
+}
+
+/**
+ * What a scheduled month has instead of a ranking: who is booked, and for how many papers.
+ *
+ * A separate table rather than the ranked one with its rate column blanked. Rank, pass rate,
+ * passed, failed and absent are all answers to a question nobody has asked yet — a table
+ * ordered "best first" over a month nobody has sat is a league table of a plan, and the order
+ * alone would be read as a finding.
+ */
+export function ScheduledClassroomTable({
+  rows,
+  onSelect,
+}: {
+  rows: ClassroomRow[];
+  onSelect: (row: ClassroomRow) => void;
+}) {
+  const columns: RankedColumn<ClassroomRow>[] = [
+    {
+      key: "name",
+      header: "Class",
+      cell: (row) => <ClassroomNameButton row={row} onSelect={onSelect} />,
+    },
+    {
+      key: "students",
+      header: "Students",
+      align: "right",
+      cell: (row) => <Num value={row.distinct_students} />,
+    },
+    {
+      key: "papers",
+      header: "Papers booked",
+      align: "right",
+      cell: (row) => (
+        <span title="Countable midterms timetabled for this class in this month. None has been sat.">
+          <Num value={row.midterms} />
+        </span>
+      ),
+    },
+  ];
+  return (
+    <RankedTable
+      columns={columns}
+      rows={rows}
+      rowKey={(row) => row.id}
+      minWidthClass="min-w-[520px]"
+      empty={
+        <EmptyPanel
+          title="Nothing is booked in this month"
+          body="No class has a countable paper timetabled here. A paper appears in the month it was timetabled for."
+        />
+      }
+    />
+  );
+}
+
 export function ClassroomTable({
   rows,
   onSelect,
@@ -261,34 +353,7 @@ export function ClassroomTable({
     {
       key: "name",
       header: "Class",
-      cell: (row) => (
-        <button
-          type="button"
-          onClick={() => onSelect(row)}
-          className="ds-ring group -mx-1 flex w-full min-w-0 items-center gap-2 rounded-lg px-1 py-0.5 text-left"
-        >
-          <span className="min-w-0">
-            <span className="flex items-center gap-2 truncate font-bold text-foreground group-hover:text-primary">
-              {row.name}
-              <ChevronRight
-                className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary"
-                aria-hidden
-              />
-            </span>
-            <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">
-              {[
-                row.level_label,
-                row.subject_label,
-                row.teacher?.name ?? "No teacher assigned",
-                row.branch?.name ?? "No branch set",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-          </span>
-          <span className="sr-only">Open this class&rsquo;s month in detail</span>
-        </button>
-      ),
+      cell: (row) => <ClassroomNameButton row={row} onSelect={onSelect} />,
     },
     ...tallyColumns<ClassroomRow>(anyPending(rows)),
     {

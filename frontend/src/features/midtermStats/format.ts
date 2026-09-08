@@ -130,6 +130,62 @@ export function monthLabel(month: MonthKey | null | undefined): string {
   return name ? `${name} ${m[1]}` : month;
 }
 
+/* ── a month the school has not reached ─────────────────────────────────────────────── */
+
+/**
+ * What a figure reads as in a month nobody has sat yet.
+ *
+ * Deliberately NOT {@link NO_VALUE}: the em dash means "there was nothing to divide by", and
+ * a scheduled month is not that — the roster is known, the papers are booked, and the answer
+ * simply does not exist yet. Two different absences of a number, two different words.
+ */
+export const SCHEDULED = "Scheduled";
+
+/** Whether `month` is one of the months nobody has sat yet, per the payload's own list. */
+export function isScheduledMonth(
+  month: MonthKey | null | undefined,
+  futureMonths: readonly MonthKey[] | undefined,
+): boolean {
+  return Boolean(month) && (futureMonths ?? []).includes(month as MonthKey);
+}
+
+/**
+ * The picker's option text. A scheduled month says so IN THE OPTION.
+ *
+ * The backend refuses to open on a future month, but the picker still offers it — and it sorts
+ * first, directly under the reader's cursor. Choosing it has to be an informed choice rather
+ * than the discovery that the school scored zero.
+ */
+export function monthOptionLabel(
+  month: MonthKey,
+  futureMonths: readonly MonthKey[] | undefined,
+): string {
+  return isScheduledMonth(month, futureMonths)
+    ? `${monthLabel(month)} (scheduled)`
+    : monthLabel(month);
+}
+
+/**
+ * The newest month in `months` that has actually been sat — what a reader stranded on a
+ * scheduled month should be offered instead. `null` when every month is still ahead.
+ *
+ * The same choice `stats.default_month` makes on the server, made again here only to label a
+ * button; the month the page opens on is always the backend's answer, never this one.
+ */
+export function latestSatMonth(
+  months: readonly MonthKey[] | undefined,
+  futureMonths: readonly MonthKey[] | undefined,
+): MonthKey | null {
+  return (months ?? []).find((m) => !isScheduledMonth(m, futureMonths)) ?? null;
+}
+
+/** "Midterm 12 Retake", "A and B", "A, B and C" — a list of names in a sentence. */
+export function titleList(titles: readonly string[]): string {
+  if (titles.length === 0) return "";
+  if (titles.length === 1) return titles[0];
+  return `${titles.slice(0, -1).join(", ")} and ${titles[titles.length - 1]}`;
+}
+
 /**
  * How a `(classroom, paper)` pair got its month.
  *
@@ -212,6 +268,7 @@ const DEFINITION_LABELS: Record<DefinitionKey, string> = {
   excluded: "Not counted",
   month: "Which month a paper falls in",
   empty_denominator: "Nothing to divide by",
+  default_month: "Which month this page opens on",
 };
 
 export type DefinitionEntry = { key: DefinitionKey; label: string; text: string };

@@ -75,6 +75,11 @@ export const DEFINITION_KEYS = [
   "excluded",
   "month",
   "empty_denominator",
+  // Which month the page opens on when none was asked for. Listed because the answer is not
+  // "the newest": the newest month a school has is routinely one it has not reached, and
+  // opening there reported a roster of absentees as a pass rate of zero. A reader who can see
+  // that the picker's first option is not the page's default is owed the rule behind it.
+  "default_month",
 ] as const;
 
 export type DefinitionKey = (typeof DEFINITION_KEYS)[number];
@@ -121,18 +126,53 @@ export type TeacherRow = GroupTally & {
 
 export type ClassroomRow = ClassroomBrief & GroupTally & { midterms: number };
 
-export type MonthlyStats = {
-  month: MonthKey | null;
-  definition: StatsDefinition;
-  totals: GroupTally & { midterms: number };
-  branches: BranchRow[];
-  departments: DepartmentRow[];
-  teachers: TeacherRow[];
-  classrooms: ClassroomRow[];
-  /** The picker's options, newest first — carried so one response draws the whole page. */
-  months: MonthKey[];
-  filters: { branch: number | null; subject: string | null; teacher: number | null };
+/**
+ * What every payload says about TIME, so no reader has to do date maths of its own.
+ *
+ * `views_stats._month_context`, on the monthly payload and the classroom payload alike, and
+ * carried by `/stats/months/` too. Computed in the school's timezone (Asia/Tashkent) rather
+ * than in the browser, because a reader's device may be on any other date entirely.
+ *
+ * **`is_future` is the one that changes what may be rendered.** Every teacher assign path
+ * writes a `starts_at`, so a paper booked for next month already dates into next month; the
+ * roster has sat nothing, absent counts as failed, and the pooled formula therefore returns a
+ * perfectly well-formed 0.0%. That is a plan reported as a result, and it is the reason the
+ * backend refuses to make such a month the DEFAULT — but the picker still offers it, so the
+ * page has to label it rather than print its figures as scores.
+ */
+export type MonthContext = {
+  /** True when the month being shown is one nobody has sat yet. */
+  is_future: boolean;
+  /** The subset of `months` that is still ahead of the school, newest first. */
+  future_months: MonthKey[];
+  /** The school's own current month. Never the browser's. */
+  this_month: MonthKey;
 };
+
+/**
+ * Papers excluded from every figure in this payload, named so their absence can be accounted
+ * for: RETAKE papers saved with no parent midterm.
+ *
+ * They cannot be counted (only students who did not pass are ever given a retake, so the
+ * denominator would be a class the paper was never offered to) and cannot be folded (there is
+ * no parent to fold them into). The list is ALWAYS present, empty or not — a page that reads
+ * the key only when it is there cannot tell "no warnings" from "an older backend".
+ */
+export type OrphanRetakes = { orphan_retakes: RetakeBrief[] };
+
+export type MonthlyStats = MonthContext &
+  OrphanRetakes & {
+    month: MonthKey | null;
+    definition: StatsDefinition;
+    totals: GroupTally & { midterms: number };
+    branches: BranchRow[];
+    departments: DepartmentRow[];
+    teachers: TeacherRow[];
+    classrooms: ClassroomRow[];
+    /** The picker's options, newest first — carried so one response draws the whole page. */
+    months: MonthKey[];
+    filters: { branch: number | null; subject: string | null; teacher: number | null };
+  };
 
 /**
  * Which authority gave a `(classroom, paper)` pair its month.
@@ -162,11 +202,17 @@ export type ClassroomMidtermRow = Tally & {
   retakes: RetakeBrief[];
 };
 
-export type ClassroomMonth = {
-  classroom: ClassroomBrief;
-  month: MonthKey | null;
-  months: MonthKey[];
-  definition: StatsDefinition;
-  summary: Tally & { midterms: number; distinct_students: number };
-  rows: ClassroomMidtermRow[];
-};
+export type ClassroomMonth = MonthContext &
+  OrphanRetakes & {
+    classroom: ClassroomBrief;
+    /**
+     * `null` when this class has no month to open on — either it has never been given a
+     * paper at all, or every month it has is still ahead of it. `future_months` is what tells
+     * the two apart, and they are not the same sentence on screen.
+     */
+    month: MonthKey | null;
+    months: MonthKey[];
+    definition: StatsDefinition;
+    summary: Tally & { midterms: number; distinct_students: number };
+    rows: ClassroomMidtermRow[];
+  };

@@ -1,17 +1,18 @@
 /**
- * The names behind one number, and the caveat that keeps two surfaces from disagreeing in
- * silence.
+ * The names behind one number, and the caveat that stops a score being read under the wrong
+ * paper's heading.
  *
- * This table resolves `retake_for()` — the FIRST retake of a paper — while the monthly
- * statistics count a pass on ANY of them. On a paper with two retakes that is "1 passed, 2
- * failed" here and "2 passed" one tab away, for the same paper on the same page. Both numbers
- * are defensible; neither was explained.
+ * The rows resolve across EVERY retake of a paper, but the table has one retake column and it
+ * is headed by the oldest — title and score ceiling. On a paper with two second chances a cell
+ * can therefore hold a score from a paper the column is not named after. The endpoint now
+ * sends `retakes[]`, so this component counts them itself and states that exactly, instead of
+ * the hedge it used when the Records tab could not tell it how many there were.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MidtermReport } from "../types";
+import type { MidtermBrief, MidtermReport } from "../types";
 
 const midtermCall = vi.fn();
 
@@ -31,6 +32,18 @@ vi.mock("../MidtermResultsTable", () => ({
 
 import { MidtermEvidence } from "../MidtermEvidence";
 
+const retake = (over: Partial<MidtermBrief> = {}): MidtermBrief => ({
+  id: 8,
+  title: "Midterm 12 Retake",
+  subject: "MATH",
+  subject_label: "Math",
+  midterm_type: "RETAKE",
+  pass_mark: 500,
+  score_ceiling: 800,
+  scoring_scale: "SCALE_800",
+  ...over,
+});
+
 const report = (over: Partial<MidtermReport> = {}): MidtermReport => ({
   classroom: {
     id: 11,
@@ -49,16 +62,8 @@ const report = (over: Partial<MidtermReport> = {}): MidtermReport => ({
     score_ceiling: 800,
     scoring_scale: "SCALE_800",
   },
-  retake: {
-    id: 8,
-    title: "Midterm 12 Retake",
-    subject: "MATH",
-    subject_label: "Math",
-    midterm_type: "RETAKE",
-    pass_mark: 500,
-    score_ceiling: 800,
-    scoring_scale: "SCALE_800",
-  },
+  retake: retake(),
+  retakes: [retake()],
   summary: { passed: 1, failed: 2, absent: 0, pending: 0, students: 3, pass_mark: 500, average_score: 460 },
   rows: [],
   ...over,
@@ -89,14 +94,21 @@ afterEach(() => {
 });
 
 describe("MidtermEvidence", () => {
-  it("states the fact when the caller knows the paper has more than one retake", async () => {
-    midtermCall.mockResolvedValue(report());
-    const out = await render(<MidtermEvidence classroomId={11} midtermId={7} retakeCount={2} />);
+  it("counts the retakes from its OWN payload, and names the paper the column is headed by", async () => {
+    const second = retake({ id: 9, title: "Midterm 12 Retake B" });
+    midtermCall.mockResolvedValue(report({ retakes: [retake(), second] }));
+    // The caller cannot count them; the response can, and that is now the authority.
+    const out = await render(
+      <MidtermEvidence classroomId={11} midtermId={7} retakeCount={null} />,
+    );
     expect(out).toContain("This paper has 2 retakes");
-    expect(out).toContain("counts a student who passed any of them");
+    expect(out).toContain("headed below by Midterm 12 Retake");
+    expect(out).toContain("counts a pass on any of them");
+    // The hedge is gone: nothing on screen says the count is unknown.
+    expect(out).not.toContain("if this one has a second retake");
   });
 
-  it("says nothing extra when the caller knows there is exactly one retake", async () => {
+  it("says nothing extra when there is exactly one retake", async () => {
     midtermCall.mockResolvedValue(report());
     const out = await render(<MidtermEvidence classroomId={11} midtermId={7} retakeCount={1} />);
     expect(out).not.toContain("retakes");
@@ -104,19 +116,27 @@ describe("MidtermEvidence", () => {
     expect(out).toContain("results table");
   });
 
-  it("warns from what it CAN see when the caller cannot count the retakes", async () => {
-    // The Records tab's endpoint sends `retake_for(m)` alone, so `retakeCount` is null there.
-    // Silence would let the two tabs' counts differ with nothing on screen to say why.
-    midtermCall.mockResolvedValue(report());
-    const out = await render(
-      <MidtermEvidence classroomId={11} midtermId={7} retakeCount={null} />,
+  it("warns when two retakes are scored out of different totals", async () => {
+    // One column, one "out of N" in its header, and a cell that may come from either paper.
+    midtermCall.mockResolvedValue(
+      report({ retakes: [retake(), retake({ id: 9, title: "Retake B", score_ceiling: 100 })] }),
     );
-    expect(out).toContain("first retake");
-    expect(out).toContain("Statistics tab counts a student who passed any of them");
+    const out = await render(<MidtermEvidence classroomId={11} midtermId={7} />);
+    expect(out).toContain("not all scored out of the same total");
+    expect(out).toContain("against its own pass mark");
+  });
+
+  it("falls back to the caller's count only when the payload carries no list", async () => {
+    // An older server. "I cannot count them" must not collapse into "there is one".
+    const legacy: Record<string, unknown> = { ...report() };
+    delete legacy.retakes;
+    midtermCall.mockResolvedValue(legacy);
+    const out = await render(<MidtermEvidence classroomId={11} midtermId={7} retakeCount={3} />);
+    expect(out).toContain("This paper has 3 retakes");
   });
 
   it("says nothing about retakes on a paper that has none", async () => {
-    midtermCall.mockResolvedValue(report({ retake: null }));
+    midtermCall.mockResolvedValue(report({ retake: null, retakes: [] }));
     const out = await render(
       <MidtermEvidence classroomId={11} midtermId={7} retakeCount={null} />,
     );

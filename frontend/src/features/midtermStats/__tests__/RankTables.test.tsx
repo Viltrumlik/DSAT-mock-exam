@@ -217,6 +217,10 @@ describe("HeadlineStats", () => {
   const stats = (over: Partial<MonthlyStats["totals"]> = {}): MonthlyStats => ({
     month: "2026-09",
     definition: {},
+    is_future: false,
+    future_months: [],
+    this_month: "2026-09",
+    orphan_retakes: [],
     totals: { ...tally(), midterms: 2, ...over },
     branches: [],
     departments: [],

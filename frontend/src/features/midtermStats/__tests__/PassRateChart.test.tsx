@@ -53,6 +53,10 @@ const teacher = (id: number | null, name: string, pass_rate: number | null): Tea
 const stats = (over: Partial<MonthlyStats> = {}): MonthlyStats => ({
   month: "2026-09",
   definition: {},
+  is_future: false,
+  future_months: [],
+  this_month: "2026-09",
+  orphan_retakes: [],
   totals: { ...tally(), midterms: 2 },
   branches: [],
   departments: [],

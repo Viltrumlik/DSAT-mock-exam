@@ -1,8 +1,8 @@
 import { cn } from "@/lib/cn";
 import { Card, CardHeader } from "@/features/classroom/ui";
-import { barWidth, formatCount, plural } from "../format";
+import { HELD_OUT_RATE_TITLE, barWidth, formatCount, heldOutNote, plural } from "../format";
 import { RateValue } from "./Rate";
-import { Tag } from "./Tag";
+import { TAG_TONES, Tag } from "./Tag";
 
 /** One normalised breakdown row, whichever endpoint it came from. */
 export interface BreakdownRow {
@@ -15,6 +15,15 @@ export interface BreakdownRow {
   denominator: number;
   errorRate: number | null;
   flagged: number;
+  /**
+   * Questions counted in `questions` but held out of everything else on the row, because
+   * their answer key is likelier broken than the topic is hard. Past papers only — the
+   * assessments endpoint has no such concept, so it leaves this undefined and the row renders
+   * exactly as it always did.
+   */
+  heldOut?: number;
+  /** `questions - heldOut`: what the rate and counts on this row actually cover. */
+  analysedQuestions?: number;
   /**
    * Questions that carry no tag at all. Kept as its own row and marked as such: it is a
    * disclosure about the content, not a topic anyone can go and teach.
@@ -97,6 +106,12 @@ export function BreakdownList({
           {rows.map((row) => {
             const width = barWidth(row.errorRate);
             const flagged = row.flagged > 0;
+            const heldOut = row.heldOut ?? 0;
+            // Falls back to the full count, so an endpoint with no hold-out concept reads
+            // "all of them" rather than "none of them".
+            const analysedQuestions = row.analysedQuestions ?? row.questions;
+            const allHeldOut = heldOut > 0 && analysedQuestions <= 0;
+            const note = heldOutNote(heldOut, analysedQuestions);
             return (
               <li key={row.id} className="space-y-1.5">
                 <div className="flex items-baseline justify-between gap-3">
@@ -121,6 +136,9 @@ export function BreakdownList({
                   <RateValue
                     value={row.errorRate}
                     flagged={flagged}
+                    // A dash here has two possible reasons and they ask for opposite
+                    // actions — wait for answers, or go and read the answer key.
+                    emptyTitle={allHeldOut ? HELD_OUT_RATE_TITLE : undefined}
                     className="shrink-0 text-sm font-bold"
                   />
                 </div>
@@ -135,11 +153,30 @@ export function BreakdownList({
                     />
                   ) : null}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {plural(row.questions, "question")} ·{" "}
-                  {`${formatCount(row.wrong)} wrong of ${formatCount(row.denominator)} ${denominatorNoun}`}
+                <p data-breakdown-counts className="text-xs text-muted-foreground">
+                  {plural(row.questions, "question")}
+                  {/* The count of what was held out sits with the count it was held out of,
+                      so the rate above never quietly covers fewer questions than the row
+                      says it has. */}
+                  {heldOut > 0 ? ` (${formatCount(heldOut)} held out)` : ""} ·{" "}
+                  {allHeldOut
+                    ? "nothing left to average"
+                    : `${formatCount(row.wrong)} wrong of ${formatCount(row.denominator)} ${denominatorNoun}`}
                   {row.flagged > 0 ? ` · ${row.flagged} to go over` : ""}
                 </p>
+                {note ? (
+                  /* `TAG_TONES.warning`'s ink, which `contrast.test.ts` measures in both
+                     themes — this is the one line on the row that a teacher must read. */
+                  <p
+                    data-held-out-note
+                    className={cn(
+                      "rounded-lg px-2 py-1 text-xs leading-relaxed",
+                      TAG_TONES.warning,
+                    )}
+                  >
+                    {note}
+                  </p>
+                ) : null}
               </li>
             );
           })}

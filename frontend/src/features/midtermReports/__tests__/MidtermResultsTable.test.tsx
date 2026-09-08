@@ -52,6 +52,7 @@ function report(over: Partial<MidtermReport> = {}): MidtermReport {
     },
     midterm: midterm(),
     retake: null,
+    retakes: [],
     summary: {
       students: rows.length,
       passed: 0,
@@ -231,6 +232,60 @@ describe("MidtermResultsTable", () => {
     expect(out).toContain("Midterm 12 Retake");
     // Bek passed first time, so his retake cell says so in words.
     expect(out).toContain("Not offered");
+  });
+
+  it("does not print a retake score under a total it may not be out of", () => {
+    // Two retakes, different ceilings. A row's score is resolved across both and the wire
+    // does not say which one produced it, so "84 / 800" would be a denominator this page
+    // invented — the 84 was out of 100.
+    const out = render(
+      <MidtermResultsTable
+        report={report({
+          rows: [
+            row({
+              midterm_score: 420,
+              midterm_passed: false,
+              retake_eligible: true,
+              retake_score: 84,
+              retake_state: "COMPLETED",
+              retake_passed: true,
+              final_status: "PASSED_ON_RETAKE",
+            }),
+          ],
+          retake: midterm({ id: 8, title: "Retake A", midterm_type: "RETAKE" }),
+          retakes: [
+            midterm({ id: 8, title: "Retake A", midterm_type: "RETAKE" }),
+            midterm({ id: 9, title: "Retake B", midterm_type: "RETAKE", score_ceiling: 100 }),
+          ],
+        })}
+      />,
+    );
+    expect(out).toContain("out of 800 or 100");
+    expect(out).not.toContain("84 / 800");
+    expect(out).toContain("84");
+  });
+
+  it("still prints the total when every retake is on one scale", () => {
+    const out = render(
+      <MidtermResultsTable
+        report={report({
+          rows: [
+            row({
+              midterm_score: 420,
+              midterm_passed: false,
+              retake_eligible: true,
+              retake_score: 620,
+              retake_state: "COMPLETED",
+              retake_passed: true,
+              final_status: "PASSED_ON_RETAKE",
+            }),
+          ],
+          retake: midterm({ id: 8, title: "Retake A", midterm_type: "RETAKE" }),
+          retakes: [midterm({ id: 8, title: "Retake A", midterm_type: "RETAKE" })],
+        })}
+      />,
+    );
+    expect(out).toContain("620 / 800");
   });
 
   it("warns when the retake is scored on a different scale from the midterm", () => {

@@ -208,12 +208,14 @@ export function scoreText(
 /**
  * How many retake papers a listed midterm has — or `null` when the list does not say.
  *
- * The distinction matters because this table and the statistics roll-up read a paper's
- * retakes differently: the per-student report resolves `retake_for()` (the FIRST retake
- * only) while `midterms.stats` counts a pass on ANY of them, so a paper with two retakes is
- * reported as "1 passed / 2 failed" here and "2 passed" there. `null` means the caller
- * cannot tell whether the two should agree, which is a different caveat from "there is
- * exactly one retake, so they do".
+ * Both admin report endpoints now send `retakes[]`, so this is an exact count and the caveat
+ * built on it can be exact too: with more than one retake the table's retake COLUMN is headed
+ * by the oldest paper while a student's cell may come from any of them.
+ *
+ * `null` survives for one reason: it is what an older server (or a payload assembled by
+ * something other than `ReportClassroomDetailView`) would produce, and "I cannot count them"
+ * must never collapse into "there is one". A `retake` object with no `retakes` array is
+ * exactly that state.
  */
 export function retakeCountOf(row: {
   retake: unknown | null;
