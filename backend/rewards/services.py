@@ -21,6 +21,7 @@ a hook corrects the value in place; it never stacks a second row.
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 
 from django.db import transaction
 from django.db.models import Count, Q, Sum
@@ -381,12 +382,111 @@ def balance(student, *, season=None) -> int:
 # thing XP is defined never to do. A `classroom` filter is still offered, because the
 # Academic board is per-class; it narrows *where* the XP was earned, never *when*.
 
+
+def board_classroom_ids(student_ids, classroom) -> dict[int, set[int]]:
+    """Per student, the classes whose earnings count toward ``classroom``'s board.
+
+    A board used to read exactly the awards tagged with its own class, and a student who
+    changed group therefore arrived on the new board with nothing: everything they had earned
+    was tagged to the group they left, so the board showed 0 and ranked them last. The school
+    reported that, and it is a bug rather than a policy — ``hooks._student_had_joined_by``
+    already states the rule from the other side: *XP belongs to the student, not to the group*.
+
+    So a board counts this class, plus every same-subject class the student has **left**. A
+    group change is a continuation of the same studies: what a student earned in the Junior
+    group is still theirs when they are promoted to Middle.
+
+    Two boundaries stop that from becoming "everything the student ever earned":
+
+    * **Same subject only.** Students study English and Math in different groups. English XP
+      has no business ranking a Math class, and merging the two would make both boards show
+      one number.
+    * **Left, not merely elsewhere.** A class the student is *concurrently* in is excluded, so
+      somebody in two Math groups is still ranked on each board by what they did in that
+      group. Without this the same total would appear on both, and fixing one complaint would
+      raise a louder one — half this school's students are in more than one class.
+
+    Classroom-less earnings (surveys, midterms) still reach no class board at all. They belong
+    to the learning center rather than to one group — see ``leaderboard._scope_note``.
+    """
+    ids = list(student_ids)
+    if not ids:
+        return {}
+
+    from classes.models import Classroom, ClassroomMembership
+
+    if not hasattr(classroom, "subject"):
+        classroom = Classroom.objects.filter(pk=classroom).first()
+        if classroom is None:
+            return {}
+    home = {classroom.pk}
+
+    siblings = set(
+        Classroom.objects.filter(subject=classroom.subject)
+        .exclude(pk=classroom.pk)
+        .values_list("id", flat=True)
+    )
+    if not siblings:
+        return {sid: set(home) for sid in ids}
+
+    left: dict[int, set[int]] = defaultdict(set)
+    stayed: dict[int, set[int]] = defaultdict(set)
+    rows = ClassroomMembership.objects.filter(
+        user_id__in=ids,
+        role=ClassroomMembership.ROLE_STUDENT,
+        classroom_id__in=siblings,
+    ).values_list("user_id", "classroom_id", "status")
+    for uid, cid, status in rows:
+        # Anything short of a removal counts as still being there — INVITED included, which is
+        # a membership not yet accepted rather than one that ended.
+        bucket = left if status == ClassroomMembership.STATUS_REMOVED else stayed
+        bucket[uid].add(cid)
+
+    # A class left and later rejoined is not a class they left.
+    return {sid: home | (left[sid] - stayed[sid]) for sid in ids}
+
+
+def _by_student(qs, *, student_ids, classroom, **annotations) -> dict[int, dict[str, int]]:
+    """Aggregate ``annotations`` per student, honouring the board's classroom rule.
+
+    With no classroom this is one GROUP BY, as it always was. With one it groups by
+    ``(student, classroom)`` and folds in Python, because *which* classes count is a
+    per-student answer — see :func:`board_classroom_ids` — and no single WHERE clause can say
+    "this class, plus the ones **this** student left". It is still one query over the ledger:
+    the WHERE narrows to the union of every student's classes, and the rows that are not this
+    student's are dropped as they are folded.
+    """
+    if classroom is None:
+        rows = qs.values("student_id").annotate(**annotations)
+        return {r["student_id"]: {k: int(r[k] or 0) for k in annotations} for r in rows}
+
+    allowed = board_classroom_ids(student_ids, classroom)
+    if not allowed:
+        return {}
+    rows = (
+        qs.filter(classroom_id__in=set().union(*allowed.values()))
+        .values("student_id", "classroom_id")
+        .annotate(**annotations)
+    )
+    out: dict[int, dict[str, int]] = {}
+    for row in rows:
+        if row["classroom_id"] not in allowed.get(row["student_id"], ()):
+            continue
+        cell = out.setdefault(row["student_id"], {k: 0 for k in annotations})
+        for key in annotations:
+            cell[key] += int(row[key] or 0)
+    return out
+
+
 def xp_balance(student, *, classroom=None) -> int:
-    """A student's lifetime XP, optionally only what was earned in one classroom."""
-    qs = PointAward.objects.filter(student=student)
-    if classroom is not None:
-        qs = qs.filter(classroom=classroom)
-    return int(qs.aggregate(total=Sum("xp"))["total"] or 0)
+    """A student's lifetime XP, optionally only what counts toward one classroom's board."""
+    # A pk is as good as an instance to `filter(student=...)`, and callers pass both.
+    student_id = getattr(student, "pk", student)
+    totals = _by_student(
+        PointAward.objects.filter(student=student),
+        student_ids=[student_id], classroom=classroom, total=Sum("xp"),
+    )
+    return totals.get(student_id, {}).get("total", 0)
 
 
 def xp_balances_for(student_ids, *, classroom=None) -> dict[int, int]:
@@ -394,11 +494,11 @@ def xp_balances_for(student_ids, *, classroom=None) -> dict[int, int]:
     callers rendering a board must default them, the same as :func:`balances_for`."""
     if not student_ids:
         return {}
-    qs = PointAward.objects.filter(student_id__in=student_ids)
-    if classroom is not None:
-        qs = qs.filter(classroom=classroom)
-    rows = qs.values("student_id").annotate(total=Sum("xp"))
-    return {row["student_id"]: int(row["total"] or 0) for row in rows}
+    totals = _by_student(
+        PointAward.objects.filter(student_id__in=student_ids),
+        student_ids=student_ids, classroom=classroom, total=Sum("xp"),
+    )
+    return {sid: cell["total"] for sid, cell in totals.items()}
 
 
 def xp_board_totals_for(student_ids, *, classroom=None) -> dict[int, dict]:
@@ -412,34 +512,30 @@ def xp_board_totals_for(student_ids, *, classroom=None) -> dict[int, dict]:
     """
     if not student_ids:
         return {}
-    qs = PointAward.objects.filter(student_id__in=student_ids)
-    if classroom is not None:
-        qs = qs.filter(classroom=classroom)
-    rows = qs.values("student_id").annotate(
-        total=Sum("xp"),
-        earned=Count("id", filter=Q(xp__gt=0)),
+    totals = _by_student(
+        PointAward.objects.filter(student_id__in=student_ids),
+        student_ids=student_ids, classroom=classroom,
+        total=Sum("xp"), earned=Count("id", filter=Q(xp__gt=0)),
     )
-    return {
-        row["student_id"]: {"xp": int(row["total"] or 0), "awards": int(row["earned"] or 0)}
-        for row in rows
-    }
+    return {sid: {"xp": cell["total"], "awards": cell["earned"]} for sid, cell in totals.items()}
 
 
 def balances_for(student_ids, *, season=None, classroom=None) -> dict[int, int]:
     """``{student_id: points}`` for a cohort, in one query.
 
-    ``classroom`` narrows to awards earned in that class — which is what a per-class board
-    wants. Note this deliberately excludes classroom-less earnings (surveys, midterms): they
-    count toward a student's global balance but belong to no single class.
+    ``classroom`` narrows to the awards that count toward that class's board — this class plus
+    the same-subject classes the student has left (:func:`board_classroom_ids`). Note this
+    deliberately excludes classroom-less earnings (surveys, midterms): they count toward a
+    student's global balance but belong to no single class.
     """
     if not student_ids:
         return {}
     season = season or current_season()
-    qs = PointAward.objects.filter(student_id__in=student_ids, season=season)
-    if classroom is not None:
-        qs = qs.filter(classroom=classroom)
-    rows = qs.values("student_id").annotate(total=Sum("points"))
-    return {row["student_id"]: int(row["total"] or 0) for row in rows}
+    totals = _by_student(
+        PointAward.objects.filter(student_id__in=student_ids, season=season),
+        student_ids=student_ids, classroom=classroom, total=Sum("points"),
+    )
+    return {sid: cell["total"] for sid, cell in totals.items()}
 
 
 def board_totals_for(student_ids, *, season=None, classroom=None) -> dict[int, dict]:
@@ -458,14 +554,9 @@ def board_totals_for(student_ids, *, season=None, classroom=None) -> dict[int, d
     if not student_ids:
         return {}
     season = season or current_season()
-    qs = PointAward.objects.filter(student_id__in=student_ids, season=season)
-    if classroom is not None:
-        qs = qs.filter(classroom=classroom)
-    rows = qs.values("student_id").annotate(
-        total=Sum("points"),
-        earned=Count("id", filter=Q(points__gt=0)),
+    totals = _by_student(
+        PointAward.objects.filter(student_id__in=student_ids, season=season),
+        student_ids=student_ids, classroom=classroom,
+        total=Sum("points"), earned=Count("id", filter=Q(points__gt=0)),
     )
-    return {
-        row["student_id"]: {"points": int(row["total"] or 0), "awards": int(row["earned"] or 0)}
-        for row in rows
-    }
+    return {sid: {"points": cell["total"], "awards": cell["earned"]} for sid, cell in totals.items()}

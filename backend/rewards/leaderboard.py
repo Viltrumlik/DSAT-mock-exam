@@ -5,7 +5,8 @@ teacher can see rank movement day to day; this one deliberately does not, and th
 combinatorial. Three scopes times two time windows times three subjects times every branch
 is a snapshot table that grows faster than the school does, all to cache an aggregate the
 ledger is already indexed for — `PointAward` carries `(student, season)`, `(season, classroom)`
-and `(student, -awarded_at)`, which is every access path below.
+and `(student, -awarded_at)`, which is every access path below. The group board reads by
+student rather than by classroom (see `_group_rows`), and `(student, season)` covers it.
 
 If it ever does need caching, cache the *response*. Do not add rows.
 
@@ -143,30 +144,101 @@ def _resolve_scope(query: BoardQuery, viewer) -> BoardQuery:
     return query
 
 
-def _award_filter(query: BoardQuery) -> Q:
-    """Every filter, as one Q over PointAward. Empty Q means the whole ledger."""
+def _common_filter(query: BoardQuery) -> Q:
+    """The clauses that mean the same thing on every board: a real earning, inside the window,
+    in the subject and level being browsed."""
     q = Q(xp__gt=0)     # a row worth no XP is not an earning on this board
 
     if query.window != WINDOW_ALL:
         since = timezone.now() - timedelta(days=WINDOW_DAYS[query.window])
         q &= Q(awarded_at__gte=since)
-
-    if query.scope == SCOPE_GROUP:
-        # An unresolvable group is an empty board, never the global one. Falling back to
-        # "everyone" here would silently show a student the whole school under a tab labelled
-        # "My Group".
-        q &= Q(classroom_id=query.classroom_id) if query.classroom_id else Q(pk__in=[])
-    elif query.scope == SCOPE_BRANCH:
-        q &= Q(classroom__branch_id=query.branch_id) if query.branch_id else Q(pk__in=[])
-    elif query.branch_id:
-        # A branch filter on the global board — browsing another branch rather than your own.
-        q &= Q(classroom__branch_id=query.branch_id)
-
     if query.subject:
         q &= Q(classroom__subject=query.subject)
     if query.level:
         q &= Q(classroom__level=query.level)
     return q
+
+
+def _award_filter(query: BoardQuery) -> Q:
+    """Every filter, as one Q over PointAward. Empty Q means the whole ledger.
+
+    ``SCOPE_GROUP`` is the one scope not expressible here, because which classes count toward
+    a group board is a per-student answer — see :func:`_group_rows`. It still resolves, to an
+    empty board, so a caller that arrives with a group query gets nothing rather than the
+    whole school under a tab labelled "My Group".
+    """
+    q = _common_filter(query)
+
+    if query.scope == SCOPE_GROUP:
+        return q & Q(pk__in=[])
+    if query.scope == SCOPE_BRANCH:
+        return q & (Q(classroom__branch_id=query.branch_id) if query.branch_id else Q(pk__in=[]))
+    if query.branch_id:
+        # A branch filter on the global board — browsing another branch rather than your own.
+        return q & Q(classroom__branch_id=query.branch_id)
+    return q
+
+
+def _group_rows(query: BoardQuery) -> list[dict]:
+    """The group board, built from the roster rather than from award rows.
+
+    Two things a filter over the ledger cannot do, and the old one got both backwards because
+    it asked "whose awards carry this classroom" instead of "who is in this class":
+
+    * a student who moved **in** brings the XP they earned in the group they left
+      (``services.board_classroom_ids``) rather than starting this board on zero — which is
+      the bug the school reported, as students losing everything on a group change;
+    * a student who moved **out** stops being ranked in a group they are no longer in.
+
+    Materialising the whole board is fine here where it would not be on the school-wide one:
+    a group is a class roster, tens of rows.
+    """
+    from classes.models import Classroom, ClassroomMembership
+
+    from .services import board_classroom_ids
+
+    classroom = (
+        Classroom.objects.filter(pk=query.classroom_id).first() if query.classroom_id else None
+    )
+    if classroom is None:
+        return []
+
+    student_ids = list(
+        ClassroomMembership.objects.filter(
+            classroom=classroom,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status__in=ClassroomMembership.NON_REMOVED_STATUSES,
+        )
+        .values_list("user_id", flat=True)
+        .distinct()
+    )
+    allowed = board_classroom_ids(student_ids, classroom)
+    if not allowed:
+        return []
+
+    totals: dict[int, dict] = {}
+    rows = (
+        PointAward.objects.filter(
+            _common_filter(query),
+            student_id__in=student_ids,
+            classroom_id__in=set().union(*allowed.values()),
+        )
+        .values("student_id", "classroom_id")
+        .annotate(xp=Sum("xp"), awards=Count("id"))
+    )
+    for row in rows:
+        if row["classroom_id"] not in allowed.get(row["student_id"], ()):
+            continue
+        cell = totals.setdefault(
+            row["student_id"], {"student_id": row["student_id"], "xp": 0, "awards": 0}
+        )
+        cell["xp"] += int(row["xp"] or 0)
+        cell["awards"] += int(row["awards"] or 0)
+
+    ordered = sorted(totals.values(), key=lambda r: (-r["xp"], -r["awards"], r["student_id"]))
+    for rank, row in enumerate(ordered, start=1):
+        row["rank"] = rank
+    return ordered
 
 
 def board(query: BoardQuery, viewer):
@@ -179,15 +251,18 @@ def board(query: BoardQuery, viewer):
     """
     query = _resolve_scope(query, viewer)
 
-    rows = list(
-        PointAward.objects.filter(_award_filter(query))
-        .values("student_id")
-        .annotate(xp=Sum("xp"), awards=Count("id"))
-        .order_by("-xp", "-awards", "student_id")[: query.limit]
-    )
-    for rank, row in enumerate(rows, start=1):
-        row["rank"] = rank
-        row["xp"] = int(row["xp"] or 0)
+    if query.scope == SCOPE_GROUP:
+        rows = _group_rows(query)[: query.limit]
+    else:
+        rows = list(
+            PointAward.objects.filter(_award_filter(query))
+            .values("student_id")
+            .annotate(xp=Sum("xp"), awards=Count("id"))
+            .order_by("-xp", "-awards", "student_id")[: query.limit]
+        )
+        for rank, row in enumerate(rows, start=1):
+            row["rank"] = rank
+            row["xp"] = int(row["xp"] or 0)
 
     return rows, {
         "scope": query.scope,
@@ -232,6 +307,16 @@ def rank_of(student, query: BoardQuery, viewer=None):
     the full ordering and slicing it.
     """
     query = _resolve_scope(query, viewer if viewer is not None else student)
+
+    if query.scope == SCOPE_GROUP:
+        # The group board is already a materialised list — see `_group_rows`. Scanning a class
+        # roster for one row is cheaper than the two aggregates the school-wide path needs, and
+        # it is the only way to get a rank that agrees with the board beside it.
+        for row in _group_rows(query):
+            if row["student_id"] == student.pk:
+                return row
+        return None
+
     base = PointAward.objects.filter(_award_filter(query))
 
     mine = base.filter(student=student).aggregate(xp=Sum("xp"), awards=Count("id"))

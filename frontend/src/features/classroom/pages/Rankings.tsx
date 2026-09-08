@@ -13,12 +13,17 @@ import type { RankingRow } from "../rankingsApi";
 // single past-paper result, which told them who had sat one recently rather than who was
 // working. `RankingKind` still carries "SAT" so historical data stays readable.
 //
-// The currency is XP: what a student has earned by learning in this class. Naming the ways to
+// The currency is XP: what a student has earned by learning this subject. Naming the ways to
 // earn is the point — a student who can see what moves the number can decide to move it.
+//
+// The second sentence is there because it used not to be true. XP stayed behind in the group
+// it was earned in, so a student who changed group opened this board on zero; the backend now
+// carries it across (`rewards.services.board_classroom_ids`) and the board says so, because a
+// number that follows you is only reassuring if you know it does.
 const ACADEMIC: { title: string; icon: LucideIcon; desc: string } = {
   title: "Academic",
   icon: GraduationCap,
-  desc: "XP earned in this class — attendance, homework and support sessions.",
+  desc: "XP earned in this class — attendance, homework and support sessions. It comes with you if you change group.",
 };
 
 /** Photo when there is one, coloured initials when there is not — the shared Avatar
