@@ -21,6 +21,7 @@ import {
   Coins,
   LifeBuoy,
   Route,
+  ScanSearch,
   TrendingUp,
   Trophy,
   ShoppingBag,
@@ -160,6 +161,10 @@ export const teacherNav: NavSection[] = [
       { href: "/teacher/mock-sessions", label: "Mock sittings", icon: CirclePlay, isNew: true },
       { href: "/teacher/materials", label: "Materials", icon: FolderOpen, hiddenInSidebar: true },
       { href: "/teacher/students", label: "Students", icon: Users, hiddenInSidebar: true },
+      // Appended, never slotted in. The school has restored this sidebar's shape once
+      // already, so this adds ONE leaf at the end of the section and touches nothing else:
+      // no label renamed, no href re-routed, no item unhidden or reordered.
+      { href: "/teacher/question-analysis", label: "Question analysis", icon: ScanSearch, isNew: true },
     ],
   },
   {

@@ -4,9 +4,14 @@
  * The teacher's classwork controls for one lesson: hand it to the class, and record what
  * each student earned in the room.
  *
- * Manager-gated (OWNER + TEACHER), never `isStaff`. Classwork points are MINTED rather
+ * Says XP, not "points", because that is the number a student watches — and on this event
+ * they are the same number (CLASSWORK_MANUAL grants XP equal to its points). The Classwork
+ * tab's per-classwork dialog is the sibling of this panel and uses the same word for the
+ * same act; the two must not name one thing twice.
+ *
+ * Manager-gated (OWNER + TEACHER), never `isStaff`. Classwork XP is MINTED rather
  * than derived from work a student did, so a TA holding the grading brief must not be able
- * to create them — the server refuses on `can_manage_class` for the same reason, and a
+ * to create it — the server refuses on `can_manage_class` for the same reason, and a
  * control that always 403s is worse than no control at all.
  *
  * The gate is a capability rather than the route because the student site renders this
@@ -64,27 +69,32 @@ function AwardRow({
         // Zero is a recorded decision, not "nothing yet" — say so rather than showing "+0".
         <Pill tone="success">
           <Check className="mr-1 h-3 w-3" aria-hidden />
-          {existing.points > 0 ? `${existing.points} recorded` : "Recorded"}
+          {existing.points > 0 ? `${existing.points} XP` : "Recorded"}
         </Pill>
       )}
-      <Input
-        type="number"
-        inputMode="numeric"
-        min={0}
-        max={maxPoints}
-        value={points}
-        onChange={(e) => setPoints(e.target.value)}
-        aria-label={`Points for ${name}`}
-        placeholder="0"
-        className="h-9 w-20 shrink-0"
-      />
+      {/* Width on a WRAPPER, not on the Input: `cn` is a plain string join here, not
+          tailwind-merge, so the Input's own leading `w-full` beats a `w-20` passed through
+          `className` and the field goes full-width, wrapping the row. */}
+      <span className="w-20 shrink-0">
+        <Input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={maxPoints}
+          value={points}
+          onChange={(e) => setPoints(e.target.value)}
+          aria-label={`XP for ${name}`}
+          placeholder="0"
+          className="h-9 px-2 text-center"
+        />
+      </span>
       <Button
         size="sm"
         variant={existing ? "secondary" : "primary"}
         disabled={!valid || award.isPending}
         onClick={submit}
       >
-        {award.isPending ? "Saving…" : existing ? "Update" : "Give points"}
+        {award.isPending ? "Saving…" : existing ? "Update" : "Give XP"}
       </Button>
       <Input
         value={note}
@@ -141,10 +151,10 @@ export function ClassworkTeacherPanel({
   return (
     <Card>
       <CardHeader
-        title="Classwork points"
+        title="Classwork XP"
         description={
           given
-            ? "The class can see this lesson. Points are yours to give — classwork has no deadline and is never scored automatically."
+            ? "The class can see this lesson. The XP is yours to give — classwork has no deadline and is never scored automatically."
             : "Give this to the class so they can see it, then record what each student earned in the room."
         }
         actions={
@@ -185,7 +195,7 @@ export function ClassworkTeacherPanel({
         <LoadingState label="Loading classwork…" />
       ) : !canManage ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          The class teacher records classwork points.
+          The class teacher gives classwork XP.
         </p>
       ) : students.length === 0 ? (
         <EmptyState
@@ -207,8 +217,9 @@ export function ClassworkTeacherPanel({
             ))}
           </ul>
           <p className="mt-3 text-xs text-muted-foreground">
-            Up to {data.max_points} points per student. Recording again replaces the
-            number — a student is paid once for a lesson, not once per press.
+            Up to {data.max_points} XP per student. Giving again replaces the number — a
+            student is paid once for a lesson, not once per press. XP adds the same number of
+            spendable points.
           </p>
         </>
       )}

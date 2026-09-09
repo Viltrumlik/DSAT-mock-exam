@@ -264,6 +264,13 @@ class SubdomainAPIGuardMiddleware:
             # a student-style preview. Authoring (POST/PATCH/DELETE) stays on questions.
             if path.startswith("/api/assessments/admin/sets/") and method == "GET":
                 return self.get_response(request)
+            # Teacher-scoped assessment reads: the submission queue, and the item analysis
+            # that flags a question a quarter of the class got wrong. Both narrow themselves
+            # to the caller's own classrooms inside the view, so there is nothing here to
+            # widen. Listed as its own prefix rather than opening ``/api/assessments/``,
+            # because the two rules above are deliberately narrower than that namespace.
+            if path.startswith("/api/assessments/teacher/"):
+                return self.get_response(request)
             # Separated midterm system: teacher standalone-midterm area (catalog + per-student
             # grant/revoke/results + the all-students grant picker at /midterms/teacher/students/).
             # The classroom flavor rides /api/classes/ (already allowed).

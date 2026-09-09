@@ -17,6 +17,7 @@ from .views import (
     ExamsMetricsView,
     ExamsPrometheusMetricsView,
 )
+from .views_item_analysis import PastpaperItemAnalysisView
 
 # ── Student routes ──────────────────────────────────────────────────────────
 router = DefaultRouter()
@@ -90,5 +91,13 @@ urlpatterns = [
     # pattern matched `\dd/` and never an id — the endpoint 404'd for three months, and with it
     # every `/practice-test/<id>` page, including the one homework sends students to.
     re_path(r"^(?P<pk>\d+)/$", PracticeTestViewSet.as_view({"get": "retrieve"}), name="practice-test-detail"),
+    # Teacher analytics: which questions of a pastpaper a classroom got wrong, and what those
+    # questions have in common. Declared above the router include for the same reason the
+    # practice-library routes are: the router owns the empty prefix.
+    path(
+        "teacher/pastpaper-item-analysis/",
+        PastpaperItemAnalysisView.as_view(),
+        name="pastpaper-item-analysis",
+    ),
     path('', include(router.urls)),
 ]

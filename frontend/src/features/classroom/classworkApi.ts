@@ -47,6 +47,14 @@ export interface ClassworkFile {
 export interface StudentClasswork {
   id: number;
   title: string;
+  /**
+   * Lifecycle, so the teacher's list can mark a draft exactly as the homework list does.
+   *
+   * A student never sees anything but PUBLISHED (the server filters their list), but a
+   * teacher's list carries drafts — and a classwork whose XP is being given while the class
+   * cannot yet see it is worth saying out loud on the row.
+   */
+  status: string;
   instructions: string;
   assigned_at: string | null;
   external_urls: string[];
@@ -125,6 +133,9 @@ export function classworkFromAssignments(items: readonly unknown[]): StudentClas
     out.push({
       id: num(r.id),
       title: str(r.title),
+      // Read one field at a time, like every other field here: this mapper drops anything
+      // it is not explicitly told about, so a new server field is invisible until named.
+      status: str(r.status) || "PUBLISHED",
       instructions: str(r.instructions),
       // The carrier is minted at hand-out time, so published_at is the real "given"
       // moment; assigned_at already coalesces it with created_at server-side.

@@ -27,14 +27,22 @@ from journals.models import ClassroomLessonGrant, JournalLesson
 from .capabilities import classroom_capabilities
 from .link_utils import labels_for
 from .models import ClassroomMembership
-from .views_rankings import _ClassroomScopedView
+from .views_rankings import _ClassroomScopedView, _display_name
 
 logger = logging.getLogger(__name__)
 
-#: Ceiling on a single classwork award. **This number is mine, not the school's** — it is a
-#: fat-finger guard, not a policy. Set against the homework maximum of 15 so one lesson can
-#: be worth several homeworks and still not be worth a term.
-MAX_CLASSWORK_POINTS = 50
+#: Ceiling on a single classwork award. **The school set this one** (2026-09-09): a teacher
+#: may hand out at most 20 for one classwork. It replaces a 50 that was my own fat-finger
+#: guard rather than a policy, and it is a POLICY now — a teacher who needs to give more is
+#: meant to be told no, not nudged.
+#:
+#: One constant for every classwork surface. Points and XP move together on this event
+#: (CLASSWORK_MANUAL grants XP equal to its points), so this is equally "20 points" and
+#: "20 XP" — the teacher-facing copy says XP because that is the number a student watches.
+#:
+#: Awards already written above the new ceiling are LEFT STANDING; only new writes are
+#: checked. Re-awarding such a student, though, is re-validated and therefore capped at 20.
+MAX_CLASSWORK_POINTS = 20
 
 
 def _vocab_rows(ids):
@@ -327,22 +335,24 @@ class Http404Lesson(Exception):
     """This classroom has no journal to deliver (no level, or none published)."""
 
 
-class _LessonScopedView(_ClassroomScopedView):
+class _ClassroomCapabilityView(_ClassroomScopedView):
     """Classroom-scoped view with capability helpers.
 
     ``IsClassMemberCap`` (inherited) is what confines a teacher to their own classrooms —
     a non-member gets 403 before any handler runs.
+
+    Split out of ``_LessonScopedView`` so a view scoped to something OTHER than a lesson can
+    carry the same gates without inheriting ``session()`` and claiming a lesson it has not
+    got. The classwork-award view is exactly that: classwork authored from the Classwork tab
+    never had a lesson to be scoped by.
     """
 
     def caps(self, request):
         return classroom_capabilities(request.user, self.get_classroom())
 
-    def deny_unless_staff(self, request):
+    def deny_unless_staff(self, request, message="Only the teaching team can view the lesson plan."):
         if not self.caps(request).is_staff:
-            return Response(
-                {"detail": "Only the teaching team can view the lesson plan."},
-                status=http.HTTP_403_FORBIDDEN,
-            )
+            return Response({"detail": message}, status=http.HTTP_403_FORBIDDEN)
         return None
 
     def deny_unless_can_manage(self, request):
@@ -368,6 +378,10 @@ class _LessonScopedView(_ClassroomScopedView):
                 status=http.HTTP_403_FORBIDDEN,
             )
         return None
+
+
+class _LessonScopedView(_ClassroomCapabilityView):
+    """A view addressed by ``lesson_id``, resolved against THIS classroom's journal."""
 
     def session(self, lesson_id: int) -> JournalLesson:
         """The template session, confirmed to belong to THIS classroom's journal.
@@ -838,3 +852,197 @@ class ClassroomLessonRescheduleView(_LessonScopedView):
             return Response({"detail": "Invalid date."}, status=http.HTTP_400_BAD_REQUEST)
         delivery.reschedule(binding, starts_on)
         return Response({"detail": "Plan rescheduled.", "starts_on": binding.starts_on})
+
+
+# ── classwork XP, addressed by the classwork itself ────────────────────────────
+
+
+class ClassroomClassworkAwardsView(_ClassroomCapabilityView):
+    """The XP a teacher gives for ONE classwork, addressed by its assignment id.
+
+    The sibling of :class:`ClassroomLessonClassworkAwardView`, and the reason it exists is
+    that the lesson-scoped route cannot reach half the classwork on the platform. That route
+    finds the carrier *through a journal lesson*, but classwork authored from the Classwork
+    tab (``/assignments/new?kind=classwork``) is an ordinary ``classes.Assignment`` with no
+    lesson behind it at all — so from the teacher's list of classwork, only the ones that
+    happened to come out of the lesson plan could ever be paid.
+
+    Nothing about the ledger changes: :func:`journals.delivery.award_classwork` was already
+    keyed on the carrier (``classwork_key(assignment_id, student_id)``), not the lesson, so
+    both routes write the same one row per (classwork, student) and correct each other in
+    place. This one simply names the carrier directly.
+
+    * ``GET`` — the roster with each student's award. Staff-readable (a TA may look).
+    * ``POST`` — set one student's award. Owner + Teacher, same as the lesson route: these
+      points are *minted* rather than derived from work, so a TA must not reach it.
+    * ``DELETE`` — withdraw one student's award entirely, points and XP. Owner + Teacher.
+
+    POST and DELETE are different facts and keep the lesson route's semantics exactly:
+    awarding a *smaller* number leaves the XP standing (``award``'s ``max(previous_xp, …)``),
+    and only a withdrawal clears it. See :func:`journals.delivery.withdraw_classwork`.
+    """
+
+    def assignment(self, assignment_id: int):
+        """This classroom's classwork carrier with that id, or 404.
+
+        Scoped by classroom AND category. The classroom scope is what stops a teacher
+        reaching another class's carrier by guessing an id; the category scope is what stops
+        this route minting CLASSWORK_MANUAL rows against a *homework*, whose reward is
+        computed from the work the student actually did and would then have two authors.
+        """
+        from .models import Assignment
+
+        return get_object_or_404(
+            Assignment,
+            pk=assignment_id,
+            classroom=self.get_classroom(),
+            category=Assignment.CATEGORY_CLASSWORK,
+        )
+
+    def _students(self, classroom):
+        """The roster this endpoint may pay, in the order the panel shows them.
+
+        Exactly the filter :func:`_roster_student` applies to a single id — non-removed
+        STUDENT memberships — so the list a teacher sees and the ids the write accepts can
+        never disagree. A name in the list that the POST then refuses would look like a bug
+        in the award, not in the roster.
+        """
+        return [
+            m.user
+            for m in ClassroomMembership.objects.filter(
+                classroom=classroom, role=ClassroomMembership.ROLE_STUDENT
+            )
+            .exclude(status=ClassroomMembership.STATUS_REMOVED)
+            .select_related("user")
+            .order_by("user__first_name", "user__last_name", "user__email")
+        ]
+
+    def _payload(self, request, assignment) -> dict:
+        awards = delivery.classwork_awards(assignment)
+        return {
+            "assignment_id": assignment.id,
+            "title": assignment.title,
+            "max_points": MAX_CLASSWORK_POINTS,
+            # Whether THIS viewer may write, not merely read. A TA gets the panel and no
+            # buttons rather than buttons that 403 — a control that always fails is worse
+            # than no control at all.
+            "can_award": bool(self.caps(request).can_manage_class),
+            "students": [
+                {
+                    "student_id": student.id,
+                    "name": _display_name(student),
+                    # `awarded` is the field to test, never `points > 0`: a recorded 0 is a
+                    # teacher who looked and decided, which is a different fact from nobody
+                    # having looked yet.
+                    "awarded": student.id in awards,
+                    "points": int(awards.get(student.id, {}).get("points", 0)),
+                    "xp": int(awards.get(student.id, {}).get("xp", 0)),
+                    "note": awards.get(student.id, {}).get("note", "") or "",
+                    "awarded_at": awards.get(student.id, {}).get("awarded_at"),
+                }
+                for student in self._students(assignment.classroom)
+            ],
+        }
+
+    def _student(self, classroom, request):
+        """The roster student this call is about, or None.
+
+        Body first, query string second — a DELETE body is legal but not universally sent,
+        so a withdrawal must also be expressible in the URL. Same rule as the lesson route.
+        """
+        raw = request.data.get("student_id") if hasattr(request.data, "get") else None
+        if raw in (None, ""):
+            raw = request.query_params.get("student_id")
+        return _roster_student(classroom, raw)
+
+    def get(self, request, classroom_pk, assignment_id):
+        denied = self.deny_unless_staff(
+            request, "Only the teaching team can see this class's classwork XP."
+        )
+        if denied:
+            return denied
+        return Response(self._payload(request, self.assignment(assignment_id)))
+
+    def post(self, request, classroom_pk, assignment_id):
+        denied = self.deny_unless_can_manage_class(request, "give classwork XP")
+        if denied:
+            return denied
+        assignment = self.assignment(assignment_id)
+        student = self._student(assignment.classroom, request)
+        if student is None:
+            return Response(
+                {"detail": "That student is not on this class's roster.", "code": "not_on_roster"},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+        points, error = _classwork_points(request.data.get("points"))
+        if error:
+            return Response({"detail": error, "code": "bad_points"}, status=http.HTTP_400_BAD_REQUEST)
+
+        awarded = delivery.award_classwork(
+            assignment,
+            student,
+            points=points,
+            actor=request.user,
+            # PointAward.note is 240 chars; an over-long note raises inside award(), which
+            # swallows it — the teacher would see a bare failure with no reason.
+            note=str(request.data.get("note") or "").strip()[:240],
+        )
+        if awarded is None:
+            # award() swallows by design, so None is the only signal that the write failed.
+            # Never report a success the ledger does not have.
+            return Response(
+                {"detail": "That XP could not be recorded. Please try again.", "code": "award_failed"},
+                status=http.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(
+            {
+                "detail": f"{points} XP recorded for {_display_name(student)}.",
+                "student_id": student.id,
+                "points": awarded.points,
+                "xp": awarded.xp,
+                "awarded_at": awarded.awarded_at,
+                **self._payload(request, assignment),
+            }
+        )
+
+    def delete(self, request, classroom_pk, assignment_id):
+        denied = self.deny_unless_can_manage_class(request, "take classwork XP back")
+        if denied:
+            return denied
+        assignment = self.assignment(assignment_id)
+        student = self._student(assignment.classroom, request)
+        if student is None:
+            return Response(
+                {"detail": "That student is not on this class's roster.", "code": "not_on_roster"},
+                status=http.HTTP_400_BAD_REQUEST,
+            )
+        row = delivery.withdraw_classwork(
+            assignment,
+            student,
+            actor=request.user,
+            reason=str(request.data.get("reason") or "").strip()[:200],
+        )
+        if row is None:
+            return Response(
+                {
+                    "detail": "There is nothing to take back — this student has no classwork XP.",
+                    "code": "no_award",
+                },
+                status=http.HTTP_404_NOT_FOUND,
+            )
+        if row.points != 0 or row.xp != 0:
+            # revoke() swallows, and returns the same False for "already withdrawn" as for
+            # "the write blew up" — so the ROW is the only honest check.
+            return Response(
+                {"detail": "That XP could not be taken back. Please try again.", "code": "withdraw_failed"},
+                status=http.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        return Response(
+            {
+                "detail": f"Took the XP back from {_display_name(student)}.",
+                "student_id": student.id,
+                "points": row.points,
+                "xp": row.xp,
+                **self._payload(request, assignment),
+            }
+        )

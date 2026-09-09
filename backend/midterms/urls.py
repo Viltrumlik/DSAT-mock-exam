@@ -10,6 +10,7 @@ from .admin_report import (
 from .admin_views import AdminMidtermQuestionViewSet, AdminMidtermViewSet
 from .views import MidtermAttemptViewSet
 from .views_report import MidtermErrorReportPdfView, MidtermErrorReportView
+from .views_stats import StatsClassroomView, StatsMonthlyView, StatsMonthsView
 from .views_student import MyMidtermsView
 from .views_teacher import (
     MidtermResitView,
@@ -65,6 +66,22 @@ urlpatterns = [
         "admin/reports/classrooms/<int:cid>/midterms/<int:mid>/pdf/",
         ReportMidtermPdfView.as_view(),
         name="midterm-report-midterm-pdf",
+    ),
+    # Admin console statistics (month picker → whole school → one classroom's month).
+    path(
+        "admin/stats/months/",
+        StatsMonthsView.as_view(),
+        name="midterm-stats-months",
+    ),
+    path(
+        "admin/stats/monthly/",
+        StatsMonthlyView.as_view(),
+        name="midterm-stats-monthly",
+    ),
+    path(
+        "admin/stats/classrooms/<int:cid>/",
+        StatsClassroomView.as_view(),
+        name="midterm-stats-classroom",
     ),
     # Teacher standalone-midterm area (grant access + results).
     path("teacher/midterms/", MidtermCatalogView.as_view(), name="midterm-teacher-catalog"),

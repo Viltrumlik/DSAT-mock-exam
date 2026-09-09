@@ -10,6 +10,10 @@ Two rules shape everything here:
   surface — so rows are enumerated from ``ClassroomMembership`` and the attempt is joined on.
 * The verdict is read from the frozen ``MidtermOutcome``, never recomputed from the current
   pass mark, so raising a pass mark next term does not retroactively fail last term's class.
+* **A retake overturns an absence as well as a fail.** ``access.retake_eligible_students``
+  grants the second chance to everyone who did not pass, which is failers *and* absentees —
+  so the retake is consulted for both, and a student the retake rescued is PASSED_ON_RETAKE
+  whichever way they failed to pass the first time.
 
 Gated on ``is_global_scope_staff`` (admin / test_admin / super_admin), deliberately NOT
 ``CanManageQuestions`` — that returns True for teachers, and a teacher must not see another
@@ -71,14 +75,26 @@ def classroom_student_ids(classroom_id: int) -> list[int]:
     )
 
 
-def _midterm_ids_for_resource_ids(resource_ids) -> set[int]:
-    """Grant ``resource_id``s → Midterm ids, absorbing cutover leftovers that still carry a
-    legacy ``MockExam.id`` (same normalization as midterms.access)."""
+def midterm_ids_by_resource_id(resource_ids) -> dict[int, int]:
+    """Grant ``resource_id`` → Midterm id, absorbing cutover leftovers that still carry a
+    legacy ``MockExam.id`` (same normalization as midterms.access).
+
+    A mapping rather than a set because a caller grouping grants BY CLASSROOM (the monthly
+    statistics roll-up) needs to know which midterm each grant pointed at, not merely that
+    some midterm did.
+    """
     if not resource_ids:
-        return set()
-    ids = set(Midterm.objects.filter(id__in=resource_ids).values_list("id", flat=True))
-    ids |= set(Midterm.objects.filter(legacy_mock_exam_id__in=resource_ids).values_list("id", flat=True))
-    return ids
+        return {}
+    out = {mid: mid for mid in Midterm.objects.filter(id__in=resource_ids).values_list("id", flat=True)}
+    for legacy_id, mid in Midterm.objects.filter(
+        legacy_mock_exam_id__in=resource_ids
+    ).values_list("legacy_mock_exam_id", "id"):
+        out.setdefault(legacy_id, mid)
+    return out
+
+
+def _midterm_ids_for_resource_ids(resource_ids) -> set[int]:
+    return set(midterm_ids_by_resource_id(resource_ids).values())
 
 
 def classroom_midterm_ids(classroom_id: int) -> set[int]:
@@ -128,7 +144,7 @@ def _midterm_brief(m: Midterm) -> dict:
 
 
 # ── verdict resolution ───────────────────────────────────────────────────────
-def _sitting(midterm, student_id, attempts_by_student, outcomes_by_student) -> dict:
+def sitting_for(midterm, student_id, attempts_by_student, outcomes_by_student) -> dict:
     """One student's (score, state, passed) on one midterm.
 
     ``passed`` is None whenever there is no verdict to give: absent, still sitting, or a
@@ -159,17 +175,25 @@ def _sitting(midterm, student_id, attempts_by_student, outcomes_by_student) -> d
     }
 
 
-def _final_status(midterm_sitting, retake_sitting) -> str:
+def final_status_for(midterm_sitting, retake_sitting) -> str:
+    """One student's final verdict on a paper, given their parent sitting and their retake.
+
+    A retake pass overturns BOTH ways of not passing — a recorded fail and an absence. The
+    absence case is not an edge: ``access.retake_eligible_students`` grants the retake to
+    failers *and* absentees precisely because "a student who was ill that morning" has had
+    no first chance at all. Consulting the retake only inside the ``passed is False`` branch
+    left those students marked ABSENT no matter what the retake said, so the same payload
+    reported a class as 80% while every one of its students held a pass.
+    """
     if midterm_sitting["passed"] is True:
         return STATUS_PASSED
+    # A student who has not yet sat the retake still stands where the parent left them —
+    # the recorded verdict is a fail (or an absence) until a retake overturns it.
+    rescued = bool(retake_sitting) and retake_sitting["passed"] is True
     if midterm_sitting["passed"] is False:
-        # A failer who has not yet sat the retake still stands failed — the recorded verdict
-        # is a fail until a retake overturns it.
-        if retake_sitting and retake_sitting["passed"] is True:
-            return STATUS_PASSED_ON_RETAKE
-        return STATUS_FAILED
+        return STATUS_PASSED_ON_RETAKE if rescued else STATUS_FAILED
     if midterm_sitting["state"] == STATE_ABSENT:
-        return STATE_ABSENT
+        return STATUS_PASSED_ON_RETAKE if rescued else STATE_ABSENT
     # A finished PRE_MIDTERM has no verdict and never will. Without this it falls through to
     # PENDING and sits in the admin report as "awaiting result" forever.
     if midterm_sitting.get("graded") is False and midterm_sitting["score"] is not None:
@@ -186,15 +210,25 @@ def _tally(statuses) -> dict:
     }
 
 
+def pick_sitting(previous, candidate):
+    """Which of two attempts by one student at one midterm the reports read.
+
+    A completed sitting always beats an abandoned/in-flight one; otherwise the later row
+    wins. Stated once, here, because ``midterms.stats`` indexes a single school-wide attempt
+    query rather than one query per midterm — and a bulk reader that picked a different
+    attempt would put a student in a different column from the one the admin report shows.
+    """
+    if previous is None or candidate.is_completed or not previous.is_completed:
+        return candidate
+    return previous
+
+
 def _attempts_by_student(midterm_id, student_ids) -> dict:
     out = {}
     for a in MidtermAttempt.objects.filter(midterm_id=midterm_id, student_id__in=student_ids).order_by(
         "created_at"
     ):
-        prev = out.get(a.student_id)
-        # A completed sitting always beats an abandoned/in-flight one; otherwise latest wins.
-        if prev is None or a.is_completed or not prev.is_completed:
-            out[a.student_id] = a
+        out[a.student_id] = pick_sitting(out.get(a.student_id), a)
     return out
 
 
@@ -205,25 +239,77 @@ def _outcomes_by_student(midterm_id, student_ids) -> dict:
     }
 
 
-def build_midterm_rows(classroom, midterm, retake) -> tuple[list[dict], dict]:
-    """The per-student table for one midterm (+ its retake), and the summary above it."""
+def resolve_retake(retakes, student_id, attempts_by_midterm, outcomes_by_midterm):
+    """``(sitting, took_one, passed_one)`` for one student across EVERY retake of a paper.
+
+    The single rule for "which second chance decided this student's fate", stated once and
+    read by both surfaces that need it: the pooled statistic in ``midterms.stats`` and the
+    per-student evidence table below. They used to disagree — statistics unioned every
+    retake while the table read only ``retake_for`` (the first) — so on a paper given two
+    second chances the headline counted a student rescued by the second as a pass while the
+    table underneath it printed them as a failure.
+
+    The first PASS wins. Failing that, the first sitting that is not an absence, so the table
+    shows a real attempt rather than an empty cell. Failing that, ``None``.
+
+    ``attempts_by_midterm`` / ``outcomes_by_midterm`` are ``{midterm_id: {student_id: row}}``
+    — the shape a bulk reader already has, so neither caller issues a query in here.
+    """
+    best = None
+    took_one = False
+    for retake in retakes:
+        r_attempts = attempts_by_midterm.get(retake.id, {})
+        r_outcomes = outcomes_by_midterm.get(retake.id, {})
+        sitting = sitting_for(retake, student_id, r_attempts, r_outcomes)
+        attempt = r_attempts.get(student_id)
+        if attempt is not None and attempt.is_completed:
+            took_one = True
+        if sitting["passed"] is True:
+            # A frozen verdict is proof of a sitting even where the attempt row has gone.
+            return sitting, True, True
+        if best is None and sitting["state"] != STATE_ABSENT:
+            best = sitting
+    return best, took_one, False
+
+
+def _as_retakes(value) -> list:
+    """``None`` / one ``Midterm`` / an iterable of them → a list, oldest first."""
+    if value is None:
+        return []
+    if hasattr(value, "pk"):
+        return [value]
+    return list(value)
+
+
+def build_midterm_rows(classroom, midterm, retakes) -> tuple[list[dict], dict]:
+    """The per-student table for one midterm (+ its retakes), and the summary above it.
+
+    ``retakes`` may be a single ``Midterm`` or every retake of the paper; pass them all, or a
+    student rescued by the second one reads as a failure here while the statistics page
+    counts them as a pass.
+    """
     student_ids = classroom_student_ids(classroom.id)
     students = {u.id: u for u in User.objects.filter(id__in=student_ids)}
+    retakes = _as_retakes(retakes)
 
     m_attempts = _attempts_by_student(midterm.id, student_ids)
     m_outcomes = _outcomes_by_student(midterm.id, student_ids)
-    r_attempts = _attempts_by_student(retake.id, student_ids) if retake else {}
-    r_outcomes = _outcomes_by_student(retake.id, student_ids) if retake else {}
+    r_attempts = {r.id: _attempts_by_student(r.id, student_ids) for r in retakes}
+    r_outcomes = {r.id: _outcomes_by_student(r.id, student_ids) for r in retakes}
 
     rows = []
     for sid in student_ids:
         student = students.get(sid)
         if student is None:  # membership pointing at a deleted user
             continue
-        m = _sitting(midterm, sid, m_attempts, m_outcomes)
-        # Only a failer is offered a second chance, and only when a retake actually exists.
-        eligible = bool(retake) and m["passed"] is False
-        r = _sitting(retake, sid, r_attempts, r_outcomes) if eligible else None
+        m = sitting_for(midterm, sid, m_attempts, m_outcomes)
+        # Everyone who did not pass is offered a second chance, and only when one exists.
+        # That is failers AND absentees — the same cohort ``access.retake_eligible_students``
+        # hands the grant to. Gating on ``passed is False`` alone excluded every absentee, so
+        # the retake column stayed blank for the students a retake most exists for and the
+        # verdict below could never be overturned.
+        eligible = bool(retakes) and (m["passed"] is False or m["state"] == STATE_ABSENT)
+        r = resolve_retake(retakes, sid, r_attempts, r_outcomes)[0] if eligible else None
         rows.append(
             {
                 "student_id": sid,
@@ -235,7 +321,7 @@ def build_midterm_rows(classroom, midterm, retake) -> tuple[list[dict], dict]:
                 "retake_state": r["state"] if r else None,
                 "retake_passed": r["passed"] if r else None,
                 "retake_eligible": eligible,
-                "final_status": _final_status(m, r),
+                "final_status": final_status_for(m, r),
             }
         )
     rows.sort(key=lambda r: r["student_name"].lower())
@@ -250,8 +336,28 @@ def build_midterm_rows(classroom, midterm, retake) -> tuple[list[dict], dict]:
     return rows, summary
 
 
+def retakes_for(midterm):
+    """EVERY retake of ``midterm``, oldest first.
+
+    A paper can be given more than one second chance — nothing stops a second RETAKE row
+    pointing at the same parent, and the retake-grant path is happy to issue one. **Every
+    reader takes all of them**: a student rescued by the *second* retake passed just as much
+    as one rescued by the first, and reading only the first reported them as a failure.
+
+    The per-student table still shows ONE retake column, but which sitting fills it is
+    :func:`resolve_retake`'s answer over the whole list rather than "whichever row has the
+    lowest id".
+    """
+    return Midterm.objects.filter(retake_of_id=midterm.id).order_by("id")
+
+
 def retake_for(midterm) -> "Midterm | None":
-    return Midterm.objects.filter(retake_of_id=midterm.id).order_by("id").first()
+    """The oldest retake of ``midterm``, for a caller that can name only one of them.
+
+    Naming a paper (a header, a PDF title) is what this is for. Deciding a student's verdict
+    is not — use :func:`retakes_for` with :func:`resolve_retake`.
+    """
+    return retakes_for(midterm).first()
 
 
 # ── views ────────────────────────────────────────────────────────────────────
@@ -322,15 +428,18 @@ class ReportClassroomDetailView(APIView):
         }
         rows = []
         for m in Midterm.objects.filter(id__in=midterm_ids).order_by("title"):
-            retake = retake_for(m)
-            _, summary = build_midterm_rows(classroom, m, retake)
+            retakes = list(retakes_for(m))
+            _, summary = build_midterm_rows(classroom, m, retakes)
             sched = schedules.get(m.id)
             rows.append(
                 {
                     **_midterm_brief(m),
                     "scheduled_at": sched.starts_at.isoformat() if (sched and sched.starts_at) else None,
                     "counts": {k: summary[k] for k in ("passed", "failed", "absent", "pending")},
-                    "retake": {"id": retake.id, "title": retake.title} if retake else None,
+                    # ``retake`` is the oldest, kept for the existing single-retake reader;
+                    # ``retakes`` is all of them, because the counts beside it already are.
+                    "retake": ({"id": retakes[0].id, "title": retakes[0].title} if retakes else None),
+                    "retakes": [{"id": r.id, "title": r.title} for r in retakes],
                 }
             )
         return Response({"classroom": _classroom_brief(classroom), "midterms": rows})
@@ -339,9 +448,9 @@ class ReportClassroomDetailView(APIView):
 def _resolve_report(cid, mid) -> tuple:
     classroom = get_object_or_404(Classroom.objects.select_related("teacher"), pk=cid)
     midterm = get_object_or_404(Midterm, pk=mid)
-    retake = retake_for(midterm)
-    rows, summary = build_midterm_rows(classroom, midterm, retake)
-    return classroom, midterm, retake, rows, summary
+    retakes = list(retakes_for(midterm))
+    rows, summary = build_midterm_rows(classroom, midterm, retakes)
+    return classroom, midterm, retakes, rows, summary
 
 
 class ReportMidtermDetailView(APIView):
@@ -350,12 +459,15 @@ class ReportMidtermDetailView(APIView):
     permission_classes = [IsGlobalScopeStaff]
 
     def get(self, request, cid=None, mid=None):
-        classroom, midterm, retake, rows, summary = _resolve_report(cid, mid)
+        classroom, midterm, retakes, rows, summary = _resolve_report(cid, mid)
         return Response(
             {
                 "classroom": _classroom_brief(classroom),
                 "midterm": _midterm_brief(midterm),
-                "retake": _midterm_brief(retake) if retake else None,
+                # One retake column, so one named paper — but every retake is disclosed
+                # beside it, because a row's retake cell may come from any of them.
+                "retake": _midterm_brief(retakes[0]) if retakes else None,
+                "retakes": [_midterm_brief(r) for r in retakes],
                 "summary": summary,
                 "rows": rows,
             }
@@ -368,14 +480,15 @@ class ReportMidtermPdfView(APIView):
     permission_classes = [IsGlobalScopeStaff]
 
     def get(self, request, cid=None, mid=None):
-        classroom, midterm, retake, rows, summary = _resolve_report(cid, mid)
+        classroom, midterm, retakes, rows, summary = _resolve_report(cid, mid)
         from .report_pdf import render_classroom_midterm_report_pdf
 
         sched = MidtermSchedule.objects.filter(classroom_id=classroom.id, midterm_id=midterm.id).first()
         pdf = render_classroom_midterm_report_pdf(
             classroom=_classroom_brief(classroom),
             midterm=_midterm_brief(midterm),
-            retake=_midterm_brief(retake) if retake else None,
+            # The sheet has one retake column and one header slot for it.
+            retake=_midterm_brief(retakes[0]) if retakes else None,
             summary=summary,
             rows=rows,
             scheduled_at=sched.starts_at if sched else None,

@@ -55,6 +55,7 @@ from .views_assign import (
     TransferOwnershipView,
 )
 from .views_lessons import (
+    ClassroomClassworkAwardsView,
     ClassroomLessonClassworkAwardView,
     ClassroomLessonClassworkView,
     ClassroomLessonDetailView,
@@ -234,6 +235,10 @@ urlpatterns = [
     path("<int:classroom_pk>/lessons/<int:lesson_id>/classwork/award/", ClassroomLessonClassworkAwardView.as_view(), name="class-lesson-classwork-award"),
     path("<int:classroom_pk>/lessons/<int:lesson_id>/classwork/", ClassroomLessonClassworkView.as_view(), name="class-lesson-classwork"),
     path("<int:classroom_pk>/lessons/<int:lesson_id>/grants/<int:grant_id>/revoke/", ClassroomLessonRevokeView.as_view(), name="class-lesson-revoke"),
+    # Classwork XP addressed by the CARRIER, not by a lesson. Classwork authored from the
+    # Classwork tab has no lesson behind it, so the lesson-scoped route above cannot reach
+    # it; both write the same one row per (classwork, student).
+    path("<int:classroom_pk>/classwork/<int:assignment_id>/awards/", ClassroomClassworkAwardsView.as_view(), name="class-classwork-awards"),
     # Teacher gradebook
     path("<int:classroom_pk>/midterm-results/", ClassroomMidtermResultsView.as_view(), name="class-midterm-results"),
     path("<int:classroom_pk>/results/", ClassroomUnifiedResultsView.as_view(), name="class-unified-results"),
