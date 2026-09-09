@@ -270,3 +270,111 @@ export interface ClassroomOption {
   is_active?: boolean;
   student_count?: number;
 }
+
+// ── inside one homework ──────────────────────────────────────────────────────
+
+/**
+ * Whether this homework's deadline has arrived.
+ *
+ * Decided by the SERVER, against `django.utils.timezone.now()`. The reader's laptop may be on
+ * any date at all, and a client-side comparison is what would let a teacher on a wrong clock
+ * — or a student on a borrowed staff login — pull the class's wrong answers and the answer
+ * keys out of a homework that is still open.
+ */
+export type HomeworkState = "closed" | "open" | "no_deadline";
+
+export interface HomeworkBlock {
+  id: number;
+  title: string;
+  due_at: string | null;
+  state: HomeworkState;
+  /**
+   * True ONLY while `state === "open"`. `no_deadline` is deliberately NOT locked: the owner's
+   * condition never arrives for such a homework, so the figures show and the page says they
+   * cover whoever has handed in so far.
+   */
+  locked: boolean;
+}
+
+/**
+ * A locked response: the homework block, and nothing else.
+ *
+ * It arrives as a 200, never a 403 — "not yet" is not an error, and an error renders as an
+ * error. The API layer narrows the payload to exactly this before it reaches a component, so
+ * a server that one day sends rows alongside `locked: true` still cannot leak one.
+ */
+export interface LockedAnalysis {
+  homework: HomeworkBlock;
+}
+
+export type AssessmentHomeworkAnalysis = AssessmentItemAnalysis & { homework: HomeworkBlock };
+
+export type AssessmentAssignmentAnalysis = LockedAnalysis | AssessmentHomeworkAnalysis;
+
+/**
+ * How many of the homework's papers this response covers, when it does not cover all of them.
+ *
+ * One assignment can bundle several past papers and each one is a full aggregation, so a
+ * request analyses at most a fixed number of them. Truncating without saying so is forbidden
+ * here: a teacher reading three papers' worth of numbers would have no way to know a fourth
+ * existed.
+ */
+export interface PapersTruncated {
+  /** How many papers this response actually analysed. */
+  analysed: number;
+  /** How many the homework carries. */
+  total: number;
+  /**
+   * The server's own sentence about the cap, rendered as written when it sends one.
+   *
+   * It knows the limit it applied and where the rest can be read; paraphrasing a disclosure
+   * the backend already worded is how the two drift apart.
+   */
+  note: string | null;
+}
+
+export interface PastpaperPapersAnalysis {
+  homework: HomeworkBlock;
+  /** One full analysis per attached paper, each keeping the single-paper shape. */
+  papers: PastpaperItemAnalysis[];
+  /** `null` in the ordinary case — every paper on the homework was analysed. */
+  papers_truncated: PapersTruncated | null;
+}
+
+export type PastpaperAssignmentAnalysis = LockedAnalysis | PastpaperPapersAnalysis;
+
+/** The one safe way to ask whether a response is locked. Never re-derive it from a date. */
+export function isLockedAnalysis(
+  payload: AssessmentAssignmentAnalysis | PastpaperAssignmentAnalysis,
+): boolean {
+  return payload.homework.locked === true;
+}
+
+/**
+ * The two guards a component reads rows through — positive, and belt-and-braces.
+ *
+ * Each asks two questions, not one: the server said this homework is not locked, AND the rows
+ * it would have withheld are actually here. A locked payload that somehow arrived carrying
+ * question rows still fails the first half, and an unlocked one missing them fails the second
+ * rather than crashing halfway down a render. They narrow *towards* the richer type on
+ * purpose: `payload is LockedAnalysis` would be worse than useless, because the rich types
+ * structurally satisfy `LockedAnalysis` and TypeScript would narrow the else-branch to
+ * `never` — silently switching off every check on the very code that reads the rows.
+ */
+export function isAssessmentHomeworkAnalysis(
+  payload: AssessmentAssignmentAnalysis,
+): payload is AssessmentHomeworkAnalysis {
+  return (
+    payload.homework.locked === false &&
+    Array.isArray((payload as AssessmentHomeworkAnalysis).questions)
+  );
+}
+
+export function isPastpaperHomeworkAnalysis(
+  payload: PastpaperAssignmentAnalysis,
+): payload is PastpaperPapersAnalysis {
+  return (
+    payload.homework.locked === false &&
+    Array.isArray((payload as PastpaperPapersAnalysis).papers)
+  );
+}

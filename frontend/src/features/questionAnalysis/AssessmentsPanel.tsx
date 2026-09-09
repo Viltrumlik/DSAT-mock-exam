@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState } from "react";
-import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, ClipboardCheck, ListChecks } from "lucide-react";
+import { ClipboardCheck, ListChecks } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -16,18 +15,22 @@ import {
 } from "@/features/classroom/ui";
 import { normalizeApiError } from "@/lib/apiError";
 import { questionAnalysisApi, questionAnalysisKeys } from "./api";
-import { agree, assessmentWrongLine, flaggedHeading, formatCount, plural } from "./format";
-import type { AssessmentGroupRow, AssessmentItemRow, AssessmentSetRef } from "./types";
+import { buildAssessmentCaveats } from "./caveats";
+import { agree, flaggedHeading, plural } from "./format";
+import type { AssessmentGroupRow, AssessmentSetRef } from "./types";
 import {
   BREAKDOWN_GRID_STYLE,
   BreakdownList,
   type BreakdownRow,
 } from "./components/BreakdownList";
-import { Caveats, type Caveat } from "./components/Caveats";
+import { AssessmentQuestionTable } from "./components/AssessmentQuestionTable";
+import { Caveats } from "./components/Caveats";
 import { Collapsible } from "./components/Collapsible";
-import { RateValue } from "./components/Rate";
-import { Tag } from "./components/Tag";
+import { FlaggedAssessmentCard } from "./components/FlaggedAssessmentCard";
 import { useQueryErrorToast } from "./useQueryErrorToast";
+
+/** Re-exported from where the flagged card now lives, so both surfaces share one route. */
+export { setPracticeHref } from "./components/FlaggedAssessmentCard";
 
 /** The same set can be assigned twice; the picker should offer it once. */
 function dedupeSets(sets: AssessmentSetRef[]): AssessmentSetRef[] {
@@ -48,116 +51,6 @@ function toBreakdownRows(groups: AssessmentGroupRow[]): BreakdownRow[] {
     flagged: group.needs_analysis_count,
     isUntagged: group.key === "untagged",
   }));
-}
-
-/**
- * Where a teacher can actually read a flagged question.
- *
- * `/teacher/assessments/[setId]/practice` renders every question in the set the way a
- * student sees it, with the recorded answer and explanation, and it is guarded by a plain
- * `AuthGuard` — a teacher can open it. The builder's set editor cannot be used here: it is
- * `adminOnly` and lives on the questions console, not the teacher portal.
- *
- * It has no per-question segment, so this lands on question 1 of the set; the link says so.
- */
-export function setPracticeHref(setId: number): string {
-  return `/teacher/assessments/${setId}/practice`;
-}
-
-function FlaggedCard({ row }: { row: AssessmentItemRow }) {
-  return (
-    <li className="rounded-2xl border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-lg bg-surface-2 px-2 py-0.5 text-xs font-bold tabular-nums text-foreground">
-              Q{row.position}
-            </span>
-            <span className="min-w-0 truncate text-xs font-semibold text-muted-foreground">
-              {row.set.title}
-            </span>
-            <Tag tone="neutral">{row.question_type_label}</Tag>
-            {row.ungraded > 0 && (
-              <Tag tone="warning">{plural(row.ungraded, "answer")} not graded yet</Tag>
-            )}
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-foreground">
-            {row.prompt || (
-              <span className="text-muted-foreground">
-                This question has no text prompt saved — open the set below to read it.
-              </span>
-            )}
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">{assessmentWrongLine(row)}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {/* An untagged question says so. Rendering nothing here made a missing skill look
-                like a chip that failed to load rather than a question nobody tagged. */}
-            {row.skill ? <Tag tone="info">{row.skill}</Tag> : <Tag tone="neutral">Untagged</Tag>}
-            {row.domain && <Tag tone="neutral">{row.domain}</Tag>}
-          </div>
-          <Link
-            href={setPracticeHref(row.set.id)}
-            title={`Opens “${row.set.title}” in teacher practice at question 1 — use the question map at the bottom to jump to Q${row.position}.`}
-            className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
-          >
-            Open the set to read Q{row.position}
-            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-          </Link>
-        </div>
-        <div className="shrink-0 text-right">
-          <RateValue value={row.error_rate} flagged className="text-2xl font-black leading-none" />
-          <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            got it wrong
-          </p>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function FullTable({ rows }: { rows: AssessmentItemRow[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[46rem] text-sm">
-        <thead>
-          <tr className="text-left text-xs text-muted-foreground">
-            <th className="py-1.5 pr-3 font-semibold">#</th>
-            <th className="py-1.5 pr-3 font-semibold">Question</th>
-            <th className="py-1.5 pr-3 font-semibold">Set</th>
-            <th className="py-1.5 pr-3 font-semibold">Type</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Wrong</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Graded</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Not graded</th>
-            <th className="py-1.5 text-right font-semibold">Error rate</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.question_id} className="border-t border-border align-top">
-              <td className="py-2 pr-3 tabular-nums text-muted-foreground">{row.position}</td>
-              <td className="max-w-md py-2 pr-3 text-foreground">
-                <span className="line-clamp-2">{row.prompt || "—"}</span>
-              </td>
-              <td className="py-2 pr-3 text-muted-foreground">{row.set.title}</td>
-              <td className="py-2 pr-3 text-muted-foreground">{row.question_type_label}</td>
-              <td className="py-2 pr-3 text-right tabular-nums text-foreground">
-                {formatCount(row.students_wrong)}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
-                {formatCount(row.students_graded)}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
-                {row.ungraded > 0 ? formatCount(row.ungraded) : "—"}
-              </td>
-              <td className="py-2 text-right font-semibold">
-                <RateValue value={row.error_rate} flagged={row.needs_analysis} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
 }
 
 /**
@@ -196,41 +89,9 @@ export function AssessmentsPanel({
   const skillRows = useMemo(() => toBreakdownRows(data?.by_skill ?? []), [data]);
   const domainRows = useMemo(() => toBreakdownRows(data?.by_domain ?? []), [data]);
 
-  const caveats: Caveat[] = [];
-  if (data) {
-    caveats.push({
-      id: "denominator",
-      tone: "info",
-      text:
-        `Every rate here is a share of answers that came back graded (denominator: ${data.denominator}). ` +
-        "A skipped question leaves no answer at all, so a student who never reached one is in no denominator.",
-    });
-    caveats.push({
-      id: "counting",
-      tone: "info",
-      text: `Each student is counted once — ${data.counting_rule}. A retry serves back exactly the questions they got wrong, so later attempts would bias this list.`,
-    });
-    caveats.push({
-      id: "cohort",
-      tone: "info",
-      text:
-        "This tab counts every student who was given a set, including students who have since left the class. The Past papers tab filters to the class roster as it stands today, so the two tabs can report different class sizes for the same class.",
-    });
-    if (data.summary.questions_awaiting_grading > 0) {
-      caveats.push({
-        id: "awaiting",
-        tone: "warning",
-        text: `${plural(data.summary.questions_awaiting_grading, "question")} ${agree(data.summary.questions_awaiting_grading, "has", "have")} answers but no verdict yet, so ${agree(data.summary.questions_awaiting_grading, "it carries", "they carry")} no rate and cannot be flagged either way.`,
-      });
-    }
-    if (data.excluded.retired_questions > 0) {
-      caveats.push({
-        id: "retired",
-        tone: "warning",
-        text: `${plural(data.excluded.retired_questions, "answer")} ${agree(data.excluded.retired_questions, "belongs", "belong")} to questions since retired in the builder, and ${agree(data.excluded.retired_questions, "is", "are")} excluded from every number on this tab.`,
-      });
-    }
-  }
+  // The two endpoints scope their cohort differently for the same class, and this page
+  // shows the other one in a sibling tab — the note has to say where that number is.
+  const caveats = data ? buildAssessmentCaveats(data, "tab") : [];
 
   return (
     <div className="space-y-5">
@@ -330,7 +191,7 @@ export function AssessmentsPanel({
             ) : (
               <ul data-flagged-list className="space-y-3">
                 {data.needs_analysis.map((row) => (
-                  <FlaggedCard key={row.question_id} row={row} />
+                  <FlaggedAssessmentCard key={row.question_id} row={row} />
                 ))}
               </ul>
             )}
@@ -375,7 +236,7 @@ export function AssessmentsPanel({
             summary="Every question in this class"
             hint={`${plural(data.questions.length, "question")}, worst first`}
           >
-            <FullTable rows={data.questions} />
+            <AssessmentQuestionTable rows={data.questions} />
           </Collapsible>
         </>
       )}

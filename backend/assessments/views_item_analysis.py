@@ -17,7 +17,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from classes.models import Classroom
+from classes.models import Assignment, Classroom
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .item_analysis import (
@@ -25,6 +25,7 @@ from .item_analysis import (
     MAX_THRESHOLD,
     MIN_THRESHOLD,
     UnknownAssessmentSet,
+    build_homework_item_analysis,
     build_item_analysis,
     parse_threshold,
     teacher_classroom_ids,
@@ -43,11 +44,18 @@ class TeacherItemAnalysisView(APIView):
     """Per-question item analysis for one classroom's assessments.
 
     ``GET /api/assessments/teacher/item-analysis/?classroom=<id>[&set=<id>][&threshold=25]``
+    ``GET /api/assessments/teacher/item-analysis/?assignment=<id>[&threshold=25]``
 
     Answers the owner's rule: which questions did a quarter or more of the answering students
     get wrong? Those come back first under ``needs_analysis``, ranked worst first, each row
     carrying the prompt excerpt, its set and its position in that set — so the list is
     actionable on its own without a second request per question.
+
+    The two forms are alternatives, never combined. ``classroom`` (optionally narrowed by
+    ``set``) is the standalone analysis page, which looks across a whole class. ``assignment``
+    is the same report *inside one homework*: it resolves the classroom itself — a teacher who
+    opened a homework has its id, not the classroom's — narrows to the assessments that
+    homework carries, and withholds every number until the homework's deadline has passed.
 
     Visible to the classroom's teaching team (owner FK, plus any non-removed staff membership)
     and to global-scope staff, who see every classroom.
@@ -60,13 +68,28 @@ class TeacherItemAnalysisView(APIView):
         summary="Per-question item analysis for a classroom",
         parameters=[
             OpenApiParameter(
-                name="classroom", type=int, required=True, description="Classroom id."
+                name="classroom",
+                type=int,
+                required=False,
+                description="Classroom id. Required unless 'assignment' is given.",
             ),
             OpenApiParameter(
                 name="set",
                 type=int,
                 required=False,
                 description="Limit to one assessment set assigned to that classroom.",
+            ),
+            OpenApiParameter(
+                name="assignment",
+                type=int,
+                required=False,
+                description=(
+                    "Homework (classes.Assignment) id — the in-homework form. Resolves the "
+                    "classroom itself and narrows to the assessments this homework carries. "
+                    "Mutually exclusive with 'set'. Until the homework's deadline has passed "
+                    "the response is a 200 carrying only the 'homework' block with "
+                    "locked=true."
+                ),
             ),
             OpenApiParameter(
                 name="threshold",
@@ -86,14 +109,10 @@ class TeacherItemAnalysisView(APIView):
         try:
             classroom_id = _int_param(params, "classroom")
             assessment_set_id = _int_param(params, "set")
+            assignment_id = _int_param(params, "assignment")
         except ValueError:
             return Response(
-                {"detail": "'classroom' and 'set' must be numeric ids."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if classroom_id is None:
-            return Response(
-                {"detail": "Query parameter 'classroom' is required."},
+                {"detail": "'classroom', 'set' and 'assignment' must be numeric ids."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
@@ -101,6 +120,21 @@ class TeacherItemAnalysisView(APIView):
         except (TypeError, ValueError):
             return Response(
                 {"detail": "'threshold' must be a number between 1 and 100."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if assignment_id is not None:
+            return self._homework(
+                request,
+                assignment_id=assignment_id,
+                assessment_set_id=assessment_set_id,
+                classroom_id=classroom_id,
+                threshold=threshold,
+            )
+
+        if classroom_id is None:
+            return Response(
+                {"detail": "Query parameter 'classroom' is required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -124,3 +158,49 @@ class TeacherItemAnalysisView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
         return Response(payload)
+
+    # ── the in-homework form ─────────────────────────────────────────────────
+    def _homework(self, request, *, assignment_id, assessment_set_id, classroom_id, threshold):
+        """``?assignment=<id>`` — the analysis as it appears inside one homework.
+
+        Out of scope is a **404, not a 403**, unlike the ``classroom=`` form above. The two
+        are asking different questions. A teacher reaching the standalone page already knows
+        the classroom exists — they picked it off their own list — so "you do not teach this
+        one" is the honest answer. A homework id is a bare integer that anybody can guess at,
+        and answering 403 to some ids and 404 to others turns this endpoint into a way of
+        enumerating which homework ids exist school-wide. ``exams/views_item_analysis.py``
+        already makes exactly this call for classrooms; this matches it.
+        """
+        if assessment_set_id is not None:
+            return Response(
+                {
+                    "detail": (
+                        "Pass either 'assignment' or 'set', not both — a homework already "
+                        "says which assessments it carries."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        assignment = (
+            Assignment.objects.select_related("classroom").filter(pk=assignment_id).first()
+        )
+        if assignment is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        scope = teacher_classroom_ids(request.user)
+        if scope is not None and assignment.classroom_id not in scope:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if classroom_id is not None and classroom_id != assignment.classroom_id:
+            # Not ignored: a caller that sent both and disagrees with us is confused about
+            # which class it is looking at, and silently answering about the other one is how
+            # a teacher ends up reading another class's numbers.
+            return Response(
+                {"detail": "'classroom' does not match the homework's classroom."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            build_homework_item_analysis(assignment=assignment, threshold=threshold)
+        )

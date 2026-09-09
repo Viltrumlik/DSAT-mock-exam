@@ -265,3 +265,51 @@ export function pastpaperWrongLine(row: {
   }
   return parts.join(" · ");
 }
+
+/**
+ * A deadline a teacher can read without doing date arithmetic.
+ *
+ * Long-form and absolute — weekday, date, time — because this sentence is the whole content
+ * of the locked state, and "05/09/26 18:00" is a thing you decode rather than read. `null`
+ * when there is no usable date, so the caller says "once the deadline passes" instead of
+ * printing "Invalid Date".
+ */
+export function formatDeadline(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  return at.toLocaleString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * "in about 3 days" — a soft hint beside the absolute deadline, never instead of it.
+ *
+ * Returns `null` when the reader's own clock already puts the deadline in the past. The
+ * server decided this homework is still open, against its own `timezone.now()`; a device an
+ * hour or a year out would otherwise render "past due" directly under a panel that says the
+ * statistics are not out yet. The absolute date above it is always right, so saying nothing
+ * is the honest fallback.
+ */
+export function timeUntilDeadline(
+  iso: string | null | undefined,
+  now: number = Date.now(),
+): string | null {
+  if (!iso) return null;
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return null;
+  const ms = at.getTime() - now;
+  if (ms <= 0) return null;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return minutes <= 1 ? "in under a minute" : `in about ${minutes} minutes`;
+  const hours = Math.round(ms / 3_600_000);
+  if (hours < 24) return hours === 1 ? "in about an hour" : `in about ${hours} hours`;
+  const days = Math.round(ms / 86_400_000);
+  return days === 1 ? "in about a day" : `in about ${days} days`;
+}

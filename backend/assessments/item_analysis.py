@@ -42,6 +42,14 @@ question two students answered must not weigh as much as one thirty students ans
 **Students who have since left the classroom still count.** This is a question about the
 QUESTION, not about the current roster: their answer was a real answer to it. Dropping them
 would silently change the numbers every time a teacher tidies up a class list.
+
+## Inside one homework, after its deadline
+
+The same analysis is also served *per homework* — the owner's second sentence about it:
+*"assessment va pastpaper statisticslar har homework deadline tugaganda o'sha homeworkning
+ichida ko'rinib turishi kerak"*. ``build_homework_item_analysis`` narrows to the assessment
+sets one ``classes.Assignment`` carries and gates the whole payload on that assignment's
+``due_at`` — see ``homework_deadline_block`` for the three states and why "not yet" is a 200.
 """
 
 from __future__ import annotations
@@ -50,6 +58,7 @@ import html
 import re
 from dataclasses import dataclass, field
 
+from django.utils import timezone
 from django.utils.html import strip_tags
 
 from access.services import is_global_scope_staff
@@ -79,6 +88,12 @@ COUNTED_ATTEMPT_STATUSES = (
     AssessmentAttempt.STATUS_SUBMITTED,
     AssessmentAttempt.STATUS_GRADED,
 )
+
+#: The three things a homework's deadline can be. ``open`` is the only one that hides the
+#: numbers; see ``homework_deadline_block``.
+HOMEWORK_CLOSED = "closed"
+HOMEWORK_OPEN = "open"
+HOMEWORK_NO_DEADLINE = "no_deadline"
 
 #: What an untagged question is called in the skill/domain breakdowns. Spelled exactly as
 #: ``classes.pastpaper_report.UNCLASSIFIED`` spells it, so the two reports do not invent two
@@ -113,6 +128,58 @@ def parse_threshold(raw: object) -> float:
         return DEFAULT_THRESHOLD
     value = float(raw)  # ValueError propagates to the caller
     return max(MIN_THRESHOLD, min(MAX_THRESHOLD, value))
+
+
+def homework_deadline_block(assignment) -> dict:
+    """One homework's deadline, as the three states a page has to draw differently.
+
+    The owner's condition for showing item analysis inside a homework is *"deadline
+    tugaganda"* — once the deadline has finished. So:
+
+    * ``closed`` — ``due_at`` is set and has arrived. The numbers show.
+    * ``open`` — ``due_at`` is set and is still ahead. **This is the only locked state.**
+      Every question row, prompt, answer key and error rate is withheld: a student who can
+      still hand the work in must not be able to read which questions the class got wrong,
+      and a teacher's screen is not a private channel — it is projected, screenshotted and
+      shared. The endpoint answers **200 with ``locked: true``, never 403**, because "the
+      deadline has not passed yet" is a state of the homework, not a failure of the request,
+      and a 403 renders as an error page. "Locked", "empty" and "broken" are three different
+      screens in this product and each one has to be reachable from the payload alone.
+    * ``no_deadline`` — ``due_at`` is NULL (the column is nullable and plenty of live rows
+      use it). Not locked: the owner's condition can never arrive for such a homework, and
+      withholding the analysis forever would be a worse answer than showing it with the
+      state saying the homework is still open and the figures cover whoever has handed in.
+
+    ``due_at`` exactly equal to now counts as arrived — the deadline is the instant the
+    homework closes, not the instant after it.
+
+    The comparison is ``timezone.now()``, server side. The reader's device clock is not
+    evidence about a deadline; a phone set a day forward would otherwise unlock a homework
+    that is still open.
+
+    This is a ``classes.Assignment`` concept and its natural home would be ``classes/``.
+    It lives here because both item-analysis modules — assessments and past papers — have to
+    agree on it exactly, and a second copy of a rule that decides what is visible is the bug
+    class this codebase keeps paying for (three separate classroom whitelists, two answer
+    mappers). ``exams.pastpaper_item_analysis`` imports this rather than restating it.
+    """
+    due_at = assignment.due_at
+    if due_at is None:
+        state, locked = HOMEWORK_NO_DEADLINE, False
+    elif due_at <= timezone.now():
+        state, locked = HOMEWORK_CLOSED, False
+    else:
+        state, locked = HOMEWORK_OPEN, True
+    return {
+        "id": assignment.pk,
+        "title": assignment.title,
+        # A datetime, rendered by DRF's encoder as an ISO-8601 string with a ``Z``. The
+        # page needs the instant, not a pre-formatted string in the server's idea of a
+        # locale, and ``None`` is a real value here rather than a missing one.
+        "due_at": due_at,
+        "state": state,
+        "locked": locked,
+    }
 
 
 def teacher_classroom_ids(user) -> set[int] | None:
@@ -353,10 +420,23 @@ def _taxonomy_for(question: AssessmentQuestion) -> tuple[object, str, object, st
     )
 
 
+def _classroom_block(classroom: Classroom) -> dict:
+    """The classroom header every form of this report carries, spelled once."""
+    return {
+        "id": classroom.id,
+        "name": classroom.name,
+        "subject": classroom.subject,
+        "subject_label": _SUBJECT_LABELS.get(classroom.subject, classroom.subject),
+        "level": classroom.level or None,
+        "level_label": _LEVEL_LABELS.get(classroom.level) if classroom.level else None,
+    }
+
+
 def build_item_analysis(
     *,
     classroom: Classroom,
     assessment_set_id: int | None = None,
+    homework_ids: list[int] | None = None,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> dict:
     """Everything a teacher needs to act on one classroom's wrong answers.
@@ -364,6 +444,12 @@ def build_item_analysis(
     The flagged questions come back FIRST, under ``needs_analysis``, so the caller never has
     to filter to find the thing the owner's rule is about; ``questions`` then carries every
     question in the same worst-first order.
+
+    ``assessment_set_id`` and ``homework_ids`` are two alternative narrowings and the view
+    never passes both. They differ in what an empty result means, which is the whole point:
+    a ``set`` the classroom was never assigned is a stale link and raises, whereas a homework
+    that simply carries no assessments is an ordinary, correct, empty answer — see
+    ``build_homework_item_analysis``.
     """
     homeworks = list(
         HomeworkAssignment.objects.filter(classroom=classroom)
@@ -377,6 +463,13 @@ def build_item_analysis(
                 "That assessment set is not assigned to this classroom."
             )
         homeworks = scoped
+    if homework_ids is not None:
+        # Intersected with this classroom's rows rather than queried on their own: a
+        # ``HomeworkAssignment`` whose ``classroom`` has drifted from its assignment's is
+        # not this classroom's work, and this is the direction that errs towards showing
+        # less.
+        wanted = set(homework_ids)
+        homeworks = [hw for hw in homeworks if hw.id in wanted]
 
     set_ids = {hw.assessment_set_id for hw in homeworks}
     attempt_students = _first_counted_attempts([hw.id for hw in homeworks])
@@ -455,18 +548,24 @@ def build_item_analysis(
     rows.sort(key=_row_sort_key)
     flagged_rows = [r for r in rows if r["needs_analysis"]]
 
+    # "There is nothing here" has two different reasons and they must not share a sentence.
+    # Narrowed to a homework, an empty result means that homework carries no assessments —
+    # the classroom may be full of them.
+    empty_note = (
+        "This homework has no assessments attached."
+        if homework_ids is not None
+        else "This classroom has no assessment questions yet."
+    )
+
     scoped_question_ids = {q.id for q in questions}
     retired = len([qid for qid in verdicts if qid not in scoped_question_ids])
 
     return {
-        "classroom": {
-            "id": classroom.id,
-            "name": classroom.name,
-            "subject": classroom.subject,
-            "subject_label": _SUBJECT_LABELS.get(classroom.subject, classroom.subject),
-            "level": classroom.level or None,
-            "level_label": _LEVEL_LABELS.get(classroom.level) if classroom.level else None,
-        },
+        "classroom": _classroom_block(classroom),
+        # Always present so a caller can read it unconditionally; only the per-homework form
+        # fills it in (``build_homework_item_analysis`` overwrites this). The standalone
+        # question-analysis page spans a whole classroom and belongs to no one homework.
+        "homework": None,
         "threshold": threshold,
         # What ``error_rate`` is a percentage OF: answers with a verdict back. A skipped
         # question writes no answer row, so a student who never reached one is in no
@@ -485,7 +584,7 @@ def build_item_analysis(
             "attempts_counted": len(attempt_students),
             "sets": len(set_ids),
         },
-        "taxonomy_coverage": _coverage(linked, len(questions)),
+        "taxonomy_coverage": _coverage(linked, len(questions), empty_note=empty_note),
         # Answers whose question has since been deactivated in the builder. They are excluded
         # from every number above; saying how many is cheaper than a teacher wondering why the
         # totals do not match a student's review page.
@@ -509,15 +608,67 @@ def build_item_analysis(
     }
 
 
-def _coverage(linked: int, total: int) -> dict:
+def build_homework_item_analysis(
+    *,
+    assignment,
+    threshold: float = DEFAULT_THRESHOLD,
+) -> dict:
+    """The same analysis, narrowed to one homework and gated on its deadline.
+
+    Two things are different from the classroom-wide form and both are load-bearing.
+
+    **The scope is the assignment's own ``HomeworkAssignment`` rows, all of them.**
+    ``HomeworkAssignment.assignment`` is a plain FK, not a OneToOne — one homework may bundle
+    several assessment sets, and the constraint that was dropped to allow that is named in
+    ``assessments/models.py``. Analysing only the first would quietly report on part of the
+    homework while looking like it reported on all of it. The ``sets`` list in the payload
+    names every one of them, so the page can say which sets these numbers came from.
+
+    **A locked homework returns almost nothing.** Not a trimmed report — a payload that
+    physically does not contain a prompt, an answer key, an error rate or a question row, so
+    there is no future field to leak through and nothing for a devtools tab to find. See
+    ``homework_deadline_block`` for why that is a 200 and not a 403.
+
+    An assignment carrying no assessments at all is an ordinary empty result: the caller
+    simply does not draw this half. It is not an error, and ``taxonomy_coverage.note`` says
+    which kind of empty it is.
+    """
+    homework = homework_deadline_block(assignment)
+    classroom = assignment.classroom
+
+    if homework["locked"]:
+        return {
+            "classroom": _classroom_block(classroom),
+            "homework": homework,
+            "threshold": threshold,
+        }
+
+    homework_ids = list(
+        HomeworkAssignment.objects.filter(assignment=assignment).values_list("id", flat=True)
+    )
+    payload = build_item_analysis(
+        classroom=classroom, homework_ids=homework_ids, threshold=threshold
+    )
+    payload["homework"] = homework
+    return payload
+
+
+def _coverage(
+    linked: int,
+    total: int,
+    *,
+    empty_note: str = "This classroom has no assessment questions yet.",
+) -> dict:
     """How much of this classroom's content can be grouped by SAT skill, and a plain note.
 
     The note is not decoration. Nothing in production links assessment questions to the bank
     yet, so the skill and domain breakdowns are usually empty, and an empty chart with no
-    explanation reads as a bug.
+    explanation reads as a bug. ``empty_note`` exists for the same reason one step further
+    out: narrowed to a single homework, "no questions" means something else again, and the
+    caller is the only one who knows which emptiness this is.
     """
     if not total:
-        note = "This classroom has no assessment questions yet."
+        note = empty_note
     elif linked == 0:
         note = (
             "No question here is linked to the question bank, so there is no SAT skill or "

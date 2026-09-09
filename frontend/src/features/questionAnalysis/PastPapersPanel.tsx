@@ -15,6 +15,7 @@ import {
 } from "@/features/classroom/ui";
 import { normalizeApiError } from "@/lib/apiError";
 import { questionAnalysisApi, questionAnalysisKeys } from "./api";
+import { buildPastpaperCaveats } from "./caveats";
 import {
   HELD_OUT_RATE_TITLE,
   SUSPECT_KEY_THRESHOLD,
@@ -23,23 +24,19 @@ import {
   flaggedHeading,
   formatCount,
   paperLabel,
-  pastpaperWrongLine,
   plural,
 } from "./format";
-import type {
-  PastPaperOption,
-  PastpaperBreakdown,
-  PastpaperItemRow,
-} from "./types";
+import type { PastPaperOption, PastpaperBreakdown } from "./types";
 import {
   BREAKDOWN_GRID_STYLE,
   BreakdownList,
   type BreakdownRow,
 } from "./components/BreakdownList";
-import { Caveats, type Caveat } from "./components/Caveats";
+import { Caveats } from "./components/Caveats";
 import { Collapsible } from "./components/Collapsible";
+import { FlaggedPastpaperCard } from "./components/FlaggedPastpaperCard";
+import { PastpaperQuestionTable } from "./components/PastpaperQuestionTable";
 import { RateValue } from "./components/Rate";
-import { Tag } from "./components/Tag";
 import { useQueryErrorToast } from "./useQueryErrorToast";
 
 /** `key === null` is the untagged bucket on every past-paper breakdown. */
@@ -89,137 +86,6 @@ function groupPapers(papers: PastPaperOption[]): { name: string; papers: PastPap
   return [...groups.entries()]
     .map(([name, list]) => ({ name, papers: list }))
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function FlaggedCard({ row }: { row: PastpaperItemRow }) {
-  return (
-    <li
-      className={`rounded-2xl border bg-card p-4 ${
-        row.suspect_key ? "border-rose-500/40" : "border-border"
-      }`}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-lg bg-surface-2 px-2 py-0.5 text-xs font-bold tabular-nums text-foreground">
-              Q{row.number}
-            </span>
-            <Tag tone="neutral">{row.module_label}</Tag>
-            <Tag tone="neutral">{row.format_label}</Tag>
-            <Tag tone="neutral">{row.question_type_label}</Tag>
-            {row.suspect_key && (
-              <Tag tone="danger">
-                <KeyRound className="h-3 w-3" aria-hidden />
-                Check the answer key
-              </Tag>
-            )}
-          </div>
-          <p className="mt-2 text-sm leading-relaxed text-foreground">
-            {row.stem || (
-              // No route reaches a past-paper question from the teacher portal — the module
-              // editor is admin-only and on the questions console — so this says where the
-              // question is instead of sending a teacher after a link that is not there.
-              <span className="text-muted-foreground">
-                This question has no text stem saved — it is Q{row.number}, {row.module_label}, on
-                the paper itself.
-              </span>
-            )}
-          </p>
-          <p className="mt-2 text-xs text-muted-foreground">{pastpaperWrongLine(row)}</p>
-          {row.seen > 0 && (
-            <p className="mt-1 text-xs text-muted-foreground">
-              Counting blank answers too,{" "}
-              <RateValue value={row.miss_rate} className="font-semibold" /> of the{" "}
-              {plural(row.seen, "student")} who saw it missed it.
-            </p>
-          )}
-          {row.suspect_key && (
-            <p className="mt-2 rounded-xl bg-rose-500/10 px-3 py-2 text-xs leading-relaxed text-rose-700 dark:text-rose-300">
-              At {SUSPECT_KEY_THRESHOLD}% or above, a wrong answer key is a likelier explanation
-              than a hard question. Read the recorded key
-              {row.correct_answer ? ` (“${row.correct_answer}”)` : ""} against the paper before
-              re-teaching anything.
-            </p>
-          )}
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            {/* An untagged question says so. Rendering nothing made a missing skill look like
-                a chip that failed to load rather than a question nobody tagged. */}
-            {row.skill_id != null ? (
-              <Tag tone="info">{row.skill}</Tag>
-            ) : (
-              <Tag tone="neutral">Untagged</Tag>
-            )}
-            {row.domain_id != null && <Tag tone="neutral">{row.domain}</Tag>}
-            {row.difficulty != null && <Tag tone="neutral">{row.difficulty_label}</Tag>}
-            {row.correct_answer && !row.suspect_key && (
-              <span className="text-xs text-muted-foreground">Key: {row.correct_answer}</span>
-            )}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <RateValue value={row.error_rate} flagged className="text-2xl font-black leading-none" />
-          <p className="mt-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-            of answers wrong
-          </p>
-        </div>
-      </div>
-    </li>
-  );
-}
-
-function FullTable({ rows }: { rows: PastpaperItemRow[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[54rem] text-sm">
-        <thead>
-          <tr className="text-left text-xs text-muted-foreground">
-            <th className="py-1.5 pr-3 font-semibold">#</th>
-            <th className="py-1.5 pr-3 font-semibold">Module</th>
-            <th className="py-1.5 pr-3 font-semibold">Question</th>
-            <th className="py-1.5 pr-3 font-semibold">Type</th>
-            <th className="py-1.5 pr-3 font-semibold">Skill</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Saw it</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Answered</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Blank</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Wrong</th>
-            <th className="py-1.5 pr-3 text-right font-semibold">Error rate</th>
-            <th className="py-1.5 text-right font-semibold">Miss rate</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.question_id} className="border-t border-border align-top">
-              <td className="py-2 pr-3 tabular-nums text-muted-foreground">{row.number}</td>
-              <td className="py-2 pr-3 text-muted-foreground">{row.module_label}</td>
-              <td className="max-w-sm py-2 pr-3 text-foreground">
-                <span className="line-clamp-2">{row.stem || "—"}</span>
-              </td>
-              <td className="py-2 pr-3 text-muted-foreground">{row.question_type_label}</td>
-              <td className="py-2 pr-3 text-muted-foreground">{row.skill}</td>
-              <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
-                {formatCount(row.seen)}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
-                {formatCount(row.answered)}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-muted-foreground">
-                {row.omitted > 0 ? formatCount(row.omitted) : "—"}
-              </td>
-              <td className="py-2 pr-3 text-right tabular-nums text-foreground">
-                {formatCount(row.wrong)}
-              </td>
-              <td className="py-2 pr-3 text-right font-semibold">
-                <RateValue value={row.error_rate} flagged={row.needs_analysis} />
-              </td>
-              <td className="py-2 text-right">
-                <RateValue value={row.miss_rate} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
 }
 
 /**
@@ -273,84 +139,9 @@ export function PastPapersPanel({
   const domainRows = useMemo(() => toBreakdownRows(breakdowns?.domain), [breakdowns]);
   const difficultyRows = useMemo(() => toBreakdownRows(breakdowns?.difficulty), [breakdowns]);
 
-  const caveats: Caveat[] = [];
-  if (data) {
-    const dq = data.data_quality;
-    caveats.push({
-      id: "denominator",
-      tone: "info",
-      text:
-        `The headline rate is wrong answers over the students who answered (denominator: ${data.denominator}). ` +
-        "Blank answers are counted separately as “left it blank”, because running out of time is a pacing problem and a wrong answer is a teaching one.",
-    });
-    caveats.push({
-      id: "selection",
-      tone: "info",
-      // The rule is "first *countable*", not "first recorded", and the difference is a real
-      // population: a student whose first sitting carried the copy bug used to be dropped
-      // from the paper entirely. Now only that sitting is discarded and their clean re-sit
-      // counts — which is the whole reason they sat it again.
-      text: `Each student's first completed sitting is the one that counts, so a student who sat this paper three times does not carry triple weight. If that first sitting was corrupted by the July 2026 submit bug it is discarded and their next clean sitting counts instead — the bug is exactly why a student would have sat the paper again. ${formatCount(
-        dq.students_counted,
-      )} of ${plural(dq.roster, "student")} on the roster have a counted sitting.`,
-    });
-    if (dq.excluded.copied > 0) {
-      caveats.push({
-        id: "copied",
-        tone: "warning",
-        text: `${plural(
-          dq.excluded.copied,
-          "sitting",
-        )} ${agree(dq.excluded.copied, "was", "were")} excluded as corrupt: the Module 2 answers were recorded under Module 1's question ids by a submit bug fixed in July 2026. That work is in none of the numbers here — but it is the sitting that was discarded, not the student. Anyone who sat this paper again cleanly is counted on that sitting.`,
-      });
-    }
-    if (dq.excluded.repeat_sitting > 0) {
-      caveats.push({
-        id: "repeat",
-        tone: "info",
-        text: `${plural(
-          dq.excluded.repeat_sitting,
-          "repeat sitting",
-        )} of this paper ${agree(dq.excluded.repeat_sitting, "was", "were")} set aside — once a student has one counted sitting, their later ones do not count again.`,
-      });
-    }
-    if (dq.suspect_key_questions > 0) {
-      caveats.push({
-        id: "suspect",
-        tone: "warning",
-        text: `${plural(
-          dq.suspect_key_questions,
-          "question",
-        )} ${agree(dq.suspect_key_questions, "is", "are")} at ${SUSPECT_KEY_THRESHOLD}% or above. That is far more often a wrong answer key than a hard question — check the key before putting it on a lesson plan. ${agree(
-          dq.suspect_key_questions,
-          "It is",
-          "They are",
-        )} held out of the paper's rate and of every statistic below, so one broken key cannot make a topic look worse than the class is; ${agree(
-          dq.suspect_key_questions,
-          "it stays",
-          "they stay",
-        )} on the list to go over, because that is where a person has to look.`,
-      });
-    }
-    caveats.push({
-      id: "cohort",
-      tone: "info",
-      text:
-        "This tab counts only students on the class roster as it stands today. The Assessments tab counts everyone who was given a set, including students who have since left the class, so the two tabs can report different class sizes for the same class.",
-    });
-    if (data.unclassified_total > 0) {
-      caveats.push({
-        id: "untagged",
-        tone: "info",
-        text: `${plural(
-          data.unclassified_total,
-          "question",
-        )} on this paper ${agree(data.unclassified_total, "carries", "carry")} no SAT skill, and ${formatCount(
-          data.unclassified_wrong,
-        )} wrong answers landed on them. They are reported in their own Untagged row, never folded into a skill.`,
-      });
-    }
-  }
+  // The two endpoints scope their cohort differently for the same class, and this page
+  // shows the other one in a sibling tab — the note has to say where that number is.
+  const caveats = data ? buildPastpaperCaveats(data, "tab") : [];
 
   return (
     <div className="space-y-5">
@@ -507,7 +298,7 @@ export function PastPapersPanel({
             ) : (
               <ul data-flagged-list className="space-y-3">
                 {data.needs_analysis.map((row) => (
-                  <FlaggedCard key={row.question_id} row={row} />
+                  <FlaggedPastpaperCard key={row.question_id} row={row} />
                 ))}
               </ul>
             )}
@@ -565,7 +356,7 @@ export function PastPapersPanel({
             summary="Every question on this paper"
             hint={`${plural(data.questions.length, "question")}, in paper order`}
           >
-            <FullTable rows={data.questions} />
+            <PastpaperQuestionTable rows={data.questions} />
           </Collapsible>
         </>
       )}

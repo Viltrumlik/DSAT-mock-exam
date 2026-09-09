@@ -85,6 +85,16 @@ as the single-attempt error report labels it (``classes.pastpaper_report.UNCLASS
 every group list carries a ``coverage`` count so the page can say how much of the paper is
 tagged instead of implying the whole of it is.
 
+## Inside one homework, after its deadline
+
+``build_homework_pastpaper_item_analysis`` serves the owner's second sentence about this
+report — *"assessment va pastpaper statisticslar har homework deadline tugaganda o'sha
+homeworkning ichida ko'rinib turishi kerak"*. It analyses the papers one ``classes.Assignment``
+attaches and withholds the lot until that homework's ``due_at`` has passed. The deadline rule
+itself is ``assessments.item_analysis.homework_deadline_block``, imported rather than
+restated: it decides what a teacher may see, and two copies of that rule would eventually
+disagree.
+
 Pure aggregation: no DRF, no request, no permission logic. ``exams/views_item_analysis.py``
 owns scoping and HTTP.
 """
@@ -98,9 +108,11 @@ from django.db.models import F
 from django.utils.html import strip_tags
 from django.utils.text import Truncator
 
+from assessments.item_analysis import homework_deadline_block
+from classes.models import assignment_target_practice_test_ids
 from classes.pastpaper_report import UNCLASSIFIED
 
-from .models import Question, TestAttempt
+from .models import PracticeTest, Question, TestAttempt
 
 #: The owner's rule. Callers may override per request; ``clamp_threshold`` keeps it sane.
 DEFAULT_THRESHOLD = 25
@@ -115,6 +127,17 @@ STEM_MAX_CHARS = 200
 
 #: What ``error_rate`` divides by, stated in the payload so nobody has to guess.
 DENOMINATOR = "answered"
+
+#: How many past papers one homework's analysis will actually crunch in a single request.
+#: Each paper costs three queries plus a pass over every counted sitting, so the work grows
+#: with the bundle, and a homework can legally attach a whole pack through
+#: ``practice_test_pack_ids`` — there is no ceiling on that in the model. Eight is a judgement
+#: call, not a measurement: it clears a two-module paper and a normal multi-paper homework
+#: with room to spare, and stops one pathological assignment from turning a page load into a
+#: report generator. When the cap bites the payload SAYS SO (``papers_truncated``, plus a
+#: sentence in ``truncation_note`` pointing at the standalone page, which does one paper at a
+#: time) — a silently short list is the same lie as a wrong number.
+MAX_PAPERS_PER_HOMEWORK = 8
 
 
 def clamp_threshold(raw) -> int:
@@ -574,4 +597,76 @@ def build_pastpaper_item_analysis(practice_test, student_ids, *, threshold: int 
             # Error rate at or above 90%: read the answer key before re-teaching anything.
             "suspect_key_questions": sum(1 for row in rows if row["suspect_key"]),
         },
+    }
+
+
+def build_homework_pastpaper_item_analysis(
+    assignment, student_ids, *, threshold: int = DEFAULT_THRESHOLD
+) -> dict:
+    """The same analysis, for the past papers one homework carries, gated on its deadline.
+
+    Three things are different from the single-paper form, and each one is a way of getting
+    this wrong that looks fine on a screen.
+
+    **A homework can carry several papers, so the answer is a list.** ``papers`` holds one
+    complete analysis per attached paper — each entry exactly the shape
+    ``build_pastpaper_item_analysis`` already returns, ``practice_test`` header included, so
+    the page renders N of the same block rather than a second, thinner dialect of it. There
+    is deliberately no merged "all papers" report: pooling two different papers' questions
+    into one error rate would state something about a topic that neither paper's cohort
+    supports, and the two papers may not even share a subject.
+
+    **The papers come from** ``assignment_target_practice_test_ids``, **never from one
+    field.** An assignment attaches past papers through four of them — ``practice_test``,
+    ``practice_test_pack``, ``practice_test_ids``, ``practice_test_pack_ids`` — and reading
+    any single one silently analyses part of a homework. That resolver also applies
+    ``practice_scope``, so an English-only homework does not report on the Math sections of
+    the pack it points at, and it returns Reading & Writing before Math, an order worth
+    keeping. Its results are then filtered to ``mock_exam__isnull=True``: a mock or midterm
+    section is scored, sat and repaired under different rules, and this report's counting
+    would be wrong about it rather than merely unavailable.
+
+    **No papers is an empty list, not an error.** Most homework carries assessments, or a
+    link, or nothing at all; ``papers: []`` means this half of the page simply does not draw.
+
+    Locked works exactly as it does for assessments — 200, the ``homework`` block, and no
+    ``papers`` key at all. Not an empty list: "the deadline has not passed" and "there are no
+    past papers here" are two different sentences and an empty list already means the second.
+    """
+    homework = homework_deadline_block(assignment)
+    threshold = clamp_threshold(threshold)
+
+    if homework["locked"]:
+        # Nothing else. No stems, no answer keys, no rates, and no shape for a future field
+        # to be added to by someone who has not read ``homework_deadline_block``.
+        return {"homework": homework, "threshold": threshold}
+
+    wanted = assignment_target_practice_test_ids(assignment)
+    by_id = {
+        paper.pk: paper
+        for paper in PracticeTest.objects.filter(pk__in=wanted, mock_exam__isnull=True)
+    }
+    # ``wanted`` carries the resolver's order (Reading & Writing first); the dict does not.
+    ordered = [by_id[pk] for pk in wanted if pk in by_id]
+    analysed = ordered[:MAX_PAPERS_PER_HOMEWORK]
+    truncated = len(ordered) > len(analysed)
+
+    return {
+        "homework": homework,
+        "threshold": threshold,
+        "papers": [
+            build_pastpaper_item_analysis(paper, student_ids, threshold=threshold)
+            for paper in analysed
+        ],
+        "papers_total": len(ordered),
+        "papers_analysed": len(analysed),
+        "papers_limit": MAX_PAPERS_PER_HOMEWORK,
+        "papers_truncated": truncated,
+        "truncation_note": (
+            f"This homework attaches {len(ordered)} past papers; the first "
+            f"{MAX_PAPERS_PER_HOMEWORK} are analysed here. The question analysis page covers "
+            f"the rest one paper at a time."
+            if truncated
+            else ""
+        ),
     }
