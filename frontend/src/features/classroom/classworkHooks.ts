@@ -7,6 +7,7 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import { classroomKeys } from "./queryKeys";
 import { useAssignments } from "./hooks";
 import { classworkFromAssignments, type StudentClasswork } from "./classworkApi";
+import { classworkAwardsApi, type ClassworkAwardsPanel } from "./classworkAwardsApi";
 import { lessonsApi, type LessonClasswork } from "./lessonsApi";
 
 const enabledId = (id: number) => Number.isFinite(id) && id > 0;
@@ -96,4 +97,76 @@ export function useStudentClasswork(classId: number): {
     isError: query.isError,
     refetch: () => void query.refetch(),
   };
+}
+
+// ── classwork XP, addressed by the classwork itself ───────────────────────────
+//
+// The hooks above reach an award THROUGH a journal lesson. These reach the same award by
+// naming its carrier, which is the only way to pay classwork a teacher wrote by hand in
+// the Classwork tab — that classwork has no lesson behind it. One row per (classwork,
+// student) either way; see classworkAwardsApi.ts.
+
+/** Hung off the classroom's assignment key so an assignment-list refresh reaches it too. */
+const awardsKey = (classId: number, assignmentId: number) =>
+  [...classroomKeys.assignments(classId), "awards", assignmentId] as const;
+
+/** The roster + every XP already recorded for one classwork. Staff-readable. */
+export function useClassworkAwards(classId: number, assignmentId: number, enabled = true) {
+  return useQuery<ClassworkAwardsPanel>({
+    queryKey: awardsKey(classId, assignmentId),
+    queryFn: () => classworkAwardsApi.panel(classId, assignmentId),
+    enabled: enabled && enabledId(classId) && enabledId(assignmentId),
+  });
+}
+
+/**
+ * Everything one XP write moves.
+ *
+ * The server hands back the refreshed panel, so that goes straight into the cache rather
+ * than being invalidated — a teacher marking a class of twenty should see each name settle
+ * immediately, not watch the whole list refetch twenty times. The assignment LIST is
+ * invalidated separately: it carries each student's own `classwork_award`, which is what
+ * they read on their own Classwork tab.
+ */
+function useAwardsWriteback(classId: number, assignmentId: number) {
+  const qc = useQueryClient();
+  return (panel: ClassworkAwardsPanel | undefined) => {
+    if (panel?.students) qc.setQueryData(awardsKey(classId, assignmentId), panel);
+    qc.invalidateQueries({ queryKey: classroomKeys.assignments(classId) });
+    // The Lessons panel reads the same award through its own key; without this a teacher
+    // who pays here and then opens the lesson would be shown the pre-payment figure.
+    qc.invalidateQueries({ queryKey: classroomKeys.lessons(classId) });
+  };
+}
+
+/**
+ * Give (or revise) one student's XP for this classwork.
+ *
+ * No error toast, deliberately: the row renders its failure inline with its own retry, and
+ * a toast that fades is not something a teacher mid-lesson can act on. Success toasts —
+ * the row's own confirmation is easy to miss.
+ */
+export function useGiveClassworkXp(classId: number, assignmentId: number) {
+  const writeback = useAwardsWriteback(classId, assignmentId);
+  return useMutation({
+    mutationFn: (vars: { student_id: number; points: number; note?: string }) =>
+      classworkAwardsApi.give(classId, assignmentId, vars),
+    onSuccess: (panel) => {
+      writeback(panel);
+      pushGlobalToast({ tone: "success", message: panel?.detail || "XP recorded." });
+    },
+  });
+}
+
+/** Take one student's award back entirely — points AND XP. Not the same as giving 0. */
+export function useWithdrawClassworkXp(classId: number, assignmentId: number) {
+  const writeback = useAwardsWriteback(classId, assignmentId);
+  return useMutation({
+    mutationFn: (studentId: number) =>
+      classworkAwardsApi.withdraw(classId, assignmentId, studentId),
+    onSuccess: (panel) => {
+      writeback(panel);
+      pushGlobalToast({ tone: "neutral", message: panel?.detail || "XP taken back." });
+    },
+  });
 }

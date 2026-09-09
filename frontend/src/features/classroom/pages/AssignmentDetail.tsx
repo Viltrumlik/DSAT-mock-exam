@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Clock, Upload, Play, RotateCcw, MessageSquare, CheckCircle2,
-  FileText, ExternalLink, GraduationCap, X, Eye,
+  FileText, ExternalLink, GraduationCap, X, Eye, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import VideoPlayer from "@/components/VideoPlayer";
@@ -14,7 +14,8 @@ import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui"
 import { useClassroom } from "../hooks";
 import { capabilitiesFor } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
-import { assignmentKind, contentActions, KIND_LABEL, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
+import { assignmentKind, contentActions, homeworkAnalysisScope, KIND_LABEL, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
+import { HomeworkQuestionStatistics } from "@/features/questionAnalysis/HomeworkQuestionStatistics";
 import { spawnRipple } from "../ui/ripple";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { SubmissionStatusPill } from "./statusPill";
@@ -77,6 +78,13 @@ export function AssignmentDetailPage({ classId, assignmentId, basePath }: { clas
 function TeacherView({ base, assignment }: { base: string; assignment: AssignmentDetail }) {
   const router = useRouter();
   const kind = assignmentKind(assignment);
+  // What there is to analyse: assessment sets, past papers, both, or — for an essay, a video
+  // or a mock — neither, in which case no section is drawn at all rather than an empty card
+  // apologising for itself on every such homework in the school.
+  const scope = homeworkAnalysisScope(assignment);
+  // The standalone console lives on the teacher portal, and the middleware there bounces
+  // anything outside `/teacher/*`. Offered only from a render that can actually reach it.
+  const fullAnalysisHref = base.startsWith("/teacher") ? "/teacher/question-analysis" : null;
   return (
     <div className="cr-section mt-4 space-y-5">
       <header>
@@ -96,6 +104,18 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
           Open in gradebook
         </Button>
       </Card>
+      {/* Staff only, and only from this branch. The flagged cards carry question prompts,
+          recorded answer keys and exactly which questions the class fell over — none of which
+          a student may read, least of all one who can still hand this homework in. */}
+      {scope.hasAny && (
+        <HomeworkQuestionStatistics
+          assignmentId={assignment.id}
+          hasAssessments={scope.hasAssessments}
+          hasPastPapers={scope.hasPastPapers}
+          pastPaperCount={scope.pastPaperCount}
+          fullAnalysisHref={fullAnalysisHref}
+        />
+      )}
     </div>
   );
 }
@@ -129,18 +149,47 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
 
   const action = resolveAction(kind, status);
   const actions = contentActions(assignment);
+  /**
+   * Classwork is work the class already did, in the room. It has no deadline by rule (the
+   * form refuses to set one), nothing to hand in, and no automatic score — the teacher's XP
+   * is the whole of the outcome. The Classwork tab links here now, so this page has to stop
+   * treating it as homework that happens to have a null `due_at`.
+   */
+  const isClasswork = String(assignment.category || "").toUpperCase() === "CLASSWORK";
   // Students may upload a file whenever the teacher allowed it (independent of any
-  // pastpaper/assessment) — or when there's no auto-graded content at all.
-  const canUpload = Boolean((assignment as { allow_file_upload?: boolean }).allow_file_upload) || actions.length === 0;
-  const badgeLabel = actions.length > 1 ? "Bundle" : KIND_LABEL[kind];
+  // pastpaper/assessment) — or when there's no auto-graded content at all. Classwork is the
+  // exception: "no content to open" is its NORMAL shape (a written brief, a couple of
+  // links), so the fallback would offer every such lesson a submission box for work that was
+  // already done in class and that nothing on the platform grades.
+  const canUpload =
+    Boolean((assignment as { allow_file_upload?: boolean }).allow_file_upload) ||
+    (actions.length === 0 && !isClasswork);
+  const badgeLabel = isClasswork ? "Classwork" : actions.length > 1 ? "Bundle" : KIND_LABEL[kind];
 
   // Meta tiles (design's hero row): label + value, animated with stagger.
-  const tiles: { label: string; value: string; countdown?: boolean }[] = [
-    { label: "Assigned", value: shortDate(assignment.assigned_at ?? assignment.created_at ?? assignment.published_at) },
-    { label: "Due", value: assignment.due_at ? shortDate(assignment.due_at) : "No deadline" },
-    { label: "Section", value: sectionLabel(assignment.subject) },
-    { label: "Countdown", value: countdown(assignment.due_at), countdown: true },
-  ];
+  const tiles: { label: string; value: string; countdown?: boolean }[] = isClasswork
+    ? [
+        { label: "In class", value: shortDate(assignment.assigned_at ?? assignment.created_at ?? assignment.published_at) },
+        { label: "Section", value: sectionLabel(assignment.subject) },
+        // Null and `{points: 0}` are different answers and stay different: null is "no
+        // teacher has looked at this yet", zero is "a teacher marked it". Never test
+        // `points > 0` to decide whether an award exists.
+        {
+          label: "XP",
+          value:
+            assignment.classwork_award == null
+              ? "Not marked yet"
+              : assignment.classwork_award.points > 0
+                ? `+${assignment.classwork_award.points}`
+                : "Reviewed",
+        },
+      ]
+    : [
+        { label: "Assigned", value: shortDate(assignment.assigned_at ?? assignment.created_at ?? assignment.published_at) },
+        { label: "Due", value: assignment.due_at ? shortDate(assignment.due_at) : "No deadline" },
+        { label: "Section", value: sectionLabel(assignment.subject) },
+        { label: "Countdown", value: countdown(assignment.due_at), countdown: true },
+      ];
 
   // Numbered instruction steps (split on newlines, drop blanks).
   const steps = (assignment.instructions ?? "")
@@ -184,9 +233,23 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
           <VideoPlayer url={lessonVideo} />
           <div className="flex flex-wrap items-center justify-between gap-3 px-[34px] pt-[24px]">
             <h1 className="text-[30px] font-extrabold leading-tight tracking-[-0.025em] text-foreground">{assignment.title}</h1>
-            <div className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-[12px] py-[6px] text-[14px] font-extrabold text-primary">
-              <Clock className="h-4 w-4" aria-hidden /> {countdown(assignment.due_at)}
-            </div>
+            {/* Classwork has no deadline by rule, so a countdown chip could only ever read
+                "No deadline" — a clock next to work that was already done in class. It gets
+                its XP instead, which is the only outcome classwork has. */}
+            {isClasswork ? (
+              <div className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-[12px] py-[6px] text-[14px] font-extrabold text-primary">
+                <Sparkles className="h-4 w-4" aria-hidden />
+                {assignment.classwork_award == null
+                  ? "Not marked yet"
+                  : assignment.classwork_award.points > 0
+                    ? `+${assignment.classwork_award.points} XP`
+                    : "Reviewed"}
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-[12px] py-[6px] text-[14px] font-extrabold text-primary">
+                <Clock className="h-4 w-4" aria-hidden /> {countdown(assignment.due_at)}
+              </div>
+            )}
           </div>
           {instructionsBlock}
         </Card>

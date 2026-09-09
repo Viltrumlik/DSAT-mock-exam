@@ -53,6 +53,16 @@ export interface AssignmentDetail {
   }[];
   /** Requesting student's assessment attempt state (for the QUIZ launcher card). */
   assessment_progress?: { state: ContentState; attempt_id: number | null };
+  /**
+   * The viewer's own XP for a CLASSWORK assignment, or null.
+   *
+   * Classwork is paid only by a teacher's hand — no percentage, no deadline, no attempt
+   * behind it — so this is the whole of a student's outcome. `null` and `{points: 0}` are
+   * different answers and must stay different: null is "nobody has marked this yet", zero is
+   * "a teacher marked it and it earned nothing this time". Never test `points > 0` to decide
+   * whether an award exists. Always null on a homework.
+   */
+  classwork_award?: { points: number; xp: number; awarded_at: string; note: string } | null;
   // New backend metadata (present on list, detail, and my-assignments payloads).
   content_type?: string;
   contents?: { kind: AssignmentKind; title: string; item_count: number | null }[];
@@ -275,6 +285,52 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
     });
   }
   return out;
+}
+
+/**
+ * What, if anything, there is to analyse inside this homework.
+ *
+ * Two facts, and neither is guessable from `assignmentKind`: a homework can bundle assessment
+ * sets AND past papers at once, and past papers reach it through four different fields
+ * (`practice_test`, `practice_test_ids`, `practice_test_pack`, `practice_test_pack_ids`) plus
+ * the server-resolved `practice_bundle_tests`. Reading one field is how a homework with two
+ * papers ends up reporting on one; the backend has its own single resolver
+ * (`classes.models.assignment_target_practice_test_ids`) for exactly this reason.
+ *
+ * A mock exam is deliberately not counted: the past-paper analysis refuses anything carrying
+ * a `mock_exam`, so claiming there is something to analyse would only produce an error card.
+ */
+export interface HomeworkAnalysisScope {
+  hasAssessments: boolean;
+  hasPastPapers: boolean;
+  /** Nothing to analyse at all — an essay homework, a video, a mock. Render no section. */
+  hasAny: boolean;
+  /**
+   * How many past papers this homework carries, when the payload actually resolves them.
+   * `null` when it cannot be known here — a pack expands into papers server-side — so the
+   * caller never claims a paper is missing on the strength of a count it had to guess.
+   */
+  pastPaperCount: number | null;
+}
+
+export function homeworkAnalysisScope(a: AssignmentDetail): HomeworkAnalysisScope {
+  const hasAssessments =
+    (a.assessment_homeworks?.length ?? 0) > 0 || a.assessment_homework != null;
+
+  const bundle = a.practice_bundle_tests ?? [];
+  const ids = new Set<number>();
+  for (const test of bundle) if (typeof test?.id === "number") ids.add(test.id);
+  if (a.practice_test != null) ids.add(a.practice_test);
+  for (const id of a.practice_test_ids ?? []) if (id != null) ids.add(id);
+  const hasPack = a.practice_test_pack != null || (a.practice_test_pack_ids?.length ?? 0) > 0;
+
+  const hasPastPapers = ids.size > 0 || hasPack;
+  return {
+    hasAssessments,
+    hasPastPapers,
+    hasAny: hasAssessments || hasPastPapers,
+    pastPaperCount: bundle.length > 0 ? bundle.length : hasPack ? null : ids.size || null,
+  };
 }
 
 /** Map a backend content state to the launcher button mode. */
