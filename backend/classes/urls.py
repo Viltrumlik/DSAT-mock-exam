@@ -46,6 +46,7 @@ from .views_support import (
     SupportSlotsView,
     SupportTeacherCalendarView,
 )
+from .views_support_report import SupportReportMonthlyView, SupportReportSessionsView
 from .views_assign import (
     AssignMidtermView,
     AssignTeacherView,
@@ -186,6 +187,12 @@ urlpatterns = [
     # same thing: this one is entered once and keeps applying.
     path("support/working-hours/", SupportWorkingHoursView.as_view(), name="support-working-hours"),
     path("support/diary/", SupportDiaryView.as_view(), name="support-diary"),
+    # The ops report on the desk: every session that has happened, and the month's numbers.
+    # A literal "report" segment among the other support literals, so nothing here can be
+    # read as a booking id. Gated on IsGlobalScopeStaff, NOT on the support-teacher-or-admin
+    # guard the rest of this block uses — see views_support_report's docstring.
+    path("support/report/sessions/", SupportReportSessionsView.as_view(), name="support-report-sessions"),
+    path("support/report/monthly/", SupportReportMonthlyView.as_view(), name="support-report-monthly"),
     path("<int:classroom_pk>/branch/", ClassroomBranchView.as_view(), name="class-branch"),
     path("<int:classroom_pk>/support-teachers/", SupportTeacherAssignView.as_view(), name="class-support-teachers"),
     path("<int:classroom_pk>/support-teachers/<int:user_id>/", SupportTeacherAssignView.as_view(), name="class-support-teacher-detail"),

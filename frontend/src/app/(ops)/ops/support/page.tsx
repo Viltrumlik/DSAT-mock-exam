@@ -1,14 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { LifeBuoy } from "lucide-react";
+import { CalendarRange, History, LifeBuoy } from "lucide-react";
 
+import { Tabs } from "@/components/ui";
 import { useSupportTeachers } from "@/features/opsSupport/opsSupportHooks";
 import { WeeklyHoursEditor } from "@/features/opsSupport/WeeklyHoursEditor";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { SupportReportPage } from "@/features/supportReport/SupportReportPage";
 
 /**
- * Support teaching, from the school's side: who does it, and when they work.
+ * Support teaching, from the school's side: who does it, when they work, and what came of it.
+ *
+ * Two tabs, because the page answers two different questions and they have different
+ * lifetimes. **Hours** is a setting — you come here to change something, once, and leave.
+ * **Sessions** is a report — you come here to read what happened. Stacking the report under
+ * the weekly grid would have buried it below a control most readers scroll straight past, and
+ * the finding it carries (hours nobody ever settled, going back to August) is the whole reason
+ * the school asked for it.
  *
  * **The four-day grid is gone.** It was here because hours used to be dated — you withdrew a
  * specific Tuesday afternoon by clicking its cell — and once the weekly schedule landed it was
@@ -34,7 +43,15 @@ function initials(name: string): string {
   return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
 }
 
+type TabKey = "hours" | "sessions";
+
+const TABS = [
+  { value: "hours", label: "Weekly hours", icon: CalendarRange },
+  { value: "sessions", label: "Session report", icon: History },
+];
+
 export default function OpsSupportPage() {
+  const [tab, setTab] = useState<TabKey>("hours");
   const teachers = useSupportTeachers();
   const [selected, setSelected] = useState<number | null>(null);
 
@@ -45,10 +62,24 @@ export default function OpsSupportPage() {
       <OpsPageHeader
         section="Support"
         title="Support teaching"
-        description="Who teaches support, and the weekly hours students can book them for. Set once — they keep applying every week."
+        description={
+          tab === "hours"
+            ? "Who teaches support, and the weekly hours students can book them for. Set once — they keep applying every week."
+            : "Every support session the desk has run: who was helped, when, on what, and how it ended."
+        }
       />
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,18rem)_1fr]">
+      <Tabs
+        tabs={TABS}
+        value={tab}
+        onValueChange={(v) => setTab(v as TabKey)}
+        aria-label="Support views"
+      />
+
+      {tab === "sessions" ? (
+        <SupportReportPage />
+      ) : (
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,18rem)_1fr]">
         {/* Who */}
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
           <div className="flex items-center gap-2 border-b border-border bg-surface-2 px-5 py-2.5">
@@ -173,8 +204,9 @@ export default function OpsSupportPage() {
               />
             </div>
           )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
