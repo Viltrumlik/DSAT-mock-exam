@@ -1,18 +1,18 @@
 /**
- * The one chart on the page, and the three things it must never do.
+ * The one chart on the page, and the four things it must never do.
  *
  * A chart is a claim about comparability, which is what makes it more dangerous than the
  * table beside it: a bar has no room for a "Data gap" marker, no counts under it and no
  * tooltip a printed page can carry. So the rules are enforced before anything is drawn — the
- * gap bucket is not a group, two bars are not a comparison, and a bare number on an axis is
- * not a percentage.
+ * gap bucket is not a group, two bars are not a comparison, a bare number on an axis is not a
+ * percentage, and the bars are the rows the reader is actually looking at.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { PassRateChart } from "../PassRateChart";
-import type { BranchRow, GroupTally, MonthlyStats, TeacherRow } from "../types";
+import type { GroupTally, TreeLevel, TreeNode } from "../types";
 
 const tally = (over: Partial<GroupTally> = {}): GroupTally => ({
   roster: 10,
@@ -35,47 +35,33 @@ const tally = (over: Partial<GroupTally> = {}): GroupTally => ({
   ...over,
 });
 
-const branch = (id: number | null, name: string, pass_rate: number | null): BranchRow => ({
+const node = (
+  level: TreeLevel,
+  id: number | null,
+  name: string,
+  pass_rate: number | null,
+): TreeNode => ({
+  ...tally({ pass_rate }),
+  key: `${level}:${id ?? "none"}`,
+  level,
   id,
   name,
-  ...tally({ pass_rate }),
+  children: [],
+  child_level: null,
 });
 
-const teacher = (id: number | null, name: string, pass_rate: number | null): TeacherRow => ({
-  id,
-  name,
-  subject: "MATH",
-  subject_label: "Math",
-  branch: "Chilonzor",
-  ...tally({ pass_rate }),
-});
-
-const stats = (over: Partial<MonthlyStats> = {}): MonthlyStats => ({
-  month: "2026-09",
-  definition: {},
-  is_future: false,
-  future_months: [],
-  this_month: "2026-09",
-  orphan_retakes: [],
-  totals: { ...tally(), midterms: 2 },
-  branches: [],
-  departments: [],
-  teachers: [],
-  classrooms: [],
-  months: ["2026-09"],
-  filters: { branch: null, subject: null, teacher: null },
-  ...over,
-});
+const branch = (id: number | null, name: string, rate: number | null) =>
+  node("branch", id, name, rate);
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function render(node: React.ReactElement): string {
+function render(el: React.ReactElement): string {
   container = document.createElement("div");
   document.body.appendChild(container);
   act(() => {
     root = createRoot(container as HTMLDivElement);
-    root.render(node);
+    root.render(el);
   });
   return (container as HTMLDivElement).textContent ?? "";
 }
@@ -87,37 +73,30 @@ afterEach(() => {
   container = null;
 });
 
+const chart = (nodes: TreeNode[], level: TreeLevel = "branch", scope: string | null = null) => (
+  <PassRateChart nodes={nodes} level={level} month="2026-09" scope={scope} />
+);
+
 describe("PassRateChart", () => {
   it("draws nothing when there are only two groups to compare", () => {
-    const out = render(
-      <PassRateChart
-        stats={stats({ branches: [branch(1, "Chilonzor", 91), branch(2, "Yunusobod", 84)] })}
-      />,
-    );
+    const out = render(chart([branch(1, "Chilonzor", 91), branch(2, "Yunusobod", 84)]));
     // Two bars beside a two-row table are the same fact drawn twice.
     expect(out).toBe("");
   });
 
   it("does not let one real branch plus the data gap pass as a two-bar comparison", () => {
-    const out = render(
-      <PassRateChart
-        stats={stats({ branches: [branch(1, "Chilonzor", 91), branch(null, "Unassigned", 62)] })} />,
-    );
+    const out = render(chart([branch(1, "Chilonzor", 91), branch(null, "Unassigned", 62)]));
     expect(out).toBe("");
   });
 
   it("plots the real branches and leaves the data gap out of the bars", () => {
     const out = render(
-      <PassRateChart
-        stats={stats({
-          branches: [
-            branch(1, "Chilonzor", 91),
-            branch(2, "Yunusobod", 84),
-            branch(null, "Unassigned", 62),
-            branch(3, "Sergeli", 77),
-          ],
-        })}
-      />,
+      chart([
+        branch(1, "Chilonzor", 91),
+        branch(2, "Yunusobod", 84),
+        branch(null, "Unassigned", 62),
+        branch(3, "Sergeli", 77),
+      ]),
     );
     expect(out).toContain("Pass rate by branch");
     expect(out).toContain("Chilonzor");
@@ -131,11 +110,7 @@ describe("PassRateChart", () => {
 
   it("puts a unit on every number, axis included", () => {
     const out = render(
-      <PassRateChart
-        stats={stats({
-          branches: [branch(1, "A", 91), branch(2, "B", 84), branch(3, "C", 77)],
-        })}
-      />,
+      chart([branch(1, "A", 91), branch(2, "B", 84), branch(3, "C", 77)]),
     );
     expect(out).toContain("91%");
     // The axis: bare 0/25/50/75/100 on a page whose other numbers are scores out of 800.
@@ -144,40 +119,58 @@ describe("PassRateChart", () => {
     }
   });
 
-  it("falls back to teachers only when the branches cannot carry a chart", () => {
-    const out = render(
-      <PassRateChart
-        stats={stats({
-          branches: [branch(1, "Chilonzor", 91), branch(null, "Unassigned", 62)],
-          teachers: [
-            teacher(1, "Aziza K", 73),
-            teacher(2, "Nodira Y", 72),
-            teacher(3, "Dilshod R", 65),
-            teacher(null, "Unassigned", null),
-          ],
-        })}
-      />,
-    );
-    expect(out).toContain("Pass rate by teacher");
-    expect(out).toContain("Aziza K");
-    expect(out).not.toContain("Pass rate by branch");
-  });
-
   it("says which groups have no roster rather than plotting them at zero", () => {
     const out = render(
-      <PassRateChart
-        stats={stats({
-          branches: [
-            branch(1, "A", 91),
-            branch(2, "B", 84),
-            branch(3, "C", 77),
-            branch(4, "D", null),
-          ],
-        })}
-      />,
+      chart([
+        branch(1, "A", 91),
+        branch(2, "B", 84),
+        branch(3, "C", 77),
+        branch(4, "D", null),
+      ]),
     );
     expect(out).toContain("1 branch has no roster this month");
     const bars = container?.querySelectorAll("ol > li") ?? [];
     expect([...bars].some((li) => li.textContent?.includes("D"))).toBe(false);
+  });
+
+  /**
+   * The rule the drill-down added. The chart used to choose its own subject — branches when
+   * there were enough, otherwise teachers — which is indefensible above a table of one
+   * department's teachers: the bars would be read as the rows under them.
+   */
+  it("plots the level the reader is on, and names the node they are inside", () => {
+    const out = render(
+      chart(
+        [
+          node("teacher", 1, "Aziza K", 73),
+          node("teacher", 2, "Nodira Y", 72),
+          node("teacher", 3, "Dilshod R", 65),
+        ],
+        "teacher",
+        "English",
+      ),
+    );
+    expect(out).toContain("Pass rate by teacher · English");
+    expect(out).toContain("for English only");
+    expect(out).not.toContain("Pass rate by branch");
+  });
+
+  it("never treats a department as a data gap, though it has no record id", () => {
+    // `id: null` means "Unassigned" for a branch or a teacher and means nothing at all for a
+    // department — subject is not a record. Reading the two the same way used to drop English
+    // and Math out of their own chart.
+    const out = render(
+      chart(
+        [
+          node("department", null, "English", 81),
+          node("department", null, "Math", 74),
+          node("department", null, "Physics", 69),
+        ],
+        "department",
+      ),
+    );
+    const bars = container?.querySelectorAll("ol > li") ?? [];
+    expect(bars).toHaveLength(3);
+    expect(out).not.toContain("unassigned bucket is left out");
   });
 });

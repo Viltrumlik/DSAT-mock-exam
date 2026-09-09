@@ -126,6 +126,67 @@ export type TeacherRow = GroupTally & {
 
 export type ClassroomRow = ClassroomBrief & GroupTally & { midterms: number };
 
+/* ── the hierarchy ──────────────────────────────────────────────────────────────────── */
+
+/**
+ * The five altitudes of the drill-down, outermost first.
+ *
+ * They are the school's own containment chain, not a taxonomy invented here:
+ * `Region → Branch → subject → teacher → Classroom`. `department` is `Classroom.subject`
+ * (ENGLISH / MATH) — there is no Department model, and a node at that level therefore has no
+ * database id of its own.
+ */
+export type TreeLevel = "region" | "branch" | "department" | "teacher" | "classroom";
+
+/**
+ * One node of the hierarchy: a pooled tally, plus what it contains.
+ *
+ * **Every node is the merge of its descendants**, which is what makes a tree the right shape
+ * for these figures at all: `Tally` adds field-wise, so `passed` and `roster` sum up the tree
+ * and `pass_rate = passed / roster` is recomputed at each level. A percentage is never
+ * averaged upward.
+ *
+ * `distinct_students` is the one field that does NOT sum — a student in two of the classrooms
+ * under a node is one student and two roster places — so it is the server's to state, never
+ * the page's to add up. Where the page has to build a node itself (see `deriveTree`), it says
+ * so rather than printing a headcount it cannot know.
+ */
+export type TreeNode = GroupTally & {
+  /** Unique within one payload: `"<level>:<id>"`, with `unassigned` for a NULL id. */
+  key: string;
+  level: TreeLevel;
+  /**
+   * The underlying record's id. `null` is the explicit "Unassigned" bucket at the region,
+   * branch and teacher levels — a known gap in the record, never a group that scored nothing.
+   * A `department` node has no record and so is always `null` there; it is not a gap.
+   */
+  id: number | null;
+  name: string;
+  /**
+   * One level down. **Absent on a classroom leaf**, not empty — the backend omits the key
+   * rather than sending `[]`, so an expandable-onto-nothing row cannot be drawn by accident.
+   */
+  children?: TreeNode[];
+  /**
+   * The level of `children`, when the server states it. It currently does not, and nothing
+   * here needs it to: `childLevel()` reads it off the children themselves.
+   */
+  child_level?: TreeLevel | null;
+  /** `(classroom, midterm)` pairs in this subtree — present at every level, like `roster`. */
+  midterms?: number;
+  /** Department nodes: the raw `Classroom.subject` behind the label. Never rendered. */
+  subject?: string | null;
+  /** Classroom leaves only — the identity the flat classroom row used to carry. */
+  subject_label?: string | null;
+  level_label?: string | null;
+  /**
+   * Set only by {@link deriveTree}: this node was rebuilt in the browser because the payload
+   * carried no hierarchy, so its `distinct_students` is a sum and cannot be trusted as a
+   * headcount. Never sent by the server.
+   */
+  derived?: boolean;
+};
+
 /**
  * What every payload says about TIME, so no reader has to do date maths of its own.
  *
@@ -169,6 +230,26 @@ export type MonthlyStats = MonthContext &
     departments: DepartmentRow[];
     teachers: TeacherRow[];
     classrooms: ClassroomRow[];
+    /**
+     * The hierarchy, top level first (regions), each node ranked best-first like the flat
+     * lists beside it.
+     *
+     * Optional on the type because a payload from a backend that predates it must not crash
+     * the page: `treeFor()` rebuilds an equivalent tree from `classrooms` and the page says
+     * it did. It is NOT optional in the contract.
+     */
+    tree?: TreeNode[];
+    /**
+     * The node keys the page should already be inside when it opens, outermost first.
+     *
+     * This is the collapsing rule on the wire: a level with exactly one child is passed
+     * through rather than clicked through, so a school with one region and one branch opens
+     * on its departments with `Fergana › Fergana city` already in the breadcrumb. The page
+     * re-derives the same rule from `tree` when this is missing or names nodes that are gone,
+     * because which levels collapse is a fact about the data and changes the day a second
+     * branch is created.
+     */
+    tree_open_path?: string[];
     /** The picker's options, newest first — carried so one response draws the whole page. */
     months: MonthKey[];
     filters: { branch: number | null; subject: string | null; teacher: number | null };

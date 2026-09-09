@@ -49,6 +49,13 @@ Four structural facts this module is shaped around, none of them guesses:
    Note that ``Midterm.subject`` speaks the OTHER vocabulary (READING_WRITING / MATH), so
    nothing here compares the two as strings — see :data:`SUBJECT_ALIASES`.
 
+Because the roll-up is pooled and pooling is just addition, the school is also a TREE:
+region → branch → department → teacher → classroom, where every node is the merge of its
+descendants. :func:`school_month_stats` returns that as ``tree`` beside the four flat lists,
+computed from the same tallies in the same pass — a tree that had gone back to the database
+for its own numbers would have been free to disagree with the headline above it. Its
+companion ``tree_open_path`` names the levels a reader may skip: see :func:`tree_open_path`.
+
 Empty denominator returns ``None``, never ``0.0``, exactly as ``classes.progress`` does: a
 rate over nobody is "we don't know", and a class with no roster has not failed everyone.
 
@@ -135,6 +142,10 @@ DEFINITION = {
     "month": (
         "the month that midterm was sat in THAT classroom: its schedule, "
         "else the earliest completed sitting"
+    ),
+    "hierarchy": (
+        "region > branch > department (the classroom's subject) > teacher > classroom; "
+        "every level is the pooled merge of the one below it"
     ),
     "empty_denominator": "null, never 0",
     "default_month": (
@@ -789,6 +800,183 @@ class _Group:
         }
 
 
+# ── the hierarchy ────────────────────────────────────────────────────────────
+#: The levels of the tree, outermost first. A classroom belongs to exactly ONE node at every
+#: level (each is one of its own attributes, or the ``Unassigned`` stand-in for a NULL one),
+#: which is what makes every counter below sum cleanly up the tree.
+TREE_LEVELS = ("region", "branch", "department", "teacher", "classroom")
+
+#: The id half of an ``Unassigned`` node's key. A node key is ``"<level>:<id>"`` — stable
+#: across requests, unique among siblings, and the only thing the page has to remember to
+#: keep a branch expanded. A NULL branch or teacher has no id to put there, so it gets this
+#: instead; a department never has one, because a department IS ``Classroom.subject``.
+TREE_UNASSIGNED_KEY = "unassigned"
+
+
+def _node_key(level: str, ident) -> str:
+    return f"{level}:{ident if ident is not None else TREE_UNASSIGNED_KEY}"
+
+
+def _tree_path(classroom) -> list[tuple[str, str, int | None, str, bool, dict]]:
+    """Where one classroom hangs: ``(level, key, id, name, sorts_last, extra)`` region → class.
+
+    Two of the five levels can be NULL on a real row and neither may be dropped:
+
+    * ``Classroom.branch`` is nullable — a create-form regression left a whole release's
+      classes with no branch and they were never backfilled. Such a class lands under an
+      ``Unassigned`` REGION as well as an ``Unassigned`` branch, because a branch is what
+      carries a region: attaching it to a real region would be inventing a fact, and hanging
+      it off a real region's ``Unassigned`` branch would double-count that region's own
+      classes if two regions each had one.
+    * ``Classroom.teacher`` is nullable, and gets the same treatment one level down.
+
+    A department is ``Classroom.subject``, so its ``id`` is ``None`` at every level of the
+    school: there is no Department row to point at. Its NAME is the label ("English"), never
+    the enum, and its raw key travels beside it so the page can deep-link to ``?subject=``.
+    """
+    branch = classroom.branch if classroom.branch_id else None
+    region = branch.region if branch is not None and branch.region_id else None
+    subject = classroom.subject or ""
+    teacher = classroom.teacher if classroom.teacher_id else None
+    return [
+        (
+            "region",
+            _node_key("region", region.id if region else None),
+            region.id if region else None,
+            region.name if region else UNASSIGNED,
+            region is None,
+            {},
+        ),
+        (
+            "branch",
+            _node_key("branch", branch.id if branch else None),
+            branch.id if branch else None,
+            branch.name if branch else UNASSIGNED,
+            branch is None,
+            {},
+        ),
+        (
+            "department",
+            _node_key("department", subject or None),
+            None,
+            _SUBJECT_LABELS.get(subject, subject) or UNASSIGNED,
+            not subject,
+            {"subject": subject or None},
+        ),
+        (
+            "teacher",
+            _node_key("teacher", teacher.id if teacher else None),
+            teacher.id if teacher else None,
+            display_name(teacher) if teacher else UNASSIGNED,
+            teacher is None,
+            {},
+        ),
+        (
+            "classroom",
+            _node_key("classroom", classroom.id),
+            classroom.id,
+            classroom.name,
+            False,
+            # A leaf carries the two labels the flat classroom row carries, so a page that
+            # renders only the tree can still tell "Math Senior A" from "Math Junior A"
+            # without joining back to the flat list. Labels, never the enums behind them.
+            {
+                "subject_label": _SUBJECT_LABELS.get(subject, subject) or None,
+                "level_label": _LEVEL_LABELS.get(classroom.level, "") or None,
+            },
+        ),
+    ]
+
+
+class _Node:
+    """One node of the hierarchy: a :class:`_Group`, its identity, and its children.
+
+    Every node's figures are its DESCENDANTS' figures merged — the same pooled addition the
+    flat tables use, never an average of the rates below it, because a mean of means lets a
+    4-student class outweigh a 30-student one at every level it is taken at.
+    """
+
+    def __init__(self, level, key, node_id, name, sorts_last=False, extra=None) -> None:
+        self.level = level
+        self.key = key
+        self.id = node_id
+        self.name = name
+        self.sorts_last = sorts_last
+        self.extra = dict(extra or {})
+        self.group = _Group()
+        #: (classroom, midterm) pairs in this subtree — the same unit ``totals.midterms``
+        #: counts, so it sums up the tree exactly as the roster does.
+        self.midterms = 0
+        self.children: dict[str, "_Node"] = {}
+
+    def add(self, tally: Tally, classroom_id: int, student_ids) -> None:
+        self.group.add(tally, classroom_id, student_ids)
+        self.midterms += 1
+
+    def payload(self) -> dict:
+        out = {
+            "level": self.level,
+            "key": self.key,
+            "id": self.id,
+            "name": self.name,
+            **self.extra,
+            **self.group.payload(),
+            "midterms": self.midterms,
+        }
+        # Absent on a leaf rather than empty: a classroom has nothing below it, and an empty
+        # list would render as a node that can be expanded onto nothing.
+        if self.children:
+            out["children"] = [child.payload() for child in _sort_nodes(self.children.values())]
+        return out
+
+
+def _sort_nodes(nodes) -> list[_Node]:
+    """``_sort_rows``'s order — best rate first, ``None`` last, ties by name — plus one rule.
+
+    ``Unassigned`` sorts below everything whatever its rate. It is a disclosure ("these
+    classes have no branch on record"), not a competitor in the ranking, and a bucket of
+    unfiled classes sitting at the top of a branch table because they happen to have scored
+    well would read as the school's best branch.
+    """
+    return sorted(
+        nodes,
+        key=lambda node: (
+            node.sorts_last,
+            node.group.tally.pass_rate is None,
+            -(node.group.tally.pass_rate or 0.0),
+            str(node.name or "").lower(),
+        ),
+    )
+
+
+def tree_open_path(tree: list[dict]) -> list[str]:
+    """The keys to expand on arrival: down to the first level that actually branches.
+
+    A level with exactly one child says nothing — the school has one region and one branch
+    today, so opening on "Fergana › Fergana city" would cost two clicks to reveal a list of
+    one, twice, before showing anything a reader did not already know. The page therefore
+    opens at the first level with a real choice in it, and the skipped levels stay in the
+    breadcrumb so the structure is still visible.
+
+    Derived from the tree every time, never hard-coded to "skip region and branch": the day a
+    second branch is created this returns ``["region:1"]`` on its own and the page starts
+    opening on branches, with nobody having to remember to change it.
+
+    Stops at a node with no children, so a school that is a single chain all the way down
+    opens on its one classroom rather than on nothing.
+    """
+    path: list[str] = []
+    level = tree
+    while len(level) == 1:
+        only = level[0]
+        children = only.get("children") or []
+        if not children:
+            break
+        path.append(only["key"])
+        level = children
+    return path
+
+
 # ── the public reports ───────────────────────────────────────────────────────
 def _classroom_month_summary(rows: list[dict], tally: Tally, classroom) -> dict:
     return {
@@ -919,6 +1107,11 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
             "departments": [],
             "teachers": [],
             "classrooms": [],
+            # The same numbers, nested: region → branch → department → teacher → classroom.
+            # Empty here for the same reason the flat lists are, and present for the same
+            # reason ``orphan_retakes`` is — see below.
+            "tree": [],
+            "tree_open_path": [],
             # Always present, empty or not: a page that reads the key only when it is there
             # cannot tell "no warnings" from "an older backend that never sent any".
             "orphan_retakes": list(orphans),
@@ -969,6 +1162,10 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
     teacher_subjects: dict[int | None, set[str]] = {}
     teacher_branches: dict[int | None, set[str]] = {}
     papers_per_classroom: dict[int, int] = {}
+    # The hierarchy, accumulated from the very same tallies as the flat tables above it —
+    # one pass, no query per node. A tree that had gone back to the database would have been
+    # free to disagree with the headline it sits under.
+    roots: dict[str, _Node] = {}
     counted = 0
 
     for classroom_id, midterm_id in sorted(pairs):
@@ -991,6 +1188,16 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
         teacher_subjects.setdefault(classroom.teacher_id, set()).add(classroom.subject)
         if classroom.branch_id:
             teacher_branches.setdefault(classroom.teacher_id, set()).add(classroom.branch.name)
+
+        # Every level on the way down gets the SAME tally, so a node ends up holding the
+        # merge of everything beneath it and the tree agrees with the tables by construction.
+        siblings = roots
+        for level, key, node_id, name, sorts_last, extra in _tree_path(classroom):
+            node = siblings.get(key)
+            if node is None:
+                node = siblings[key] = _Node(level, key, node_id, name, sorts_last, extra)
+            node.add(tally, classroom_id, roster_ids)
+            siblings = node.children
 
     def _only(values: set[str]) -> str | None:
         return next(iter(values)) if len(values) == 1 else None
@@ -1037,6 +1244,8 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
         for key, group in per_classroom.items()
     ]
 
+    tree = [node.payload() for node in _sort_nodes(roots.values())]
+
     return {
         "month": month,
         "definition": dict(DEFINITION),
@@ -1045,5 +1254,10 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
         "departments": _sort_rows(department_rows),
         "teachers": _sort_rows(teacher_rows),
         "classrooms": _sort_rows(classroom_rows),
+        # The same tallies, nested. The flat lists above stay exactly as they were: they are
+        # what a reader compares two teachers across the whole school with, which a tree
+        # cannot do, and the page that reads them is not the only one that ever will.
+        "tree": tree,
+        "tree_open_path": tree_open_path(tree),
         "orphan_retakes": orphans,
     }

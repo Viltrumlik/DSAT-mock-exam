@@ -22,6 +22,12 @@ Beside it every payload also carries what it is NOT showing, for the same reason
 * ``orphan_retakes`` — retake papers with no parent midterm, excluded from every number
   because they cannot be counted or folded, and named so the page can say "1 retake paper has
   no parent midterm and was left out" instead of just quietly having fewer papers.
+
+The monthly payload additionally carries ``tree`` — the same numbers nested region → branch
+→ department → teacher → classroom — beside the four flat lists, and ``tree_open_path``, the
+node keys a reader may skip because those levels have only one child (a school with one
+region and one branch should not cost two clicks to reveal a list of one, twice). Both are
+computed in ``midterms.stats``; see :func:`~midterms.stats.tree_open_path`.
 """
 
 from __future__ import annotations
