@@ -18,11 +18,12 @@ idempotent per-record award survives that treatment; a re-derived history does n
 from __future__ import annotations
 
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.utils import timezone
 
 from classes.models import Classroom, ClassroomMembership
 from classes.models_attendance import AttendanceRecord, AttendanceSession
@@ -44,6 +45,14 @@ class StrikeFixture(TestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.student,
             role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        # `joined_at` is auto_now_add, so this membership starts *today* while the lessons
+        # below are dated August 2026. `hooks._student_had_joined_by` refuses to pay a mark for
+        # a lesson held before the student joined, so once the calendar passed these dates
+        # every award here became a silent no-op. Backdate the membership; both ends are fixed
+        # dates, so it cannot rot again. Same trap as `tests_hooks.AttendanceFixture`.
+        ClassroomMembership.objects.filter(classroom=self.classroom).update(
+            joined_at=timezone.make_aware(datetime(2026, 7, 1, 9, 0))
         )
         self.day = date(2026, 8, 1)
         self._next_day = 0

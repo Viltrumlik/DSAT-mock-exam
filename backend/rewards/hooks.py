@@ -260,6 +260,41 @@ def _award_dies_with_this_delete(instance, origin) -> bool:
     return origin_model is not None and issubclass(origin_model, user_model)
 
 
+def _the_group_is_going_not_the_earning(origin) -> bool:
+    """Is this cascade the deletion of the CLASSROOM rather than of the attendance?
+
+    A group is deleted when the school closes it, merges it, or clears one that was created by
+    mistake. None of those says the lessons never happened, and the school's rule is that XP
+    belongs to the **student**, not to the group — the same rule ``_student_had_joined_by``
+    states from the other side ("a student who leaves keeps everything they earned while they
+    were here"), and the one the class boards now honour when somebody changes group
+    (``services.board_classroom_ids``).
+
+    So the earning stays. ``PointAward.classroom`` is SET_NULL, so what survives is an award
+    with no classroom — exactly the shape a survey or midterm award already has. It counts on
+    the student's Points page and on the school-wide board, and on no class board, because
+    there is no class any more.
+
+    **Deliberately narrower than "the record is going".** A teacher deleting one mark, or a
+    whole lesson, IS saying that attendance did not happen, and that must still revoke — those
+    are the corrections this receiver exists for. Only the group's own removal is exempt.
+
+    This reverses what the receiver below used to document. Nobody has been bitten yet: the
+    eight classrooms hard-deleted on production between 2026-09-02 and 09-07 held no attendance
+    awards at all, so the cascade found nothing to take. Deleting a group that *had* been taught
+    in would have confiscated its students' XP.
+    """
+    if origin is None:
+        return False
+
+    from classes.models import Classroom
+
+    if isinstance(origin, Classroom):
+        return True
+    origin_model = getattr(origin, "model", None)      # a QuerySet.delete()
+    return origin_model is not None and issubclass(origin_model, Classroom)
+
+
 @receiver(post_delete, sender="classes.AttendanceRecord", dispatch_uid="rewards_attendance_record_deleted")
 def _on_attendance_record_deleted(sender, instance, origin=None, **kwargs):
     """A mark was removed, so whatever it paid comes back — unless the payee is going with it.
@@ -290,8 +325,13 @@ def _on_attendance_record_deleted(sender, instance, origin=None, **kwargs):
 
     Skipping is not a compromise, it is the correct answer: the whole ledger for that student
     is being deleted by the same statement, so there is no award left to take back and nobody
-    left to take it from. Every other delete — one mark, a session, a classroom, a queryset of
-    marks — leaves the award row standing and still revokes.
+    left to take it from.
+
+    **A classroom cascade is the second exemption, and it is exempt for the opposite reason.**
+    There the award survives — ``PointAward.classroom`` is SET_NULL — and it is the *student's*
+    earning that must survive with it. See ``_the_group_is_going_not_the_earning``. Every other
+    delete (one mark, a session, a queryset of marks) still revokes, because each of those is
+    somebody saying the attendance did not happen.
 
     ``transaction.on_commit`` would also dodge the FK, and is wrong here: the register is
     corrected inside teacher requests that read the balance back, and a deferred revoke leaves
@@ -299,6 +339,8 @@ def _on_attendance_record_deleted(sender, instance, origin=None, **kwargs):
     """
     try:
         if _award_dies_with_this_delete(instance, origin):
+            return
+        if _the_group_is_going_not_the_earning(origin):
             return
         revoke_attendance_award(instance.pk, reason="attendance record deleted")
     except Exception:

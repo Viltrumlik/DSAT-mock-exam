@@ -33,7 +33,7 @@ other.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import connection
@@ -98,6 +98,16 @@ class AttendanceFixture(TestCase):
             ClassroomMembership.objects.create(
                 classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT
             )
+        # `joined_at` is auto_now_add, so a membership created here starts *today* while the
+        # lessons below are dated June 2026. `hooks._student_had_joined_by` refuses to pay a
+        # mark for a lesson held before the student joined, so from the day that guard shipped
+        # every award in this fixture silently became a no-op and 25 tests across three suites
+        # went red — not because attendance broke, but because the fixture's own dates had
+        # drifted into the past. Backdate the membership to before the first lesson; both ends
+        # are fixed dates, so this cannot rot again.
+        ClassroomMembership.objects.filter(classroom=self.classroom).update(
+            joined_at=timezone.make_aware(datetime(2026, 5, 1, 9, 0))
+        )
 
     def _session(self, *, finalized=True, day=0):
         return AttendanceSession.objects.create(
@@ -385,6 +395,54 @@ class AttendanceDeletionTests(AttendanceFixture):
         self.assertEqual(PointAwardAudit.objects.count(), 0)
 
 
+    def test_deleting_the_group_leaves_its_students_xp_alone(self):
+        """A group gets closed, merged, or cleared away — none of which says the lessons never
+        happened. XP belongs to the student and not to the group (the same rule that lets a
+        student carry XP into a new group), so the earning outlives the class that hosted it.
+
+        This is the one delete on this path that does NOT revoke. It reverses what the receiver
+        documented before 2026-09-08, when deleting a taught group would have confiscated its
+        students' XP as a side effect of the cascade.
+        """
+        s = self._session()
+        AttendanceRecord.objects.create(session=s, student=self.s1, status=P)
+        AttendanceRecord.objects.create(session=s, student=self.s2, status=L)
+        self.assertEqual(_paid(self.s1), (5, 5))
+
+        self.classroom.delete()
+
+        self.assertEqual(_paid(self.s1), (5, 5))
+        self.assertEqual(_paid(self.s2), (3, 3))
+        # SET_NULL leaves an award belonging to no class — the shape a survey award already
+        # has. It counts on the Points page and the school-wide board, and on no class board,
+        # because there is no class any more.
+        self.assertIsNone(PointAward.objects.get(student=self.s1).classroom_id)
+
+    def test_deleting_groups_in_bulk_leaves_the_xp_too(self):
+        """``Classroom.objects.filter(...).delete()`` reaches the receiver with a different
+        ``origin`` shape, and a bulk tidy-up of last term's groups is exactly how this would
+        arrive in production. The guard must recognise both."""
+        s = self._session()
+        AttendanceRecord.objects.create(session=s, student=self.s1, status=P)
+        self.assertEqual(_paid(self.s1), (5, 5))
+
+        Classroom.objects.filter(pk=self.classroom.pk).delete()
+
+        self.assertEqual(_paid(self.s1), (5, 5))
+
+    def test_the_exemption_does_not_widen_to_a_deleted_lesson(self):
+        """The boundary, pinned. Deleting the *lesson* is somebody saying that attendance did
+        not happen, and it must still take the points back — a group being deleted is the only
+        thing this receiver forgives."""
+        s = self._session()
+        AttendanceRecord.objects.create(session=s, student=self.s1, status=P)
+        self.assertEqual(_paid(self.s1), (5, 5))
+
+        s.delete()
+
+        self.assertEqual(_paid(self.s1), (0, 0))
+
+
 class UserDeletionCascadeTests(TransactionTestCase):
     """Deleting a USER who holds attendance awards. **A ``TransactionTestCase``, and that is the
     whole point of the class.**
@@ -434,6 +492,13 @@ class UserDeletionCascadeTests(TransactionTestCase):
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=self.student,
             role=ClassroomMembership.ROLE_STUDENT,
+        )
+        # Backdated for the reason `AttendanceFixture` explains: `joined_at` is auto_now_add and
+        # the lessons in `_mark` are dated June 2026, so without this the membership guard pays
+        # nothing and the assertions below measure an empty ledger. That would be a false green
+        # in the one class of this module built specifically to defeat false greens.
+        ClassroomMembership.objects.filter(classroom=self.classroom).update(
+            joined_at=timezone.make_aware(datetime(2026, 5, 1, 9, 0))
         )
 
     def _mark(self, *, day, status):
