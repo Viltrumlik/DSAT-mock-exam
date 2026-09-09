@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart3, CalendarClock, FolderOpen, RefreshCw } from "lucide-react";
 import { Select, Tabs } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
@@ -8,14 +8,9 @@ import MidtermRecordsBrowser from "@/features/midtermReports/MidtermReportsPage"
 import { ClassroomMonthPanel } from "./ClassroomMonthPanel";
 import { DefinitionNote } from "./DefinitionNote";
 import { HeadlineStats } from "./HeadlineStats";
+import { HierarchyPanel } from "./HierarchyPanel";
 import { PassRateChart } from "./PassRateChart";
-import {
-  BranchTable,
-  ClassroomTable,
-  DepartmentTable,
-  ScheduledClassroomTable,
-  TeacherTable,
-} from "./RankTables";
+import { ScheduledClassroomTable } from "./RankTables";
 import {
   EmptyPanel,
   ErrorPanel,
@@ -27,17 +22,23 @@ import {
 } from "./StatsUI";
 import { errText, midtermStatsApi } from "./api";
 import { latestSatMonth, monthLabel, monthOptionLabel, plural, titleList } from "./format";
-import type { ClassroomRow, MonthKey, MonthlyStats } from "./types";
+import { collapseFrom, hierarchyFor, resolvePath, viewAt } from "./tree";
+import type { MonthKey, MonthlyStats, TreeNode } from "./types";
 
 /**
- * The admin console's midterm page: one month of the school, ranked, with the names one click
- * away.
+ * The admin console's midterm page: one month of the school, one level at a time, with the
+ * names a few clicks away.
  *
- * The page this replaces answered only "what did each student score", one classroom and one
- * paper at a time — nothing about a class as a whole was ever shown, so the questions the
- * school actually asks ("how did this branch do", "how is this teacher's month", "how many got
- * through without a retake") could not be answered here at all. The order is deliberate:
- * statistics first, detail on request.
+ * Two rebuilds are visible here. The page this first replaced answered only "what did each
+ * student score", one classroom and one paper at a time — nothing about a class as a whole was
+ * ever shown. The page THAT became answered the pooled questions but drew four flat sibling
+ * tables at once — Branches, Departments, Teachers, Classes — with no relationship between
+ * them, which is the complexity the owner asked us to remove: *"hierarchy qiling"*. The four
+ * are now one drill-down, `region → branch → department → teacher → class`, and the class row
+ * still opens the same per-student panel it always did.
+ *
+ * The order is deliberate: the whole school in five tiles, the rule those tiles were computed
+ * by, then the level the reader is standing in, then detail on request.
  *
  * **Data fetching is plain `useState` + axios, not React Query, and that is not an oversight.**
  * The in-app browser pane reports `visibilityState: "hidden"`, which pauses React Query's
@@ -52,6 +53,9 @@ const TABS = [
   { value: "records", label: "Classroom records", icon: FolderOpen },
 ];
 
+/** All the drill-down panel needs of a class to open it: an id and something to call it. */
+type OpenClass = { id: number; name: string };
+
 export default function MidtermStatsPage() {
   const [tab, setTab] = useState<TabKey>("statistics");
   /** null until the first response: the backend opens on the newest month that has data. */
@@ -59,7 +63,15 @@ export default function MidtermStatsPage() {
   const [stats, setStats] = useState<MonthlyStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<ClassroomRow | null>(null);
+  const [selected, setSelected] = useState<OpenClass | null>(null);
+  /**
+   * Where the reader has drilled to, as node KEYS rather than nodes.
+   *
+   * Keys, because a refresh replaces every node object while the position on screen should
+   * survive it. `null` means "wherever the payload says to open" — which is not the top level:
+   * a level with one child is passed through, so today the page opens on Departments.
+   */
+  const [pathKeys, setPathKeys] = useState<string[] | null>(null);
 
   const load = useCallback(async (requested: MonthKey | null) => {
     setLoading(true);
@@ -80,6 +92,13 @@ export default function MidtermStatsPage() {
     void load(month);
   }, [load, month]);
 
+  /** Switching month replaces the whole tree, so the reader's position in it goes with it. */
+  const openMonth = useCallback((next: MonthKey | null) => {
+    setSelected(null);
+    setPathKeys(null);
+    setMonth(next);
+  }, []);
+
   const months = stats?.months ?? [];
   /** What the picker shows: the month asked for, so it does not snap back mid-request. */
   const pickerMonth = month ?? stats?.month ?? "";
@@ -98,6 +117,36 @@ export default function MidtermStatsPage() {
    */
   const noResultsYet = stats != null && stats.month == null && futureMonths.length > 0;
 
+  const hierarchy = useMemo(() => hierarchyFor(stats), [stats]);
+  /**
+   * A stored path can go stale — a refresh that lands a different month, a class that stopped
+   * counting — and `resolvePath` answers that with the deepest position that still exists
+   * rather than with a blank table.
+   */
+  const path = useMemo(
+    () => (pathKeys == null ? hierarchy.openPath : resolvePath(hierarchy.roots, pathKeys)),
+    [hierarchy, pathKeys],
+  );
+  const view = useMemo(() => viewAt(hierarchy.roots, path), [hierarchy.roots, path]);
+
+  /** Going UP is literal: the reader asked for that level, even if it holds one row. */
+  const goTo = useCallback(
+    (depth: number) => setPathKeys(path.slice(0, depth).map((n) => n.key)),
+    [path],
+  );
+
+  /** Going DOWN collapses: a level with a single child is passed through, never clicked through. */
+  const open = useCallback(
+    (node: TreeNode) => {
+      if (node.level === "classroom") {
+        setSelected({ id: node.id as number, name: node.name });
+        return;
+      }
+      setPathKeys(collapseFrom(hierarchy.roots, [...path, node]).map((n) => n.key));
+    },
+    [hierarchy.roots, path],
+  );
+
   const monthPicker =
     months.length > 0 ? (
       <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground">
@@ -110,10 +159,7 @@ export default function MidtermStatsPage() {
           <Select
             selectSize="sm"
             value={pickerMonth}
-            onChange={(e) => {
-              setSelected(null);
-              setMonth(e.target.value || null);
-            }}
+            onChange={(e) => openMonth(e.target.value || null)}
             aria-label="Statistics month"
           >
             {/* With no month to open on there is nothing to select, and a control whose value
@@ -137,7 +183,7 @@ export default function MidtermStatsPage() {
       <OpsPageHeader
         section="Midterms"
         title="Midterm statistics"
-        description="How every branch, department, teacher and class did in one month — and the students behind each number."
+        description="One month, opened one level at a time: regions, then branches, departments, teachers and classes — and the students behind each number."
         actions={
           tab === "statistics" && selected == null ? (
             <>
@@ -194,10 +240,7 @@ export default function MidtermStatsPage() {
               month={shownMonth}
               thisMonth={stats.this_month}
               latestMonth={latestSatMonth(months, futureMonths)}
-              onOpenLatest={() => {
-                setSelected(null);
-                setMonth(latestSatMonth(months, futureMonths));
-              }}
+              onOpenLatest={() => openMonth(latestSatMonth(months, futureMonths))}
               detail={`${plural(stats.totals.midterms, "paper")} timetabled for ${plural(stats.totals.classrooms, "class", "classes")}, and ${plural(stats.totals.distinct_students, "student")} on those rosters.`}
             />
           ) : null}
@@ -205,7 +248,12 @@ export default function MidtermStatsPage() {
           {/* No month was selected at all, so there is nothing for a row of tiles to be ABOUT.
               Their zeros would be a description of an empty selection wearing the words
               "Passed" and "Did not pass". An empty month that genuinely happened still gets
-              them: its zeros describe a month. */}
+              them: its zeros describe a month.
+
+              These tiles are the WHOLE SCHOOL wherever the reader has drilled to. They do not
+              follow the drill-down on purpose — a reader looking at one department needs the
+              total to compare it against — which is why the card below states whose numbers
+              its own table is showing. */}
           {noResultsYet ? null : <HeadlineStats stats={stats} />}
           <DefinitionNote definition={stats.definition} />
 
@@ -227,8 +275,8 @@ export default function MidtermStatsPage() {
           )}
 
           {scheduled ? (
-            /* No chart and no ranking. Every one of those answers a question about a result,
-               and ordering classes "best first" over a month nobody has sat would be read as a
+            /* No drill-down and no ranking. Every level of a hierarchy is a comparison, and
+               ordering classes "best first" over a month nobody has sat would be read as a
                finding about the classes at the bottom. */
             <SectionCard
               title={`Booked for ${monthLabel(shownMonth) || "this month"}`}
@@ -265,35 +313,23 @@ export default function MidtermStatsPage() {
             </SectionCard>
           ) : (
             <>
-              <PassRateChart stats={stats} />
+              {/* The chart plots the rows the table below lists, never a level the reader is
+                  not on. It draws nothing until a level actually branches. */}
+              <PassRateChart
+                nodes={view.rows}
+                level={view.level}
+                month={shownMonth}
+                scope={view.parent?.name ?? null}
+              />
 
-              <SectionCard
-                title="Branches"
-                description="Each branch's passers over its classrooms' rosters. Classrooms with no branch set get their own row rather than being dropped."
-              >
-                <BranchTable rows={stats.branches} />
-              </SectionCard>
-
-              <SectionCard
-                title="Departments"
-                description="English and Math, pooled the same way. A department is the classroom's subject — there is no separate department record."
-              >
-                <DepartmentTable rows={stats.departments} />
-              </SectionCard>
-
-              <SectionCard
-                title="Teachers"
-                description="Each teacher over their own classes. A class with nobody assigned is shown as its own row, because its students still count in the school total."
-              >
-                <TeacherTable rows={stats.teachers} />
-              </SectionCard>
-
-              <SectionCard
-                title="Classes"
-                description="Every class that sat a countable paper this month. Open one for its papers, and the students behind them."
-              >
-                <ClassroomTable rows={stats.classrooms} onSelect={setSelected} />
-              </SectionCard>
+              <HierarchyPanel
+                roots={hierarchy.roots}
+                path={path}
+                derived={hierarchy.derived}
+                month={shownMonth}
+                onGo={goTo}
+                onOpen={open}
+              />
             </>
           )}
         </div>

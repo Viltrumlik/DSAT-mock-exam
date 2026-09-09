@@ -10,7 +10,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { MonthlyStats } from "../types";
+import type { MonthlyStats, TreeLevel, TreeNode } from "../types";
 
 const monthly = vi.fn();
 
@@ -51,6 +51,48 @@ const tally = {
   distinct_students: 10,
 };
 
+const mathClass = {
+  id: 11,
+  name: "Math Senior A",
+  subject: "MATH",
+  subject_label: "Math",
+  level: "senior",
+  level_label: "Senior",
+  teacher: { id: 5, name: "Nodir T" },
+  branch: { id: 1, name: "Chilonzor", region: "Tashkent" },
+  midterms: 1,
+  ...tally,
+};
+
+const englishClass = {
+  ...mathClass,
+  id: 12,
+  name: "English 9-B",
+  subject: "ENGLISH",
+  subject_label: "English",
+  level: "intermediate",
+  level_label: "Intermediate",
+  teacher: { id: 6, name: "Aziza K" },
+};
+
+const treeNode = (
+  key: string,
+  level: TreeLevel,
+  id: number | null,
+  name: string,
+  children: TreeNode[],
+  over: Partial<TreeNode> = {},
+): TreeNode => ({
+  ...tally,
+  key,
+  level,
+  id,
+  name,
+  children,
+  child_level: children[0]?.level ?? null,
+  ...over,
+});
+
 const payload = (over: Partial<MonthlyStats> = {}): MonthlyStats => ({
   month: "2026-09",
   definition: {
@@ -70,20 +112,43 @@ const payload = (over: Partial<MonthlyStats> = {}): MonthlyStats => ({
   teachers: [
     { id: 5, name: "Nodir T", subject: "MATH", subject_label: "Math", branch: "Chilonzor", ...tally },
   ],
-  classrooms: [
-    {
-      id: 11,
-      name: "Math Senior A",
-      subject: "MATH",
-      subject_label: "Math",
-      level: "senior",
-      level_label: "Senior",
-      teacher: { id: 5, name: "Nodir T" },
-      branch: { id: 1, name: "Chilonzor", region: "Tashkent" },
-      midterms: 1,
-      ...tally,
-    },
+  classrooms: [mathClass, englishClass],
+  // The hierarchy, exactly as `midterms/stats.py` sends it: one region, one branch, and two
+  // departments under that branch — which is production's own shape today.
+  tree: [
+    treeNode("region:1", "region", 1, "Tashkent", [
+      treeNode("branch:1", "branch", 1, "Chilonzor", [
+        treeNode("department:1:MATH", "department", null, "Math", [
+          treeNode("teacher:1:MATH:5", "teacher", 5, "Nodir T", [
+            treeNode("classroom:11", "classroom", 11, "Math Senior A", [], {
+              midterms: 1,
+              level_label: "Senior",
+              subject_label: "Math",
+            }),
+          ]),
+          treeNode("teacher:1:MATH:7", "teacher", 7, "Sardor U", [
+            treeNode("classroom:13", "classroom", 13, "Math 10-B", [], {
+              midterms: 1,
+              level_label: "Beginner",
+              subject_label: "Math",
+            }),
+          ]),
+        ]),
+        treeNode("department:1:ENGLISH", "department", null, "English", [
+          treeNode("teacher:1:ENGLISH:6", "teacher", 6, "Aziza K", [
+            treeNode("classroom:12", "classroom", 12, "English 9-B", [], {
+              midterms: 1,
+              level_label: "Intermediate",
+              subject_label: "English",
+            }),
+          ]),
+        ]),
+      ]),
+    ]),
   ],
+  // A level with one child is passed through, so the page opens on Departments with the two
+  // levels above it already in the breadcrumb.
+  tree_open_path: ["region:1", "branch:1"],
   months: ["2026-09", "2026-08"],
   filters: { branch: null, subject: null, teacher: null },
   ...over,
@@ -124,11 +189,87 @@ describe("MidtermStatsPage", () => {
     // The rule is on the page, not in a handbook.
     expect(out).toContain("passed (first sitting or retake) / all roster students");
     expect(out).toContain("An absent student counts as failed");
-    // All four altitudes are present.
-    for (const heading of ["Branches", "Departments", "Teachers", "Classes"]) {
-      expect(out).toContain(heading);
-    }
+    // ONE level, not four tables: the school has a single region and a single branch, so both
+    // are passed through and the page opens where the school actually branches.
+    expect(out).toContain("Departments in Chilonzor");
+    expect(out).toContain("Math");
+    expect(out).toContain("English");
+    // The levels that were skipped are still in the trail — that is what keeps the structure
+    // visible, and what starts working on its own the day a second branch is created.
+    const trail = container?.querySelector("nav")?.textContent ?? "";
+    expect(trail).toContain("Tashkent");
+    expect(trail).toContain("Chilonzor");
+    // And the levels below are NOT on screen yet.
+    expect(out).not.toContain("Math Senior A");
+    expect(out).not.toContain("Nodir T");
     expect(monthly).toHaveBeenCalledWith(null);
+  });
+
+  /**
+   * The owner's request, end to end: *"ularni ustiga bossa ichida departmentlar ko'rinsin,
+   * ularni ichida teacherlar, ularni ichida classroomlar"*.
+   */
+  it("descends a level per click and comes back up through the breadcrumb", async () => {
+    monthly.mockResolvedValue(payload());
+    await render();
+
+    const click = async (label: string) => {
+      const btn = [...(container?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent?.includes(label),
+      ) as HTMLElement;
+      expect(btn, `no button for ${label}`).toBeTruthy();
+      await act(async () => {
+        btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    };
+
+    await click("Math");
+    expect(container?.textContent).toContain("Teachers in Math");
+    expect(container?.textContent).toContain("Nodir T");
+    expect(container?.textContent).not.toContain("Math Senior A");
+
+    await click("Nodir T");
+    expect(container?.textContent).toContain("Classes taught by Nodir T");
+    expect(container?.textContent).toContain("Math Senior A");
+
+    // Back up two levels in one click, to the branch's own children.
+    await click("Chilonzor");
+    expect(container?.textContent).toContain("Departments in Chilonzor");
+    expect(container?.textContent).not.toContain("Nodir T");
+  });
+
+  it("opens the class drill-down from the deepest level, not a fifth table", async () => {
+    monthly.mockResolvedValue(payload());
+    await render();
+    const step = async (label: string) => {
+      const btn = [...(container?.querySelectorAll("button") ?? [])].find(
+        (b) => b.textContent?.includes(label),
+      ) as HTMLElement;
+      await act(async () => {
+        btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    };
+    await step("Math");
+    await step("Nodir T");
+    await step("Math Senior A");
+    // `ClassroomMonthPanel` takes over; it fetches on its own and offers the way back.
+    expect(container?.textContent).toContain("Back to September 2026 statistics");
+  });
+
+  it("keeps the school total in the tiles wherever the reader has drilled to", async () => {
+    monthly.mockResolvedValue(payload());
+    await render();
+    const before = container?.querySelector("div.rounded-2xl")?.textContent;
+    const btn = [...(container?.querySelectorAll("button") ?? [])].find((b) =>
+      b.textContent?.includes("Math"),
+    ) as HTMLElement;
+    await act(async () => {
+      btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    // The five tiles are the whole school on purpose — a reader inside one department needs
+    // the total to compare against — which is why the card below states its own scope.
+    expect(container?.querySelector("div.rounded-2xl")?.textContent).toBe(before);
+    expect(container?.textContent).toContain("Teachers in Math");
   });
 
   it("renders a failed request as a failure — never as an empty school", async () => {
@@ -138,7 +279,9 @@ describe("MidtermStatsPage", () => {
     expect(out).toContain("Could not load these figures");
     expect(out).toContain("Nothing here is empty — it is unknown");
     expect(out).not.toContain("No midterms in");
-    expect(out).not.toContain("Branches");
+    // No table at all, at any level: a blank hierarchy under an error is read as a finding.
+    expect(out).not.toContain("Departments in");
+    expect(out).not.toContain("All regions");
   });
 
   it("renders an empty month as an empty month, with the reason", async () => {
@@ -167,6 +310,8 @@ describe("MidtermStatsPage", () => {
         departments: [],
         teachers: [],
         classrooms: [],
+        tree: [],
+        tree_open_path: [],
       }),
     );
     const out = await render();
@@ -246,10 +391,10 @@ describe("MidtermStatsPage", () => {
       expect(out).toContain("Booked for October 2026");
       expect(out).toContain("Papers booked");
       expect(out).toContain("Math Senior A");
-      // A league table of a plan: the order alone would be read as a finding.
-      for (const heading of ["Branches", "Departments", "Teachers"]) {
-        expect(out).not.toContain(heading);
-      }
+      // A league table of a plan: the order alone would be read as a finding, and every
+      // level of a hierarchy is a comparison — so there is no hierarchy here at all.
+      expect(out).not.toContain("All regions");
+      expect(out).not.toContain("Departments in");
       expect(out).not.toContain("Pass rate by");
     });
 
@@ -309,6 +454,8 @@ describe("MidtermStatsPage", () => {
           departments: [],
           teachers: [],
           classrooms: [],
+          tree: [],
+          tree_open_path: [],
         }),
       );
       const out = await render();
@@ -335,8 +482,8 @@ describe("MidtermStatsPage", () => {
       expect(out).toContain("1 retake paper left out of every figure for September 2026");
       expect(out).toContain("Midterm 12 Retake");
       expect(out).toContain("no parent midterm");
-      // Still a month with data: the tables are untouched.
-      expect(out).toContain("Branches");
+      // Still a month with data: the drill-down is untouched.
+      expect(out).toContain("Departments in Chilonzor");
     });
 
     it("explains an empty month whose only paper was an orphan retake", async () => {
@@ -367,6 +514,8 @@ describe("MidtermStatsPage", () => {
           departments: [],
           teachers: [],
           classrooms: [],
+          tree: [],
+          tree_open_path: [],
         }),
       );
       const out = await render();

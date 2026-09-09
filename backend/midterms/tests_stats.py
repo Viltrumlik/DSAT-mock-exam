@@ -11,7 +11,9 @@ report that flatters or punishes a teacher wrongly, and none of them looks like 
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from classes.models import Branch, Classroom, ClassroomMembership, Region
@@ -878,3 +880,499 @@ class ScopedMonthTests(TestCase):
 
     def test_a_scope_with_no_classrooms_at_all_has_no_months(self):
         self.assertEqual(stats.available_months(teacher_id=999999), [])
+
+
+#: The keys of a tree node that are COUNTS, and so must equal the sum of the children's.
+#: Derived from the dataclass rather than listed, so a field added to ``Tally`` is covered by
+#: the recursive invariant below on the day it is added instead of quietly escaping it.
+RATE_KEYS = ("pass_rate", "attendance_rate", "first_try_share", "retake_share")
+SUMMED_KEYS = [k for k in stats.EMPTY_TALLY.as_dict() if k not in RATE_KEYS] + [
+    "classrooms",
+    "midterms",
+]
+
+
+class HierarchyTests(TestCase):
+    """The tree: region → branch → department → teacher → classroom.
+
+    The owner's complaint was that four flat sibling tables show no relationship between the
+    school's levels — *"hierarchy qiling"*. The numbers are unchanged; the shape is new, and
+    the whole of its trustworthiness rests on one property: **every node is the pooled merge
+    of its descendants**. A node that averaged its children's percentages, or that dropped a
+    branchless classroom on the way down, would still look entirely plausible on screen.
+
+    The fixture is deliberately lopsided — a 2-student class beside a 10-student one, a
+    teacher who works in two departments and at two branches, a class with no branch and no
+    teacher — because those are the shapes that make a mean of means and a silent drop show
+    up as a wrong number rather than as a rounding difference.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.fergana = Region.objects.create(name="Fergana")
+        self.tashkent = Region.objects.create(name="Tashkent")
+        self.city = Branch.objects.create(region=self.fergana, name="Fergana city")
+        self.margilan = Branch.objects.create(region=self.fergana, name="Margilan")
+        self.chilonzor = Branch.objects.create(region=self.tashkent, name="Chilonzor")
+
+        self.nodir = User.objects.create(
+            username="t1", role="teacher", first_name="Nodir", last_name="T"
+        )
+        self.aziza = User.objects.create(
+            username="t2", role="teacher", first_name="Aziza", last_name="B"
+        )
+
+        # Fergana city / Math / Nodir — 2 students, both pass.
+        self.m1 = make_classroom("Math Senior A", self.admin, teacher=self.nodir, branch=self.city)
+        # Fergana city / Math / Aziza — 10 students, 5 pass. Ten times the weight of the above.
+        self.m2 = make_classroom("Math Senior B", self.admin, teacher=self.aziza, branch=self.city)
+        # Fergana city / English / Nodir — the same teacher in a second department.
+        self.e1 = make_classroom(
+            "English Senior A", self.admin, subject=Classroom.SUBJECT_ENGLISH,
+            teacher=self.nodir, branch=self.city,
+        )
+        # Margilan / Math / nobody — a real branch, no teacher on record.
+        self.m3 = make_classroom("Math Junior C", self.admin, branch=self.margilan)
+        # Tashkent / Chilonzor / English / Aziza — the same teacher at a second branch.
+        self.e2 = make_classroom(
+            "English Junior D", self.admin, subject=Classroom.SUBJECT_ENGLISH,
+            teacher=self.aziza, branch=self.chilonzor,
+        )
+        # No branch and no teacher — the two NULLs a real roster has.
+        self.floating = make_classroom("Math Junior E", self.admin)
+
+        self.m1_students = students("a", 2)
+        self.m2_students = students("b", 10)
+        self.e1_students = students("c", 4)
+        self.m3_students = students("d", 5)
+        self.e2_students = students("e", 6)
+        self.floating_students = students("f", 3)
+        enrol(self.m1, *self.m1_students)
+        enrol(self.m2, *self.m2_students)
+        enrol(self.e1, *self.e1_students)
+        enrol(self.m3, *self.m3_students)
+        enrol(self.e2, *self.e2_students)
+        enrol(self.floating, *self.floating_students)
+
+        self.midterm = make_midterm("Midterm 12")
+        for classroom in (self.m1, self.m2, self.e1, self.m3, self.e2, self.floating):
+            MidtermSchedule.objects.create(
+                classroom=classroom, midterm=self.midterm, starts_at=SEPTEMBER
+            )
+        self.pass_all(self.m1_students)
+        self.pass_some(self.m2_students, 5)
+        self.pass_some(self.e1_students, 1)
+        # Nobody in m3 sat it at all: absent counts as failed, so 0%, not "no data".
+        self.pass_some(self.e2_students, 3)
+        self.pass_all(self.floating_students)
+
+    def pass_all(self, roster):
+        for student in roster:
+            sit(self.midterm, student, score=800, when=SEPTEMBER)
+
+    def pass_some(self, roster, passers):
+        for student in roster[:passers]:
+            sit(self.midterm, student, score=800, when=SEPTEMBER)
+        for student in roster[passers:]:
+            sit(self.midterm, student, score=200, when=SEPTEMBER)
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+    def tree(self, **filters):
+        return stats.school_month_stats("2026-09", **filters)["tree"]
+
+    def by_name(self, nodes):
+        return {node["name"]: node for node in nodes}
+
+    def find(self, nodes, *names):
+        """Walk down by name: ``self.find(tree, "Fergana", "Fergana city", "Math")``."""
+        node = None
+        for name in names:
+            node = self.by_name(nodes)[name]
+            nodes = node.get("children") or []
+        return node
+
+    def assert_pooled(self, node, where=""):
+        """Every counter is its children's sum, and every rate comes back out of those counters.
+
+        The single assertion the whole tree rests on, applied at every node of every level.
+        Recomputing the rate from the node's OWN counters is the half that catches an average
+        of averages: 100% and 50% pooled over 2 and 10 students is 58.3%, and the mean, 75%,
+        is a number a reader has no way to tell is wrong.
+        """
+        where = where or node["name"]
+        children = node.get("children") or []
+        if not children:
+            self.assertEqual(node["level"], "classroom", where)
+            self.assertEqual(node["classrooms"], 1, where)
+            return
+        for key in SUMMED_KEYS:
+            self.assertEqual(
+                node[key], sum(child[key] for child in children), f"{where}.{key}"
+            )
+        self.assertEqual(node["pass_rate"], rate(node["passed"], node["roster"]), where)
+        self.assertEqual(node["attendance_rate"], rate(node["attended"], node["roster"]), where)
+        self.assertEqual(node["first_try_share"], rate(node["passed_first"], node["passed"]), where)
+        # A head counted once here may be counted twice below — that is the whole point of
+        # carrying both numbers — so this one is bounded, never equal.
+        self.assertLessEqual(
+            node["distinct_students"],
+            sum(child["distinct_students"] for child in children),
+            where,
+        )
+        for child in children:
+            self.assert_pooled(child, f"{where} > {child['name']}")
+
+    # ── the invariant ────────────────────────────────────────────────────────
+    def test_every_node_is_the_sum_of_its_children_at_every_level(self):
+        tree = self.tree()
+        self.assertEqual(len(tree), 3)          # Fergana, Tashkent, and the unassigned bucket
+        for node in tree:
+            self.assert_pooled(node)
+
+    def test_the_root_of_the_tree_equals_the_totals_block_it_sits_under(self):
+        """A tree that disagreed with the headline above it would be worse than no tree."""
+        payload = stats.school_month_stats("2026-09")
+        tree, totals = payload["tree"], payload["totals"]
+        for key in SUMMED_KEYS:
+            self.assertEqual(sum(node[key] for node in tree), totals[key], key)
+        self.assertEqual(totals["roster"], 30)
+        self.assertEqual(totals["passed"], 14)
+        self.assertEqual(totals["pass_rate"], 46.7)
+        self.assertEqual(totals["classrooms"], 6)
+        self.assertEqual(totals["midterms"], 6)
+        self.assertEqual(
+            sum(node["distinct_students"] for node in tree), totals["distinct_students"]
+        )
+
+    def test_a_region_pools_its_branches_rather_than_averaging_them(self):
+        fergana = self.find(self.tree(), "Fergana")
+        self.assertEqual(fergana["roster"], 21)     # 2 + 10 + 4 + 5
+        self.assertEqual(fergana["passed"], 8)
+        self.assertEqual(fergana["pass_rate"], 38.1)
+        self.assertNotEqual(fergana["pass_rate"], 25.0)   # the mean of 50.0% and 0.0%
+        self.assertEqual(fergana["classrooms"], 4)
+
+    def test_a_department_pools_a_two_student_class_with_a_ten_student_one(self):
+        math = self.find(self.tree(), "Fergana", "Fergana city", "Math")
+        self.assertEqual(math["roster"], 12)
+        self.assertEqual(math["passed"], 7)
+        self.assertEqual(math["pass_rate"], 58.3)
+        self.assertNotEqual(math["pass_rate"], 75.0)      # the mean of 100.0% and 50.0%
+
+    # ── the shape ────────────────────────────────────────────────────────────
+    def test_every_node_carries_the_same_keys_whatever_its_level(self):
+        """One frontend component renders all five levels, so all five answer the same keys."""
+        seen = set()
+
+        def check(node, depth):
+            seen.add(node["level"])
+            self.assertEqual(node["level"], stats.TREE_LEVELS[depth])
+            self.assertIsInstance(node["key"], str)
+            self.assertTrue(node["key"].startswith(f"{node['level']}:"))
+            self.assertIsInstance(node["name"], str)
+            self.assertTrue(node["name"])
+            self.assertTrue(node["id"] is None or isinstance(node["id"], int))
+            for key in SUMMED_KEYS + list(RATE_KEYS) + ["distinct_students"]:
+                self.assertIn(key, node, f"{node['name']}.{key}")
+            for child in node.get("children") or []:
+                check(child, depth + 1)
+
+        for node in self.tree():
+            check(node, 0)
+        self.assertEqual(seen, set(stats.TREE_LEVELS))
+
+    def test_a_classroom_leaf_has_no_children_key_at_all(self):
+        """Empty rather than absent would render as a node that expands onto nothing."""
+        leaf = self.find(self.tree(), "Fergana", "Fergana city", "Math", "Nodir T", "Math Senior A")
+        self.assertEqual(leaf["level"], "classroom")
+        self.assertNotIn("children", leaf)
+        self.assertEqual(leaf["id"], self.m1.id)
+        self.assertEqual(leaf["classrooms"], 1)
+        self.assertEqual(leaf["midterms"], 1)
+        self.assertEqual(leaf["pass_rate"], 100.0)
+        # The two labels the flat classroom row carries, so a page rendering only the tree
+        # can still tell a Senior class from a Junior one — and neither is a raw enum.
+        self.assertEqual(leaf["subject_label"], "Math")
+        self.assertEqual(leaf["level_label"], "Senior")
+
+    def test_a_key_is_stable_and_identifies_the_row_it_came_from(self):
+        tree = self.tree()
+        fergana = self.find(tree, "Fergana")
+        self.assertEqual(fergana["key"], f"region:{self.fergana.id}")
+        self.assertEqual(
+            self.find(tree, "Fergana", "Fergana city")["key"], f"branch:{self.city.id}"
+        )
+        english = self.find(tree, "Fergana", "Fergana city", "English")
+        self.assertEqual(english["key"], "department:ENGLISH")
+        self.assertEqual(
+            self.find(tree, "Fergana", "Fergana city", "English", "Nodir T")["key"],
+            f"teacher:{self.nodir.id}",
+        )
+        # Stable: a second call produces the same keys, so an expanded branch stays expanded.
+        self.assertEqual(
+            [node["key"] for node in self.tree()], [node["key"] for node in tree]
+        )
+
+    def test_a_department_is_a_subject_so_it_has_no_id_and_never_shows_its_enum(self):
+        english = self.find(self.tree(), "Fergana", "Fergana city", "English")
+        self.assertIsNone(english["id"])
+        self.assertEqual(english["name"], "English")          # not "ENGLISH"
+        self.assertEqual(english["subject"], Classroom.SUBJECT_ENGLISH)   # for a deep link
+        self.assertEqual(english["roster"], 4)
+
+    def test_a_teacher_appears_under_each_department_they_teach_in(self):
+        """The flat table merges Nodir's two subjects into one row; the tree must not, or a
+        department's children would not add up to the department."""
+        tree = self.tree()
+        maths = self.find(tree, "Fergana", "Fergana city", "Math", "Nodir T")
+        english = self.find(tree, "Fergana", "Fergana city", "English", "Nodir T")
+        self.assertEqual(maths["id"], english["id"], "the same teacher")
+        self.assertEqual(maths["roster"], 2)
+        self.assertEqual(english["roster"], 4)
+        flat = next(r for r in stats.school_month_stats("2026-09")["teachers"]
+                    if r["name"] == "Nodir T")
+        self.assertEqual(flat["roster"], 6)      # the same teacher, pooled across departments
+
+    def test_a_teacher_at_two_branches_appears_under_each_of_them(self):
+        tree = self.tree()
+        city = self.find(tree, "Fergana", "Fergana city", "Math", "Aziza B")
+        chilonzor = self.find(tree, "Tashkent", "Chilonzor", "English", "Aziza B")
+        self.assertEqual(city["roster"], 10)
+        self.assertEqual(chilonzor["roster"], 6)
+
+    # ── the unassigned disclosure ────────────────────────────────────────────
+    def test_a_branchless_classroom_lands_under_an_unassigned_region_and_branch(self):
+        """Never dropped, and never attached to a real region: a class with no branch has no
+        region either, and putting it inside one would be inventing a fact about it."""
+        tree = self.tree()
+        unassigned = self.by_name(tree)[stats.UNASSIGNED]
+        self.assertEqual(unassigned["level"], "region")
+        self.assertIsNone(unassigned["id"])
+        self.assertEqual(unassigned["key"], "region:unassigned")
+        branch = self.find(tree, stats.UNASSIGNED, stats.UNASSIGNED)
+        self.assertEqual(branch["level"], "branch")
+        self.assertIsNone(branch["id"])
+        leaf = self.find(tree, stats.UNASSIGNED, stats.UNASSIGNED, "Math", stats.UNASSIGNED)
+        self.assertEqual(leaf["level"], "teacher")
+        self.assertIsNone(leaf["id"])
+        self.assertEqual(leaf["roster"], 3)
+        # Nothing was quietly dropped on the way: the tree still totals the school.
+        self.assertEqual(
+            sum(node["roster"] for node in tree),
+            stats.school_month_stats("2026-09")["totals"]["roster"],
+        )
+
+    def test_a_teacherless_classroom_inside_a_real_branch_keeps_its_branch(self):
+        """The teacher is what is unknown, not the location — Margilan is still Margilan."""
+        node = self.find(self.tree(), "Fergana", "Margilan", "Math", stats.UNASSIGNED)
+        self.assertIsNone(node["id"])
+        self.assertEqual(node["key"], "teacher:unassigned")
+        self.assertEqual(node["roster"], 5)
+        self.assertEqual(node["absent"], 5)
+        self.assertEqual(node["pass_rate"], 0.0)   # measured, and genuinely zero
+
+    def test_unassigned_sorts_last_however_well_it_scored(self):
+        """It is a disclosure, not a ranking. At 100% it would otherwise head the school."""
+        tree = self.tree()
+        self.assertEqual([node["name"] for node in tree], ["Tashkent", "Fergana", stats.UNASSIGNED])
+        self.assertEqual(self.by_name(tree)[stats.UNASSIGNED]["pass_rate"], 100.0)
+
+    # ── sorting ──────────────────────────────────────────────────────────────
+    def test_children_sort_by_rate_descending_with_nulls_last(self):
+        branches = self.find(self.tree(), "Fergana")["children"]
+        self.assertEqual([b["name"] for b in branches], ["Fergana city", "Margilan"])
+        self.assertEqual([b["pass_rate"] for b in branches], [50.0, 0.0])
+
+        # A class with nobody on its roster has not come bottom of the school, it has not
+        # been measured — so it sorts below the branch that genuinely scored zero.
+        empty = make_classroom("Nobody Yet", self.admin, branch=self.margilan)
+        MidtermSchedule.objects.create(
+            classroom=empty, midterm=self.midterm, starts_at=SEPTEMBER
+        )
+        branches = self.find(self.tree(), "Fergana")["children"]
+        self.assertEqual([b["pass_rate"] for b in branches], [50.0, 0.0])
+        rooms = self.find(self.tree(), "Fergana", "Margilan", "Math", stats.UNASSIGNED)["children"]
+        self.assertEqual([r["pass_rate"] for r in rooms], [0.0, None])
+        self.assertEqual([r["name"] for r in rooms], ["Math Junior C", "Nobody Yet"])
+
+    def test_a_tie_is_broken_by_name(self):
+        """Two classes on the same rate must not swap places between two page loads."""
+        for prefix, name in (("zz", "Zulu Senior"), ("aa", "Aardvark Senior")):
+            tied = make_classroom(name, self.admin, teacher=self.nodir, branch=self.city)
+            enrol(tied, *students(prefix, 2))
+            MidtermSchedule.objects.create(
+                classroom=tied, midterm=self.midterm, starts_at=SEPTEMBER
+            )
+        # Neither sits the paper, so both are 0% and only the name can decide.
+        rooms = self.find(self.tree(), "Fergana", "Fergana city", "Math", "Nodir T")["children"]
+        self.assertEqual(
+            [r["name"] for r in rooms], ["Math Senior A", "Aardvark Senior", "Zulu Senior"]
+        )
+        self.assertEqual([r["pass_rate"] for r in rooms], [100.0, 0.0, 0.0])
+
+    # ── distinct students ────────────────────────────────────────────────────
+    def test_distinct_students_is_a_deduped_head_count_not_a_sum(self):
+        """112 of 226 students hold two active memberships. ``roster`` counts the head twice
+        because the pooled formula is defined on rosters; ``distinct_students`` says so."""
+        shared = self.m1_students[0]
+        enrol(self.m2, shared)          # one student, two classrooms, one department
+        tree = self.tree()
+        maths = self.find(tree, "Fergana", "Fergana city", "Math")
+        self.assertEqual(maths["roster"], 13)             # 2 + 11, the head counted twice
+        self.assertEqual(maths["distinct_students"], 12)  # …and once here
+        # The gap is exactly what a sum of the children would have hidden.
+        self.assertEqual(
+            sum(child["distinct_students"] for child in maths["children"]), 13
+        )
+        city = self.find(tree, "Fergana", "Fergana city")
+        self.assertEqual(city["roster"], 17)
+        self.assertEqual(city["distinct_students"], 16)
+        for node in tree:
+            self.assert_pooled(node)
+
+    def test_two_papers_in_one_month_double_the_roster_of_the_class_that_sat_them(self):
+        """``roster`` is per (classroom, midterm) pair everywhere, leaf included."""
+        second = make_midterm("Midterm 13")
+        MidtermSchedule.objects.create(
+            classroom=self.m1, midterm=second, starts_at=SEPTEMBER + timedelta(days=5)
+        )
+        for student in self.m1_students:
+            sit(second, student, score=200, when=SEPTEMBER + timedelta(days=5))
+        leaf = self.find(
+            self.tree(), "Fergana", "Fergana city", "Math", "Nodir T", "Math Senior A"
+        )
+        self.assertEqual(leaf["midterms"], 2)
+        self.assertEqual(leaf["classrooms"], 1)
+        self.assertEqual(leaf["roster"], 4)               # 2 students × 2 papers
+        self.assertEqual(leaf["distinct_students"], 2)
+        self.assertEqual(leaf["pass_rate"], 50.0)
+        payload = stats.school_month_stats("2026-09")
+        self.assertEqual(payload["totals"]["midterms"], 7)
+        for node in payload["tree"]:
+            self.assert_pooled(node)
+
+    # ── the collapsing rule ──────────────────────────────────────────────────
+    def test_a_school_that_branches_at_the_top_skips_nothing(self):
+        payload = stats.school_month_stats("2026-09")
+        self.assertEqual(payload["tree_open_path"], [])
+
+    def test_a_single_region_and_a_single_branch_are_skipped_down_to_departments(self):
+        """Production's shape today: one region, one branch, both departments under it. Two
+        clicks that each reveal a list of one is the complexity being complained about."""
+        payload = stats.school_month_stats("2026-09", branch_id=self.city.id)
+        self.assertEqual(
+            payload["tree_open_path"], [f"region:{self.fergana.id}", f"branch:{self.city.id}"]
+        )
+        # The skipped levels are still IN the tree, so the breadcrumb can name them and so
+        # the page starts opening on branches by itself the day a second branch is created.
+        self.assertEqual([node["name"] for node in payload["tree"]], ["Fergana"])
+        opened = self.find(payload["tree"], "Fergana", "Fergana city")["children"]
+        self.assertEqual({node["name"] for node in opened}, {"Math", "English"})
+
+    def test_the_path_is_derived_so_a_second_branch_shortens_it_on_its_own(self):
+        """Never hard-coded to "skip region and branch": the day a second branch is created
+        the page starts opening on branches with nobody having to remember to change it."""
+        scoped = stats.school_month_stats("2026-09", branch_id=self.city.id)
+        self.assertEqual(
+            scoped["tree_open_path"], [f"region:{self.fergana.id}", f"branch:{self.city.id}"]
+        )
+        # File the branchless class under Margilan. Maths is now taught at two branches of a
+        # single region, so the branch level has a choice in it and stops being skipped.
+        Classroom.objects.filter(pk=self.floating.pk).update(branch=self.margilan)
+        payload = stats.school_month_stats("2026-09", subject=Classroom.SUBJECT_MATH)
+        self.assertEqual(payload["tree_open_path"], [f"region:{self.fergana.id}"])
+        self.assertEqual(
+            [node["name"] for node in self.find(payload["tree"], "Fergana")["children"]],
+            ["Fergana city", "Margilan"],
+        )
+
+    def test_a_single_chain_stops_at_the_last_level_that_has_children(self):
+        """One classroom all the way down: the page opens on it, never on nothing."""
+        payload = stats.school_month_stats(
+            "2026-09", teacher_id=self.nodir.id, subject=Classroom.SUBJECT_ENGLISH
+        )
+        self.assertEqual(
+            payload["tree_open_path"],
+            [
+                f"region:{self.fergana.id}",
+                f"branch:{self.city.id}",
+                "department:ENGLISH",
+                f"teacher:{self.nodir.id}",
+            ],
+        )
+        leaf = self.find(
+            payload["tree"], "Fergana", "Fergana city", "English", "Nodir T", "English Senior A"
+        )
+        self.assertEqual(leaf["level"], "classroom")
+        self.assertNotIn("children", leaf)
+
+    def test_an_empty_month_is_an_empty_tree_and_an_empty_path(self):
+        payload = stats.school_month_stats("2026-01")
+        self.assertEqual(payload["tree"], [])
+        self.assertEqual(payload["tree_open_path"], [])
+        payload = stats.school_month_stats(None)
+        self.assertEqual(payload["tree"], [])
+        self.assertEqual(payload["tree_open_path"], [])
+
+    def test_the_open_path_of_an_empty_tree_is_empty(self):
+        self.assertEqual(stats.tree_open_path([]), [])
+
+    # ── the flat tables are untouched ────────────────────────────────────────
+    def test_the_flat_lists_are_unchanged_beside_the_tree(self):
+        """The tree is additive. The four tables are what a reader compares two teachers
+        across the whole school with, which a tree cannot do."""
+        payload = stats.school_month_stats("2026-09")
+        self.assertEqual(
+            {row["name"] for row in payload["branches"]},
+            {"Fergana city", "Margilan", "Chilonzor", stats.UNASSIGNED},
+        )
+        self.assertEqual(
+            {row["subject"] for row in payload["departments"]},
+            {Classroom.SUBJECT_MATH, Classroom.SUBJECT_ENGLISH},
+        )
+        self.assertEqual(
+            {row["name"] for row in payload["teachers"]},
+            {"Nodir T", "Aziza B", stats.UNASSIGNED},
+        )
+        self.assertEqual(len(payload["classrooms"]), 6)
+        # And a branch row still equals its node in the tree.
+        flat = next(r for r in payload["branches"] if r["name"] == "Fergana city")
+        node = self.find(payload["tree"], "Fergana", "Fergana city")
+        for key in SUMMED_KEYS:
+            if key == "midterms":       # the flat branch row has never carried one
+                continue
+            self.assertEqual(flat[key], node[key], key)
+        self.assertEqual(flat["pass_rate"], node["pass_rate"])
+        self.assertEqual(flat["distinct_students"], node["distinct_students"])
+
+    def test_the_tree_costs_no_query_of_its_own(self):
+        """A node is not worth a round trip. Every tally it needs is already in hand, and a
+        tree that had gone back to the database would have been free to disagree with the
+        table beside it."""
+        with CaptureQueriesContext(connection) as before:
+            stats.school_month_stats("2026-09")
+        # The same six classrooms and the same six papers, spread over MORE NODES: a second
+        # region, a second branch and a department that did not exist a moment ago. A query
+        # per node would show up here as a longer list.
+        andijan = Region.objects.create(name="Andijan")
+        Classroom.objects.filter(pk=self.m2.pk).update(
+            branch=Branch.objects.create(region=andijan, name="Andijan city")
+        )
+        with CaptureQueriesContext(connection) as after:
+            payload = stats.school_month_stats("2026-09")
+        self.assertEqual(len(after), len(before))
+        self.assertEqual([node["name"] for node in payload["tree"]],
+                         ["Andijan", "Tashkent", "Fergana", stats.UNASSIGNED])
+
+    def test_the_payload_states_the_hierarchy_it_is_reporting(self):
+        definition = stats.school_month_stats("2026-09")["definition"]
+        self.assertIn("region", definition["hierarchy"])
+        self.assertIn("classroom", definition["hierarchy"])
+        self.assertEqual(definition["rollup"], "pooled")
+
+
+def rate(numerator, denominator):
+    """The test's own copy of the rule, so a bug in ``_rate`` cannot agree with itself."""
+    if not denominator:
+        return None
+    return round(100.0 * numerator / denominator, 1)

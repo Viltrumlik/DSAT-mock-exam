@@ -362,11 +362,18 @@ export type ChartBar = { name: string; rate: number };
  * it in among real ones.
  */
 export function chartBars<T extends { id: number | null; name: string; pass_rate: number | null }>(
-  rows: T[],
+  rows: readonly T[],
   max: number,
+  /**
+   * What counts as a gap here. Overridable because `id: null` does not mean the same thing at
+   * every level of the hierarchy: a DEPARTMENT node is `id: null` because subject is not a
+   * record, and it is a real group with real students — treating it as a hole would drop
+   * English and Math out of their own chart.
+   */
+  isGap: (row: T) => boolean = isUnassigned,
 ): { bars: ChartBar[]; unrated: number; gaps: number; truncated: number } {
-  const gaps = rows.filter(isUnassigned).length;
-  const plottable = rows.filter((r) => !isUnassigned(r) && r.pass_rate != null);
+  const gaps = rows.filter(isGap).length;
+  const plottable = rows.filter((r) => !isGap(r) && r.pass_rate != null);
   const unrated = rows.length - gaps - plottable.length;
   const bars = plottable
     .slice(0, max)

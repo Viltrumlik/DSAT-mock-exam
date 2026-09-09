@@ -473,3 +473,101 @@ class OrphanRetakeApiTests(TestCase):
         body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
         self.assertEqual(body["orphan_retakes"], [])
         self.assertEqual(body["totals"]["pass_rate"], 100.0)
+
+
+class HierarchyApiTests(TestCase):
+    """The monthly payload carries the tree, and says where to open it.
+
+    The numbers in it are proved in ``midterms.tests_stats``; what matters here is that the
+    HTTP surface carries both keys on EVERY response — including an empty month — because a
+    page that reads a key only when it happens to be there cannot tell "this month has no
+    tree" from "an older backend that never sent one", and would render the second as the
+    first: an empty state over a failure, which is the one thing this page must never do.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create(username="adm", role="admin")
+        self.c = APIClient()
+        self.c.force_authenticate(self.admin)
+
+        self.region = Region.objects.create(name="Fergana")
+        self.branch = Branch.objects.create(region=self.region, name="Fergana city")
+        self.teacher = User.objects.create(
+            username="t1", role="teacher", first_name="Nodir", last_name="T"
+        )
+        self.maths = make_classroom(
+            "Math Senior A", self.admin, teacher=self.teacher, branch=self.branch
+        )
+        self.english = make_classroom(
+            "English Senior B", self.admin, subject=Classroom.SUBJECT_ENGLISH,
+            teacher=self.teacher, branch=self.branch,
+        )
+        self.maths_students = students("a", 4)
+        self.english_students = students("b", 2)
+        enrol(self.maths, *self.maths_students)
+        enrol(self.english, *self.english_students)
+
+        self.midterm = make_midterm("Midterm 12")
+        for classroom in (self.maths, self.english):
+            MidtermSchedule.objects.create(
+                classroom=classroom, midterm=self.midterm, starts_at=LAST_MONTH_AT
+            )
+        for student in self.maths_students[:3]:
+            sit(self.midterm, student, score=800, when=LAST_MONTH_AT)
+        for student in self.maths_students[3:]:
+            sit(self.midterm, student, score=200, when=LAST_MONTH_AT)
+        for student in self.english_students:
+            sit(self.midterm, student, score=800, when=LAST_MONTH_AT)
+
+    def test_the_monthly_payload_carries_the_tree_and_where_to_open_it(self):
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        self.assertEqual(
+            body["tree_open_path"], [f"region:{self.region.id}", f"branch:{self.branch.id}"]
+        )
+        self.assertEqual([node["name"] for node in body["tree"]], ["Fergana"])
+        region = body["tree"][0]
+        self.assertEqual(region["level"], "region")
+        self.assertEqual(region["roster"], 6)
+        self.assertEqual(region["passed"], 5)
+        self.assertEqual(region["pass_rate"], 83.3)
+        branch = region["children"][0]
+        self.assertEqual(branch["key"], f"branch:{self.branch.id}")
+        departments = {node["name"]: node for node in branch["children"]}
+        self.assertEqual(set(departments), {"English", "Math"})
+        self.assertEqual(departments["English"]["pass_rate"], 100.0)
+        self.assertEqual(departments["Math"]["pass_rate"], 75.0)
+        # Down to a classroom leaf, through the teacher.
+        teacher = departments["Math"]["children"][0]
+        self.assertEqual(teacher["name"], "Nodir T")
+        self.assertEqual(teacher["id"], self.teacher.id)
+        leaf = teacher["children"][0]
+        self.assertEqual(leaf["level"], "classroom")
+        self.assertEqual(leaf["id"], self.maths.id)
+        self.assertNotIn("children", leaf)
+
+    def test_the_tree_agrees_with_the_totals_it_is_sent_beside(self):
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        totals = body["totals"]
+        for key in ("roster", "passed", "attended", "absent", "classrooms", "midterms"):
+            self.assertEqual(sum(node[key] for node in body["tree"]), totals[key], key)
+        self.assertEqual(totals["pass_rate"], body["tree"][0]["pass_rate"])
+
+    def test_an_empty_month_carries_an_empty_tree_rather_than_no_key(self):
+        body = self.c.get(MONTHLY_URL, {"month": "2026-01"})
+        self.assertEqual(body.status_code, 200, body.content)
+        body = body.json()
+        self.assertEqual(body["tree"], [])
+        self.assertEqual(body["tree_open_path"], [])
+
+    def test_a_filter_that_matches_nothing_still_carries_both_keys(self):
+        body = self.c.get(MONTHLY_URL, {"teacher": 999999}).json()
+        self.assertEqual(body["tree"], [])
+        self.assertEqual(body["tree_open_path"], [])
+
+    def test_the_flat_tables_are_still_there_beside_it(self):
+        """The page being rebuilt is not the only reader this endpoint has."""
+        body = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        self.assertEqual([row["name"] for row in body["branches"]], ["Fergana city"])
+        self.assertEqual(len(body["departments"]), 2)
+        self.assertEqual([row["name"] for row in body["teachers"]], ["Nodir T"])
+        self.assertEqual(len(body["classrooms"]), 2)
