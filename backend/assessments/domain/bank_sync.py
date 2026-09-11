@@ -65,7 +65,8 @@ def _match_taxonomy(subject, category):
     if not category:
         return None, None
     parts = [p.strip() for p in str(category).split("›")]
-    domain = BankDomain.objects.filter(
+    # The bank is SAT-only; a level's curriculum topic list is never a match for it.
+    domain = BankDomain.objects.sat().filter(
         subject=subject, name__iexact=(parts[0] if parts else "")
     ).first()
     skill = None
@@ -79,7 +80,7 @@ def _provisional_taxonomy(subject, category):
     subject's first domain + its first skill. Difficulty defaults MEDIUM (none on AQ)."""
     domain, skill = _match_taxonomy(subject, category)
     if domain is None:
-        domain = BankDomain.objects.filter(subject=subject).order_by("display_order", "id").first()
+        domain = BankDomain.objects.sat().filter(subject=subject).order_by("display_order", "id").first()
     if skill is None and domain is not None:
         skill = BankSkill.objects.filter(domain=domain).order_by("display_order", "id").first()
     return domain, skill, Difficulty.MEDIUM

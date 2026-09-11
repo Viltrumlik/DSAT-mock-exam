@@ -20,6 +20,7 @@ const LIGHT = `
   --mer-text-muted: #64748b;
   --mer-series: #2a68c0;
   --mer-series-hover: #21539e;
+  --mer-good: #1a8f55;
   --mer-tooltip-bg: #0f1729;
   --mer-tooltip-border: transparent;
   --mer-tooltip-text: #ffffff;
@@ -37,6 +38,7 @@ const DARK = `
   --mer-text-muted: #94a3b8;
   --mer-series: #3987e5;
   --mer-series-hover: #63a3ee;
+  --mer-good: #3ccf86;
   --mer-tooltip-bg: #1e293b;
   --mer-tooltip-border: rgba(255, 255, 255, 0.14);
   --mer-tooltip-text: #f1f5f9;
@@ -101,6 +103,11 @@ const CSS = `
   color: var(--mer-text-muted);
 }
 .mer-details > summary::-webkit-details-marker { display: none; }
+/* One row per topic the paper tested: the share answered right, in the series colour, and
+   green once the whole topic is right. */
+.mer-meter { height: 6px; border-radius: 999px; background: var(--mer-grid); overflow: hidden; }
+.mer-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--mer-series); }
+.mer-meter[data-full="true"] > span { background: var(--mer-good); }
 
 /* Print-to-PDF of the report card alone — visibility rather than display so the card keeps
    its position while everything around it drops out. */
@@ -118,7 +125,7 @@ const CSS = `
   .mer-card button { display: none; }
   .mer-scroll { overflow: visible !important; }
   .mer-details > summary { display: none; }
-  .mer-tile, .mer-bar { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .mer-tile, .mer-bar, .mer-meter, .mer-meter > span { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 `;
 

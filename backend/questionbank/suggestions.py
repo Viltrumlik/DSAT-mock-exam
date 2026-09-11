@@ -49,7 +49,10 @@ class HeuristicSuggestionProvider(SuggestionProvider):
         ).lower()
         best_skill = None
         best_score = 0
-        for skill in BankSkill.objects.filter(domain__subject=question.subject).select_related("domain"):
+        # SAT skills only — a level's curriculum topics are never suggested for a bank question.
+        for skill in BankSkill.objects.filter(
+            domain__subject=question.subject, domain__level=""
+        ).select_related("domain"):
             tokens = {t for t in skill.name.lower().replace(",", " ").split() if len(t) > 3}
             score = sum(1 for t in tokens if t in text)
             if score > best_score:

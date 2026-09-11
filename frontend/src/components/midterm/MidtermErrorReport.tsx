@@ -8,7 +8,7 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import SkillMistakeChart from "./SkillMistakeChart";
 import { ErrorReportStyles } from "./errorReportStyles";
 import { accuracyPercent } from "./chartGeometry";
-import { errorReportApi, type ErrorReport } from "./errorReportApi";
+import { errorReportApi, type ErrorReport, type ErrorReportSkill } from "./errorReportApi";
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -29,19 +29,67 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 /** Nothing to chart is two very different situations, and conflating them would mislead. */
-function EmptyState({ report }: { report: ErrorReport }) {
+function EmptyState({ report, noun }: { report: ErrorReport; noun: string }) {
   const unclassified = report.unclassified_total > 0;
   return (
     <div className="mer-tile mt-4 flex flex-col items-center gap-2 rounded-2xl px-6 py-10 text-center">
       {!unclassified && <CheckCircle2 className="h-8 w-8" style={{ color: "var(--mer-series)" }} />}
       <p className="text-[16px] font-extrabold" style={{ color: "var(--mer-text)" }}>
-        {unclassified ? "No skill breakdown for this midterm" : "A clean paper"}
+        {unclassified ? `No ${noun} breakdown for this midterm` : "A clean paper"}
       </p>
       <p className="max-w-sm text-[13px] font-medium" style={{ color: "var(--mer-text-2)" }}>
         {unclassified
-          ? "These questions have not been classified by skill yet, so your mistakes cannot be broken down. Ask your teacher to walk through the paper with you."
+          ? `These questions have not been classified by ${noun} yet, so your mistakes cannot be broken down. Ask your teacher to walk through the paper with you.`
           : "You did not miss a single question, so there is nothing to plot here. Keep the same routine for the next one."}
       </p>
+    </div>
+  );
+}
+
+/**
+ * Every topic the paper tested, fully-correct ones included — the chart above only ever
+ * shows the ones that cost marks, so without this a student never sees a topic they got
+ * all right. Rendered in the order given: the curriculum's, for a junior math midterm.
+ */
+function CoveredTopics({ covered, noun }: { covered: ErrorReportSkill[]; noun: string }) {
+  return (
+    <div className="mt-8">
+      <h3 className="text-[15px] font-extrabold" style={{ color: "var(--mer-text)" }}>
+        {noun === "topic" ? "Topics" : "Skills"} in this paper
+      </h3>
+      <p className="mt-1 text-[13px] font-medium" style={{ color: "var(--mer-text-2)" }}>
+        Every {noun} this midterm tested, and how many of its questions you got right.
+      </p>
+      <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+        {covered.map((s) => {
+          const right = Math.max(0, s.total - s.wrong);
+          const full = s.wrong === 0;
+          return (
+            <li
+              key={s.skill_id ?? `name:${s.skill}`}
+              className="mer-tile rounded-xl px-3.5 py-2.5"
+              aria-label={`${s.skill}: ${right} of ${s.total} correct`}
+            >
+              <div className="flex items-center gap-2">
+                {full ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0" style={{ color: "var(--mer-good)" }} aria-hidden />
+                ) : (
+                  <span className="mx-1 h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--mer-series)" }} aria-hidden />
+                )}
+                <span className="min-w-0 flex-1 truncate text-[13px] font-bold" style={{ color: "var(--mer-text)" }} title={s.skill}>
+                  {s.skill}
+                </span>
+                <span className="shrink-0 text-[12px] font-extrabold tabular-nums" style={{ color: "var(--mer-text-2)" }}>
+                  {right}/{s.total}
+                </span>
+              </div>
+              <div className="mer-meter mt-2" data-full={full} aria-hidden>
+                <span style={{ width: `${s.total ? (right / s.total) * 100 : 0}%` }} />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -55,6 +103,9 @@ export default function MidtermErrorReport({ report }: { report: ErrorReport }) 
   const [busy, setBusy] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
   const mistakes = Math.max(0, report.total_count - report.correct_count);
+  // A junior math paper is tagged from the learning center's own topic list, so it speaks of
+  // topics; an SAT-tagged paper keeps speaking of skills. The server decides which.
+  const noun = report.topic_noun === "topic" ? "topic" : "skill";
 
   /** Print-to-PDF of this card alone; the print stylesheet hides everything around it. */
   function printReport() {
@@ -119,27 +170,35 @@ export default function MidtermErrorReport({ report }: { report: ErrorReport }) 
         />
         <Tile label="Mistakes" value={`${mistakes}`} />
         <Tile
-          label="Weak skills"
+          label={`Weak ${noun}s`}
           value={`${report.skills.length}`}
-          sub={report.skills.length === 1 ? "skill to work on" : "skills to work on"}
+          sub={report.skills.length === 1 ? `${noun} to work on` : `${noun}s to work on`}
         />
       </div>
 
       <div className="mt-8">
         <h3 className="text-[15px] font-extrabold" style={{ color: "var(--mer-text)" }}>
-          Mistakes by skill
+          Mistakes by {noun}
         </h3>
         <p className="mt-1 text-[13px] font-medium" style={{ color: "var(--mer-text-2)" }}>
-          Only skills you actually missed questions on, ordered from most to least.
+          Only {noun}s you actually missed questions on, ordered from most to least.
         </p>
-        {report.skills.length === 0 ? <EmptyState report={report} /> : <div className="mt-5"><SkillMistakeChart skills={report.skills} /></div>}
+        {report.skills.length === 0 ? (
+          <EmptyState report={report} noun={noun} />
+        ) : (
+          <div className="mt-5">
+            <SkillMistakeChart skills={report.skills} />
+          </div>
+        )}
       </div>
+
+      {report.covered && report.covered.length > 0 && <CoveredTopics covered={report.covered} noun={noun} />}
 
       {report.unclassified_wrong > 0 && (
         <p className="mt-6 flex items-start gap-2 text-[12px] font-semibold" style={{ color: "var(--mer-text-muted)" }}>
           <Info className="mt-px h-3.5 w-3.5 shrink-0" />
           <span>
-            {report.unclassified_wrong} of your {mistakes} mistakes came from questions that are not tagged to a skill
+            {report.unclassified_wrong} of your {mistakes} mistakes came from questions that are not tagged to a {noun}
             yet, so they are not in the chart above.
           </span>
         </p>

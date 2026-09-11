@@ -19,7 +19,7 @@ import io
 
 from django.db import transaction
 
-from .models import Question
+from .models import MockExam, Question
 from .serializers import AdminQuestionSerializer
 
 # Header row is line 1, so the first data row is line 2.
@@ -49,18 +49,46 @@ def _bank_subject(platform_subject: str) -> str:
     return "MATH" if str(platform_subject or "").strip().upper() == "MATH" else "ENGLISH"
 
 
-def _skill_index(platform_subject: str) -> dict[str, int]:
-    """{normalized skill name/code -> BankSkill id} for the module's subject.
+def _midterm_level(module) -> str:
+    """The level of the midterm this module belongs to, or "" when it is not a midterm's.
+
+    A midterm owns its modules two ways: the builder's MockExam(kind=MIDTERM) → PracticeTest
+    → Module, and the new model's Midterm / MidtermVersion, which hold theirs one-to-one.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    practice_test = getattr(module, "practice_test", None)
+    mock = getattr(practice_test, "mock_exam", None) if practice_test is not None else None
+    if mock is not None and mock.kind == MockExam.KIND_MIDTERM:
+        return (mock.midterm_level or "").strip().lower()
+    for attr in ("midterm", "midterm_module2"):
+        try:
+            return (getattr(module, attr).level or "").strip().lower()
+        except ObjectDoesNotExist:
+            pass
+    for attr in ("midterm_version", "midterm_version_module2"):
+        try:
+            return (getattr(module, attr).midterm.level or "").strip().lower()
+        except ObjectDoesNotExist:
+            pass
+    return ""
+
+
+def _skill_index(platform_subject: str, level: str = "") -> dict[str, int]:
+    """{normalized skill name/code -> BankSkill id} for the module's subject and level.
 
     Resolution is subject-scoped, so a MATH module only ever matches MATH skills — a
     row that names an English skill in a Math module simply fails to resolve (reported
-    as a row error) instead of silently attaching a wrong-subject skill. Skill names are
-    unique within a subject, so a case/space-insensitive name match is unambiguous; the
-    stable ``code`` (e.g. "linear-functions") is also accepted."""
-    from questionbank.models import BankSkill
+    as a row error) instead of silently attaching a wrong-subject skill. It is level-scoped
+    the same way: a junior math midterm resolves against the junior topic list and nothing
+    else, every other module against the SAT taxonomy (``BankDomain.objects.for_level``).
+    Names are unique within the one list a module sees, so a case/space-insensitive name
+    match is unambiguous; the stable ``code`` (e.g. "linear-functions") is also accepted."""
+    from questionbank.models import BankDomain, BankSkill
 
+    domains = BankDomain.objects.for_level(_bank_subject(platform_subject), level)
     idx: dict[str, int] = {}
-    for s in BankSkill.objects.filter(domain__subject=_bank_subject(platform_subject)):
+    for s in BankSkill.objects.filter(domain__in=domains):
         idx[_norm_key(s.name)] = s.id
         if s.code:
             idx[_norm_key(s.code)] = s.id
@@ -179,7 +207,7 @@ def import_questions_csv(
     if not payloads:
         return [], {"detail": "The CSV has no question rows."}
 
-    skill_lookup = _skill_index(subject)
+    skill_lookup = _skill_index(subject, _midterm_level(module))
 
     validated = []
     errors = []

@@ -39,6 +39,7 @@ from .models import (
     ImportBatch,
     ImportCandidate,
     Subject,
+    TaxonomyLevel,
 )
 from .triage import TriageError
 
@@ -241,7 +242,8 @@ class BankDomainListView(generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        qs = BankDomain.objects.all()
+        # The bank is SAT-only; a level's curriculum topics are a midterm tagging list.
+        qs = BankDomain.objects.sat()
         if self.request.query_params.get("subject"):
             qs = qs.filter(subject=self.request.query_params["subject"])
         return qs.order_by("subject", "display_order", "name")
@@ -259,7 +261,7 @@ class BankSkillListView(generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        qs = BankSkill.objects.select_related("domain")
+        qs = BankSkill.objects.select_related("domain").filter(domain__level=TaxonomyLevel.SAT)
         p = self.request.query_params
         if (domain_id := _int_or_none(p.get("domain"))) is not None:
             qs = qs.filter(domain_id=domain_id)
@@ -284,18 +286,26 @@ def _bank_subject(raw):
     return _SUBJECT_ALIASES.get(str(raw or "").strip().upper())
 
 
-@extend_schema(tags=["questionbank"], parameters=[OpenApiParameter("subject", str)])
+@extend_schema(
+    tags=["questionbank"],
+    parameters=[OpenApiParameter("subject", str), OpenApiParameter("level", str)],
+)
 class BankTaxonomyView(APIView):
     """GET /api/questionbank/taxonomy/ — domains with their skills nested.
 
     ``domains/`` + ``skills/`` would make a grouped picker do two round-trips and join
     them client-side; this returns the tree the ``<optgroup>`` already needs.
+
+    ``level`` is the midterm's level. With a subject, a level that has its own topic list
+    (junior math) gets that list and nothing else; any other level gets the SAT taxonomy.
+    Without a level — every caller before this one — the answer is the SAT taxonomy, as
+    it always was.
     """
 
     permission_classes = QB_PERMISSIONS
 
     def get(self, request):
-        domains = BankDomain.objects.all()
+        domains = BankDomain.objects.sat()
         raw_subject = request.query_params.get("subject")
         if raw_subject:
             subject = _bank_subject(raw_subject)
@@ -304,7 +314,7 @@ class BankTaxonomyView(APIView):
             # is worse than an empty picker.
             if subject is None:
                 return Response({"results": []})
-            domains = domains.filter(subject=subject)
+            domains = BankDomain.objects.for_level(subject, request.query_params.get("level"))
         domains = domains.order_by("subject", "display_order", "name").prefetch_related("skills")
         return Response({
             "results": [
@@ -312,6 +322,8 @@ class BankTaxonomyView(APIView):
                     "domain_id": d.id,
                     "domain": d.name,
                     "subject": d.subject,
+                    # Blank for SAT domains; the picker calls a level's own list "topics".
+                    "level": d.level,
                     "skills": [{"id": s.id, "name": s.name} for s in d.skills.all()],
                 }
                 for d in domains
