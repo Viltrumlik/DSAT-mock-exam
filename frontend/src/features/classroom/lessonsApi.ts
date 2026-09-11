@@ -113,7 +113,8 @@ export type LessonFocus = "today" | "next" | "last" | "undated";
 
 export interface LessonPlan {
   bound: boolean;
-  /** The one lesson the panel opens on — resolved server-side, no picker. */
+  /** Today's lesson (else the nearest), resolved server-side. The list marks it; the
+   *  teacher still picks which lesson to open. */
   focus_lesson_id?: number | null;
   focus?: LessonFocus;
   /** Why there is no plan, so the UI can tell the teacher what to ask an admin for. */
