@@ -9,6 +9,9 @@ import {
   Users,
 } from "lucide-react";
 
+import { useMe } from "@/hooks/useMe";
+import { isAdminOpsPath, isScopedOpsAdmin } from "@/features/ops/adminScope";
+
 // ─── Quick links ──────────────────────────────────────────────────────────────
 
 const QUICK_LINKS = [
@@ -47,6 +50,10 @@ const QUICK_LINKS = [
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OpsDashboardPage() {
+  const { me } = useMe();
+  // An admin is not shown Midterms or Journals, so neither is a tile that opens them.
+  const links = isScopedOpsAdmin(me) ? QUICK_LINKS.filter((link) => isAdminOpsPath(link.href)) : QUICK_LINKS;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -61,7 +68,7 @@ export default function OpsDashboardPage() {
           Quick access
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {QUICK_LINKS.map((link) => (
+          {links.map((link) => (
             <Link
               key={link.href}
               href={link.href}

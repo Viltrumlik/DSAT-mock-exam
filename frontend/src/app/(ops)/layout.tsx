@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { useMe } from "@/hooks/useMe";
+import { ADMIN_OPS_SECTIONS, isAdminOpsPath, isScopedOpsAdmin } from "@/features/ops/adminScope";
 import {
+  Loader2,
   LayoutDashboard,
   Users,
   School,
@@ -25,7 +28,8 @@ import {
  * Operational console navigation.
  * Serves admin.mastersat.uz.
  *
- * Admin operations nav is shown to all staff. The teacher workspace lives on its own
+ * Admin operations nav is shown to all staff, except that an `admin` sees only the school's
+ * seven sections (features/ops/adminScope). The teacher workspace lives on its own
  * subdomain (teacher.mastersat.uz) and is reached from there, not from here — this console
  * is governance only.
  */
@@ -169,13 +173,26 @@ function NavItem({
 
 export default function OpsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { me } = useMe();
 
   const role = String(me?.role ?? "").trim().toLowerCase();
   const isSuperAdmin = role === "super_admin" || Boolean(me?.is_superuser);
-  const navItems = OPS_NAV.filter(
-    (item) => !("superAdminOnly" in item && item.superAdminOnly) || isSuperAdmin,
-  );
+  // An admin sees the school's seven sections and nothing else — see features/ops/adminScope.
+  const scopedAdmin = isScopedOpsAdmin(me);
+  const navItems = OPS_NAV.filter((item) => {
+    if ("superAdminOnly" in item && item.superAdminOnly && !isSuperAdmin) return false;
+    return !scopedAdmin || ADMIN_OPS_SECTIONS.includes(item.href);
+  });
+
+  // Hiding the link alone would leave the page one typed address away, and every ops page
+  // renders inside this layout — so this is the one place that can close them all. The
+  // page is never mounted, so none of its requests go out either. AuthGuard renders nothing
+  // until `me` has loaded, so there is no first paint before the role is known.
+  const blocked = scopedAdmin && !isAdminOpsPath(pathname);
+  useEffect(() => {
+    if (blocked) router.replace("/ops");
+  }, [blocked, router]);
 
   return (
     <AuthGuard adminOnly>
@@ -202,7 +219,15 @@ export default function OpsLayout({ children }: { children: React.ReactNode }) {
             </aside>
 
             {/* Main content */}
-            <main className="min-w-0">{children}</main>
+            <main className="min-w-0">
+              {blocked ? (
+                <div className="flex justify-center py-16">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary/60" aria-label="Redirecting" />
+                </div>
+              ) : (
+                children
+              )}
+            </main>
           </div>
         </div>
       </div>
