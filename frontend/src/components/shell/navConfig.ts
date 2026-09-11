@@ -16,7 +16,6 @@ import {
   CirclePlay,
   FolderOpen,
   BookA,
-  CircleHelp,
   ShieldCheck,
   Coins,
   LifeBuoy,
@@ -54,7 +53,7 @@ export type NavSection = { id: string; section: string; items: NavItem[] };
 
 /**
  * Student information architecture.
- * Dashboard, Midterm, Question Bank and Profile are top-level links; "Learn"
+ * Dashboard, Midterm and Profile are top-level links; "Learn"
  * and "Simulation" are collapsible categories that expand to reveal their
  * routes on click. Notifications live in the top-bar bell, not the sidebar.
  */
@@ -97,7 +96,9 @@ export const studentNav: NavSection[] = [
       // rather than a destination to remember.
       { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, hiddenInSidebar: true },
       { href: "/rewards", label: "Points", icon: Coins, hiddenInSidebar: true },
-      { href: "/question-bank", label: "Question Bank", icon: CircleHelp },
+      // No Question Bank: the school took it out of the student area (students never used
+      // it). The route stays for staff — see app/(main)/question-bank/page.tsx — and the
+      // bank itself is authored in the builder, which has its own nav.
       // Appended rather than slotted next to Dashboard where it arguably belongs. The
       // sidebar's shape has been restored by the school once already, so this adds ONE leaf
       // and moves nothing: no group is touched, no label renamed, no href re-routed.
