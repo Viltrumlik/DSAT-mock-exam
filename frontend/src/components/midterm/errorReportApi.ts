@@ -43,6 +43,14 @@ export interface ErrorReport {
   unclassified_wrong: number;
   /** Already filtered to wrong > 0 and already sorted decreasing — render in the order given. */
   skills: ErrorReportSkill[];
+  /**
+   * Every skill the paper tested, fully-correct ones included, in the taxonomy's order (the
+   * curriculum's, for a junior math midterm). Optional: a server older than the field
+   * omits it, and the section simply does not render.
+   */
+  covered?: ErrorReportSkill[];
+  /** "topic" when the paper's level has its own topic list (junior math), else "skill". */
+  topic_noun?: "topic" | "skill";
 }
 
 export const errorReportApi = {

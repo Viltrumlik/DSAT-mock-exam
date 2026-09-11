@@ -11,6 +11,7 @@ Mounted at /api/midterms/attempts/<pk>/error-report/.
 
 from __future__ import annotations
 
+import math
 import re
 
 from django.contrib.auth import get_user_model
@@ -27,6 +28,7 @@ from access.constants import (
     ROLE_TEST_AUDITOR,
 )
 from access.services import normalized_role
+from questionbank.models import BankDomain, BankSkill
 
 from .access import midterm_results_state
 from .models import MidtermAttempt, MidtermOutcome
@@ -64,6 +66,22 @@ def report_date(attempt) -> str:
     return f"{dt.day} {dt.strftime('%B %Y')}"
 
 
+_BANK_SUBJECT = {"MATH": "MATH", "READING_WRITING": "ENGLISH"}
+
+
+def topic_noun(midterm) -> str:
+    """"topic" when this midterm's level has its own topic list, "skill" otherwise.
+
+    Keyed on the list existing — the same test the builder's picker uses to decide which
+    list to offer — so the author and the student see the same word for the same tag.
+    """
+    level = (midterm.level or "").strip().lower()
+    subject = _BANK_SUBJECT.get(str(midterm.subject or "").upper())
+    if not level or subject is None:
+        return "skill"
+    return "topic" if BankDomain.objects.filter(subject=subject, level=level).exists() else "skill"
+
+
 def build_error_report(attempt) -> dict:
     """The full error-report payload for one COMPLETED attempt."""
     midterm = attempt.midterm
@@ -98,6 +116,20 @@ def build_error_report(attempt) -> dict:
     # Only skills the student actually lost marks on — a fully-correct skill is not an error.
     skills = [b for b in buckets.values() if b["wrong"] > 0]
     skills.sort(key=lambda b: (-b["wrong"], b["skill"]))
+
+    # Every skill the paper tested, fully-correct ones included, in the taxonomy's own order
+    # — for a junior math midterm that is the order the curriculum teaches the topics in.
+    # The chart stays errors-only; this is what lets a student see every topic they sat.
+    order = {
+        s.id: (s.domain.display_order, s.display_order)
+        for s in BankSkill.objects.filter(
+            id__in=[b["skill_id"] for b in buckets.values() if b["skill_id"]]
+        ).select_related("domain")
+    }
+    covered = sorted(
+        buckets.values(),
+        key=lambda b: (order.get(b["skill_id"], (math.inf, math.inf)), b["skill"] or ""),
+    )
 
     correct_count = sum(1 for r in rows if r.is_correct)
 
@@ -137,6 +169,10 @@ def build_error_report(attempt) -> dict:
         "unclassified_total": unclassified_total,
         "unclassified_wrong": unclassified_wrong,
         "skills": skills,
+        "covered": covered,
+        # What the school calls a tag on this paper: "topic" for a level taught from its own
+        # topic list (junior math), "skill" for the SAT taxonomy.
+        "topic_noun": topic_noun(midterm),
     }
 
 

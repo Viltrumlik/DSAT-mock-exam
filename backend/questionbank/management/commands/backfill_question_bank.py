@@ -36,7 +36,7 @@ def _match_taxonomy(subject, category):
     parts = [p.strip() for p in category.replace("›", "›").split("›")]
     domain_name = parts[0] if parts else ""
     skill_name = parts[1] if len(parts) > 1 else ""
-    domain = BankDomain.objects.filter(subject=subject, name__iexact=domain_name).first()
+    domain = BankDomain.objects.sat().filter(subject=subject, name__iexact=domain_name).first()
     skill = None
     if domain and skill_name:
         skill = BankSkill.objects.filter(domain=domain, name__iexact=skill_name).first()

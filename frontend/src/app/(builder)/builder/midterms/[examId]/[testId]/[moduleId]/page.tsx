@@ -21,6 +21,8 @@ type AdminMockExam = {
   kind: string;
   midterm_scoring_scale?: "SCALE_100" | "SCALE_800";
   midterm_module_question_limit?: number | null;
+  /** foundation | junior | middle | senior | "" — junior math is tagged from its own topics. */
+  midterm_level?: string;
   tests: AdminTestSection[];
 };
 
@@ -66,6 +68,7 @@ function MidtermModuleEditor({
         examKind={exam?.kind ?? "MIDTERM"}
         scoringScale={exam?.midterm_scoring_scale ?? undefined}
         midtermModuleQuestionLimit={exam?.midterm_module_question_limit ?? undefined}
+        midtermLevel={exam?.midterm_level ?? undefined}
       />
     </div>
   );

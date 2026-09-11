@@ -52,6 +52,32 @@ afterEach(async () => {
   document.body.innerHTML = "";
 });
 
+describe("MidtermErrorReport — topics", () => {
+  it("speaks of topics on a junior math paper, and lists every topic it tested", async () => {
+    await render({
+      ...BASE,
+      topic_noun: "topic",
+      skills: [{ skill_id: 40, skill: "Percent", domain: "Junior Math", total: 4, wrong: 1 }],
+      covered: [
+        { skill_id: 39, skill: "Proportion", domain: "Junior Math", total: 3, wrong: 0 },
+        { skill_id: 40, skill: "Percent", domain: "Junior Math", total: 4, wrong: 1 },
+      ],
+    });
+    expect(host.textContent).toContain("Mistakes by topic");
+    expect(host.textContent).toContain("Weak topics");
+    expect(host.textContent).toContain("Topics in this paper");
+    // A fully-correct topic is listed too — the chart alone would never show Proportion.
+    const rows = [...host.querySelectorAll("li[aria-label]")].map((li) => li.getAttribute("aria-label"));
+    expect(rows).toEqual(["Proportion: 3 of 3 correct", "Percent: 3 of 4 correct"]);
+  });
+
+  it("keeps speaking of skills, with no list, when the server sends neither field", async () => {
+    await render(BASE);
+    expect(host.textContent).toContain("Mistakes by skill");
+    expect(host.textContent).not.toContain("in this paper");
+  });
+});
+
 describe("MidtermErrorReport", () => {
   it("heads the report with the student, midterm and date", async () => {
     await render(BASE);

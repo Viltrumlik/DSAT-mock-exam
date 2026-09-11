@@ -8,6 +8,8 @@ export type SkillTaxonomyDomain = {
   domain_id: number;
   domain: string;
   subject: string;
+  /** Blank for the SAT taxonomy; a level code for that level's own topic list. */
+  level?: string;
   skills: { id: number; name: string }[];
 };
 
@@ -32,19 +34,23 @@ export function bankSubjectForQuestionType(questionType: string | null | undefin
 }
 
 export const skillTaxonomyKeys = {
-  bySubject: (subject: string) => ["questionbank", "taxonomy", subject] as const,
+  bySubject: (subject: string, level = "") => ["questionbank", "taxonomy", subject, level] as const,
 };
 
 /**
- * GET /api/questionbank/taxonomy/?subject=… — read-only, questions-console only.
+ * GET /api/questionbank/taxonomy/?subject=…&level=… — read-only, questions-console only.
  * The taxonomy only changes when someone reseeds it, so this is cached aggressively
  * and never retried: a failure just leaves the picker empty (unclassified stays legal).
+ *
+ * `level` is a midterm's level. A level with its own topic list (junior math) gets that
+ * list INSTEAD of the SAT taxonomy; any other level, or none, gets the SAT taxonomy.
  */
-export function useSkillTaxonomyQuery(subject: BankSubject | null) {
+export function useSkillTaxonomyQuery(subject: BankSubject | null, level?: string | null) {
+  const lvl = (level ?? "").trim().toLowerCase();
   return useQuery({
-    queryKey: skillTaxonomyKeys.bySubject(subject ?? "none"),
+    queryKey: skillTaxonomyKeys.bySubject(subject ?? "none", lvl),
     queryFn: async (): Promise<SkillTaxonomyDomain[]> => {
-      const r = await api.get("/questionbank/taxonomy/", { params: { subject } });
+      const r = await api.get("/questionbank/taxonomy/", { params: { subject, ...(lvl ? { level: lvl } : {}) } });
       const results = (r.data as { results?: SkillTaxonomyDomain[] } | null)?.results;
       return Array.isArray(results) ? results : [];
     },

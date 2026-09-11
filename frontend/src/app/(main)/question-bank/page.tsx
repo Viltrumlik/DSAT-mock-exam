@@ -1,10 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Database, Search, X, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
 import { MathText } from "@/components/MathText";
 import { useDebounce } from "@/hooks/useDebounce";
+import { useMe } from "@/hooks/useMe";
+import { isReviewerRole } from "@/features/reviewCenter/ui";
 import {
   usePracticeAnswer,
   usePracticeList,
@@ -17,7 +20,38 @@ const PAGE_SIZE = 30;
 const SUBJECTS = ["ENGLISH", "MATH"] as const;
 const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"] as const;
 
-export default function StudentQuestionBankPage() {
+/**
+ * The school took the Question Bank out of the student area — students never used it — so
+ * it has no sidebar entry any more. Staff keep the page by URL; a student arriving from an
+ * old bookmark gets a way back instead of a practice list. The practice list is a separate
+ * component so none of its queries run for a student.
+ */
+export default function QuestionBankPage() {
+  const { me } = useMe();
+  const role = (me as { role?: string } | undefined)?.role;
+
+  if (!isReviewerRole(role)) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center">
+        <Database className="mx-auto mb-4 h-10 w-10 text-muted-foreground/50" />
+        <h1 className="text-lg font-bold text-foreground">Question Bank</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This page is no longer part of the student area. Your practice lives in your classroom.
+        </p>
+        <Link
+          href="/"
+          className="mt-5 inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90"
+        >
+          Go to dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  return <QuestionBankPractice />;
+}
+
+function QuestionBankPractice() {
   const [subject, setSubject] = useState("");
   const [domain, setDomain] = useState<number | "">("");
   const [skill, setSkill] = useState<number | "">("");

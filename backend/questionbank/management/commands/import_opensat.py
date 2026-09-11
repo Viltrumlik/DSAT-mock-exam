@@ -109,7 +109,7 @@ class Command(BaseCommand):
         key = (subject, _clean(name).lower())
         if key not in cache:
             cache[key] = (
-                BankDomain.objects.filter(subject=subject, name__iexact=_clean(name)).first()
+                BankDomain.objects.sat().filter(subject=subject, name__iexact=_clean(name)).first()
             )
         return cache[key]
 

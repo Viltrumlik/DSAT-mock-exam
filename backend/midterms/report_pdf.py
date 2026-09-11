@@ -373,15 +373,21 @@ def _error_header(c, report, generated_at, heading="Midterm Error Report"):
           f"Generated {_datetime(generated_at)}", align="right")
 
 
+def _noun(report) -> str:
+    """"topic" for a paper tagged from its level's own topic list, else "skill". The
+    pastpaper sheet shares this renderer and never sends one, so it stays "skill"."""
+    return report.get("topic_noun") or "skill"
+
+
 def _error_summary(c, report, y0):
-    """Score / Correct / Mistakes / Weak skills, as a 4-up strip."""
+    """Score / Correct / Mistakes / Weak skills (or topics), as a 4-up strip."""
     reg, bold = _fonts()
     wrong = report["total_count"] - report["correct_count"]
     cells = [
         ("Score", f"{report['score']}", f"/ {_exam(report)['score_ceiling']}"),
         ("Correct", f"{report['correct_count']}", f"/ {report['total_count']}"),
         ("Mistakes", str(wrong), ""),
-        ("Weak skills", str(len(report["skills"])), ""),
+        (f"Weak {_noun(report)}s", str(len(report["skills"])), ""),
     ]
     inner = PAGE_W - 2 * MARGIN
     cw = (inner - 3 * 10) / 4
@@ -467,16 +473,17 @@ def render_student_error_report_pdf(report, *, generated_at=None, heading="Midte
     _error_summary(c, report, y)
 
     skills = report["skills"]
+    noun = _noun(report)
     y -= 30
-    _text(c, bold, 11, NAVY, MARGIN, y, "Mistakes by skill")
+    _text(c, bold, 11, NAVY, MARGIN, y, f"Mistakes by {noun}")
     y -= 12
     if skills:
         _text(c, reg, 8, BODY, MARGIN, y,
-              f"{len(skills)} skill(s) cost marks. Skills answered fully correctly are not shown.")
+              f"{len(skills)} {noun}(s) cost marks. {noun.capitalize()}s answered fully correctly are not shown.")
         y -= CHART_H + 18
         y = _error_chart(c, skills, y)
     else:
-        _text(c, reg, 8, BODY, MARGIN, y, "No skill lost marks on this paper.")
+        _text(c, reg, 8, BODY, MARGIN, y, f"No {noun} lost marks on this paper.")
         y -= 24
 
     # The same numbers as a table — the chart is a summary, this is the record, and it is
@@ -485,7 +492,7 @@ def render_student_error_report_pdf(report, *, generated_at=None, heading="Midte
     if skills:
         _text(c, bold, 9, NAVY, MARGIN, y, "Detail")
         y -= 16
-        cols = [("Skill", 220), ("Domain", 190), ("Questions", 50), ("Wrong", 45)]
+        cols = [(noun.capitalize(), 220), ("Domain", 190), ("Questions", 50), ("Wrong", 45)]
         c.setFillColor(HEAD_BG)
         c.rect(MARGIN, y - 6, PAGE_W - 2 * MARGIN, 18, fill=1, stroke=0)
         cx = MARGIN + 8
@@ -507,7 +514,7 @@ def render_student_error_report_pdf(report, *, generated_at=None, heading="Midte
     if report.get("unclassified_wrong"):
         y -= 8
         _text(c, reg, 7.5, GRAY, MARGIN, y,
-              f"{report['unclassified_wrong']} mistake(s) are on questions not yet tagged with a skill "
+              f"{report['unclassified_wrong']} mistake(s) are on questions not yet tagged with a {noun} "
               "and are not shown above.")
 
     _footer(c, 1, 1)

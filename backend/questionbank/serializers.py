@@ -24,6 +24,7 @@ from .models import (
     ImportBatch,
     ImportCandidate,
     QuestionStatus,
+    TaxonomyLevel,
 )
 from .services import create_bank_question, update_bank_question
 
@@ -264,11 +265,12 @@ class BankQuestionWriteSerializer(serializers.ModelSerializer):
     content_hash is always recomputed on save. Status is NOT set here —
     transitions go through the triage endpoints; create lands in TRIAGE."""
 
+    # SAT taxonomy only: a level's curriculum topics tag midterm questions, never the bank.
     domain = serializers.PrimaryKeyRelatedField(
-        queryset=BankDomain.objects.all(), required=False, allow_null=True
+        queryset=BankDomain.objects.sat(), required=False, allow_null=True
     )
     skill = serializers.PrimaryKeyRelatedField(
-        queryset=BankSkill.objects.all(), required=False, allow_null=True
+        queryset=BankSkill.objects.filter(domain__level=TaxonomyLevel.SAT), required=False, allow_null=True
     )
     correct_answer = FlexibleJSONField(required=False, allow_null=True)
     student_answer = FlexibleJSONField(required=False, allow_null=True)
@@ -341,8 +343,8 @@ class BankQuestionWriteSerializer(serializers.ModelSerializer):
 
 # ── Triage write inputs (Phase B) ─────────────────────────────────────────────
 class TriageClassifyInputSerializer(serializers.Serializer):
-    domain = serializers.PrimaryKeyRelatedField(queryset=BankDomain.objects.all())
-    skill = serializers.PrimaryKeyRelatedField(queryset=BankSkill.objects.all())
+    domain = serializers.PrimaryKeyRelatedField(queryset=BankDomain.objects.sat())
+    skill = serializers.PrimaryKeyRelatedField(queryset=BankSkill.objects.filter(domain__level=TaxonomyLevel.SAT))
     difficulty = serializers.ChoiceField(choices=Difficulty.choices)
 
 
@@ -354,8 +356,10 @@ class BulkTriageInputSerializer(serializers.Serializer):
     action = serializers.ChoiceField(choices=["approve", "reject", "classify"])
     ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=False)
     # classify-only
-    domain = serializers.PrimaryKeyRelatedField(queryset=BankDomain.objects.all(), required=False)
-    skill = serializers.PrimaryKeyRelatedField(queryset=BankSkill.objects.all(), required=False)
+    domain = serializers.PrimaryKeyRelatedField(queryset=BankDomain.objects.sat(), required=False)
+    skill = serializers.PrimaryKeyRelatedField(
+        queryset=BankSkill.objects.filter(domain__level=TaxonomyLevel.SAT), required=False
+    )
     difficulty = serializers.ChoiceField(choices=Difficulty.choices, required=False)
     # reject-only
     reason = serializers.CharField(required=False, allow_blank=True, default="")

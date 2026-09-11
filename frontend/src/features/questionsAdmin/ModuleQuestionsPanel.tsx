@@ -141,6 +141,7 @@ function QuestionEditor({
   sectionSubject,
   examKind,
   scoringScale,
+  midtermLevel,
   onSaved,
   onDeleted,
 }: {
@@ -154,6 +155,8 @@ function QuestionEditor({
   examKind?: string;
   /** SCALE_800 midterms use per-question weights (like SAT); SCALE_100 ignores them. */
   scoringScale?: "SCALE_100" | "SCALE_800";
+  /** MockExam.midterm_level — a level with its own topic list is tagged from that list. */
+  midtermLevel?: string;
   onSaved: (updated: AdminModuleQuestion) => void;
   onDeleted: () => void;
 }) {
@@ -280,11 +283,16 @@ function QuestionEditor({
   // ── Taxonomy picker ────────────────────────────────────────────────────────
   // The bank's skills are subject-scoped, so the list follows the question's own type
   // (READING and WRITING share one ENGLISH list). Blank stays a valid answer.
+  // A midterm also passes its level: junior math is taught from the learning center's own
+  // topic list, and the server answers with that list in place of the SAT skills.
   const bankSubject = bankSubjectForQuestionType(draft.question_type);
-  const taxonomy = useSkillTaxonomyQuery(bankSubject);
+  const taxonomy = useSkillTaxonomyQuery(bankSubject, isMidterm ? midtermLevel : null);
   const taxonomyDomains = taxonomy.data ?? [];
+  const isTopicList = taxonomyDomains.some((d) => !!d.level);
   // A skill saved before the question changed type is no longer in the fetched list;
-  // keep showing its stored label rather than silently rendering "Unclassified".
+  // keep showing its stored label rather than silently rendering "Unclassified". On a
+  // topic list that is an SAT skill tagged before the list existed — it stays until the
+  // author picks a topic, and says so.
   const skillIsOffList =
     draft.skill != null && !taxonomyDomains.some((d) => d.skills.some((s) => s.id === draft.skill));
 
@@ -468,9 +476,9 @@ function QuestionEditor({
           </>
         )}
 
-        {/* SAT skill — optional taxonomy tag; feeds the per-skill error report. */}
+        {/* SAT skill, or the level's own topic — optional tag; feeds the student's report. */}
         <div>
-          <label className={FIELD_LABEL}>SAT skill (optional)</label>
+          <label className={FIELD_LABEL}>{isTopicList ? "Topic (optional)" : "SAT skill (optional)"}</label>
           <select
             className={INPUT}
             value={draft.skill ?? ""}
@@ -481,6 +489,7 @@ function QuestionEditor({
               <option value={String(draft.skill)}>
                 {question.skill_name || `Skill #${draft.skill}`}
                 {question.domain_name ? ` (${question.domain_name})` : ""}
+                {isTopicList ? " — not a topic of this list, pick one below" : ""}
               </option>
             )}
             {taxonomyDomains.map((d) => (
@@ -500,6 +509,8 @@ function QuestionEditor({
               ? "Skill list unavailable — the question can still be saved unclassified."
               : taxonomyDomains.length === 0
               ? "No skills seeded for this subject yet."
+              : isTopicList
+              ? "The student sees this topic in their midterm report. Leave unclassified if unsure."
               : "Groups the question in the student's error report. Leave unclassified if unsure."}
           </p>
         </div>
@@ -1034,10 +1045,12 @@ export default function ModuleQuestionsPanel(props: {
   scoringScale?: "SCALE_100" | "SCALE_800";
   /** MockExam.midterm_module_question_limit — per-module cap for midterms (default 30). */
   midtermModuleQuestionLimit?: number | null;
+  /** MockExam.midterm_level — picks the level's own topic list when it has one. */
+  midtermLevel?: string;
   /** Backend adapter. Default = exams practice-test API; full mocks pass a mocks adapter. */
   api?: ModuleQuestionsApi;
 }) {
-  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit } = props;
+  const { testId, moduleId, packId, packTitle, sectionSubject, moduleOrder, backHref, backLabel, examKind, scoringScale, midtermModuleQuestionLimit, midtermLevel } = props;
   const api = props.api ?? examsModuleQuestionsApi;
 
   const {
@@ -1559,6 +1572,7 @@ export default function ModuleQuestionsPanel(props: {
                 sectionSubject={sectionSubject}
                 examKind={examKind}
                 scoringScale={scoringScale}
+                midtermLevel={midtermLevel}
                 onSaved={(updated) => {
                   setSelectedId(updated.id);
                 }}

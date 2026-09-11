@@ -75,11 +75,50 @@ class TimestampedModel(models.Model):
 # ──────────────────────────────────────────────────────────────────────────────
 # Taxonomy
 # ──────────────────────────────────────────────────────────────────────────────
+class TaxonomyLevel(models.TextChoices):
+    """Blank is the SAT taxonomy. The codes match the classroom / midterm level codes."""
+    SAT = "", "SAT (every level)"
+    FOUNDATION = "foundation", "Foundation"
+    JUNIOR = "junior", "Junior"
+    MIDDLE = "middle", "Middle"
+    SENIOR = "senior", "Senior"
+
+
+class BankDomainQuerySet(models.QuerySet):
+    def sat(self):
+        """The SAT taxonomy — every domain that is not one level's own topic list."""
+        return self.filter(level=TaxonomyLevel.SAT)
+
+    def for_level(self, subject: str, level: str | None):
+        """What a question of this (subject, level) is tagged from: the level's own topic
+        list when the learning center has written one, otherwise the SAT taxonomy.
+
+        Never both. A junior math midterm is taught from the junior curriculum, so offering
+        SAT skills beside its topics is exactly the list the school asked to have removed.
+        """
+        level = str(level or "").strip().lower()
+        if level:
+            own = self.filter(subject=subject, level=level)
+            if own.exists():
+                return own
+        return self.filter(subject=subject, level=TaxonomyLevel.SAT)
+
+
 class BankDomain(models.Model):
     subject = models.CharField(max_length=16, choices=Subject.choices, db_index=True)
     name = models.CharField(max_length=255)
     code = models.SlugField(max_length=64, help_text="Stable machine code, e.g. 'algebra'.")
     display_order = models.PositiveIntegerField(default=0)
+    #: Blank = the SAT taxonomy, which the question bank, assessments and every SAT report
+    #: are built on. A level code makes the domain that level's OWN topic list (the junior
+    #: math curriculum): it is offered only to midterm questions of that subject and level,
+    #: and every bank-side consumer filters it out with ``.sat()``, so a curriculum topic
+    #: can never be attached to a bank question or picked up by a name-matching import.
+    level = models.CharField(
+        max_length=16, choices=TaxonomyLevel.choices, blank=True, default=TaxonomyLevel.SAT, db_index=True
+    )
+
+    objects = BankDomainQuerySet.as_manager()
 
     class Meta:
         db_table = "qb_domains"

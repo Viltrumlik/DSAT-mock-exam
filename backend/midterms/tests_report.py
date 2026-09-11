@@ -117,6 +117,40 @@ class ErrorReportTests(TestCase):
                          [("Nonlinear functions", 2), ("Linear equations", 1)])
         self.assertFalse(body["passed"])
 
+    def test_covered_lists_every_skill_the_paper_tested_fully_correct_ones_included(self):
+        # nonlinear: both right; linear: one wrong. The chart stays errors-only.
+        attempt = self._sit([True, True, False, True, True], score=700)
+        body = self.c.get(f"/api/midterms/attempts/{attempt.id}/error-report/").json()
+        self.assertEqual([s["skill"] for s in body["skills"]], ["Linear equations"])
+        self.assertEqual(
+            [(s["skill"], s["total"], s["wrong"]) for s in body["covered"]],
+            [("Linear equations", 2, 1), ("Nonlinear functions", 2, 0)],
+        )
+
+    def test_covered_follows_the_taxonomy_order_not_the_alphabet(self):
+        # The order the curriculum teaches the topics in is the one a student recognises.
+        BankSkill.objects.filter(pk=self.nonlinear.pk).update(display_order=0)
+        BankSkill.objects.filter(pk=self.linear.pk).update(display_order=1)
+        attempt = self._sit([True, True, True, True, True], score=800)
+        body = self.c.get(f"/api/midterms/attempts/{attempt.id}/error-report/").json()
+        self.assertEqual([s["skill"] for s in body["covered"]], ["Nonlinear functions", "Linear equations"])
+
+    def test_a_sat_tagged_paper_calls_its_tags_skills(self):
+        attempt = self._sit([True, True, True, True, True], score=800)
+        body = self.c.get(f"/api/midterms/attempts/{attempt.id}/error-report/").json()
+        self.assertEqual(body["topic_noun"], "skill")
+
+    def test_a_junior_math_paper_calls_its_tags_topics(self):
+        # update_or_create: a migrated test database already holds the junior list.
+        BankDomain.objects.update_or_create(
+            subject="MATH", code="junior-math",
+            defaults={"name": "Junior Math", "level": "junior", "display_order": 100},
+        )
+        Midterm.objects.filter(pk=self.mt.pk).update(level="junior")
+        attempt = self._sit([True, True, True, True, True], score=800)
+        body = self.c.get(f"/api/midterms/attempts/{attempt.id}/error-report/").json()
+        self.assertEqual(body["topic_noun"], "topic")
+
     def test_report_is_frozen_against_live_question_edits(self):
         attempt = self._sit([True, False, True, True, True], score=560)
         # The builder re-tags and re-keys the question after the fact.

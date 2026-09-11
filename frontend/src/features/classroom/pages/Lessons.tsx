@@ -540,10 +540,10 @@ function LessonDetailView({
   canManage: boolean;
   /** Manager tier only — see ClassworkPanel. */
   canAward: boolean;
-  /** "Today's lesson" etc. when this was auto-selected; empty when browsed to. */
+  /** "Today's lesson" etc. when this is the plan's focus lesson; empty for any other. */
   focusLabel?: string;
-  /** Present only when there is a plan to go back to. */
-  onBack?: () => void;
+  /** Back to the list of sessions, which is where the tab always opens. */
+  onBack: () => void;
 }) {
   const { data, isLoading, isError, refetch } = useLessonDetail(classId, lessonId);
   const [tab, setTab] = useState<"homework" | "classwork">("homework");
@@ -556,15 +556,13 @@ function LessonDetailView({
 
   return (
     <div className="space-y-4">
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          All lessons
-        </button>
-      )}
+      <button
+        onClick={onBack}
+        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden />
+        All lessons
+      </button>
 
       <div className="flex flex-wrap items-center gap-2">
         {focusLabel && (
@@ -602,9 +600,10 @@ function LessonDetailView({
 export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
   const classId = classroom.id;
   const { data, isLoading, isError, refetch } = useLessonPlan(classId);
-  // "list" = the teacher explicitly opened the full plan; a number = a specific lesson;
-  // null = the default, which lands on the server-chosen focus lesson (today's).
-  const [view, setView] = useState<number | "list" | null>(null);
+  // The tab opens on the list of every session and the teacher picks one: null = the
+  // list, a number = that lesson. It used to land straight on the server's focus lesson
+  // instead, and for a class without usable lesson dates that was Lesson 1, every time.
+  const [openId, setOpenId] = useState<number | null>(null);
   const reschedule = useRescheduleLessons(classId);
 
   // Derive from capabilities, never by comparing role strings inline — capabilities.ts
@@ -629,18 +628,16 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
     );
   }
 
-  // Which lesson to show. By default (view === null) the server picks — today's lesson,
-  // or the nearest one — so the teacher lands straight on it with no picker. "list" is
-  // the opt-in escape to browse the whole plan.
-  const targetId = view === "list" ? null : view ?? data.focus_lesson_id ?? null;
-  const open = targetId != null ? data.lessons.find((l) => l.lesson_id === targetId) : undefined;
+  // The server still names a focus lesson — today's, else the nearest. It no longer opens
+  // it; it marks it, so today's row is easy to find in a long plan. "undated" means the
+  // class has no usable lesson dates, and then no row is "today", so nothing is marked.
+  const focusLabel = { today: "Today's lesson", next: "Next lesson", last: "Most recent lesson", undated: "" }[
+    data.focus ?? "undated"
+  ];
+  const isFocus = (lessonId: number) => !!focusLabel && lessonId === data.focus_lesson_id;
+
+  const open = openId != null ? data.lessons.find((l) => l.lesson_id === openId) : undefined;
   if (open) {
-    const focusLabel =
-      view == null
-        ? { today: "Today's lesson", next: "Next lesson", last: "Most recent lesson", undated: "" }[
-            data.focus ?? "undated"
-          ]
-        : "";
     return (
       <LessonDetailView
         classId={classId}
@@ -648,25 +645,14 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
         row={open}
         canManage={canManage}
         canAward={caps.canManageClass}
-        focusLabel={focusLabel}
-        // More than one session? Offer the full plan. A single-session plan has nothing
-        // to go back to, so the button is hidden.
-        onBack={data.lessons.length > 1 ? () => setView("list") : undefined}
+        focusLabel={isFocus(open.lesson_id) ? focusLabel : ""}
+        onBack={() => setOpenId(null)}
       />
     );
   }
 
   return (
     <div className="space-y-4">
-      {data.focus_lesson_id != null && (
-        <button
-          onClick={() => setView(null)}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden />
-          Back to today
-        </button>
-      )}
       <Card>
         <CardHeader
           title={data.journal?.title || "Lesson plan"}
@@ -707,10 +693,17 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
             {data.lessons.map((l) => (
               <li key={l.lesson_id}>
                 <button
-                  onClick={() => setView(l.lesson_id)}
-                  className="flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-surface-2"
+                  onClick={() => setOpenId(l.lesson_id)}
+                  aria-current={isFocus(l.lesson_id) ? "date" : undefined}
+                  className={`flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-surface-2 ${
+                    isFocus(l.lesson_id) ? "bg-primary/5" : ""
+                  }`}
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-bold text-muted-foreground">
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                      isFocus(l.lesson_id) ? "bg-primary text-primary-foreground" : "bg-surface-2 text-muted-foreground"
+                    }`}
+                  >
                     {l.lesson_number}
                   </span>
                   {l.lesson_type === "MIDTERM" ? (
@@ -729,6 +722,7 @@ export function Lessons({ classroom }: { classroom: ClassroomWithRole }) {
                       {formatDate(l.scheduled_for)}
                     </span>
                   </span>
+                  {isFocus(l.lesson_id) && <Pill tone="primary">{focusLabel}</Pill>}
                   {l.lesson_type === "MIDTERM"
                     ? l.midterm?.granted && <Pill tone="success">Access given</Pill>
                     : l.homework_released && <Pill tone="success">Homework given</Pill>}
