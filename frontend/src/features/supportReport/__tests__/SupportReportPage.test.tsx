@@ -168,7 +168,9 @@ describe("SupportReportPage", () => {
     expect(out).toContain("32 support sessions have never been settled");
     expect(out).toContain("paid nobody");
     // Not just a count: the age and the owner are the parts that make it a backlog.
-    // Locale-formatted by the browser; assert on the parts, not on one locale's order.
+    // Locale-formatted by the browser; assert on the parts, not on one locale's order. Which
+    // day it is at all comes from `vitest.config.ts` pinning TZ — rendered west of UTC-7 this
+    // +05:00 datetime is the 12th.
     expect(out).toMatch(/Aug(ust)?\s+13,?\s+2026|13\s+Aug(ust)?\s+2026/);
     // 13 August to FROZEN_NOW. Deterministic only because the clock is frozen.
     expect(out).toContain("27 days ago");
