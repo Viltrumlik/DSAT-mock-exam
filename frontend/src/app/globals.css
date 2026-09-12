@@ -1600,3 +1600,19 @@ mark.ts-annot {
 @media (prefers-reduced-motion: reduce) {
   .rmap *, .rmap *::before, .rmap *::after { animation: none !important; transition: none !important; }
 }
+
+/* A bar that draws itself from its left edge. Generic on purpose: a meter, a split bar and
+   a progress track all want the same motion, and naming it per-page is how three copies of
+   one keyframe end up in a stylesheet. The delay is set per instance through --ds-delay. */
+@keyframes ds-growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.ds-growx {
+  transform-origin: left;
+  animation: ds-growX .62s cubic-bezier(.22, 1, .36, 1) both;
+  animation-delay: var(--ds-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Holds the finished bar, never an empty track. */
+  .ds-growx { animation: none !important; transform: none !important; }
+}
