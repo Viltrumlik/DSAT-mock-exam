@@ -39,8 +39,16 @@ _TYPE_ALIASES = {
 _TRUE_TOKENS = {"1", "true", "t", "yes", "y", "grid", "grid-in", "gridin", "spr"}
 
 
+#: The apostrophes that all mean the same letter in a topic name. The foundation math
+#: topics are written in Uzbek ("O'nli kasrlar"), and a teacher's keyboard, Excel's
+#: autocorrect and the school's own document each produce a different one of these — so a
+#: name is matched with every one of them folded away, not on the byte the author typed.
+_APOSTROPHES = "'\u2018\u2019\u02bb\u02bc\u00b4\u0060"
+
+
 def _norm_key(key: str) -> str:
-    return (key or "").strip().lower().replace(" ", "_").replace("/", "_")
+    key = (key or "").strip().lower().replace(" ", "_").replace("/", "_")
+    return key.translate({ord(c): None for c in _APOSTROPHES})
 
 
 def _bank_subject(platform_subject: str) -> str:

@@ -118,7 +118,7 @@ def build_error_report(attempt) -> dict:
     skills.sort(key=lambda b: (-b["wrong"], b["skill"]))
 
     # Every skill the paper tested, fully-correct ones included, in the taxonomy's own order
-    # — for a junior math midterm that is the order the curriculum teaches the topics in.
+    # — on a midterm taught from its own list that is the order the curriculum teaches in.
     # The chart stays errors-only; this is what lets a student see every topic they sat.
     order = {
         s.id: (s.domain.display_order, s.display_order)
@@ -171,7 +171,7 @@ def build_error_report(attempt) -> dict:
         "skills": skills,
         "covered": covered,
         # What the school calls a tag on this paper: "topic" for a level taught from its own
-        # topic list (junior math), "skill" for the SAT taxonomy.
+        # topic list (junior and foundation math), "skill" for the SAT taxonomy.
         "topic_noun": topic_noun(midterm),
     }
 

@@ -49,7 +49,7 @@ function EmptyState({ report, noun }: { report: ErrorReport; noun: string }) {
 /**
  * Every topic the paper tested, fully-correct ones included — the chart above only ever
  * shows the ones that cost marks, so without this a student never sees a topic they got
- * all right. Rendered in the order given: the curriculum's, for a junior math midterm.
+ * all right. Rendered in the order given: the curriculum's, on a paper taught from one.
  */
 function CoveredTopics({ covered, noun }: { covered: ErrorReportSkill[]; noun: string }) {
   return (
@@ -103,8 +103,9 @@ export default function MidtermErrorReport({ report }: { report: ErrorReport }) 
   const [busy, setBusy] = useState(false);
   const cardRef = useRef<HTMLElement | null>(null);
   const mistakes = Math.max(0, report.total_count - report.correct_count);
-  // A junior math paper is tagged from the learning center's own topic list, so it speaks of
-  // topics; an SAT-tagged paper keeps speaking of skills. The server decides which.
+  // A paper taught from the learning center's own curriculum (junior or foundation math) is
+  // tagged from its topic list, so it speaks of topics; an SAT-tagged paper keeps speaking of
+  // skills. The server decides which.
   const noun = report.topic_noun === "topic" ? "topic" : "skill";
 
   /** Print-to-PDF of this card alone; the print stylesheet hides everything around it. */
