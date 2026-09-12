@@ -1007,7 +1007,12 @@ mark.ts-annot {
   --dz-mute: #64748b;
   --dz-faint: #94a3b8;
   --dz-panel: #ffffff;
-  --dz-card: #f4f7fc;
+  /* Pointed at the house card. The dashboard keeps its own token names — it is a second
+     design system and renaming them here would touch every inline style in it — but there is
+     no reason for its cards to be a different colour from every other card in the product.
+     They were #f4f7fc, which is why the dashboard still looked washed out after the surface
+     pass: it was not reading --card at all. */
+  --dz-card: var(--card);
   --dz-border: #e7ebf3;
   --dz-amber: #f59e0b;
   --dz-amber-soft: rgba(245, 158, 11, 0.13);
@@ -1024,7 +1029,7 @@ mark.ts-annot {
   --dz-mute: #94a3b8;
   --dz-faint: #6b7a90;
   --dz-panel: #1e293b;
-  --dz-card: #172033;
+  --dz-card: var(--card);
   --dz-border: rgba(255, 255, 255, 0.09);
   --dz-amber: #fbbf24;
   --dz-amber-soft: rgba(251, 191, 36, 0.15);
