@@ -121,9 +121,9 @@ class StatsApiTests(TestCase):
         self.assertEqual(body["totals"]["pass_rate"], 50.0)
         self.assertEqual(
             body["definition"]["pass_rate"],
-            "passed (first sitting or retake) / all roster students",
+            "students who passed, out of every student who was due to sit the exam",
         )
-        self.assertEqual(body["definition"]["absent_counts_as"], "failed")
+        self.assertEqual(body["definition"]["absent_counts_as"], "not passed")
         self.assertEqual(body["definition"]["rollup"], "pooled")
         self.assertEqual({row["name"] for row in body["branches"]}, {"Chilonzor", "Unassigned"})
 

@@ -50,7 +50,7 @@ describe("formatRate", () => {
 
 describe("rateReason", () => {
   it("distinguishes an empty roster from a cohort in which nobody passed", () => {
-    expect(rateReason("pass", 0)).toContain("No students on the roster");
+    expect(rateReason("pass", 0)).toContain("due to sit an exam");
     expect(rateReason("share", 12)).toContain("Nobody passed");
   });
 });
@@ -133,14 +133,14 @@ describe("definitionLine", () => {
     };
     const line = definitionLine(definition);
     expect(line).toContain("passed (first sitting or retake) / all roster students");
-    expect(line).toContain("An absent student counts as failed");
-    expect(line).toContain("never an average of percentages");
+    expect(line).toContain("did not come counts as failed");
+    expect(line).toContain("never the average of their percentages");
   });
 
   it("still states a rule when the backend sent none", () => {
     const line = definitionLine(undefined);
-    expect(line).toContain("all roster students");
-    expect(line).toContain("counts as failed");
+    expect(line).toContain("every student who was due to sit the exam");
+    expect(line).toContain("counts as not passed");
   });
 });
 
@@ -234,11 +234,11 @@ describe("rosterNote / groupSubline", () => {
   it("names the roster count too when a row carries two different denominators", () => {
     // 112 of 226 students hold two active memberships, so roster > headcount is ordinary.
     expect(groupSubline({ classrooms: 12, distinct_students: 180, roster: 210 })).toBe(
-      "12 classes · 180 students · 210 roster places",
+      "12 classes · 180 students · 210 exams expected",
     );
     const note = rosterNote(210, 180);
     expect(note).toContain("180 students");
-    expect(note).toContain("210 roster places");
+    expect(note).toContain("210 exams were expected");
     expect(note).toContain("two of these classes");
   });
 });
@@ -295,8 +295,8 @@ describe("MONTH_BASIS_NOTE", () => {
     // The panel used to print a hardcoded "this paper was never timetabled…" clause AND
     // then this note, which opens with the same clause. The sentence appeared twice.
     for (const basis of ["first_sitting", "published", "created"] as const) {
-      expect(MONTH_BASIS_NOTE[basis]).toContain("never timetabled for this class");
+      expect(MONTH_BASIS_NOTE[basis]).toContain("never booked for this class");
     }
-    expect(MONTH_BASIS_NOTE.schedule).not.toContain("never timetabled");
+    expect(MONTH_BASIS_NOTE.schedule).not.toContain("never booked");
   });
 });

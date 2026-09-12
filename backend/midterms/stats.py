@@ -127,25 +127,31 @@ UNASSIGNED = "Unassigned"
 #: the rule rather than imply it: a "pass rate" that counted only the students who turned up
 #: is a different number under the same name, and no reader could tell which one they had.
 #: Same discipline as the ``weights`` block ``classes.progress`` returns.
+#: Written for the person reading the page, not for the database. Every sentence here is
+#: printed in the admin console verbatim, and the owner's word for the old set was that they
+#: were unreadable: "roster", "denominator" and "verdict" are the reporting dialect, and an
+#: administrator should not have to translate one to check how a class did. The RULE is
+#: unchanged — passed over everyone who was due to sit, an absent student counting as not
+#: passed — only the words are.
 DEFINITION = {
-    "pass_rate": "passed (first sitting or retake) / all roster students",
-    "absent_counts_as": "failed",
+    "pass_rate": "students who passed, out of every student who was due to sit the exam",
+    "absent_counts_as": "not passed",
     "rollup": "pooled",
     "denominator": (
-        "every non-removed student membership in the classroom, whether or not they sat the paper"
+        "every student in the class, whether or not they turned up for the exam"
     ),
-    "first_try_share": "of the students who passed, the share who passed at the first sitting",
+    "first_try_share": "of the students who passed, how many did it without a retake",
     "excluded": (
-        "pre-midterms (diagnostics, never graded) and retake papers "
-        "(folded into the midterm they are the second chance at)"
+        "practice exams, which are never graded, and retake papers, "
+        "which count towards the exam they are a second chance at"
     ),
     "month": (
-        "the month that midterm was sat in THAT classroom: its schedule, "
-        "else the earliest completed sitting"
+        "the month the class was booked to sit the exam, or, when it was never booked, "
+        "the month somebody first sat it"
     ),
     "hierarchy": (
-        "region > branch > department (the classroom's subject) > teacher > classroom; "
-        "every level is the pooled merge of the one below it"
+        "region > branch > department (the class's subject) > teacher > class; "
+        "every level adds up the level below it"
     ),
     "empty_denominator": "null, never 0",
     "default_month": (
@@ -1261,3 +1267,44 @@ def school_month_stats(month, *, branch_id=None, subject=None, teacher_id=None) 
         "tree_open_path": tree_open_path(tree),
         "orphan_retakes": orphans,
     }
+
+
+#: How many months a trend is allowed to reach back over. One school year, so a reader sees
+#: the shape of a year without the endpoint quietly turning into a full-history rebuild as
+#: the platform ages — every month costs one ``school_month_stats`` pass.
+TREND_MAX_MONTHS = 12
+
+
+def month_trend(months, *, branch_id=None, subject=None, teacher_id=None) -> list[dict]:
+    """Pass rate per month, oldest first — the shape of a year rather than one snapshot.
+
+    Deliberately thin: a caller drawing a line wants the rate and the two counts it was made
+    of, not four ranked tables per point. Months that were never sat are left OUT rather than
+    plotted as zero — a month with no roster has no rate (``pass_rate`` is None by the same
+    rule every other figure here follows), and a gap in a line is the honest drawing of it.
+
+    Only months the scope has actually reached: a month scheduled ahead has an all-absent
+    roster, and plotting it would put a 0% point at the right-hand end of every chart.
+    """
+    ordered = sorted({m for m in (months or []) if is_month_key(m) and not is_future_month(m)})
+    out = []
+    for month in ordered[-TREND_MAX_MONTHS:]:
+        stats = school_month_stats(month, branch_id=branch_id, subject=subject, teacher_id=teacher_id)
+        totals = stats["totals"]
+        if not totals["roster"]:
+            continue
+        out.append(
+            {
+                "month": month,
+                "pass_rate": totals["pass_rate"],
+                "attendance_rate": totals["attendance_rate"],
+                "passed": totals["passed"],
+                "failed": totals["failed"],
+                "absent": totals["absent"],
+                "pending": totals["pending"],
+                "roster": totals["roster"],
+                "classrooms": totals["classrooms"],
+                "midterms": totals["midterms"],
+            }
+        )
+    return out

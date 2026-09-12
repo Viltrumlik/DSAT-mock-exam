@@ -46,7 +46,13 @@ export function OpsPageHeader({
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         ) : null}
       </div>
-      {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
+      {/* Wraps rather than shrink-0. A page with three controls up here — a picker, a
+          download and a refresh — pushed the last one off the right edge of a phone, and a
+          button you cannot see is a button that does not exist. Wrapping costs a desktop
+          reader nothing: it only happens when the row would otherwise overflow. */}
+      {actions ? (
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+      ) : null}
     </div>
   );
 }

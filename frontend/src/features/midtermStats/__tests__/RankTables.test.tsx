@@ -1,6 +1,6 @@
 /**
  * What survives the move to a drill-down: the unranked table a scheduled month gets instead
- * of one, and the five tiles above the page.
+ * of one, and the cards above the page.
  *
  * The four flat ranked tables this file used to cover are gone — one hierarchy replaced them
  * — and their rules moved with them to `HierarchyPanel.test.tsx`. What stayed behind is the
@@ -12,7 +12,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ScheduledClassroomTable } from "../RankTables";
-import { HeadlineStats } from "../HeadlineStats";
+import { SummaryCards } from "../SummaryCards";
 import type { ClassroomRow, GroupTally, MonthlyStats } from "../types";
 
 const tally = (over: Partial<GroupTally> = {}): GroupTally => ({
@@ -99,7 +99,7 @@ describe("ScheduledClassroomTable", () => {
   });
 });
 
-describe("HeadlineStats", () => {
+describe("SummaryCards", () => {
   const stats = (over: Partial<MonthlyStats["totals"]> = {}): MonthlyStats => ({
     month: "2026-09",
     definition: {},
@@ -117,21 +117,20 @@ describe("HeadlineStats", () => {
   });
 
   it("leads with the rate, and shows the fraction it came from", () => {
-    const out = render(<HeadlineStats stats={stats()} />);
+    const out = render(<SummaryCards stats={stats()} />);
     expect(out).toContain("90%");
-    expect(out).toContain("9 of 10 roster places passed in September 2026");
-    expect(out).toContain("8 at the first sitting · 1 on a retake");
+    expect(out).toContain("9 of 10 passed in September 2026");
   });
 
-  it("splits the passers, never the roster", () => {
-    const out = render(<HeadlineStats stats={stats()} />);
-    expect(out).toContain("88.9% first sitting · 11.1% retake");
-    expect(out).toContain("8 of 9 passers needed no retake");
+  it("splits the passers between first time and retake", () => {
+    const out = render(<SummaryCards stats={stats()} />);
+    expect(out).toContain("8 passed first time");
+    expect(out).toContain("1 after a retake");
   });
 
-  it("says there is no split rather than printing 0% when nobody passed", () => {
+  it("says nobody passed rather than dressing a zero up as a result", () => {
     const out = render(
-      <HeadlineStats
+      <SummaryCards
         stats={stats({
           passed: 0,
           passed_first: 0,
@@ -144,32 +143,45 @@ describe("HeadlineStats", () => {
       />,
     );
     expect(out).toContain("Nobody passed this month");
-    expect(out).toContain("—");
   });
 
-  it("flags the students who are still awaiting a verdict", () => {
-    const out = render(<HeadlineStats stats={stats({ pending: 3 })} />);
-    expect(out).toContain("3 still awaiting a result");
+  it("flags the results that have not landed yet", () => {
+    const out = render(<SummaryCards stats={stats({ pending: 3 })} />);
+    expect(out).toContain("3 still waiting for a result");
   });
 
-  it("puts the HEADCOUNT under the word Students, not the roster-place total", () => {
+  it("puts the HEADCOUNT under the word Students, not the exams-expected total", () => {
     // `roster` is summed once per (classroom, paper) pair, so a class of 20 sitting two
-    // papers contributes 40. Under a tile labelled "Students" that is simply a wrong number,
+    // papers contributes 40. Under a card labelled "Students" that is simply a wrong number,
     // and it used to be the big one — with the real headcount as 12px detail beneath it.
     const out = render(
-      <HeadlineStats stats={stats({ roster: 117, distinct_students: 99, classrooms: 6, midterms: 7 })} />,
+      <SummaryCards stats={stats({ roster: 117, distinct_students: 99, classrooms: 6, midterms: 7 })} />,
     );
-    const tile = [...(container?.querySelectorAll("div.rounded-2xl") ?? [])].find((d) =>
+    const card = [...(container?.querySelectorAll("div.rounded-2xl") ?? [])].find((d) =>
       d.textContent?.startsWith("Students"),
     );
-    expect(tile?.textContent).toBe(
-      "Students996 classes · 7 papers117 roster places — every rate is over these.",
-    );
+    expect(card?.textContent).toContain("99");
+    expect(card?.textContent).toContain("6 classes · 7 exams");
     expect(out).not.toContain("Students117");
   });
 
-  it("drops the roster line entirely when it would say the same thing twice", () => {
-    const out = render(<HeadlineStats stats={stats({ roster: 10, distinct_students: 10 })} />);
-    expect(out).not.toContain("roster places — every rate is over these");
+  it("explains the bigger denominator in plain words, and only when it differs", () => {
+    const out = render(
+      <SummaryCards stats={stats({ roster: 117, distinct_students: 99, classrooms: 6, midterms: 7 })} />,
+    );
+    expect(out).toContain("117 and not 99, because 18 students sat more than one exam");
+    const same = render(<SummaryCards stats={stats({ roster: 10, distinct_students: 10 })} />);
+    expect(same).not.toContain("Rates are over");
+  });
+
+  it("never prints a rate for a month nobody has sat", () => {
+    const out = render(<SummaryCards stats={{ ...stats(), is_future: true }} />);
+    expect(out).toContain("Nobody has sat");
+    expect(out).not.toContain("90%");
+  });
+
+  it("names what happened to everyone who did not pass", () => {
+    const out = render(<SummaryCards stats={stats({ failed: 3, absent: 2, passed: 5, pass_rate: 50 })} />);
+    expect(out).toContain("3 failed the exam · 2 did not come");
   });
 });

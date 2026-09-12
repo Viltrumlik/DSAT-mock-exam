@@ -121,7 +121,7 @@ describe("ClassroomMonthPanel", () => {
     expect(out).toContain("Math Senior A");
     expect(out).toContain("Senior · Math · Nodir T · Chilonzor, Tashkent");
     expect(out).toContain("75%");
-    expect(out).toContain("3 of 4 roster places");
+    expect(out).toContain("3 of 4 students");
     expect(out).toContain("2 first sitting · 1 on a retake");
     expect(out).toContain("Midterm 12");
     expect(out).toContain("Reading & Writing");
@@ -134,11 +134,11 @@ describe("ClassroomMonthPanel", () => {
     classroomCall.mockResolvedValue(detail({ rows: [paper({ month_basis: "first_sitting" })] }));
     const out = await render();
     expect(out).toContain("From the first sitting");
-    expect(out).toContain("never timetabled for this class");
+    expect(out).toContain("never booked for this class");
     // The row used to print a hardcoded "this paper was never timetabled for this class, so
     // its month was inferred" and then append MONTH_BASIS_NOTE, which opens with the same
     // clause. The sentence appeared twice in a row and read as a rendering bug.
-    expect(out.split("never timetabled for this class")).toHaveLength(2);
+    expect(out.split("never booked for this class")).toHaveLength(2);
   });
 
   it("calls the attendance figure attendance, not SAT THE PAPER", async () => {
@@ -237,7 +237,7 @@ describe("ClassroomMonthPanel", () => {
     expect(out).toContain("October 2026 is scheduled — nobody has sat these papers yet");
     expect(out).toContain("Booked for October 2026");
     expect(out).toContain("Papers booked for this month");
-    expect(out).toContain("4 students on the roster · not sat yet");
+    expect(out).toContain("4 students due to sit · not sat yet");
     expect(out).toContain("Scheduled");
     // Neither the summary nor the paper row prints the 0% the formula returns.
     expect(out).not.toContain("0%");

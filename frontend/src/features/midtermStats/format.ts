@@ -49,7 +49,7 @@ export function rateReason(kind: "pass" | "share" | "attendance", roster: number
     return "Nobody passed this month, so there is no first-sitting/retake split to show.";
   }
   if (roster === 0) {
-    return "No students on the roster this month, so there is nothing to compute a rate over.";
+    return "No student here was due to sit an exam this month, so there is no rate to work out.";
   }
   return "No rate could be computed for this row.";
 }
@@ -75,17 +75,17 @@ export function rosterNote(roster: number, distinctStudents: number): string | n
   if (roster === distinctStudents) return null;
   return (
     `Two different counts, both correct: ${plural(distinctStudents, "student")} sat under ` +
-    `this row, filling ${plural(roster, "roster place")}. A student in two of these classes ` +
-    `is on two rosters, and a class that sat two papers is counted once per paper — every ` +
-    `rate here is over roster places, which is what pooling asks for.`
+    `this row, and ${roster} exams were expected of them. A student in two of these classes ` +
+    `counts in both, and a class that sat two exams counts once per exam — every rate here ` +
+    `is over the ${roster}.`
   );
 }
 
 /**
- * The sub-line under a ranked row's name: what the row is pooled over.
+ * The sub-line under a ranked row's name: what the row is added up over.
  *
- * Names the roster count too whenever it differs from the headcount, so the rate's
- * denominator is never a number that appears nowhere else on the row.
+ * Names the number the rate is actually over whenever it differs from the headcount, so the
+ * bottom of the fraction is never a figure that appears nowhere else on the row.
  */
 export function groupSubline(row: {
   classrooms: number;
@@ -96,7 +96,7 @@ export function groupSubline(row: {
     plural(row.classrooms, "class", "classes"),
     plural(row.distinct_students, "student"),
   ];
-  if (row.roster !== row.distinct_students) parts.push(plural(row.roster, "roster place"));
+  if (row.roster !== row.distinct_students) parts.push(`${plural(row.roster, "exam")} expected`);
   return parts.join(" · ");
 }
 
@@ -200,14 +200,17 @@ export const MONTH_BASIS_LABEL: Record<MonthBasis, string> = {
   created: "From the creation date",
 };
 
+//: All four open on the same clause on purpose — the row says WHICH basis, the note says why
+//: — and all four now say "booked" rather than "timetabled", which is the word the rest of
+//: the page uses for the same act.
 export const MONTH_BASIS_NOTE: Record<MonthBasis, string> = {
-  schedule: "This class has a scheduled sitting for this paper, and its date sets the month.",
+  schedule: "This class has a sitting booked for this exam, and its date sets the month.",
   first_sitting:
-    "This paper was never timetabled for this class, so the month is the earliest completed sitting on its roster.",
+    "This exam was never booked for this class, so the month is when somebody here first sat it.",
   published:
-    "This paper was never timetabled for this class and nobody has completed it, so the month is the date the paper was published.",
+    "This exam was never booked for this class and nobody has finished it, so the month is the date the exam was published.",
   created:
-    "This paper was never timetabled for this class, nobody has completed it and it was never published, so the month is the date the paper was created.",
+    "This exam was never booked for this class, nobody has finished it and it was never published, so the month is the date the exam was created.",
 };
 
 /** True when the month was inferred rather than timetabled — worth flagging on the row. */
@@ -291,13 +294,14 @@ export function definitionEntries(definition: StatsDefinition | undefined): Defi
  * rule if the backend ever stops sending a key.
  */
 export function definitionLine(definition: StatsDefinition | undefined): string {
-  const rate = definition?.pass_rate ?? "passed (first sitting or retake) / all roster students";
-  const absent = definition?.absent_counts_as ?? "failed";
-  const rollup = definition?.rollup ?? "pooled";
+  const rate =
+    definition?.pass_rate ??
+    "students who passed, out of every student who was due to sit the exam";
+  const absent = definition?.absent_counts_as ?? "not passed";
   return (
-    `Pass rate is ${rate}. An absent student counts as ${absent}. ` +
-    `Branch, department and teacher rates are ${rollup} — their classrooms' passers over ` +
-    `their classrooms' rosters, never an average of percentages.`
+    `The pass rate is ${rate}. A student who did not come counts as ${absent}. ` +
+    `A branch, a department or a teacher is their classes added together — ` +
+    `never the average of their percentages, so a class of four cannot outweigh a class of thirty.`
   );
 }
 

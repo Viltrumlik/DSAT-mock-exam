@@ -118,11 +118,18 @@ export function RateCell({
   reason,
   detail,
   title,
+  bar = true,
 }: {
   rate: number | null;
   reason: string;
   /** "9 of 10" — always shown, so a reader can see the fraction behind the percentage. */
   detail: string;
+  /**
+   * Whether to draw the rate's own bar. Off wherever the row already carries a bar of what
+   * actually happened: two bars on one row, one of them merely restating the percentage
+   * printed between them, is decoration — and this school has rejected exactly that before.
+   */
+  bar?: boolean;
   /**
    * Why this denominator is not the headcount printed beside the row's name, when the two
    * differ. Every ranked row shows both numbers; without this it reconciles neither.
@@ -131,7 +138,7 @@ export function RateCell({
 }) {
   return (
     <div className="flex items-center justify-end gap-3" title={title}>
-      <RateBar rate={rate} />
+      {bar ? <RateBar rate={rate} /> : null}
       <span className="text-right">
         <RateFigure rate={rate} reason={reason} className="font-bold text-foreground" />
         <span className="block text-[11px] tabular-nums text-muted-foreground">{detail}</span>
@@ -305,7 +312,7 @@ export function ScheduledBanner({
         <p className="mt-0.5 font-semibold">
           There are no results for a month the school has not reached
           {thisMonth ? `; it is ${monthLabel(thisMonth)} now` : ""}. Every student on these
-          rosters is still counted absent, and absent counts as not passed — so a pass rate
+          class lists is still counted as not having come, which counts as not passed — so a rate
           here would come out at zero for work nobody has done. Nothing on this page is a
           score for {monthLabel(month)}.
         </p>
@@ -369,11 +376,9 @@ export function OrphanRetakeNote({
         </span>
       </p>
       <p className="mt-1 pl-[22px] font-normal">
-        {titleList(papers.map((p) => p.title))} {one ? "has" : "have"} no parent midterm.{" "}
-        {one ? "It is" : "They are"} counted nowhere here: only a student who did not pass is
-        given a retake, so standing one on its own would measure a whole class against a paper
-        most of them were never offered. Give {one ? "it" : "each"} a parent midterm in the
-        builder and {one ? "it folds" : "they fold"} into that paper&rsquo;s numbers.
+        {titleList(papers.map((p) => p.title))} {one ? "has" : "have"} no main exam to belong
+        to, so {one ? "it counts" : "they count"} nowhere. Give {one ? "it" : "each"} a main
+        exam in the builder and {one ? "it joins" : "they join"} that exam&rsquo;s numbers.
       </p>
     </div>
   );
