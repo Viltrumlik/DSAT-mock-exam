@@ -245,9 +245,25 @@ export function AppShell({
   const title = pageTitleFor(nav, pathname, brand.name);
   const signedIn = !!user;
 
+  /**
+   * One row of the sidebar, in the shape the owner asked for.
+   *
+   * Two states, and they differ in KIND rather than in shade:
+   *
+   * * **where you are** is a solid block of the brand colour with the icon sitting straight
+   *   on it. It is the only filled thing in the rail, so it can be found without reading.
+   * * **everywhere else** has no outline at all — just the icon in a soft tile, and the label
+   *   in ordinary text. Every row used to carry a 1.5px border, which made the whole rail a
+   *   stack of empty boxes and left the current page distinguishable only by tint.
+   *
+   * The tile is what carries the icon at rest and what disappears under the fill: on the
+   * active row the icon has the block itself to sit on, so a second container around it would
+   * be a box inside a box.
+   */
   const renderLeaf = (item: NavItem, opts?: { nested?: boolean }) => {
     const active = isNavItemActive(item.href, pathname);
     const Icon = item.icon;
+    const nested = opts?.nested && !collapsed;
     const link = (
       <Link
         key={item.href}
@@ -256,21 +272,36 @@ export function AppShell({
         onPointerDown={addRipple}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "ds-ring group relative flex items-center gap-[13px] overflow-hidden rounded-[13px] border-[1.5px] px-3.5 py-[11px] text-[15px] font-semibold transition-[background-color,color,transform,border-color,box-shadow] duration-200 active:scale-[0.96]",
-          collapsed && "md:justify-center md:px-2",
-          opts?.nested && !collapsed && "ml-3 py-[9px] text-[14px]",
+          "ds-ring group relative flex items-center gap-3 overflow-hidden rounded-2xl px-2.5 py-2 text-[15px] font-semibold transition-[background-color,color,transform,box-shadow] duration-200 active:scale-[0.97]",
+          collapsed && "md:justify-center md:px-1.5",
+          nested && "ml-4 text-[14px]",
           active
-            ? "border-primary bg-primary-soft font-bold text-primary hover:translate-x-0.5 hover:shadow-[0_6px_16px_rgba(42,104,192,0.18)]"
-            : "border-border bg-transparent text-muted-foreground hover:translate-x-[3px] hover:border-primary hover:text-primary",
+            ? "bg-primary text-primary-foreground shadow-[0_10px_22px_-10px_rgba(42,104,192,.9)]"
+            : "text-foreground hover:bg-surface-2",
         )}
       >
-        <Icon
-          className={cn("h-5 w-5 shrink-0", active && "[animation:dz-navPop_0.4s_ease]")}
-          strokeWidth={2}
-        />
+        <span
+          className={cn(
+            "grid shrink-0 place-items-center rounded-xl transition-colors duration-200",
+            nested ? "h-8 w-8" : "h-10 w-10",
+            active
+              ? "bg-transparent text-primary-foreground"
+              : "bg-surface-2 text-foreground group-hover:bg-card",
+          )}
+        >
+          <Icon
+            className={cn(nested ? "h-4 w-4" : "h-[18px] w-[18px]", active && "[animation:dz-navPop_0.4s_ease]")}
+            strokeWidth={2}
+          />
+        </span>
         {!collapsed ? <span className="flex-1 truncate">{item.label}</span> : null}
         {!collapsed && item.isNew ? (
-          <span className="rounded-md bg-success-soft px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em] text-success-foreground">
+          <span
+            className={cn(
+              "rounded-md px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.08em]",
+              active ? "bg-white/20 text-primary-foreground" : "bg-success-soft text-success-foreground",
+            )}
+          >
             New
           </span>
         ) : null}
@@ -293,24 +324,34 @@ export function AppShell({
     const hasActive = navGroupHasActiveChild(item, pathname);
     const Icon = item.icon;
     return (
-      <div key={item.label} className="flex flex-col gap-[7px]">
+      <div key={item.label} className="flex flex-col gap-1.5">
+        {/* A category wears the same shape as a page, so the rail reads as one kit rather
+            than as two. It is never "active" itself — it holds the page you are on, which is
+            what the tinted tile says. */}
         <button
           type="button"
           onClick={() => toggleGroup(item)}
           onPointerDown={addRipple}
           aria-expanded={open}
           className={cn(
-            "ds-ring group relative flex items-center gap-[13px] overflow-hidden rounded-[13px] border-[1.5px] px-3.5 py-[11px] text-left text-[15px] font-semibold transition-[background-color,color,transform,border-color,box-shadow] duration-200 active:scale-[0.96]",
-            hasActive
-              ? "border-border bg-surface-2 text-foreground"
-              : "border-border bg-transparent text-muted-foreground hover:translate-x-[3px] hover:border-primary hover:text-primary",
+            "ds-ring group relative flex items-center gap-3 overflow-hidden rounded-2xl px-2.5 py-2 text-left text-[15px] font-semibold transition-[background-color,color,transform,box-shadow] duration-200 active:scale-[0.97]",
+            hasActive ? "text-foreground" : "text-foreground hover:bg-surface-2",
           )}
         >
-          <Icon className="h-5 w-5 shrink-0" strokeWidth={2} />
+          <span
+            className={cn(
+              "grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors duration-200",
+              hasActive
+                ? "bg-primary-soft text-primary dark:text-primary-hover"
+                : "bg-surface-2 text-foreground group-hover:bg-card",
+            )}
+          >
+            <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
+          </span>
           <span className="flex-1 truncate">{item.label}</span>
           <ChevronDown
             className={cn(
-              "h-4 w-4 shrink-0 transition-transform duration-200",
+              "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
               open ? "rotate-0" : "-rotate-90",
             )}
             strokeWidth={2.5}
@@ -318,7 +359,7 @@ export function AppShell({
         </button>
         {open ? (
           <div
-            className="flex flex-col gap-[7px]"
+            className="flex flex-col gap-1.5"
             style={{ animation: "dz-sectionIn .3s cubic-bezier(.22,1,.36,1) both" }}
           >
             {item.children.map((c) => renderLeaf(c, { nested: true }))}
@@ -420,7 +461,7 @@ export function AppShell({
             filteredNav.map(({ id, section, items }, sIdx) => (
               <div
                 key={id}
-                className="flex flex-col gap-[7px]"
+                className="flex flex-col gap-1.5"
                 style={{ animation: "dz-sectionIn .42s cubic-bezier(.22,1,.36,1) both", animationDelay: `${sIdx * 60}ms` }}
               >
                 {!collapsed && section ? (
