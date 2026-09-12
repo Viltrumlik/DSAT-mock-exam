@@ -25,6 +25,24 @@ vi.mock("../api", () => ({
 
 import { SupportReportPage } from "../SupportReportPage";
 
+/**
+ * The instant this page is rendered at.
+ *
+ * The backlog banner states the age of the oldest unsettled hour against the clock, not
+ * against the payload — the finding is that those hours are still sitting there *now*, and a
+ * banner frozen at `generated_at` would go stale in the reader's hands. That is right, and it
+ * makes any assertion on the words it prints a statement about what day it is: measured from
+ * the real clock, "27 days ago" becomes "28 days ago" at the next midnight, and the suite
+ * starts failing on a date rather than on a change.
+ *
+ * So the test says when "now" is. This is the same instant `format.test.ts` hands `ageInDays`
+ * directly, and the fixture's own `generated_at`: 27 days after {@link OLDEST_UNSETTLED}.
+ */
+const FROZEN_NOW = new Date("2026-09-09T12:00:00+05:00");
+
+/** The oldest unsettled hour in the fixture — what the banner measures its age from. */
+const OLDEST_UNSETTLED = "2026-08-13T09:00:00+05:00";
+
 const counts = (over: Partial<SupportCounts> = {}): SupportCounts => ({
   slots_published: 6,
   bookings: 8,
@@ -51,19 +69,19 @@ const report = (over: Partial<SupportMonthlyReport> = {}): SupportMonthlyReport 
       ...counts(),
       attendance_rate: 0.8333,
       backlog_unsettled: 30,
-      backlog_oldest: "2026-08-13T09:00:00+05:00",
+      backlog_oldest: OLDEST_UNSETTLED,
     },
   ],
   total: { ...counts(), attendance_rate: 0.8333 },
   backlog: {
     unsettled: 32,
-    oldest: "2026-08-13T09:00:00+05:00",
+    oldest: OLDEST_UNSETTLED,
     teachers: [
       {
         support_teacher_id: 7,
         support_teacher: "Dilafruz Ibrokhimjonova",
         unsettled: 30,
-        oldest: "2026-08-13T09:00:00+05:00",
+        oldest: OLDEST_UNSETTLED,
       },
       {
         support_teacher_id: 8,
@@ -105,6 +123,10 @@ async function render(): Promise<string> {
 }
 
 beforeEach(() => {
+  // `Date` only. The render path awaits promises and React's own scheduler, and faking the
+  // timer functions as well would freeze the queues `act` is waiting on.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(FROZEN_NOW);
   monthly.mockReset();
   sessions.mockReset();
   sessions.mockResolvedValue(emptyHistory);
@@ -117,6 +139,7 @@ afterEach(() => {
   container?.remove();
   root = null;
   container = null;
+  vi.useRealTimers();
 });
 
 describe("SupportReportPage", () => {
@@ -145,8 +168,11 @@ describe("SupportReportPage", () => {
     expect(out).toContain("32 support sessions have never been settled");
     expect(out).toContain("paid nobody");
     // Not just a count: the age and the owner are the parts that make it a backlog.
-    // Locale-formatted by the browser; assert on the parts, not on one locale's order.
+    // Locale-formatted by the browser; assert on the parts, not on one locale's order. Which
+    // day it is at all comes from `vitest.config.ts` pinning TZ — rendered west of UTC-7 this
+    // +05:00 datetime is the 12th.
     expect(out).toMatch(/Aug(ust)?\s+13,?\s+2026|13\s+Aug(ust)?\s+2026/);
+    // 13 August to FROZEN_NOW. Deterministic only because the clock is frozen.
     expect(out).toContain("27 days ago");
     expect(out).toContain("Dilafruz Ibrokhimjonova");
     expect(out).toContain("Nodir T");
@@ -217,7 +243,7 @@ describe("SupportReportPage", () => {
             ...counts({ held: 0, no_show: 0, cancelled: 0, unsettled: 8 }),
             attendance_rate: null,
             backlog_unsettled: 30,
-            backlog_oldest: "2026-08-13T09:00:00+05:00",
+            backlog_oldest: OLDEST_UNSETTLED,
           },
         ],
         total: {
