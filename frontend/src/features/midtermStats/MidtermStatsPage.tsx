@@ -232,7 +232,7 @@ export default function MidtermStatsPage() {
       <OpsPageHeader
         section="Midterms"
         title="Midterm results"
-        description="How every class did this month — open a row to go from the whole school down to one student."
+        description="How every class did this month — open a row to go from the whole learning center down to one student."
         actions={
           tab === "statistics" && selected == null ? (
             <>

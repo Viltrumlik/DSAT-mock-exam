@@ -106,7 +106,7 @@ export function QuestionAnalysisPage() {
             <Field
               label="Flag a question at"
               htmlFor={thresholdInputId}
-              hint={`The school's rule is ${DEFAULT_THRESHOLD}%. Press Enter or tab out to apply.`}
+              hint={`The learning center's rule is ${DEFAULT_THRESHOLD}%. Press Enter or tab out to apply.`}
             >
               <ThresholdControl
                 value={threshold}

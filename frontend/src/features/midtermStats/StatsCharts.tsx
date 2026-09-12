@@ -175,7 +175,7 @@ export function TrendChart({
       title="Month by month"
       description={
         move == null
-          ? "The share of students who passed, in every month the school has sat one."
+          ? "The share of students who passed, in every month the learning center has sat one."
           : `${monthLabel(latest.month)} is ${move === 0 ? "the same as" : `${Math.abs(move)} points ${move > 0 ? "above" : "below"}`} ${monthLabel(previous.month)}.`
       }
     >

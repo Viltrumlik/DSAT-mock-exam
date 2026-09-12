@@ -333,7 +333,7 @@ export const UNASSIGNED_BRANCH_NOTE =
   "Classrooms with no branch set. A create-form regression left these unset and they were never backfilled — they are a known gap in the record, not a branch that scored nothing.";
 
 export const UNASSIGNED_TEACHER_NOTE =
-  "Classrooms with no teacher assigned. Their students still count in the school total.";
+  "Classrooms with no teacher assigned. Their students still count in the learning center total.";
 
 /** "1 paper" / "3 papers", and the same for students and classes. */
 export function plural(count: number, singular: string, pluralForm?: string): string {

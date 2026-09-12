@@ -310,7 +310,7 @@ export function ScheduledBanner({
           {monthLabel(month)} is scheduled — nobody has sat these papers yet
         </p>
         <p className="mt-0.5 font-semibold">
-          There are no results for a month the school has not reached
+          There are no results for a month the learning center has not reached
           {thisMonth ? `; it is ${monthLabel(thisMonth)} now` : ""}. Every student on these
           class lists is still counted as not having come, which counts as not passed — so a rate
           here would come out at zero for work nobody has done. Nothing on this page is a

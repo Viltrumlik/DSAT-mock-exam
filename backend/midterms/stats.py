@@ -155,7 +155,7 @@ DEFINITION = {
     ),
     "empty_denominator": "null, never 0",
     "default_month": (
-        "the most recent month the school has actually reached; a month scheduled ahead is "
+        "the most recent month the learning center has actually reached; a month scheduled ahead is "
         "offered but never opened on, because nobody has sat it yet"
     ),
 }
