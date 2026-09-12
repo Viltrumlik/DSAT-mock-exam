@@ -273,6 +273,7 @@ export function HierarchyPanel({
       <HierarchyBreadcrumb path={path} rootLabel={rootLabel} onGo={onGo} />
 
       <SectionCard
+        index={6}
         title={scopeHeading(level, parent)}
         description={
           <>

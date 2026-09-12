@@ -1567,3 +1567,33 @@ mark.ts-annot {
 @media (prefers-reduced-motion: reduce) {
   .rmap *, .rmap *::before, .rmap *::after { animation: none !important; transition: none !important; }
 }
+
+/* ============================================================
+   Midterm statistics — motion for a page that is read, not played with.
+
+   The house kit (.cr-*) already covers everything that ENTERS: the cards
+   stagger in with .cr-card, the table rows with .cr-rowin, both driven by an
+   inline delay per index. Only one thing here has no equivalent in the kit — a
+   bar that has to DRAW ITSELF rather than appear — so that is all this adds.
+
+   The growth is not decoration. These bars are how the page shows what a
+   percentage cannot: how the students who did not pass divide between failing
+   the exam and never coming. Drawing that left to right is the figure being
+   built in front of the reader; a bar that is simply there is a bar nobody
+   watches being made.
+   ============================================================ */
+@keyframes mts-growX {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.mts-grow {
+  transform-origin: left;
+  animation: mts-growX .62s cubic-bezier(.22,1,.36,1) both;
+  animation-delay: var(--mts-delay, 0ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Holds the finished bar, never an empty track. */
+  .mts-grow { animation: none !important; transform: none !important; }
+}

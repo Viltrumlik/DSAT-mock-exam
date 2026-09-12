@@ -359,7 +359,9 @@ export default function MidtermStatsPage() {
             </SectionCard>
           ) : (
             <>
-              <div className="grid gap-4 lg:grid-cols-2">
+              {/* `cr-rise` rather than `cr-card`: this is a grid of two cards, and a hover
+                  lift belongs to each card, not to the pair of them. */}
+              <div className="cr-rise grid gap-4 lg:grid-cols-2" style={{ animationDelay: "300ms" }}>
                 <ResultsDonut stats={stats} />
                 {/* Draws nothing until a level actually branches; the grid then gives the
                     donut the full width rather than leaving a hole beside it. */}
@@ -371,7 +373,9 @@ export default function MidtermStatsPage() {
                 />
               </div>
 
-              <TrendChart points={trend} loading={trendLoading} error={trendError} />
+              <div className="cr-rise" style={{ animationDelay: "380ms" }}>
+                <TrendChart points={trend} loading={trendLoading} error={trendError} />
+              </div>
 
               <HierarchyPanel
                 roots={hierarchy.roots}

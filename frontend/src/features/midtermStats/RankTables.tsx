@@ -30,14 +30,10 @@ export function tallyColumns<T extends GroupTally>(showPending: boolean): Ranked
       // Wide enough for a bar that can be read. The ops tables were leaving ~240px of dead
       // space between the name block and this column; the bar spends it.
       className: "w-[220px]",
-      cell: (row) => (
-        <SplitBar
-          tally={row}
-          height="h-2.5"
-          // Not a second copy of the pass rate: the same width, divided by what actually
-          // happened to the people who did not pass.
-        />
-      ),
+      // Not a second copy of the pass rate: the same width, divided by what actually
+      // happened to the people who did not pass. The delay matches the row's own entry,
+      // so a bar draws itself just after the row it belongs to has arrived.
+      cell: (row, i) => <SplitBar tally={row} height="h-2.5" delay={Math.min(i, 12) * 35 + 180} />,
     },
     {
       key: "rate",

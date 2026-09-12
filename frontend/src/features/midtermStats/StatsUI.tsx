@@ -22,15 +22,21 @@ export function SectionCard({
   actions,
   children,
   className,
+  index,
 }: {
   title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
   className?: string;
+  /** Position on the page, so a screenful of cards arrives in order rather than at once. */
+  index?: number;
 }) {
   return (
-    <section className={cn("rounded-2xl border border-border bg-card", className)}>
+    <section
+      className={cn("cr-card rounded-2xl border border-border bg-card", className)}
+      style={{ animationDelay: `${(index ?? 0) * 80}ms` }}
+    >
       {(title || actions) && (
         <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
           <div className="min-w-0">
@@ -209,7 +215,13 @@ export function RankedTable<T>({
         </thead>
         <tbody className="divide-y divide-border">
           {rows.map((row, i) => (
-            <tr key={rowKey(row, i)} className="align-middle hover:bg-surface-2">
+            <tr
+              key={rowKey(row, i)}
+              className="cr-rowin align-middle transition-colors hover:bg-surface-2"
+              // Capped: a long table must not make its last row wait a second and a half
+              // for its turn, and past a dozen rows nobody reads the stagger anyway.
+              style={{ animationDelay: `${Math.min(i, 12) * 35}ms` }}
+            >
               {columns.map((c) => (
                 <td
                   key={c.key}

@@ -264,6 +264,24 @@ describe("HierarchyPanel", () => {
     expect(out).toContain("sat more than one exam this month, and each exam counts");
   });
 
+  it("draws each row's bar just after the row it belongs to, and caps the wait", () => {
+    const tree = roots();
+    render(panel(tree, collapseFrom(tree, [])));
+    const rows = [...(container?.querySelectorAll("tbody tr") ?? [])];
+    const ms = (el: Element | null, prop: string) =>
+      Number(((el as HTMLElement | null)?.style.getPropertyValue(prop) || "0ms").replace("ms", ""));
+
+    rows.forEach((tr, i) => {
+      const rowIn = Number((tr as HTMLElement).style.animationDelay.replace("ms", ""));
+      const bar = ms(tr.querySelector(".mts-grow"), "--mts-delay");
+      // The bar is drawn after its row has arrived, never before it.
+      expect(bar).toBeGreaterThan(rowIn);
+      // And nothing waits on a stagger longer than a dozen rows' worth.
+      expect(rowIn).toBeLessThanOrEqual(12 * 35);
+      expect(i).toBeGreaterThanOrEqual(0);
+    });
+  });
+
   it("says out loud when it had to rebuild the hierarchy itself", () => {
     const tree = roots();
     const out = render(panel(tree, collapseFrom(tree, []), { derived: true }));

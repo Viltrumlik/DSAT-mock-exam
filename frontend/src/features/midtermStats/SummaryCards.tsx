@@ -56,6 +56,7 @@ function Card({
   detail,
   tone = "info",
   valueClass,
+  index = 0,
   children,
 }: {
   icon: LucideIcon;
@@ -64,11 +65,16 @@ function Card({
   detail?: React.ReactNode;
   tone?: Tone;
   valueClass?: string;
+  /** Position in the row, so the four arrive left to right rather than together. */
+  index?: number;
   children?: React.ReactNode;
 }) {
   const t = TONE[tone];
   return (
-    <div className={cn("flex flex-col rounded-2xl border p-4", t.card)}>
+    <div
+      className={cn("cr-card flex flex-col rounded-2xl border p-4", t.card)}
+      style={{ animationDelay: `${index * 70}ms` }}
+    >
       <div className="flex items-center gap-2">
         <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-lg", t.icon)}>
           <Icon className="h-4 w-4" aria-hidden />
@@ -90,6 +96,7 @@ function Booked({ stats }: { stats: MonthlyStats }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <Card
+        index={0}
         icon={CalendarX2}
         tone="primary"
         label="Pass rate"
@@ -97,12 +104,14 @@ function Booked({ stats }: { stats: MonthlyStats }) {
         detail={`Nobody has sat ${monthLabel(stats.month) || "this month"} yet, so there is no rate — not a rate of zero.`}
       />
       <Card
+        index={1}
         icon={GraduationCap}
         label="Exams booked"
         value={t.midterms}
         detail={`${plural(t.classrooms, "class", "classes")} have an exam in this month.`}
       />
       <Card
+        index={2}
         icon={Users}
         label="Students"
         value={t.distinct_students}
@@ -124,6 +133,7 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Card
+        index={0}
         icon={CircleCheck}
         tone="primary"
         label="Pass rate"
@@ -137,13 +147,17 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
       >
         <span className="mt-3 block h-2 w-full overflow-hidden rounded-full bg-card/70">
           <span
-            className={cn("block h-full rounded-full", RATE_TONE_FILL[tone])}
-            style={{ width: `${Math.max(0, Math.min(100, t.pass_rate ?? 0))}%` }}
+            className={cn("mts-grow block h-full rounded-full", RATE_TONE_FILL[tone])}
+            style={{
+              width: `${Math.max(0, Math.min(100, t.pass_rate ?? 0))}%`,
+              "--mts-delay": "220ms",
+            } as React.CSSProperties}
           />
         </span>
       </Card>
 
       <Card
+        index={1}
         icon={CircleCheck}
         tone="success"
         label="Passed"
@@ -156,6 +170,7 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
       />
 
       <Card
+        index={2}
         icon={CircleX}
         tone="danger"
         label="Did not pass"
@@ -171,6 +186,7 @@ export function SummaryCards({ stats }: { stats: MonthlyStats }) {
       />
 
       <Card
+        index={3}
         icon={Users}
         label="Students"
         value={t.distinct_students}

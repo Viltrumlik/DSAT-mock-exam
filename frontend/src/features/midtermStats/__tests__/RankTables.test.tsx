@@ -174,6 +174,16 @@ describe("SummaryCards", () => {
     expect(same).not.toContain("Rates are over");
   });
 
+  it("brings the four cards in one after another, not all at once", () => {
+    render(<SummaryCards stats={stats()} />);
+    const cards = [...(container?.querySelectorAll("div.rounded-2xl.cr-card") ?? [])];
+    expect(cards).toHaveLength(4);
+    const delays = cards.map((c) => Number((c as HTMLElement).style.animationDelay.replace("ms", "")));
+    // Strictly increasing left to right.
+    expect(delays).toEqual([...delays].sort((a, b) => a - b));
+    expect(new Set(delays).size).toBe(4);
+  });
+
   it("never prints a rate for a month nobody has sat", () => {
     const out = render(<SummaryCards stats={{ ...stats(), is_future: true }} />);
     expect(out).toContain("Nobody has sat");

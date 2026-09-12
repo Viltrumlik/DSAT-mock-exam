@@ -20,10 +20,16 @@ export function SplitBar({
   tally,
   className,
   height = "h-2",
+  delay = 0,
 }: {
   tally: Pick<Tally, OutcomeKey | "roster">;
   className?: string;
   height?: string;
+  /**
+   * How long to wait before drawing, in ms. A table passes its row index so the bars run
+   * down the column rather than all snapping at once; a single bar leaves it at 0.
+   */
+  delay?: number;
 }) {
   const total = tally.roster ?? 0;
   const parts = OUTCOMES.map((o) => ({ ...o, count: tally[o.key] ?? 0 })).filter((p) => p.count > 0);
@@ -43,14 +49,21 @@ export function SplitBar({
       role="img"
       aria-label={parts.map((p) => `${p.label}: ${p.count} of ${total}`).join(", ")}
     >
-      {parts.map((p) => (
-        <span
-          key={p.key}
-          className={p.fill}
-          style={{ width: `${(p.count / total) * 100}%` }}
-          title={`${p.label}: ${p.count} of ${total}`}
-        />
-      ))}
+      {/* One growing wrapper rather than three, so the segments keep their proportions to
+          each other the whole way across instead of racing. */}
+      <span
+        className="mts-grow flex w-full"
+        style={{ "--mts-delay": `${delay}ms` } as React.CSSProperties}
+      >
+        {parts.map((p) => (
+          <span
+            key={p.key}
+            className={p.fill}
+            style={{ width: `${(p.count / total) * 100}%` }}
+            title={`${p.label}: ${p.count} of ${total}`}
+          />
+        ))}
+      </span>
     </span>
   );
 }
