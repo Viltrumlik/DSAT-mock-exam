@@ -2,7 +2,6 @@
 
 import { Fragment, useId, useState } from "react";
 import {
-  Award,
   Building2,
   ChevronDown,
   Crown,
@@ -143,16 +142,6 @@ function YouTag() {
   return (
     <span className="shrink-0 rounded-full bg-primary px-1.5 py-px text-[10px] font-extrabold uppercase tracking-[0.06em] text-primary-foreground">
       you
-    </span>
-  );
-}
-
-/** `awards` — how many earnings sit behind the XP. The tie-break, and the answer to "from what?". */
-function AwardsChip({ count }: { count: number }) {
-  return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-chart-6/10 px-2 py-0.5 text-[11px] font-bold text-chart-6">
-      <Award className="h-3 w-3" aria-hidden />
-      {count.toLocaleString("en-US")} {count === 1 ? "award" : "awards"}
     </span>
   );
 }
@@ -368,9 +357,6 @@ function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
         {row.xp.toLocaleString("en-US")}
         <span className="ml-1 text-[10px] font-bold text-muted-foreground sm:text-[11px]">XP</span>
       </p>
-      <div className="mt-1.5">
-        <AwardsChip count={row.awards} />
-      </div>
       {/* The step. Its numeral repeats the rank read out above, so it is decoration here. */}
       <div
         aria-hidden
@@ -432,10 +418,9 @@ function StandingRow({
         className="font-extrabold"
         style={tintOf(row.student_id)}
       />
-      {/* Name over branch on the left, XP over awards on the right. A phone cannot spare a
-          right column for both figures without cutting the name short, so there the name takes
-          the whole first line, the XP sits on the branch line and the awards go under it. The
-          next place to reach, when there is one, runs underneath. DOM order is reading order. */}
+      {/* Name over branch on the left, the XP on the right. A phone cannot spare a right column
+          without cutting the name short, so there the name takes the whole first line and the XP
+          sits on the branch line. The next place to reach, when there is one, runs underneath. */}
       <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
         <p className="col-[1/-1] row-[1] flex min-w-0 items-center gap-1.5 text-sm font-bold text-foreground sm:col-[1]">
           <span className="truncate">{row.name}</span>
@@ -446,10 +431,7 @@ function StandingRow({
           {row.xp.toLocaleString("en-US")}
           <span className="ml-1 text-[11px] font-bold text-muted-foreground">XP</span>
         </span>
-        <span className="col-[1] row-[3] justify-self-start sm:col-[2] sm:row-[2] sm:justify-self-end">
-          <AwardsChip count={row.awards} />
-        </span>
-        {goal ? <GoalLine goal={goal} className="col-[1/-1] row-[4] mt-0.5 sm:row-[3]" /> : null}
+        {goal ? <GoalLine goal={goal} className="col-[1/-1] row-[3] mt-0.5" /> : null}
       </div>
     </li>
   );
@@ -522,7 +504,6 @@ export function LeaderboardPage() {
       icon: standing?.rank === 1 ? Crown : Trophy,
     },
     { label: "Your XP", value: standing ? standing.xp.toLocaleString("en-US") : "—", icon: Zap },
-    { label: "Awards", value: standing ? standing.awards.toLocaleString("en-US") : "—", icon: Award },
     // A count of lessons attended in a row. Shown only while there is one to celebrate.
     ...(streak > 0
       ? [{ label: "Streak", value: `${streak} ${streak === 1 ? "lesson" : "lessons"}`, icon: Flame }]
