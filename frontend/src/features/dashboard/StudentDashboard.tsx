@@ -95,12 +95,9 @@ function DashboardBody({
             vertical space. */}
         <DashboardStories />
 
-        {/* Level, XP, points and strikes, one fact per chip. */}
-        <DashboardPulse />
-
-        {/* Goal + countdown, back at the top where they were before the chip row. For a
-            while they sat below the calendar with a chip each standing in for them up here;
-            the owner asked for the cards themselves, not the chips. */}
+        {/* Goal + countdown, first thing on the dashboard. For a while they sat below the
+            calendar with a chip each standing in for them up top; the owner asked for the
+            cards themselves, and then for them ABOVE the chip row rather than under it. */}
         <div
           style={{
             display: "grid",
@@ -121,6 +118,9 @@ function DashboardBody({
             }}
           />
         </div>
+
+        {/* Level, XP, points and strikes, one fact per chip. */}
+        <DashboardPulse />
 
         {/* Calendar + right column */}
         <ScheduleSection />
