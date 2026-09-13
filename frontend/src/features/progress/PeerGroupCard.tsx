@@ -200,23 +200,25 @@ function MetricTile({
 
   return (
     <div className="quartz squircle flex flex-col gap-3 p-4 [--sq:11px]">
-      <div className="flex items-center justify-between gap-2">
-        <span className="inline-flex min-w-0 items-center gap-2 text-[11.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          <span className={cn("squircle grid h-7 w-7 shrink-0 place-items-center [--sq:5px]", t.icon)}>
-            <Icon className="h-4 w-4" aria-hidden />
+      {/* The label has the row to itself — beside the delta chip it truncated to "ATTE…" in a
+          four-tile row. */}
+      <span className="inline-flex min-w-0 items-center gap-2 text-[11.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+        <span className={cn("squircle grid h-7 w-7 shrink-0 place-items-center [--sq:5px]", t.icon)}>
+          <Icon className="h-4 w-4" aria-hidden />
+        </span>
+        <span className="truncate">{label}</span>
+      </span>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+        <span className="flex items-baseline gap-1.5">
+          <span className="ds-num text-[30px] font-extrabold leading-none tracking-tight text-foreground">
+            {fmt(metric.you, unit)}
           </span>
-          <span className="truncate">{label}</span>
+          {unit === "words" && metric.you != null ? (
+            <span className="text-[13px] font-semibold text-muted-foreground">words</span>
+          ) : null}
         </span>
         <DeltaChip gap={gapToGroup(metric)} />
-      </div>
-
-      <div className="flex items-baseline gap-1.5">
-        <span className="ds-num text-[30px] font-extrabold leading-none tracking-tight text-foreground">
-          {fmt(metric.you, unit)}
-        </span>
-        {unit === "words" && metric.you != null ? (
-          <span className="text-[13px] font-semibold text-muted-foreground">words</span>
-        ) : null}
       </div>
 
       <CompareScale metric={metric} unit={unit} tone={tone} label={label} />
@@ -283,7 +285,7 @@ function AttendanceTrend({ trend }: { trend: PeerGroup["attendance_trend"] }) {
   }
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex h-32 items-end gap-3">
+      <div className="flex h-28 items-end gap-3">
         {trend.map((month) => (
           <div key={month.month} className="flex h-full min-w-0 flex-1 flex-col items-center gap-1.5">
             <div className="flex w-full flex-1 items-end justify-center gap-1.5">
@@ -462,7 +464,11 @@ export function PeerGroupCard({
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="squircle flex flex-col gap-3 bg-success/[0.05] p-4 [--sq:11px]">
           <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Your last lessons</p>
-          <LessonStrip lessons={group.recent_lessons} />
+          <div className="flex flex-1 items-center">
+            <div className="w-full">
+              <LessonStrip lessons={group.recent_lessons} />
+            </div>
+          </div>
         </div>
         <div className="squircle flex flex-col gap-3 bg-success/[0.05] p-4 [--sq:11px]">
           <p className="text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Attendance by month</p>
