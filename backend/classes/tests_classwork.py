@@ -586,17 +586,22 @@ class AwardClassworkEndpointTests(ClassworkFixture):
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertIsNone(resp.json()["classwork_award"])
 
-    def test_the_classwork_carrier_reaches_the_students_assignment_list(self):
+    def test_the_classwork_carrier_reaches_the_students_classwork_tab(self):
         """§7: classwork became student-visible. A carrier the class cannot see is the whole
-        feature missing, and nothing else in this file would notice."""
+        feature missing, and nothing else in this file would notice.
+
+        It reaches them through the Classwork tab's own request, ``?category=CLASSWORK`` —
+        and NOT through the plain list, which is homework (tests_classwork_separation)."""
         self._award(self.teacher, 8)
         carrier = self.carriers().get()
 
-        resp = self.as_(self.student).get(f"/api/classes/{self.classroom.id}/assignments/")
-        self.assertEqual(resp.status_code, 200, resp.content)
-        body = resp.json()
-        rows = body["results"] if isinstance(body, dict) else body
-        self.assertIn(carrier.id, [row["id"] for row in rows])
+        url = f"/api/classes/{self.classroom.id}/assignments/"
+        for params, expected in (({"category": "CLASSWORK"}, True), ({}, False)):
+            resp = self.as_(self.student).get(url, params)
+            self.assertEqual(resp.status_code, 200, resp.content)
+            body = resp.json()
+            rows = body["results"] if isinstance(body, dict) else body
+            self.assertEqual(carrier.id in [row["id"] for row in rows], expected, params)
 
 
 class WithdrawClassworkEndpointTests(ClassworkFixture):

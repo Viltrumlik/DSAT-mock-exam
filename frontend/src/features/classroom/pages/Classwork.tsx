@@ -23,11 +23,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MoreVertical, Plus, Presentation, Sparkles } from "lucide-react";
+import { Archive, MoreVertical, Plus, Presentation, Sparkles } from "lucide-react";
 import { Button, EmptyState, ErrorState, LoadingState, Pill } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import { spawnRipple } from "../ui/ripple";
 import { useStudentClasswork } from "../classworkHooks";
+import { AssignmentRowActions } from "./AssignmentRowActions";
 import { ClassworkAwardDialog } from "./ClassworkAwardDialog";
 import type { StudentClasswork } from "../classworkApi";
 import type { ClassroomWithRole } from "../types";
@@ -151,6 +152,7 @@ function StaffRow({
   classBase,
   index,
   canAward,
+  archived,
 }: {
   row: StudentClasswork;
   classId: number;
@@ -158,6 +160,8 @@ function StaffRow({
   index: number;
   /** `capabilities.canManageClass` — OWNER + TEACHER. Never `isStaff`; classwork XP is minted. */
   canAward: boolean;
+  /** Rendered in the archived section: hidden from the class, so no XP is offered on it. */
+  archived?: boolean;
 }) {
   const [awarding, setAwarding] = useState(false);
   const n = activityCount(row);
@@ -170,27 +174,27 @@ function StaffRow({
         subtitle={n > 0 ? `${n} ${n === 1 ? "activity" : "activities"}` : undefined}
         meta={row.assigned_at ? `In class ${shortDate(row.assigned_at)}` : "In class"}
         index={index}
-        // Same badge the homework list shows, for the same reason: XP can be given on a
+        // Same badges the homework list shows, for the same reason: XP can be given on a
         // classwork the class cannot see yet, and the teacher should not have to guess.
-        badge={row.status === "DRAFT" ? <Pill tone="neutral">Draft</Pill> : null}
+        badge={
+          row.status === "DRAFT" ? <Pill tone="neutral">Draft</Pill>
+            : row.status === "ARCHIVED" ? <Pill tone="neutral">Archived</Pill>
+            : null
+        }
         actions={
           <>
             {/* The whole point of the tab for a teacher, so it is a button and not a menu
                 item: marking a class is the thing they came here to do. TAs are not offered
                 it at all — the server refuses them, and a control that always 403s is worse
                 than no control. */}
-            {canAward && (
+            {canAward && !archived && (
               <Button size="sm" variant="secondary" icon={Sparkles} onClick={() => setAwarding(true)}>
                 Give XP
               </Button>
             )}
-            <Link
-              href={href}
-              aria-label={`Open ${row.title || "classwork"}`}
-              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-            >
-              <MoreVertical className="h-[18px] w-[18px]" />
-            </Link>
+            {/* Edit, publish, archive and delete. They lived only on the Assignments list,
+                which classwork no longer appears on — without them here, nothing could. */}
+            <AssignmentRowActions classId={classId} classBase={classBase} row={row} archived={archived} kind="classwork" />
           </>
         }
       />
@@ -214,6 +218,13 @@ export function Classwork({ classroom }: { classroom: ClassroomWithRole }) {
   const classBase = useClassBase(classId);
   const { rows, isLoading, isError, refetch } = useStudentClasswork(classId);
   const newHref = `${classBase}/assignments/new?kind=classwork`;
+  // The Assignments list's archive, for classwork: archived classwork is reachable nowhere
+  // else, now that the homework list leaves classwork out.
+  const [showArchived, setShowArchived] = useState(false);
+  const archived = useStudentClasswork(classId, {
+    archived: true,
+    enabled: showArchived && caps.canManageAssignments,
+  });
 
   return (
     <div className="cr-section space-y-6">
@@ -280,6 +291,42 @@ export function Classwork({ classroom }: { classroom: ClassroomWithRole }) {
                 canAward={caps.canManageClass}
               />
             ),
+          )}
+        </div>
+      )}
+
+      {caps.canManageAssignments && (
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          className="text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {showArchived ? "Hide archived" : "Show archived"}
+        </button>
+      )}
+
+      {showArchived && caps.canManageAssignments && (
+        <div className="space-y-2">
+          <p className="text-sm font-bold text-foreground">Archived</p>
+          {archived.isLoading ? (
+            <LoadingState label="Loading…" />
+          ) : archived.isError ? (
+            <ErrorState title="Archived classwork not available" onRetry={archived.refetch} />
+          ) : archived.rows.length === 0 ? (
+            <EmptyState icon={Archive} title="Nothing archived" />
+          ) : (
+            <div className="divide-y divide-border border-y border-border">
+              {archived.rows.map((row, i) => (
+                <StaffRow
+                  key={row.id}
+                  row={row}
+                  classId={classId}
+                  classBase={classBase}
+                  index={i}
+                  canAward={caps.canManageClass}
+                  archived
+                />
+              ))}
+            </div>
           )}
         </div>
       )}

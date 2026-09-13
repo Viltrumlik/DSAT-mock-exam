@@ -383,6 +383,14 @@ class HomeworkListTests(VocabFixture):
         self.assignment.save(update_fields=["status"])
         self.assertEqual(self.client.get("/api/vocabulary/homework/").json(), [])
 
+    def test_a_set_opened_as_classwork_is_not_homework(self):
+        # Classwork is shown in the classroom's Classwork tab, never under Homework — and the
+        # set itself stays openable, which is how that tab's detail page reaches it.
+        self.assignment.category = Assignment.CATEGORY_CLASSWORK
+        self.assignment.save(update_fields=["category"])
+        self.assertEqual(self.client.get("/api/vocabulary/homework/").json(), [])
+        self.assertEqual(self.client.get(f"/api/vocabulary/sets/{self.vset.id}/").status_code, 200)
+
     def test_removed_member_sees_nothing(self):
         ClassroomMembership.objects.filter(
             classroom=self.classroom, user=self.student
