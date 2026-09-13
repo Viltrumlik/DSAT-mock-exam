@@ -37,7 +37,7 @@ export function coalesceRuns(task: () => Promise<unknown>): CoalescedRuns {
       running = false;
       const queued = next;
       next = null;
-      // Started before this run's callers hear that it ended, so none of them sees a moment with no run.
+      // Now, not on a later tick: by the time this run's callers hear that it ended, the next is under way.
       if (queued) start(queued);
       settle();
     };
