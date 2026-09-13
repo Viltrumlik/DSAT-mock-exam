@@ -56,7 +56,6 @@ type ClassPerson = { id: number; role: string; user: { id: number; username?: st
 type Attempt = { id: number; submitted_at?: string | null; is_completed?: boolean; score?: number | null; practice_test_details?: { subject?: string; title?: string } };
 type ExamDateOptionRow = { id: number; exam_date: string; label: string };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapMeToForm(me: any): MeForm {
   return {
     username: me.username || "", first_name: me.first_name || "", last_name: me.last_name || "",
@@ -136,7 +135,6 @@ export default function ProfilePage() {
   const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null; client_id: string | null; start_url: string | null } | null>(null);
   const [telegramLinkBusy, setTelegramLinkBusy] = useState(false);
   const [examDateOptions, setExamDateOptions] = useState<ExamDateOptionRow[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsFailed, setSessionsFailed] = useState(false);
@@ -239,7 +237,6 @@ export default function ProfilePage() {
           const assignments = await classesApi.listAssignments(c.id);
           for (const asg of assignments.items) {
             total += 1;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let sub: any = null;
             try { sub = await classesApi.getMySubmission(c.id, asg.id); } catch { sub = null; }
             if (!!sub && sub.status === "SUBMITTED") { submitted += 1; continue; }
