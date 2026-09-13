@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
@@ -118,3 +120,44 @@ class GradebookRosterTests(GradebookFixture):
         self.assertEqual(roster[self.a.id]["source"], "AUTO")
         self.assertEqual(float(roster[self.a.id]["grade"]), 700.0)
         self.assertEqual(roster[self.b.id]["status"], "MISSING")
+
+
+class GradebookDraftTests(GradebookFixture):
+    """Homework that has not reached the class.
+
+    `create` gives homework a deadline (the start of the class's next lesson) whatever its status,
+    and students are only ever given PUBLISHED work. The overview listed a draft anyway, with every
+    student MISSING it.
+    """
+
+    def _homework(self, title, status, due_in):
+        return Assignment.objects.create(
+            classroom=self.classroom, created_by=self.owner, title=title,
+            category=Assignment.CATEGORY_HOMEWORK, instructions="Read", max_score=100,
+            status=status, due_at=timezone.now() + due_in,
+        )
+
+    def test_drafts_are_left_out_whatever_their_placeholder_deadline(self):
+        stale = self._homework("Unit 3 review", Assignment.STATUS_DRAFT, timedelta(days=-2))  # lesson begun
+        fresh = self._homework("Unit 4 preview", Assignment.STATUS_DRAFT, timedelta(days=2))
+        overdue = self._homework("Worksheet", Assignment.STATUS_PUBLISHED, timedelta(days=-2))
+        self.client.force_authenticate(self.owner)
+        data = self._overview().json()
+
+        ids = [r["id"] for r in data["assignments"]]
+        self.assertNotIn(stale.id, ids)
+        self.assertNotIn(fresh.id, ids)
+        # Published homework is still listed, overdue included, with everyone who is missing it.
+        self.assertCountEqual(ids, [overdue.id, self.manual.id, self.auto.id])
+        self.assertEqual({r["id"]: r for r in data["assignments"]}[overdue.id]["counts"]["missing"], 3)
+        self.assertEqual(data["students"], 3)
+
+    def test_work_turned_in_on_a_draft_is_not_counted_to_grade(self):
+        # The header's "N to grade" has to agree with the rows listed under it.
+        draft = self._homework("Unit 3 review", Assignment.STATUS_DRAFT, timedelta(days=-2))
+        Submission.objects.create(assignment=draft, student=self.c, status=Submission.STATUS_SUBMITTED, submitted_at=timezone.now())
+        self.client.force_authenticate(self.owner)
+        data = self._overview().json()
+
+        self.assertEqual(data["needs_grading_total"], 1)  # A's essay only
+        self.assertNotIn(draft.id, [r["id"] for r in data["assignments"]])
