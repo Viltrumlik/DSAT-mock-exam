@@ -55,8 +55,8 @@ export default function RootLayout({
   return (
     // The font variables go on <html>, not <body>. Tailwind declares its @theme tokens on :root,
     // and a custom property resolves its var() where it is declared: with --font-geist-sans only
-    // on <body>, `--font-sans: var(--font-geist-sans), …` resolved to nothing, so the `font-sans`
-    // utility and the controls rule in globals.css silently inherited the serif body instead.
+    // on <body>, `--font-sans: var(--font-geist-sans), …` resolved to nothing, and every
+    // var(--font-sans) silently fell back to inheriting whatever surrounded it.
     <html
       lang="en"
       suppressHydrationWarning

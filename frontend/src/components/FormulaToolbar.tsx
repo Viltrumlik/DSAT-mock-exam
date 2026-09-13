@@ -222,9 +222,9 @@ export function FormulaToolbar({ onInsert }: FormulaToolbarProps) {
               ? <span
                   className={[
                     "pointer-events-none leading-none",
-                    item.id === "q-bold"      ? "text-sm font-black font-sans"              :
-                    item.id === "q-italic"    ? "text-sm font-semibold italic font-sans"   :
-                    item.id === "q-underline" ? "text-sm font-semibold underline font-sans" :
+                    item.id === "q-bold"      ? "text-sm font-black"                        :
+                    item.id === "q-italic"    ? "text-sm font-semibold italic"             :
+                    item.id === "q-underline" ? "text-sm font-semibold underline"           :
                     item.id === "q-wrap"      ? "text-[10px] font-mono"                    :
                     "text-sm",
                   ].join(" ")}
