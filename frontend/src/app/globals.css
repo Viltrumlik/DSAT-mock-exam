@@ -1705,6 +1705,7 @@ mark.ts-annot {
   transform-origin: left;
   animation: ds-growX .62s cubic-bezier(.22, 1, .36, 1) both;
   animation-delay: var(--ds-delay, 0ms);
+}
 
 /* The midterm page asked for the same motion under its own name and its own delay
    variable. It is an ALIAS, not a second copy: two identical @keyframes in one stylesheet
