@@ -291,8 +291,8 @@ function Chip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        // `font-[inherit]`: the global `button { font-family }` rule would otherwise set these
-        // in Geist inside a page set in Plus Jakarta.
+        // HeroPage sets the page in Plus Jakarta, and the global controls rule in globals.css
+        // (`font-family: inherit`) passes it to these buttons; `font-[inherit]` only restates it.
         "ds-ring cr-pill rounded-full px-3.5 py-1.5 font-[inherit] text-[13px] font-bold",
         active
           ? "bg-primary text-primary-foreground shadow-[0_6px_14px_-6px_var(--primary)]"
