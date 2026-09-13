@@ -6,9 +6,11 @@
  * fails the build if a request string appears anywhere else.
  */
 import api from "@/lib/api";
-import type { ClassroomMonth, MonthKey, MonthlyStats } from "./types";
+import { downloadBlob } from "@/lib/download";
+import type { BranchOption, ClassroomMonth, MonthKey, MonthlyStats, TrendPoint } from "./types";
 
 const BASE = "/midterms/admin/stats";
+const REPORTS = "/midterms/admin/reports";
 
 /**
  * There is a fourth endpoint, `GET .../stats/months/`, and nothing here calls it on purpose:
@@ -38,6 +40,39 @@ export const midtermStatsApi = {
       params: month ? { month } : undefined,
     });
     return r.data as ClassroomMonth;
+  },
+
+  /**
+   * The pass rate month by month, for the trend line.
+   *
+   * Its own request rather than a key on the monthly payload: it costs the server one month
+   * computation per point, and the page must draw its first number without waiting on a
+   * year of them. Fetched beside the month; a failure leaves the chart out, never the page.
+   */
+  async trend(): Promise<TrendPoint[]> {
+    const r = await api.get(`${BASE}/trend/`);
+    return (r.data?.results ?? []) as TrendPoint[];
+  },
+
+  /** The branches a whole-branch PDF can be asked for. */
+  async branches(): Promise<BranchOption[]> {
+    const r = await api.get(`${REPORTS}/branches/`);
+    return (r.data?.results ?? []) as BranchOption[];
+  },
+
+  /**
+   * The whole branch as one PDF: departments, teachers, classes and every student.
+   *
+   * `branchId: 0` is the whole school — the endpoint reads it that way, so a school with a
+   * single branch does not have to pick one from a list of one.
+   */
+  async downloadBranchPdf(branchId: number, month: MonthKey | null, name: string): Promise<void> {
+    const r = await api.get(`${REPORTS}/branches/${branchId}/pdf/`, {
+      params: month ? { month } : undefined,
+      responseType: "blob",
+    });
+    const slug = (name || "branch").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    downloadBlob(r.data as Blob, `midterm-report-${slug}-${month ?? "latest"}.pdf`);
   },
 };
 

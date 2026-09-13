@@ -43,6 +43,7 @@ from .stats import (
     DEFINITION,
     SUBJECT_ALIASES,
     available_months,
+    month_trend,
     classroom_brief,
     classroom_month,
     classroom_months,
@@ -209,5 +210,37 @@ class StatsClassroomView(APIView):
                 # accounted for rather than looking like a paper that went missing.
                 "orphan_retakes": orphan_retakes,
                 **_month_context(months, month),
+            }
+        )
+
+
+class StatsTrendView(APIView):
+    """GET .../stats/trend/?branch=&subject=&teacher= — the pass rate month by month.
+
+    Its own endpoint rather than a key on the monthly payload, for one reason: it costs one
+    full month computation per point, and the page an administrator opens every morning must
+    not wait on a year of arithmetic to draw its first number. The page fetches this beside
+    the month and draws the line when it lands.
+
+    Months nobody has sat are not points. See :func:`~midterms.stats.month_trend`.
+    """
+
+    permission_classes = [IsGlobalScopeStaff]
+
+    def get(self, request):
+        try:
+            branch_id = _int_param(request, "branch")
+            teacher_id = _int_param(request, "teacher")
+            subject = _subject_param(request)
+        except InvalidFilter as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        months = available_months(branch_id=branch_id, subject=subject, teacher_id=teacher_id)
+        return Response(
+            {
+                "results": month_trend(
+                    months, branch_id=branch_id, subject=subject, teacher_id=teacher_id
+                ),
+                "filters": {"branch": branch_id, "subject": subject, "teacher": teacher_id},
             }
         )

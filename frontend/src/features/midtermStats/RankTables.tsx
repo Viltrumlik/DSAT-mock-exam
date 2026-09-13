@@ -2,6 +2,8 @@
 
 import { ChevronRight } from "lucide-react";
 import { formatShare, rateReason, rosterNote } from "./format";
+import { OUTCOME } from "./outcome";
+import { SplitBar } from "./SplitBar";
 import { EmptyPanel, Note, Num, RankedTable, RateCell } from "./StatsUI";
 import type { RankedColumn } from "./StatsUI";
 import type { ClassroomRow, GroupTally } from "./types";
@@ -23,17 +25,28 @@ import type { ClassroomRow, GroupTally } from "./types";
 export function tallyColumns<T extends GroupTally>(showPending: boolean): RankedColumn<T>[] {
   const columns: RankedColumn<T>[] = [
     {
+      key: "split",
+      header: "How the month went",
+      // Wide enough for a bar that can be read. The ops tables were leaving ~240px of dead
+      // space between the name block and this column; the bar spends it.
+      className: "w-[220px]",
+      // Not a second copy of the pass rate: the same width, divided by what actually
+      // happened to the people who did not pass. The delay matches the row's own entry,
+      // so a bar draws itself just after the row it belongs to has arrived.
+      cell: (row, i) => <SplitBar tally={row} height="h-2.5" delay={Math.min(i, 12) * 35 + 180} />,
+    },
+    {
       key: "rate",
       header: "Pass rate",
       align: "right",
-      // Wide enough for a bar that can be read. The ops tables were leaving ~240px of dead
-      // space between the name block and this column; the bar spends it.
-      className: "w-[260px]",
+      className: "w-[120px]",
       cell: (row) => (
         <RateCell
           rate={row.pass_rate}
           reason={rateReason("pass", row.roster)}
           detail={formatShare(row.passed, row.roster)}
+          // The bar for this row is the split one, two columns to the left.
+          bar={false}
           // "150 of 210" beside "180 students" is two denominators on one row. Say why.
           title={rosterNote(row.roster, row.distinct_students) ?? undefined}
         />
@@ -44,8 +57,8 @@ export function tallyColumns<T extends GroupTally>(showPending: boolean): Ranked
       header: "Passed",
       align: "right",
       cell: (row) => (
-        <span title={`${row.passed_first} at the first sitting, ${row.passed_retake} on a retake`}>
-          <Num value={row.passed} className="font-bold" />
+        <span title={`${row.passed_first} passed first time, ${row.passed_retake} after a retake`}>
+          <Num value={row.passed} className={`font-bold ${OUTCOME.passed.text}`} />
         </span>
       ),
     },
@@ -53,15 +66,15 @@ export function tallyColumns<T extends GroupTally>(showPending: boolean): Ranked
       key: "failed",
       header: "Failed",
       align: "right",
-      cell: (row) => <Num value={row.failed} />,
+      cell: (row) => <Num value={row.failed} className={row.failed > 0 ? OUTCOME.failed.text : undefined} />,
     },
     {
       key: "absent",
-      header: "Absent",
+      header: "Did not come",
       align: "right",
       cell: (row) => (
-        <span title="Absent counts as not passed: in the denominator, not the numerator.">
-          <Num value={row.absent} />
+        <span title="Not coming counts the same as not passing.">
+          <Num value={row.absent} className={row.absent > 0 ? OUTCOME.absent.text : undefined} />
         </span>
       ),
     },
@@ -69,10 +82,10 @@ export function tallyColumns<T extends GroupTally>(showPending: boolean): Ranked
   if (showPending) {
     columns.push({
       key: "pending",
-      header: "Awaiting",
+      header: "Waiting",
       align: "right",
       cell: (row) => (
-        <span title="Still sitting, or sat and not yet given a verdict. Counted in the denominator, so the rate can only go up.">
+        <span title="Still sitting the exam, or sat it and not yet marked. The rate can only go up as these land.">
           <Num value={row.pending} />
         </span>
       ),
@@ -98,9 +111,10 @@ export function DenominatorNote({ rows }: { rows: readonly GroupTally[] }) {
   return (
     <div className="border-t border-border px-5 py-3">
       <Note>
-        Rates are over <strong className="font-bold">roster places</strong>, not the headcount
-        beside the name: a class that sat two papers counts once per paper, and a student in
-        two of these classes is on both rosters.
+        Some of these students sat more than one exam this month, and each exam counts. So a
+        rate here is over the{" "}
+        <strong className="font-bold">exams expected</strong> — the number beside the row&rsquo;s
+        name — and not over the number of people.
       </Note>
     </div>
   );

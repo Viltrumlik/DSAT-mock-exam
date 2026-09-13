@@ -1,15 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, CalendarClock, FolderOpen, RefreshCw } from "lucide-react";
+import { BarChart3, CalendarClock, Download, FolderOpen, RefreshCw } from "lucide-react";
 import { Select, Tabs } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import MidtermRecordsBrowser from "@/features/midtermReports/MidtermReportsPage";
+import { cn } from "@/lib/cn";
 import { ClassroomMonthPanel } from "./ClassroomMonthPanel";
 import { DefinitionNote } from "./DefinitionNote";
-import { HeadlineStats } from "./HeadlineStats";
+import { SummaryCards } from "./SummaryCards";
 import { HierarchyPanel } from "./HierarchyPanel";
-import { PassRateChart } from "./PassRateChart";
+import { LevelBars, ResultsDonut, TrendChart } from "./StatsCharts";
+import { SplitLegend } from "./SplitBar";
 import { ScheduledClassroomTable } from "./RankTables";
 import {
   EmptyPanel,
@@ -23,34 +25,37 @@ import {
 import { errText, midtermStatsApi } from "./api";
 import { latestSatMonth, monthLabel, monthOptionLabel, plural, titleList } from "./format";
 import { collapseFrom, hierarchyFor, resolvePath, viewAt } from "./tree";
-import type { MonthKey, MonthlyStats, TreeNode } from "./types";
+import type { MonthKey, MonthlyStats, TreeNode, TrendPoint } from "./types";
 
 /**
- * The admin console's midterm page: one month of the school, one level at a time, with the
- * names a few clicks away.
+ * The admin console's midterm page: one month of the school, told in the order a person asks
+ * about it — how did we do, what happened, who needs looking at.
  *
- * Two rebuilds are visible here. The page this first replaced answered only "what did each
- * student score", one classroom and one paper at a time — nothing about a class as a whole was
- * ever shown. The page THAT became answered the pooled questions but drew four flat sibling
- * tables at once — Branches, Departments, Teachers, Classes — with no relationship between
- * them, which is the complexity the owner asked us to remove: *"hierarchy qiling"*. The four
- * are now one drill-down, `region → branch → department → teacher → class`, and the class row
- * still opens the same per-student panel it always did.
+ * Three rebuilds are visible here, and the third is why the page looks like this. The first
+ * page answered only "what did each student score", one class and one paper at a time. The
+ * second answered the pooled questions but drew four flat sibling tables at once. The third
+ * turned those into a drill-down — and the owner's verdict on the result was that it had
+ * become *chalkash va murakkab*: tangled and complicated. Every figure was correct, and the
+ * page spent its first screen on three blocks of explanation before it showed a single one.
  *
- * The order is deliberate: the whole school in five tiles, the rule those tiles were computed
- * by, then the level the reader is standing in, then detail on request.
+ * So the order is now: the four numbers, the pictures that make them mean something, the
+ * level you are standing in, and the rules underneath where a reader who wants them can
+ * find them. Nothing was removed — the definition, the outstanding-results warning and the
+ * orphaned-retake disclosure are all still here, at the foot of the page instead of ahead
+ * of the data. And the reporting dialect is gone: no roster places, no denominators, no
+ * verdicts. Passed, failed, did not come, waiting for a result.
  *
- * **Data fetching is plain `useState` + axios, not React Query, and that is not an oversight.**
- * The in-app browser pane reports `visibilityState: "hidden"`, which pauses React Query's
- * retries indefinitely — a failed fetch never resolves and the page spins forever. Every ops
- * surface fetches this way.
+ * **Data fetching is plain `useState` + axios, not React Query, and that is not an
+ * oversight.** The in-app browser pane reports `visibilityState: "hidden"`, which pauses
+ * React Query's retries indefinitely — a failed fetch never resolves and the page spins
+ * forever. Every ops surface fetches this way.
  */
 
 type TabKey = "statistics" | "records";
 
 const TABS = [
-  { value: "statistics", label: "Statistics", icon: BarChart3 },
-  { value: "records", label: "Classroom records", icon: FolderOpen },
+  { value: "statistics", label: "Results", icon: BarChart3 },
+  { value: "records", label: "Class records", icon: FolderOpen },
 ];
 
 /** All the drill-down panel needs of a class to open it: an id and something to call it. */
@@ -64,6 +69,12 @@ export default function MidtermStatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<OpenClass | null>(null);
+  /** The month-by-month line, fetched beside the month because it costs far more to build. */
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [trendLoading, setTrendLoading] = useState(true);
+  const [trendError, setTrendError] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   /**
    * Where the reader has drilled to, as node KEYS rather than nodes.
    *
@@ -82,7 +93,7 @@ export default function MidtermStatsPage() {
       // Never fall back to an empty payload: a failed request that renders as "no midterms
       // this month" is a lie about the school, and this page is read to judge people.
       setStats(null);
-      setError(errText(e, "Could not load the monthly statistics."));
+      setError(errText(e, "Could not load this month's results."));
     } finally {
       setLoading(false);
     }
@@ -91,6 +102,24 @@ export default function MidtermStatsPage() {
   useEffect(() => {
     void load(month);
   }, [load, month]);
+
+  /** The trend does not depend on the selected month, so it is fetched once. */
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const points = await midtermStatsApi.trend();
+        if (alive) setTrend(points);
+      } catch (e) {
+        if (alive) setTrendError(errText(e, "Could not load the earlier months."));
+      } finally {
+        if (alive) setTrendLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   /** Switching month replaces the whole tree, so the reader's position in it goes with it. */
   const openMonth = useCallback((next: MonthKey | null) => {
@@ -129,6 +158,26 @@ export default function MidtermStatsPage() {
   );
   const view = useMemo(() => viewAt(hierarchy.roots, path), [hierarchy.roots, path]);
 
+  /**
+   * What the download button will produce: the branch the reader is standing in, or the
+   * whole school. An Unassigned branch has no id to ask for, and the school-wide document
+   * contains its classes anyway — so it falls back rather than offering a broken download.
+   */
+  const branchNode = path.find((n) => n.level === "branch" && n.id != null) ?? null;
+  const pdfLabel = branchNode ? branchNode.name : "All branches";
+
+  const downloadPdf = useCallback(async () => {
+    setPdfBusy(true);
+    setPdfError(null);
+    try {
+      await midtermStatsApi.downloadBranchPdf(branchNode?.id ?? 0, shownMonth ?? null, pdfLabel);
+    } catch (e) {
+      setPdfError(errText(e, "Could not build the PDF."));
+    } finally {
+      setPdfBusy(false);
+    }
+  }, [branchNode, pdfLabel, shownMonth]);
+
   /** Going UP is literal: the reader asked for that level, even if it holds one row. */
   const goTo = useCallback(
     (depth: number) => setPathKeys(path.slice(0, depth).map((n) => n.key)),
@@ -155,12 +204,12 @@ export default function MidtermStatsPage() {
         {/* Wide enough for "October 2026 (scheduled)" to be read WHILE CLOSED. At w-44 the
             marker was clipped to "October 2026 (sch", which is the one word that had to
             survive. */}
-        <span className="w-60">
+        <span className="w-[min(15rem,60vw)] sm:w-60">
           <Select
             selectSize="sm"
             value={pickerMonth}
             onChange={(e) => openMonth(e.target.value || null)}
-            aria-label="Statistics month"
+            aria-label="Month"
           >
             {/* With no month to open on there is nothing to select, and a control whose value
                 matches no option renders blank — which reads as a broken picker rather than as
@@ -182,12 +231,24 @@ export default function MidtermStatsPage() {
     <div className="space-y-5">
       <OpsPageHeader
         section="Midterms"
-        title="Midterm statistics"
-        description="One month, opened one level at a time: regions, then branches, departments, teachers and classes — and the students behind each number."
+        title="Midterm results"
+        description="How every class did this month — open a row to go from the whole learning center down to one student."
         actions={
           tab === "statistics" && selected == null ? (
             <>
               {monthPicker}
+              {/* One file for everything under this heading: departments, their teachers,
+                  every class and every student. It used to take one download per class. */}
+              <button
+                type="button"
+                onClick={() => void downloadPdf()}
+                disabled={pdfBusy}
+                title={`Download ${pdfLabel} for ${monthLabel(shownMonth) || "this month"} as one PDF — every department, teacher, class and student.`}
+                className="ds-ring inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60"
+              >
+                <Download className={cn("h-4 w-4", pdfBusy && "animate-pulse")} aria-hidden />
+                {pdfBusy ? "Preparing…" : "Download PDF"}
+              </button>
               <button
                 type="button"
                 onClick={() => void load(month)}
@@ -216,15 +277,15 @@ export default function MidtermStatsPage() {
           initialMonth={shownMonth}
           fallbackName={selected.name}
           onBack={() => setSelected(null)}
-          backLabel={`Back to ${monthLabel(shownMonth) || "the"} statistics`}
+          backLabel={`Back to ${monthLabel(shownMonth) || "the"} results`}
         />
       ) : error ? (
         <ErrorPanel message={error} onRetry={() => void load(month)} />
       ) : loading || stats == null ? (
         <div className="space-y-4" aria-busy>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-28 animate-pulse rounded-2xl bg-surface-2" />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface-2" />
             ))}
           </div>
           <SectionCard>
@@ -233,46 +294,31 @@ export default function MidtermStatsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {/* First on the page, before any figure: the reader has to know what they are
-              looking at before they look at it. */}
+          {pdfError ? (
+            <Note className="border-danger/25 bg-danger-soft text-danger-foreground">{pdfError}</Note>
+          ) : null}
+
+          {/* Before any figure: the reader has to know what they are looking at. */}
           {scheduled && shownMonth ? (
             <ScheduledBanner
               month={shownMonth}
               thisMonth={stats.this_month}
               latestMonth={latestSatMonth(months, futureMonths)}
               onOpenLatest={() => openMonth(latestSatMonth(months, futureMonths))}
-              detail={`${plural(stats.totals.midterms, "paper")} timetabled for ${plural(stats.totals.classrooms, "class", "classes")}, and ${plural(stats.totals.distinct_students, "student")} on those rosters.`}
+              detail={`${plural(stats.totals.midterms, "exam")} booked for ${plural(stats.totals.classrooms, "class", "classes")}, and ${plural(stats.totals.distinct_students, "student")} due to sit them.`}
             />
           ) : null}
 
-          {/* No month was selected at all, so there is nothing for a row of tiles to be ABOUT.
+          {/* No month was selected at all, so there is nothing for a row of cards to be ABOUT.
               Their zeros would be a description of an empty selection wearing the words
               "Passed" and "Did not pass". An empty month that genuinely happened still gets
               them: its zeros describe a month.
 
-              These tiles are the WHOLE SCHOOL wherever the reader has drilled to. They do not
+              These cards are the WHOLE SCHOOL wherever the reader has drilled to. They do not
               follow the drill-down on purpose — a reader looking at one department needs the
               total to compare it against — which is why the card below states whose numbers
               its own table is showing. */}
-          {noResultsYet ? null : <HeadlineStats stats={stats} />}
-          <DefinitionNote definition={stats.definition} />
-
-          {/* Excluded from every number above, and named. Rendered whether or not the month
-              has data: a month whose only paper is an orphan is exactly the one whose
-              emptiness needs explaining. */}
-          <OrphanRetakeNote month={shownMonth ?? null} papers={orphans} />
-
-          {/* `pending` counts roster places — (student, paper) pairs — not students, so a
-              student awaiting two verdicts is two of them. Naming them "students" here made
-              the same mistake the Students tile used to make, one altitude down. */}
-          {!scheduled && stats.totals.pending > 0 && (
-            <Note>
-              {plural(stats.totals.pending, "roster place")} in {monthLabel(shownMonth)}{" "}
-              {stats.totals.pending === 1 ? "is" : "are"} still awaiting a result. They are in
-              the denominator and not in the numerator, so every rate on this page is a floor
-              for this month — it can only go up as those verdicts land.
-            </Note>
-          )}
+          {noResultsYet ? null : <SummaryCards stats={stats} />}
 
           {scheduled ? (
             /* No drill-down and no ranking. Every level of a hierarchy is a comparison, and
@@ -280,7 +326,7 @@ export default function MidtermStatsPage() {
                finding about the classes at the bottom. */
             <SectionCard
               title={`Booked for ${monthLabel(shownMonth) || "this month"}`}
-              description="What is timetabled, not how it went. Open a class to see which papers it has coming."
+              description="What is timetabled, not how it went. Open a class to see which exams it has coming."
             >
               <ScheduledClassroomTable rows={stats.classrooms} onSelect={setSelected} />
             </SectionCard>
@@ -289,7 +335,7 @@ export default function MidtermStatsPage() {
               <div className="p-5">
                 <EmptyPanel
                   title="No results yet"
-                  body={`Nothing has been sat under this view. Every month it has is still ahead: ${titleList(futureMonths.map(monthLabel))}. Pick one above — marked "scheduled" — to see what is booked, or widen the view.`}
+                  body={`Nobody has sat an exam under this view. Every month it has is still ahead: ${titleList(futureMonths.map(monthLabel))}. Pick one above — marked "scheduled" — to see what is booked.`}
                 />
               </div>
             </SectionCard>
@@ -300,27 +346,36 @@ export default function MidtermStatsPage() {
                   /* The month is not empty — it is empty OF THINGS THAT COUNT, and the reason
                      is sitting in the builder under a name the reader can search for. */
                   <EmptyPanel
-                    title={`No countable midterms in ${monthLabel(shownMonth) || "this month"}`}
-                    body={`The only ${orphans.length === 1 ? "paper" : plural(orphans.length, "paper")} dating into this month ${orphans.length === 1 ? "is a retake" : "are retakes"} with no parent midterm — ${titleList(orphans.map((p) => p.title))} — and a parentless retake is counted nowhere. Nothing else was timetabled here.`}
+                    title={`No exams counted in ${monthLabel(shownMonth) || "this month"}`}
+                    body={`The only ${orphans.length === 1 ? "paper" : plural(orphans.length, "paper")} dating into this month ${orphans.length === 1 ? "is a retake" : "are retakes"} with no parent exam — ${titleList(orphans.map((p) => p.title))} — and a retake with no parent is counted nowhere. Nothing else was booked here.`}
                   />
                 ) : (
                   <EmptyPanel
-                    title={`No midterms in ${monthLabel(shownMonth) || "this month"}`}
-                    body="No class sat a countable paper in this month. Pick another month above — a paper falls in the month it was timetabled for, or, when it was never timetabled, the month somebody first sat it."
+                    title={`No exams in ${monthLabel(shownMonth) || "this month"}`}
+                    body="No class sat an exam that counts in this month. Pick another month above — an exam falls in the month it was booked for, or, when it was never booked, the month somebody first sat it."
                   />
                 )}
               </div>
             </SectionCard>
           ) : (
             <>
-              {/* The chart plots the rows the table below lists, never a level the reader is
-                  not on. It draws nothing until a level actually branches. */}
-              <PassRateChart
-                nodes={view.rows}
-                level={view.level}
-                month={shownMonth}
-                scope={view.parent?.name ?? null}
-              />
+              {/* `cr-rise` rather than `cr-card`: this is a grid of two cards, and a hover
+                  lift belongs to each card, not to the pair of them. */}
+              <div className="cr-rise grid gap-4 lg:grid-cols-2" style={{ animationDelay: "300ms" }}>
+                <ResultsDonut stats={stats} />
+                {/* Draws nothing until a level actually branches; the grid then gives the
+                    donut the full width rather than leaving a hole beside it. */}
+                <LevelBars
+                  nodes={view.rows}
+                  level={view.level}
+                  month={shownMonth}
+                  scope={view.parent?.name ?? null}
+                />
+              </div>
+
+              <div className="cr-rise" style={{ animationDelay: "380ms" }}>
+                <TrendChart points={trend} loading={trendLoading} error={trendError} />
+              </div>
 
               <HierarchyPanel
                 roots={hierarchy.roots}
@@ -332,6 +387,21 @@ export default function MidtermStatsPage() {
               />
             </>
           )}
+
+          {/* Everything a reader may need and nobody needs FIRST. This is the block that used
+              to sit between the numbers and the table. */}
+          <div className="space-y-3 border-t border-border pt-4">
+            <SplitLegend />
+            {!scheduled && stats.totals.pending > 0 && (
+              <Note>
+                {plural(stats.totals.pending, "result")} in {monthLabel(shownMonth)}{" "}
+                {stats.totals.pending === 1 ? "is" : "are"} still to come. They count as not
+                passed for now, so every rate here can only go up.
+              </Note>
+            )}
+            <OrphanRetakeNote month={shownMonth ?? null} papers={orphans} />
+            <DefinitionNote definition={stats.definition} />
+          </div>
         </div>
       )}
     </div>

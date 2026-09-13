@@ -180,7 +180,7 @@ export function AssessmentsPanel({
           <Card className="space-y-4">
             <CardHeader
               title={flaggedHeading(data.needs_analysis.length)}
-              description={`Ranked worst first. A question at or above ${threshold}% is one the school's rule says to re-teach.`}
+              description={`Ranked worst first. A question at or above ${threshold}% is one the learning center's rule says to re-teach.`}
             />
             {data.needs_analysis.length === 0 ? (
               <EmptyState

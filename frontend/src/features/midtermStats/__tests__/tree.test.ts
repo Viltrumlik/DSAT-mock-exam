@@ -232,7 +232,7 @@ describe("deriveTree", () => {
     // Two classes, 10 students each, but the same student may be in both — a rebuilt node
     // cannot tell, and 112 of the school's 226 students really are in two classes.
     const roots = deriveTree([cls(), cls({ id: 12, name: "B" })]);
-    expect(nodeSubline(roots[0])).toBe("2 classes · 20 roster places");
+    expect(nodeSubline(roots[0])).toBe("2 classes · 20 exams expected");
     expect(nodeSubline(roots[0])).not.toContain("students");
     // The class itself is exact, because that number came straight off its own row.
     const leaf = roots[0].children![0].children![0].children![0].children![0];

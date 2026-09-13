@@ -134,7 +134,7 @@ function ScopeFigure({ node }: { node: TreeNode }) {
         <RateFigure rate={node.pass_rate} reason={rateReason("pass", node.roster)} />
       </p>
       <p className="text-[11px] tabular-nums text-muted-foreground">
-        {formatShare(node.passed, node.roster)} roster places
+        {formatShare(node.passed, node.roster)} students
       </p>
     </div>
   );
@@ -273,6 +273,7 @@ export function HierarchyPanel({
       <HierarchyBreadcrumb path={path} rootLabel={rootLabel} onGo={onGo} />
 
       <SectionCard
+        index={6}
         title={scopeHeading(level, parent)}
         description={
           <>

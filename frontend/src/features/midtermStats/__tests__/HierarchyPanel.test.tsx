@@ -152,7 +152,7 @@ describe("HierarchyPanel", () => {
     expect(out).toContain("Departments in Fergana city");
     expect(out).toContain("branch total");
     expect(out).toContain("75%");
-    expect(out).toContain("45 of 60 roster places");
+    expect(out).toContain("45 of 60 students");
   });
 
   it("names the level in the column header rather than showing a bare list", () => {
@@ -242,23 +242,44 @@ describe("HierarchyPanel", () => {
     });
     const out = render(panel(tree, collapseFrom(tree, [])));
     expect(out).toContain("—");
-    expect(out).toContain("No students on the roster");
-    // An empty track beside an em dash is a picture of 0%, which is the claim the dash exists
-    // to avoid. The Math row must contribute no bar at all.
+    expect(out).toContain("due to sit an exam");
+    // A coloured bar beside an em dash is a picture of 0%, which is the claim the dash exists
+    // to avoid. The row's bar is the split one (passed | failed | did not come), and for a
+    // node nobody was due to sit under it must draw an empty track and no segments at all.
     const rows = [...(container?.querySelectorAll("tbody tr") ?? [])];
     const math = rows.find((r) => r.textContent?.includes("Math"));
-    expect(math?.querySelectorAll("[aria-hidden] .bg-primary")).toHaveLength(0);
+    expect(math?.querySelectorAll('[role="img"]')).toHaveLength(0);
     const english = rows.find((r) => r.textContent?.includes("English"));
-    expect(english!.querySelectorAll("[aria-hidden] .bg-primary").length).toBeGreaterThan(0);
+    const bar = english!.querySelector('[role="img"]');
+    expect(bar).not.toBeNull();
+    expect(bar!.querySelectorAll("span").length).toBeGreaterThan(0);
   });
 
   it("reconciles the two denominators when a row shows both", () => {
     const tree = roots();
     const out = render(panel(tree, collapseFrom(tree, [])));
-    // 40 roster places over 34 students: a student in two of these classes is on two rosters.
+    // 40 exams expected of 34 students: a student in two of these classes is counted in both.
     expect(out).toContain("34 students");
-    expect(out).toContain("40 roster places");
-    expect(out).toContain("Rates are over roster places");
+    expect(out).toContain("40 exams expected");
+    expect(out).toContain("sat more than one exam this month, and each exam counts");
+  });
+
+  it("draws each row's bar just after the row it belongs to, and caps the wait", () => {
+    const tree = roots();
+    render(panel(tree, collapseFrom(tree, [])));
+    const rows = [...(container?.querySelectorAll("tbody tr") ?? [])];
+    const ms = (el: Element | null, prop: string) =>
+      Number(((el as HTMLElement | null)?.style.getPropertyValue(prop) || "0ms").replace("ms", ""));
+
+    rows.forEach((tr, i) => {
+      const rowIn = Number((tr as HTMLElement).style.animationDelay.replace("ms", ""));
+      const bar = ms(tr.querySelector(".mts-grow"), "--mts-delay");
+      // The bar is drawn after its row has arrived, never before it.
+      expect(bar).toBeGreaterThan(rowIn);
+      // And nothing waits on a stagger longer than a dozen rows' worth.
+      expect(rowIn).toBeLessThanOrEqual(12 * 35);
+      expect(i).toBeGreaterThanOrEqual(0);
+    });
   });
 
   it("says out loud when it had to rebuild the hierarchy itself", () => {

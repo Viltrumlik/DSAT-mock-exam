@@ -153,7 +153,7 @@ describe("SupportReportPage", () => {
     expect(out).toContain("83.3%");
     expect(out).not.toContain("0.8333");
     expect(out).toContain("5 of 6");
-    expect(out).toContain("The whole school");
+    expect(out).toContain("The whole learning center");
     expect(monthly).toHaveBeenCalledWith(null);
   });
 
@@ -198,7 +198,7 @@ describe("SupportReportPage", () => {
     expect(out).toContain("Nothing here is empty — it is unknown");
     // The lie this rule exists to prevent.
     expect(out).not.toContain("No support hours in");
-    expect(out).not.toContain("The whole school");
+    expect(out).not.toContain("The whole learning center");
   });
 
   it("renders an empty month as an empty month, with the reason", async () => {
