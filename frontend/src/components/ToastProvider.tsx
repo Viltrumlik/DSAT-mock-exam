@@ -2,21 +2,28 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
+import { overlayFaceClass, useOverlayFace, type OverlayFace } from "@/components/ui/OverlayFace";
 
 export type Toast = { id: string; message: string; tone?: "neutral" | "success" | "error" };
 
-const ToastCtx = createContext<{ push: (t: Omit<Toast, "id">) => void } | null>(null);
+/**
+ * A toast carries the face of the surface that raised it. The stack renders here, in the root layout,
+ * above every console, so it cannot see a console's provider for itself — see OverlayFace.
+ */
+type ShownToast = Toast & { face: OverlayFace };
+
+const ToastCtx = createContext<{ push: (t: Omit<Toast, "id">, face?: OverlayFace) => void } | null>(null);
 
 function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [toasts, setToasts] = useState<ShownToast[]>([]);
 
-  const push = useCallback((t: Omit<Toast, "id">) => {
+  const push = useCallback((t: Omit<Toast, "id">, face: OverlayFace = "ui") => {
     const id = uid();
-    const toast: Toast = { id, tone: t.tone || "neutral", message: t.message };
+    const toast: ShownToast = { id, tone: t.tone || "neutral", message: t.message, face };
     setToasts((prev) => [toast, ...prev].slice(0, 3));
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((x) => x.id !== id));
@@ -27,6 +34,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     const onEvt = (e: Event) => {
       const d = (e as CustomEvent<{ tone?: Toast["tone"]; message?: string }>).detail;
       if (!d?.message) return;
+      // An event has no surface to read a face from, so it takes the default.
       push({ tone: d.tone || "neutral", message: String(d.message) });
     };
     window.addEventListener("mastersat-toast", onEvt as EventListener);
@@ -44,6 +52,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             key={t.id}
             className={cn(
               "rounded-2xl border border-border bg-card px-4 py-3 shadow-lg",
+              overlayFaceClass(t.face),
               t.tone === "success" && "border-primary/20 bg-primary/5",
               t.tone === "error" && "border-red-500/20 bg-red-500/5",
             )}
@@ -59,7 +68,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
 export function useToast() {
   const ctx = useContext(ToastCtx);
-  if (!ctx) throw new Error("useToast must be used within ToastProvider");
-  return ctx;
+  const face = useOverlayFace();
+  const toast = useMemo(
+    () => (ctx ? { push: (t: Omit<Toast, "id">) => ctx.push(t, face) } : null),
+    [ctx, face],
+  );
+  if (!toast) throw new Error("useToast must be used within ToastProvider");
+  return toast;
 }
 

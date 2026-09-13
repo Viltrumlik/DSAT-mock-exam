@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";
+import { OverlayFaceProvider } from "@/components/ui/OverlayFace";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
@@ -171,7 +172,19 @@ function NavItem({
   );
 }
 
+/**
+ * The console is set in the body's Georgia — it never took the app shell's `ds-app` — so its dialogs
+ * and toasts are too, rather than being the one sans thing in it. See OverlayFace.
+ */
 export default function OpsLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <OverlayFaceProvider face="body">
+      <OpsConsole>{children}</OpsConsole>
+    </OverlayFaceProvider>
+  );
+}
+
+function OpsConsole({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { me } = useMe();
