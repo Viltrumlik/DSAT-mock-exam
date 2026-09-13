@@ -169,6 +169,18 @@ async function handled(events: Promise<unknown>[]) {
   });
 }
 
+/** Which of these events the hub is done with, kept up to date as each one settles. */
+function doneSoFar(events: Promise<unknown>[]) {
+  const done = events.map(() => false);
+  events.forEach((event, i) => {
+    const mark = () => {
+      done[i] = true;
+    };
+    event.then(mark, mark);
+  });
+  return done;
+}
+
 beforeEach(() => {
   // React 19 only flushes work inside `act` when the environment declares itself one.
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -193,13 +205,19 @@ describe("HomeworkGradingHub — one refresh at a time", () => {
     const second = held<unknown>();
     api.list.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
     const events = await deliver("workspace.updated", "workspace.updated", "stream.updated", "workspace.updated", "resync");
+    const done = doneSoFar(events);
+    await settle();
 
-    // One refresh waits on the server; the other four events wait for the one after it.
+    // One refresh waits on the server, and every event waits with it: the first on that refresh, the other
+    // four on the one after it.
     expect(api.list).toHaveBeenCalledTimes(2);
+    expect(done).toEqual([false, false, false, false, false]);
 
     await act(async () => first.release(algebraOnly()));
     await until(() => api.list.mock.calls.length === 3);
+    await settle();
     expect(rows()).toEqual([`${BASE}/1/101`]);
+    expect(done).toEqual([true, false, false, false, false]);
 
     // By the time the refresh after it asks, Algebra has a second homework.
     serve([ALGEBRA], { 1: [WEEK_4, WEEK_5] });
