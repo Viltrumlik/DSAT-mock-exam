@@ -11,51 +11,7 @@
  */
 
 import { classesApi } from "@/lib/api";
-import type { Classroom, NormalizedList, Assignment } from "@/lib/criticalApiContract";
-import type { AssignmentWithContext } from "../types";
-
-/**
- * List all assignments across all classrooms the current user manages.
- * Used by the ops assignments dashboard.
- *
- * @note This performs N requests (one per classroom). Acceptable for
- *       typical classroom counts (<50). Future: backend-provided aggregate endpoint.
- */
-export async function listAllAssignments(): Promise<AssignmentWithContext[]> {
-  const classroomList: NormalizedList<Classroom> = await classesApi.list();
-  const managed = classroomList.items.filter(
-    (c) => (c as Classroom & { my_role?: string }).my_role === "ADMIN",
-  );
-
-  const out: AssignmentWithContext[] = [];
-
-  await Promise.allSettled(
-    managed.map(async (classroom) => {
-      try {
-        const assignments: NormalizedList<Assignment> = await classesApi.listAssignments(classroom.id);
-        for (const a of assignments.items) {
-          out.push({
-            ...a,
-            classroomId: classroom.id,
-            classroomName: classroom.name ?? `Class #${classroom.id}`,
-            subject: (classroom as Classroom & { subject?: string }).subject,
-          });
-        }
-      } catch {
-        // Individual classroom failures don't abort the whole list
-      }
-    }),
-  );
-
-  // Sort: most recently created first, then by due date
-  out.sort((a, b) => {
-    const da = a.due_at ? new Date(a.due_at).getTime() : 0;
-    const db = b.due_at ? new Date(b.due_at).getTime() : 0;
-    return db - da;
-  });
-
-  return out;
-}
+import type { NormalizedList, Assignment } from "@/lib/criticalApiContract";
 
 /**
  * List assignments for a single classroom.

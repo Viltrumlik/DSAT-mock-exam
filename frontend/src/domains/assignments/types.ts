@@ -24,16 +24,6 @@ export type AssignmentState =
   | "CANCELLED";
 
 /**
- * A classroom assignment enriched with classroom and set metadata
- * for the ops assignment list view.
- */
-export type AssignmentWithContext = Assignment & {
-  classroomId: number;
-  classroomName: string;
-  subject?: string;
-};
-
-/**
  * Filters for the assignment management list.
  */
 export type AssignmentFilters = {
