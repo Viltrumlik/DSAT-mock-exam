@@ -70,7 +70,9 @@ export function useGradingQueue(previewItems?: QueueItem[]): GradingData {
       const pairs: { classId: number; className: string; assignmentId: number; assignmentTitle: string }[] = [];
       await mapWithConcurrency(managed, 4, async (c) => {
         const aRes = await classesApi.listAssignments(c.id).catch(() => ({ items: [] }));
-        (aRes.items as Array<{ id: number; title?: string }>).slice(0, ASSIGNMENTS_PER_CLASS_CAP).forEach((a) => {
+        // Drafts stay out, before the cap: no student has been given one, and drafts listed first would take
+        // the slots of homework with work waiting. A row that names no status is kept.
+        aRes.items.filter((a) => a.status !== "DRAFT").slice(0, ASSIGNMENTS_PER_CLASS_CAP).forEach((a) => {
           pairs.push({ classId: c.id, className: c.name || "Class", assignmentId: a.id, assignmentTitle: a.title || "Assignment" });
         });
       });
