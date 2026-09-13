@@ -247,7 +247,7 @@ function Fact({
 }) {
   return (
     <div
-      className="quartz cr-cardrise relative h-full overflow-hidden rounded-2xl px-5 py-4"
+      className="quartz quartz-float cr-cardrise relative h-full overflow-hidden rounded-2xl px-5 py-4"
       style={{ animationDelay: `${index * 80}ms` }}
     >
       <Icon

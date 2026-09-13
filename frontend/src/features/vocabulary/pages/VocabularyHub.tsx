@@ -171,16 +171,9 @@ export function VocabularyHub() {
         </div>
       </Card>
 
-      {/* -my-1/py-1 keeps the active pill's shadow from being clipped by the
-          horizontal scroller that saves the three tabs on a phone. */}
-      <div className="-my-1 max-w-full overflow-x-auto py-1">
-        <Tabs
-          items={tabs}
-          active={tab}
-          onChange={(id) => setTab(id as TabKey)}
-          className="whitespace-nowrap"
-        />
-      </div>
+      {/* The bar scrolls itself now and carries its own padding, so the wrapper that used
+          to do both would only clip the block's shadow. */}
+      <Tabs items={tabs} active={tab} onChange={(id) => setTab(id as TabKey)} />
 
       <div key={tab} className="cr-section">
         {tab === "bank" ? <BankTab query={sections} /> : null}
