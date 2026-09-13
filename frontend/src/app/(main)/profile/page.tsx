@@ -25,6 +25,7 @@ import { rewardsApi, type MyRewards } from "@/features/rewards/rewardsApi";
 import {
   Button, Card, CardHeader, EmptyState, ErrorState, Pill, Spinner,
 } from "@/features/classroom/ui";
+import { capabilitiesFor } from "@/features/classroom/capabilities";
 import { cn } from "@/lib/cn";
 
 type MeForm = {
@@ -371,7 +372,9 @@ export default function ProfilePage() {
   const completion = profileCompletion(me);
   const targetScore = me.target_score ? Math.max(0, Math.min(1600, parseInt(me.target_score, 10))) : null;
   const nextDays = me.sat_exam_date ? daysUntil(me.sat_exam_date) : null;
-  const enrolledClasses = classes.filter((c) => { const r = String(c.my_role || "").toLowerCase(); return r === "student" || r === "admin"; });
+  // Every class the user holds a seat in. This named STUDENT and ADMIN, all the roles there were
+  // when it was written; the OWNER, TEACHER and TA seats that came later fell off the list.
+  const enrolledClasses = classes.filter((c) => capabilitiesFor(c.my_role).isMember);
   const totalPeers = enrolledClasses.reduce((acc, c) => acc + Math.max(0, (c.members_count || 0) - 1), 0);
   const selectedClass = enrolledClasses.find((c) => c.id === selectedClassId) || null;
   const selectedStudents = selectedClassPeople.filter((p) => String(p.role || "").toLowerCase() === "student");
