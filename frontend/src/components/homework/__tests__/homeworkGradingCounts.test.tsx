@@ -5,10 +5,10 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
 
 /**
  * What the homework grading hub (`/teacher/homework/grading`) says about each homework: its
- * "N missing" and "All in" badges, the "N / M submitted" line, the overdue banner, and which
- * homework it lists first.
+ * "N missing" and "All in" badges, the "N / M submitted" line, the overdue banner, which homework it
+ * lists first, and whether it asks if a homework nobody has turned in reached the students.
  *
- * All of them were `members_count - submissions_count`, and neither number is the one they need.
+ * The first four were `members_count - submissions_count`, and neither number is the one they need.
  * `members_count` is every member of the class who has not been removed, the teacher and any TA
  * included; the class row's `student_count` is its active students. `submissions_count` is every
  * submission row: a draft the student never turned in, work returned for revision, and the work of
@@ -17,7 +17,9 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
  * as submitted.
  *
  * So a class of 20 students with a teacher and a TA, every one of whom had turned the homework in,
- * read "2 missing" and could never read "All in".
+ * read "2 missing" and could never read "All in". And one draft was enough to stop the hub asking
+ * "was this assignment communicated to students?", while the grading page it links to still said
+ * "No submissions yet".
  */
 
 const api = vi.hoisted(() => ({
@@ -73,10 +75,10 @@ const WORKSHEET = homework(102, "Worksheet", {
   turned_in_count: 16,
 });
 
-// Due in five days. Three students have started a draft.
+// Set four days ago and due in two. Three students have started a draft; nobody has turned it in.
 const READING = homework(103, "Reading", {
-  due_at: "2026-09-18T09:00:00+05:00",
-  created_at: "2026-09-12T09:00:00+05:00",
+  due_at: "2026-09-15T09:00:00+05:00",
+  created_at: "2026-09-09T09:00:00+05:00",
   submissions_count: 3,
   turned_in_count: 0,
 });
@@ -138,6 +140,11 @@ function submittedLine(el: Element): string | null {
   return [...el.querySelectorAll("span")].map(text).find((t) => t.endsWith(" submitted")) ?? null;
 }
 
+/** Whether a row asks if the homework reached the students. */
+function asksIfCommunicated(el: Element): boolean {
+  return text(el).includes("No submissions yet — was this assignment communicated to students?");
+}
+
 /** The overdue banner's headline, or null when there is no banner. */
 function banner(): string | null {
   return [...host.querySelectorAll("p")].map(text).find((t) => t.includes("overdue with missing submissions")) ?? null;
@@ -177,6 +184,16 @@ describe("HomeworkGradingHub — who has turned the homework in", () => {
     expect(badges(row(1, 102))).toEqual(["4 missing"]);
     expect(submittedLine(row(1, 102))).toBe("16 / 20 submitted");
     expect(submittedLine(row(1, 103))).toBe("0 / 20 submitted");
+  });
+
+  it("asks whether homework reached the students when nobody has turned it in, drafts or not, and only where there are students", async () => {
+    await renderHub([ALGEBRA, GEOMETRY], { 1: [ESSAY, WORKSHEET, READING], 2: [DIAGNOSTIC] });
+
+    // Set four days ago; three drafts, nothing turned in. The grading page says "No submissions yet".
+    expect(asksIfCommunicated(row(1, 103))).toBe(true);
+    expect(asksIfCommunicated(row(1, 101))).toBe(false);
+    // Nobody to reach: the class has no students.
+    expect(asksIfCommunicated(row(2, 201))).toBe(false);
   });
 
   it("raises the banner for, and lists first, only the overdue homework that is really missing work", async () => {
