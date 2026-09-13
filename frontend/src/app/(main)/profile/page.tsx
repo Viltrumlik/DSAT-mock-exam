@@ -18,7 +18,7 @@ import {
   Select, Skeleton, Tabs,
 } from "@/components/ui";
 import { GoalCard, StatTile } from "@/features/profile/ProfileSections";
-import { POINTS_EXPLAINER, STREAK_EXPLAINER, XP_EXPLAINER } from "@/features/rewards/explainers";
+import { POINTS_EXPLAINER, STRIKE_EXPLAINER, XP_EXPLAINER } from "@/features/rewards/explainers";
 import { rewardsApi, type MyRewards } from "@/features/rewards/rewardsApi";
 // The house devices. Importing the classroom's kit is what makes this page read as part of
 // the same product as the homework it opens onto.
@@ -485,14 +485,14 @@ export default function ProfilePage() {
               index={1}
               tone="amber"
               icon={Flame}
-              label="Streak"
-              explain={STREAK_EXPLAINER}
-              value={rewards ? rewards.current_streak : "—"}
+              label="Strikes"
+              explain={STRIKE_EXPLAINER}
+              value={rewards ? rewards.strikes : "—"}
               detail={
                 rewards
                   ? rewards.current_streak === 0
-                    ? "Attend your next lesson to start one."
-                    : `${rewards.current_streak === 1 ? "lesson" : "lessons"} in a row · best ${rewards.best_streak}`
+                    ? "Attend your next lesson to start a run."
+                    : `${rewards.current_streak} ${rewards.current_streak === 1 ? "lesson" : "lessons"} in a row · best ${rewards.best_streak}`
                   : undefined
               }
             />

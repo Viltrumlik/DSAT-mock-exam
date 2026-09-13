@@ -780,7 +780,10 @@ export function LeaderboardPage() {
     ...(streak > 0
       ? [
           {
-            label: "Streak",
+            // Named for what it counts. This one really is the RUN, not the spendable
+            // strikes, and sitting a word like "Streak" next to a "Strikes" total
+            // elsewhere is how the two get read as the same number.
+            label: "In a row",
             value: `${streak} ${streak === 1 ? "lesson" : "lessons"}`,
             icon: Flame,
           },

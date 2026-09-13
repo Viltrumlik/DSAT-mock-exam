@@ -7,7 +7,7 @@ import { useRoadmap } from "@/features/roadmap/hooks";
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
 import {
   POINTS_EXPLAINER,
-  STREAK_EXPLAINER,
+  STRIKE_EXPLAINER,
   XP_EXPLAINER,
   type Explainer,
 } from "@/features/rewards/explainers";
@@ -215,15 +215,22 @@ export function DashboardPulse({
         href="/shop"
         explain={POINTS_EXPLAINER}
       />,
+      // `strikes`, not `current_streak`: the spendable balance is what the Strike shop
+      // charges against, and the two part company the moment a student buys anything. The
+      // run itself is the detail line, where it reads as context rather than as the total.
       <Chip
-        key="streak"
+        key="strikes"
         index={i++}
         tone="amber"
         icon={Flame}
-        label="Streak"
-        value={rewards.data.current_streak}
-        detail={rewards.data.current_streak > 0 ? `best ${rewards.data.best_streak}` : "start one"}
-        explain={STREAK_EXPLAINER}
+        label="Strikes"
+        value={rewards.data.strikes}
+        detail={
+          rewards.data.current_streak > 0
+            ? `${rewards.data.current_streak} ${rewards.data.current_streak === 1 ? "lesson" : "lessons"} in a row`
+            : "attend a lesson to start"
+        }
+        explain={STRIKE_EXPLAINER}
       />,
     );
   }
