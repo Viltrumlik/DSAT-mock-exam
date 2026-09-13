@@ -39,6 +39,10 @@ function shortDate(iso?: string | null): string {
 
 /** Right-aligned status line — 1:1 with the mockup (Posted / Due / Was due-red). */
 function statusInfo(a: AsgRow, staff: boolean): { text: string; overdue: boolean } {
+  // A draft has no deadline yet. Its `due_at` is only the placeholder `create` gives all homework:
+  // the first publish replaces it with the lesson after publishing, and no student sees a draft
+  // before then. So no date shown for one, red or not, is a date the class will have.
+  if (a.status === "DRAFT") return { text: "Not published", overdue: false };
   if (a.due_at) {
     const due = new Date(a.due_at).getTime();
     if (!Number.isNaN(due)) {

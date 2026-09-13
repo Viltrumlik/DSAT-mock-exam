@@ -115,6 +115,11 @@ class GradebookOverviewView(_ClassroomScopedView):
 
         rows = []
         for a in assignments:
+            if a.status == Assignment.STATUS_DRAFT:
+                # Not given to the class yet: students only ever see PUBLISHED work, so nobody can be
+                # missing a draft and nothing on it is waiting to be graded. Its due_at is only the
+                # placeholder `create` gives all homework, which the first publish replaces.
+                continue
             sub_map = subs_by_assignment.get(a.id, {})
             cells = [_cell(sub_map.get(sid)) for sid in student_ids]
             counts = _counts(cells)
