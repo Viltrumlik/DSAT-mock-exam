@@ -145,10 +145,10 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
                 </span>
               </div>
 
-              {/* Back inside the card, as asked — but sunk into it. A recess at the card's
-                  foot, flush to its edges, so three white blocks can sit ON a white card
-                  and still be objects rather than panels drawn on it. */}
-              <div className="quartz-well -mx-5 -mb-5 mt-1 px-5 py-[18px]">
+              {/* Inside the card, on its own white — no tray under them. Three blocks on
+                  a white card, told apart from it by a one-pixel edge and the weight of
+                  their shadow, which is the whole of the device now. */}
+              <div className="mt-1">
                 <div className="grid gap-4 sm:grid-cols-3">
                   <Fact
                     icon={Layers}
@@ -252,7 +252,7 @@ function Fact({
     >
       <Icon
         aria-hidden
-        className="pointer-events-none absolute -bottom-4 -right-3 h-[86px] w-[86px] text-foreground/[0.045] drop-shadow-[0_1px_0_rgba(255,255,255,0.85)] dark:drop-shadow-none"
+        className="pointer-events-none absolute -bottom-4 -right-3 h-[86px] w-[86px] text-foreground/[0.05]"
         strokeWidth={1.25}
       />
       <div className="relative">
@@ -288,8 +288,8 @@ function HeaderSkeleton() {
           </div>
           <Skeleton variant="circle" className="h-16 w-16 shrink-0" />
         </div>
-        {/* The recess and its three blocks, so the card does not change height on load. */}
-        <div className="quartz-well -mx-5 -mb-5 mt-1 px-5 py-[18px]">
+        {/* The three blocks, so the card does not change height on load. */}
+        <div className="mt-1">
           <div className="grid gap-4 sm:grid-cols-3">
             {[0, 1, 2].map((i) => (
               <Skeleton key={i} className="h-[104px] rounded-2xl" />

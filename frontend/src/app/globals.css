@@ -1630,144 +1630,54 @@ mark.ts-annot {
 }
 
 /* ── Quartz ──────────────────────────────────────────────────────────────────
-   A block of white quartz: a cool, faintly translucent stone that catches the light
-   on its top facet, carries a cleavage sheen across one corner, and sits on its own
-   shadow — so a tile reads as an OBJECT resting on the page rather than a rectangle
-   drawn on it.
+   A block of white quartz — and by the fourth pass, white is the whole of it.
 
-   It exists because of a specific bind. The three aggregates under a section title
-   were first flat and were called plain; tinting them made each one a miniature of
-   the coloured card it sat in ("ranglar ko'payib ketgan … shapelar juda katta va
-   takrorlayapti kattasini"); stripping the colour again made them plain once more.
-   The way out is to decorate with MATERIAL instead of hue — light, bevel, depth and
-   weight — which adds no colour to the page at all.
+   It started tinted and lit, with a cleavage sheen and a sunken grey recess to sit in,
+   and that was one layer too many: "murakkablashib qolibdi … background ranglar hammasini
+   oq qiling. simple but cool". So the gradient, the sheen and the well are gone. What is
+   left is the part that was doing the work anyway — a hairline, a shadow with some weight
+   in it, and a lift under the cursor.
 
-   Every value is white or slate at low alpha over `--card`, so the block belongs to
-   whichever surface it is dropped on and follows the light/dark toggle. */
+   White on white, told apart by an edge one pixel wide. That is the whole trick, and it
+   is why the block still reads as an object on a white card without a drop of colour. */
 .quartz {
   position: relative;
-  isolation: isolate;
-  /* White nearly all the way, with the cool tint held back to the far corner — a block of
-     stone reads BRIGHTER than the card stock around it, not duller. */
-  background:
-    linear-gradient(152deg,
-      #ffffff 0%,
-      rgba(255, 255, 255, .99) 40%,
-      rgba(245, 249, 253, .98) 74%,
-      rgba(230, 238, 249, .98) 100%),
-    var(--card);
+  background: var(--card);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .95),      /* the lit top facet */
-    inset 1px 0 0 rgba(255, 255, 255, .7),
-    inset -1px 0 0 rgba(15, 23, 42, .035),
-    inset 0 -1px 0 rgba(15, 23, 42, .06),        /* the shaded bottom facet */
-    0 1px 2px rgba(15, 23, 42, .06),
-    0 12px 22px -10px rgba(30, 58, 110, .24),
-    0 30px 50px -28px rgba(30, 58, 110, .28);
+    0 0 0 1px rgba(15, 23, 42, .055),            /* the hairline — the only separator */
+    0 1px 2px rgba(15, 23, 42, .04),
+    0 8px 18px -10px rgba(30, 58, 110, .16);
   transition:
-    transform .30s cubic-bezier(.22, 1, .36, 1),
-    box-shadow .30s cubic-bezier(.22, 1, .36, 1);
+    transform .28s cubic-bezier(.22, 1, .36, 1),
+    box-shadow .28s cubic-bezier(.22, 1, .36, 1);
 }
 
-/* The cleavage plane — one specular band across the top-left, the way light crosses a
-   cut crystal. It brightens and travels a little as the block lifts. */
-.quartz::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  border-radius: inherit;
-  pointer-events: none;
-  background: linear-gradient(114deg,
-    rgba(255, 255, 255, .95) 0%,
-    rgba(255, 255, 255, .35) 26%,
-    rgba(255, 255, 255, 0) 52%);
-  opacity: .8;
-  transition: opacity .30s ease, transform .30s cubic-bezier(.22, 1, .36, 1);
-}
-
-/* Float: the block leaves the page, its shadow spreads and softens the way a real one
-   does as the gap grows, and the sheen slides with it. */
+/* Float: the block leaves the page and its shadow spreads the way a real one does as the
+   gap grows. */
 .quartz:hover {
-  transform: translateY(-5px);
+  transform: translateY(-4px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .98),
-    inset 1px 0 0 rgba(255, 255, 255, .8),
-    inset -1px 0 0 rgba(15, 23, 42, .04),
-    inset 0 -1px 0 rgba(15, 23, 42, .07),
-    0 2px 4px rgba(15, 23, 42, .05),
-    0 18px 30px -12px rgba(30, 58, 110, .24),
-    0 44px 70px -34px rgba(30, 58, 110, .30);
+    0 0 0 1px rgba(15, 23, 42, .07),
+    0 2px 4px rgba(15, 23, 42, .04),
+    0 20px 34px -14px rgba(30, 58, 110, .22);
 }
 
-.quartz:hover::before {
-  opacity: 1;
-  transform: translateX(5%);
-}
-
-/* Smoky quartz: the same stone, read in the dark. The facets invert — the highlight is
-   a thin white line at low alpha, the depth is black. */
 .dark .quartz {
-  background:
-    linear-gradient(158deg,
-      rgba(255, 255, 255, .075) 0%,
-      rgba(255, 255, 255, .025) 44%,
-      rgba(255, 255, 255, .055) 100%),
-    var(--card);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .15),
-    inset 1px 0 0 rgba(255, 255, 255, .06),
-    inset 0 -1px 0 rgba(0, 0, 0, .38),
-    0 1px 2px rgba(0, 0, 0, .40),
-    0 12px 24px -12px rgba(0, 0, 0, .62),
-    0 30px 52px -30px rgba(0, 0, 0, .72);
-}
-
-.dark .quartz::before {
-  background: linear-gradient(114deg,
-    rgba(255, 255, 255, .13) 0%,
-    rgba(255, 255, 255, .04) 26%,
-    rgba(255, 255, 255, 0) 52%);
+    0 0 0 1px rgba(255, 255, 255, .07),
+    0 1px 2px rgba(0, 0, 0, .35),
+    0 10px 20px -10px rgba(0, 0, 0, .55);
 }
 
 .dark .quartz:hover {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .20),
-    inset 1px 0 0 rgba(255, 255, 255, .08),
-    inset 0 -1px 0 rgba(0, 0, 0, .42),
-    0 2px 4px rgba(0, 0, 0, .42),
-    0 22px 36px -14px rgba(0, 0, 0, .68),
-    0 52px 80px -40px rgba(0, 0, 0, .78);
+    0 0 0 1px rgba(255, 255, 255, .10),
+    0 2px 4px rgba(0, 0, 0, .38),
+    0 24px 40px -16px rgba(0, 0, 0, .65);
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* Keeps the stone — drops the flight. */
-  .quartz, .quartz::before { transition: none !important; }
+  .quartz { transition: none !important; }
   .quartz:hover { transform: none; }
-  .quartz:hover::before { transform: none; }
-}
-
-/* The well a quartz block sits in.
-   White stone on a white card is invisible, and the owner wants the blocks back inside
-   the header card while still standing apart from it ("ichiga quring ammo ular
-   ko'rinishidan ajralib turishi kerak"). So the card's foot is SUNK: a shallow recess,
-   darker than the surface and lit from the inside top edge the way a cut-out is. The
-   blocks then read as raised out of it — card, recess, stone, three planes of depth and
-   not one drop of colour.
-   Meant to sit flush to the card's own edges (`-mx-5 -mb-5`), so the card's
-   `overflow-hidden` clips its corners to the card radius. */
-.quartz-well {
-  background: linear-gradient(180deg, rgba(15, 23, 42, .050) 0%, rgba(15, 23, 42, .022) 100%);
-  box-shadow:
-    inset 0 2px 4px rgba(15, 23, 42, .07),        /* the lip of the cut-out */
-    inset 0 1px 0 rgba(15, 23, 42, .05),
-    inset 0 -1px 0 rgba(255, 255, 255, .85);
-}
-
-.dark .quartz-well {
-  background: linear-gradient(180deg, rgba(0, 0, 0, .30) 0%, rgba(0, 0, 0, .16) 100%);
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, .45),
-    inset 0 1px 0 rgba(0, 0, 0, .5),
-    inset 0 -1px 0 rgba(255, 255, 255, .045);
 }
