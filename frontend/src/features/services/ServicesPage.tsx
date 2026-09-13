@@ -150,11 +150,14 @@ function Fact({
   tone,
   icon: Icon,
   label,
+  sub,
   children,
 }: {
   tone: Tone;
   icon: LucideIcon;
   label: string;
+  /** A quieter second line — who, where. Its own line, so the first never breaks mid-phrase. */
+  sub?: string;
   children: React.ReactNode;
 }) {
   const t = TONE[tone];
@@ -164,6 +167,7 @@ function Fact({
       <div className="min-w-0">
         <p className={cn("text-[10.5px] font-extrabold uppercase tracking-[0.08em]", t.text)}>{label}</p>
         <p className="mt-0.5 text-[13px] font-bold leading-snug text-foreground">{children}</p>
+        {sub ? <p className="truncate text-[12px] font-medium text-muted-foreground">{sub}</p> : null}
       </div>
     </div>
   );
@@ -187,10 +191,13 @@ export function ServicesPage() {
   const supportFact = bookings.isPending ? (
     <FactSkeleton />
   ) : bookings.isSuccess ? (
-    <Fact tone="emerald" icon={CalendarClock} label="Your next hour">
-      {nextHour
-        ? `${supportHourLabel(nextHour.slot.starts_at)} · ${nextHour.slot.support_teacher}`
-        : "Nothing booked yet"}
+    <Fact
+      tone="emerald"
+      icon={CalendarClock}
+      label="Your next hour"
+      sub={nextHour ? `with ${nextHour.slot.support_teacher}` : undefined}
+    >
+      {nextHour ? supportHourLabel(nextHour.slot.starts_at) : "Nothing booked yet"}
     </Fact>
   ) : null;
 
