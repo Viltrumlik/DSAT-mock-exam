@@ -22,6 +22,8 @@ export type GradebookModel = {
 export type ClassOption = { id: number; name: string };
 /** A load that did not come back, with the server's reason if it gave one (a 403 or 404 does; a crash or a dropped connection does not). */
 export type LoadError = { detail: string | null };
+/** The server's `detail` from a rejected request. Anything else (an HTML error page, no answer at all) gives no reason. */
+function loadErrorOf(e: unknown): LoadError { const d = (e as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail; return { detail: typeof d === "string" ? d : null }; }
 
 const ASSIGNMENT_CAP = 12;
 
@@ -32,8 +34,6 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return out;
 }
 function toNum(v: unknown): number | null { const n = Number(v); return Number.isFinite(n) ? n : null; }
-/** The server's `detail` from a rejected request. Anything else (an HTML error page, no answer at all) gives no reason. */
-function loadErrorOf(e: unknown): LoadError { const d = (e as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail; return { detail: typeof d === "string" ? d : null }; }
 
 export type GradebookData = {
   status: "booting" | "unauthenticated" | "error" | "empty" | "ready";
