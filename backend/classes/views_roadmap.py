@@ -17,6 +17,7 @@ from rest_framework.views import APIView
 from journals.models import ClassroomLesson
 
 from .progress import student_progress
+from .progress_peers import peer_progress
 from .roadmap import build_roadmap
 from .roadmap_reading import delivery_for_student, mark_read, read_payload
 
@@ -58,6 +59,25 @@ class StudentProgressView(APIView):
 
     def get(self, request):
         return Response(student_progress(request.user))
+
+
+class StudentPeerProgressView(APIView):
+    """``GET /api/classes/progress/peers/`` — the student beside their group, per subject.
+
+    Its own endpoint rather than more keys on ``/progress/``: the ladder is cheap and answers
+    on its own, and this reads the whole roster's registers and homework — a page that waited
+    for the comparison to show the ladder would be slower for no reason. See
+    ``classes.progress_peers`` for the rules (same definitions, aggregates only, a minimum
+    group size).
+
+    ``IsAuthenticated``, like ``/progress/``: it only ever speaks about the requesting student's
+    own classrooms, found through their own memberships, and returns no classmate's data.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(peer_progress(request.user))
 
 
 class RoadmapReadingView(APIView):

@@ -99,7 +99,7 @@ from .views_midterm_v2 import (
 )
 from .views_roster import MemberManageView, ClassroomRosterView
 from .views_media import AssignmentVideoUploadUrlView
-from .views_roadmap import RoadmapReadingView, StudentProgressView, StudentRoadmapView
+from .views_roadmap import RoadmapReadingView, StudentPeerProgressView, StudentProgressView, StudentRoadmapView
 
 
 router = DefaultRouter()
@@ -121,6 +121,7 @@ urlpatterns = [
     # router's <int:pk> classroom detail and the collection routes below.
     path("roadmap/", StudentRoadmapView.as_view(), name="student-roadmap"),
     path("progress/", StudentProgressView.as_view(), name="student-progress"),
+    path("progress/peers/", StudentPeerProgressView.as_view(), name="student-progress-peers"),
     # Above the router include, like every other literal segment here — the
     # classroom detail route's <int:pk> would otherwise swallow "roadmap".
     path(
