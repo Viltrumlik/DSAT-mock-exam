@@ -45,6 +45,11 @@ export interface Member {
     username?: string;
     /** Absolute URL of the profile photo; null when the student has not uploaded one. */
     profile_image_url?: string | null;
+    /**
+     * The ACCOUNT role ("teacher", "admin", "support_teacher", "super_admin", …) — not to be
+     * confused with `Member.role`, the membership's permission tier. See `staffTitle`.
+     */
+    role?: string | null;
   };
   role: RawRole;
   joined_at?: string;

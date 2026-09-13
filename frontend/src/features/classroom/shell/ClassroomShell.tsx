@@ -5,9 +5,10 @@ import Link from "next/link";
 import { ArrowLeft, Check, Copy, BookOpen, Calculator, Send, DoorClosed } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatLessonDaysShort } from "@/lib/classroomSchedule";
+import { useMe } from "@/hooks/useMe";
 import { Tabs } from "../ui/Tabs";
 import { Pill } from "../ui/Pill";
-import { capabilitiesFor, ROLE_LABEL, normalizeRole } from "../capabilities";
+import { capabilitiesFor, memberTitle, normalizeRole } from "../capabilities";
 import { useRankings } from "../rankingsHooks";
 import { useTelegramGroup } from "../telegramHooks";
 import type { ClassroomWithRole } from "../types";
@@ -72,6 +73,10 @@ export function ClassroomShell({
   const caps = capabilitiesFor(classroom.my_role);
   const role = normalizeRole(classroom.my_role);
   const tabs = visibleTabs(caps);
+  // The viewer's own title, named after their account like the People page's staff list — so
+  // a teacher whose membership is OWNER after a transfer reads "Teacher" in both places.
+  const { me } = useMe();
+  const title = memberTitle(classroom.my_role, String(me?.role ?? ""));
 
   const classId = Number(classroom.id);
   const isStudent = role === "STUDENT";
@@ -124,7 +129,7 @@ export function ClassroomShell({
                   <DoorClosed className="h-3.5 w-3.5" aria-hidden /> {room}
                 </span>
               )}
-              {role && <span>· {ROLE_LABEL[role]}</span>}
+              {title && <span>· {title}</span>}
             </div>
             {tgManaged ? (
               <button

@@ -8,6 +8,7 @@ from rest_framework import serializers
 from urllib.parse import urlparse
 from django.core.validators import URLValidator
 
+from access.services import normalized_role
 from exams.models import MockExam, PracticeTest, PracticeTestPack
 from users.photos import profile_image_url
 
@@ -315,6 +316,12 @@ class ClassroomMembershipSerializer(serializers.ModelSerializer):
             # the teacher subdomain alike, and a relative /media/ path resolves only on
             # whichever host serves the images.
             "profile_image_url": profile_image_url(u, self.context.get("request")),
+            # The ACCOUNT role, which is what the teaching team is labelled by. The membership
+            # role above is a permission tier and says nothing about who a person is: an
+            # ownership transfer demotes the admin who made the class to TEACHER and promotes
+            # the teacher to OWNER, and a support teacher joins as a TA. Canonical spelling
+            # (`normalized_role`), so a legacy "math_teacher" arrives as "teacher".
+            "role": normalized_role(u),
         }
 
 

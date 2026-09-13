@@ -11,7 +11,7 @@ import { Avatar as UiAvatar } from "@/components/ui/Avatar";
 import { LoadingState, ErrorState, EmptyState, ConfirmDialog } from "../ui";
 import { useClassMembers } from "../hooks";
 import { classroomKeys } from "../queryKeys";
-import { normalizeRole, ROLE_LABEL, capabilitiesFor } from "../capabilities";
+import { normalizeRole, staffTitle, STAFF_TITLE_ORDER, capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole, Member } from "../types";
 
 type PendingAction =
@@ -116,7 +116,13 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
 
   const members: Member[] = Array.isArray(data) ? data : data?.members ?? [];
   const active = members.filter((m) => normalizeRole(m.role) != null && String((m as { status?: string }).status ?? "ACTIVE") !== "REMOVED");
-  const staff = active.filter((m) => normalizeRole(m.role) !== "STUDENT");
+  // Listed by title, the owner first: the server orders by membership role, which put the
+  // class's teacher (an OWNER after a transfer) above the super_admin. `sort` is stable, so
+  // people sharing a title keep the server's order among themselves.
+  const titleRank = (m: Member) => STAFF_TITLE_ORDER.indexOf(staffTitle(m.role, m.user.role) ?? "Teacher");
+  const staff = active
+    .filter((m) => normalizeRole(m.role) !== "STUDENT")
+    .sort((a, b) => titleRank(a) - titleRank(b));
   const students = active.filter((m) => normalizeRole(m.role) === "STUDENT");
 
   const q = query.trim().toLowerCase();
@@ -174,7 +180,7 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
         ) : (
           <div className="cr-rise divide-y divide-primary/10 overflow-hidden rounded-2xl border border-primary/15 bg-[var(--primary-soft)]">
             {staff.map((m) => {
-              const role = normalizeRole(m.role);
+              const title = staffTitle(m.role, m.user.role);
               return (
                 <div key={m.id} className="group flex items-center gap-3 px-4 py-3.5">
                   <Avatar u={m.user} className="cr-pulse bg-white text-primary shadow-sm dark:bg-white/90" />
@@ -182,9 +188,9 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
                     <p className="truncate text-sm font-bold text-foreground">{fullName(m.user)}</p>
                     <p className="truncate text-xs text-muted-foreground">{m.user.email}</p>
                   </div>
-                  {role && role !== "STUDENT" && (
+                  {title && (
                     <span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold text-primary shadow-sm dark:bg-white/90">
-                      {ROLE_LABEL[role]}
+                      {title}
                     </span>
                   )}
                   <Actions m={m} />
