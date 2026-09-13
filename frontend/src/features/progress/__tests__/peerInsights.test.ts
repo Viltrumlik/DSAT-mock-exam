@@ -66,6 +66,41 @@ describe("peerInsights", () => {
     ]);
   });
 
+  it("leads with this month when a student under the group's term average is ahead of it now", () => {
+    // The shape of a real group on production: under the group across the term, ahead in September.
+    const g = group(
+      {
+        attendance_trend: [
+          { month: "2026-08", you: 62.5, group: 80.2 },
+          { month: "2026-09", you: 70, group: 69.2 },
+        ],
+      },
+      {
+        attendance: { ...metric({ you: 66.7, group_average: 74.1, standing: "lower_half" }), detail: { present: 8, late: 0, absent: 4, excused: 0 } },
+        overall: metric({ standing: "lower_half" }),
+      },
+    );
+    const insights = peerInsights(g, 4);
+    expect(insights[0].text).toBe("In September your attendance (70%) is above your group's (69%).");
+    // …and the term-average line that would contradict it is not said in the same breath.
+    expect(insights.map((i) => i.key)).not.toContain("attendance-gap");
+  });
+
+  it("notices attendance rising month on month", () => {
+    const g = group(
+      {
+        attendance_trend: [
+          { month: "2026-07", you: 60, group: 75 },
+          { month: "2026-08", you: 71.4, group: 78 },
+        ],
+      },
+      { overall: metric({ standing: "lower_half" }) },
+    );
+    expect(peerInsights(g, 4).map((i) => i.text)).toContain(
+      "Your attendance is up from 60% in July to 71% in August.",
+    );
+  });
+
   it("explains hidden standings", () => {
     const g = group({ standings_hidden: true }, { overall: metric({ standing: null }) });
     expect(peerInsights(g, 4).map((i) => i.key)).toContain("hidden");
