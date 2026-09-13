@@ -13,9 +13,11 @@ import { SectionMasteryBar } from "./MasteryBar";
  *
  * Rebuilt around the fact that these cards appear four at a time and used to be
  * indistinguishable — one `Library` glyph, one blue square, one grey ring at 0%, one grey
- * bar, four times. The section's own colour (see `sectionTone`) now runs through the
- * whole card: a wash over it, its top edge, the glyph square, the meta chips, the ring,
- * the meter. The same colour greets the student on the section's own page.
+ * bar, four times. The section now owns a colour (see `sectionTone`), carried by the
+ * card's top edge, the glyph square, the meta chips, the ring and the meter — never by the
+ * card's GROUND, which stays white. Four small marks are enough to tell four cards apart,
+ * and they cost the page no coloured surface. The same colour greets the student on the
+ * section's own page.
  *
  * The ring and the bar answer **different** questions, which is why both are here:
  *
@@ -41,10 +43,10 @@ export function SectionCard({ section, index = 0 }: { section: VocabSectionSumma
         className={cn("cr-card group relative h-full overflow-hidden", done && "ring-1 ring-inset ring-success/40")}
         style={{ animationDelay: `${Math.min(index, 12) * 60}ms` }}
       >
-        {/* Two layers of the section's colour, neither of them a `bg-*` on the card: see
-            the note on `glow` in sectionTone for why that matters. */}
-        <span aria-hidden className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br", look.glow)} />
-        <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", look.edge)} />
+        {/* The card stays white. The section's colour lives in the small marks only — this
+            edge, the glyph, the ring, the meter, the link — which is enough to tell four
+            cards apart at a glance and adds no coloured ground to the page. */}
+        <span aria-hidden className={cn("absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r", look.edge)} />
 
         <CardContent className="relative flex h-full flex-col gap-4">
           <div className="flex items-start gap-4">

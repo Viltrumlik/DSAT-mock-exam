@@ -51,8 +51,6 @@ export interface ModeAccentClasses {
   track: string;
   /** The legend dot under the bar. */
   dot: string;
-  /** The game's own card wash on the hub guide — border + tinted ground. */
-  wash: string;
 }
 
 export const MODE_ACCENT: Record<StudyModeAccent, ModeAccentClasses> = {
@@ -64,7 +62,6 @@ export const MODE_ACCENT: Record<StudyModeAccent, ModeAccentClasses> = {
     fill: "bg-primary",
     track: "bg-primary/15",
     dot: "bg-primary",
-    wash: "border-primary/25 bg-primary-soft",
   },
   info: {
     icon: "bg-info-soft text-info-foreground",
@@ -74,7 +71,6 @@ export const MODE_ACCENT: Record<StudyModeAccent, ModeAccentClasses> = {
     fill: "bg-info",
     track: "bg-info/15",
     dot: "bg-info",
-    wash: "border-info/25 bg-info-soft",
   },
   warning: {
     icon: "bg-warning-soft text-warning-foreground",
@@ -84,7 +80,6 @@ export const MODE_ACCENT: Record<StudyModeAccent, ModeAccentClasses> = {
     fill: "bg-warning",
     track: "bg-warning/15",
     dot: "bg-warning",
-    wash: "border-warning/25 bg-warning-soft",
   },
   success: {
     icon: "bg-success-soft text-success-foreground",
@@ -94,7 +89,6 @@ export const MODE_ACCENT: Record<StudyModeAccent, ModeAccentClasses> = {
     fill: "bg-success",
     track: "bg-success/15",
     dot: "bg-success",
-    wash: "border-success/25 bg-success-soft",
   },
 };
 

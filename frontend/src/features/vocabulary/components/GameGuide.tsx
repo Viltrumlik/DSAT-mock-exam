@@ -14,12 +14,14 @@ import { STUDY_MODES, STUDY_MODE_LABEL } from "../types";
  * hero prose and nothing else. Meanwhile the hub's own bottom half was empty: four
  * section cards ended a little past the fold and the rest of the page was background.
  *
- * So the games fill it, in their own colours. Those are the same four colours the bar on
- * every set card is painted in, which is what the strip along the bottom of each tile is
- * for — this band is that bar's key. The rule itself (one clean run masters a game; four
- * master the set) is non-obvious enough to have needed a sentence of hero copy, so it
- * sits behind the **!** where a student can ask for it instead of being told it every
- * visit.
+ * So the games fill it, each marked with its own colour on a white ground, like everything
+ * else here. Those are the same four colours the bar on every set card is painted in,
+ * which is what the strip along the bottom of each tile is for: this band is that bar's
+ * key, so the colour has to survive even where the tinted ground did not.
+ *
+ * The rule itself — one clean run masters a game, four master the set — is non-obvious
+ * enough to have needed a sentence of hero copy, so it sits behind the **!** where a
+ * student can ask for it instead of being told it every visit.
  */
 export function GameGuide({ className }: { className?: string }) {
   return (
@@ -53,7 +55,7 @@ export function GameGuide({ className }: { className?: string }) {
             return (
               <div
                 key={mode}
-                className={cn("cr-card group relative overflow-hidden rounded-2xl border p-4", tone.wash)}
+                className="cr-card group relative overflow-hidden rounded-2xl border border-border bg-card p-4"
                 style={{ animationDelay: `${i * 70}ms` }}
               >
                 <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", tone.edge)} />
