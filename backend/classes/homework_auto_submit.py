@@ -162,6 +162,12 @@ def sync_practice_submission_for_assignment(student, assignment: Assignment) -> 
     If every practice-test target for ``assignment`` has a completed attempt for ``student``,
     ensure the class submission is SUBMITTED with a linked attempt.
     """
+    # Live homework only. A draft has not been given to anyone, so finishing its test hands
+    # nothing in. ARCHIVED work is read-only with its grades retained (see Assignment.STATUS_*),
+    # so a retake must not re-link and re-grade it. ``publish`` and ``unarchive`` run
+    # sync_practice_submissions_for_class, which picks up whatever was finished meanwhile.
+    if assignment.status != Assignment.STATUS_PUBLISHED:
+        return False
     # Multi-content bundles are instructional: each part scores in its own engine, but the
     # classroom submission is not auto-finalized from a single signal (the practice-sync and
     # assessment-sync paths would otherwise race on one SubmissionReview).
@@ -188,13 +194,21 @@ def sync_practice_submission_for_assignment(student, assignment: Assignment) -> 
 
 
 def sync_homework_after_test_attempt_saved(attempt: TestAttempt) -> None:
-    """Called from post_save when ``is_completed`` is True."""
+    """Called from post_save when ``is_completed`` is True.
+
+    Only the classes the student is an ACTIVE member of, and only their PUBLISHED homework: a
+    removed or invited student's finished test is not work handed in to that class.
+    """
     if not attempt.is_completed:
         return
     student_id = attempt.student_id
-    class_ids = ClassroomMembership.objects.filter(
-        user_id=student_id, role=ClassroomMembership.ROLE_STUDENT
-    ).values_list("classroom_id", flat=True)
+    class_ids = list(
+        ClassroomMembership.objects.filter(
+            user_id=student_id,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        ).values_list("classroom_id", flat=True)
+    )
     if not class_ids:
         return
 
@@ -205,7 +219,9 @@ def sync_homework_after_test_attempt_saved(attempt: TestAttempt) -> None:
     if not student:
         return
 
-    for assignment in Assignment.objects.filter(classroom_id__in=class_ids).iterator():
+    for assignment in Assignment.objects.filter(
+        classroom_id__in=class_ids, status=Assignment.STATUS_PUBLISHED
+    ).iterator():
         targets = assignment_target_practice_test_ids(assignment)
         if not targets or attempt.practice_test_id not in targets:
             continue
@@ -216,6 +232,40 @@ def sync_homework_after_test_attempt_saved(attempt: TestAttempt) -> None:
                 "sync_homework_after_attempt assignment_id=%s attempt_id=%s",
                 assignment.pk,
                 attempt.pk,
+            )
+
+
+def sync_practice_submissions_for_class(assignment: Assignment) -> None:
+    """Run the practice sync for every ACTIVE student of ``assignment``'s class.
+
+    ``publish`` and ``unarchive`` call it. The post_save sync skips homework that is not live,
+    so a test finished while this was a draft, or archived, is handed in here, the moment the
+    homework goes live. Otherwise it would wait for somebody to open a page that syncs lazily,
+    and interventions and the gradebook, which read Submission rows, would show the student as
+    missing. The teacher's ``submissions`` list is that lazy sync, and uses this too.
+
+    Best-effort per student: a failure is logged and the rest of the class still syncs.
+    """
+    if assignment.status != Assignment.STATUS_PUBLISHED:
+        return
+    if not assignment_target_practice_test_ids(assignment):
+        return
+
+    from django.contrib.auth import get_user_model
+
+    students = get_user_model().objects.filter(
+        class_memberships__classroom_id=assignment.classroom_id,
+        class_memberships__role=ClassroomMembership.ROLE_STUDENT,
+        class_memberships__status=ClassroomMembership.STATUS_ACTIVE,
+    )
+    for student in students:
+        try:
+            sync_practice_submission_for_assignment(student, assignment)
+        except Exception:
+            logger.exception(
+                "sync_practice_submissions_for_class assignment_id=%s student_id=%s",
+                assignment.pk,
+                student.pk,
             )
 
 
