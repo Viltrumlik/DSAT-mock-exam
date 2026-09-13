@@ -14,6 +14,8 @@ import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { Button, Field, Select } from "../ui";
 import { Avatar } from "@/components/ui/Avatar";
+import { useOverlayFaceClass } from "@/components/ui/OverlayFace";
+import { cn } from "@/lib/cn";
 
 /**
  * "Seating & versions": the system decides who sits with whom AND which paper each chair
@@ -35,6 +37,8 @@ export function AssignVersionModal({
   // win from in there, and the whole left column of desks disappears behind the nav.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Portalled onto <body>, out of the page's typeface — see OverlayFace.
+  const faceClass = useOverlayFaceClass();
 
   const [seating, setSeating] = useState<SeatingGrid | null>(null);
   const [versions, setVersions] = useState<MidtermVersionBrief[]>([]);
@@ -108,7 +112,7 @@ export function AssignVersionModal({
 
   // z-[200] is the project's modal layer (components/ui/Modal, Drawer); the shells own z-[100].
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className={cn("fixed inset-0 z-[200] flex items-center justify-center p-4", faceClass)}>
       <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
       <div className="relative flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-2xl">
         <div className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
