@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Alert, Button, Modal, Skeleton } from "@/components/ui";
+import { Check } from "lucide-react";
+import { Alert, Avatar, Button, Modal, Skeleton } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { useInvitableClassmates, useInviteMember } from "./supportHooks";
 
 /**
@@ -56,7 +58,8 @@ export function AddMemberDialog({
       ?.detail ?? (invite.isError ? "That didn't go through. Try again." : null);
 
   return (
-    <Modal open={open} onClose={close} title="Add someone to this session">
+    // `ds-app`: portalled onto <body>, outside the shell's sans, it would read in Georgia.
+    <Modal open={open} onClose={close} title="Add someone to this session" className="ds-app">
       <div className="space-y-3">
         <p className="text-sm font-semibold text-muted-foreground">
           {when} with {teacherName}. Whoever you pick gets their own seat, and we&apos;ll tell
@@ -67,14 +70,14 @@ export function AddMemberDialog({
           alone.
         </p>
 
-        {errorText ? <Alert tone="danger">{errorText}</Alert> : null}
+        {errorText ? <Alert tone="danger" className="squircle [--sq:10px]">{errorText}</Alert> : null}
 
         {/* Four branches. An error here must not render as "you have no classmates" — that
             would send a student off to ask a teacher about a problem that does not exist. */}
         {classmates.isPending ? (
-          <Skeleton className="h-24 rounded-xl" />
+          <Skeleton className="squircle h-24 [--sq:9px]" />
         ) : classmates.isError ? (
-          <Alert tone="danger">
+          <Alert tone="danger" className="squircle [--sq:10px]">
             Couldn&apos;t load your classmates.{" "}
             <button className="underline" onClick={() => void classmates.refetch()}>
               Try again
@@ -86,20 +89,23 @@ export function AddMemberDialog({
             session is already in it.
           </p>
         ) : (
-          <ul className="max-h-64 space-y-1 overflow-y-auto">
+          <ul className="max-h-64 space-y-1.5 overflow-y-auto p-0.5">
             {classmates.data.map((student) => (
               <li key={student.id}>
                 <button
                   type="button"
                   onClick={() => setPicked(student.id)}
-                  className={
-                    "w-full rounded-xl border px-3 py-2.5 text-left text-sm font-bold transition " +
-                    (picked === student.id
-                      ? "border-primary bg-primary-soft text-primary"
-                      : "border-border hover:bg-surface-2")
-                  }
+                  aria-pressed={picked === student.id}
+                  className={cn(
+                    "ds-ring squircle flex w-full items-center gap-3 border-2 px-3 py-2 text-left font-[inherit] text-sm font-bold transition-colors [--sq:9px]",
+                    picked === student.id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-transparent bg-surface-2 text-foreground hover:bg-surface-3",
+                  )}
                 >
-                  {student.name}
+                  <Avatar name={student.name} size={28} />
+                  <span className="min-w-0 flex-1 truncate">{student.name}</span>
+                  {picked === student.id ? <Check className="h-4 w-4 shrink-0" aria-hidden /> : null}
                 </button>
               </li>
             ))}

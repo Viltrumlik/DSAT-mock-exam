@@ -45,14 +45,14 @@ export function SessionRating({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="ds-ring inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-xs font-bold text-muted-foreground hover:bg-surface-2"
+        className="ds-ring inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-muted-foreground hover:bg-warning/10"
         aria-label={`You rated this ${rating} out of 5 — ${MEANING[rating]}. Change it.`}
       >
         {SCALE.map((n) => (
           <Star
             key={n}
             aria-hidden
-            className={cn("h-3.5 w-3.5", n <= rating ? "fill-amber-400 text-amber-400" : "text-border")}
+            className={cn("h-3.5 w-3.5", n <= rating ? "fill-amber-400 text-amber-400" : "text-amber-400/35")}
           />
         ))}
       </button>
@@ -61,15 +61,22 @@ export function SessionRating({
 
   if (!open) {
     return (
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+      // Amber, the stars' own colour, rather than a grey secondary button: it is an invitation,
+      // and it should look like the thing it opens.
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="ds-ring cr-press inline-flex h-8 items-center gap-1.5 rounded-full bg-warning/10 px-3 font-[inherit] text-[12.5px] font-bold text-warning-foreground transition-colors hover:bg-warning/15"
+      >
+        <Star className="h-3.5 w-3.5" aria-hidden />
         Rate this session
-      </Button>
+      </button>
     );
   }
 
   const shown = hovered ?? picked ?? 0;
   return (
-    <div className="w-full space-y-2 rounded-xl border border-border bg-surface-2 p-3">
+    <div className="squircle w-full space-y-2 bg-warning/[0.07] p-3.5 [--sq:9px]">
       <p className="text-xs font-bold text-foreground">How was this session?</p>
       <div className="flex items-center gap-1" onMouseLeave={() => setHovered(null)}>
         {SCALE.map((n) => (
@@ -82,13 +89,13 @@ export function SessionRating({
             onFocus={() => setHovered(n)}
             onBlur={() => setHovered(null)}
             onClick={() => setPicked(n)}
-            className="ds-ring rounded p-0.5"
+            className="ds-ring rounded-full p-0.5"
           >
             <Star
               aria-hidden
               className={cn(
                 "h-6 w-6 transition-colors",
-                n <= shown ? "fill-amber-400 text-amber-400" : "text-border",
+                n <= shown ? "fill-amber-400 text-amber-400" : "text-amber-400/35",
               )}
             />
           </button>

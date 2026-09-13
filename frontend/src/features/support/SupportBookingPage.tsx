@@ -1,18 +1,34 @@
 "use client";
 
+/**
+ * /support — a student books an hour with a support teacher from one of their classes.
+ *
+ * Dressed in the house's white quartz (the owner, 2026-09-13: "endi support pagega navbat"), and
+ * in Support's own colour: the emerald its card wears on /services, so the card and the page it
+ * opens read as one place. The blue banner is a quartz hero with its three facts as tiles; each
+ * teacher's week is a block of quartz; the day strip picks the way the house tabs do, solid when
+ * chosen; an hour is a small quartz chip, and one that cannot be taken fades instead of sitting in
+ * a grey box. What the page says and does — the limits, the reasons, the confirm panel, the
+ * rating — is exactly as it was.
+ */
+
 import { useMemo, useState } from "react";
-import { CalendarClock, Check, Clock, Info, LifeBuoy, UserPlus, Users, X } from "lucide-react";
 import {
-  Avatar,
-  Field,
-  HeroPage,
-  Input,
-  PageHero,
-  Skeleton,
-} from "@/components/ui";
+  CalendarClock,
+  CalendarRange,
+  Check,
+  Clock,
+  Info,
+  LifeBuoy,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Avatar, Field, HeroPage, Input, Skeleton } from "@/components/ui";
 // The house state devices. The classroom folder is the kit these live in; importing them
 // here is what makes this page read as part of the same product rather than a cousin of it.
-import { Button, Card, CardHeader, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+import { Button, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
 import type { PillTone } from "@/features/classroom/ui";
 import type { SupportBooking, SupportCalendarTeacher, SupportHour } from "@/lib/api";
 import { normalizeApiError } from "@/lib/apiError";
@@ -83,6 +99,17 @@ const UNAVAILABLE_REASON: Record<Exclude<SupportHour["state"], "open" | "mine">,
   day_taken: "You have a session today",
 };
 
+/** A small pill action on a session row — the shape the house tabs and chips already use. */
+function rowAction(kind: "primary" | "quiet") {
+  return cn(
+    "ds-ring cr-press inline-flex h-8 items-center gap-1.5 rounded-full px-3 font-[inherit] text-[12.5px] font-bold transition-colors",
+    "disabled:pointer-events-none disabled:opacity-50",
+    kind === "primary"
+      ? "bg-primary/10 text-primary hover:bg-primary/15 dark:text-primary-hover"
+      : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
+  );
+}
+
 export function SupportBookingPage() {
   const calendar = useSupportCalendar();
   const bookings = useMySupportBookings();
@@ -134,68 +161,121 @@ export function SupportBookingPage() {
   const closeHour = calendar.data?.close_hour ?? 18;
   const pad = (n: number) => String(n).padStart(2, "0");
 
+  const tiles: { label: string; value: string; icon: LucideIcon; accent?: boolean }[] = [
+    { label: "Open hours", value: `${pad(openHour)}:00–${pad(closeHour)}:00`, icon: Clock },
+    { label: "You can book", value: `${calendar.data?.days ?? 4} days ahead`, icon: CalendarRange },
+    {
+      // The limit is shown here, before an hour is picked, rather than surfacing as
+      // a refusal after one is. "1 of 2 booked" is a plan; "you can't book that" is
+      // a wall.
+      label: "Your sessions",
+      value: allowance
+        ? `${allowance.upcoming} of ${allowance.max_upcoming} booked`
+        : `${upcoming} upcoming`,
+      icon: CalendarClock,
+      accent: true,
+    },
+  ];
+
   return (
-    <HeroPage className="space-y-5">
-      <Card pad="none" className="cr-card overflow-hidden">
-        <PageHero
-          badge="Support"
-          title="Book a support session"
-          description="Pick an hour with a support teacher from one of your classes — one session a day. Attending one earns you points."
-          tiles={[
-            { label: "Open hours", value: `${pad(openHour)}:00–${pad(closeHour)}:00`, icon: Clock },
-            { label: "You can book", value: `${calendar.data?.days ?? 4} days ahead` },
-            {
-              // The limit is shown here, before an hour is picked, rather than surfacing as
-              // a refusal after one is. "1 of 2 booked" is a plan; "you can't book that" is
-              // a wall.
-              label: "Your sessions",
-              value: allowance
-                ? `${allowance.upcoming} of ${allowance.max_upcoming} booked`
-                : `${upcoming} upcoming`,
-              accent: true,
-              icon: CalendarClock,
-            },
-          ]}
+    <HeroPage className="flex flex-col gap-6">
+      {/* ── HERO ─────────────────────────────────────────────────────── */}
+      {/* cr-cardrise, not a float: nothing on the hero is clickable, so it must not lift. */}
+      <section className="quartz squircle cr-cardrise relative overflow-hidden [--sq:15px]">
+        {/* Support's emerald as a thin edge, the mark its card carries on /services. */}
+        <span
+          aria-hidden
+          className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-success via-success/40 to-transparent"
         />
-      </Card>
+        <div className="relative flex flex-col gap-6 px-6 py-7 sm:px-8">
+          <div className="flex items-start gap-4">
+            <span className="squircle flex h-14 w-14 shrink-0 items-center justify-center bg-success/15 text-success-foreground [--sq:8.5px]">
+              <LifeBuoy className="h-7 w-7" aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1">
+              <span className="inline-flex items-center rounded-full bg-success/10 px-3 py-1 text-xs font-extrabold text-success-foreground">
+                Support
+              </span>
+              <h1 className="mt-2.5 text-[28px] font-extrabold leading-[1.1] tracking-[-0.025em] text-foreground sm:text-[32px]">
+                Book a support session
+              </h1>
+              <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
+                Pick an hour with a support teacher from one of your classes — one session a day.
+                Attending one earns you points.
+              </p>
+            </div>
+          </div>
+
+          {/* Three blocks of quartz on the hero's own white, as on the vocabulary set page. */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {tiles.map((t, i) => (
+              <div
+                key={t.label}
+                className="quartz squircle cr-cardrise relative overflow-hidden px-4 py-3.5 [--sq:10px]"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <t.icon
+                  aria-hidden
+                  strokeWidth={1.25}
+                  className="pointer-events-none absolute -bottom-3 -right-2 h-16 w-16 text-foreground/[0.05]"
+                />
+                <p className="relative text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">
+                  {t.label}
+                </p>
+                <p
+                  className={cn(
+                    "ds-num relative mt-1.5 text-[22px] font-extrabold leading-none tracking-tight",
+                    t.accent ? "text-success-foreground" : "text-foreground",
+                  )}
+                >
+                  {t.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Said once, up front. The alternative is a student picking an hour, typing a topic,
           pressing Confirm and only then being told they are at their limit. */}
       {allowance && !allowance.can_book ? (
-        <Card className="cr-card border-amber-400/50 bg-amber-500/[0.06]">
-          <p className="text-sm font-bold text-foreground">
-            You have {allowance.upcoming} session{allowance.upcoming === 1 ? "" : "s"} booked already
-          </p>
-          <p className="mt-1 text-[13px] font-medium text-muted-foreground">
-            Attend one — or cancel it if you can&apos;t make it — and you can book another.
-          </p>
-        </Card>
+        <div className="squircle cr-rowin flex items-start gap-3 bg-warning/10 px-5 py-4 [--sq:11px]">
+          <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" aria-hidden />
+          <div>
+            <p className="text-sm font-bold text-foreground">
+              You have {allowance.upcoming} session{allowance.upcoming === 1 ? "" : "s"} booked already
+            </p>
+            <p className="mt-1 text-[13px] font-medium text-muted-foreground">
+              Attend one — or cancel it if you can&apos;t make it — and you can book another.
+            </p>
+          </div>
+        </div>
       ) : null}
 
       {/* `isPending`, not `isLoading`: between retries `isLoading` drops to false while the
           data is still undefined, and the branch below it would flash "no support teacher" at
           a student whose request is merely being retried. */}
       {calendar.isPending ? (
-        <div className="space-y-3">
-          <Skeleton className="h-56 rounded-2xl" />
-          <Skeleton className="h-40 rounded-2xl" />
+        <div className="space-y-4" aria-hidden>
+          <Skeleton className="squircle h-64 [--sq:13px]" />
+          <Skeleton className="squircle h-44 [--sq:13px]" />
         </div>
       ) : calendar.isError ? (
-        <Card className="cr-card">
+        <section className="quartz squircle [--sq:13px]">
           <ErrorState
             title="The calendar isn't loading right now."
             message="Nothing is lost — your teacher's free hours will be here once it loads."
             onRetry={() => void calendar.refetch()}
           />
-        </Card>
+        </section>
       ) : (calendar.data?.teachers.length ?? 0) === 0 ? (
-        <Card className="cr-card">
+        <section className="quartz squircle [--sq:13px]">
           <EmptyState
             icon={LifeBuoy}
             title="No support teacher on your classes yet"
             description="Once your class has a support teacher, their free hours appear here for you to book."
           />
-        </Card>
+        </section>
       ) : (
         calendar.data?.teachers.map((teacher) => (
           <TeacherCalendar
@@ -221,109 +301,114 @@ export function SupportBookingPage() {
         ))
       )}
 
-      <Card className="cr-card">
-        <CardHeader
-          title="Your sessions"
-          description="Points arrive once your teacher confirms you attended"
-        />
-        <div className="mt-3">
-          {bookings.isPending ? (
-            <div className="space-y-2"><Skeleton className="h-14" /><Skeleton className="h-14" /></div>
-          ) : bookings.isError ? (
-            // Not an empty state: "no sessions yet" would be a lie, and the calendar above
-            // would offer hours this student has already taken.
+      {/* ── YOUR SESSIONS ─────────────────────────────────────────────── */}
+      <section className="flex flex-col gap-4">
+        <div>
+          <h2 className="text-[20px] font-extrabold tracking-[-0.015em] text-foreground">Your sessions</h2>
+          <p className="ds-small mt-1">Points arrive once your teacher confirms you attended</p>
+        </div>
+
+        {bookings.isPending ? (
+          <div className="quartz squircle space-y-2 p-4 [--sq:13px]" aria-hidden>
+            <Skeleton className="h-14" />
+            <Skeleton className="h-14" />
+          </div>
+        ) : bookings.isError ? (
+          // Not an empty state: "no sessions yet" would be a lie, and the calendar above
+          // would offer hours this student has already taken.
+          <div className="quartz squircle [--sq:13px]">
             <ErrorState
               title="Couldn't load your sessions."
               message="Your bookings are safe — they'll appear once the list loads."
               onRetry={() => void bookings.refetch()}
             />
-          ) : (bookings.data?.length ?? 0) === 0 ? (
+          </div>
+        ) : (bookings.data?.length ?? 0) === 0 ? (
+          <div className="quartz squircle [--sq:13px]">
             <EmptyState
               icon={LifeBuoy}
               title="No sessions yet"
               description="Pick an hour above and it will appear here."
             />
-          ) : (
-            <ul className="divide-y divide-border">
-              {bookings.data?.map((b) => (
-                <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-foreground">
-                      {b.slot.support_teacher}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {fmtWhen(b.slot.starts_at)}
-                      {b.classroom_name ? ` · ${b.classroom_name}` : ""}
-                    </p>
-                    {b.topic && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">{b.topic}</p>
-                    )}
-                    {/* What the teacher says the hour covered. Worth more to a student than
-                        the green tick beside it. */}
-                    {b.teacher_note && (
-                      <p className="mt-1 flex items-start gap-1.5 text-xs font-semibold text-foreground">
-                        <Info className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" aria-hidden />
-                        <span>{b.teacher_note}</span>
-                      </p>
-                    )}
-                    {b.invited_by && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {b.invited_by} added you to this one
-                      </p>
-                    )}
-                    {b.status === "CANCELLED" && b.cancel_reason && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        Cancelled — {b.cancel_reason}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Pill tone={STATUS_STYLE[b.status].tone}>{STATUS_STYLE[b.status].label}</Pill>
-                    {b.status === "BOOKED" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={UserPlus}
-                        onClick={() => setInviting(b)}
-                      >
-                        Add a member
-                      </Button>
-                    )}
-                    {b.status === "BOOKED" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={X}
-                        disabled={cancel.isPending}
-                        onClick={() => { setCancelError(null); setCancelling(b); }}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                    {b.status === "HELD" && (
-                      <Check className="h-4 w-4 text-emerald-600" aria-hidden />
-                    )}
-                  </div>
-                  {/* Only a session that happened can be rated — there is nothing to judge
-                      about one that was cancelled, missed, or is still to come. */}
-                  {b.status === "HELD" && (
-                    <div className="w-full">
-                      <SessionRating
-                        rating={b.rating}
-                        comment={b.rating_comment}
-                        pending={rate.isPending}
-                        onRate={(rating, comment) =>
-                          rate.mutate({ bookingId: b.id, rating, comment })
-                        }
-                      />
-                    </div>
+          </div>
+        ) : (
+          <ul className="quartz squircle cr-cardrise divide-y divide-border overflow-hidden [--sq:13px]">
+            {bookings.data?.map((b) => (
+              <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[14.5px] font-extrabold text-foreground">
+                    {b.slot.support_teacher}
+                  </p>
+                  <p className="text-[12.5px] font-semibold text-muted-foreground">
+                    {fmtWhen(b.slot.starts_at)}
+                    {b.classroom_name ? ` · ${b.classroom_name}` : ""}
+                  </p>
+                  {b.topic && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{b.topic}</p>
                   )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Card>
+                  {/* What the teacher says the hour covered. Worth more to a student than
+                      the green tick beside it — so it sits in a well of its own. */}
+                  {b.teacher_note && (
+                    <p className="squircle mt-2 flex items-start gap-1.5 bg-success/[0.08] px-3 py-2 text-xs font-semibold text-foreground [--sq:7px]">
+                      <Info className="mt-0.5 h-3 w-3 shrink-0 text-success-foreground" aria-hidden />
+                      <span>{b.teacher_note}</span>
+                    </p>
+                  )}
+                  {b.invited_by && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {b.invited_by} added you to this one
+                    </p>
+                  )}
+                  {b.status === "CANCELLED" && b.cancel_reason && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      Cancelled — {b.cancel_reason}
+                    </p>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Pill tone={STATUS_STYLE[b.status].tone}>
+                    {STATUS_STYLE[b.status].label}
+                  </Pill>
+                  {b.status === "BOOKED" && (
+                    <button type="button" className={rowAction("primary")} onClick={() => setInviting(b)}>
+                      <UserPlus className="h-3.5 w-3.5" aria-hidden />
+                      Add a member
+                    </button>
+                  )}
+                  {b.status === "BOOKED" && (
+                    <button
+                      type="button"
+                      className={rowAction("quiet")}
+                      disabled={cancel.isPending}
+                      onClick={() => { setCancelError(null); setCancelling(b); }}
+                    >
+                      <X className="h-3.5 w-3.5" aria-hidden />
+                      Cancel
+                    </button>
+                  )}
+                  {b.status === "HELD" && (
+                    <Check className="h-4 w-4 text-emerald-600" aria-hidden />
+                  )}
+                </div>
+                {/* Only a session that happened can be rated — there is nothing to judge
+                    about one that was cancelled, missed, or is still to come. */}
+                {b.status === "HELD" && (
+                  <div className="w-full">
+                    <SessionRating
+                      rating={b.rating}
+                      comment={b.rating_comment}
+                      pending={rate.isPending}
+                      onRate={(rating, comment) =>
+                        rate.mutate({ bookingId: b.id, rating, comment })
+                      }
+                    />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <AddMemberDialog
         open={inviting !== null}
@@ -381,13 +466,13 @@ function TeacherCalendar({
     : "";
 
   return (
-    <Card className="cr-card space-y-4">
+    <section className="quartz squircle cr-cardrise space-y-4 p-5 [--sq:13px] sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Avatar src={teacher.photo_url} name={teacher.name} size={44} />
           <div className="min-w-0">
-            <p className="truncate text-[15px] font-extrabold text-foreground">{teacher.name}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p className="truncate text-[16px] font-extrabold tracking-[-0.01em] text-foreground">{teacher.name}</p>
+            <p className="truncate text-xs font-medium text-muted-foreground">
               Support teacher
               {teacher.classrooms.length
                 ? ` · ${teacher.classrooms.map((c) => c.name).join(", ")}`
@@ -400,8 +485,10 @@ function TeacherCalendar({
         </Pill>
       </div>
 
-      {/* Day strip — scrolls rather than wraps, so the row stays one line on a phone. */}
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+      {/* Day strip — scrolls rather than wraps, so the row stays one line on a phone. The
+          vertical padding is the headroom the chosen day's shadow and the press lift need:
+          `overflow-x-auto` clips the other axis too. */}
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 py-1.5">
         {teacher.days.map((d, i) => {
           const label = dayLabel(d.date);
           const free = d.hours.filter((h) => h.state === "open").length;
@@ -439,10 +526,10 @@ function TeacherCalendar({
               // reads "Today Aug 7 10 free" as one run-on and the button has no name.
               aria-label={`${label.title}, ${label.sub}, ${free > 0 ? `${free} hours free` : emptyLabel}`}
               className={cn(
-                "ds-ring cr-press min-w-[92px] shrink-0 rounded-xl border px-3 py-2 text-left transition-colors",
+                "ds-ring cr-press squircle min-w-[92px] shrink-0 px-3 py-2 text-left font-[inherit] transition-colors [--sq:9px]",
                 active
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-foreground hover:bg-surface-2",
+                  ? "bg-primary text-primary-foreground shadow-[0_6px_14px_-6px_var(--primary)]"
+                  : "bg-surface-2 text-foreground hover:bg-surface-3",
               )}
             >
               <span className="block text-sm font-extrabold">{label.title}</span>
@@ -450,7 +537,13 @@ function TeacherCalendar({
               <span
                 className={cn(
                   "mt-1 block text-[11px] font-bold",
-                  free > 0 ? "text-emerald-600" : "text-muted-foreground",
+                  free > 0
+                    ? active
+                      ? "text-primary-foreground"
+                      : "text-emerald-600 dark:text-emerald-400"
+                    : active
+                      ? "text-primary-foreground/80"
+                      : "text-muted-foreground",
                 )}
               >
                 {free > 0 ? `${free} free` : emptyLabel}
@@ -466,7 +559,7 @@ function TeacherCalendar({
           work Sunday mornings" is not: it is the shape of the timetable, and rendering it as
           eight struck-out chips a day buries the two hours that are actually bookable. */}
       {bookableHours.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border px-4 py-8 text-center">
+        <div className="squircle border border-dashed border-border px-4 py-8 text-center [--sq:11px]">
           <p className="text-sm font-bold text-foreground">
             {teacher.name} isn&apos;t working on this day.
           </p>
@@ -488,7 +581,7 @@ function TeacherCalendar({
       )}
 
       {picked ? (
-        <div className="cr-rowin rounded-2xl border border-primary/30 bg-primary/[0.06] p-4">
+        <div className="squircle cr-rowin border border-primary/25 bg-primary/[0.06] p-4 [--sq:11px]">
           {/* Named off the pick itself, never off whichever day is on screen. */}
           <p className="text-sm font-extrabold text-foreground">
             {dayLabel(picked).title} · {fmtHour(picked)} with {teacher.name}
@@ -523,7 +616,7 @@ function TeacherCalendar({
           </div>
         </div>
       ) : null}
-    </Card>
+    </section>
   );
 }
 
@@ -538,7 +631,7 @@ function HourChip({
 
   if (hour.state === "mine") {
     return (
-      <div className="rounded-xl border border-primary bg-primary px-3 py-2.5 text-center text-primary-foreground">
+      <div className="squircle bg-primary px-3 py-2.5 text-center text-primary-foreground shadow-[0_6px_14px_-8px_var(--primary)] [--sq:8px]">
         <span className="ds-num block text-sm font-extrabold">{time}</span>
         <span className="block text-[11px] font-bold opacity-90">Booked</span>
       </div>
@@ -546,12 +639,14 @@ function HourChip({
   }
 
   if (hour.state !== "open") {
+    // Faded into the card rather than boxed in grey: it is still a fact about the week, but
+    // it shouldn't compete with the hours that can actually be taken.
     return (
       <div
         aria-disabled
-        className="rounded-xl border border-border bg-surface-2 px-3 py-2.5 text-center text-muted-foreground"
+        className="squircle bg-foreground/[0.035] px-3 py-2.5 text-center text-muted-foreground [--sq:8px]"
       >
-        <span className="ds-num block text-sm font-bold line-through decoration-1">{time}</span>
+        <span className="ds-num block text-sm font-bold line-through decoration-1 opacity-70">{time}</span>
         <span className="block text-[11px] font-semibold">{UNAVAILABLE_REASON[hour.state]}</span>
       </div>
     );
@@ -564,14 +659,22 @@ function HourChip({
       aria-pressed={selected}
       aria-label={`Book ${time}${hour.capacity > 1 ? `, ${hour.seats_left} seats left` : ""}`}
       className={cn(
-        "ds-ring cr-press rounded-xl border px-3 py-2.5 text-center transition-colors",
+        // A 2px border on every open chip, transparent until it means something, so picking
+        // one doesn't nudge the grid. `.quartz` owns background and shadow, so the pick is
+        // drawn with the border and a chip that isn't quartz any more.
+        "ds-ring cr-press squircle border-2 px-3 py-2 text-center font-[inherit] transition-colors [--sq:8px]",
         selected
-          ? "border-primary bg-primary/15 text-primary"
-          : "border-border bg-card text-foreground hover:border-primary/50 hover:bg-primary/5",
+          ? "border-primary bg-primary/10 text-primary"
+          : "quartz border-transparent text-foreground hover:border-primary/40",
       )}
     >
       <span className="ds-num block text-sm font-extrabold">{time}</span>
-      <span className="flex items-center justify-center gap-1 text-[11px] font-semibold opacity-70">
+      <span
+        className={cn(
+          "flex items-center justify-center gap-1 text-[11px] font-bold",
+          selected ? "text-primary" : "text-emerald-600 dark:text-emerald-400",
+        )}
+      >
         {hour.capacity > 1 ? (
           <span className="inline-flex items-center gap-1">
             <Users className="h-3 w-3" aria-hidden />
