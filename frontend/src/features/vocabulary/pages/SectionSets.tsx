@@ -8,7 +8,7 @@
  */
 
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Layers, Library, Type } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Library } from "lucide-react";
 
 import { Badge, Card, CardContent, EmptyState, ExplainButton, ProgressRing, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -16,15 +16,8 @@ import { cn } from "@/lib/cn";
 import { SetCard } from "../components/SetCard";
 import { VocabCardsSkeleton, VocabErrorState } from "../components/VocabStates";
 import { useVocabSection } from "../hooks";
-import { sectionLook, type VocabToneClasses } from "../sectionTone";
+import { sectionLook } from "../sectionTone";
 
-/** "Mastered" is green throughout the feature, section hue or not. */
-const SUCCESS: Pick<VocabToneClasses, "icon" | "wash" | "edge" | "text"> = {
-  icon: "bg-success/15 text-success-foreground",
-  wash: "border-success/25 bg-success-soft",
-  edge: "from-success via-success/40 to-transparent",
-  text: "text-success-foreground",
-};
 
 export function SectionSets({ sectionId }: { sectionId: number }) {
   const q = useVocabSection(sectionId);
@@ -74,12 +67,11 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
       ) : (
         <>
           <Card className="cr-cardrise relative overflow-hidden">
-            <span aria-hidden className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br", look.glow)} />
-            <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", look.edge)} />
+            <span aria-hidden className={cn("absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r", look.edge)} />
             <CardContent className="relative flex flex-col gap-5">
-              <div className="flex items-start gap-4">
-                <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl", look.icon)}>
-                  <look.Icon className="h-6 w-6" aria-hidden />
+              <div className="flex items-start gap-3.5">
+                <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", look.icon)}>
+                  <look.Icon className="h-5 w-5" aria-hidden />
                 </span>
 
                 <div className="min-w-0 flex-1">
@@ -113,30 +105,25 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
                 </span>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-3">
-                <StatTile
-                  icon={Layers}
+              <div className="grid divide-y divide-border border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+                <Fact
                   label="Sets"
                   value={sets.length}
                   detail={startedSets > 0 ? `${startedSets} already started` : "none started yet"}
                   index={0}
-                  look={look}
                 />
-                <StatTile
-                  icon={Type}
+                <Fact
                   label="Words"
                   value={wordCount}
                   detail={`${masteredWords} of them mastered`}
                   index={1}
-                  look={look}
                 />
-                <StatTile
-                  icon={CheckCircle2}
+                <Fact
                   label="Sets mastered"
                   value={masteredSets}
                   detail={`${masteredPct}% of this section`}
                   index={2}
-                  look={SUCCESS}
+                  accent={look.text}
                 />
               </div>
             </CardContent>
@@ -171,47 +158,45 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
 }
 
 /**
- * The three aggregates under a section's title.
+ * One of the three aggregates under a section's title.
  *
- * They were three white rectangles with a hairline border — the one part of the page
- * with no colour and no second fact on it, which the owner picked out by name. Each now
- * wears the section's own hue (the last one green, because "mastered" is green
- * everywhere in this feature) and carries a line that says something the big number
- * cannot: how many of the sets have been opened, how many of the words are already
- * proved, how far through the section that leaves you.
+ * Two goes at this. It began as three white rectangles with a hairline border, which the
+ * owner called plain; it then became three tinted cards with accent edges and 30px
+ * coloured numbers, which he called worse — *"ranglar ko'payib ketgan … shapelar juda
+ * katta va takrorlayapti kattasini"*: each tile was a miniature of the card it sat inside,
+ * in the card's own colour, so the eye met the same rounded tinted rectangle three times
+ * at three sizes.
+ *
+ * So: no box at all. A rule across the foot of the header and two thin dividers turn the
+ * three facts into a rail. Structure does the separating, colour does none of it — the
+ * section's hue is left to the glyph, the ring and the 3px edge, and it appears here only
+ * on "Sets mastered", the one number that is about progress rather than size.
  */
-function StatTile({
-  icon: Icon,
+function Fact({
   label,
   value,
   detail,
   index,
-  look,
+  accent,
 }: {
-  icon: React.ElementType;
   label: string;
   value: number;
   /** A second, DIFFERENT fact. Never a restatement of `value`. */
   detail: string;
   index: number;
-  look: Pick<VocabToneClasses, "icon" | "wash" | "edge" | "text">;
+  /** Text colour for the number. Default is plain foreground. */
+  accent?: string;
 }) {
   return (
     <div
-      className={cn("cr-card relative overflow-hidden rounded-2xl border p-4", look.wash)}
+      className="cr-pillin py-3.5 sm:px-5 sm:py-1 sm:first:pl-0 sm:last:pr-0"
       style={{ animationDelay: `${index * 70}ms` }}
     >
-      <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", look.edge)} />
-      <div className="flex items-center gap-2.5">
-        <span className={cn("cr-iconpop grid h-9 w-9 shrink-0 place-items-center rounded-xl", look.icon)}>
-          <Icon className="h-[18px] w-[18px]" aria-hidden />
-        </span>
-        <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">{label}</p>
-      </div>
-      <p className={cn("ds-num mt-2.5 text-[30px] font-extrabold leading-none tracking-tight", look.text)}>
+      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
+      <p className={cn("ds-num mt-1 text-[22px] font-extrabold leading-none tracking-tight", accent ?? "text-foreground")}>
         {value}
       </p>
-      <p className="mt-1.5 text-[12.5px] font-medium leading-snug text-muted-foreground">{detail}</p>
+      <p className="mt-1 text-[12px] font-medium text-muted-foreground">{detail}</p>
     </div>
   );
 }
