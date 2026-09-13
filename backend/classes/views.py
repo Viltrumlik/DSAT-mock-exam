@@ -1613,11 +1613,15 @@ class ClassroomViewSet(ModelViewSet):
         now = timezone.now()
         seven_days_ago = now - timedelta(days=7)
 
-        # All students in the classroom.
+        # The students in the class: ACTIVE memberships, as the classroom's student count, the
+        # gradebook and class analytics count them. Removal is a soft delete, so without the
+        # status filter a removed student stayed in every figure below — the denominators, the
+        # missing and inactive lists, the average score. An INVITED student has not joined yet.
         students = list(
             ClassroomMembership.objects.filter(
                 classroom=classroom,
                 role=ClassroomMembership.ROLE_STUDENT,
+                status=ClassroomMembership.STATUS_ACTIVE,
             ).select_related("user").order_by("user__last_name", "user__first_name")
         )
         student_ids = [m.user_id for m in students]
