@@ -1779,3 +1779,26 @@ mark.ts-annot {
   .quartz-float { transition: none !important; }
   .quartz-float:hover { transform: none; }
 }
+
+/* ── Continuous corners ──────────────────────────────────────────────────────────
+   Apple's shape. The owner, on the vocabulary set page: "o'tkir qirrali burchaklarni
+   reshape qilib apple shapega o'xshash" — the corners read as sharp. A circular radius
+   turns abruptly where the curve meets the straight edge; a squircle eases into the turn,
+   which is the cut of every iOS icon and card.
+
+   `corner-shape: squircle` draws exactly that where the browser has it (Chromium 139+).
+   Everywhere else the same element keeps an ordinary round corner, so the fallback is
+   simply the page as it was. A squircle at a given radius turns later than a circle does,
+   so the radius is scaled up under @supports to keep the same softness.
+
+   Size it with `--sq` (default 22px), never with a `rounded-*` class on the same element:
+   this rule is unlayered and beats the utilities anyway. The border, the background and the
+   `.quartz` hairline (a box-shadow) all follow the shape. */
+.squircle { border-radius: var(--sq, 22px); }
+
+@supports (corner-shape: squircle) {
+  .squircle {
+    corner-shape: squircle;
+    border-radius: calc(var(--sq, 22px) * 1.8);
+  }
+}

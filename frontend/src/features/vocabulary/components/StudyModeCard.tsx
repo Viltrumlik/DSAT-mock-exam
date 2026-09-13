@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 
-import { Card, CardContent } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { withLaunchAssignment } from "../launchContext";
@@ -73,41 +72,43 @@ export function StudyModeCard({
   const tone = MODE_ACCENT[accent ?? STUDY_MODE_ACCENT[mode]];
   const Icon = meta.icon;
 
+  // A block of white quartz with continuous corners and an app-icon glyph — the shape the
+  // owner asked for in place of the kit card's sharper one. Floats under the pointer when it
+  // can be opened; a locked game stays put and fades.
   const body = (
-    <Card
-      variant={disabled ? "outlined" : "default"}
+    <div
       className={cn(
-        "group relative h-full overflow-hidden",
-        disabled ? "opacity-60" : cn("cr-lift", tone.border),
-        mastered && "ring-1 ring-inset ring-success/40",
+        "quartz squircle group relative flex h-full flex-col gap-4 overflow-hidden p-5 [--sq:13px]",
+        disabled ? "opacity-60" : "quartz-float",
       )}
     >
       {/* Accent edge — the only thing that tells the four cards apart at a glance. */}
       <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", tone.edge)} />
-      <CardContent className="flex h-full flex-col gap-3">
-        <div className="flex items-start justify-between gap-2">
-          <span
-            className={cn(
-              "flex h-12 w-12 items-center justify-center rounded-2xl transition-transform duration-200 ease-[var(--ds-ease-premium)] group-hover:-rotate-3 group-hover:scale-105",
-              tone.icon,
-            )}
-          >
-            <Icon className="h-[22px] w-[22px]" />
-          </span>
-          <MasteryScore mastered={mastered} tone={tone} />
-        </div>
-        <div className="flex-1">
-          <h3 className="ds-h4">{STUDY_MODE_LABEL[mode]}</h3>
-          <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{meta.blurb}</p>
-        </div>
-        {disabled ? null : (
-          <span aria-hidden className={cn("inline-flex items-center gap-1 text-[13px] font-bold", tone.cta)}>
-            {mastered ? "Play again" : "Start"}
-            <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </span>
-        )}
-      </CardContent>
-    </Card>
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className={cn(
+            "squircle flex h-12 w-12 items-center justify-center transition-transform duration-200 ease-[var(--ds-ease-premium)] [--sq:7.5px] group-hover:-rotate-3 group-hover:scale-105",
+            tone.icon,
+          )}
+        >
+          <Icon className="h-[22px] w-[22px]" />
+        </span>
+        <MasteryScore mastered={mastered} tone={tone} />
+      </div>
+      <div className="flex-1">
+        <h3 className="text-[17px] font-extrabold tracking-[-0.01em] text-foreground">{STUDY_MODE_LABEL[mode]}</h3>
+        <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">{meta.blurb}</p>
+      </div>
+      {disabled ? null : (
+        <span
+          aria-hidden
+          className={cn("inline-flex w-fit items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-bold", tone.track, tone.cta)}
+        >
+          {mastered ? "Play again" : "Start"}
+          <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+        </span>
+      )}
+    </div>
   );
 
   if (disabled) return body;
@@ -115,7 +116,7 @@ export function StudyModeCard({
   return (
     <Link
       href={withLaunchAssignment(`/vocabulary/sets/${setId}/${STUDY_MODE_SEGMENT[mode]}`, assignmentId)}
-      className="ds-ring block h-full rounded-2xl"
+      className="ds-ring squircle block h-full [--sq:13px]"
     >
       {body}
     </Link>
