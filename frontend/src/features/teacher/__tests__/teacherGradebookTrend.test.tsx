@@ -23,7 +23,7 @@ const api = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => ({ classesApi: api }));
 vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ bootState: "AUTHENTICATED" }) }));
 
-const { useGradebook } = await import("../useGradebook");
+const { useGradebook, gradeTrend } = await import("../useGradebook");
 
 /** A `GET /api/classes/` row, in the serializer's wire shape. */
 const ALGEBRA = { id: 1, name: "Algebra 2", subject: "MATH", lesson_days: "ODD", join_code: "JOIN1", my_role: "TEACHER" };
@@ -152,5 +152,19 @@ describe("useGradebook — a student's trend", () => {
     const { model } = await settle(() => useGradebook(), matrixLoaded);
 
     expect(model?.students.map((s) => [s.id, s.average, s.trendDelta])).toEqual([[11, 70, null]]);
+  });
+});
+
+// The hook reverses its newest-first grades before asking; the ui-catalog preview lists its homework oldest first and
+// asks directly. Both lean on this order, so it is pinned here and not only through the hook.
+describe("gradeTrend — grades in the order the homework was given", () => {
+  it("is the newest grade minus the oldest, whatever lies between", () => {
+    expect(gradeTrend([60, 40, 90])).toBe(30);
+    expect(gradeTrend([80, 95, 55])).toBe(-25);
+  });
+
+  it("is null under two grades", () => {
+    expect(gradeTrend([70])).toBeNull();
+    expect(gradeTrend([])).toBeNull();
   });
 });

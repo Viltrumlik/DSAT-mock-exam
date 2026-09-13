@@ -30,6 +30,10 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return out;
 }
 function toNum(v: unknown): number | null { const n = Number(v); return Number.isFinite(n) ? n : null; }
+/** How far a student's grade moved: the newest minus the oldest, from grades in the order the homework was given. */
+export function gradeTrend(gradesOldestFirst: number[]): number | null {
+  return gradesOldestFirst.length >= 2 ? gradesOldestFirst[gradesOldestFirst.length - 1] - gradesOldestFirst[0] : null;
+}
 
 export type GradebookData = {
   status: "booting" | "unauthenticated" | "empty" | "ready";
@@ -103,7 +107,8 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
         });
         const graded = cells.filter((c) => c.grade != null).map((c) => c.grade as number);
         const average = graded.length ? Math.round(graded.reduce((a, b) => a + b, 0) / graded.length) : null;
-        const trendDelta = graded.length >= 2 ? graded[graded.length - 1] - graded[0] : null;
+        // The columns keep the order `listAssignments` sends, newest-given first, so the grades run backwards in time.
+        const trendDelta = gradeTrend([...graded].reverse());
         const missing = cells.filter((c) => c.status === "missing").length;
         return { id: u.id, name: [u.first_name, u.last_name].filter(Boolean).join(" ").trim() || u.email || "Student", avatarUrl: u.profile_image_url ?? null, cells, average, trendDelta, missing };
       });
