@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
+import { classesWithCapability } from "./classesWithCapability";
 
 export type GradeFile = { url: string; file_name?: string; file_type?: string };
 export type Submission = {
@@ -63,7 +64,7 @@ export function useGradingQueue(previewItems?: QueueItem[]): GradingData {
     setLoading(true);
     (async () => {
       const classesRes = await classesApi.list().catch(() => ({ items: [] as Array<{ id: number; name?: string; my_role?: string }> }));
-      const managed = (classesRes.items as Array<{ id: number; name?: string; my_role?: string }>).filter((c) => c.my_role && c.my_role !== "student");
+      const managed = classesWithCapability(classesRes.items as Array<{ id: number; name?: string; my_role?: string }>, "canGrade");
       if (cancelled) return;
 
       // (class, assignment) pairs to inspect.
