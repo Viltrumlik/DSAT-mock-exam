@@ -389,6 +389,9 @@ class HomeworkListView(APIView):
                 classroom_id__in=_member_classroom_ids(request.user),
                 assignment__status=Assignment.STATUS_PUBLISHED,
             )
+            # This is the Homework tab. A set opened in class is classwork, shown in the
+            # classroom's Classwork tab, whose detail page links straight to the set.
+            .exclude(assignment__category=Assignment.CATEGORY_CLASSWORK)
             .select_related("assignment", "classroom", "vocab_set", "vocab_set__section")
             .order_by(
                 F("assignment__due_at").asc(nulls_last=True),

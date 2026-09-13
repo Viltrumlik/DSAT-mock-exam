@@ -1,21 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ClipboardList, Plus, MoreVertical, Eye, Archive, RotateCcw, ExternalLink, Pencil, Trash2 } from "lucide-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import api, { classesApi } from "@/lib/api";
+import { ClipboardList, Plus, MoreVertical, Archive } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { normalizeApiError } from "@/lib/apiError";
-import { pushGlobalToast } from "@/lib/toastBus";
-import { Button, Pill, LoadingState, ErrorState, EmptyState, ConfirmDialog } from "../ui";
+import { Button, Pill, LoadingState, ErrorState, EmptyState } from "../ui";
 import { useAssignments } from "../hooks";
-import { useAssignmentLifecycle } from "../homeworkHooks";
 import { classroomKeys } from "../queryKeys";
 import { capabilitiesFor } from "../capabilities";
 import { spawnRipple } from "../ui/ripple";
+import { AssignmentRowActions } from "./AssignmentRowActions";
 import { SubmissionStatusPill } from "./statusPill";
 import type { ClassroomWithRole } from "../types";
 
@@ -95,7 +92,8 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight text-foreground sm:text-[28px]">Assignments</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {staff ? "Homework, practice tests, and classwork" : "Your work for this class"}
+            {/* Not classwork: the server leaves it out of this list, and it has its own tab. */}
+            {staff ? "Homework and practice tests" : "Your work for this class"}
           </p>
         </div>
         {/* Homework only. Classwork is authored from its own tab — the two are different
@@ -203,31 +201,6 @@ function StudentRow({ classBase, a, index }: { classBase: string; a: AsgRow; ind
 }
 
 function StaffRow({ classId, classBase, a, index, archived }: { classId: number; classBase: string; a: AsgRow; index: number; archived?: boolean }) {
-  const qc = useQueryClient();
-  const lc = useAssignmentLifecycle(classId, a.id);
-  const [confirmArchive, setConfirmArchive] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const del = useMutation({
-    mutationFn: () => classesApi.deleteAssignment(classId, a.id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: classroomKeys.assignments(classId) });
-      pushGlobalToast({ tone: "success", message: `“${a.title}” deleted.` });
-      setConfirmDelete(false);
-    },
-    onError: (e) => pushGlobalToast({ tone: "error", message: normalizeApiError(e).message }),
-  });
-
-  async function run(m: { mutateAsync: () => Promise<unknown> }, ok: string) {
-    try {
-      await m.mutateAsync();
-      pushGlobalToast({ tone: "success", message: ok });
-      setConfirmArchive(false);
-    } catch (e) {
-      pushGlobalToast({ tone: "error", message: normalizeApiError(e).message });
-    }
-  }
-
   return (
     <RowShell
       classBase={classBase}
@@ -239,114 +212,7 @@ function StaffRow({ classId, classBase, a, index, archived }: { classId: number;
           : a.status === "ARCHIVED" ? <Pill tone="neutral">Archived</Pill>
           : null
       }
-      actions={
-        <>
-          <KebabMenu>
-            <MenuItem icon={ExternalLink} href={hrefFor(classBase, a)}>Open</MenuItem>
-            <MenuItem icon={Pencil} href={`${classBase}/assignments/${a.id}/edit`}>Edit</MenuItem>
-            {a.status === "DRAFT" && (
-              <MenuItem icon={Eye} onClick={() => run(lc.publish, `“${a.title}” published.`)}>Publish</MenuItem>
-            )}
-            {a.status === "PUBLISHED" && (
-              <MenuItem icon={Archive} onClick={() => setConfirmArchive(true)}>Archive</MenuItem>
-            )}
-            {(a.status === "ARCHIVED" || archived) && (
-              <MenuItem icon={RotateCcw} onClick={() => run(lc.unarchive, `“${a.title}” unarchived.`)}>Unarchive</MenuItem>
-            )}
-            <MenuItem icon={Trash2} destructive onClick={() => setConfirmDelete(true)}>Delete</MenuItem>
-          </KebabMenu>
-
-          <ConfirmDialog
-            open={confirmArchive}
-            title="Archive assignment?"
-            description={`“${a.title}” will be hidden from students. Existing grades are kept and you can unarchive it later.`}
-            confirmLabel="Archive"
-            tone="danger"
-            loading={lc.archive.isPending}
-            onConfirm={() => run(lc.archive, `“${a.title}” archived.`)}
-            onCancel={() => setConfirmArchive(false)}
-          />
-
-          <ConfirmDialog
-            open={confirmDelete}
-            title="Delete assignment?"
-            description={`“${a.title}” will be permanently deleted, along with any student submissions and grades. This cannot be undone.`}
-            confirmLabel="Delete"
-            tone="danger"
-            loading={del.isPending}
-            onConfirm={() => del.mutate()}
-            onCancel={() => setConfirmDelete(false)}
-          />
-        </>
-      }
+      actions={<AssignmentRowActions classId={classId} classBase={classBase} row={a} archived={archived} />}
     />
   );
-}
-
-/** Minimal kebab dropdown (click-away via a transparent overlay). */
-function KebabMenu({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
-
-  // Each assignment row is its own stacking context (the `.cr-rowin` enter animation
-  // ends on a `translateY(0)` transform), so an absolutely-positioned menu is trapped
-  // behind the rows below it. Render it in a portal with fixed coordinates so it
-  // floats above everything and stays clickable.
-  const place = useCallback(() => {
-    const el = btnRef.current;
-    if (!el) return;
-    const r = el.getBoundingClientRect();
-    setPos({ top: Math.round(r.bottom + 4), right: Math.max(8, Math.round(window.innerWidth - r.right)) });
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    place();
-    const close = () => setOpen(false);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
-    return () => {
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-    };
-  }, [open, place]);
-
-  return (
-    <div className="shrink-0">
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label="Actions"
-        aria-expanded={open}
-        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-      >
-        <MoreVertical className="h-[18px] w-[18px]" />
-      </button>
-      {open && pos && typeof document !== "undefined" &&
-        createPortal(
-          <>
-            <div className="fixed inset-0 z-[998]" onClick={() => setOpen(false)} aria-hidden />
-            <div
-              className="fixed z-[999] w-44 overflow-hidden rounded-xl border border-border bg-card p-1 shadow-[var(--ds-shadow-lg)]"
-              style={{ top: pos.top, right: pos.right }}
-              onClick={() => setOpen(false)}
-            >
-              {children}
-            </div>
-          </>,
-          document.body,
-        )}
-    </div>
-  );
-}
-
-function MenuItem({ icon: Icon, onClick, href, destructive, children }: { icon: React.ElementType; onClick?: () => void; href?: string; destructive?: boolean; children: React.ReactNode }) {
-  const cls = destructive
-    ? "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-500/10 dark:text-red-400"
-    : "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-semibold text-foreground transition-colors hover:bg-surface-2";
-  const iconCls = destructive ? "h-4 w-4 text-red-500" : "h-4 w-4 text-muted-foreground";
-  const body = (<><Icon className={iconCls} aria-hidden />{children}</>);
-  return href ? <Link href={href} className={cls}>{body}</Link> : <button type="button" onClick={onClick} className={cls}>{body}</button>;
 }

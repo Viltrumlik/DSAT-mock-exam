@@ -74,7 +74,9 @@ export default function AssignAssessmentContainer() {
     setExistingAssessmentAssignmentId(null);
     if (!cid || !targetSetId) return;
     try {
-      const list = (await classesApi.listAssignments(cid)).items;
+      // ALL, not the default homework list: a set can reach a classroom only once, and a
+      // set already given as classwork counts — the server refuses it either way.
+      const list = (await classesApi.listAssignments(cid, { category: "ALL" })).items;
       const rows = Array.isArray(list) ? list : [];
       const hit = rows.find((a: any) => Number(a?.assessment_homework?.set?.id) === Number(targetSetId));
       if (hit?.id) {

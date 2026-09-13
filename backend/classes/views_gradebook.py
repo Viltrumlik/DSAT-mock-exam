@@ -102,8 +102,10 @@ class GradebookOverviewView(_ClassroomScopedView):
             return Response({"detail": "Staff only."}, status=http.HTTP_403_FORBIDDEN)
 
         student_ids = _active_student_ids(classroom)
+        # Homework only. Classwork has nothing to hand in, so every student sat in its row as
+        # "missing"; the teacher marks classwork with XP in the Classwork tab instead.
         assignments = list(
-            classroom.assignments.exclude(status=Assignment.STATUS_ARCHIVED).order_by("-created_at")
+            classroom.assignments.homework().exclude(status=Assignment.STATUS_ARCHIVED).order_by("-created_at")
         )
         # All relevant submissions in one query, grouped by assignment → student.
         subs_by_assignment: dict[int, dict[int, Submission]] = defaultdict(dict)
