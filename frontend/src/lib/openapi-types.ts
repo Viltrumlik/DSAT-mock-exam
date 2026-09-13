@@ -1202,54 +1202,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/classes/{classroom_pk}/analytics/class/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["classes_analytics_class_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/classes/{classroom_pk}/analytics/me/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["classes_analytics_me_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/classes/{classroom_pk}/analytics/students/{student_id}/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["classes_analytics_students_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/classes/{classroom_pk}/assign-midterm/": {
         parameters: {
             query?: never;
@@ -2306,26 +2258,6 @@ export interface paths {
         };
         /** @description Unified class feed: posts, new assignments, and submission events (mixed, newest first). */
         get: operations["classes_stream_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/classes/{id}/student-workspace/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * @description Student-centric slices: all classwork with workflow, due soon, recently graded, new posts.
-         *     Teachers receive the same assignment list with ``workflow_status`` null.
-         */
-        get: operations["classes_student_workspace_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9176,67 +9108,6 @@ export interface operations {
             };
         };
     };
-    classes_analytics_class_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                classroom_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    classes_analytics_me_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                classroom_pk: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    classes_analytics_students_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                classroom_pk: number;
-                student_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No response body */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     classes_assign_midterm_create: {
         parameters: {
             query?: never;
@@ -10843,28 +10714,6 @@ export interface operations {
         };
     };
     classes_stream_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description A unique integer value identifying this classroom. */
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Classroom"];
-                };
-            };
-        };
-    };
-    classes_student_workspace_retrieve: {
         parameters: {
             query?: never;
             header?: never;

@@ -1272,53 +1272,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ClassroomCreate'
           description: ''
-  /api/classes/{classroom_pk}/analytics/class/:
-    get:
-      operationId: classes_analytics_class_retrieve
-      parameters:
-      - in: path
-        name: classroom_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - classes
-      responses:
-        '200':
-          description: No response body
-  /api/classes/{classroom_pk}/analytics/me/:
-    get:
-      operationId: classes_analytics_me_retrieve
-      parameters:
-      - in: path
-        name: classroom_pk
-        schema:
-          type: integer
-        required: true
-      tags:
-      - classes
-      responses:
-        '200':
-          description: No response body
-  /api/classes/{classroom_pk}/analytics/students/{student_id}/:
-    get:
-      operationId: classes_analytics_students_retrieve
-      parameters:
-      - in: path
-        name: classroom_pk
-        schema:
-          type: integer
-        required: true
-      - in: path
-        name: student_id
-        schema:
-          type: integer
-        required: true
-      tags:
-      - classes
-      responses:
-        '200':
-          description: No response body
   /api/classes/{classroom_pk}/assign-midterm/:
     post:
       operationId: classes_assign_midterm_create
@@ -2929,28 +2882,6 @@ paths:
       operationId: classes_stream_retrieve
       description: 'Unified class feed: posts, new assignments, and submission events
         (mixed, newest first).'
-      parameters:
-      - in: path
-        name: id
-        schema:
-          type: integer
-        description: A unique integer value identifying this classroom.
-        required: true
-      tags:
-      - classes
-      responses:
-        '200':
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Classroom'
-          description: ''
-  /api/classes/{id}/student-workspace/:
-    get:
-      operationId: classes_student_workspace_retrieve
-      description: |-
-        Student-centric slices: all classwork with workflow, due soon, recently graded, new posts.
-        Teachers receive the same assignment list with ``workflow_status`` null.
       parameters:
       - in: path
         name: id
