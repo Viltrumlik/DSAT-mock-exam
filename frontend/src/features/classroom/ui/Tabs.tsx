@@ -10,7 +10,20 @@ export interface TabItem {
   count?: number;
 }
 
-/** Pill tab bar (1:1 with the Classroom mockup). Horizontally scrollable on mobile. */
+/**
+ * The tab bar, shared by the classroom shell, its lesson and midterm panels, the
+ * vocabulary hub, the standalone midterm list and the question analysis page.
+ *
+ * Restyled to the filter pills on the leaderboard, which is the shape the owner pointed
+ * at: fully round, **solid** primary when chosen, a soft neutral when not, and no border
+ * on either. What it replaces read as a row of outlined buttons of equal weight — the
+ * chosen one was only a paler blue inside the same 1.5px frame, so which tab you were on
+ * took a moment to find.
+ *
+ * The row sits on a block of white quartz (`.quartz`), without the float: a bar that
+ * jumped whenever the pointer crossed it would be noise, and the surface is here to
+ * ground the pills, not to be clicked.
+ */
 export function Tabs({
   items,
   active,
@@ -23,7 +36,12 @@ export function Tabs({
   className?: string;
 }) {
   return (
-    <div className={cn("flex gap-2.5 overflow-x-auto pb-0.5", className)} role="tablist">
+    <div
+      // `p-2` is also the headroom the pills' hover lift needs: `overflow-x-auto` makes
+      // the other axis scroll too, so a 2px rise with no padding would be clipped.
+      className={cn("quartz flex gap-2 overflow-x-auto rounded-2xl p-2", className)}
+      role="tablist"
+    >
       {items.map((t) => {
         const selected = t.id === active;
         const Icon = t.icon;
@@ -36,10 +54,13 @@ export function Tabs({
             onClick={() => onChange(t.id)}
             onPointerDown={spawnRipple}
             className={cn(
-              "cr-ripple flex shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border-[1.5px] px-4 py-2.5 text-sm font-extrabold transition-all active:scale-95",
+              "ds-ring cr-ripple cr-pill flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2",
+              // `font-[inherit]`: the global `button { font-family }` rule would otherwise
+              // set these in Geist inside a page set in Plus Jakarta.
+              "font-[inherit] text-[13.5px] font-bold",
               selected
-                ? "cr-tabpop border-primary bg-primary-soft text-primary"
-                : "border-border bg-card text-muted-foreground hover:-translate-y-0.5 hover:border-primary hover:bg-primary-soft hover:text-primary",
+                ? "cr-tabpop bg-primary text-primary-foreground shadow-[0_6px_14px_-6px_var(--primary)]"
+                : "bg-surface-2 text-muted-foreground hover:bg-surface-3 hover:text-foreground",
             )}
           >
             {Icon && <Icon className="h-4 w-4" aria-hidden />}
@@ -48,7 +69,9 @@ export function Tabs({
               <span
                 className={cn(
                   "rounded-full px-1.5 py-0.5 text-[11px] font-extrabold leading-none",
-                  selected ? "bg-primary/15 text-primary" : "bg-surface-2 text-muted-foreground",
+                  // On the filled pill the count has to sit on the primary itself, so it
+                  // is a translucent white rather than another opaque chip.
+                  selected ? "bg-white/25 text-primary-foreground" : "bg-surface-3 text-muted-foreground",
                 )}
               >
                 {t.count}

@@ -1,85 +1,27 @@
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Layers, Shuffle, Timer, ClipboardCheck, type LucideIcon } from "lucide-react";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { withLaunchAssignment } from "../launchContext";
+// The four games' colours and routes live in `modeTone`, not here: the set progress bar
+// paints its segments from the same table, and a component file it had to import a Card
+// and a Link to reach was the wrong home for it. Re-exported so the name still resolves
+// wherever the mode files' comments point at it.
+import {
+  MODE_ACCENT,
+  MODE_META,
+  STUDY_MODE_ACCENT,
+  STUDY_MODE_SEGMENT,
+  type ModeAccentClasses,
+  type StudyModeAccent,
+} from "../modeTone";
 import { STUDY_MODE_LABEL, type StudyMode } from "../types";
 
-/** URL segment per mode — the route is `/vocabulary/sets/<id>/<segment>`. */
-export const STUDY_MODE_SEGMENT: Record<StudyMode, string> = {
-  flashcard: "flashcards",
-  matching: "matching",
-  speed: "speed",
-  test: "test",
-};
+export { STUDY_MODE_ACCENT, STUDY_MODE_SEGMENT };
+export type { StudyModeAccent };
 
-/**
- * The four modes are a *choice*, so each one carries its own semantic accent —
- * four identical grey cards make the pick feel arbitrary. Tokens only, so the
- * accents survive the light/dark toggle.
- */
-export type StudyModeAccent = "primary" | "info" | "warning" | "success";
-
-/**
- * Single source of truth for which accent belongs to which mode. Each mode's
- * own full-screen surface mirrors the accent its launcher card carries here —
- * every mode file repeats this pairing in a header comment, so a change made
- * here has exactly four places to follow it.
- */
-export const STUDY_MODE_ACCENT: Record<StudyMode, StudyModeAccent> = {
-  flashcard: "primary",
-  matching: "info",
-  speed: "warning",
-  test: "success",
-};
-
-const ACCENT: Record<StudyModeAccent, { icon: string; edge: string; border: string; cta: string }> = {
-  primary: {
-    icon: "bg-primary-soft text-primary",
-    edge: "from-primary/70 via-primary/25 to-transparent",
-    border: "hover:border-primary/40",
-    cta: "text-primary",
-  },
-  info: {
-    icon: "bg-info-soft text-info-foreground",
-    edge: "from-info/70 via-info/25 to-transparent",
-    border: "hover:border-info/40",
-    cta: "text-info-foreground",
-  },
-  warning: {
-    icon: "bg-warning-soft text-warning-foreground",
-    edge: "from-warning/70 via-warning/25 to-transparent",
-    border: "hover:border-warning/40",
-    cta: "text-warning-foreground",
-  },
-  success: {
-    icon: "bg-success-soft text-success-foreground",
-    edge: "from-success/70 via-success/25 to-transparent",
-    border: "hover:border-success/40",
-    cta: "text-success-foreground",
-  },
-};
-
-const MODE_META: Record<StudyMode, { icon: LucideIcon; blurb: string }> = {
-  flashcard: {
-    icon: Layers,
-    blurb: "Flip each card and mark what you knew. Missed words come back.",
-  },
-  matching: {
-    icon: Shuffle,
-    blurb: "Pair every word with its definition. The clock runs the whole way.",
-  },
-  speed: {
-    icon: Timer,
-    blurb: "Sixty seconds. Pick the right meaning as fast as you can.",
-  },
-  test: {
-    icon: ClipboardCheck,
-    blurb: "Multiple choice, true/false and spelling — every word, once.",
-  },
-};
 
 /**
  * The per-game score, always shown as **0/1 or 1/1** — never a percentage. A game is
@@ -87,12 +29,14 @@ const MODE_META: Record<StudyMode, { icon: LucideIcon; blurb: string }> = {
  * with any other denominator would promise partial credit that does not exist. Reading the
  * four cards left to right gives the same number the progress bar above them shows.
  */
-function MasteryScore({ mastered }: { mastered: boolean }) {
+function MasteryScore({ mastered, tone }: { mastered: boolean; tone: ModeAccentClasses }) {
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-extrabold",
-        mastered ? "bg-success-soft text-success-foreground" : "bg-surface-3 text-muted-foreground",
+        // Unearned reads in the game's own tint, not the kit grey: a card whose only
+        // filled pixel is a grey badge is the "austere" the owner named.
+        mastered ? "bg-success-soft text-success-foreground" : cn(tone.track, tone.cta),
       )}
       title={mastered ? "Mastered — one clean run" : "Not mastered yet"}
     >
@@ -126,7 +70,7 @@ export function StudyModeCard({
   assignmentId?: number;
 }) {
   const meta = MODE_META[mode];
-  const tone = ACCENT[accent ?? STUDY_MODE_ACCENT[mode]];
+  const tone = MODE_ACCENT[accent ?? STUDY_MODE_ACCENT[mode]];
   const Icon = meta.icon;
 
   const body = (
@@ -150,7 +94,7 @@ export function StudyModeCard({
           >
             <Icon className="h-[22px] w-[22px]" />
           </span>
-          <MasteryScore mastered={mastered} />
+          <MasteryScore mastered={mastered} tone={tone} />
         </div>
         <div className="flex-1">
           <h3 className="ds-h4">{STUDY_MODE_LABEL[mode]}</h3>

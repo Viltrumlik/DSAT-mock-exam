@@ -54,8 +54,16 @@ export function Drawer({
         aria-modal="true"
         style={{ width: `min(100%, ${width}px)` }}
         className={cn(
-          "absolute inset-y-0 flex flex-col border-border bg-card shadow-modal",
-          side === "right" ? "right-0 border-l ds-anim-slide-right" : "left-0 border-r",
+          // It had four square corners and was welded to the edge of the screen. On anything
+          // wider than a phone it now floats clear of all four edges and is rounded like every
+          // other surface in the product; on a phone it stays flush, where a floating sheet
+          // would only spend the width the content needs — but the two corners facing the page
+          // are rounded there too, because those are the ones a reader actually sees.
+          "absolute inset-y-0 flex flex-col overflow-hidden border-border bg-card shadow-modal",
+          "sm:inset-y-3 sm:rounded-3xl sm:border",
+          side === "right"
+            ? "right-0 rounded-l-3xl border-l ds-anim-slide-right sm:right-3"
+            : "left-0 rounded-r-3xl border-r sm:left-3",
         )}
       >
         <div className="flex items-center justify-between gap-4 border-b border-border px-5 py-4">

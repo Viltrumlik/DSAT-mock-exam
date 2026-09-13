@@ -72,7 +72,12 @@
   Border: border-border
 */
 :root {
-  --bg: #ffffff;
+  /* The page is the BACKDROP and a card is the thing on it. This was the other way round —
+     a white page under #f8fafc cards — so every surface in the product sat flat against its
+     background with nothing to lift it, which is what made the whole platform read as paper.
+     The backdrop is tinted with the brand blue rather than greyed: "no grey areas" was the
+     instruction, and a neutral wash is exactly what grey looks like. */
+  --bg: #eef2fa;
   --surface: #f8fafc;
   --surface-2: #f1f5f9;
   --surface-3: #e2e8f0;
@@ -86,8 +91,10 @@
 
   --background: var(--bg);
   --foreground: var(--text-primary);
-  --card: var(--surface);
+  --card: #ffffff;
   --border: var(--border-subtle);
+  /* The light along a card's top edge. One line, and every panel stops being a rectangle. */
+  --ds-sheen: rgba(255, 255, 255, 0.92);
 
   /* Brand */
   --primary: #2a68c0;
@@ -148,13 +155,18 @@
   --ds-surface-2: var(--surface-2);
   --ds-border-strong: var(--border-strong);
   --ds-text-muted: var(--text-secondary);
-  --ds-radius-sm: 0.5rem;
-  --ds-radius-md: 0.75rem;
-  --ds-radius-lg: 1rem;
-  --ds-radius-xl: 1.25rem;
-  --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
-  --ds-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08);
-  --ds-shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12);
+  /* One notch rounder across the board. The old scale left corners on buttons, inputs and
+     small tiles reading as sharp next to the 2xl cards around them. */
+  --ds-radius-sm: 0.625rem;
+  --ds-radius-md: 0.875rem;
+  --ds-radius-lg: 1.125rem;
+  --ds-radius-xl: 1.5rem;
+  /* Two layers each: a tight contact shadow so the edge is crisp, and a wide soft one so the
+     card floats. Cast in navy rather than black — a neutral shadow on a tinted page reads as
+     dirt, a tinted one reads as light. */
+  --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 2px 8px -2px rgba(30, 58, 110, 0.10);
+  --ds-shadow-md: 0 2px 4px rgba(15, 23, 42, 0.04), 0 10px 24px -8px rgba(30, 58, 110, 0.18);
+  --ds-shadow-lg: 0 6px 12px rgba(15, 23, 42, 0.06), 0 24px 48px -16px rgba(30, 58, 110, 0.26);
   --ds-transition: 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --ds-transition-fast: 100ms cubic-bezier(0.2, 0.8, 0.2, 1);
   --ds-ease-premium: cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -175,8 +187,11 @@
 
   --background: var(--bg);
   --foreground: var(--text-primary);
-  --card: var(--surface);
+  /* A step ABOVE --surface, not equal to it: in the dark a card that matches its page has no
+     edge at all, and the shadow under it cannot be seen. */
+  --card: #161f33;
   --border: var(--border-subtle);
+  --ds-sheen: rgba(255, 255, 255, 0.055);
 
   --primary: #4b5ce6;
   --primary-hover: #6e7cf2;
@@ -215,9 +230,9 @@
   --chart-grid: rgba(255, 255, 255, 0.08);
   --chart-axis: #94a3b8;
 
-  --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --ds-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --ds-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+  --ds-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40), 0 2px 8px -2px rgba(0, 0, 0, 0.45);
+  --ds-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.40), 0 10px 24px -8px rgba(0, 0, 0, 0.60);
+  --ds-shadow-lg: 0 6px 12px rgba(0, 0, 0, 0.50), 0 24px 48px -16px rgba(0, 0, 0, 0.70);
 }
 
 body {
@@ -343,20 +358,29 @@ optgroup {
   background-size: 200% 100%;
 }
 
-/* App background — solid, no gradients */
+/* App background — a lit backdrop rather than a flat fill.
+   The wash is wide, faint and anchored above the fold, so the top of every page carries a
+   little light and the cards on it have something to be lit AGAINST. It is one gradient, not
+   a texture: the page must never compete with what is on it. */
 .app-bg {
-  background: var(--background);
+  background:
+    radial-gradient(120% 62% at 50% -12%, rgba(42, 104, 192, 0.13), transparent 62%),
+    var(--background);
+  background-attachment: fixed;
 }
 
 .dark .app-bg {
-  background: var(--background);
+  background:
+    radial-gradient(120% 62% at 50% -12%, rgba(75, 92, 230, 0.20), transparent 62%),
+    var(--background);
+  background-attachment: fixed;
 }
 
 /* Surface — solid card with subtle border */
 .surface {
   background: var(--card);
   border: 1px solid var(--border);
-  box-shadow: var(--ds-shadow-sm);
+  box-shadow: var(--ds-shadow-sm), inset 0 1px 0 var(--ds-sheen);
 }
 
 /* Panel — rounded card */
@@ -364,31 +388,40 @@ optgroup {
   border-radius: var(--ds-radius-lg);
   background: var(--card);
   border: 1px solid var(--border);
-  box-shadow: var(--ds-shadow-sm);
+  box-shadow: var(--ds-shadow-sm), inset 0 1px 0 var(--ds-sheen);
 }
 
 .panel-soft {
   border-radius: var(--ds-radius-md);
   background: var(--card);
   border: 1px solid var(--border);
-  box-shadow: var(--ds-shadow-sm);
+  box-shadow: var(--ds-shadow-sm), inset 0 1px 0 var(--ds-sheen);
 }
 
-/* Cards */
+/* Cards.
+   The lift is 2px and it is the same 2px the classroom kit already uses (.cr-card, .cr-lift),
+   so a card behaves the same wherever in the product it is met. */
 .ui-card {
   background: var(--card);
   border: 1px solid var(--border);
-  box-shadow: var(--ds-shadow-sm);
-  transition: box-shadow 150ms ease, border-color 150ms ease;
+  box-shadow: var(--ds-shadow-sm), inset 0 1px 0 var(--ds-sheen);
+  transition: transform 200ms cubic-bezier(.22, 1, .36, 1), box-shadow 200ms ease,
+    border-color 200ms ease;
 }
 
 .ui-card:hover {
   border-color: rgba(42, 104, 192, 0.25);
-  box-shadow: var(--ds-shadow-md);
+  box-shadow: var(--ds-shadow-md), inset 0 1px 0 var(--ds-sheen);
+  transform: translateY(-2px);
 }
 
 .dark .ui-card:hover {
   border-color: rgba(75, 92, 230, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-card { transition: box-shadow 200ms ease, border-color 200ms ease; }
+  .ui-card:hover { transform: none; }
 }
 
 /* Inputs */
@@ -974,7 +1007,12 @@ mark.ts-annot {
   --dz-mute: #64748b;
   --dz-faint: #94a3b8;
   --dz-panel: #ffffff;
-  --dz-card: #f4f7fc;
+  /* Pointed at the house card. The dashboard keeps its own token names — it is a second
+     design system and renaming them here would touch every inline style in it — but there is
+     no reason for its cards to be a different colour from every other card in the product.
+     They were #f4f7fc, which is why the dashboard still looked washed out after the surface
+     pass: it was not reading --card at all. */
+  --dz-card: var(--card);
   --dz-border: #e7ebf3;
   --dz-amber: #f59e0b;
   --dz-amber-soft: rgba(245, 158, 11, 0.13);
@@ -991,7 +1029,7 @@ mark.ts-annot {
   --dz-mute: #94a3b8;
   --dz-faint: #6b7a90;
   --dz-panel: #1e293b;
-  --dz-card: #172033;
+  --dz-card: var(--card);
   --dz-border: rgba(255, 255, 255, 0.09);
   --dz-amber: #fbbf24;
   --dz-amber-soft: rgba(251, 191, 36, 0.15);
@@ -1193,7 +1231,13 @@ mark.ts-annot {
 .cr-rowin { animation: dz-cardIn .45s cubic-bezier(.22,1,.36,1) both; }
 
 /* Cards: stagger-in (delay set inline per index) + hover lift */
-.cr-card { animation: dz-cardIn .5s cubic-bezier(.22,1,.36,1) both;
+/* `backwards`, NOT `both`. A filled-forwards animation keeps applying its last keyframe
+   for ever, and an animation outranks every normal declaration — so `dz-cardIn`'s closing
+   `transform` was pinning the element and the `:hover` lift two lines below this one had
+   never moved a single card in the app (measured: 0.00px). `backwards` still holds the
+   opening frame through the staggered animation-delay, which is the part that matters;
+   the closing frame is the element's natural state anyway, so nothing changes at rest. */
+.cr-card { animation: dz-cardIn .5s cubic-bezier(.22,1,.36,1) backwards;
   transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s, background-color .2s; }
 .cr-card:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-md); }
 
@@ -1337,7 +1381,8 @@ mark.ts-annot {
 @keyframes dz-trophyBounce { 0%, 100% { transform: translateY(0) rotate(-6deg) } 50% { transform: translateY(-4px) rotate(6deg) } }
 
 /* Entry helpers (delays set inline per index where staggered) */
-.cr-cardrise { animation: dz-cardRise .5s cubic-bezier(.22,1,.36,1) both; }
+/* `backwards` for the same reason as `.cr-card` — see the note there. */
+.cr-cardrise { animation: dz-cardRise .5s cubic-bezier(.22,1,.36,1) backwards; }
 .cr-cardinb  { animation: dz-cardInB .55s cubic-bezier(.22,1,.36,1) both; }
 .cr-pillin   { animation: dz-pillIn .4s cubic-bezier(.22,1,.36,1) both; }
 .cr-rowin2   { animation: dz-rowIn .42s cubic-bezier(.22,1,.36,1) both; }
@@ -1651,32 +1696,86 @@ mark.ts-annot {
   .rmap *, .rmap *::before, .rmap *::after { animation: none !important; transition: none !important; }
 }
 
-/* ============================================================
-   Midterm statistics — motion for a page that is read, not played with.
+/* A bar that draws itself from its left edge. Generic on purpose: a meter, a split bar and
+   a progress track all want the same motion, and naming it per-page is how three copies of
+   one keyframe end up in a stylesheet. The delay is set per instance through --ds-delay. */
+@keyframes ds-growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
-   The house kit (.cr-*) already covers everything that ENTERS: the cards
-   stagger in with .cr-card, the table rows with .cr-rowin, both driven by an
-   inline delay per index. Only one thing here has no equivalent in the kit — a
-   bar that has to DRAW ITSELF rather than appear — so that is all this adds.
-
-   The growth is not decoration. These bars are how the page shows what a
-   percentage cannot: how the students who did not pass divide between failing
-   the exam and never coming. Drawing that left to right is the figure being
-   built in front of the reader; a bar that is simply there is a bar nobody
-   watches being made.
-   ============================================================ */
-@keyframes mts-growX {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
+.ds-growx {
+  transform-origin: left;
+  animation: ds-growX .62s cubic-bezier(.22, 1, .36, 1) both;
+  animation-delay: var(--ds-delay, 0ms);
 }
 
+/* The midterm page asked for the same motion under its own name and its own delay
+   variable. It is an ALIAS, not a second copy: two identical @keyframes in one stylesheet
+   is the thing the note above exists to prevent, and the pages met here only because they
+   were built on parallel branches. `--mts-delay` stays, so nothing that uses the class
+   has to change. */
 .mts-grow {
   transform-origin: left;
-  animation: mts-growX .62s cubic-bezier(.22,1,.36,1) both;
+  animation: ds-growX .62s cubic-bezier(.22, 1, .36, 1) both;
   animation-delay: var(--mts-delay, 0ms);
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* Holds the finished bar, never an empty track. */
-  .mts-grow { animation: none !important; transform: none !important; }
+  .ds-growx, .mts-grow { animation: none !important; transform: none !important; }
+}
+
+/* ── Quartz ──────────────────────────────────────────────────────────────────
+   A block of white quartz — and by the fourth pass, white is the whole of it.
+
+   It started tinted and lit, with a cleavage sheen and a sunken grey recess to sit in,
+   and that was one layer too many: "murakkablashib qolibdi … background ranglar hammasini
+   oq qiling. simple but cool". So the gradient, the sheen and the well are gone. What is
+   left is the part that was doing the work anyway — a hairline, a shadow with some weight
+   in it, and a lift under the cursor.
+
+   White on white, told apart by an edge one pixel wide. That is the whole trick, and it
+   is why the block still reads as an object on a white card without a drop of colour. */
+.quartz {
+  position: relative;
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, .055),            /* the hairline — the only separator */
+    0 1px 2px rgba(15, 23, 42, .04),
+    0 8px 18px -10px rgba(30, 58, 110, .16);
+}
+
+/* Float, opt-in. Split off from the stone itself because a surface can want the material
+   without the motion — a tab bar that jumped whenever the pointer crossed it would be
+   noise, while a block you can click into should lift. */
+.quartz-float {
+  transition:
+    transform .28s cubic-bezier(.22, 1, .36, 1),
+    box-shadow .28s cubic-bezier(.22, 1, .36, 1);
+}
+
+.quartz-float:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 0 0 1px rgba(15, 23, 42, .07),
+    0 2px 4px rgba(15, 23, 42, .04),
+    0 20px 34px -14px rgba(30, 58, 110, .22);
+}
+
+.dark .quartz {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, .07),
+    0 1px 2px rgba(0, 0, 0, .35),
+    0 10px 20px -10px rgba(0, 0, 0, .55);
+}
+
+.dark .quartz-float:hover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, .10),
+    0 2px 4px rgba(0, 0, 0, .38),
+    0 24px 40px -16px rgba(0, 0, 0, .65);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keeps the stone — drops the flight. */
+  .quartz-float { transition: none !important; }
+  .quartz-float:hover { transform: none; }
 }

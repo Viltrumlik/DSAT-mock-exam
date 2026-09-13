@@ -104,7 +104,7 @@ export function ModeFrame({ setId, title, subtitle, right, progress, children }:
 
 /**
  * Header pill for a clock or a counter. The four accent tones mirror
- * `STUDY_MODE_ACCENT` in `components/StudyModeCard` — a mode's header pill
+ * `STUDY_MODE_ACCENT` in `modeTone` — a mode's header pill
  * carries the same colour its launcher card does on the set page.
  */
 export function ModePill({

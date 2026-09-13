@@ -6,17 +6,20 @@ import { examsStudentApi } from "@/features/examsStudent/api";
 import { formatLessonDaysMeta } from "@/lib/classroomSchedule";
 import TelegramLoginButton, { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import {
-  BookOpen, CalendarClock, Copy, FileText, MailCheck, MailWarning, MessageCircle, Phone,
-  Pencil, School, Shield, Target, Users,
+  BookOpen, Coins, Copy, FileText, Flame, MailCheck, MailWarning, MessageCircle,
+  Phone, Pencil, School, Settings2, Shield, Target, Trophy, User, Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { displayEmail } from "@/lib/email";
 import { EmailVerificationModal } from "@/components/EmailVerificationModal";
 import { NotificationPreferencesCard } from "@/features/notifications/NotificationPreferencesCard";
 import {
-  Avatar, Alert, Checkbox, Field, HeroChip, HeroPage, Input, Modal, PageHero, Progress,
-  Select, Skeleton,
+  Avatar, Alert, Checkbox, Field, HeroChip, HeroPage, Input, Modal, PageHero,
+  Select, Skeleton, Tabs,
 } from "@/components/ui";
+import { GoalCard, StatTile } from "@/features/profile/ProfileSections";
+import { POINTS_EXPLAINER, STREAK_EXPLAINER, XP_EXPLAINER } from "@/features/rewards/explainers";
+import { rewardsApi, type MyRewards } from "@/features/rewards/rewardsApi";
 // The house devices. Importing the classroom's kit is what makes this page read as part of
 // the same product as the homework it opens onto.
 import {
@@ -90,7 +93,25 @@ function ResultCard({
   );
 }
 
+type ProfileTab = "overview" | "classes" | "settings";
+
+const PROFILE_TABS = [
+  { value: "overview", label: "Overview", icon: User },
+  { value: "classes", label: "Classes", icon: School },
+  { value: "settings", label: "Settings", icon: Settings2 },
+];
+
 export default function ProfilePage() {
+  /**
+   * Three tabs, and the split is the whole point of the rebuild.
+   *
+   * Everything a student opens their own profile FOR is on the first one. The notification
+   * matrix and the session log — which together were more than half the page — are on the
+   * third, where somebody who wants them can find them and nobody else has to scroll past
+   * them.
+   */
+  const [tab, setTab] = useState<ProfileTab>("overview");
+  const [rewards, setRewards] = useState<MyRewards | null>(null);
   const [me, setMe] = useState<MeForm | null>(null);
   const [draft, setDraft] = useState<MeForm | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -149,12 +170,16 @@ export default function ProfilePage() {
     setLoading(true);
     setLoadFailed(false);
     try {
-      const [meData, classData, tgWidget, examDatesRaw] = await Promise.all([
+      const [meData, classData, tgWidget, examDatesRaw, rewardsData] = await Promise.all([
         usersApi.getMe(),
         classesApi.list(),
         usersApi.getTelegramWidgetConfig().catch(() => ({ enabled: false, bot_username: null as string | null, client_id: null as string | null, start_url: null as string | null })),
         usersApi.listExamDates().catch(() => []),
+        // Their XP, streak and points. Caught rather than awaited hard: the profile must
+        // still render for a student whose rewards row has not been created yet.
+        rewardsApi.me().catch(() => null),
       ]);
+      setRewards(rewardsData);
       setTelegramCfg(tgWidget);
       setExamDateOptions(Array.isArray(examDatesRaw) ? (examDatesRaw as ExamDateOptionRow[]) : []);
       const meMapped = mapMeToForm(meData);
@@ -377,17 +402,10 @@ export default function ProfilePage() {
           }
           title={fullName || me.username}
           subtitle={`@${me.username}`}
-          tiles={[
-            { label: "Target score", value: targetScore != null ? targetScore : "—" },
-            {
-              label: "SAT exam",
-              value: nextDays == null ? "Not set" : nextDays < 0 ? "Done" : `${nextDays} days`,
-              accent: true,
-              icon: CalendarClock,
-            },
-            { label: "Classes", value: enrolledClasses.length },
-            { label: "Profile", value: `${completion}%` },
-          ]}
+          // No tiles. The masthead used to repeat the four numbers that now have coloured
+          // cards of their own two rows down, and a figure printed twice on one screen is a
+          // figure a reader has to reconcile.
+          tiles={[]}
           actions={
             <>
               <button
@@ -429,222 +447,292 @@ export default function ProfilePage() {
             {me.telegram_linked ? (
               <HeroChip icon={MessageCircle}>Telegram linked</HeroChip>
             ) : null}
+            {/* An unfinished profile is worth saying ONCE, where it can be acted on — not as
+                a permanent "Profile 57%" tile that says nothing about what is missing. */}
+            {completion < 100 ? (
+              <HeroChip as="button" type="button" icon={Pencil} onClick={handleOpenEdit}>
+                Profile {completion}% — finish it
+              </HeroChip>
+            ) : null}
           </div>
         </PageHero>
       </Card>
 
-      {/* Telegram banner */}
-      {telegramCfg?.enabled && !me.telegram_linked && telegramCfg.start_url ? (
-        <Card className="cr-card flex flex-col gap-4 border-primary/30 bg-primary/5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-primary">Telegram</p>
-            <p className="mt-0.5 text-[15px] font-extrabold text-foreground">Connect your Telegram account</p>
-            <p className="text-xs font-semibold text-muted-foreground">Sign in with one tap next time.</p>
+      {/* What the student came for, and nothing else on this tab. */}
+      <Tabs
+        tabs={PROFILE_TABS}
+        value={tab}
+        onValueChange={(v) => setTab(v as ProfileTab)}
+        aria-label="Profile sections"
+      />
+
+      {tab === "overview" ? (
+        <div className="space-y-4">
+          {/* Their own numbers, each in its own colour. A row of identically grey figures is
+              the austere page again in miniature: nothing to land on, and no number looking
+              more important than any other. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatTile
+              index={0}
+              tone="primary"
+              icon={Trophy}
+              label="XP"
+              value={rewards ? rewards.xp.toLocaleString("en-US") : "—"}
+              detail="Earned by turning up and doing the work."
+              explain={XP_EXPLAINER}
+            />
+            <StatTile
+              index={1}
+              tone="amber"
+              icon={Flame}
+              label="Streak"
+              explain={STREAK_EXPLAINER}
+              value={rewards ? rewards.current_streak : "—"}
+              detail={
+                rewards
+                  ? rewards.current_streak === 0
+                    ? "Attend your next lesson to start one."
+                    : `${rewards.current_streak === 1 ? "lesson" : "lessons"} in a row · best ${rewards.best_streak}`
+                  : undefined
+              }
+            />
+            <StatTile
+              index={2}
+              tone="emerald"
+              icon={Coins}
+              label="Points"
+              value={rewards ? rewards.points.toLocaleString("en-US") : "—"}
+              detail={rewards ? `${rewards.coins} ${rewards.coins === 1 ? "coin" : "coins"} to spend in the shop` : undefined}
+              explain={POINTS_EXPLAINER}
+            />
+            <StatTile
+              index={3}
+              tone="sky"
+              icon={FileText}
+              label="Homework"
+              value={analyticsLoading ? "…" : `${homeworkCompletion}%`}
+              detail={
+                analyticsLoading
+                  ? "Calculating…"
+                  : `${homeworkProgress.submitted} of ${homeworkProgress.total} done · ${homeworkProgress.overdue} past due`
+              }
+              fill={analyticsLoading ? null : homeworkCompletion}
+            />
           </div>
-          <div className="shrink-0">
-            {telegramLinkBusy ? <Spinner className="h-6 w-6 text-primary" /> : <TelegramLoginButton startUrl={telegramCfg.start_url} next="/profile" />}
+
+          {/* The goal and the countdown, as ONE thing. They used to be two chips in the
+              masthead, which is where a number goes to be true rather than to be acted on. */}
+          <GoalCard
+            target={targetScore}
+            best={lastMockResult?.score ?? lastPracticeResult?.score ?? null}
+            examDate={me.sat_exam_date ? formatDate(me.sat_exam_date) : null}
+            daysLeft={nextDays}
+            onEdit={handleOpenEdit}
+          />
+
+{/* RESULTS */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <ResultCard
+              label="Last practice"
+              value={lastPracticeResult?.score != null ? lastPracticeResult.score : "—"}
+              icon={BookOpen}
+              hint={lastPracticeResult
+                ? `${formatSubject(lastPracticeResult.practice_test_details?.subject)} · ${lastPracticeResult.submitted_at ? formatDate(lastPracticeResult.submitted_at) : "Completed"}`
+                : analyticsLoading ? "Loading…" : "No practice yet"}
+            />
+            <ResultCard
+              label="Last mock"
+              value={lastMockResult?.score != null ? lastMockResult.score : "—"}
+              icon={Target}
+              delay={60}
+              hint={lastMockResult
+                ? `${lastMockResult.mock_exam_title || "Mock"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Done"}`
+                : analyticsLoading ? "Loading…" : "No mock yet"}
+            />
           </div>
-        </Card>
+        </div>
       ) : null}
 
-      {/* RESULTS */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <ResultCard
-          label="Last practice"
-          value={lastPracticeResult?.score != null ? lastPracticeResult.score : "—"}
-          icon={BookOpen}
-          hint={lastPracticeResult
-            ? `${formatSubject(lastPracticeResult.practice_test_details?.subject)} · ${lastPracticeResult.submitted_at ? formatDate(lastPracticeResult.submitted_at) : "Completed"}`
-            : analyticsLoading ? "Loading…" : "No practice yet"}
-        />
-        <ResultCard
-          label="Last mock"
-          value={lastMockResult?.score != null ? lastMockResult.score : "—"}
-          icon={Target}
-          delay={60}
-          hint={lastMockResult
-            ? `${lastMockResult.mock_exam_title || "Mock"} · ${lastMockResult.completed_at ? formatDate(lastMockResult.completed_at) : "Done"}`
-            : analyticsLoading ? "Loading…" : "No mock yet"}
-        />
-        <Card className="cr-card flex flex-col justify-center gap-3" style={{ animationDelay: "120ms" }}>
-          <div className="flex items-center gap-4">
-            <span className="cr-iconpop flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 transition-transform">
-              <FileText className="h-[22px] w-[22px]" aria-hidden />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">Homework</p>
-              <p className="ds-num text-[26px] font-extrabold leading-tight text-foreground">
-                {analyticsLoading ? "…" : `${homeworkCompletion}%`}
-              </p>
-              <p className="truncate text-xs font-semibold text-muted-foreground">
-                {analyticsLoading
-                  ? "Calculating…"
-                  : `${homeworkProgress.submitted}/${homeworkProgress.total} done · ${homeworkProgress.overdue} past due`}
-              </p>
-            </div>
-          </div>
-          <Progress value={homeworkCompletion} tone="success" size="sm" />
-        </Card>
-      </div>
+      {tab === "classes" ? (
+        <div className="space-y-4">
+{/* CLASSES + CLASSMATES */}
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <Card className="cr-card space-y-4 xl:col-span-2">
+              <CardHeader
+                title={<span className="inline-flex items-center gap-2"><School className="h-4 w-4 text-primary" /> My classes</span>}
+                actions={<Pill tone="primary">{enrolledClasses.length} enrolled</Pill>}
+              />
+              <div className="grid grid-cols-3 gap-2">
+                {[{ v: enrolledClasses.length, l: "Classes" }, { v: totalPeers, l: "Peers" }, { v: selectedClass?.name || "—", l: "Active" }].map((s, i) => (
+                  <div key={i} className="rounded-xl bg-surface-2 p-3 text-center">
+                    <p className={cn("ds-num font-extrabold text-foreground", typeof s.v === "number" ? "text-xl" : "mt-1 line-clamp-2 text-xs")}>{s.v}</p>
+                    <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">{s.l}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {classesLoading ? (
+                  <div className="col-span-full flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
+                ) : enrolledClasses.length === 0 ? (
+                  <div className="col-span-full">
+                    <EmptyState icon={School} title="No classes yet" description="Join a class to see details here." />
+                  </div>
+                ) : (
+                  enrolledClasses.map((c, i) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSelectedClassId(c.id)}
+                      style={{ animationDelay: `${i * 50}ms` }}
+                      className={cn(
+                        "cr-rowin ds-ring cr-lift rounded-2xl border bg-card p-4 text-left",
+                        selectedClassId === c.id
+                          ? "border-primary bg-primary/[0.06]"
+                          : "border-border hover:border-primary/40",
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-[15px] font-extrabold text-foreground">{c.name}</p>
+                          <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
+                            {formatSubject(c.subject)} · {formatLessonDaysMeta(c.lesson_days) || "--"} {c.lesson_time || ""}
+                          </p>
+                        </div>
+                        <BookOpen className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+                      </div>
+                      <div className="mt-3 border-t border-border pt-3 text-xs font-semibold text-muted-foreground">
+                        <p className="truncate">Teacher: {formatTeacherLine(c)} · {c.members_count || 0} students</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </Card>
 
-      {/* CLASSES + CLASSMATES */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card className="cr-card space-y-4 xl:col-span-2">
-          <CardHeader
-            title={<span className="inline-flex items-center gap-2"><School className="h-4 w-4 text-primary" /> My classes</span>}
-            actions={<Pill tone="primary">{enrolledClasses.length} enrolled</Pill>}
-          />
-          <div className="grid grid-cols-3 gap-2">
-            {[{ v: enrolledClasses.length, l: "Classes" }, { v: totalPeers, l: "Peers" }, { v: selectedClass?.name || "—", l: "Active" }].map((s, i) => (
-              <div key={i} className="rounded-xl bg-surface-2 p-3 text-center">
-                <p className={cn("ds-num font-extrabold text-foreground", typeof s.v === "number" ? "text-xl" : "mt-1 line-clamp-2 text-xs")}>{s.v}</p>
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">{s.l}</p>
+            <Card className="cr-card space-y-4">
+              <CardHeader
+                title={<span className="inline-flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Classmates</span>}
+              />
+              <div className="rounded-xl bg-surface-2 p-3">
+                <p className="line-clamp-2 text-sm font-extrabold text-foreground">{selectedClass?.name || "No class selected"}</p>
+                <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
+                  {selectedClass?.start_date ? `Started ${formatDate(selectedClass.start_date)}` : "No start date"}
+                </p>
               </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {classesLoading ? (
-              <div className="col-span-full flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
-            ) : enrolledClasses.length === 0 ? (
-              <div className="col-span-full">
-                <EmptyState icon={School} title="No classes yet" description="Join a class to see details here." />
-              </div>
-            ) : (
-              enrolledClasses.map((c, i) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setSelectedClassId(c.id)}
-                  style={{ animationDelay: `${i * 50}ms` }}
-                  className={cn(
-                    "cr-rowin ds-ring cr-lift rounded-2xl border bg-card p-4 text-left",
-                    selectedClassId === c.id
-                      ? "border-primary bg-primary/[0.06]"
-                      : "border-border hover:border-primary/40",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-[15px] font-extrabold text-foreground">{c.name}</p>
-                      <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">
-                        {formatSubject(c.subject)} · {formatLessonDaysMeta(c.lesson_days) || "--"} {c.lesson_time || ""}
-                      </p>
+              <div className="max-h-[320px] space-y-2 overflow-auto">
+                {peopleLoading ? (
+                  <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
+                ) : selectedStudents.length === 0 ? (
+                  <p className="py-4 text-center text-sm font-semibold text-muted-foreground">No students found.</p>
+                ) : (
+                  selectedStudents.slice(0, 12).map((p) => (
+                    <div key={p.id} className="flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
+                      <Avatar name={`${p.user.first_name || ""} ${p.user.last_name || ""}`.trim() || p.user.username} src={p.user.profile_image_url} size={32} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-foreground">{p.user.first_name || ""} {p.user.last_name || ""}</p>
+                        <p className="truncate text-xs text-muted-foreground">@{p.user.username || "user"}</p>
+                      </div>
                     </div>
-                    <BookOpen className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-                  </div>
-                  <div className="mt-3 border-t border-border pt-3 text-xs font-semibold text-muted-foreground">
-                    <p className="truncate">Teacher: {formatTeacherLine(c)} · {c.members_count || 0} students</p>
-                  </div>
-                </button>
-              ))
-            )}
+                  ))
+                )}
+              </div>
+              {selectedStudents.length > 12 ? <p className="text-xs font-semibold text-muted-foreground">+{selectedStudents.length - 12} more</p> : null}
+            </Card>
           </div>
-        </Card>
+        </div>
+      ) : null}
 
-        <Card className="cr-card space-y-4">
-          <CardHeader
-            title={<span className="inline-flex items-center gap-2"><Users className="h-4 w-4 text-primary" /> Classmates</span>}
-          />
-          <div className="rounded-xl bg-surface-2 p-3">
-            <p className="line-clamp-2 text-sm font-extrabold text-foreground">{selectedClass?.name || "No class selected"}</p>
-            <p className="mt-0.5 text-xs font-semibold text-muted-foreground">
-              {selectedClass?.start_date ? `Started ${formatDate(selectedClass.start_date)}` : "No start date"}
-            </p>
-          </div>
-          <div className="max-h-[320px] space-y-2 overflow-auto">
-            {peopleLoading ? (
-              <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
-            ) : selectedStudents.length === 0 ? (
-              <p className="py-4 text-center text-sm font-semibold text-muted-foreground">No students found.</p>
-            ) : (
-              selectedStudents.slice(0, 12).map((p) => (
-                <div key={p.id} className="flex items-center gap-2.5 rounded-xl bg-surface-2 p-2.5">
-                  <Avatar name={`${p.user.first_name || ""} ${p.user.last_name || ""}`.trim() || p.user.username} src={p.user.profile_image_url} size={32} />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-bold text-foreground">{p.user.first_name || ""} {p.user.last_name || ""}</p>
-                    <p className="truncate text-xs text-muted-foreground">@{p.user.username || "user"}</p>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-          {selectedStudents.length > 12 ? <p className="text-xs font-semibold text-muted-foreground">+{selectedStudents.length - 12} more</p> : null}
-        </Card>
-      </div>
+      {tab === "settings" ? (
+        <div className="space-y-4">
+{/* Telegram banner */}
+          {telegramCfg?.enabled && !me.telegram_linked && telegramCfg.start_url ? (
+            <Card className="cr-card flex flex-col gap-4 border-primary/30 bg-primary/5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-primary">Telegram</p>
+                <p className="mt-0.5 text-[15px] font-extrabold text-foreground">Connect your Telegram account</p>
+                <p className="text-xs font-semibold text-muted-foreground">Sign in with one tap next time.</p>
+              </div>
+              <div className="shrink-0">
+                {telegramLinkBusy ? <Spinner className="h-6 w-6 text-primary" /> : <TelegramLoginButton startUrl={telegramCfg.start_url} next="/profile" />}
+              </div>
+            </Card>
+          ) : null}
 
-      {/* NOTIFICATIONS — the client for /api/notifications/preferences/, which shipped as a
-          working GET/PATCH that nothing on the site could reach. Sits above the session list
-          because both are "settings about my account", and this is the one a student is far
-          more likely to have come here for. */}
-      <NotificationPreferencesCard />
+{/* NOTIFICATIONS — the client for /api/notifications/preferences/, which shipped as a
+              working GET/PATCH that nothing on the site could reach. Sits above the session list
+              because both are "settings about my account", and this is the one a student is far
+              more likely to have come here for. */}
+          <NotificationPreferencesCard />
 
-      {/* SESSIONS */}
-      <Card className="cr-card space-y-3">
-        <CardHeader
-          title={<span className="inline-flex items-center gap-2"><Shield className="h-4 w-4 text-primary" /> Active sessions</span>}
-          description="Revoke anything you don't recognise."
-          actions={
-            <Button variant="secondary" size="sm" loading={sessionsLoading} onClick={() => void loadSessions()}>
-              Refresh
-            </Button>
-          }
-        />
-        <div className="space-y-2">
-          {sessionsLoading ? (
-            <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
-          ) : sessionsFailed ? (
-            // "No session data" here would tell a student nobody is signed in as them, which
-            // is the one thing this card exists to let them check.
-            <ErrorState
-              title="Couldn't load your sessions."
-              message="Your account is unaffected — only this list failed to load."
-              onRetry={() => void loadSessions()}
+{/* SESSIONS */}
+          <Card className="cr-card space-y-3">
+            <CardHeader
+              title={<span className="inline-flex items-center gap-2"><Shield className="h-4 w-4 text-primary" /> Active sessions</span>}
+              description="Revoke anything you don't recognise."
+              actions={
+                <Button variant="secondary" size="sm" loading={sessionsLoading} onClick={() => void loadSessions()}>
+                  Refresh
+                </Button>
+              }
             />
-          ) : sessions.length === 0 ? (
-            <EmptyState icon={Shield} title="No session data" description="Sign in again to create a session record." />
-          ) : (
-            sessions.map((s, i) => {
-              const revoked = !!s.revoked_at;
-              return (
-                <div
-                  key={s.id}
-                  style={{ animationDelay: `${i * 50}ms` }}
-                  className="cr-rowin flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-extrabold text-foreground">{revoked ? "Revoked session" : "Active session"}</p>
-                      {!revoked ? <Pill tone="success">Live</Pill> : null}
+            <div className="space-y-2">
+              {sessionsLoading ? (
+                <div className="flex justify-center py-8"><Spinner className="h-5 w-5 text-primary" /></div>
+              ) : sessionsFailed ? (
+                // "No session data" here would tell a student nobody is signed in as them, which
+                // is the one thing this card exists to let them check.
+                <ErrorState
+                  title="Couldn't load your sessions."
+                  message="Your account is unaffected — only this list failed to load."
+                  onRetry={() => void loadSessions()}
+                />
+              ) : sessions.length === 0 ? (
+                <EmptyState icon={Shield} title="No session data" description="Sign in again to create a session record." />
+              ) : (
+                sessions.map((s, i) => {
+                  const revoked = !!s.revoked_at;
+                  return (
+                    <div
+                      key={s.id}
+                      style={{ animationDelay: `${i * 50}ms` }}
+                      className="cr-rowin flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 md:flex-row md:items-center md:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-extrabold text-foreground">{revoked ? "Revoked session" : "Active session"}</p>
+                          {!revoked ? <Pill tone="success">Live</Pill> : null}
+                        </div>
+                        <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">IP: {s.ip || "--"} · Last active: {s.last_seen_at ? formatDate(s.last_seen_at) : "--"}</p>
+                        <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{s.user_agent || ""}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={revoked}
+                        loading={sessionsBusyId === s.id}
+                        className="shrink-0"
+                        onClick={async () => {
+                          setSessionsBusyId(s.id);
+                          try { await authApi.revokeSession(Number(s.id)); await loadSessions(); } finally { setSessionsBusyId(null); }
+                        }}
+                      >
+                        Revoke
+                      </Button>
                     </div>
-                    <p className="mt-1 truncate text-xs font-semibold text-muted-foreground">IP: {s.ip || "--"} · Last active: {s.last_seen_at ? formatDate(s.last_seen_at) : "--"}</p>
-                    <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">{s.user_agent || ""}</p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={revoked}
-                    loading={sessionsBusyId === s.id}
-                    className="shrink-0"
-                    onClick={async () => {
-                      setSessionsBusyId(s.id);
-                      try { await authApi.revokeSession(Number(s.id)); await loadSessions(); } finally { setSessionsBusyId(null); }
-                    }}
-                  >
-                    Revoke
-                  </Button>
-                </div>
-              );
-            })
-          )}
+                  );
+                })
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
+              <p className="text-xs font-semibold text-muted-foreground">Tip: revoke unknown sessions for security.</p>
+              <Button size="sm" variant="danger" onClick={async () => {
+                setSessionsLoading(true);
+                try { await authApi.revokeAllSessions(); setSessions([]); } finally { setSessionsLoading(false); }
+              }}>Revoke all</Button>
+            </div>
+          </Card>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-          <p className="text-xs font-semibold text-muted-foreground">Tip: revoke unknown sessions for security.</p>
-          <Button size="sm" variant="danger" onClick={async () => {
-            setSessionsLoading(true);
-            try { await authApi.revokeAllSessions(); setSessions([]); } finally { setSessionsLoading(false); }
-          }}>Revoke all</Button>
-        </div>
-      </Card>
+      ) : null}
 
       {/* Edit modal */}
       <Modal open={editOpen && !!draft} onClose={handleCloseEdit} title="Edit profile" description="Photo updates instantly. Other fields save on confirm." size="lg">

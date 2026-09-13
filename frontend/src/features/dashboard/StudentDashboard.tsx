@@ -29,7 +29,7 @@ import type { ScheduleEvent } from "@/lib/api";
 import { useDashboardData, type DashboardModel, type ExamDateOption } from "./useDashboardData";
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 import { DashboardStories } from "./DashboardStories";
-import { LevelCards, RewardsStrip } from "./DashboardProgress";
+import { DashboardPulse } from "./DashboardPulse";
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -95,20 +95,25 @@ function DashboardBody({
             vertical space. */}
         <DashboardStories />
 
-        {/* Where they are: level, next level, how far through it, and the group's week. */}
-        <LevelCards />
+        {/* Where they stand, in one band. This replaced three full-width slabs — a level
+            card, a rewards strip and a score/countdown pair — that a student scrolled past
+            before reaching anything they could act on, two of them mostly empty and all
+            three the same shade. */}
+        <DashboardPulse examDate={model.examDate} target={model.target} />
 
-        {/* What they have earned. */}
-        <RewardsStrip />
+        {/* Calendar + right column */}
+        <ScheduleSection />
 
-        {/* Score + countdown */}
+        {/* The two things a student SETS rather than reads, below the week they came to see.
+            They were at the top, where the eye lands, for controls most people touch twice a
+            term. The band above links up here. */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "1fr 1fr",
             gap: 20,
             alignItems: "stretch",
-            marginBottom: 22,
+            marginTop: 22,
           }}
           className="dz-scoregrid"
         >
@@ -122,9 +127,6 @@ function DashboardBody({
             }}
           />
         </div>
-
-        {/* Calendar + right column */}
-        <ScheduleSection />
       </div>
     </div>
   );

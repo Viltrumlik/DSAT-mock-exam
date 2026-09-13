@@ -11,6 +11,11 @@ interface ProgressRingProps {
   strokeWidth?: number;
   /** Tailwind text color for the filled arc, e.g. "text-primary" */
   color?: string;
+  /**
+   * Tailwind text color for the unfilled arc. Defaults to the kit's grey border — pass a
+   * tint of `color` where a ring sits at 0 and would otherwise be a grey doughnut.
+   */
+  trackColor?: string;
   /** Show percentage label in the center */
   showLabel?: boolean;
   className?: string;
@@ -22,6 +27,7 @@ export function ProgressRing({
   size = 64,
   strokeWidth = 5,
   color = "text-primary",
+  trackColor = "text-border",
   showLabel = true,
   className,
   children,
@@ -42,7 +48,7 @@ export function ProgressRing({
           fill="none"
           stroke="currentColor"
           strokeWidth={strokeWidth}
-          className="text-border"
+          className={trackColor}
         />
         {/* Fill */}
         <circle
