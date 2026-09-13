@@ -213,11 +213,11 @@ class InterventionsHomeworkTests(InterventionsFixture):
     """Only PUBLISHED homework counts.
 
     ``.homework()`` leaves classwork out, but not DRAFT or ARCHIVED work, and students never see
-    either: a draft has not been given to anyone yet, and archiving retires work. Nobody can turn
-    them in, yet a past-due one put every student on the missing list, and both held completion
-    down and sat in the dashboard's assignment lists. A homework gets its deadline when it is
-    created, draft or not, so a draft left unpublished goes past due at the next lesson. Class
-    analytics measures completion against PUBLISHED work only, for the same reason.
+    either: a draft has not been given to anyone yet, and archiving retires work. Nobody is asked
+    to turn them in, yet a past-due one put every student on the missing list, and both held
+    completion down and sat in the dashboard's assignment lists. A homework gets its deadline
+    when it is created, draft or not, so a draft left unpublished goes past due at the next
+    lesson. Class analytics measures completion against PUBLISHED work only, for the same reason.
     """
 
     def test_draft_and_archived_homework_are_not_counted(self):
