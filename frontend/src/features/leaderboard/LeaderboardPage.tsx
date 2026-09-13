@@ -312,61 +312,179 @@ function FilterBar({
   );
 }
 
+/**
+ * Where the sparks sit around a medal avatar, and when each one catches the light.
+ *
+ * Three per column, never in the same places twice, so the three do not twinkle in unison.
+ */
+const SPARKS: { left: string; top: string; size: number; delay: number }[][] = [
+  [
+    { left: "-14%", top: "6%", size: 11, delay: 0 },
+    { left: "96%", top: "28%", size: 8, delay: 700 },
+    { left: "84%", top: "-8%", size: 7, delay: 1500 },
+  ],
+  [
+    { left: "-12%", top: "22%", size: 8, delay: 400 },
+    { left: "92%", top: "8%", size: 9, delay: 1200 },
+    { left: "10%", top: "-10%", size: 6, delay: 1900 },
+  ],
+  [
+    { left: "94%", top: "18%", size: 9, delay: 250 },
+    { left: "-10%", top: "-4%", size: 7, delay: 1050 },
+    { left: "78%", top: "92%", size: 6, delay: 1750 },
+  ],
+];
+
+/** A four-point star, drawn rather than imported — it is 30 bytes of clip-path. */
+const STAR =
+  "polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%)";
+
+/**
+ * One place on the podium.
+ *
+ * The staging is the point, and it runs bottom-up: **third rises, then second, then the
+ * winner**, and each person is revealed only once their own step has finished standing. The
+ * board used to show all three complete on first paint, which is a photograph of a podium
+ * rather than a podium — the owner's words for it were that the top three looked *huddi
+ * rasmdek*, just like a picture.
+ *
+ * Every delay here is derived from `place`, never from `slot`: `slot` is where a column sits
+ * on screen (the leader in the middle), and the order things happen in has to follow the
+ * RANK or the winner would not be last.
+ */
 function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
   const place = (row.rank >= 1 && row.rank <= 3 ? row.rank : 3) as 1 | 2 | 3;
   const medal = MEDALS[place];
   const first = place === 1;
+  /** Third at 0ms, the winner last, so the eye finishes on the crown. */
+  const barDelay = (3 - place) * 170;
+  /** After its own step has settled, not after the whole podium has. */
+  const profileDelay = barDelay + 620;
+  const sparks = SPARKS[place - 1];
+
   return (
-    <li
-      className={cn("cr-rise flex min-w-0 flex-col items-center text-center", SLOT[slot])}
-      style={{ animationDelay: `${slot * 90}ms` }}
-    >
+    <li className={cn("flex min-w-0 flex-col items-center text-center", SLOT[slot])}>
       <span className="sr-only">Rank {row.rank}: </span>
-      {first ? (
-        <Crown
-          aria-hidden
-          className="cr-float mb-1 h-7 w-7 sm:h-8 sm:w-8"
-          style={{ color: medal.solid, fill: CROWN_FILL }}
-        />
-      ) : null}
-      <span className="rounded-full p-[3px]" style={{ background: medal.fill, boxShadow: medal.glow }}>
-        <span className="block rounded-full bg-card p-[2px]">
-          <Avatar
-            src={row.profile_image_url}
-            name={row.name}
-            size={first ? 72 : 58}
-            className="font-extrabold"
-            style={{ background: medal.fill, color: "#fff", textShadow: "0 1px 2px rgba(15,23,42,.35)" }}
+
+      {/* The person. Held back until their step is up — see `lb-profile`. */}
+      <div
+        className="lb-profile flex min-w-0 w-full flex-col items-center"
+        style={{ "--lb-profile-delay": `${profileDelay}ms` } as React.CSSProperties}
+      >
+        {first ? (
+          <Crown
+            aria-hidden
+            className="cr-float mb-1 h-7 w-7 drop-shadow-[0_3px_6px_rgba(245,197,66,.55)] sm:h-9 sm:w-9"
+            style={{ color: medal.solid, fill: CROWN_FILL }}
           />
+        ) : null}
+
+        <span className="relative inline-flex">
+          {/* The winner alone gets the halo and the turning ring. Two effects on one avatar
+              is a lot; on all three it would be noise, and nothing would stand out. */}
+          {first ? (
+            <>
+              <span
+                aria-hidden
+                className="lb-glow absolute -inset-4 rounded-full"
+                style={{ background: `radial-gradient(closest-side, ${CROWN_FILL}, transparent 72%)` }}
+              />
+              <span
+                aria-hidden
+                className="lb-ring absolute -inset-[6px] rounded-full opacity-90"
+                style={{
+                  background: `conic-gradient(from 0deg, ${CROWN_FILL}, #ffffff, ${medal.solid}, ${CROWN_FILL})`,
+                }}
+              />
+            </>
+          ) : null}
+
+          <span
+            className="relative rounded-full p-[3px]"
+            style={{ background: medal.fill, boxShadow: medal.glow }}
+          >
+            <span className="block rounded-full bg-card p-[2px]">
+              <Avatar
+                src={row.profile_image_url}
+                name={row.name}
+                size={first ? 78 : 58}
+                className="font-extrabold"
+                style={{ background: medal.fill, color: "#fff", textShadow: "0 1px 2px rgba(15,23,42,.35)" }}
+              />
+            </span>
+          </span>
+
+          {sparks.map((spark, i) => (
+            <span
+              key={i}
+              aria-hidden
+              className="lb-sparkle pointer-events-none absolute"
+              style={{
+                left: spark.left,
+                top: spark.top,
+                width: spark.size,
+                height: spark.size,
+                background: i === 1 ? "#ffffff" : CROWN_FILL,
+                clipPath: STAR,
+                animationDelay: `${profileDelay + spark.delay}ms`,
+              }}
+            />
+          ))}
         </span>
-      </span>
-      {/* Two lines rather than an ellipsis: a phone gives each step under a hundred pixels, and
-          the three names are the point of the podium. */}
-      <p className="mt-2.5 line-clamp-2 max-w-full break-words px-0.5 text-[13px] font-extrabold leading-tight text-foreground sm:text-[15px]">
-        {row.name}
-      </p>
-      {row.is_me ? (
-        <span className="mt-1">
-          <YouTag />
-        </span>
-      ) : null}
-      <p className="mt-0.5 max-w-full truncate px-0.5 text-[11px] font-semibold text-muted-foreground sm:text-xs">
-        {row.branch ?? "No branch yet"}
-      </p>
-      <p className="ds-num mt-1 text-lg font-extrabold leading-tight text-foreground sm:text-[22px]">
-        {row.xp.toLocaleString("en-US")}
-        <span className="ml-1 text-[10px] font-bold text-muted-foreground sm:text-[11px]">XP</span>
-      </p>
-      {/* The step. Its numeral repeats the rank read out above, so it is decoration here. */}
+
+        {/* Two lines rather than an ellipsis: a phone gives each step under a hundred pixels, and
+            the three names are the point of the podium. */}
+        <p className="mt-2.5 line-clamp-2 max-w-full break-words px-0.5 text-[13px] font-extrabold leading-tight text-foreground sm:text-[15px]">
+          {row.name}
+        </p>
+        {row.is_me ? (
+          <span className="mt-1">
+            <YouTag />
+          </span>
+        ) : null}
+        <p className="mt-0.5 max-w-full truncate px-0.5 text-[11px] font-semibold text-muted-foreground sm:text-xs">
+          {row.branch ?? "No branch yet"}
+        </p>
+        <p
+          className="ds-num mt-1 text-lg font-extrabold leading-tight sm:text-[22px]"
+          style={first ? { color: medal.solid } : undefined}
+        >
+          {row.xp.toLocaleString("en-US")}
+          <span className="ml-1 text-[10px] font-bold text-muted-foreground sm:text-[11px]">XP</span>
+        </p>
+      </div>
+
+      {/* The step. Its numeral repeats the rank read out above, so it is decoration here.
+          The box is full height from the first frame and only its FILL grows, so the column
+          never changes size and nothing below the podium jumps. */}
       <div
         aria-hidden
-        className={cn("relative mt-3 flex w-full justify-center overflow-hidden rounded-t-xl sm:rounded-t-2xl", STEP[place])}
-        style={{ background: medal.fill }}
+        className={cn(
+          "relative mt-3 w-full overflow-hidden rounded-t-xl sm:rounded-t-2xl",
+          STEP[place],
+        )}
+        style={{ boxShadow: medal.glow }}
       >
-        <span className="absolute inset-y-0 left-[14%] w-[20%] -skew-x-12 bg-white/20" />
+        {/* The fill, and its own depth. The shading is a layer of THIS element's background
+            rather than a sibling: as a sibling it kept full height while the fill grew, so a
+            step that had not risen yet showed as a white rectangle instead of nothing. */}
         <span
-          className="relative mt-1.5 text-3xl font-extrabold text-white sm:mt-2 sm:text-4xl"
-          style={{ textShadow: "0 2px 6px rgba(15,23,42,.3)" }}
+          className="lb-step-fill absolute inset-0"
+          style={{
+            background:
+              `linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0) 46%, rgba(15,23,42,.16)), ${medal.fill}`,
+            "--lb-bar-delay": `${barDelay}ms`,
+          } as React.CSSProperties}
+        />
+        {/* The glint, which now actually travels. The delay keeps it off the step until the
+            step has finished rising. */}
+        <span
+          className="lb-shine absolute inset-y-0 left-0 w-[26%] bg-gradient-to-r from-transparent via-white/60 to-transparent"
+          style={{ "--lb-shine-delay": `${barDelay + 950}ms` } as React.CSSProperties}
+        />
+        <span
+          className="lb-numeral relative flex h-full items-start justify-center pt-1.5 text-3xl font-extrabold text-white sm:pt-2 sm:text-4xl"
+          style={{ textShadow: "0 2px 6px rgba(15,23,42,.35)", "--lb-bar-delay": `${barDelay}ms` } as React.CSSProperties}
         >
           {row.rank}
         </span>
@@ -383,7 +501,7 @@ function Podium({ rows }: { rows: LeaderboardRow[] }) {
         <span key={i} aria-hidden className="absolute rounded-full" style={style} />
       ))}
       {/* Rank order in the DOM, podium order on screen — a screen reader hears 1, 2, 3. */}
-      <ol className="relative mx-auto grid max-w-2xl grid-cols-3 items-end gap-1.5 px-1.5 pt-7 sm:gap-4 sm:px-8 sm:pt-9">
+      <ol className="relative mx-auto grid max-w-2xl grid-cols-3 items-end gap-1.5 px-1.5 pt-8 sm:gap-4 sm:px-8 sm:pt-10">
         {rows.map((row, i) => (
           <PodiumColumn key={row.student_id} row={row} slot={i} />
         ))}
@@ -590,6 +708,36 @@ export function LeaderboardPage() {
         ) : null}
       </FilterBar>
 
+      {/* The top three, in a panel of their own.
+          They used to sit INSIDE the standings card, at the head of a list of fifty, and the
+          owner's verdict was that they had become *huddi rasmdek* — just a picture — because
+          of it. Three people who are the point of the board should not be the first item of
+          something else. */}
+      {board.isPending ? (
+        <Card pad="none" className="cr-card p-4 sm:p-6">
+          <div className="grid grid-cols-3 items-end gap-2 sm:gap-4">
+            <Skeleton className="h-36 rounded-2xl" />
+            <Skeleton className="h-44 rounded-2xl" />
+            <Skeleton className="h-32 rounded-2xl" />
+          </div>
+        </Card>
+      ) : !board.isError && podium.length > 0 ? (
+        <Card
+          pad="none"
+          className={cn(
+            "cr-card overflow-hidden transition-opacity duration-200",
+            board.isFetching && "opacity-60",
+          )}
+        >
+          <Podium rows={podium} />
+          {podiumGoal ? (
+            <div className="flex justify-center px-4 pb-4">
+              <GoalLine goal={podiumGoal} pill />
+            </div>
+          ) : null}
+        </Card>
+      ) : null}
+
       {/* A notch less padding on a phone, where every pixel of it comes out of the names. */}
       <Card pad="none" className="cr-card space-y-4 p-4 sm:p-6">
         <CardHeader
@@ -623,11 +771,6 @@ export function LeaderboardPage() {
             empty board tells the student they are alone on it. */}
         {board.isPending ? (
           <div className="space-y-2">
-            <div className="grid grid-cols-3 items-end gap-2 sm:gap-4">
-              <Skeleton className="h-32 rounded-2xl" />
-              <Skeleton className="h-40 rounded-2xl" />
-              <Skeleton className="h-28 rounded-2xl" />
-            </div>
             <Skeleton className="h-14 rounded-2xl" />
             <Skeleton className="h-14 rounded-2xl" />
             <Skeleton className="h-14 rounded-2xl" />
@@ -646,12 +789,6 @@ export function LeaderboardPage() {
           />
         ) : (
           <div className={cn("space-y-4 transition-opacity duration-200", board.isFetching && "opacity-60")}>
-            {podium.length > 0 ? <Podium rows={podium} /> : null}
-            {podiumGoal ? (
-              <div className="flex justify-center">
-                <GoalLine goal={podiumGoal} pill />
-              </div>
-            ) : null}
             {list.length > 0 ? (
               <ul className="space-y-1">
                 {list.map((row, i) => (

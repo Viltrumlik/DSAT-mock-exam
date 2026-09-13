@@ -242,6 +242,68 @@ describe("LeaderboardPage", () => {
     expect(host.textContent).toContain("Student 4");
   });
 
+  it("gives the top three a panel of their own, with the list starting at fourth", async () => {
+    // They used to be the first item INSIDE the standings card, which is what made three
+    // people who are the point of the board read as a picture at the top of a list.
+    useLeaderboard.mockReturnValue(query({
+      data: { ...BOARD, count: 4, rows: [row(1, 1, 300), row(2, 2, 250), row(3, 3, 200), row(4, 4, 100)] },
+    }));
+    await render();
+
+    const podium = host.querySelector("ol > li")!.closest("ol")!;
+    const standings = [...host.querySelectorAll("ul")].find((u) => u.textContent?.includes("Student 4"))!;
+    expect(standings).toBeTruthy();
+    // Not nested in either direction: two panels, not one.
+    expect(podium.contains(standings)).toBe(false);
+    expect(standings.contains(podium)).toBe(false);
+    // The list below the podium does not repeat the three standing on it.
+    expect(standings.textContent).not.toContain("Student 1");
+  });
+
+  it("raises the steps third-first so the winner lands last, then reveals each person", async () => {
+    useLeaderboard.mockReturnValue(query({
+      data: { ...BOARD, count: 3, rows: [row(1, 1, 300), row(2, 2, 250), row(3, 3, 200)] },
+    }));
+    await render();
+
+    const columns = [...host.querySelectorAll("ol > li")];
+    const delay = (el: Element | null, prop: string) =>
+      Number(((el as HTMLElement | null)?.style.getPropertyValue(prop) || "0ms").replace("ms", ""));
+
+    // DOM order is rank order, so [0] is the winner.
+    const bars = columns.map((c) => delay(c.querySelector(".lb-step-fill"), "--lb-bar-delay"));
+    expect(bars[2]).toBeLessThan(bars[1]);
+    expect(bars[1]).toBeLessThan(bars[0]);
+
+    // And nobody is shown before their own step has finished standing.
+    columns.forEach((c, i) => {
+      const profile = delay(c.querySelector(".lb-profile"), "--lb-profile-delay");
+      expect(profile).toBeGreaterThan(bars[i]);
+    });
+  });
+
+  it("gives the step a glint that actually travels, and holds it until the step is up", async () => {
+    // The step carried a static white band parked at 14% — the mark of a shine with no shine
+    // in it, which is what the owner asked to be given an animation.
+    useLeaderboard.mockReturnValue(query({
+      data: { ...BOARD, count: 3, rows: [row(1, 1, 300), row(2, 2, 250), row(3, 3, 200)] },
+    }));
+    await render();
+
+    const shines = [...host.querySelectorAll(".lb-shine")];
+    expect(shines).toHaveLength(3);
+    for (const shine of shines) {
+      const started = Number(
+        ((shine as HTMLElement).style.getPropertyValue("--lb-shine-delay") || "0ms").replace("ms", ""),
+      );
+      const bar = Number(
+        ((shine.parentElement!.querySelector(".lb-step-fill") as HTMLElement).style
+          .getPropertyValue("--lb-bar-delay") || "0ms").replace("ms", ""),
+      );
+      expect(started).toBeGreaterThan(bar);
+    }
+  });
+
   it("names the next place to reach, and the hero agrees with the table", async () => {
     const me = row(5, 5, 180, { is_me: true });
     useLeaderboard.mockReturnValue(query({

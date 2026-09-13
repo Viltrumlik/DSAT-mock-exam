@@ -1234,6 +1234,89 @@ mark.ts-annot {
 }
 
 /* ============================================================
+   Leaderboard podium — the top three, and only them.
+
+   The board's own motion, not the classroom kit's: a step does not "enter", it
+   GROWS, and the person standing on it is revealed once it has finished. Every
+   class here is additive — it sets motion only, never colour — and every one of
+   them holds its FINAL state when animation is off, so the reduced-motion block
+   at the bottom leaves a complete, static podium rather than an empty one.
+
+   Timing is driven from the component through three custom properties, because
+   the order is a deliberate piece of staging: third rises, then second, then the
+   winner, so the eye finishes on the crown.
+   ============================================================ */
+
+/* The step filling up from its own base. Scaled rather than grown in height, so
+   the column's box never changes size and nothing below it moves. */
+@keyframes lb-stepRise {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* The person, once their step is standing. */
+@keyframes lb-profileIn {
+  from { opacity: 0; transform: translateY(16px) scale(.92); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The gloss actually travelling across the step. It used to be a static white
+   band parked at 14% — the mark of a shine with no shine in it. The long tail
+   holds it off-screen between passes so it reads as an occasional glint. */
+@keyframes lb-shine {
+  0%        { transform: translateX(-220%) skewX(-12deg); }
+  38%, 100% { transform: translateX(620%) skewX(-12deg); }
+}
+
+/* The winner's halo, breathing. */
+@keyframes lb-glow {
+  0%, 100% { opacity: .38; transform: scale(1); }
+  50%      { opacity: .8;  transform: scale(1.07); }
+}
+
+/* A conic ring turning behind the first-place avatar. */
+@keyframes lb-ringSpin { to { transform: rotate(1turn); } }
+
+/* Little sparks around the medals. */
+@keyframes lb-sparkle {
+  0%, 100% { opacity: 0; transform: scale(.3) rotate(0deg); }
+  45%      { opacity: 1; transform: scale(1) rotate(70deg); }
+}
+
+/* The numeral, arriving with its step rather than sitting there first. */
+@keyframes lb-numeralIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.lb-step-fill {
+  transform-origin: bottom;
+  animation: lb-stepRise .7s cubic-bezier(.22,1,.36,1) both;
+  animation-delay: var(--lb-bar-delay, 0ms);
+}
+.lb-numeral {
+  animation: lb-numeralIn .45s cubic-bezier(.22,1,.36,1) both;
+  animation-delay: calc(var(--lb-bar-delay, 0ms) + 340ms);
+}
+.lb-profile {
+  animation: lb-profileIn .55s cubic-bezier(.22,1,.36,1) both;
+  animation-delay: var(--lb-profile-delay, 0ms);
+}
+.lb-shine  { animation: lb-shine 4.2s ease-in-out infinite; animation-delay: var(--lb-shine-delay, 0ms); }
+.lb-glow   { animation: lb-glow 3.2s ease-in-out infinite; }
+.lb-ring   { animation: lb-ringSpin 7s linear infinite; }
+.lb-sparkle{ animation: lb-sparkle 2.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-step-fill, .lb-numeral, .lb-profile, .lb-shine, .lb-glow, .lb-ring, .lb-sparkle {
+    animation: none !important;
+  }
+  /* The shine has nowhere to rest without its animation: a white band frozen
+     mid-step is the artefact this replaced, so it simply does not appear. */
+  .lb-shine, .lb-sparkle { opacity: 0 !important; }
+}
+
+/* ============================================================
    Student results / submit / homework redesign — motion ported
    1:1 from the MasterSAT Submit / Result Summary / Results /
    Homework mockups. Reuses the dz-* keyframes above; adds the
