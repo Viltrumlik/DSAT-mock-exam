@@ -31,7 +31,6 @@ import {
   ArrowRight,
   CalendarClock,
   CalendarDays,
-  ConciergeBell,
   GraduationCap,
   Hourglass,
   LifeBuoy,
@@ -221,7 +220,9 @@ export function ServicesPage() {
         />
         <div className="relative flex items-start gap-4 px-6 py-7 sm:px-8">
           <span className="squircle flex h-14 w-14 shrink-0 items-center justify-center bg-primary/10 text-primary [--sq:8.5px] dark:text-primary-hover">
-            <ConciergeBell className="h-7 w-7" aria-hidden />
+            {/* The sidebar's own Services glyph, so the page and the menu item that opens it
+                wear the same mark — as the shop's hero wears the shop's bag. */}
+            <LifeBuoy className="h-7 w-7" aria-hidden />
           </span>
           <div className="min-w-0 flex-1">
             <h1 className="text-[28px] font-extrabold leading-[1.1] tracking-[-0.025em] text-foreground sm:text-[32px]">
