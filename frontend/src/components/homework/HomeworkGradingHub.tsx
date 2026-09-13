@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import { subscribeRealtime } from "@/lib/realtime";
+import { capabilitiesFor } from "@/features/classroom/capabilities";
 import { AlertTriangle, Calendar, ChevronRight, ClipboardCheck } from "lucide-react";
 
 type Row = {
@@ -42,7 +43,8 @@ export default function HomeworkGradingHub({
     setError(null);
     try {
       const all = await classesApi.list();
-      const groups = all.items.filter((g) => g.my_role === "ADMIN");
+      // Every class the user may grade in, as the assignment page and the server decide it.
+      const groups = all.items.filter((g) => capabilitiesFor(g.my_role).canGrade);
       const out: Row[] = [];
       for (const g of groups) {
         const list = await classesApi.listAssignments(g.id);
