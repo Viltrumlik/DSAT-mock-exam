@@ -1,4 +1,5 @@
-"""The teacher's intervention signals: what counts as turned in, and which students count.
+"""The teacher's intervention signals: what counts as turned in, and which students and which
+homework count.
 
 ``GET /api/classes/<pk>/interventions/`` feeds the teacher portal: Submission rate, Class health,
 "Students needing support" ("N missing"), Lagging submissions, and the at-risk and "% turned in"
@@ -205,4 +206,36 @@ class InterventionsStudentsTests(InterventionsFixture):
         self.assertEqual(
             [(row["student_id"], row["avg_score_pct"]) for row in data["low_score_students"]],
             [(struggling.id, 50.0)],
+        )
+
+
+class InterventionsHomeworkTests(InterventionsFixture):
+    """Only PUBLISHED homework counts.
+
+    ``.homework()`` leaves classwork out, but not DRAFT or ARCHIVED work, and students never see
+    either: a draft has not been given to anyone yet, and archiving retires work. Nobody can turn
+    them in, yet a past-due one put every student on the missing list, and both held completion
+    down and sat in the dashboard's assignment lists. A homework gets its deadline when it is
+    created, draft or not, so a draft left unpublished goes past due at the next lesson. Class
+    analytics measures completion against PUBLISHED work only, for the same reason.
+    """
+
+    def test_draft_and_archived_homework_are_not_counted(self):
+        missing = self._student("iv_missing@t.com")
+        self._submission(self.student, Submission.STATUS_SUBMITTED)
+        self._homework("Next unit, not published yet", status=Assignment.STATUS_DRAFT)
+        self._homework("Last unit, archived", status=Assignment.STATUS_ARCHIVED)
+
+        data = self._interventions()
+
+        self.assertEqual(
+            self._figures(data),
+            {
+                "student_count": 2,
+                "assignment_count": 1,
+                "overall_completion_pct": 50.0,
+                "completion": {self.homework.id: (1, 2, 50.0)},
+                "overdue_count": {missing.id: 1},
+                "inactive": [missing.id],
+            },
         )

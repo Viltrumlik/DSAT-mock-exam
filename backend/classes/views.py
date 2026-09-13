@@ -1641,12 +1641,16 @@ class ClassroomViewSet(ModelViewSet):
                 },
             })
 
-        # All homework in the classroom. Not classwork: there is nothing to turn in, so every
+        # The classroom's published homework. Not classwork: there is nothing to turn in, so every
         # student would read as not having done it, and the completion figures the teacher
         # dashboard shows would be pulled down by work that was never meant to be handed in.
+        # Not DRAFT or ARCHIVED either: students never see them, so nobody can turn them in, yet
+        # a homework has its deadline from the moment it is created, draft or not. Archived work
+        # is retired; class analytics measures completion against PUBLISHED work too.
         assignments = list(
             Assignment.objects.homework()
             .filter(classroom=classroom)
+            .filter(status=Assignment.STATUS_PUBLISHED)
             .prefetch_related("assessment_homeworks__assessment_set")
             .order_by("due_at", "-created_at")
         )
