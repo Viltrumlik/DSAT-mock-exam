@@ -5,7 +5,7 @@
  * (people + listAssignments + listSubmissions). Cells carry status + grade.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 
@@ -20,6 +20,8 @@ export type GradebookModel = {
   missingCount: number;
 };
 export type ClassOption = { id: number; name: string };
+/** A load that did not come back, with the server's reason if it gave one (a 403 or 404 does; a crash or a dropped connection does not). */
+export type LoadError = { detail: string | null };
 
 const ASSIGNMENT_CAP = 12;
 
@@ -30,14 +32,22 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return out;
 }
 function toNum(v: unknown): number | null { const n = Number(v); return Number.isFinite(n) ? n : null; }
+/** The server's `detail` from a rejected request. Anything else (an HTML error page, no answer at all) gives no reason. */
+function loadErrorOf(e: unknown): LoadError { const d = (e as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail; return { detail: typeof d === "string" ? d : null }; }
 
 export type GradebookData = {
-  status: "booting" | "unauthenticated" | "empty" | "ready";
+  status: "booting" | "unauthenticated" | "error" | "empty" | "ready";
   classes: ClassOption[];
   selectedClassId: number | null;
   setSelectedClassId: (id: number) => void;
   loading: boolean;
   model: GradebookModel | null;
+  /** The class list did not load (status "error"). */
+  classListError: LoadError | null;
+  retryClassList: () => void;
+  /** The selected class's matrix did not load, or not all of it. None of it is drawn: every number on it is taken over all of its homework. */
+  matrixError: LoadError | null;
+  retryMatrix: () => void;
 };
 
 export function useGradebook(preview?: { classes: ClassOption[]; model: GradebookModel }): GradebookData {
@@ -47,32 +57,38 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
   const [model, setModel] = useState<GradebookModel | null>(preview?.model ?? null);
   const [loading, setLoading] = useState(!preview);
   const [empty, setEmpty] = useState(false);
+  const [classListError, setClassListError] = useState<LoadError | null>(null);
+  const [matrixError, setMatrixError] = useState<LoadError | null>(null);
+  // "Try again" bumps a counter to run its load's effect again.
+  const [classListTries, setClassListTries] = useState(0);
+  const [matrixTries, setMatrixTries] = useState(0);
 
-  // Load class list once.
+  // Load class list once, and again on "Try again".
   useEffect(() => {
     if (preview) return;
     if (bootState !== "AUTHENTICATED") { setLoading(false); return; }
     let cancelled = false;
     (async () => {
-      const res = await classesApi.list().catch(() => ({ items: [] as Array<{ id: number; name?: string; my_role?: string }> }));
+      const res = await classesApi.list();
       const managed = (res.items as Array<{ id: number; name?: string; my_role?: string }>).filter((c) => c.my_role && c.my_role !== "student");
       if (cancelled) return;
       if (managed.length === 0) { setEmpty(true); setLoading(false); return; }
       setClasses(managed.map((c) => ({ id: c.id, name: c.name || "Class" })));
       setSelectedClassId((cur) => cur ?? managed[0].id);
-    })();
+    })().catch((e: unknown) => { if (!cancelled) { setClassListError(loadErrorOf(e)); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [bootState, preview]);
+  }, [bootState, preview, classListTries]);
 
-  // Load matrix for the selected class.
+  // Load matrix for the selected class, and again on "Try again".
   useEffect(() => {
     if (preview || selectedClassId == null) return;
     let cancelled = false;
     setLoading(true);
+    setMatrixError(null);
     (async () => {
       const [peopleRes, aRes] = await Promise.all([
-        classesApi.people(selectedClassId).catch(() => ({})),
-        classesApi.listAssignments(selectedClassId).catch(() => ({ items: [] })),
+        classesApi.people(selectedClassId),
+        classesApi.listAssignments(selectedClassId),
       ]);
       if (cancelled) return;
       const members = (Array.isArray(peopleRes) ? peopleRes : (peopleRes as { members?: unknown[] }).members ?? (peopleRes as { items?: unknown[] }).items ?? []) as Array<{ role?: string; user?: { id: number; first_name?: string; last_name?: string; email?: string; profile_image_url?: string | null } }>;
@@ -82,7 +98,7 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
       // submissions per assignment → studentId -> {status, grade}
       const subByAssignment = new Map<number, Map<number, { status: Cell["status"]; grade: number | null }>>();
       await mapWithConcurrency(assignments, 4, async (a) => {
-        const subs = (await classesApi.listSubmissions(selectedClassId, a.id).catch(() => [])) as Array<{ student?: { id: number }; workflow_status?: string; review?: { grade?: unknown } | null }>;
+        const subs = (await classesApi.listSubmissions(selectedClassId, a.id)) as Array<{ student?: { id: number }; workflow_status?: string; review?: { grade?: unknown } | null }>;
         const map = new Map<number, { status: Cell["status"]; grade: number | null }>();
         (Array.isArray(subs) ? subs : []).forEach((s) => {
           if (!s.student) return;
@@ -118,17 +134,27 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
 
       setModel({ assignments: assignmentCols, students: studentRows, classAverage, distribution: bands, missingCount });
       setLoading(false);
-    })();
+    })().catch((e: unknown) => { if (!cancelled) { setModel(null); setMatrixError(loadErrorOf(e)); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [selectedClassId, preview]);
+  }, [selectedClassId, preview, matrixTries]);
+
+  const retryClassList = useCallback(() => {
+    // Its effect does not mark the page loading (on arrival it already is), so the retry does. Left
+    // out, the page would read "No students yet" while the class list loads.
+    setClassListError(null);
+    setLoading(true);
+    setClassListTries((n) => n + 1);
+  }, []);
+  const retryMatrix = useCallback(() => setMatrixTries((n) => n + 1), []);
 
   const status = useMemo<GradebookData["status"]>(() => {
     if (preview) return "ready";
     if (bootState === "BOOTING") return "booting";
     if (bootState !== "AUTHENTICATED") return "unauthenticated";
+    if (classListError) return "error";
     if (empty) return "empty";
     return "ready";
-  }, [bootState, empty, preview]);
+  }, [bootState, classListError, empty, preview]);
 
-  return { status, classes, selectedClassId, setSelectedClassId, loading, model };
+  return { status, classes, selectedClassId, setSelectedClassId, loading, model, classListError, retryClassList, matrixError, retryMatrix };
 }

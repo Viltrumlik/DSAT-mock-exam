@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileText, Paperclip, CheckCircle2, ClipboardPen, CornerDownLeft, ExternalLink,
-  ChevronUp, ChevronDown, History,
+  ChevronUp, ChevronDown, History, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
-  Card, CardContent, Badge, Button, IconButton, Avatar, Textarea, Input, Field, EmptyState, Skeleton,
+  Alert, Card, CardContent, Button, IconButton, Avatar, Textarea, Input, Field, EmptyState, Skeleton,
   ToastProvider, useToast,
 } from "@/components/ui";
 import { useGradingQueue, studentName, type QueueItem } from "./useGradingQueue";
@@ -39,7 +39,7 @@ export function TeacherGrading({ previewItems }: { previewItems?: QueueItem[] })
 }
 
 function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
-  const { status, items, loading, grade } = useGradingQueue(previewItems);
+  const { status, items, loading, error, retry, grade } = useGradingQueue(previewItems);
   const toast = useToast();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [score, setScore] = useState("");
@@ -112,6 +112,16 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
   }
   if (status === "unauthenticated") {
     return <div className="mx-auto max-w-md py-16"><Card><CardContent className="py-10 text-center"><p className="ds-h3">Grading</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a teacher account.</p></CardContent></Card></div>;
+  }
+  if (status === "error") {
+    return (
+      <div className="mx-auto max-w-md space-y-3 py-16">
+        <Alert tone="danger" title="Couldn’t load the submissions waiting to be graded">
+          {error?.detail ?? "Submissions and grades are unchanged — only this page failed to load."}
+        </Alert>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retry}>Try again</Button>
+      </div>
+    );
   }
 
   return (

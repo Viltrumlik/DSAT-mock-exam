@@ -107,6 +107,22 @@ function networkError() {
 
 const FORBIDDEN = { detail: "You do not have permission to perform this action." };
 
+/** Fail `fn`'s next call, then hold the one after it until the returned `release` is called. */
+function failThenHold(fn: typeof api.list, error: () => unknown) {
+  const answer = fn.getMockImplementation()!;
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = () => resolve();
+  });
+  fn.mockImplementationOnce(async () => {
+    throw error();
+  }).mockImplementationOnce(async (...args: number[]) => {
+    await held;
+    return answer(...args);
+  });
+  return () => release();
+}
+
 let host: HTMLDivElement;
 let root: Root;
 
@@ -341,6 +357,25 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     expect(text()).toContain("First Student");
   });
 
+  it("while Try again waits on the class list, the page is loading — not 'No classes yet' or 'No students yet'", async () => {
+    const release = failThenHold(api.list, networkError);
+    await mount(<TeacherGradebook />);
+    await until(pageSettled);
+
+    await act(async () => button("Try again").click());
+    await until(() => api.list.mock.calls.length === 2);
+    await until(() => true);
+
+    expect(pageSettled()).toBe(false);
+    expect(text()).not.toContain("No classes yet");
+    expect(text()).not.toContain("No students yet");
+    expect(text()).not.toContain("Couldn’t load");
+
+    await act(async () => release());
+    await until(pageSettled);
+    expect(text()).toContain("First Student");
+  });
+
   it("a class that did not load says so in its gradebook's place, with Try again — not 'No students yet'", async () => {
     api.people.mockRejectedValueOnce(httpError(503));
     await mount(<TeacherGradebook />);
@@ -361,6 +396,24 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     expect(text()).not.toContain("Couldn’t load");
     expect(stat("Students")).toBe("2");
     expect(stat("Missing work")).toBe("0");
+  });
+
+  it("while Try again waits on the class, its gradebook's place is loading — not 'No students yet'", async () => {
+    const release = failThenHold(api.people, () => httpError(503));
+    await mount(<TeacherGradebook />);
+    await until(pageSettled);
+
+    await act(async () => button("Try again").click());
+    await until(() => api.people.mock.calls.length === 2);
+    await until(() => true);
+
+    expect(pageSettled()).toBe(false);
+    expect(text()).not.toContain("No students yet");
+    expect(text()).not.toContain("Couldn’t load");
+
+    await act(async () => release());
+    await until(pageSettled);
+    expect(stat("Students")).toBe("2");
   });
 
   it("one homework's submissions not loading puts no '!' on anyone and no number in 'Missing work'", async () => {
@@ -495,6 +548,24 @@ describe("TeacherGrading — what the teacher sees when a load fails", () => {
     await until(pageSettled);
 
     expect(text()).not.toContain("Couldn’t load");
+    expect(text()).toContain("5 awaiting a grade");
+  });
+
+  it("while Try again waits, the page is loading — not 'All caught up'", async () => {
+    const release = failThenHold(api.list, () => httpError(502));
+    await mount(<TeacherGrading />);
+    await until(pageSettled);
+
+    await act(async () => button("Try again").click());
+    await until(() => api.list.mock.calls.length === 2);
+    await until(() => true);
+
+    expect(pageSettled()).toBe(false);
+    expect(text()).not.toContain("All caught up");
+    expect(text()).not.toContain("Couldn’t load");
+
+    await act(async () => release());
+    await until(pageSettled);
     expect(text()).toContain("5 awaiting a grade");
   });
 
