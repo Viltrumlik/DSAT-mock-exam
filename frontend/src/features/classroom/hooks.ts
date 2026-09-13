@@ -3,12 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { classesApi } from "@/lib/api";
 import { classroomKeys } from "./queryKeys";
-import type {
-  ClassroomWithRole,
-  Interventions,
-  Member,
-  StudentWorkspace,
-} from "./types";
+import type { ClassroomWithRole, Member } from "./types";
 
 const enabledId = (id: number) => Number.isFinite(id) && id > 0;
 
@@ -32,24 +27,6 @@ export function useClassMembers(id: number) {
     queryKey: classroomKeys.members(id),
     queryFn: () => classesApi.people(id),
     enabled: enabledId(id),
-  });
-}
-
-export function useStudentWorkspace(id: number) {
-  return useQuery<StudentWorkspace>({
-    queryKey: classroomKeys.workspace(id),
-    queryFn: () => classesApi.getStudentWorkspace(id),
-    enabled: enabledId(id),
-    staleTime: 15_000,
-  });
-}
-
-export function useInterventions(id: number) {
-  return useQuery<Interventions>({
-    queryKey: classroomKeys.interventions(id),
-    queryFn: () => classesApi.getInterventions(id),
-    enabled: enabledId(id),
-    staleTime: 15_000,
   });
 }
 
