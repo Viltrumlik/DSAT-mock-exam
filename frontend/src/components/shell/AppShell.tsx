@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   Menu,
   X,
@@ -98,7 +97,6 @@ export function AppShell({
   // draw — the ops and builder consoles mount this same component.
   const unread = useUnreadSummary(Boolean(notifications));
   const unreadTotal = unread.data?.total ?? 0;
-  const queryClient = useQueryClient();
   const [acctOpen, setAcctOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const cmdRef = useRef<HTMLDivElement>(null);
