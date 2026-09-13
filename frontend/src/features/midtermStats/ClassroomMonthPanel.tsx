@@ -203,7 +203,7 @@ export function ClassroomMonthPanel({
               thisMonth={data.this_month}
               latestMonth={latestSatMonth(data.months, futureMonths)}
               onOpenLatest={() => setMonth(latestSatMonth(data.months, futureMonths))}
-              detail={`${plural(summary.midterms, "paper")} booked for ${plural(summary.distinct_students, "student")} on this roster.`}
+              detail={`${plural(summary.midterms, "exam")} booked for ${plural(summary.distinct_students, "student")} in this class.`}
             />
           ) : null}
 
@@ -213,7 +213,7 @@ export function ClassroomMonthPanel({
                 ? `Booked for ${monthLabel(data.month)}`
                 : `${monthLabel(data.month)} summary`
             }
-            description={`${plural(summary.midterms, "paper")} · ${plural(summary.distinct_students, "student")} on the roster`}
+            description={`${plural(summary.midterms, "exam")} · ${plural(summary.distinct_students, "student")}`}
           >
             {scheduled ? (
               <div className="grid gap-x-6 gap-y-4 p-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -230,7 +230,7 @@ export function ClassroomMonthPanel({
                 <Figure
                   label="Students"
                   value={String(summary.distinct_students)}
-                  detail={`${plural(summary.roster, "roster place")} waiting on these papers.`}
+                  detail={`${plural(summary.roster, "result")} expected from these exams.`}
                 />
               </div>
             ) : (
@@ -246,7 +246,7 @@ export function ClassroomMonthPanel({
                     <RateBar rate={summary.pass_rate} />
                   </span>
                 }
-                detail={`${formatShare(summary.passed, summary.roster)} roster places`}
+                detail={`${formatShare(summary.passed, summary.roster)} students`}
               />
               <Figure
                 label="Passed"
@@ -283,9 +283,9 @@ export function ClassroomMonthPanel({
             {!scheduled && summary.roster !== summary.distinct_students && summary.midterms > 1 && (
               <div className="border-t border-border px-5 py-3">
                 <Note>
-                  This class sat {plural(summary.midterms, "paper")} this month, so its{" "}
-                  {summary.distinct_students} students appear {summary.roster} times in the
-                  denominator — once per paper. That is what the pooled rule asks for.
+                  This class sat {plural(summary.midterms, "exam")} this month, so its{" "}
+                  {summary.distinct_students} students are counted {summary.roster} times —
+                  once for each exam they were due to sit.
                 </Note>
               </div>
             )}
@@ -309,7 +309,7 @@ export function ClassroomMonthPanel({
             title={scheduled ? "Papers booked for this month" : "Papers sat this month"}
             description={
               scheduled
-                ? "Nothing here has been sat. Open a paper to see who is on its roster."
+                ? "Nothing here has been sat. Open an exam to see who was due to sit it."
                 : "Open a paper to see the students behind its numbers."
             }
           >
@@ -424,7 +424,7 @@ function PaperRow({
                 reads as a class that failed to turn up for a paper that has not happened. */}
             {scheduled ? (
               <span>
-                {plural(row.roster, "student")} on the roster · not sat yet
+                {plural(row.roster, "student")} due to sit · not sat yet
               </span>
             ) : (
               <>

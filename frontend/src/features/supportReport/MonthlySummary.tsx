@@ -229,7 +229,7 @@ export function MonthlySummary({
 
       <SectionCard
         title={shown ? `The desk in ${shown}` : "The desk this month"}
-        description="Each support teacher's month, and the school pooled underneath. Attendance is the students who came over everyone settled either way — an hour nobody settled is in neither."
+        description="Each support teacher's month, and the learning center pooled underneath. Attendance is the students who came over everyone settled either way — an hour nobody settled is in neither."
         actions={monthPicker}
       >
         {empty ? (
@@ -249,7 +249,7 @@ export function MonthlySummary({
               footer={
                 <tr className="bg-surface-2 align-middle">
                   <td className="px-3 py-3 pl-5 text-left">
-                    <span className="font-bold text-foreground">The whole school</span>
+                    <span className="font-bold text-foreground">The whole learning center</span>
                     <span className="block text-[11px] text-muted-foreground">
                       {teacherSubline(total)}
                     </span>
@@ -267,7 +267,7 @@ export function MonthlySummary({
                   <td className="px-3 py-3 text-right">
                     <Num
                       value={total.students_helped}
-                      title="Distinct students school-wide. A student who saw two support teachers is one student, not two — this is not the sum of the column above."
+                      title="Distinct students across the whole learning center. A student who saw two support teachers is one student, not two — this is not the sum of the column above."
                     />
                   </td>
                   <td className="px-3 py-3 text-right">
@@ -285,7 +285,7 @@ export function MonthlySummary({
 
             <div className="space-y-2 border-t border-border px-5 py-4">
               <Note>
-                Attendance is {formatRate(total.attendance_rate)} for the school:{" "}
+                Attendance is {formatRate(total.attendance_rate)} for the learning center:{" "}
                 {formatShare(total.held, settledCount(total))} settled either way, pooled across
                 every teacher rather than averaged over them. Cancelled hours are in neither
                 half — the seat went back to the calendar — and unsettled ones are in neither

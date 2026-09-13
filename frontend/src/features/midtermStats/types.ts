@@ -297,3 +297,31 @@ export type ClassroomMonth = MonthContext &
     summary: Tally & { midterms: number; distinct_students: number };
     rows: ClassroomMidtermRow[];
   };
+
+/**
+ * One point on the month-by-month line (`GET /stats/trend/`).
+ *
+ * Months nobody sat are not sent at all rather than sent as zero — a month with nobody on a
+ * list has no rate, and a 0% point would read as a month the school failed.
+ */
+export type TrendPoint = {
+  month: MonthKey;
+  pass_rate: number | null;
+  attendance_rate: number | null;
+  passed: number;
+  failed: number;
+  absent: number;
+  pending: number;
+  /** Results expected that month: a student counts once per exam they were due to sit. */
+  roster: number;
+  classrooms: number;
+  midterms: number;
+};
+
+/** A branch the whole-branch PDF can be asked for (`GET /reports/branches/`). */
+export type BranchOption = {
+  id: number;
+  name: string;
+  region: string | null;
+  classrooms: number;
+};

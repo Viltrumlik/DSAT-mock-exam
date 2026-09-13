@@ -13,14 +13,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MonthlyStats, TreeLevel, TreeNode } from "../types";
 
 const monthly = vi.fn();
+// The trend is fetched beside the month and must never be able to fail the page: an empty
+// list is the shape a school with one month of results actually sends.
+const trend = vi.fn(async () => []);
+const downloadBranchPdf = vi.fn(async () => {});
 
 vi.mock("../api", () => ({
   midtermStatsApi: {
     monthly: (...args: unknown[]) => monthly(...args),
     classroom: vi.fn(),
     months: vi.fn(),
+    trend: () => trend(),
+    branches: vi.fn(async () => []),
+    downloadBranchPdf: () => downloadBranchPdf(),
   },
   errText: (_e: unknown, fallback: string) => fallback,
+}));
+
+// Recharts needs layout jsdom does not give it; the page's charts are covered in their own
+// file, and here they would only add noise to assertions about words.
+vi.mock("@/components/ui/charts", () => ({
+  ChartCard: ({ title, description, children }: Record<string, unknown>) => (
+    <section>
+      <h3>{title as React.ReactNode}</h3>
+      <p>{description as React.ReactNode}</p>
+      {children as React.ReactNode}
+    </section>
+  ),
+  DonutChart: () => <div>donut</div>,
+  StackedBarChart: () => <div>bars</div>,
+  AreaChart: () => <div>area</div>,
 }));
 
 // The records tab is not mounted on first paint; stub it so the smoke test does not drag the
@@ -183,12 +205,12 @@ describe("MidtermStatsPage", () => {
     monthly.mockResolvedValue(payload());
     const out = await render();
 
-    expect(out).toContain("Midterm statistics");
+    expect(out).toContain("Midterm results");
     expect(out).toContain("90%");
-    expect(out).toContain("9 of 10 roster places passed in September 2026");
+    expect(out).toContain("9 of 10 passed in September 2026");
     // The rule is on the page, not in a handbook.
     expect(out).toContain("passed (first sitting or retake) / all roster students");
-    expect(out).toContain("An absent student counts as failed");
+    expect(out).toContain("A student who did not come counts as failed");
     // ONE level, not four tables: the school has a single region and a single branch, so both
     // are passed through and the page opens where the school actually branches.
     expect(out).toContain("Departments in Chilonzor");
@@ -253,7 +275,7 @@ describe("MidtermStatsPage", () => {
     await step("Nodir T");
     await step("Math Senior A");
     // `ClassroomMonthPanel` takes over; it fetches on its own and offers the way back.
-    expect(container?.textContent).toContain("Back to September 2026 statistics");
+    expect(container?.textContent).toContain("Back to September 2026 results");
   });
 
   it("keeps the school total in the tiles wherever the reader has drilled to", async () => {
@@ -316,7 +338,7 @@ describe("MidtermStatsPage", () => {
     );
     const out = await render();
 
-    expect(out).toContain("No midterms in January 2026");
+    expect(out).toContain("No exams in January 2026");
     expect(out).toContain("—");
     expect(out).not.toContain("Could not load");
   });
@@ -329,7 +351,7 @@ describe("MidtermStatsPage", () => {
     // `pending` counts roster places, not students — a student awaiting two verdicts is two
     // of them. Calling them students overstated the headcount, which is the mistake the
     // Students tile used to make one altitude up.
-    expect(out).toContain("4 roster places in September 2026 are still awaiting a result");
+    expect(out).toContain("4 results in September 2026 are still to come");
     expect(out).not.toContain("4 students in September 2026");
     expect(out).toContain("can only go up");
   });
@@ -381,7 +403,7 @@ describe("MidtermStatsPage", () => {
       expect(out).not.toContain("0 of 10 roster places passed");
       // Nor the verdict tiles that are only zero because nothing has happened.
       expect(out).not.toContain("Did not pass");
-      expect(out).toContain("Papers scheduled");
+      expect(out).toContain("Exams booked");
     });
 
     it("shows what is booked instead of ranking classes that have sat nothing", async () => {
@@ -481,7 +503,7 @@ describe("MidtermStatsPage", () => {
 
       expect(out).toContain("1 retake paper left out of every figure for September 2026");
       expect(out).toContain("Midterm 12 Retake");
-      expect(out).toContain("no parent midterm");
+      expect(out).toContain("no main exam to belong to");
       // Still a month with data: the drill-down is untouched.
       expect(out).toContain("Departments in Chilonzor");
     });
@@ -520,14 +542,14 @@ describe("MidtermStatsPage", () => {
       );
       const out = await render();
 
-      expect(out).toContain("No countable midterms in January 2026");
-      expect(out).toContain("is a retake with no parent midterm — Midterm 12 Retake");
+      expect(out).toContain("No exams counted in January 2026");
+      expect(out).toContain("is a retake with no parent exam — Midterm 12 Retake");
       // The generic copy would have left the reader hunting for a paper they can see.
       expect(out).not.toContain("No class sat a countable paper in this month");
     });
   });
 
-  it("never calls roster places students, at any altitude", async () => {
+  it("never calls the exams-expected total students, at any altitude", async () => {
     // A class of 5 sitting two papers: 10 roster places, 5 human beings.
     monthly.mockResolvedValue(
       payload({
@@ -535,9 +557,10 @@ describe("MidtermStatsPage", () => {
       }),
     );
     const out = await render();
-    expect(out).toContain("10 roster places — every rate is over these.");
-    // The headline tile leads with the 5 human beings, not the 10 roster places.
-    expect(out).toContain("Students51 class · 2 papers");
+    // The bigger number is disclosed, in words rather than in the reporting dialect.
+    expect(out).toContain("Rates are over 10 and not 5, because 5 students sat more than one exam");
+    // The headline card leads with the 5 human beings, not the 10 exams expected of them.
+    expect(out).toContain("Students51 class · 2 exams");
     expect(out).not.toContain("Students101 class");
   });
 });

@@ -2,6 +2,8 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .admin_report import (
+    ReportBranchListView,
+    ReportBranchPdfView,
     ReportClassroomDetailView,
     ReportClassroomListView,
     ReportMidtermDetailView,
@@ -10,7 +12,7 @@ from .admin_report import (
 from .admin_views import AdminMidtermQuestionViewSet, AdminMidtermViewSet
 from .views import MidtermAttemptViewSet
 from .views_report import MidtermErrorReportPdfView, MidtermErrorReportView
-from .views_stats import StatsClassroomView, StatsMonthlyView, StatsMonthsView
+from .views_stats import StatsClassroomView, StatsMonthlyView, StatsMonthsView, StatsTrendView
 from .views_student import MyMidtermsView
 from .views_teacher import (
     MidtermResitView,
@@ -67,6 +69,18 @@ urlpatterns = [
         ReportMidtermPdfView.as_view(),
         name="midterm-report-midterm-pdf",
     ),
+    # Whole-branch report: every department, teacher, class and student in one PDF.
+    # Declared before the classroom routes so "branches" cannot be read as a classroom id.
+    path(
+        "admin/reports/branches/",
+        ReportBranchListView.as_view(),
+        name="midterm-report-branches",
+    ),
+    path(
+        "admin/reports/branches/<int:bid>/pdf/",
+        ReportBranchPdfView.as_view(),
+        name="midterm-report-branch-pdf",
+    ),
     # Admin console statistics (month picker → whole school → one classroom's month).
     path(
         "admin/stats/months/",
@@ -82,6 +96,11 @@ urlpatterns = [
         "admin/stats/classrooms/<int:cid>/",
         StatsClassroomView.as_view(),
         name="midterm-stats-classroom",
+    ),
+    path(
+        "admin/stats/trend/",
+        StatsTrendView.as_view(),
+        name="midterm-stats-trend",
     ),
     # Teacher standalone-midterm area (grant access + results).
     path("teacher/midterms/", MidtermCatalogView.as_view(), name="midterm-teacher-catalog"),

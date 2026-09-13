@@ -113,7 +113,7 @@ export function nodeSubline(node: TreeNode): string {
   const headcountKnown = !node.derived || node.level === "classroom";
   if (headcountKnown) parts.push(plural(node.distinct_students, "student"));
   if (node.roster !== node.distinct_students || !headcountKnown) {
-    parts.push(plural(node.roster, "roster place"));
+    parts.push(`${plural(node.roster, "exam")} expected`);
   }
   return parts.join(" · ");
 }

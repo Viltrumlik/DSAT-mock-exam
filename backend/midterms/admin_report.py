@@ -498,3 +498,67 @@ class ReportMidtermPdfView(APIView):
         response = HttpResponse(pdf, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
+
+
+# ── branch-wide report ───────────────────────────────────────────────────────
+class ReportBranchListView(APIView):
+    """GET .../reports/branches/ — the branches a whole-branch PDF can be asked for.
+
+    Lists every branch, not only the ones with midterm activity: a branch whose classes sat
+    nothing this month is a legitimate thing to export (the document says so on its cover),
+    and hiding it would read as the branch not existing.
+    """
+
+    permission_classes = [IsGlobalScopeStaff]
+
+    def get(self, request):
+        from classes.models_org import Branch
+
+        # One aggregate for every branch, not a count query per row.
+        counts: dict[int, int] = {}
+        for bid in Classroom.objects.filter(branch__isnull=False).values_list("branch_id", flat=True):
+            counts[bid] = counts.get(bid, 0) + 1
+
+        rows = [
+            {
+                "id": b.id,
+                "name": b.name,
+                "region": b.region.name if b.region_id else None,
+                "classrooms": counts.get(b.id, 0),
+            }
+            for b in Branch.objects.select_related("region").order_by("name")
+        ]
+        return Response({"results": rows})
+
+
+class ReportBranchPdfView(APIView):
+    """GET .../reports/branches/<bid>/pdf/?month=YYYY-MM — one branch's whole month.
+
+    ``bid=0`` is the whole school. A separate route would have to be kept in step with this
+    one for no gain; the builder already treats ``branch_id=None`` as "every branch".
+    """
+
+    permission_classes = [IsGlobalScopeStaff]
+
+    def get(self, request, bid=None):
+        from .branch_report import build_branch_report
+        from .branch_report_pdf import render_branch_report_pdf
+        from .stats import available_months, default_month, is_month_key
+
+        branch_id = bid or None
+        month = (request.query_params.get("month") or "").strip()
+        if month and not is_month_key(month):
+            return Response(
+                {"detail": "month must look like 2026-09."}, status=400
+            )
+        if not month:
+            month = default_month(available_months(branch_id=branch_id))
+
+        report = build_branch_report(branch_id=branch_id, month=month)
+        pdf = render_branch_report_pdf(report, generated_at=timezone.now())
+        slug = (report.get("branch") or {}).get("name") or "all-branches"
+        slug = "".join(ch if ch.isalnum() else "-" for ch in slug.lower()).strip("-") or "branch"
+        filename = f"midterm-report-{slug}-{month or 'no-month'}.pdf"
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response

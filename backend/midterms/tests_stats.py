@@ -583,11 +583,13 @@ class SchoolMonthStatsTests(TestCase):
 
     def test_the_payload_states_its_own_definition(self):
         payload = stats.school_month_stats("2026-09")
+        # The console prints these sentences verbatim, so they are written for a reader
+        # rather than for the database — see the note above DEFINITION.
         self.assertEqual(
             payload["definition"]["pass_rate"],
-            "passed (first sitting or retake) / all roster students",
+            "students who passed, out of every student who was due to sit the exam",
         )
-        self.assertEqual(payload["definition"]["absent_counts_as"], "failed")
+        self.assertEqual(payload["definition"]["absent_counts_as"], "not passed")
         self.assertEqual(payload["definition"]["rollup"], "pooled")
 
     def test_filters_narrow_every_level(self):
@@ -1366,8 +1368,10 @@ class HierarchyTests(TestCase):
 
     def test_the_payload_states_the_hierarchy_it_is_reporting(self):
         definition = stats.school_month_stats("2026-09")["definition"]
-        self.assertIn("region", definition["hierarchy"])
-        self.assertIn("classroom", definition["hierarchy"])
+        # Every level, end to end — a payload that named only the ends would let a reader
+        # assume the two in the middle do not exist.
+        for level in ("region", "branch", "department", "teacher", "class"):
+            self.assertIn(level, definition["hierarchy"])
         self.assertEqual(definition["rollup"], "pooled")
 
 
