@@ -46,7 +46,9 @@ export default function HomeworkGradingHub({
       const out: Row[] = [];
       for (const g of groups) {
         const list = await classesApi.listAssignments(g.id);
-        const arr = list.items;
+        // Drafts stay out: students are never given unpublished homework, so nobody owes it yet, and the
+        // deadline a draft was saved with is replaced when it is published.
+        const arr = list.items.filter((a) => a.status !== "DRAFT");
         for (const a of arr) {
           out.push({
             id: Number(a.id),
