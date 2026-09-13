@@ -860,9 +860,10 @@ html:not(.dark) .shell-sidebar-gold {
 /* Surfaces driven by the new shell use the sans UI stack; the serif
    body default is preserved for long-form reading passages. */
 .ds-app {
-  /* Reference the next/font variable directly (it's defined on <body>, not
-     :root) with a concrete fallback so the declaration is always valid —
-     keeps the new shell on the sans UI stack over the serif body default. */
+  /* Names the next/font variable directly, with a concrete fallback. It was
+     written while --font-sans still resolved to nothing (the font variables
+     sat on <body>; they are on <html> now), and it keeps the shell's exact
+     fallback stack — on the sans UI face over the serif body default. */
   font-family: var(--font-geist-sans, ui-sans-serif), ui-sans-serif, system-ui,
     -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }

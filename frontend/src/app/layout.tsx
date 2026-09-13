@@ -53,11 +53,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    // The font variables go on <html>, not <body>. Tailwind declares its @theme tokens on :root,
+    // and a custom property resolves its var() where it is declared: with --font-geist-sans only
+    // on <body>, `--font-sans: var(--font-geist-sans), …` resolved to nothing, so the `font-sans`
+    // utility and the controls rule in globals.css silently inherited the serif body instead.
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} ${plusJakarta.variable} ${baloo.variable}`}
+    >
       <head />
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${plusJakarta.variable} ${baloo.variable} antialiased`}
-      >
+      <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <QueryProvider>
             <ToastProvider>
