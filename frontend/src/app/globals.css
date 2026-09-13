@@ -1746,3 +1746,28 @@ mark.ts-annot {
   .quartz:hover { transform: none; }
   .quartz:hover::before { transform: none; }
 }
+
+/* The well a quartz block sits in.
+   White stone on a white card is invisible, and the owner wants the blocks back inside
+   the header card while still standing apart from it ("ichiga quring ammo ular
+   ko'rinishidan ajralib turishi kerak"). So the card's foot is SUNK: a shallow recess,
+   darker than the surface and lit from the inside top edge the way a cut-out is. The
+   blocks then read as raised out of it — card, recess, stone, three planes of depth and
+   not one drop of colour.
+   Meant to sit flush to the card's own edges (`-mx-5 -mb-5`), so the card's
+   `overflow-hidden` clips its corners to the card radius. */
+.quartz-well {
+  background: linear-gradient(180deg, rgba(15, 23, 42, .050) 0%, rgba(15, 23, 42, .022) 100%);
+  box-shadow:
+    inset 0 2px 4px rgba(15, 23, 42, .07),        /* the lip of the cut-out */
+    inset 0 1px 0 rgba(15, 23, 42, .05),
+    inset 0 -1px 0 rgba(255, 255, 255, .85);
+}
+
+.dark .quartz-well {
+  background: linear-gradient(180deg, rgba(0, 0, 0, .30) 0%, rgba(0, 0, 0, .16) 100%);
+  box-shadow:
+    inset 0 2px 5px rgba(0, 0, 0, .45),
+    inset 0 1px 0 rgba(0, 0, 0, .5),
+    inset 0 -1px 0 rgba(255, 255, 255, .045);
+}

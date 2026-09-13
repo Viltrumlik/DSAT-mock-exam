@@ -77,11 +77,6 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
       ) : q.isLoading || !q.data ? (
         <>
           <HeaderSkeleton />
-          <div className="grid gap-4 sm:grid-cols-3">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-[104px] rounded-2xl" />
-            ))}
-          </div>
           <VocabCardsSkeleton count={4} className="lg:grid-cols-3" />
         </>
       ) : (
@@ -149,39 +144,42 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
                   />
                 </span>
               </div>
+
+              {/* Back inside the card, as asked — but sunk into it. A recess at the card's
+                  foot, flush to its edges, so three white blocks can sit ON a white card
+                  and still be objects rather than panels drawn on it. */}
+              <div className="quartz-well -mx-5 -mb-5 mt-1 px-5 py-[18px]">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <Fact
+                    icon={Layers}
+                    label="Sets"
+                    value={sets.length}
+                    detail={
+                      startedSets > 0
+                        ? `${startedSets} already started`
+                        : "none started yet"
+                    }
+                    index={0}
+                  />
+                  <Fact
+                    icon={Type}
+                    label="Words"
+                    value={wordCount}
+                    detail={`${masteredWords} of them mastered`}
+                    index={1}
+                  />
+                  <Fact
+                    icon={Trophy}
+                    label="Sets mastered"
+                    value={masteredSets}
+                    detail={`${masteredPct}% of this section`}
+                    index={2}
+                    accent={look.text}
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
-
-          {/* Three blocks standing ON the page, not three tiles drawn INSIDE the card —
-              which is what made them read as miniatures of it. */}
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Fact
-              icon={Layers}
-              label="Sets"
-              value={sets.length}
-              detail={
-                startedSets > 0
-                  ? `${startedSets} already started`
-                  : "none started yet"
-              }
-              index={0}
-            />
-            <Fact
-              icon={Type}
-              label="Words"
-              value={wordCount}
-              detail={`${masteredWords} of them mastered`}
-              index={1}
-            />
-            <Fact
-              icon={Trophy}
-              label="Sets mastered"
-              value={masteredSets}
-              detail={`${masteredPct}% of this section`}
-              index={2}
-              accent={look.text}
-            />
-          </div>
 
           {sets.length === 0 ? (
             <EmptyState
@@ -258,7 +256,9 @@ function Fact({
         strokeWidth={1.25}
       />
       <div className="relative">
-        <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">{label}</p>
+        <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">
+          {label}
+        </p>
         <p
           className={cn(
             "ds-num mt-1.5 text-[26px] font-extrabold leading-none tracking-tight",
@@ -267,7 +267,9 @@ function Fact({
         >
           {value}
         </p>
-        <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">{detail}</p>
+        <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">
+          {detail}
+        </p>
       </div>
     </div>
   );
@@ -275,7 +277,7 @@ function Fact({
 
 function HeaderSkeleton() {
   return (
-    <Card className="cr-cardrise" aria-hidden>
+    <Card className="cr-cardrise overflow-hidden" aria-hidden>
       <CardContent className="flex flex-col gap-5">
         <div className="flex items-start gap-4">
           <Skeleton className="h-12 w-12" />
@@ -285,6 +287,14 @@ function HeaderSkeleton() {
             <Skeleton variant="text" className="w-3/4" />
           </div>
           <Skeleton variant="circle" className="h-16 w-16 shrink-0" />
+        </div>
+        {/* The recess and its three blocks, so the card does not change height on load. */}
+        <div className="quartz-well -mx-5 -mb-5 mt-1 px-5 py-[18px]">
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-[104px] rounded-2xl" />
+            ))}
+          </div>
         </div>
       </CardContent>
     </Card>
