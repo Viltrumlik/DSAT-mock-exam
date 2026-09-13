@@ -326,8 +326,15 @@ export function AppShell({
     return (
       <div key={item.label} className="flex flex-col gap-1.5">
         {/* A category wears the same shape as a page, so the rail reads as one kit rather
-            than as two. It is never "active" itself — it holds the page you are on, which is
-            what the tinted tile says. */}
+            than as two.
+
+            When the page you are on lives inside it, the category takes the SELECTION colour
+            too — the owner's ask, since a pale tile beside plain text did not read as "you are
+            in here", and when the group is folded shut it is the only mark left on screen. It
+            is carried in three strengths so the page itself stays the one solid pill: the tile
+            goes solid primary, the label and chevron go primary, and the row takes the soft
+            primary ground. Two identical filled bars stacked would say two things are
+            selected. */}
         <button
           type="button"
           onClick={() => toggleGroup(item)}
@@ -335,14 +342,16 @@ export function AppShell({
           aria-expanded={open}
           className={cn(
             "ds-ring group relative flex items-center gap-3 overflow-hidden rounded-2xl px-2.5 py-2 text-left text-[15px] font-semibold transition-[background-color,color,transform,box-shadow] duration-200 active:scale-[0.97]",
-            hasActive ? "text-foreground" : "text-foreground hover:bg-surface-2",
+            hasActive
+              ? "bg-primary-soft font-bold text-primary dark:text-primary-hover"
+              : "text-foreground hover:bg-surface-2",
           )}
         >
           <span
             className={cn(
-              "grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors duration-200",
+              "grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-[background-color,color,box-shadow] duration-200",
               hasActive
-                ? "bg-primary-soft text-primary dark:text-primary-hover"
+                ? "bg-primary text-primary-foreground shadow-[0_8px_18px_-8px_rgba(42,104,192,.85)]"
                 : "bg-surface-2 text-foreground group-hover:bg-card",
             )}
           >
@@ -351,7 +360,8 @@ export function AppShell({
           <span className="flex-1 truncate">{item.label}</span>
           <ChevronDown
             className={cn(
-              "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200",
+              "h-4 w-4 shrink-0 transition-transform duration-200",
+              hasActive ? "text-primary dark:text-primary-hover" : "text-muted-foreground",
               open ? "rotate-0" : "-rotate-90",
             )}
             strokeWidth={2.5}
