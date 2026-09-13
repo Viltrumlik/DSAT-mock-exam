@@ -6,21 +6,26 @@
  * attention always 0. `PAYLOAD` is written key for key from `ClassroomViewSet.interventions`;
  * `classesApi.getInterventions` hands the body to the hook unmapped, so it is exactly what the
  * component receives. The numbers agree with each other: seven students, three assignments.
+ *
+ * The component tests stub only the HTTP call. The real hooks and a real query client sit between
+ * it and the cards, so a rejected request reaches the page the way it does in the app.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { classCompletionPct, needsAttention } from "../interventions";
 import type { ClassroomWithRole, InterventionStudent, Interventions, Member } from "../types";
 
-const useInterventions = vi.fn();
-const useClassMembers = vi.fn();
+const getInterventions = vi.fn();
+const people = vi.fn();
 
-vi.mock("../hooks", () => ({
-  useInterventions: (...a: unknown[]) => useInterventions(...a),
-  useClassMembers: (...a: unknown[]) => useClassMembers(...a),
-  useStudentWorkspace: () => ({ data: undefined, isLoading: true }),
+vi.mock("@/lib/api", () => ({
+  classesApi: {
+    getInterventions: (...a: unknown[]) => getInterventions(...a),
+    people: (...a: unknown[]) => people(...a),
+  },
 }));
 // Only the student view reads these.
 vi.mock("../rankingsHooks", () => ({ useRankings: () => ({ data: undefined, isLoading: true }) }));
@@ -155,43 +160,70 @@ describe("ClassroomOverview, for a teacher", () => {
     role: "STUDENT",
   }));
 
+  /** What axios rejects with when the endpoint refuses the viewer, as it does OWNER and TA today. */
+  const FORBIDDEN = Object.assign(new Error("Request failed with status code 403"), {
+    response: { status: 403, data: { detail: "Teacher or admin access required." } },
+  });
+
   let host: HTMLElement;
   let root: Root;
 
-  function query(overrides: Record<string, unknown> = {}) {
-    return { data: undefined, isLoading: false, isError: false, refetch: vi.fn(), ...overrides };
+  /** One turn of the loop: a query settles after the commit that started it. */
+  async function settle() {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
   }
 
   async function render() {
-    await act(async () => root.render(<ClassroomOverview classroom={CLASSROOM} onNavigate={() => {}} />));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <ClassroomOverview classroom={CLASSROOM} onNavigate={() => {}} />
+        </QueryClientProvider>,
+      );
+    });
+    await settle();
   }
 
-  /** The value under a stat card's label. */
+  /** A stat card's value, and the note under it when there is one. */
   function stat(label: string) {
-    const el = [...host.querySelectorAll("p")].find((p) => p.textContent === label);
-    if (!el) throw new Error(`no "${label}" stat card`);
-    return el.nextElementSibling?.textContent;
+    const name = [...host.querySelectorAll("p")].find((p) => p.textContent === label);
+    if (!name) throw new Error(`no "${label}" stat card`);
+    const value = name.nextElementSibling;
+    return { value: value?.textContent, note: value?.nextElementSibling?.textContent ?? null };
+  }
+
+  function button(text: string) {
+    const found = [...host.querySelectorAll("button")].find((b) => b.textContent?.includes(text));
+    if (!found) throw new Error(`no "${text}" button`);
+    return found;
   }
 
   beforeEach(() => {
+    // React 19 only flushes work inside `act` when the environment declares itself one.
+    (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
-    useClassMembers.mockReturnValue(query({ data: MEMBERS }));
+    getInterventions.mockReset();
+    people.mockReset();
+    people.mockResolvedValue(MEMBERS);
   });
 
   afterEach(() => {
     act(() => root.unmount());
     host.remove();
-    vi.clearAllMocks();
   });
 
   it("shows the class's real completion and the students who need attention", async () => {
-    useInterventions.mockReturnValue(query({ data: PAYLOAD }));
+    getInterventions.mockResolvedValue(PAYLOAD);
     await render();
 
-    expect(stat("Completion")).toBe("52%");
-    expect(stat("Needs attention")).toBe("4");
+    expect(getInterventions).toHaveBeenCalledWith(12);
+    expect(stat("Completion")).toEqual({ value: "52%", note: null });
+    expect(stat("Needs attention")).toEqual({ value: "4", note: null });
 
     const text = host.textContent ?? "";
     expect(text).toContain("1 missing · Inactive 12d · Average 41.5%");
@@ -203,36 +235,44 @@ describe("ClassroomOverview, for a teacher", () => {
   });
 
   it("says everyone is on track only when the server flagged nobody", async () => {
-    useInterventions.mockReturnValue(query({ data: quiet({ student_count: 7, assignment_count: 3, overall_completion_pct: 100 }) }));
+    getInterventions.mockResolvedValue(quiet({ student_count: 7, assignment_count: 3, overall_completion_pct: 100 }));
     await render();
 
-    expect(stat("Completion")).toBe("100%");
-    expect(stat("Needs attention")).toBe("0");
+    expect(stat("Completion")).toEqual({ value: "100%", note: null });
+    expect(stat("Needs attention")).toEqual({ value: "0", note: null });
     expect(host.textContent).toContain("Everyone's on track");
   });
 
-  it("shows a failed load as an error, never as everyone on track", async () => {
-    const refetch = vi.fn();
-    useInterventions.mockReturnValue(query({ isError: true, refetch }));
+  it("shows a rejected request as an error on every card, never as everyone on track", async () => {
+    getInterventions.mockRejectedValue(FORBIDDEN);
     await render();
 
+    expect(stat("Completion")).toEqual({ value: "—", note: "Couldn't load" });
+    expect(stat("Needs attention")).toEqual({ value: "—", note: "Couldn't load" });
     expect(host.textContent).toContain("We couldn't check in on students.");
     expect(host.textContent).not.toContain("Everyone's on track");
-    expect(stat("Completion")).toBe("—");
-    expect(stat("Needs attention")).toBe("—");
+  });
 
-    const retry = [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Try again"));
-    if (!retry) throw new Error("no retry button");
-    await act(async () => retry.click());
-    expect(refetch).toHaveBeenCalledTimes(1);
+  it("retries that same request from the error", async () => {
+    getInterventions.mockRejectedValueOnce(new Error("Network Error")).mockResolvedValueOnce(PAYLOAD);
+    await render();
+
+    await act(async () => button("Try again").click());
+    await settle();
+
+    expect(getInterventions).toHaveBeenCalledTimes(2);
+    expect(stat("Completion")).toEqual({ value: "52%", note: null });
+    expect(stat("Needs attention")).toEqual({ value: "4", note: null });
+    expect(host.textContent).not.toContain("We couldn't check in on students.");
   });
 
   it("shows no numbers while the response is on its way", async () => {
-    useInterventions.mockReturnValue(query({ isLoading: true }));
+    getInterventions.mockReturnValue(new Promise(() => {}));
     await render();
 
-    expect(stat("Completion")).toBe("—");
-    expect(stat("Needs attention")).toBe("—");
+    expect(stat("Completion")).toEqual({ value: "—", note: null });
+    expect(stat("Needs attention")).toEqual({ value: "—", note: null });
+    expect(host.textContent).toContain("Checking in on students…");
     expect(host.textContent).not.toContain("Everyone's on track");
   });
 });

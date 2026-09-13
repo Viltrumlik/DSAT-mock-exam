@@ -259,6 +259,8 @@ function TeacherOverview({ classroom, onNavigate }: { classroom: ClassroomWithRo
   const studentCount = memberList.filter((m) => String(m.role).toUpperCase() === "STUDENT").length;
   const completion = classCompletionPct(iv.data);
   const attention = needsAttention(iv.data);
+  // Without this note a failed load reads "—", which is also what a class with nothing assigned shows.
+  const failed = iv.isError && !iv.data;
 
   return (
     <div className="space-y-6">
@@ -267,10 +269,17 @@ function TeacherOverview({ classroom, onNavigate }: { classroom: ClassroomWithRo
         <StatCard
           label="Completion"
           value={completion != null ? `${completion}%` : "—"}
+          sub={failed ? "Couldn't load" : undefined}
           icon={CheckCircle2}
           accent="text-emerald-600 bg-emerald-500/10"
         />
-        <StatCard label="Needs attention" value={iv.data ? attention.length : "—"} icon={AlertCircle} accent="text-amber-600 bg-amber-500/10" />
+        <StatCard
+          label="Needs attention"
+          value={iv.data ? attention.length : "—"}
+          sub={failed ? "Couldn't load" : undefined}
+          icon={AlertCircle}
+          accent="text-amber-600 bg-amber-500/10"
+        />
         <StatCard label="Rankings" value="View" icon={Trophy} accent="text-amber-600 bg-amber-500/10" onClick={() => onNavigate("rankings")} />
       </div>
 
@@ -283,9 +292,9 @@ function TeacherOverview({ classroom, onNavigate }: { classroom: ClassroomWithRo
       <Card>
         <CardHeader title="Needs attention" description="Students who could use a nudge" />
         <div className="mt-4 space-y-2">
-          {iv.isLoading ? (
+          {iv.isPending ? (
             <LoadingState label="Checking in on students…" />
-          ) : !iv.data ? (
+          ) : failed ? (
             <ErrorState message="We couldn't check in on students." onRetry={() => iv.refetch()} />
           ) : attention.length === 0 ? (
             <EmptyState icon={Sparkles} title="Everyone's on track" description="No students need attention right now." />
