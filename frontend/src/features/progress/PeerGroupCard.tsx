@@ -343,6 +343,7 @@ export function PeerGroupCard({
   const SubjectIcon = group.subject === "math" ? Calculator : BookOpen;
   const { attendance, homework, overall, vocabulary } = group.metrics;
   const attendanceGap = gapToGroup(attendance);
+  const homeworkGap = gapToGroup(homework);
   const overallGap = gapToGroup(overall);
   const vocabularyGap = gapToGroup(vocabulary);
 
@@ -431,10 +432,10 @@ export function PeerGroupCard({
               ? `${homework.detail.completed} of ${homework.detail.total} done · ${homework.detail.remaining} left`
               : "No homework set yet"
           }
+          // In points, like the other tiles. The count of pieces that closes the gap is the
+          // insight's to say — both at once is one number drawn twice.
           lowerNote={
-            homework.detail.to_reach_average > 0
-              ? `${homework.detail.to_reach_average} more to reach your group's average`
-              : null
+            homeworkGap != null ? `${Math.abs(Math.round(homeworkGap))} points to your group's average` : null
           }
         />
         <MetricTile

@@ -102,8 +102,10 @@ describe("MyProgressPage — you and your group", () => {
     expect(text).toContain("+11 vs group");
     expect(text).toContain("Top quarter of your group for attendance and words mastered.");
     expect(text).toContain("1 more homework brings you up to your group's average.");
-    // The lower-half band is said as the next step, not as a label.
-    expect(text).toContain("1 more to reach your group's average");
+    // The lower-half band is said as a distance to the average, not as a label…
+    expect(text).toContain("5 points to your group's average");
+    // …and the count of homework that closes it is said once, by the insight.
+    expect(text.split("more homework brings you up").length - 1).toBe(1);
     expect(host.querySelector('a[href="/classes/34"]')).not.toBeNull();
   });
 
