@@ -11,12 +11,26 @@ type Row = {
   title: string;
   due_at?: string | null;
   created_at?: string | null;
-  submissions_count?: number;
-  members_count?: number;
+  /** The class's active students who have turned it in: SUBMITTED or REVIEWED. */
+  turned_in_count?: number;
+  /** The class's active students. */
+  student_count?: number;
   classroom_id: number;
   classroom_name: string;
   subject?: string;
 };
+
+/**
+ * Students yet to turn the homework in, or null when either count is unknown.
+ *
+ * Out of the class's students, not its members (`members_count` counts the teacher and any TA), and
+ * never from `submissions_count`, which also counts drafts, work returned for revision and students
+ * who have left the class.
+ */
+function missingCount(r: Row): number | null {
+  if (r.turned_in_count == null || r.student_count == null) return null;
+  return Math.max(0, r.student_count - r.turned_in_count);
+}
 
 type Props = {
   /** Base URL for this flow, e.g. `/teacher/homework/grading` */
@@ -53,8 +67,8 @@ export default function HomeworkGradingHub({
             title: String(a.title || "Untitled"),
             due_at: a.due_at ?? null,
             created_at: typeof (a as Record<string, unknown>).created_at === "string" ? (a as Record<string, unknown>).created_at as string : null,
-            submissions_count: typeof a.submissions_count === "number" ? a.submissions_count : undefined,
-            members_count: typeof g.members_count === "number" ? g.members_count : undefined,
+            turned_in_count: typeof a.turned_in_count === "number" ? a.turned_in_count : undefined,
+            student_count: typeof g.student_count === "number" ? g.student_count : undefined,
             classroom_id: g.id,
             classroom_name: g.name || `Class #${g.id}`,
             subject: g.subject,
@@ -64,11 +78,7 @@ export default function HomeworkGradingHub({
       // Sort: overdue-with-missing-submissions first, then by due date desc
       const urgencyScore = (row: Row) => {
         const isOverdue = row.due_at ? new Date(row.due_at) < new Date() : false;
-        const hasMissing =
-          row.submissions_count != null &&
-          row.members_count != null &&
-          row.submissions_count < row.members_count;
-        return isOverdue && hasMissing ? 1 : 0;
+        return isOverdue && (missingCount(row) ?? 0) > 0 ? 1 : 0;
       };
       out.sort((x, y) => {
         const uDiff = urgencyScore(y) - urgencyScore(x);
@@ -127,16 +137,16 @@ export default function HomeworkGradingHub({
     () =>
       rows.filter((r) => {
         const isOverdue = r.due_at ? new Date(r.due_at) < new Date() : false;
-        const missing =
-          r.submissions_count != null && r.members_count != null
-            ? r.members_count - r.submissions_count
-            : null;
-        return isOverdue && missing != null && missing > 0;
+        return isOverdue && (missingCount(r) ?? 0) > 0;
       }).length,
     [rows],
   );
 
-  /** Assignments created >3 days ago with zero submissions — likely not communicated to students. */
+  /**
+   * Assignments created >3 days ago that no student has turned in — likely not communicated to
+   * students. A draft does not count, as on the grading page, and a class with no students has
+   * nobody to reach.
+   */
   const STALE_DAYS = 3;
   const staleIds = useMemo(() => {
     const cutoff = Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000;
@@ -145,8 +155,8 @@ export default function HomeworkGradingHub({
         .filter((r) => {
           if (!r.created_at) return false;
           const createdMs = new Date(r.created_at).getTime();
-          const zeroSubmissions = r.submissions_count === 0;
-          return zeroSubmissions && createdMs < cutoff;
+          const noneTurnedIn = r.turned_in_count === 0 && (r.student_count ?? 0) > 0;
+          return noneTurnedIn && createdMs < cutoff;
         })
         .map((r) => r.id),
     );
@@ -214,15 +224,10 @@ export default function HomeworkGradingHub({
           <ul className="divide-y divide-border">
             {rows.map((r) => {
               const isOverdue = r.due_at ? new Date(r.due_at) < new Date() : false;
-              const missing =
-                r.submissions_count != null && r.members_count != null
-                  ? r.members_count - r.submissions_count
-                  : null;
-              const needsAttention = isOverdue && missing != null && missing > 0;
-              const allIn =
-                r.submissions_count != null &&
-                r.members_count != null &&
-                r.submissions_count >= r.members_count;
+              const missing = missingCount(r);
+              const needsAttention = isOverdue && (missing ?? 0) > 0;
+              // A class with no students has nobody to be all in.
+              const allIn = missing === 0 && (r.student_count ?? 0) > 0;
               const isStale = staleIds.has(r.id);
               return (
                 <li key={`${r.classroom_id}-${r.id}`}>
@@ -256,11 +261,11 @@ export default function HomeworkGradingHub({
                           <Calendar className="h-3.5 w-3.5" />
                           {formatDue(r.due_at)}
                         </span>
-                        {typeof r.submissions_count === "number" ? (
+                        {typeof r.turned_in_count === "number" ? (
                           <span className="inline-flex items-center gap-1 font-medium text-foreground/80">
                             <ClipboardCheck className="h-3.5 w-3.5" />
-                            {r.submissions_count}
-                            {r.members_count != null ? ` / ${r.members_count}` : ""} submitted
+                            {r.turned_in_count}
+                            {r.student_count != null ? ` / ${r.student_count}` : ""} submitted
                           </span>
                         ) : null}
                       </p>
