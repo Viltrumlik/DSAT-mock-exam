@@ -20,14 +20,15 @@ import {
   Minus,
 } from "lucide-react";
 import { Card, CardHeader } from "../ui/Surface";
-import { StatCard, Button, EmptyState, LoadingState, Pill } from "../ui";
+import { StatCard, Button, EmptyState, ErrorState, LoadingState, Pill } from "../ui";
 import type { PillTone } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import { useStudentWorkspace, useInterventions, useClassMembers } from "../hooks";
+import { classCompletionPct, needsAttention } from "../interventions";
 import { useRankings } from "../rankingsHooks";
 import { useMyAttendance } from "../attendanceHooks";
 import { SubmissionStatusPill } from "./statusPill";
-import type { ClassroomWithRole, WorkspaceAssignment, InterventionRow } from "../types";
+import type { ClassroomWithRole, WorkspaceAssignment } from "../types";
 import type { RankingRow } from "../rankingsApi";
 import type { ClassroomTabId } from "../shell/tabs";
 
@@ -256,12 +257,8 @@ function TeacherOverview({ classroom, onNavigate }: { classroom: ClassroomWithRo
 
   const memberList = Array.isArray(members.data) ? members.data : members.data?.members ?? [];
   const studentCount = memberList.filter((m) => String(m.role).toUpperCase() === "STUDENT").length;
-  const completion = iv.data?.completion_rate;
-  const attention: InterventionRow[] = [
-    ...(iv.data?.overdue ?? []),
-    ...(iv.data?.inactive ?? []),
-    ...(iv.data?.low_scores ?? []),
-  ];
+  const completion = classCompletionPct(iv.data);
+  const attention = needsAttention(iv.data);
 
   return (
     <div className="space-y-6">
@@ -269,11 +266,11 @@ function TeacherOverview({ classroom, onNavigate }: { classroom: ClassroomWithRo
         <StatCard label="Students" value={studentCount || (members.isLoading ? "—" : 0)} icon={Users} />
         <StatCard
           label="Completion"
-          value={completion != null ? `${Math.round(Number(completion) * (Number(completion) <= 1 ? 100 : 1))}%` : "—"}
+          value={completion != null ? `${completion}%` : "—"}
           icon={CheckCircle2}
           accent="text-emerald-600 bg-emerald-500/10"
         />
-        <StatCard label="Needs attention" value={iv.isLoading ? "—" : attention.length} icon={AlertCircle} accent="text-amber-600 bg-amber-500/10" />
+        <StatCard label="Needs attention" value={iv.data ? attention.length : "—"} icon={AlertCircle} accent="text-amber-600 bg-amber-500/10" />
         <StatCard label="Rankings" value="View" icon={Trophy} accent="text-amber-600 bg-amber-500/10" onClick={() => onNavigate("rankings")} />
       </div>
 
@@ -288,18 +285,17 @@ function TeacherOverview({ classroom, onNavigate }: { classroom: ClassroomWithRo
         <div className="mt-4 space-y-2">
           {iv.isLoading ? (
             <LoadingState label="Checking in on students…" />
+          ) : !iv.data ? (
+            <ErrorState message="We couldn't check in on students." onRetry={() => iv.refetch()} />
           ) : attention.length === 0 ? (
             <EmptyState icon={Sparkles} title="Everyone's on track" description="No students need attention right now." />
           ) : (
-            attention.slice(0, 8).map((row, i) => (
-              <div key={i} className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
+            attention.slice(0, 8).map((row) => (
+              <div key={row.student.student_id} className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">{personName(row.user)}</p>
-                  {(row.detail || row.assignment?.title) && (
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.detail ?? row.assignment?.title}</p>
-                  )}
+                  <p className="truncate text-sm font-medium text-foreground">{personName(row.student)}</p>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">{row.detail}</p>
                 </div>
-                {row.value != null && <Pill tone="warning">{String(row.value)}</Pill>}
               </div>
             ))
           )}

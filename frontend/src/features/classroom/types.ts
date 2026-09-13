@@ -77,17 +77,44 @@ export interface RecentlyGraded {
   graded_at?: string | null;
 }
 
-/** Teacher interventions from GET /classes/{id}/interventions/. */
+/**
+ * Teacher interventions from GET /classes/{id}/interventions/ (`ClassroomViewSet.interventions`).
+ * `classesApi.getInterventions` returns the body unmapped, so this is the server's shape verbatim.
+ */
 export interface Interventions {
-  overdue?: InterventionRow[];
-  inactive?: InterventionRow[];
-  low_scores?: InterventionRow[];
-  completion_rate?: number | null;
+  /** At least one past-due assignment not turned in; most missing first. */
+  overdue_students: (InterventionStudent & { overdue_count: number; oldest_overdue_due_at: string | null })[];
+  /** No submission or attempt in 7 days; both fields are null for a student who has never had one. */
+  inactive_students: (InterventionStudent & { last_activity_at: string | null; days_inactive: number | null })[];
+  /** Average assessment score below 60%; lowest first. */
+  low_score_students: (InterventionStudent & { avg_score_pct: number })[];
+  completion_summary: InterventionAssignment[];
+  class_stats: {
+    student_count: number;
+    assignment_count: number;
+    /** 0–100, already a percentage. Also 0 when nothing is assigned. */
+    overall_completion_pct: number;
+    avg_assessment_score_pct: number | null;
+  };
 }
 
-export interface InterventionRow {
-  user?: { id: number; first_name?: string; last_name?: string; email?: string };
-  assignment?: { id: number; title: string };
-  detail?: string;
-  value?: number | string;
+/** A student as each list in `Interventions` describes them. */
+export interface InterventionStudent {
+  student_id: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  profile_image_url: string | null;
+}
+
+export interface InterventionAssignment {
+  assignment_id: number;
+  title: string;
+  due_at: string | null;
+  is_overdue: boolean;
+  is_assessment: boolean;
+  submitted_count: number;
+  student_count: number;
+  /** 0–100. */
+  completion_pct: number;
 }
