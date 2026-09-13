@@ -17,9 +17,15 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
-import { HeroPage, PageHero, Skeleton } from "@/components/ui";
+import { ExplainButton, HeroPage, PageHero, Skeleton } from "@/components/ui";
 // The classroom's devices, so the school-wide board reads as the same product as the class one.
-import { Card, CardHeader, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+import {
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorState,
+  Pill,
+} from "@/features/classroom/ui";
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
 import { useLeaderboard, useLeaderboardFilters } from "./leaderboardHooks";
 import type {
@@ -36,7 +42,10 @@ const SCOPES: { value: LeaderboardScope; label: string; icon: LucideIcon }[] = [
 
 /** Only for the folded summary line, in the moment before the server's own labels arrive —
  *  the chips themselves never render anything but the server's. */
-const WINDOW_LABEL: Record<LeaderboardWindow, string> = { ALL: "All time", MONTH: "This month" };
+const WINDOW_LABEL: Record<LeaderboardWindow, string> = {
+  ALL: "All time",
+  MONTH: "This month",
+};
 
 type Medal = {
   /** The medal colour itself. */
@@ -56,9 +65,21 @@ type Medal = {
  * surface they sit on here is either their own fill or a translucent wash, so both themes hold.
  */
 const MEDALS: Record<1 | 2 | 3, Medal> = {
-  1: { solid: "#e3a008", fill: "linear-gradient(160deg,#f5b740,#d98f0a)", glow: "0 10px 26px -10px rgba(227,160,8,.9)" },
-  2: { solid: "#94a3b8", fill: "linear-gradient(160deg,#cbd5e1,#94a3b8)", glow: "0 10px 26px -10px rgba(148,163,184,.95)" },
-  3: { solid: "#e0851a", fill: "linear-gradient(160deg,#f4b15f,#e0851a)", glow: "0 10px 26px -10px rgba(224,133,26,.9)" },
+  1: {
+    solid: "#e3a008",
+    fill: "linear-gradient(160deg,#f5b740,#d98f0a)",
+    glow: "0 10px 26px -10px rgba(227,160,8,.9)",
+  },
+  2: {
+    solid: "#94a3b8",
+    fill: "linear-gradient(160deg,#cbd5e1,#94a3b8)",
+    glow: "0 10px 26px -10px rgba(148,163,184,.95)",
+  },
+  3: {
+    solid: "#e0851a",
+    fill: "linear-gradient(160deg,#f4b15f,#e0851a)",
+    glow: "0 10px 26px -10px rgba(224,133,26,.9)",
+  },
 };
 /** The crown's fill, from the same set. */
 const CROWN_FILL = "#f5c542";
@@ -89,28 +110,82 @@ const STAGE =
 
 /** A little confetti behind the podium. Decoration only; the house chart ramp keeps it on-palette. */
 const CONFETTI: React.CSSProperties[] = [
-  { left: "4%", top: "14%", width: 8, height: 8, background: "var(--chart-5)", opacity: 0.55 },
-  { left: "11%", top: "42%", width: 5, height: 5, background: "var(--chart-2)", opacity: 0.65 },
-  { left: "27%", top: "7%", width: 6, height: 6, background: CROWN_FILL, opacity: 0.8 },
-  { left: "72%", top: "9%", width: 5, height: 5, background: "var(--chart-3)", opacity: 0.65 },
-  { left: "88%", top: "18%", width: 8, height: 8, background: "var(--chart-6)", opacity: 0.5 },
-  { left: "95%", top: "46%", width: 5, height: 5, background: "var(--chart-1)", opacity: 0.6 },
+  {
+    left: "4%",
+    top: "14%",
+    width: 8,
+    height: 8,
+    background: "var(--chart-5)",
+    opacity: 0.55,
+  },
+  {
+    left: "11%",
+    top: "42%",
+    width: 5,
+    height: 5,
+    background: "var(--chart-2)",
+    opacity: 0.65,
+  },
+  {
+    left: "27%",
+    top: "7%",
+    width: 6,
+    height: 6,
+    background: CROWN_FILL,
+    opacity: 0.8,
+  },
+  {
+    left: "72%",
+    top: "9%",
+    width: 5,
+    height: 5,
+    background: "var(--chart-3)",
+    opacity: 0.65,
+  },
+  {
+    left: "88%",
+    top: "18%",
+    width: 8,
+    height: 8,
+    background: "var(--chart-6)",
+    opacity: 0.5,
+  },
+  {
+    left: "95%",
+    top: "46%",
+    width: 5,
+    height: 5,
+    background: "var(--chart-1)",
+    opacity: 0.6,
+  },
 ];
 
 /** Initials colours for rows without a photo, from the house chart ramp so both themes are
  *  covered. Keyed on the student rather than the rank, so a filter that moves someone does not
  *  also repaint them. */
-const TINTS = ["--chart-1", "--chart-2", "--chart-3", "--chart-4", "--chart-5", "--chart-6"];
+const TINTS = [
+  "--chart-1",
+  "--chart-2",
+  "--chart-3",
+  "--chart-4",
+  "--chart-5",
+  "--chart-6",
+];
 
 function tintOf(studentId: number): React.CSSProperties {
   const colour = `var(${TINTS[studentId % TINTS.length]})`;
-  return { background: `color-mix(in oklab, ${colour} 16%, transparent)`, color: colour };
+  return {
+    background: `color-mix(in oklab, ${colour} 16%, transparent)`,
+    color: colour,
+  };
 }
 
 /** Branch and region are the whole reason this board is worth crossing classes for — without
  *  them a global row is a name and a number with no context. */
 function placeOf(row: LeaderboardRow): string {
-  return row.branch ? `${row.branch}${row.region ? ` · ${row.region}` : ""}` : "No branch yet";
+  return row.branch
+    ? `${row.branch}${row.region ? ` · ${row.region}` : ""}`
+    : "No branch yet";
 }
 
 type Goal = { xp: number; rank: number };
@@ -124,7 +199,10 @@ type Goal = { xp: number; rank: number };
  * last visible row is the very next rank up; anything else is a number to take on trust. Null at
  * #1, and when the row above shares their rank.
  */
-function nextGoal(rows: LeaderboardRow[], my: LeaderboardRow | null): Goal | null {
+function nextGoal(
+  rows: LeaderboardRow[],
+  my: LeaderboardRow | null,
+): Goal | null {
   if (!my) return null;
   const at = rows.findIndex((r) => r.student_id === my.student_id);
   if (at >= 0) {
@@ -149,7 +227,15 @@ function YouTag() {
 /** Growth-oriented by construction: it names the next place, never the distance from the top.
  *  `dark:text-primary-hover` wherever brand-blue text sits on the card: the dark theme's
  *  `--primary` is a 3:1 indigo on the near-black surface, its hover shade clears 4.5:1. */
-function GoalLine({ goal, pill, className }: { goal: Goal; pill?: boolean; className?: string }) {
+function GoalLine({
+  goal,
+  pill,
+  className,
+}: {
+  goal: Goal;
+  pill?: boolean;
+  className?: string;
+}) {
   return (
     <p
       className={cn(
@@ -176,7 +262,14 @@ function RankBadge({ rank, highlight }: { rank: number; highlight?: boolean }) {
             ? "bg-primary text-primary-foreground"
             : "bg-foreground/[0.06] text-muted-foreground",
       )}
-      style={medal ? { background: medal.fill, textShadow: "0 1px 2px rgba(15,23,42,.3)" } : undefined}
+      style={
+        medal
+          ? {
+              background: medal.fill,
+              textShadow: "0 1px 2px rgba(15,23,42,.3)",
+            }
+          : undefined
+      }
     >
       {rank}
     </span>
@@ -184,7 +277,9 @@ function RankBadge({ rank, highlight }: { rank: number; highlight?: boolean }) {
 }
 
 function Chip({
-  active, onClick, children,
+  active,
+  onClick,
+  children,
 }: {
   active: boolean;
   onClick: () => void;
@@ -209,11 +304,24 @@ function Chip({
   );
 }
 
-function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+function FilterGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   const id = useId();
   return (
-    <div role="group" aria-labelledby={id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
-      <p id={id} className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground sm:w-16 sm:shrink-0">
+    <div
+      role="group"
+      aria-labelledby={id}
+      className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
+    >
+      <p
+        id={id}
+        className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground sm:w-16 sm:shrink-0"
+      >
         {label}
       </p>
       <div className="flex flex-wrap items-center gap-2">{children}</div>
@@ -231,7 +339,11 @@ function FilterGroup({ label, children }: { label: string; children: React.React
  * while folded, so the hidden chips drop out of the tab order and the accessibility tree.
  */
 function FilterBar({
-  open, onToggle, summary, onReset, children,
+  open,
+  onToggle,
+  summary,
+  onReset,
+  children,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -262,7 +374,9 @@ function FilterBar({
             <span
               className={cn(
                 "ds-num flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] font-extrabold",
-                open ? "bg-white text-primary" : "bg-primary text-primary-foreground",
+                open
+                  ? "bg-white text-primary"
+                  : "bg-primary text-primary-foreground",
               )}
             >
               {active}
@@ -280,8 +394,16 @@ function FilterBar({
         <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-muted-foreground">
           {summary.map((s, i) => (
             <Fragment key={s.key}>
-              {i > 0 ? <span aria-hidden className="mx-1.5 opacity-60">·</span> : null}
-              <span className={s.active ? "font-bold text-foreground" : undefined}>{s.label}</span>
+              {i > 0 ? (
+                <span aria-hidden className="mx-1.5 opacity-60">
+                  ·
+                </span>
+              ) : null}
+              <span
+                className={s.active ? "font-bold text-foreground" : undefined}
+              >
+                {s.label}
+              </span>
             </Fragment>
           ))}
         </p>
@@ -305,7 +427,9 @@ function FilterBar({
         )}
       >
         <div className="min-h-0 overflow-hidden">
-          <div className="space-y-3 border-t border-border px-4 py-4 sm:px-5">{children}</div>
+          <div className="space-y-3 border-t border-border px-4 py-4 sm:px-5">
+            {children}
+          </div>
         </div>
       </div>
     </Card>
@@ -318,7 +442,10 @@ function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
   const first = place === 1;
   return (
     <li
-      className={cn("cr-rise flex min-w-0 flex-col items-center text-center", SLOT[slot])}
+      className={cn(
+        "cr-rise flex min-w-0 flex-col items-center text-center",
+        SLOT[slot],
+      )}
       style={{ animationDelay: `${slot * 90}ms` }}
     >
       <span className="sr-only">Rank {row.rank}: </span>
@@ -329,14 +456,21 @@ function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
           style={{ color: medal.solid, fill: CROWN_FILL }}
         />
       ) : null}
-      <span className="rounded-full p-[3px]" style={{ background: medal.fill, boxShadow: medal.glow }}>
+      <span
+        className="rounded-full p-[3px]"
+        style={{ background: medal.fill, boxShadow: medal.glow }}
+      >
         <span className="block rounded-full bg-card p-[2px]">
           <Avatar
             src={row.profile_image_url}
             name={row.name}
             size={first ? 72 : 58}
             className="font-extrabold"
-            style={{ background: medal.fill, color: "#fff", textShadow: "0 1px 2px rgba(15,23,42,.35)" }}
+            style={{
+              background: medal.fill,
+              color: "#fff",
+              textShadow: "0 1px 2px rgba(15,23,42,.35)",
+            }}
           />
         </span>
       </span>
@@ -355,12 +489,17 @@ function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
       </p>
       <p className="ds-num mt-1 text-lg font-extrabold leading-tight text-foreground sm:text-[22px]">
         {row.xp.toLocaleString("en-US")}
-        <span className="ml-1 text-[10px] font-bold text-muted-foreground sm:text-[11px]">XP</span>
+        <span className="ml-1 text-[10px] font-bold text-muted-foreground sm:text-[11px]">
+          XP
+        </span>
       </p>
       {/* The step. Its numeral repeats the rank read out above, so it is decoration here. */}
       <div
         aria-hidden
-        className={cn("relative mt-3 flex w-full justify-center overflow-hidden rounded-t-xl sm:rounded-t-2xl", STEP[place])}
+        className={cn(
+          "relative mt-3 flex w-full justify-center overflow-hidden rounded-t-xl sm:rounded-t-2xl",
+          STEP[place],
+        )}
         style={{ background: medal.fill }}
       >
         <span className="absolute inset-y-0 left-[14%] w-[20%] -skew-x-12 bg-white/20" />
@@ -378,9 +517,17 @@ function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
 /** The first three, stood on a podium — the classroom board's layout, in fuller colour. */
 function Podium({ rows }: { rows: LeaderboardRow[] }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl" style={{ background: STAGE }}>
+    <div
+      className="relative overflow-hidden rounded-2xl"
+      style={{ background: STAGE }}
+    >
       {CONFETTI.map((style, i) => (
-        <span key={i} aria-hidden className="absolute rounded-full" style={style} />
+        <span
+          key={i}
+          aria-hidden
+          className="absolute rounded-full"
+          style={style}
+        />
       ))}
       {/* Rank order in the DOM, podium order on screen — a screen reader hears 1, 2, 3. */}
       <ol className="relative mx-auto grid max-w-2xl grid-cols-3 items-end gap-1.5 px-1.5 pt-7 sm:gap-4 sm:px-8 sm:pt-9">
@@ -393,7 +540,10 @@ function Podium({ rows }: { rows: LeaderboardRow[] }) {
 }
 
 function StandingRow({
-  row, highlight, goal, index = 0,
+  row,
+  highlight,
+  goal,
+  index = 0,
 }: {
   row: LeaderboardRow;
   highlight?: boolean;
@@ -426,12 +576,18 @@ function StandingRow({
           <span className="truncate">{row.name}</span>
           {row.is_me ? <YouTag /> : null}
         </p>
-        <p className="col-[1] row-[2] truncate text-xs font-semibold text-muted-foreground">{placeOf(row)}</p>
+        <p className="col-[1] row-[2] truncate text-xs font-semibold text-muted-foreground">
+          {placeOf(row)}
+        </p>
         <span className="ds-num col-[2] row-[2] justify-self-end whitespace-nowrap text-sm font-extrabold text-foreground sm:row-[1] sm:text-[15px]">
           {row.xp.toLocaleString("en-US")}
-          <span className="ml-1 text-[11px] font-bold text-muted-foreground">XP</span>
+          <span className="ml-1 text-[11px] font-bold text-muted-foreground">
+            XP
+          </span>
         </span>
-        {goal ? <GoalLine goal={goal} className="col-[1/-1] row-[3] mt-0.5" /> : null}
+        {goal ? (
+          <GoalLine goal={goal} className="col-[1/-1] row-[3] mt-0.5" />
+        ) : null}
       </div>
     </li>
   );
@@ -460,7 +616,9 @@ export function LeaderboardPage() {
   const my = board.data?.my ?? null;
   // Only show "your position" separately when they are not already visible in the table —
   // repeating a row the student can see is noise, and hiding it when they cannot is worse.
-  const myRow = my ? rows.find((r) => r.student_id === my.student_id) : undefined;
+  const myRow = my
+    ? rows.find((r) => r.student_id === my.student_id)
+    : undefined;
   const myIsVisible = myRow != null;
   // The row the student can see beats `my` for the hero: `my.rank` shares a tied rank, the table
   // breaks the tie, and the two must not disagree on one screen.
@@ -475,22 +633,29 @@ export function LeaderboardPage() {
   const summary = [
     {
       key: "window",
-      label: filters.data?.windows.find((w) => w.value === window)?.label ?? WINDOW_LABEL[window],
+      label:
+        filters.data?.windows.find((w) => w.value === window)?.label ??
+        WINDOW_LABEL[window],
       active: window !== "ALL",
     },
     {
       key: "subject",
       label: subject
-        ? (filters.data?.subjects.find((s) => s.value === subject)?.label ?? subject)
+        ? (filters.data?.subjects.find((s) => s.value === subject)?.label ??
+          subject)
         : "All subjects",
       active: subject !== null,
     },
     ...(branchApplies
-      ? [{
-          key: "branch",
-          label: filters.data?.branches.find((b) => b.id === branch)?.name ?? "Branch",
-          active: true,
-        }]
+      ? [
+          {
+            key: "branch",
+            label:
+              filters.data?.branches.find((b) => b.id === branch)?.name ??
+              "Branch",
+            active: true,
+          },
+        ]
       : []),
   ];
 
@@ -503,10 +668,20 @@ export function LeaderboardPage() {
       accent: true,
       icon: standing?.rank === 1 ? Crown : Trophy,
     },
-    { label: "Your XP", value: standing ? standing.xp.toLocaleString("en-US") : "—", icon: Zap },
+    {
+      label: "Your XP",
+      value: standing ? standing.xp.toLocaleString("en-US") : "—",
+      icon: Zap,
+    },
     // A count of lessons attended in a row. Shown only while there is one to celebrate.
     ...(streak > 0
-      ? [{ label: "Streak", value: `${streak} ${streak === 1 ? "lesson" : "lessons"}`, icon: Flame }]
+      ? [
+          {
+            label: "Streak",
+            value: `${streak} ${streak === 1 ? "lesson" : "lessons"}`,
+            icon: Flame,
+          },
+        ]
       : []),
   ];
 
@@ -524,7 +699,8 @@ export function LeaderboardPage() {
             {SCOPES.map(({ value, label, icon: Icon }) => {
               // "My Branch" is hidden rather than shown over an empty board when the school
               // has not put this student's class in a branch yet.
-              if (value === "BRANCH" && filters.data && !filters.data.my_branch) return null;
+              if (value === "BRANCH" && filters.data && !filters.data.my_branch)
+                return null;
               return (
                 <button
                   key={value}
@@ -561,7 +737,11 @@ export function LeaderboardPage() {
       >
         <FilterGroup label="Time">
           {(filters.data?.windows ?? []).map((w) => (
-            <Chip key={w.value} active={window === w.value} onClick={() => setWindow(w.value)}>
+            <Chip
+              key={w.value}
+              active={window === w.value}
+              onClick={() => setWindow(w.value)}
+            >
               {w.label}
             </Chip>
           ))}
@@ -571,7 +751,11 @@ export function LeaderboardPage() {
             All subjects
           </Chip>
           {(filters.data?.subjects ?? []).map((s) => (
-            <Chip key={s.value} active={subject === s.value} onClick={() => setSubject(s.value)}>
+            <Chip
+              key={s.value}
+              active={subject === s.value}
+              onClick={() => setSubject(s.value)}
+            >
               {s.label}
             </Chip>
           ))}
@@ -582,7 +766,11 @@ export function LeaderboardPage() {
               All branches
             </Chip>
             {(filters.data?.branches ?? []).map((b) => (
-              <Chip key={b.id} active={branch === b.id} onClick={() => setBranch(b.id)}>
+              <Chip
+                key={b.id}
+                active={branch === b.id}
+                onClick={() => setBranch(b.id)}
+              >
                 {b.name}
               </Chip>
             ))}
@@ -597,11 +785,22 @@ export function LeaderboardPage() {
             <span className="flex items-center gap-2.5 text-base font-extrabold">
               <span
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-white"
-                style={{ background: MEDALS[1].fill, boxShadow: MEDALS[1].glow }}
+                style={{
+                  background: MEDALS[1].fill,
+                  boxShadow: MEDALS[1].glow,
+                }}
               >
                 <Trophy className="h-4 w-4" aria-hidden />
               </span>
               Standings
+              <ExplainButton title="How the board is ordered">
+                It ranks on{" "}
+                <strong className="font-bold text-foreground">XP</strong>,
+                highest first. When two students are level on XP, the one who
+                earned it across more separate awards is placed above — steady
+                work outranks a single big one. The line under the filters says
+                which XP this particular board is counting.
+              </ExplainButton>
             </span>
           }
           // The server's own sentence about what this slice counts. Rendered rather than
@@ -609,13 +808,17 @@ export function LeaderboardPage() {
           // than inside the folded filters, because it is what explains a total that shrank.
           description={
             board.data?.scope_note ? (
-              <span className="text-[13px] font-medium">{board.data.scope_note}</span>
+              <span className="text-[13px] font-medium">
+                {board.data.scope_note}
+              </span>
             ) : undefined
           }
           // The rows this response carries, capped by the server — not how many are ranked.
           actions={
             board.data && !board.isError && rows.length > 0 ? (
-              <Pill tone="primary" className="dark:text-primary-hover">Top {board.data.count}</Pill>
+              <Pill tone="primary" className="dark:text-primary-hover">
+                Top {board.data.count}
+              </Pill>
             ) : undefined
           }
         />
@@ -645,7 +848,12 @@ export function LeaderboardPage() {
             description="Once XP is earned here, the standings will show up."
           />
         ) : (
-          <div className={cn("space-y-4 transition-opacity duration-200", board.isFetching && "opacity-60")}>
+          <div
+            className={cn(
+              "space-y-4 transition-opacity duration-200",
+              board.isFetching && "opacity-60",
+            )}
+          >
             {podium.length > 0 ? <Podium rows={podium} /> : null}
             {podiumGoal ? (
               <div className="flex justify-center">

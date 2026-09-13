@@ -1,0 +1,63 @@
+import type { ReactNode } from "react";
+
+/**
+ * What XP, points and the streak actually are, in one place.
+ *
+ * Three numbers sit side by side on the dashboard and again on the profile, and none of
+ * them explains itself: XP and points look interchangeable until you try to spend one,
+ * and nothing on either page says that an *excused* absence breaks a streak exactly as an
+ * unexcused one does. These are the sentences behind the **!** on both pages.
+ *
+ * Shared rather than written twice, because the day a rule changes it must not be true in
+ * one place and stale in the other. Every claim here is the behaviour in
+ * `rewards/strikes.py`, not a paraphrase of the marketing:
+ *
+ * * `STREAK_STATUSES = ("PRESENT", "LATE")` — everything else, EXCUSED included, resets it;
+ * * `balance = current_streak - spent_in_streak`, so the streak is spendable and spending
+ *   it does not break it;
+ * * a break clears `spent_in_streak` too — no refund, and no debt carried into the next run;
+ * * XP survives a bad score and is withdrawn only when the record behind it is corrected.
+ *
+ * Deliberately free of numbers that live in the database — the points-per-coin rate is a
+ * setting, and a sentence naming it here would start lying the day it is changed. The
+ * rewards page shows the live rate beside the button that does the conversion.
+ */
+export interface Explainer {
+  title: string;
+  body: ReactNode;
+}
+
+export const XP_EXPLAINER: Explainer = {
+  title: "What XP is",
+  body: (
+    <>
+      XP is the record of what you have done, and it is never spent — it only adds up. Most
+      rules pay XP alongside points; the rewards page says which ones. Scoring badly never
+      costs you XP. The only thing that takes it back is a corrected record, such as a lesson
+      marked present and later changed to absent.
+    </>
+  ),
+};
+
+export const POINTS_EXPLAINER: Explainer = {
+  title: "Points and coins",
+  body: (
+    <>
+      Points are the half you spend. You turn them into coins yourself, on the rewards page —
+      it does not happen on its own — and the shop is priced in coins. XP keeps counting
+      either way, so spending never costs you position.
+    </>
+  ),
+};
+
+export const STREAK_EXPLAINER: Explainer = {
+  title: "How the streak works",
+  body: (
+    <>
+      It counts your lessons in a row marked{" "}
+      <strong className="font-bold text-foreground">present or late</strong>. One missed lesson
+      sets it back to zero — an excused absence too. The streak is also a balance you can
+      spend: spending it does not break the run, and a break leaves you owing nothing.
+    </>
+  ),
+};

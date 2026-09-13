@@ -2,6 +2,8 @@
 
 import type { LucideIcon } from "lucide-react";
 import { CalendarDays, Flame, Sparkles, Target, Trophy } from "lucide-react";
+import { ExplainButton } from "@/components/ui";
+import type { Explainer } from "@/features/rewards/explainers";
 import { cn } from "@/lib/cn";
 
 /**
@@ -63,6 +65,7 @@ export function StatTile({
   /** 0–100. Drawn as a bar under the number when given — omitted when there is nothing to fill. */
   fill,
   index = 0,
+  explain,
 }: {
   icon: LucideIcon;
   label: string;
@@ -71,13 +74,20 @@ export function StatTile({
   tone?: Tone;
   fill?: number | null;
   index?: number;
+  /** Puts a ! in the tile's corner. For a number whose rule is not on its face. */
+  explain?: Explainer;
 }) {
   const t = TONE[tone];
   return (
     <div
-      className={cn("cr-card flex flex-col rounded-2xl border p-4", t.card)}
+      className={cn("cr-card relative flex flex-col rounded-2xl border p-4", t.card)}
       style={{ animationDelay: `${index * 70}ms` }}
     >
+      {explain ? (
+        <ExplainButton title={explain.title} side="left" className="absolute right-2.5 top-2.5">
+          {explain.body}
+        </ExplainButton>
+      ) : null}
       <div className="flex items-center gap-2">
         <span className={cn("cr-iconpop grid h-8 w-8 shrink-0 place-items-center rounded-xl", t.icon)}>
           <Icon className="h-[18px] w-[18px]" aria-hidden />

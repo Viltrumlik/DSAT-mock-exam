@@ -2,8 +2,15 @@
 
 import Link from "next/link";
 import { CalendarClock, Coins, Flame, GraduationCap, Target, Trophy } from "lucide-react";
+import { ExplainButton } from "@/components/ui";
 import { useRoadmap } from "@/features/roadmap/hooks";
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
+import {
+  POINTS_EXPLAINER,
+  STREAK_EXPLAINER,
+  XP_EXPLAINER,
+  type Explainer,
+} from "@/features/rewards/explainers";
 import { cn } from "@/lib/cn";
 
 /**
@@ -63,6 +70,7 @@ function Chip({
   tone,
   index,
   href,
+  explain,
 }: {
   icon: typeof Trophy;
   label: string;
@@ -71,6 +79,8 @@ function Chip({
   tone: ChipTone;
   index: number;
   href?: string;
+  /** Puts a ! in the chip's corner. For a number whose rule is not on its face. */
+  explain?: Explainer;
 }) {
   const t = TONE[tone];
   const body = (
@@ -92,17 +102,28 @@ function Chip({
     </>
   );
   const className = cn(
-    "cr-card flex min-w-[190px] flex-1 items-center gap-3 rounded-2xl border p-3.5 text-left",
+    "cr-card flex h-full w-full items-center gap-3 rounded-2xl border p-3.5 text-left",
     t.wrap,
   );
   const style = { animationDelay: `${index * 60}ms` } as React.CSSProperties;
-  return href ? (
-    <Link href={href} className={cn(className, "ds-ring")} style={style}>
-      {body}
-    </Link>
-  ) : (
-    <div className={className} style={style}>
-      {body}
+  // The ! is a sibling of the chip, never a child: half of these chips are links, and a
+  // <button> inside an <a> is invalid markup that would also swallow the navigation.
+  return (
+    <div className="relative flex min-w-[190px] flex-1">
+      {href ? (
+        <Link href={href} className={cn(className, "ds-ring")} style={style}>
+          {body}
+        </Link>
+      ) : (
+        <div className={className} style={style}>
+          {body}
+        </div>
+      )}
+      {explain ? (
+        <ExplainButton title={explain.title} side="left" className="absolute right-2 top-2">
+          {explain.body}
+        </ExplainButton>
+      ) : null}
     </div>
   );
 }
@@ -173,7 +194,16 @@ export function DashboardPulse({
   // then changes is worse than a chip that arrives a beat late.
   if (rewards.data) {
     chips.push(
-      <Chip key="xp" index={i++} tone="emerald" icon={Trophy} label="XP" value={rewards.data.xp.toLocaleString("en-US")} href="/leaderboard" />,
+      <Chip
+        key="xp"
+        index={i++}
+        tone="emerald"
+        icon={Trophy}
+        label="XP"
+        value={rewards.data.xp.toLocaleString("en-US")}
+        href="/leaderboard"
+        explain={XP_EXPLAINER}
+      />,
       <Chip
         key="points"
         index={i++}
@@ -183,6 +213,7 @@ export function DashboardPulse({
         value={rewards.data.points.toLocaleString("en-US")}
         detail={`${rewards.data.coins} ${rewards.data.coins === 1 ? "coin" : "coins"}`}
         href="/shop"
+        explain={POINTS_EXPLAINER}
       />,
       <Chip
         key="streak"
@@ -192,6 +223,7 @@ export function DashboardPulse({
         label="Streak"
         value={rewards.data.current_streak}
         detail={rewards.data.current_streak > 0 ? `best ${rewards.data.best_streak}` : "start one"}
+        explain={STREAK_EXPLAINER}
       />,
     );
   }

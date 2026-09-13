@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -49,10 +57,36 @@ export function ExplainButton({
   panelClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Horizontal correction, in px, applied after measuring. A ! on the leftmost tile of a
+  // grid opens its panel off the left edge of the screen otherwise — which it did, on the
+  // profile's XP tile, until this was here.
+  const [shift, setShift] = useState(0);
   const wrapRef = useRef<HTMLSpanElement>(null);
+  const panelRef = useRef<HTMLSpanElement>(null);
   const panelId = useId();
 
-  const close = useCallback(() => setOpen(false), []);
+  const close = useCallback(() => {
+    setOpen(false);
+    setShift(0);
+  }, []);
+
+  // Margin, not transform: `ds-anim-pop` animates transform, and a filled animation
+  // outranks an inline style, so a transform correction would be thrown away.
+  //
+  // BOTH margins, because the panel is anchored on a different edge per side. A
+  // left-anchored panel (`left-0`) moves with `margin-left`; a right-anchored one
+  // (`right-full`, which is what `side="left"` uses) ignores it entirely and moves with a
+  // negative `margin-right`. Setting only the first is why the profile's XP panel still
+  // measured off-screen after the first attempt at this.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const el = panelRef.current;
+    if (!el) return;
+    const GUTTER = 10;
+    const r = el.getBoundingClientRect();
+    if (r.left < GUTTER) setShift(GUTTER - r.left);
+    else if (r.right > window.innerWidth - GUTTER) setShift(window.innerWidth - GUTTER - r.right);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,8 +131,10 @@ export function ExplainButton({
       {open ? (
         <span
           id={panelId}
+          ref={panelRef}
           role="dialog"
           aria-label={title}
+          style={shift ? { marginLeft: shift, marginRight: -shift } : undefined}
           className={cn(
             "ds-anim-pop absolute z-[320] w-[min(19rem,calc(100vw-2.5rem))] rounded-2xl border border-border bg-card p-3.5 text-left",
             "shadow-[var(--ds-shadow-lg)]",
