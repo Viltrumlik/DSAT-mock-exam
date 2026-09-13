@@ -8,16 +8,31 @@
  */
 
 import Link from "next/link";
-import { ArrowLeft, CheckCircle2, Library } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Layers,
+  Library,
+  Trophy,
+  Type,
+  type LucideIcon,
+} from "lucide-react";
 
-import { Badge, Card, CardContent, EmptyState, ExplainButton, ProgressRing, Skeleton } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  CardContent,
+  EmptyState,
+  ExplainButton,
+  ProgressRing,
+  Skeleton,
+} from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { SetCard } from "../components/SetCard";
 import { VocabCardsSkeleton, VocabErrorState } from "../components/VocabStates";
 import { useVocabSection } from "../hooks";
 import { sectionLook } from "../sectionTone";
-
 
 export function SectionSets({ sectionId }: { sectionId: number }) {
   const q = useVocabSection(sectionId);
@@ -62,15 +77,31 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
       ) : q.isLoading || !q.data ? (
         <>
           <HeaderSkeleton />
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-[104px] rounded-2xl" />
+            ))}
+          </div>
           <VocabCardsSkeleton count={4} className="lg:grid-cols-3" />
         </>
       ) : (
         <>
           <Card className="cr-cardrise relative overflow-hidden">
-            <span aria-hidden className={cn("absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r", look.edge)} />
+            <span
+              aria-hidden
+              className={cn(
+                "absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r",
+                look.edge,
+              )}
+            />
             <CardContent className="relative flex flex-col gap-5">
               <div className="flex items-start gap-3.5">
-                <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", look.icon)}>
+                <span
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                    look.icon,
+                  )}
+                >
                   <look.Icon className="h-5 w-5" aria-hidden />
                 </span>
 
@@ -86,48 +117,71 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <h1 className="ds-h1">{q.data.title}</h1>
                     <ExplainButton title="What the ring and the bars mean">
-                      The ring counts the <strong className="font-bold text-foreground">sets</strong> you have
-                      finished in this section. The four-colour bar on each card below is that set&rsquo;s four
-                      games — one colour each — filled once you play that game with every word right.
+                      The ring counts the{" "}
+                      <strong className="font-bold text-foreground">
+                        sets
+                      </strong>{" "}
+                      you have finished in this section. The four-colour bar on
+                      each card below is that set&rsquo;s four games — one
+                      colour each — filled once you play that game with every
+                      word right.
                     </ExplainButton>
                   </div>
-                  {q.data.description ? <p className="ds-small mt-1.5 max-w-2xl">{q.data.description}</p> : null}
+                  {q.data.description ? (
+                    <p className="ds-small mt-1.5 max-w-2xl">
+                      {q.data.description}
+                    </p>
+                  ) : null}
                 </div>
 
-                <span className="shrink-0" title={`${masteredSets} of ${sets.length} sets mastered`}>
+                <span
+                  className="shrink-0"
+                  title={`${masteredSets} of ${sets.length} sets mastered`}
+                >
                   <ProgressRing
                     value={masteredPct}
                     size={64}
                     strokeWidth={6}
                     color={masteredPct >= 100 ? "text-success" : look.ring}
-                    trackColor={masteredPct >= 100 ? "text-success/20" : look.ringTrack}
+                    trackColor={
+                      masteredPct >= 100 ? "text-success/20" : look.ringTrack
+                    }
                   />
                 </span>
               </div>
-
-              <div className="grid divide-y divide-border border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-                <Fact
-                  label="Sets"
-                  value={sets.length}
-                  detail={startedSets > 0 ? `${startedSets} already started` : "none started yet"}
-                  index={0}
-                />
-                <Fact
-                  label="Words"
-                  value={wordCount}
-                  detail={`${masteredWords} of them mastered`}
-                  index={1}
-                />
-                <Fact
-                  label="Sets mastered"
-                  value={masteredSets}
-                  detail={`${masteredPct}% of this section`}
-                  index={2}
-                  accent={look.text}
-                />
-              </div>
             </CardContent>
           </Card>
+
+          {/* Three blocks standing ON the page, not three tiles drawn INSIDE the card —
+              which is what made them read as miniatures of it. */}
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Fact
+              icon={Layers}
+              label="Sets"
+              value={sets.length}
+              detail={
+                startedSets > 0
+                  ? `${startedSets} already started`
+                  : "none started yet"
+              }
+              index={0}
+            />
+            <Fact
+              icon={Type}
+              label="Words"
+              value={wordCount}
+              detail={`${masteredWords} of them mastered`}
+              index={1}
+            />
+            <Fact
+              icon={Trophy}
+              label="Sets mastered"
+              value={masteredSets}
+              detail={`${masteredPct}% of this section`}
+              index={2}
+              accent={look.text}
+            />
+          </div>
 
           {sets.length === 0 ? (
             <EmptyState
@@ -158,27 +212,33 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
 }
 
 /**
- * One of the three aggregates under a section's title.
+ * One of the three aggregates under a section's title — a block of quartz.
  *
- * Two goes at this. It began as three white rectangles with a hairline border, which the
- * owner called plain; it then became three tinted cards with accent edges and 30px
- * coloured numbers, which he called worse — *"ranglar ko'payib ketgan … shapelar juda
- * katta va takrorlayapti kattasini"*: each tile was a miniature of the card it sat inside,
- * in the card's own colour, so the eye met the same rounded tinted rectangle three times
- * at three sizes.
+ * Three goes at this. Flat white rectangles were called plain. Tinting them in the
+ * section's colour made each one a miniature of the card it sat inside, at which point
+ * the page had one rounded tinted rectangle at three sizes: *"ranglar ko'payib ketgan …
+ * shapelar juda katta va takrorlayapti kattasini"*. Taking the colour back out returned
+ * them to plain.
  *
- * So: no box at all. A rule across the foot of the header and two thin dividers turn the
- * three facts into a rail. Structure does the separating, colour does none of it — the
- * section's hue is left to the glyph, the ring and the 3px edge, and it appears here only
- * on "Sets mastered", the one number that is about progress rather than size.
+ * The bind is that decoration was being attempted with hue, and hue was the thing there
+ * was already too much of. So these are decorated with **material** instead — the `.quartz`
+ * block in globals.css: a lit top facet, a shaded bottom one, a cleavage sheen across the
+ * corner, real weight underneath, and a lift under the cursor. That is a great deal of
+ * ornament and not one new colour on the page.
+ *
+ * The glyph is carved rather than printed: outsized, cropped by the block's own edge, at
+ * four per cent of the foreground with a white shadow a pixel below it, which is what
+ * reads as an engraving in stone rather than an icon sitting on top of it.
  */
 function Fact({
+  icon: Icon,
   label,
   value,
   detail,
   index,
   accent,
 }: {
+  icon: LucideIcon;
   label: string;
   value: number;
   /** A second, DIFFERENT fact. Never a restatement of `value`. */
@@ -189,14 +249,26 @@ function Fact({
 }) {
   return (
     <div
-      className="cr-pillin py-3.5 sm:px-5 sm:py-1 sm:first:pl-0 sm:last:pr-0"
-      style={{ animationDelay: `${index * 70}ms` }}
+      className="quartz cr-cardrise relative h-full overflow-hidden rounded-2xl px-5 py-4"
+      style={{ animationDelay: `${index * 80}ms` }}
     >
-      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
-      <p className={cn("ds-num mt-1 text-[22px] font-extrabold leading-none tracking-tight", accent ?? "text-foreground")}>
-        {value}
-      </p>
-      <p className="mt-1 text-[12px] font-medium text-muted-foreground">{detail}</p>
+      <Icon
+        aria-hidden
+        className="pointer-events-none absolute -bottom-4 -right-3 h-[86px] w-[86px] text-foreground/[0.045] drop-shadow-[0_1px_0_rgba(255,255,255,0.85)] dark:drop-shadow-none"
+        strokeWidth={1.25}
+      />
+      <div className="relative">
+        <p className="text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">{label}</p>
+        <p
+          className={cn(
+            "ds-num mt-1.5 text-[26px] font-extrabold leading-none tracking-tight",
+            accent ?? "text-foreground",
+          )}
+        >
+          {value}
+        </p>
+        <p className="mt-1.5 text-[12px] font-medium text-muted-foreground">{detail}</p>
+      </div>
     </div>
   );
 }
@@ -213,11 +285,6 @@ function HeaderSkeleton() {
             <Skeleton variant="text" className="w-3/4" />
           </div>
           <Skeleton variant="circle" className="h-16 w-16 shrink-0" />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-[62px]" />
-          ))}
         </div>
       </CardContent>
     </Card>

@@ -1231,7 +1231,13 @@ mark.ts-annot {
 .cr-rowin { animation: dz-cardIn .45s cubic-bezier(.22,1,.36,1) both; }
 
 /* Cards: stagger-in (delay set inline per index) + hover lift */
-.cr-card { animation: dz-cardIn .5s cubic-bezier(.22,1,.36,1) both;
+/* `backwards`, NOT `both`. A filled-forwards animation keeps applying its last keyframe
+   for ever, and an animation outranks every normal declaration — so `dz-cardIn`'s closing
+   `transform` was pinning the element and the `:hover` lift two lines below this one had
+   never moved a single card in the app (measured: 0.00px). `backwards` still holds the
+   opening frame through the staggered animation-delay, which is the part that matters;
+   the closing frame is the element's natural state anyway, so nothing changes at rest. */
+.cr-card { animation: dz-cardIn .5s cubic-bezier(.22,1,.36,1) backwards;
   transition: transform .2s cubic-bezier(.22,1,.36,1), box-shadow .2s, border-color .2s, background-color .2s; }
 .cr-card:hover { transform: translateY(-2px); box-shadow: var(--ds-shadow-md); }
 
@@ -1292,7 +1298,8 @@ mark.ts-annot {
 @keyframes dz-trophyBounce { 0%, 100% { transform: translateY(0) rotate(-6deg) } 50% { transform: translateY(-4px) rotate(6deg) } }
 
 /* Entry helpers (delays set inline per index where staggered) */
-.cr-cardrise { animation: dz-cardRise .5s cubic-bezier(.22,1,.36,1) both; }
+/* `backwards` for the same reason as `.cr-card` — see the note there. */
+.cr-cardrise { animation: dz-cardRise .5s cubic-bezier(.22,1,.36,1) backwards; }
 .cr-cardinb  { animation: dz-cardInB .55s cubic-bezier(.22,1,.36,1) both; }
 .cr-pillin   { animation: dz-pillIn .4s cubic-bezier(.22,1,.36,1) both; }
 .cr-rowin2   { animation: dz-rowIn .42s cubic-bezier(.22,1,.36,1) both; }
@@ -1620,4 +1627,122 @@ mark.ts-annot {
 @media (prefers-reduced-motion: reduce) {
   /* Holds the finished bar, never an empty track. */
   .ds-growx { animation: none !important; transform: none !important; }
+}
+
+/* ── Quartz ──────────────────────────────────────────────────────────────────
+   A block of white quartz: a cool, faintly translucent stone that catches the light
+   on its top facet, carries a cleavage sheen across one corner, and sits on its own
+   shadow — so a tile reads as an OBJECT resting on the page rather than a rectangle
+   drawn on it.
+
+   It exists because of a specific bind. The three aggregates under a section title
+   were first flat and were called plain; tinting them made each one a miniature of
+   the coloured card it sat in ("ranglar ko'payib ketgan … shapelar juda katta va
+   takrorlayapti kattasini"); stripping the colour again made them plain once more.
+   The way out is to decorate with MATERIAL instead of hue — light, bevel, depth and
+   weight — which adds no colour to the page at all.
+
+   Every value is white or slate at low alpha over `--card`, so the block belongs to
+   whichever surface it is dropped on and follows the light/dark toggle. */
+.quartz {
+  position: relative;
+  isolation: isolate;
+  /* White nearly all the way, with the cool tint held back to the far corner — a block of
+     stone reads BRIGHTER than the card stock around it, not duller. */
+  background:
+    linear-gradient(152deg,
+      #ffffff 0%,
+      rgba(255, 255, 255, .99) 40%,
+      rgba(245, 249, 253, .98) 74%,
+      rgba(230, 238, 249, .98) 100%),
+    var(--card);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .95),      /* the lit top facet */
+    inset 1px 0 0 rgba(255, 255, 255, .7),
+    inset -1px 0 0 rgba(15, 23, 42, .035),
+    inset 0 -1px 0 rgba(15, 23, 42, .06),        /* the shaded bottom facet */
+    0 1px 2px rgba(15, 23, 42, .06),
+    0 12px 22px -10px rgba(30, 58, 110, .24),
+    0 30px 50px -28px rgba(30, 58, 110, .28);
+  transition:
+    transform .30s cubic-bezier(.22, 1, .36, 1),
+    box-shadow .30s cubic-bezier(.22, 1, .36, 1);
+}
+
+/* The cleavage plane — one specular band across the top-left, the way light crosses a
+   cut crystal. It brightens and travels a little as the block lifts. */
+.quartz::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(114deg,
+    rgba(255, 255, 255, .95) 0%,
+    rgba(255, 255, 255, .35) 26%,
+    rgba(255, 255, 255, 0) 52%);
+  opacity: .8;
+  transition: opacity .30s ease, transform .30s cubic-bezier(.22, 1, .36, 1);
+}
+
+/* Float: the block leaves the page, its shadow spreads and softens the way a real one
+   does as the gap grows, and the sheen slides with it. */
+.quartz:hover {
+  transform: translateY(-5px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .98),
+    inset 1px 0 0 rgba(255, 255, 255, .8),
+    inset -1px 0 0 rgba(15, 23, 42, .04),
+    inset 0 -1px 0 rgba(15, 23, 42, .07),
+    0 2px 4px rgba(15, 23, 42, .05),
+    0 18px 30px -12px rgba(30, 58, 110, .24),
+    0 44px 70px -34px rgba(30, 58, 110, .30);
+}
+
+.quartz:hover::before {
+  opacity: 1;
+  transform: translateX(5%);
+}
+
+/* Smoky quartz: the same stone, read in the dark. The facets invert — the highlight is
+   a thin white line at low alpha, the depth is black. */
+.dark .quartz {
+  background:
+    linear-gradient(158deg,
+      rgba(255, 255, 255, .075) 0%,
+      rgba(255, 255, 255, .025) 44%,
+      rgba(255, 255, 255, .055) 100%),
+    var(--card);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .15),
+    inset 1px 0 0 rgba(255, 255, 255, .06),
+    inset 0 -1px 0 rgba(0, 0, 0, .38),
+    0 1px 2px rgba(0, 0, 0, .40),
+    0 12px 24px -12px rgba(0, 0, 0, .62),
+    0 30px 52px -30px rgba(0, 0, 0, .72);
+}
+
+.dark .quartz::before {
+  background: linear-gradient(114deg,
+    rgba(255, 255, 255, .13) 0%,
+    rgba(255, 255, 255, .04) 26%,
+    rgba(255, 255, 255, 0) 52%);
+}
+
+.dark .quartz:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .20),
+    inset 1px 0 0 rgba(255, 255, 255, .08),
+    inset 0 -1px 0 rgba(0, 0, 0, .42),
+    0 2px 4px rgba(0, 0, 0, .42),
+    0 22px 36px -14px rgba(0, 0, 0, .68),
+    0 52px 80px -40px rgba(0, 0, 0, .78);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Keeps the stone — drops the flight. */
+  .quartz, .quartz::before { transition: none !important; }
+  .quartz:hover { transform: none; }
+  .quartz:hover::before { transform: none; }
 }
