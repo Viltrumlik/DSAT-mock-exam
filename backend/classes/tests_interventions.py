@@ -1,5 +1,5 @@
-"""The teacher's intervention signals: what counts as turned in, and which students and which
-homework count.
+"""The teacher's intervention signals: what counts as turned in, which students and which homework
+count, and who may read them.
 
 ``GET /api/classes/<pk>/interventions/`` feeds the teacher portal: Submission rate, Class health,
 "Students needing support" ("N missing"), Lagging submissions, and the at-risk and "% turned in"
@@ -239,3 +239,57 @@ class InterventionsHomeworkTests(InterventionsFixture):
                 "inactive": [missing.id],
             },
         )
+
+
+class InterventionsAccessTests(InterventionsFixture):
+    """The classroom's whole teaching team may read it, and nobody else.
+
+    The gate let in ``ADMIN`` and the literal ``"TEACHER"`` only. That left out OWNER, which is
+    what an ownership transfer makes the new teacher, and TA, which is how a support teacher sits
+    in a class. Both got 403, and the teacher portal silently dropped the class from Class health
+    and showed it at 0% on the analytics pages. The capability matrix gives "view class analytics"
+    to the whole teaching team, and the class analytics and gradebook endpoints already follow it.
+    """
+
+    def _get(self, user):
+        client = APIClient()
+        client.force_authenticate(user)
+        return client.get(f"/api/classes/{self.classroom.id}/interventions/")
+
+    def test_the_teacher_a_class_is_transferred_to_can_read_it(self):
+        admin = User.objects.create_user("iv_admin@t.com", "secret123", role=C.ROLE_ADMIN)
+        new_owner = User.objects.create_user(
+            "iv_new_owner@t.com", "secret123", role=C.ROLE_TEACHER, subject=C.DOMAIN_MATH
+        )
+        governance = APIClient()
+        governance.force_authenticate(admin)
+        transfer = governance.post(
+            f"/api/classes/{self.classroom.id}/transfer-ownership/", {"user_id": new_owner.id}, format="json"
+        )
+        self.assertEqual(transfer.status_code, 200, transfer.content)
+
+        response = self._get(new_owner)
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["class_stats"]["student_count"], 1)
+
+    def test_every_teaching_role_can_read_it(self):
+        M = ClassroomMembership
+        for role in (M.ROLE_OWNER, M.ROLE_ADMIN, M.ROLE_TEACHER, M.ROLE_TA):
+            with self.subTest(role=role):
+                # Teacher and support-teacher ACCOUNTS, so a global-admin override cannot be
+                # what lets them in: only the classroom role can.
+                user = User.objects.create_user(
+                    f"iv_as_{role.lower()}@t.com", "secret123",
+                    role=C.ROLE_SUPPORT_TEACHER if role == M.ROLE_TA else C.ROLE_TEACHER,
+                    subject=C.DOMAIN_MATH,
+                )
+                M.objects.create(classroom=self.classroom, user=user, role=role)
+
+                response = self._get(user)
+
+                self.assertEqual(response.status_code, 200, response.content)
+                self.assertEqual(response.json()["class_stats"]["student_count"], 1)
+
+    def test_a_student_cannot_read_it(self):
+        self.assertEqual(self._get(self.student).status_code, 403)

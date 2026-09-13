@@ -1598,17 +1598,17 @@ class ClassroomViewSet(ModelViewSet):
           - completion_summary: per-assignment completion rates
           - class_stats:        overall health metrics
 
-        Access: teachers and admins of the classroom only.
+        Access: the classroom's teaching team (owner, teacher, TA), as for class analytics.
         """
+        # Membership-scoped: anyone outside the class, global admins included, gets 404 here.
         classroom = self.get_object()
-        user = request.user
-        membership = classroom.memberships.filter(user=user).exclude(
-            status=ClassroomMembership.STATUS_REMOVED
-        ).first()
-        if not membership:
-            return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
-        if membership.role not in (ClassroomMembership.ROLE_ADMIN, "TEACHER"):
-            return Response({"detail": "Teacher or admin access required."}, status=status.HTTP_403_FORBIDDEN)
+        # The capability, not a list of role strings: that list let in ADMIN and TEACHER but
+        # turned away OWNER, which is what an ownership transfer makes the new teacher, and TA.
+        if not has_cap(request.user, classroom, "can_view_class_analytics"):
+            return Response(
+                {"detail": "Only the teaching team can view class analytics."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         now = timezone.now()
         seven_days_ago = now - timedelta(days=7)
