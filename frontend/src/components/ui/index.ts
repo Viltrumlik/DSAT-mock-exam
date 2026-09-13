@@ -59,6 +59,7 @@ export type { ModalProps } from "./Modal";
 export { Drawer } from "./Drawer";
 export type { DrawerProps } from "./Drawer";
 export { Tooltip } from "./Tooltip";
+export { ExplainButton } from "./ExplainButton";
 export { ToastProvider, useToast } from "./Toast";
 export type { ToastTone } from "./Toast";
 

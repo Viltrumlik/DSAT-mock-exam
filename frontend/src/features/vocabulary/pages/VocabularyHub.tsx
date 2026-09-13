@@ -9,7 +9,15 @@
  * is homework waiting without opening the tab.
  *
  * Visually this is the AssignmentDetail idiom: gradient hero → meta tiles built
- * from real aggregates → pill tab bar → staggered cards.
+ * from real aggregates → pill tab bar → staggered cards → the games.
+ *
+ * Two things were wrong with it and both were about what a student sees on arrival. The
+ * section cards were interchangeable — the same glyph, the same blue, the same grey ring
+ * at 0% — so the grid read as one shape repeated rather than four places to go; that is
+ * fixed a level down, in `sectionTone` and `SectionCard`. And the page stopped a little
+ * past the fold: four cards, then background. `GameGuide` fills it with the four games,
+ * which are the feature itself and were otherwise invisible until a student had clicked
+ * twice, and which are the key to the coloured bar on every set card.
  */
 
 import { useMemo, useState } from "react";
@@ -36,6 +44,7 @@ import { EmptyState, Pill, Tabs, type TabItem } from "@/features/classroom/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
 
+import { GameGuide } from "../components/GameGuide";
 import { SectionCard } from "../components/SectionCard";
 import { SetCard } from "../components/SetCard";
 import { VocabCardsSkeleton, VocabErrorState, vocabErrorMessage } from "../components/VocabStates";
@@ -116,7 +125,7 @@ export function VocabularyHub() {
 
   return (
     <div
-      className="mx-auto flex max-w-6xl flex-col gap-6 pb-12"
+      className="mx-auto flex max-w-6xl flex-col gap-7 pb-14"
       style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}
     >
       {/* HERO — eyebrow, title, aggregate meta tiles, primary action. */}
@@ -133,8 +142,12 @@ export function VocabularyHub() {
               <h1 className="mt-[14px] text-[30px] font-extrabold leading-none tracking-[-0.025em] sm:text-[34px]">
                 Build your word bank
               </h1>
+              {/* The mastery rule used to be spelled out here on every visit. It now sits
+                  under the ! on the guide at the foot of the page, where a student can
+                  ask for it, and the hero says what is actually on the three tabs. */}
               <p className="mt-3 max-w-xl text-sm font-medium leading-relaxed opacity-[0.78]">
-                Four ways to study every set — flashcards, matching, speed and a full test. Play one with every word right and it is mastered; all four masters the set.
+                The word lists your teachers publish, the homework they set, and any set you build
+                yourself — all studied the same four ways.
               </p>
             </div>
             <Link href="/vocabulary/new-set" className="ds-ring rounded-xl">
@@ -174,6 +187,10 @@ export function VocabularyHub() {
         {tab === "mine" ? <MySetsTab query={mySets} /> : null}
         {tab === "homework" ? <HomeworkTab query={homework} /> : null}
       </div>
+
+      {/* Below every tab, not inside one: the games are how you study a set from any of
+          the three, and this is the page's other half, which was empty. */}
+      <GameGuide className="mt-1" />
     </div>
   );
 }
@@ -204,7 +221,7 @@ function BankTab({ query }: { query: ReturnType<typeof useVocabSections> }) {
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid gap-5 sm:grid-cols-2">
       {sections.map((s, i) => (
         <SectionCard key={s.id} section={s} index={i} />
       ))}
@@ -252,7 +269,7 @@ function MySetsTab({ query }: { query: ReturnType<typeof useMySets> }) {
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2">
           {sets.map((s, i) => (
             <SetCard
               key={s.id}
@@ -319,7 +336,7 @@ function HomeworkTab({ query }: { query: ReturnType<typeof useVocabHomework> }) 
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6">
       {groups.map((g, i) => (
         <HomeworkGroupCard key={`${g.assignment_id}`} group={g} index={i} />
       ))}
@@ -388,7 +405,7 @@ function HomeworkGroupCard({ group, index }: { group: VocabHomeworkGroup; index:
             re-assigned for revision — and the two cards then differ ONLY by this
             id. Drop it and the server binds both runs to whichever assignment is
             newest, which is how one homework scored 100% while its twin scored 0. */}
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2">
           {group.sets.map((s, i) => (
             <SetCard
               key={s.id}

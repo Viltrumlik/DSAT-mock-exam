@@ -10,15 +10,27 @@
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Layers, Library, Type } from "lucide-react";
 
-import { Badge, Card, CardContent, EmptyState, ProgressRing, Skeleton } from "@/components/ui";
+import { Badge, Card, CardContent, EmptyState, ExplainButton, ProgressRing, Skeleton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
 import { SetCard } from "../components/SetCard";
 import { VocabCardsSkeleton, VocabErrorState } from "../components/VocabStates";
 import { useVocabSection } from "../hooks";
+import { sectionLook, type VocabToneClasses } from "../sectionTone";
+
+/** "Mastered" is green throughout the feature, section hue or not. */
+const SUCCESS: Pick<VocabToneClasses, "icon" | "wash" | "edge" | "text"> = {
+  icon: "bg-success/15 text-success-foreground",
+  wash: "border-success/25 bg-success-soft",
+  edge: "from-success via-success/40 to-transparent",
+  text: "text-success-foreground",
+};
 
 export function SectionSets({ sectionId }: { sectionId: number }) {
   const q = useVocabSection(sectionId);
+  // The colour the hub card wore, carried through the click — a section is the same
+  // place on both pages and should look like it.
+  const look = sectionLook(sectionId);
 
   const sets = q.data?.sets ?? [];
   // Words comes from the SECTION's own aggregate, the same one the hub card shows. Summing
@@ -30,11 +42,15 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
 
   const valid = Number.isFinite(sectionId) && sectionId > 0;
   const masteredPct = q.data?.mastery?.percent ?? 0;
+  // Distinct words already proved, and sets with at least one finished game — both from
+  // the payload the page already has, neither shown anywhere before.
+  const masteredWords = q.data?.progress?.mastered ?? 0;
+  const startedSets = sets.filter((s) => s.completed).length;
   const allDone = sets.length > 0 && sets.every((s) => s.mastery?.is_mastered);
 
   return (
     <div
-      className="mx-auto flex max-w-6xl flex-col gap-6 pb-12"
+      className="mx-auto flex max-w-6xl flex-col gap-7 pb-14"
       style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}
     >
       <Link
@@ -57,11 +73,13 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
         </>
       ) : (
         <>
-          <Card className="cr-cardrise">
-            <CardContent className="flex flex-col gap-5">
+          <Card className="cr-cardrise relative overflow-hidden">
+            <span aria-hidden className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br", look.glow)} />
+            <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", look.edge)} />
+            <CardContent className="relative flex flex-col gap-5">
               <div className="flex items-start gap-4">
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary-soft text-primary">
-                  <Library className="h-6 w-6" aria-hidden />
+                <span className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl", look.icon)}>
+                  <look.Icon className="h-6 w-6" aria-hidden />
                 </span>
 
                 <div className="min-w-0 flex-1">
@@ -73,28 +91,52 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
                       </Badge>
                     ) : null}
                   </div>
-                  <h1 className="ds-h1 mt-2">{q.data.title}</h1>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <h1 className="ds-h1">{q.data.title}</h1>
+                    <ExplainButton title="What the ring and the bars mean">
+                      The ring counts the <strong className="font-bold text-foreground">sets</strong> you have
+                      finished in this section. The four-colour bar on each card below is that set&rsquo;s four
+                      games — one colour each — filled once you play that game with every word right.
+                    </ExplainButton>
+                  </div>
                   {q.data.description ? <p className="ds-small mt-1.5 max-w-2xl">{q.data.description}</p> : null}
                 </div>
 
-                <ProgressRing
-                  value={masteredPct}
-                  size={64}
-                  strokeWidth={6}
-                  color={masteredPct >= 100 ? "text-success" : "text-primary"}
-                  className="shrink-0"
-                />
+                <span className="shrink-0" title={`${masteredSets} of ${sets.length} sets mastered`}>
+                  <ProgressRing
+                    value={masteredPct}
+                    size={64}
+                    strokeWidth={6}
+                    color={masteredPct >= 100 ? "text-success" : look.ring}
+                    trackColor={masteredPct >= 100 ? "text-success/20" : look.ringTrack}
+                  />
+                </span>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <StatTile icon={Layers} label="Sets" value={sets.length} index={0} />
-                <StatTile icon={Type} label="Words" value={wordCount} index={1} />
+                <StatTile
+                  icon={Layers}
+                  label="Sets"
+                  value={sets.length}
+                  detail={startedSets > 0 ? `${startedSets} already started` : "none started yet"}
+                  index={0}
+                  look={look}
+                />
+                <StatTile
+                  icon={Type}
+                  label="Words"
+                  value={wordCount}
+                  detail={`${masteredWords} of them mastered`}
+                  index={1}
+                  look={look}
+                />
                 <StatTile
                   icon={CheckCircle2}
                   label="Sets mastered"
                   value={masteredSets}
+                  detail={`${masteredPct}% of this section`}
                   index={2}
-                  tone="success"
+                  look={SUCCESS}
                 />
               </div>
             </CardContent>
@@ -108,7 +150,7 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
               description="Sets show up as soon as the words are published. Try another section in the meantime."
             />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {sets.map((s, i) => (
                 <SetCard
                   key={s.id}
@@ -128,36 +170,48 @@ export function SectionSets({ sectionId }: { sectionId: number }) {
   );
 }
 
+/**
+ * The three aggregates under a section's title.
+ *
+ * They were three white rectangles with a hairline border — the one part of the page
+ * with no colour and no second fact on it, which the owner picked out by name. Each now
+ * wears the section's own hue (the last one green, because "mastered" is green
+ * everywhere in this feature) and carries a line that says something the big number
+ * cannot: how many of the sets have been opened, how many of the words are already
+ * proved, how far through the section that leaves you.
+ */
 function StatTile({
   icon: Icon,
   label,
   value,
+  detail,
   index,
-  tone = "primary",
+  look,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
+  /** A second, DIFFERENT fact. Never a restatement of `value`. */
+  detail: string;
   index: number;
-  tone?: "primary" | "success";
+  look: Pick<VocabToneClasses, "icon" | "wash" | "edge" | "text">;
 }) {
   return (
     <div
-      className="cr-pillin flex items-center gap-3 rounded-xl border border-border bg-surface-1 px-4 py-3"
-      style={{ animationDelay: `${index * 60}ms` }}
+      className={cn("cr-card relative overflow-hidden rounded-2xl border p-4", look.wash)}
+      style={{ animationDelay: `${index * 70}ms` }}
     >
-      <span
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-          tone === "success" ? "bg-success-soft text-success" : "bg-primary-soft text-primary",
-        )}
-      >
-        <Icon className="h-4 w-4" aria-hidden />
-      </span>
-      <div className="min-w-0">
-        <p className="ds-overline">{label}</p>
-        <p className="ds-num text-[22px] font-extrabold leading-none tracking-tight text-foreground">{value}</p>
+      <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", look.edge)} />
+      <div className="flex items-center gap-2.5">
+        <span className={cn("cr-iconpop grid h-9 w-9 shrink-0 place-items-center rounded-xl", look.icon)}>
+          <Icon className="h-[18px] w-[18px]" aria-hidden />
+        </span>
+        <p className="text-[11px] font-extrabold uppercase tracking-[0.06em] text-muted-foreground">{label}</p>
       </div>
+      <p className={cn("ds-num mt-2.5 text-[30px] font-extrabold leading-none tracking-tight", look.text)}>
+        {value}
+      </p>
+      <p className="mt-1.5 text-[12.5px] font-medium leading-snug text-muted-foreground">{detail}</p>
     </div>
   );
 }

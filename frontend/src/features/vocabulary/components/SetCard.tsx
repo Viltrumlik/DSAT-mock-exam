@@ -42,6 +42,9 @@ export function SetCard({
   index?: number;
 }) {
   const mastered = Boolean(mastery?.is_mastered);
+  // Counts read in the card's own hue rather than the kit grey — the greys were the
+  // coldest thing on a page of four identical cards.
+  const chip = mastered ? "bg-success/12 text-success-foreground" : "bg-primary/10 text-primary dark:text-primary-hover";
   // `cr-card` already carries the hover lift, so no `cr-lift` on top of it. The
   // border hover matches Card's `interactive` variant, which this card can't
   // use: it hosts real controls, so it isn't one big click target.
@@ -69,12 +72,12 @@ export function SetCard({
               <h3 className="ds-h4 line-clamp-2 hover:underline">{title}</h3>
             </Link>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-0.5 text-[12px] font-semibold text-muted-foreground">
+              <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-bold", chip)}>
                 <Type className="h-3.5 w-3.5" aria-hidden />
                 <span className="ds-num">{wordCount}</span> {wordCount === 1 ? "word" : "words"}
               </span>
               {mastery ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-0.5 text-[12px] font-semibold text-muted-foreground">
+                <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-bold", chip)}>
                   <Gamepad2 className="h-3.5 w-3.5" aria-hidden />
                   <span className="ds-num">
                     {mastery.mastered_modes}/{mastery.total_modes}
