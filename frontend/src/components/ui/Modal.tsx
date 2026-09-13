@@ -16,6 +16,12 @@ export type ModalProps = {
   size?: "sm" | "md" | "lg" | "xl";
   /** Hide the default close (×) button */
   hideClose?: boolean;
+  /**
+   * Extra classes for the dialog panel. The modal is portalled onto `<body>`, outside the app
+   * shell, so it inherits the body's Georgia rather than the shell's sans; pass `ds-app` to put
+   * it back on the UI face.
+   */
+  className?: string;
 };
 
 const sizeClass = {
@@ -34,6 +40,7 @@ export function Modal({
   footer,
   size = "md",
   hideClose,
+  className,
 }: ModalProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -67,6 +74,7 @@ export function Modal({
         className={cn(
           "ds-anim-pop relative z-10 flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-modal",
           sizeClass[size],
+          className,
         )}
       >
         {title || !hideClose ? (

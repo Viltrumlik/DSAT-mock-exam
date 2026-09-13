@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { usersApi } from "@/lib/api";
+import { usersApi, type SupportBooking } from "@/lib/api";
 import type { ExamDateOption } from "@/features/dashboard/useDashboardData";
 
 export const servicesKeys = {
@@ -67,4 +67,49 @@ export function formatExamDate(option: ExamDateOption, now = new Date()): string
     day: "numeric",
     ...(y === now.getFullYear() ? {} : { year: "numeric" }),
   });
+}
+
+/**
+ * The soonest sitting on offer. The endpoint sorts by the admin's `sort_order`, which is a
+ * display order and not a promise about time, so the earliest is picked here. `exam_date` is a
+ * plain YYYY-MM-DD, which compares correctly as a string.
+ */
+export function earliestExamDate(options: ExamDateOption[] | undefined): ExamDateOption | null {
+  let earliest: ExamDateOption | null = null;
+  for (const option of options ?? []) {
+    if (!earliest || option.exam_date < earliest.exam_date) earliest = option;
+  }
+  return earliest;
+}
+
+/**
+ * The student's next support hour: booked, not withdrawn by the teacher, and not over yet — an
+ * hour in progress still counts, since the student may be on their way to it. Earliest first.
+ */
+export function nextSupportHour(
+  bookings: SupportBooking[] | undefined,
+  now: number = Date.now(),
+): SupportBooking | null {
+  let next: SupportBooking | null = null;
+  for (const booking of bookings ?? []) {
+    if (booking.status !== "BOOKED" || booking.slot.is_cancelled) continue;
+    if (!(Date.parse(booking.slot.ends_at) > now)) continue;
+    if (!next || Date.parse(booking.slot.starts_at) < Date.parse(next.slot.starts_at)) next = booking;
+  }
+  return next;
+}
+
+/** "Today, 15:00" and "Tomorrow, 15:00" earn their names; after that, "Tue, Sep 15, 15:00". */
+export function supportHourLabel(iso: string, now: Date = new Date()): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const time = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const day = new Date(at);
+  day.setHours(0, 0, 0, 0);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((day.getTime() - today.getTime()) / 86_400_000);
+  if (diff === 0) return `Today, ${time}`;
+  if (diff === 1) return `Tomorrow, ${time}`;
+  return `${at.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}, ${time}`;
 }

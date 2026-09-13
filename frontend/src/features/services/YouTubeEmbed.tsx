@@ -25,7 +25,7 @@ export function YouTubeEmbed({ videoId, title }: { videoId: string; title: strin
   const poster = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-surface-2">
+    <div className="squircle relative aspect-video w-full overflow-hidden bg-surface-2 [--sq:9px]">
       {playing ? (
         <iframe
           className="absolute inset-0 h-full w-full"
