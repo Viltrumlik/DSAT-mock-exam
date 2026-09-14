@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
+import { coalesceRuns } from "@/lib/coalesceRuns";
 import { subscribeRealtime } from "@/lib/realtime";
 import { capabilitiesFor } from "@/features/classroom/capabilities";
 import { AlertTriangle, Calendar, ChevronRight, ClipboardCheck } from "lucide-react";
@@ -135,18 +136,25 @@ export default function HomeworkGradingHub({
 
   // Realtime: silently refresh submission counts when workspace events fire
   useEffect(() => {
+    // One refresh at a time. Each reloads every class's homework, and the stream hands over a batch as one
+    // call per event: the events that arrive while a refresh runs share one refresh after it.
+    const refreshes = coalesceRuns(() => fetchRows(true));
     const unsub = subscribeRealtime(
       {
         onEvent: async (ev) => {
           const relevantTypes = ["workspace.updated", "stream.updated", "resync"];
           if (relevantTypes.includes(ev.type)) {
-            await fetchRows(true);
+            await refreshes.run();
           }
         },
       },
       { debounceMs: 300 },
     );
-    return () => unsub();
+    return () => {
+      // First: unsubscribing hands the handler the events its debounce still holds, for a page that is gone.
+      refreshes.cancel();
+      unsub();
+    };
   }, [fetchRows]);
 
   const formatDue = (s?: string | null) => {
