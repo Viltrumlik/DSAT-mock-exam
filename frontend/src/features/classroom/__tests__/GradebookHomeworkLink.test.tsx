@@ -138,10 +138,20 @@ describe("Gradebook tab — opened from a homework's page", () => {
   it("keeps an archived homework's grades as they are: nothing to grade or return", async () => {
     await mount(`${PAGE}?tab=grading&assignment=102`, grades("ARCHIVED"));
 
-    expect(host.textContent).toContain("Archived homework is hidden from students, and its grades stay as they are.");
+    // The archive dialog's own promise: "Existing grades are kept and you can unarchive it later."
+    expect(host.textContent).toContain("Archived homework is hidden from students, and its grades are kept.");
     expect(host.textContent).toContain("To grade or return work on it, unarchive it on the Assignments tab.");
     expect(buttons("Grade")).toHaveLength(0);
     expect(buttons("Re-grade")).toHaveLength(0);
+  });
+
+  it("does not tell the teacher to grade archived work that is graded automatically", async () => {
+    const quiz = grades("ARCHIVED");
+    quiz.assignment = { ...quiz.assignment, is_auto_graded: true, source_label: "Quiz" };
+    await mount(`${PAGE}?tab=grading&assignment=102`, quiz);
+
+    expect(host.textContent).toContain("Archived homework is hidden from students, and its grades are kept.");
+    expect(host.textContent).not.toContain("To grade or return work on it");
   });
 
   it("still lets the teacher grade published homework opened the same way", async () => {
