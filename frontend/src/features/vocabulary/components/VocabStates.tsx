@@ -56,14 +56,14 @@ export function VocabCardsSkeleton({ count = 4, className }: { count?: number; c
   );
 }
 
-/** Loading placeholder for the word list — one boxed stack of word rows. */
+/** Loading placeholder for the word list — a stack of word blocks, the shape the list loads into. */
 export function VocabRowsSkeleton({ count = 5 }: { count?: number }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-card" aria-hidden>
+    <div className="flex flex-col gap-3" aria-hidden>
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className={cn("cr-rowin flex items-center gap-4 p-4", i > 0 && "border-t border-border")}
+          className="quartz squircle cr-rowin flex items-center gap-4 p-5 [--sq:11px]"
           style={{ animationDelay: `${i * 60}ms` }}
         >
           <Skeleton variant="circle" className="h-9 w-9 shrink-0" />

@@ -8,24 +8,35 @@
  * The hero meter is the SET's four-game mastery, straight off the payload: a quarter of
  * the bar per game played clean. The word tiles beside it are derived from the word list
  * instead — one fewer field for the API to keep in sync with the filter right below it.
+ *
+ * Dressed like the rest of vocabulary (the owner, 2026-09-13: "u eski dizaynda qolib
+ * ketibdi"). The section's own colour and glyph come in from its hub card and section page,
+ * so the three pages read as one place. White quartz replaces the solid blue banner, the word
+ * filter uses the house pill tabs, and every block has continuous `.squircle` corners where it
+ * had sharp ones. The page's order — hero, games, words — is unchanged.
  */
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, BookOpen, CheckCircle2, Circle, Gamepad2, Pencil, Sparkles, Type } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle, Gamepad2, Pencil, Sparkles, Type } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import { Alert, Card, Skeleton } from "@/components/ui";
+import { Alert, Skeleton } from "@/components/ui";
+import { cn } from "@/lib/cn";
 
-import { masteryPercent } from "../components/MasteryBar";
+import { MasteryBar, masteryPercent } from "../components/MasteryBar";
 import { StudyModeCard } from "../components/StudyModeCard";
 import { VocabErrorState, VocabRowsSkeleton } from "../components/VocabStates";
 import { WordList } from "../components/WordList";
 import { useVocabSet } from "../hooks";
 import { useLaunchAssignmentId } from "../launchContext";
+import { sectionLook, toneClasses } from "../sectionTone";
 import { STUDY_MODES, type ProgressCounts } from "../types";
 
 const JAKARTA = "var(--font-plus-jakarta), system-ui, sans-serif";
+
+/** A student's own set has no section to borrow a colour from, so "mine" wears violet. */
+const CUSTOM_LOOK = { ...toneClasses("violet"), Icon: Sparkles };
 
 export function SetOverview({ setId }: { setId: number }) {
   const q = useVocabSet(setId);
@@ -67,12 +78,12 @@ export function SetOverview({ setId }: { setId: number }) {
 
   if (q.isLoading || !set) {
     return (
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12" style={{ fontFamily: JAKARTA }}>
+      <div className="mx-auto flex max-w-6xl flex-col gap-7 pb-14" style={{ fontFamily: JAKARTA }}>
         <BackLink href="/vocabulary" label="Back to vocabulary" />
-        <Skeleton className="h-64 rounded-2xl" />
+        <Skeleton className="squircle h-72 [--sq:15px]" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-44 rounded-2xl" />
+            <Skeleton key={i} className="squircle h-48 [--sq:13px]" />
           ))}
         </div>
         <VocabRowsSkeleton count={5} />
@@ -83,6 +94,7 @@ export function SetOverview({ setId }: { setId: number }) {
   const empty = set.words.length === 0;
   const mastery = set.mastery;
   const pct = masteryPercent(mastery);
+  const look = set.section ? sectionLook(set.section.id) : CUSTOM_LOOK;
 
   // Same label/icon vocabulary as the hub hero, so the two heroes read as one
   // component with different numbers in it. "Games" leads: it is what the bar below
@@ -95,87 +107,98 @@ export function SetOverview({ setId }: { setId: number }) {
   ];
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12" style={{ fontFamily: JAKARTA }}>
+    <div className="mx-auto flex max-w-6xl flex-col gap-7 pb-14" style={{ fontFamily: JAKARTA }}>
       <BackLink href={backHref} label={backLabel} />
 
       {/* ── HERO ─────────────────────────────────────────────────────── */}
-      {/* cr-cardrise, not cr-card: a hero is not clickable, so it must not lift. */}
-      <Card className="cr-cardrise overflow-hidden">
-        <div className="relative overflow-hidden bg-gradient-to-br from-primary to-primary-hover px-6 py-7 text-primary-foreground sm:px-[34px] sm:py-[30px]">
-          <div aria-hidden className="pointer-events-none absolute -bottom-14 -right-10 h-56 w-56 rounded-full bg-white/[0.06]" />
-          <div aria-hidden className="pointer-events-none absolute -top-24 right-28 h-44 w-44 rounded-full bg-white/[0.05]" />
+      {/* cr-cardrise, not a float: a hero is not clickable, so it must not lift. */}
+      <section className="quartz squircle cr-cardrise relative overflow-hidden [--sq:15px]">
+        {/* The section's colour as a thin edge — the same mark its hub card and section
+            page carry — rather than a whole banner of it. */}
+        <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", look.edge)} />
 
-          <div className="relative flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold">
-              {set.section ? <BookOpen className="h-3.5 w-3.5" aria-hidden /> : <Sparkles className="h-3.5 w-3.5" aria-hidden />}
-              {set.section ? set.section.title : "My set"}
+        <div className="relative flex flex-col gap-6 px-6 py-7 sm:px-8">
+          <div className="flex items-start gap-4">
+            <span className={cn("squircle flex h-14 w-14 shrink-0 items-center justify-center [--sq:8.5px]", look.icon)}>
+              <look.Icon className="h-7 w-7" aria-hidden />
             </span>
-            {mastery.is_mastered ? (
-              <span className="inline-flex items-center gap-1.5 rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold">
-                <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Mastered
-              </span>
-            ) : null}
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-xs font-extrabold", look.chip)}>
+                  {set.section ? set.section.title : "My set"}
+                </span>
+                {mastery.is_mastered ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-success-soft px-3 py-1 text-xs font-extrabold text-success-foreground">
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden /> Mastered
+                  </span>
+                ) : null}
+              </div>
+              <h1 className="mt-2.5 text-[28px] font-extrabold leading-[1.1] tracking-[-0.025em] text-foreground sm:text-[32px]">
+                {set.title}
+              </h1>
+            </div>
+
             {set.is_custom ? (
               <Link
                 href={`/vocabulary/new-set?set=${set.id}`}
-                className="ds-ring cr-press ml-auto inline-flex items-center gap-1.5 rounded-[20px] bg-white/20 px-[13px] py-[5px] text-xs font-extrabold hover:bg-white/30"
+                className="ds-ring cr-press inline-flex shrink-0 items-center gap-1.5 rounded-full bg-surface-2 px-3.5 py-2 text-xs font-extrabold text-foreground transition-colors hover:bg-surface-3"
               >
                 <Pencil className="h-3.5 w-3.5" aria-hidden /> Edit words
               </Link>
             ) : null}
           </div>
 
-          <h1 className="relative mt-[14px] text-[30px] font-extrabold leading-none tracking-[-0.025em] sm:text-[34px]">
-            {set.title}
-          </h1>
-
-          <div className="relative mt-[26px] flex flex-wrap gap-x-[34px] gap-y-4">
+          {/* Four blocks of quartz on the hero's own white, told apart by a hairline and
+              their weight — the section page's facts, at this page's scale. */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {tiles.map((t, i) => (
-              <div key={t.label} className="cr-pillin" style={{ animationDelay: `${i * 60}ms` }}>
-                <div className="text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">{t.label}</div>
-                <div className="mt-[5px] inline-flex items-center gap-1.5 rounded-lg bg-white/[0.16] px-[11px] py-[3px] text-[17px] font-extrabold">
-                  <t.icon className="h-4 w-4 opacity-80" aria-hidden />
-                  <span className="ds-num">{t.value}</span>
-                </div>
+              <div
+                key={t.label}
+                className="quartz squircle cr-cardrise relative overflow-hidden px-4 py-3.5 [--sq:10px]"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <t.icon
+                  aria-hidden
+                  strokeWidth={1.25}
+                  className="pointer-events-none absolute -bottom-3 -right-2 h-16 w-16 text-foreground/[0.05]"
+                />
+                <p className="relative text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">{t.label}</p>
+                <p
+                  className={cn(
+                    "ds-num relative mt-1.5 text-[24px] font-extrabold leading-none tracking-tight",
+                    i === 0 ? look.text : "text-foreground",
+                  )}
+                >
+                  {t.value}
+                </p>
               </div>
             ))}
           </div>
 
-          {/* Mastery meter — ONE SEGMENT PER GAME, filled when that game has been played
-              clean. Four separated blocks rather than a sliding fill because the rule is
-              discrete: a quarter appears the moment a game is mastered and never sits
-              anywhere in between. Numbers live in the tiles above, so the bar itself is
-              decorative to a screen reader. */}
-          <div className="relative mt-6 max-w-md">
-            <div className="flex items-center justify-between text-[11px] font-extrabold uppercase tracking-[0.06em] opacity-[0.72]">
-              <span>Mastery</span>
-              <span className="ds-num">{pct}%</span>
+          {/* One segment per game in that game's own colour — the bar the set cards on the
+              section page already use, so a colour means the same game on both. */}
+          <div className="max-w-xl">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-[0.09em] text-muted-foreground">Mastery</span>
+              <span className={cn("ds-num text-[13px] font-extrabold", look.text)}>{pct}%</span>
             </div>
-            <div aria-hidden className="mt-2 flex h-2 w-full gap-1">
-              {STUDY_MODES.map((mode) => (
-                <span
-                  key={mode}
-                  className={`cr-bar h-full flex-1 rounded-full transition-colors duration-500 ${
-                    mastery.modes[mode] ? "bg-white" : "bg-white/20"
-                  }`}
-                />
-              ))}
-            </div>
+            <MasteryBar mastery={mastery} legend />
           </div>
         </div>
-      </Card>
+      </section>
 
       {/* ── MODE LAUNCHER — the centrepiece ──────────────────────────── */}
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-4">
         <div>
-          <h2 className="ds-h3">Study this set</h2>
-          <p className="ds-small mt-0.5">
+          <h2 className="text-[20px] font-extrabold tracking-[-0.015em] text-foreground">Study this set</h2>
+          <p className="ds-small mt-1">
             Play a game with every word right and it is mastered — a quarter of the bar
             each. All four, and the set is done.
           </p>
         </div>
         {empty ? (
-          <Alert tone="warning" title="Nothing to study yet">
+          <Alert tone="warning" title="Nothing to study yet" className="squircle [--sq:10px]">
             This set has no words, so the study modes stay locked.
             {set.is_custom ? " Add a few words and they will unlock straight away." : ""}
           </Alert>
@@ -195,7 +218,7 @@ export function SetOverview({ setId }: { setId: number }) {
         </div>
       </section>
 
-      <WordList words={set.words} setId={set.id} />
+      <WordList words={set.words} setId={set.id} iconClassName={look.icon} />
     </div>
   );
 }
