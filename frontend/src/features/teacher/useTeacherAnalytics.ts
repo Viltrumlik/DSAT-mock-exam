@@ -68,7 +68,8 @@ export type TeacherAnalyticsModel = {
 };
 
 type AnyRow = Record<string, unknown>;
-const num = (v: unknown): number | null => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+// The server's null is a number it does not have yet (nothing graded, no homework, no practice score). Number(null) is 0.
+const num = (v: unknown): number | null => { if (v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 const sid = (r: AnyRow): number | null => num(r.user_id ?? r.id ?? r.student_id);
 function nameOf(r: AnyRow): string {
   return [r.first_name, r.last_name].filter(Boolean).join(" ").trim() || (r.email as string) || "Student";
@@ -139,7 +140,7 @@ export function useTeacherAnalytics(previewModel?: TeacherAnalyticsModel): Teach
         (iv?.overdue_students as AnyRow[] | undefined)?.forEach((r) => { const id = sid(r); if (id != null) overdueMap.set(id, num(r.overdue_count) ?? 0); });
 
         const hwLb = lb?.homework_grade_leaderboard as AnyRow | undefined;
-        const hwRows = (hwLb?.students as AnyRow[] | undefined) ?? [];
+        const hwRows = (hwLb?.rows as AnyRow[] | undefined) ?? [];
         const hwById = new Map<number, AnyRow>();
         hwRows.forEach((r) => { const id = sid(r); if (id != null) hwById.set(id, r); });
 
