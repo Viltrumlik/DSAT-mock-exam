@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarClock, Coins, Flame, GraduationCap, Target, Trophy } from "lucide-react";
+import { Coins, Flame, GraduationCap, Trophy } from "lucide-react";
 import { ExplainButton } from "@/components/ui";
 import { useRoadmap } from "@/features/roadmap/hooks";
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
@@ -14,22 +14,19 @@ import {
 import { cn } from "@/lib/cn";
 
 /**
- * The top of the dashboard, in one band instead of three.
+ * The row of single facts near the top of the dashboard: level per subject, XP, points and
+ * strikes.
  *
- * What it replaces: a level card, a rewards strip and a score/countdown pair — three
- * full-width slabs, one under another, before a student reached anything they could act on.
- * Two of the three were mostly empty for most students (a level card reading "Not set yet",
- * a target card showing three dashes), and all three were the same shade, so the row that
- * mattered was not findable. The owner's note was to move them, recolour them and put them
- * somewhere else entirely.
+ * It began as the replacement for three full-width bands — a level card, a rewards strip and
+ * a score/countdown pair — and at first it carried the exam countdown and the target score as
+ * chips too, with the full cards for both moved below the calendar. The owner asked for the
+ * reverse on those two: the chips removed, and the countdown and goal cards back at the top
+ * where they were. So this row now holds only what has no card of its own, and nothing on
+ * the dashboard is said twice.
  *
- * So: one row of chips, each in its own colour, each a single fact. The exam countdown is
- * the widest and the only filled one, because it is the only number on the dashboard that
- * changes by itself and the only one with a deadline attached.
- *
- * The editable cards those bands carried — the target-score sliders and the exam-date picker
- * — are not deleted. They moved BELOW the calendar, which is where a control you touch twice
- * a term belongs; this band links to them.
+ * It can legitimately be empty — a student with no level set yet, before their rewards have
+ * loaded — and then it renders nothing rather than a margin with no chips in it. The exam
+ * chip used to guarantee at least one entry; without it that guarantee is gone.
  */
 
 type ChipTone = "primary" | "violet" | "amber" | "emerald" | "sky";
@@ -128,52 +125,16 @@ function Chip({
   );
 }
 
-/** Whole days from today to `iso`, in the reader's own day — negative once it has passed. */
-function daysUntil(iso: string | null): number | null {
-  if (!iso) return null;
-  const target = new Date(`${iso}T00:00:00`);
-  if (Number.isNaN(target.getTime())) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
-}
-
-export function DashboardPulse({
-  examDate,
-  target,
-}: {
-  examDate: string | null;
-  target: number | null;
-}) {
+export function DashboardPulse() {
   const roadmap = useRoadmap();
   const rewards = useMyRewards();
 
-  const left = daysUntil(examDate);
   const tracks = roadmap.data?.tracks ?? [];
   // One chip per subject a student actually studies, never a placeholder for one they do not.
   const levelled = tracks.filter((t) => t.own_level_label);
 
   const chips: React.ReactNode[] = [];
   let i = 0;
-
-  chips.push(
-    <Chip
-      key="exam"
-      index={i++}
-      tone="primary"
-      icon={CalendarClock}
-      label="SAT exam"
-      value={left == null ? "Pick a date" : left < 0 ? "Done" : `${left} ${left === 1 ? "day" : "days"}`}
-      detail={left == null ? "Set it below to start the countdown" : undefined}
-      href={left == null ? undefined : "/profile"}
-    />,
-  );
-
-  if (target != null) {
-    chips.push(
-      <Chip key="target" index={i++} tone="violet" icon={Target} label="Target" value={target} detail="out of 1600" />,
-    );
-  }
 
   for (const track of levelled) {
     chips.push(
@@ -234,6 +195,8 @@ export function DashboardPulse({
       />,
     );
   }
+
+  if (chips.length === 0) return null;
 
   return (
     // Flowed rather than gridded: the number of chips depends on how many subjects a student
