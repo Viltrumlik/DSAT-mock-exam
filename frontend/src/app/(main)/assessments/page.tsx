@@ -1,9 +1,16 @@
 "use client";
 
 /**
- * /assessments — Student assessment workspace, a 3-column board
- * (To-do / In progress / Completed) matched 1:1 to the MasterSAT Assessments mockup.
- * Uses the shared `.dzboard` design scope. Data: GET /api/classes/my-assignments/.
+ * /assessments — Student assessment workspace. Uses the shared `.dzboard` design scope.
+ * Data: GET /api/classes/my-assignments/.
+ *
+ * Found by narrowing, not by scrolling (the owner, 2026-09-13: a student with ~150 assessments
+ * could not locate one on a single board). The landing view is a To-do strip — homework still
+ * open, nearest deadline first — above the two subjects, English and Math; a student with only
+ * one subject lands straight in its domains. A subject opens its SAT domains, and a domain opens
+ * the 3-column board (To do / In progress / Completed) for just that domain. The level lives in
+ * the URL (`?subject=&domain=`), so Back goes up one. Search still looks across everything.
+ * The narrowing rules are in `features/assessments/studentAssessmentNav`.
  *
  * Card variants:
  *  - To-do      → question count · ~time, due chip, category tags, Start
@@ -15,16 +22,20 @@
  * deadline reads as "Catch up · <day>".
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   BookOpen, Calculator, Clock, Calendar, CheckCircle2,
   PlayCircle, RefreshCw, AlertTriangle, Hourglass, Loader2, Flag, Search,
+  ChevronRight, ClipboardList, Layers,
 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { classesApi } from "@/lib/api";
 import type { Assignment } from "@/lib/criticalApiContract";
 import { useStartAttempt } from "@/features/assessments/hooks";
+import {
+  compareTodo, domainOf, isOpenTodo, orderedDomains, subjectKeyOf, type SubjectKey,
+} from "@/features/assessments/studentAssessmentNav";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 
@@ -141,12 +152,60 @@ function entryHaystack(e: Entry): string {
     .toLowerCase();
 }
 
+/**
+ * How many To-do cards the landing view shows before "Show all": one row on a laptop. At six (two
+ * rows of these tall cards) the subject picker the page opens on sat below the fold at 1280×900.
+ */
+const TODO_PREVIEW = 3;
+
+function isDone(e: Entry): boolean {
+  const s = deriveState(e);
+  return s === "COMPLETED" || s === "SUBMITTED";
+}
+
+type DomainGroup = { name: string; entries: Entry[] };
+type SubjectGroup = { key: SubjectKey; entries: Entry[]; domains: DomainGroup[] };
+
+/** English, then Math — the order the owner names them — each split into its SAT domains. */
+function groupBySubject(entries: Entry[]): SubjectGroup[] {
+  const bySubject = new Map<SubjectKey, Map<string, Entry[]>>();
+  for (const e of entries) {
+    const key = subjectKeyOf(e.hw.set?.subject ?? e.subject);
+    if (!key) continue;
+    const domains = bySubject.get(key) ?? new Map<string, Entry[]>();
+    const name = domainOf(e.hw.set?.category);
+    const list = domains.get(name);
+    if (list) list.push(e);
+    else domains.set(name, [e]);
+    bySubject.set(key, domains);
+  }
+  const out: SubjectGroup[] = [];
+  for (const key of ["english", "math"] as const) {
+    const domains = bySubject.get(key);
+    if (!domains) continue;
+    out.push({
+      key,
+      entries: [...domains.values()].flat(),
+      domains: orderedDomains(key, domains.keys()).map((name) => ({ name, entries: domains.get(name) ?? [] })),
+    });
+  }
+  return out;
+}
+
+/** What a subject or domain holds, so a student can tell where the unfinished work is before opening it. */
+function counts(entries: Entry[]): { total: number; todo: number; done: number } {
+  const done = entries.filter(isDone).length;
+  return { total: entries.length, todo: entries.length - done, done };
+}
+
 function Board() {
   const router = useRouter();
+  const params = useSearchParams();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [query, setQuery] = useState("");
+  const [showAllTodo, setShowAllTodo] = useState(false);
 
   // Start (or resume) the assessment directly from the card — no intermediate
   // launcher page. The backend reuses an in-progress attempt or creates a fresh one.
@@ -191,16 +250,38 @@ function Board() {
   };
   useEffect(() => { void load(); }, []);
 
-  const byCol = useMemo(() => {
-    const m: Record<ColKey, Entry[]> = { todo: [], progress: [], done: [] };
-    const q = query.trim().toLowerCase();
-    for (const e of entries) {
-      if (q && !entryHaystack(e).includes(q)) continue;
-      m[colOf(deriveState(e))].push(e);
-    }
-    return m;
-  }, [entries, query]);
-  const matchCount = byCol.todo.length + byCol.progress.length + byCol.done.length;
+  const subjects = useMemo(() => groupBySubject(entries), [entries]);
+  const todo = useMemo(() => {
+    const now = Date.now();
+    return entries
+      .filter((e) => isOpenTodo(e.assignment.due_at, isDone(e), now))
+      .sort((a, b) => compareTodo(a.assignment.due_at, b.assignment.due_at));
+  }, [entries]);
+  const q = query.trim().toLowerCase();
+  const matches = useMemo(() => (q ? entries.filter((e) => entryHaystack(e).includes(q)) : []), [entries, q]);
+
+  // Where the student is. With one subject there is nothing to choose between, so that subject
+  // IS the landing view. A subject or domain in the URL this student does not have — an old
+  // link, a class since left — falls back a level rather than opening onto nothing.
+  const sole = subjects.length === 1 ? subjects[0] : null;
+  const picked = subjects.find((s) => s.key === subjectKeyOf(params.get("subject"))) ?? null;
+  const subject = sole ?? picked;
+  const domain = subject?.domains.find((d) => d.name === params.get("domain")) ?? null;
+
+  const go = (next: { subject?: SubjectKey; domain?: string } = {}) => {
+    const sp = new URLSearchParams();
+    if (next.subject) sp.set("subject", next.subject);
+    if (next.domain) sp.set("domain", next.domain);
+    const qs = sp.toString();
+    router.push(qs ? `/assessments?${qs}` : "/assessments");
+  };
+
+  const cards = { onGo: (href: string) => router.push(href), onStart: beginAssessment, startingId };
+  const trail: Crumb[] = [{ label: "My assessments", onClick: () => go() }];
+  if (subject && !sole) {
+    trail.push({ label: subjectStyle(subject.key).label, onClick: domain ? () => go({ subject: subject.key }) : undefined });
+  }
+  if (domain) trail.push({ label: domain.name });
 
   return (
     <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
@@ -216,61 +297,287 @@ function Board() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search assessments…"
-              aria-label="Search assessments"
+              placeholder="Search all assessments…"
+              aria-label="Search all assessments"
               style={{ width: "100%", border: "1px solid var(--dz-border)", background: "var(--dz-panel)", borderRadius: 12, padding: "11px 14px 11px 44px", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--dz-ink)", outline: "none" }}
             />
           </div>
         </div>
 
-        {!loading && !error && query.trim() && matchCount === 0 ? (
-          <div style={{ marginBottom: 18, border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "22px 16px", textAlign: "center", color: "var(--dz-mute)", fontSize: 14, fontWeight: 600 }}>
-            No assessments match “{query.trim()}”.
-          </div>
-        ) : null}
+        {!loading && !error && !q && trail.length > 1 ? <Crumbs trail={trail} /> : null}
 
         {error ? (
           <AssessError onRetry={() => void load()} />
+        ) : loading ? (
+          <LandingSkeleton />
+        ) : q ? (
+          // Search is the other way to locate something, so it looks across every subject and
+          // domain rather than only the one the student happens to be standing in.
+          matches.length === 0 ? <Notice text={`No assessments match “${query.trim()}”.`} /> : <BoardColumns entries={matches} {...cards} />
+        ) : entries.length === 0 ? (
+          <Notice title="No assessments yet" text="When a teacher gives you an assessment, it shows up here." />
+        ) : domain ? (
+          <BoardColumns entries={domain.entries} {...cards} />
+        ) : subject && !sole ? (
+          <DomainGrid subject={subject} onOpen={(name) => go({ subject: subject.key, domain: name })} />
         ) : (
-          // `auto-fit` rather than a fixed `repeat(3, 1fr)`: the responsive behaviour used to hang
-          // on a `dz-board` class that matches no rule anywhere in the codebase, so a phone got
-          // three ~105px columns of the most-used student screen.
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 18 }}>
-            {COLUMNS.map((col) => (
-              <div key={col.key} style={{ background: "var(--dz-card)", border: "1px solid var(--dz-border)", borderRadius: 18, padding: 16, minHeight: 300 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 6px 16px" }}>
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: col.dot }} />
-                  <span style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)" }}>{col.name}</span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: "var(--dz-faint)", background: "var(--dz-panel)", padding: "2px 9px", borderRadius: 8 }}>
-                    {loading ? "·" : byCol[col.key].length}
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {loading ? (
-                    Array.from({ length: 2 }).map((_, i) => (
-                      <div key={i} className="dz-skel" style={{ height: 150, borderRadius: 14 }} />
-                    ))
-                  ) : byCol[col.key].length === 0 ? (
-                    <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "26px 16px", textAlign: "center" }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--dz-mute)" }}>Nothing here</div>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--dz-faint)", marginTop: 3 }}>{col.emptyHint}</div>
-                    </div>
-                  ) : (
-                    byCol[col.key].map((e) => (
-                      <AssessCard
-                        key={`${e.classroomId}-${e.assignment.id}-${e.hw.homework_id}`}
-                        entry={e}
-                        onGo={(href) => router.push(href)}
-                        onStart={beginAssessment}
-                        starting={startingId === e.hw.homework_id}
-                      />
-                    ))
-                  )}
-                </div>
+          <>
+            <TodoSection entries={todo} showAll={showAllTodo} onToggle={() => setShowAllTodo((v) => !v)} {...cards} />
+            {sole ? (
+              <DomainGrid subject={sole} onOpen={(name) => go({ subject: sole.key, domain: name })} />
+            ) : subjects.length > 1 ? (
+              <SubjectGrid subjects={subjects} onOpen={(key) => go({ subject: key })} />
+            ) : (
+              // Nothing this page could place under a subject: show it all rather than hide it.
+              <BoardColumns entries={entries} {...cards} />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type CardActions = { onGo: (href: string) => void; onStart: (homeworkId: number) => void; startingId: number | null };
+
+/** The To do / In progress / Completed board, for whatever slice of the work it is handed. */
+function BoardColumns({ entries, onGo, onStart, startingId }: { entries: Entry[] } & CardActions) {
+  const byCol = useMemo(() => {
+    const m: Record<ColKey, Entry[]> = { todo: [], progress: [], done: [] };
+    for (const e of entries) m[colOf(deriveState(e))].push(e);
+    return m;
+  }, [entries]);
+
+  return (
+    // `auto-fit` rather than a fixed `repeat(3, 1fr)`: the responsive behaviour used to hang
+    // on a `dz-board` class that matches no rule anywhere in the codebase, so a phone got
+    // three ~105px columns of the most-used student screen.
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 18 }}>
+      {COLUMNS.map((col) => (
+        <div key={col.key} style={{ background: "var(--dz-card)", border: "1px solid var(--dz-border)", borderRadius: 18, padding: 16, minHeight: 300 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 6px 16px" }}>
+            <span style={{ width: 10, height: 10, borderRadius: "50%", background: col.dot }} />
+            <span style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)" }}>{col.name}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--dz-faint)", background: "var(--dz-panel)", padding: "2px 9px", borderRadius: 8 }}>
+              {byCol[col.key].length}
+            </span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {byCol[col.key].length === 0 ? (
+              <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: "26px 16px", textAlign: "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--dz-mute)" }}>Nothing here</div>
+                <div style={{ fontSize: 12, fontWeight: 500, color: "var(--dz-faint)", marginTop: 3 }}>{col.emptyHint}</div>
               </div>
+            ) : (
+              byCol[col.key].map((e) => (
+                <AssessCard
+                  key={`${e.classroomId}-${e.assignment.id}-${e.hw.homework_id}`}
+                  entry={e}
+                  onGo={onGo}
+                  onStart={onStart}
+                  starting={startingId === e.hw.homework_id}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Homework still open, nearest deadline first — the work a student opens the page to find. */
+function TodoSection({ entries, showAll, onToggle, onGo, onStart, startingId }: { entries: Entry[]; showAll: boolean; onToggle: () => void } & CardActions) {
+  const shown = showAll ? entries : entries.slice(0, TODO_PREVIEW);
+  return (
+    <section style={{ marginBottom: 34 }}>
+      <SectionHead icon={<ClipboardList size={18} />} title="To-do" count={entries.length} hint="Homework that is still open, nearest deadline first" />
+      {entries.length === 0 ? (
+        <Notice text="Nothing due right now. New homework from your teachers shows up here." />
+      ) : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: 16 }}>
+            {shown.map((e) => (
+              <AssessCard
+                key={`${e.classroomId}-${e.assignment.id}-${e.hw.homework_id}`}
+                entry={e}
+                onGo={onGo}
+                onStart={onStart}
+                starting={startingId === e.hw.homework_id}
+              />
             ))}
           </div>
-        )}
+          {entries.length > TODO_PREVIEW ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              style={{ marginTop: 14, border: "1px solid var(--dz-border)", background: "var(--dz-panel)", borderRadius: 11, padding: "9px 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 800, color: "var(--dz-indigo)", cursor: "pointer" }}
+            >
+              {showAll ? "Show fewer" : `Show all ${entries.length}`}
+            </button>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+function SubjectGrid({ subjects, onOpen }: { subjects: SubjectGroup[]; onOpen: (key: SubjectKey) => void }) {
+  return (
+    <section>
+      <SectionHead icon={<Layers size={18} />} title="Subjects" hint="Choose a subject to see its domains" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 18 }}>
+        {subjects.map((s) => {
+          const style = subjectStyle(s.key);
+          const c = counts(s.entries);
+          return (
+            <NavCard
+              key={s.key}
+              big
+              title={style.label}
+              icon={style.isMath ? <Calculator size={24} /> : <BookOpen size={24} />}
+              accent={style.accent}
+              soft={style.soft}
+              line={`${c.total} ${c.total === 1 ? "assessment" : "assessments"} · ${s.domains.length} ${s.domains.length === 1 ? "domain" : "domains"}`}
+              todo={c.todo}
+              done={c.done}
+              onClick={() => onOpen(s.key)}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function DomainGrid({ subject, onOpen }: { subject: SubjectGroup; onOpen: (domain: string) => void }) {
+  const style = subjectStyle(subject.key);
+  return (
+    <section>
+      <SectionHead
+        icon={style.isMath ? <Calculator size={18} /> : <BookOpen size={18} />}
+        title={`${style.label} domains`}
+        hint="Choose a domain to see its assessments"
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 270px), 1fr))", gap: 16 }}>
+        {subject.domains.map((d) => {
+          const c = counts(d.entries);
+          return (
+            <NavCard
+              key={d.name}
+              title={d.name}
+              icon={<Layers size={19} />}
+              accent={style.accent}
+              soft={style.soft}
+              line={`${c.total} ${c.total === 1 ? "assessment" : "assessments"}`}
+              todo={c.todo}
+              done={c.done}
+              onClick={() => onOpen(d.name)}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** One subject or domain to open: what it is, how much is in it, and how much of that is done. */
+function NavCard({ title, icon, accent, soft, line, todo, done, onClick, big }: {
+  title: string; icon: React.ReactNode; accent: string; soft: string; line: string; todo: number; done: number; onClick: () => void; big?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="dz-statecard"
+      style={{ width: "100%", textAlign: "left", display: "flex", flexDirection: "column", gap: 12, background: "var(--dz-panel)", border: "1px solid var(--dz-border)", borderTop: `3px solid ${accent}`, borderRadius: 16, padding: big ? 20 : 16, fontFamily: "inherit", cursor: "pointer" }}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ width: big ? 48 : 40, height: big ? 48 : 40, borderRadius: 12, background: soft, color: accent, display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+          {icon}
+        </span>
+        <span style={{ flex: 1, minWidth: 0, fontSize: big ? 21 : 16, fontWeight: 800, lineHeight: 1.25, color: "var(--dz-ink)" }}>{title}</span>
+        <ChevronRight size={20} style={{ flex: "none", color: "var(--dz-faint)" }} />
+      </span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--dz-mute)" }}>{line}</span>
+      {todo > 0 || done > 0 ? (
+        <span style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {todo > 0 ? (
+            <span style={{ fontSize: 12, fontWeight: 800, color: accent, background: soft, padding: "4px 10px", borderRadius: 8 }}>{todo} to do</span>
+          ) : null}
+          {done > 0 ? (
+            <span style={{ fontSize: 12, fontWeight: 800, color: "#15803d", background: "rgba(22,163,74,.12)", padding: "4px 10px", borderRadius: 8 }}>{done} done</span>
+          ) : null}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+function SectionHead({ icon, title, count, hint }: { icon: React.ReactNode; title: string; count?: number; hint?: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 19, fontWeight: 800, letterSpacing: "-.01em", color: "var(--dz-ink)" }}>
+        <span style={{ display: "flex", color: "var(--dz-indigo)" }}>{icon}</span>
+        {title}
+      </span>
+      {typeof count === "number" ? (
+        <span style={{ fontSize: 12, fontWeight: 800, color: "var(--dz-faint)", background: "var(--dz-panel)", border: "1px solid var(--dz-border)", padding: "2px 9px", borderRadius: 8 }}>{count}</span>
+      ) : null}
+      {hint ? <span style={{ fontSize: 13, fontWeight: 600, color: "var(--dz-mute)" }}>{hint}</span> : null}
+    </div>
+  );
+}
+
+type Crumb = { label: string; onClick?: () => void };
+
+/** My assessments › English › Algebra — each level above the current one is a way back up. */
+function Crumbs({ trail }: { trail: Crumb[] }) {
+  return (
+    <nav aria-label="Breadcrumb" style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4, margin: "-6px 0 20px" }}>
+      {trail.map((c, i) => (
+        <span key={`${i}-${c.label}`} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          {i > 0 ? <ChevronRight size={15} style={{ color: "var(--dz-faint)" }} /> : null}
+          {c.onClick ? (
+            <button
+              type="button"
+              onClick={c.onClick}
+              style={{ border: "none", background: "transparent", padding: "4px 6px", borderRadius: 8, fontFamily: "inherit", fontSize: 14, fontWeight: 700, color: "var(--dz-indigo)", cursor: "pointer" }}
+            >
+              {c.label}
+            </button>
+          ) : (
+            <span aria-current="page" style={{ padding: "4px 6px", fontSize: 14, fontWeight: 800, color: "var(--dz-ink)" }}>{c.label}</span>
+          )}
+        </span>
+      ))}
+    </nav>
+  );
+}
+
+function Notice({ title, text }: { title?: string; text: string }) {
+  return (
+    <div style={{ border: "1.5px dashed var(--dz-border)", borderRadius: 13, padding: title ? "40px 16px" : "22px 16px", textAlign: "center" }}>
+      {title ? <div style={{ fontSize: 16, fontWeight: 800, color: "var(--dz-ink)", marginBottom: 6 }}>{title}</div> : null}
+      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--dz-mute)" }}>{text}</div>
+    </div>
+  );
+}
+
+function LandingSkeleton() {
+  return (
+    <div aria-busy="true">
+      <div className="dz-skel" style={{ width: 130, height: 22, borderRadius: 8, marginBottom: 14 }} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 280px), 1fr))", gap: 16, marginBottom: 34 }}>
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div key={i} className="dz-skel" style={{ height: 150, borderRadius: 14 }} />
+        ))}
+      </div>
+      <div className="dz-skel" style={{ width: 110, height: 22, borderRadius: 8, marginBottom: 14 }} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 18 }}>
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div key={i} className="dz-skel" style={{ height: 130, borderRadius: 16 }} />
+        ))}
       </div>
     </div>
   );
@@ -475,5 +782,6 @@ function AssessError({ onRetry }: { onRetry: () => void }) {
 }
 
 export default function AssessmentsPage() {
-  return <AuthGuard><Board /></AuthGuard>;
+  // `useSearchParams` needs a Suspense boundary, or the route bails out of static rendering.
+  return <AuthGuard><Suspense fallback={null}><Board /></Suspense></AuthGuard>;
 }
