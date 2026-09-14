@@ -230,8 +230,10 @@ class StudentsInTheClassCases:
                 )
                 for row in (_row(rows, self.anna), _row(rows, self.boris))
             ],
-            # Anna turned in the practice test and the essay, Boris the essay: 2 and 1 of 3.
-            [(80.0, 1, 2, 66.7), (60.0, 1, 1, 33.3)],
+            # Anna turned in the practice test and the essay, Boris the essay: 2 and 1. Completion is
+            # turned in ÷ (turned in + missing) since #224, and none of these homework has a due date,
+            # so nothing is missing and both read 100 — the turn-in counts are what tell them apart.
+            [(80.0, 1, 2, 100.0), (60.0, 1, 1, 100.0)],
         )
 
     # ── what a student sees, under the class's ranking settings ──────────────────
