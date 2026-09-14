@@ -25,7 +25,10 @@ interface AsgRow {
   status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
   workflow_status?: string | null;
   assessment_homework?: unknown | null;
-  submissions_count?: number;
+  /** The class's active students who have turned it in: SUBMITTED or REVIEWED. Sent to staff only. */
+  turned_in_count?: number;
+  /** The class's active students, the total `turned_in_count` is out of. Taken from the class. */
+  student_count?: number;
 }
 
 function shortDate(iso?: string | null): string {
@@ -46,6 +49,21 @@ function statusInfo(a: AsgRow, staff: boolean): { text: string; overdue: boolean
   }
   const posted = a.published_at || a.created_at;
   return posted ? { text: `Posted ${shortDate(posted)}`, overdue: false } : { text: "No deadline", overdue: false };
+}
+
+/**
+ * Staff's "N / M submitted" under a homework's title: the class's active students who have turned it
+ * in, out of its active students. Null until one has, and when the server sent no count.
+ *
+ * Never `submissions_count`, which counts every submission row: a draft the student never turned in,
+ * work returned for revision, and the work of a student who has since left the class or joined its
+ * teaching team. Nor `members_count` as the total, which counts the teacher and any TA.
+ */
+function submittedLine(a: AsgRow): string | null {
+  if (typeof a.turned_in_count !== "number" || a.turned_in_count <= 0) return null;
+  return typeof a.student_count === "number"
+    ? `${a.turned_in_count} / ${a.student_count} submitted`
+    : `${a.turned_in_count} submitted`;
 }
 
 function hrefFor(classBase: string, a: AsgRow): string {
@@ -81,9 +99,12 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
     enabled: showArchived && staff,
   });
 
-  const rows = (data?.items ?? []) as AsgRow[];
+  // Every row carries the class's student count, the total its "N / M submitted" line is out of.
+  const withStudentCount = (a: AsgRow): AsgRow => ({ ...a, student_count: classroom.student_count });
+  const rows = ((data?.items ?? []) as AsgRow[]).map(withStudentCount);
   const archivedRows = ((Array.isArray(archived.data) ? archived.data : archived.data?.items ?? []) as AsgRow[])
-    .filter((a) => a.status === "ARCHIVED");
+    .filter((a) => a.status === "ARCHIVED")
+    .map(withStudentCount);
 
   return (
     <div className="cr-section space-y-6">
@@ -159,6 +180,7 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
  *  icon · title · badge · date · actions). */
 function RowShell({ classBase, a, index, staff, badge, actions }: { classBase: string; a: AsgRow; index: number; staff: boolean; badge?: React.ReactNode; actions?: React.ReactNode }) {
   const s = statusInfo(a, staff);
+  const submitted = staff ? submittedLine(a) : null;
   return (
     <div className="cr-rowin group flex items-center gap-3 px-3 py-3 transition-colors hover:bg-surface-2" style={{ animationDelay: `${Math.min(index, 14) * 40}ms` }}>
       <span className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -166,8 +188,8 @@ function RowShell({ classBase, a, index, staff, badge, actions }: { classBase: s
       </span>
       <Link href={hrefFor(classBase, a)} className="min-w-0 flex-1">
         <p className="truncate text-[15px] font-bold text-foreground transition-colors group-hover:text-primary">{a.title}</p>
-        {staff && typeof a.submissions_count === "number" && a.submissions_count > 0 && (
-          <p className="mt-0.5 text-xs text-muted-foreground">{a.submissions_count} submitted</p>
+        {submitted && (
+          <p className="mt-0.5 text-xs text-muted-foreground">{submitted}</p>
         )}
       </Link>
       {badge}
