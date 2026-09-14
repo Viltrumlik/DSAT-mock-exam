@@ -111,9 +111,18 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
       ) : (
         <Card className="cr-card">
           <CardHeader title="Grading" description={assignment.category === "HOMEWORK" || kind === "FILE" ? "Manual grading" : "Auto-graded"} />
-          <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`${base}?tab=grading`)}>
-            Open in gradebook
-          </Button>
+          {assignment.status === "DRAFT" ? (
+            // A draft reaches no student, so nothing on it can be handed in or graded yet. A button into
+            // the gradebook opened a list that leaves the draft out or counts the whole class as missing
+            // it; say what comes first instead.
+            <p className="mt-4 text-sm text-muted-foreground">
+              Students cannot see a draft, so there is nothing to grade yet. You publish it on the Assignments tab.
+            </p>
+          ) : (
+            <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`${base}?tab=grading`)}>
+              Open in gradebook
+            </Button>
+          )}
         </Card>
       )}
       {/* Staff only, and only from this branch. The flagged cards carry question prompts,
