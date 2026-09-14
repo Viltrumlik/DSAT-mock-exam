@@ -85,6 +85,33 @@ def is_configured() -> bool:
     return bool(bot_token())
 
 
+#: ``getMe`` answers the same thing for the life of a token, so it is asked once. Keyed by
+#: token so a configuration change during a process's life is not served a stale @name.
+_username_cache: dict[str, str] = {}
+
+
+def get_me() -> TgResult:
+    return _call("getMe", {})
+
+
+def bot_username() -> str:
+    """The bot's ``@name``, needed to build a ``t.me/<bot>?start=…`` deep link.
+
+    Empty when the bot is unreachable, and the caller must treat that as "no deep link"
+    rather than guessing: a link to the wrong @name sends the student to a stranger.
+    """
+    tok = bot_token()
+    if not tok:
+        return ""
+    if tok in _username_cache:
+        return _username_cache[tok]
+    me = get_me()
+    name = str((me.result or {}).get("username") or "").lstrip("@") if me.ok else ""
+    if name:
+        _username_cache[tok] = name
+    return name
+
+
 def _call(method: str, params: dict, *, token: str = "") -> TgResult:
     tok = token or bot_token()
     if not tok:

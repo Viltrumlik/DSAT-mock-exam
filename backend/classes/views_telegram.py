@@ -75,6 +75,39 @@ class ClassroomTelegramJoinView(_TelegramClassroomView):
         return Response(state, status=http.HTTP_200_OK)
 
 
+class ClassroomTelegramBotLinkView(_TelegramClassroomView):
+    """Cut this student a ``/start`` deep link for this class.
+
+    A POST because it mints a single-use credential and spends any earlier one. Throttled
+    with the join endpoint for the same reason: each call is a row and a Bot API round trip.
+    """
+
+    throttle_classes = [TelegramJoinThrottle]
+
+    def post(self, request, classroom_pk):
+        classroom = self.get_classroom()
+        if not tg.is_managed(classroom):
+            return Response(
+                {"detail": "This class has no Telegram group set up yet. Ask your teacher.",
+                 "code": "no_group"},
+                status=http.HTTP_409_CONFLICT,
+            )
+        verdict = tg.eligibility(request.user, classroom)
+        if not verdict.allowed:
+            return Response(
+                {"detail": verdict.message, "code": "not_eligible"},
+                status=http.HTTP_403_FORBIDDEN,
+            )
+        link = tg.start_link(user=request.user, classroom=classroom)
+        if not link:
+            return Response(
+                {"detail": "The Telegram bot is not reachable right now. Try again shortly.",
+                 "code": "telegram_error"},
+                status=http.HTTP_502_BAD_GATEWAY,
+            )
+        return Response({"bot_link": link})
+
+
 class ClassroomTelegramMembersView(_TelegramClassroomView):
     """Staff view: is the group wired up, and who does the site think is in it?"""
 
@@ -218,7 +251,9 @@ class ClassroomTelegramWebhookView(APIView):
         chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
         chat_id = chat.get("id")
         text = str(message.get("text") or "").strip()
-        command = (text.split()[0].lower().split("@", 1)[0]) if text else ""
+        parts = text.split()
+        command = (parts[0].lower().split("@", 1)[0]) if parts else ""
+        payload = parts[1] if len(parts) > 1 else ""
         if chat_id is None or command not in ("/chatid", "/start"):
             return
 
@@ -228,6 +263,13 @@ class ClassroomTelegramWebhookView(APIView):
         if command == "/start":
             if is_group:
                 return  # /start in a group is noise; nobody is opening a DM channel there.
+            frm = message.get("from") if isinstance(message.get("from"), dict) else {}
+            # A payload is the whole point of the deep link: it is the only thing that ties
+            # this chat to a MasterSAT account, because every update the bot receives says
+            # who sent it and nothing about who they are here.
+            if payload:
+                tg.api.send_message(chat_id, tg.handle_start_token(payload, frm))
+                return
             tg.api.send_message(chat_id, self._start_body(message))
             return
 
@@ -257,16 +299,16 @@ class ClassroomTelegramWebhookView(APIView):
             telegram_id = 0
 
         user = (
-            get_user_model().objects.filter(telegram_id=telegram_id).first()
+            get_user_model().objects.filter(telegram_bot_user_id=telegram_id).first()
             if telegram_id
             else None
         )
         if user is None:
             return (
                 "👋 This is the MasterSAT class bot.\n\n"
-                "Connect your Telegram account on the MasterSAT website first (Profile → "
-                "Connect Telegram). After that, open your class and press "
-                "<b>Join Telegram group</b> to get your invite."
+                "Open your class on the MasterSAT website and press <b>Join Telegram "
+                "group</b>. That gives you a button which brings you back here already "
+                "connected, and your invite arrives in this chat."
             )
         name = tg.api.esc((user.first_name or user.username or "").strip())
         return (

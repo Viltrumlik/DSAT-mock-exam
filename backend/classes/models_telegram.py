@@ -96,7 +96,9 @@ class ClassroomTelegramMember(models.Model):
     #: unique constraints below make impossible to reconcile after the fact.
     #:
     #: It is NOT what the identity check compares against. That check reads
-    #: ``ticket.user.telegram_id``, the account the student proved they control.
+    #: ``User.telegram_bot_user_id`` — the Bot API id the student bound by pressing Start on
+    #: their own ``/start`` link. Not ``telegram_id`` next to it, which is the OIDC subject
+    #: from a Telegram sign-in and a different number for the same person.
     telegram_user_id = models.BigIntegerField(null=True, blank=True, db_index=True)
     telegram_username = models.CharField(max_length=64, blank=True, default="")
     telegram_display_name = models.CharField(max_length=200, blank=True, default="")
@@ -221,3 +223,56 @@ class ClassroomTelegramEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.action} {self.user_name or self.telegram_user_id} @ {self.classroom_name}"
+
+
+class TelegramStartToken(models.Model):
+    """One-shot proof that ties a ``/start`` in the bot to the account that asked for it.
+
+    A bot cannot be *told* who somebody is. Every update it receives carries a Bot API user
+    id and nothing else, and that id is in a different namespace from the OIDC subject the
+    site stores when somebody signs in with Telegram — 9-11 digits against 17-19. So the
+    site cannot know a student's bot id in advance, and the ticket's identity check had
+    nothing real to compare against.
+
+    The way to learn it is to be shown it. The student presses Join, the site cuts a random
+    token, and hands them ``https://t.me/<bot>?start=<token>``. When they open it the bot
+    gets that token *and* the Bot API id of whoever pressed Start, in one update — which is
+    exactly the binding, made by the person themselves. From then on the invite goes out
+    over that DM, to an account the site has watched identify itself.
+
+    Short-lived and single-use because it is a credential: whoever opens it first is bound.
+    It is only ever shown to the authenticated student on their own screen, the same trust
+    the invite link itself rests on.
+    """
+
+    #: Telegram's ``/start`` payload allows at most 64 characters of ``A-Za-z0-9_-``, which
+    #: rules out a signed Django token — those are far longer. So the token is opaque and
+    #: the meaning lives in this row.
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="telegram_start_tokens"
+    )
+    #: What to do once they are bound: mint this class's invite and send it in the same
+    #: chat. Null for a link that only binds the account.
+    classroom = models.ForeignKey(
+        "classes.Classroom", on_delete=models.CASCADE, null=True, blank=True,
+        related_name="telegram_start_tokens",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    #: The account that actually opened it. Kept even when the binding is refused (because
+    #: another site account already holds that bot id), since that is the interesting case.
+    telegram_user_id = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        db_table = "classroom_telegram_start_tokens"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"start token for user {self.user_id} ({'used' if self.used_at else 'open'})"
+
+    def is_open(self, now=None) -> bool:
+        from django.utils import timezone as _tz
+
+        return self.used_at is None and self.expires_at > (now or _tz.now())

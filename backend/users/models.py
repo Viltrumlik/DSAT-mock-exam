@@ -142,12 +142,28 @@ class User(AbstractUser):
         db_index=True,
         help_text="E.164-style or local digits; optional, unique when set (e.g. for Telegram users).",
     )
+    #: The subject of an ``oauth.telegram.org`` OIDC login — NOT a Bot API user id, however
+    #: much the name suggests otherwise. Telegram issues this per application and it arrives
+    #: 17-19 digits long, where a Bot API id is 9-11. The two never match, and treating them
+    #: as one thing is what made every ticketed group join fail as an identity mismatch.
+    #: This column is the sign-in identity; ``telegram_bot_user_id`` below is the bot one.
     telegram_id = models.BigIntegerField(
         null=True,
         blank=True,
         unique=True,
         db_index=True,
-        help_text="Telegram user id when linked or signed up via Telegram.",
+        help_text="OIDC subject from Telegram sign-in. NOT the Bot API user id — see telegram_bot_user_id.",
+    )
+    #: What the Bot API calls this person: the ``id`` in every ``message.from`` and
+    #: ``chat_member`` update. Learned one way only — the person opens the bot on a
+    #: single-use ``/start`` deep link cut for their account — because a bot cannot be told
+    #: who somebody is, it can only be shown.
+    telegram_bot_user_id = models.BigIntegerField(
+        null=True,
+        blank=True,
+        unique=True,
+        db_index=True,
+        help_text="Telegram Bot API user id, learned when this person opens the bot from their own /start link.",
     )
     last_password_change = models.DateTimeField(
         null=True,

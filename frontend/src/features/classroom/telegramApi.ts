@@ -20,6 +20,12 @@ export interface TelegramGroupState {
   managed: boolean;
   /** The legacy static invite link. Still shown for classes that have only this. */
   group_url: string;
+  /**
+   * True once the **bot** has met this student — they opened it on their own `/start` link
+   * and it recorded which Telegram account pressed Start. Not the same thing as having
+   * signed in with Telegram: that gives the site an OIDC subject, which is a different
+   * number from the one the bot sees at the group door.
+   */
   telegram_linked: boolean;
   status: TelegramMemberStatus;
   removed_reason: TelegramRemovalReason;
@@ -43,4 +49,7 @@ export const telegramGroupApi = {
     (await api.get(`${base(classId)}/`)).data,
   join: async (classId: number): Promise<TelegramGroupState> =>
     (await api.post(`${base(classId)}/join/`, {})).data,
+  /** A single-use `t.me/<bot>?start=…` that introduces this student to the bot. */
+  botLink: async (classId: number): Promise<{ bot_link: string }> =>
+    (await api.post(`${base(classId)}/bot-link/`, {})).data,
 };

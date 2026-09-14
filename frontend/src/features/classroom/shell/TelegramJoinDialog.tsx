@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, Copy, ExternalLink, Send, ShieldCheck } from "lucide-react";
 
-import TelegramLoginButton from "@/components/TelegramLoginButton";
-import { usersApi } from "@/lib/api";
 import { Button, Dialog, ErrorState, Spinner } from "../ui";
-import { useJoinTelegramGroup, useTelegramGroup } from "../telegramHooks";
+import { useJoinTelegramGroup, useTelegramBotLink, useTelegramGroup } from "../telegramHooks";
 import type { TelegramGroupState } from "../telegramApi";
 
 /**
@@ -16,9 +14,15 @@ import type { TelegramGroupState } from "../telegramApi";
  * them and the two must not be able to drift: a page that promises one thing while the bot
  * does another is worse than a page that says nothing.
  *
- * Three steps, and the student is only ever shown the one they are on — connect Telegram,
- * read what the link is, take the link. Nothing here removes anybody or explains a removal
- * after the fact; that arrives as a notification, because by then they are not on this page.
+ * Two steps, and the student is only ever shown the one they are on — meet the bot, then
+ * take the link. Meeting the bot is not a formality: every update the bot receives says
+ * which Telegram account sent it and nothing about who that is here, so until somebody
+ * presses Start on a link cut for their account, the site cannot recognise them at the
+ * group door. That handshake is also what makes the invite deliverable, since a bot may
+ * only message people who have messaged it first.
+ *
+ * Nothing here removes anybody or explains a removal after the fact; that arrives as a
+ * notification, because by then they are not on this page.
  */
 
 function Rules({ rules }: { rules: string[] }) {
@@ -94,33 +98,17 @@ export function TelegramJoinDialog({
 }) {
   const { data: state, isLoading, isError, refetch } = useTelegramGroup(classId, open);
   const join = useJoinTelegramGroup(classId);
-  const [cfg, setCfg] = useState<{ startUrl: string | null; botUsername: string | null } | null>(
-    null,
-  );
+  const botLink = useTelegramBotLink(classId);
+  const { mutate: mintBotLink } = botLink;
+  const needsBot = Boolean(state?.eligible && !state.telegram_linked);
 
-  // Fetched when the dialog opens, not on every classroom render: it is a network call to
-  // learn a button's href and a bot's @name, and most visits to a class never touch this.
+  // Minted as soon as we know they need one, so the step is a single tap rather than
+  // "press this to reveal a button". Guarded on `open` because the token is single-use and
+  // spends its predecessor: cutting one per render would leave a trail of dead links.
   useEffect(() => {
-    if (!open || cfg) return;
-    let cancelled = false;
-    usersApi
-      .getTelegramWidgetConfig()
-      .then((c) => {
-        if (cancelled) return;
-        setCfg({
-          startUrl: c.enabled ? c.start_url : null,
-          botUsername: (c.bot_username || "").replace(/^@/, "") || null,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setCfg({ startUrl: null, botUsername: null });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, cfg]);
-  const startUrl = cfg?.startUrl ?? null;
-  const botUsername = cfg?.botUsername ?? null;
+    if (!open || !needsBot) return;
+    mintBotLink();
+  }, [open, needsBot, mintBotLink]);
 
   const joinError = join.error as { response?: { data?: { detail?: string } } } | null;
   const errorMessage = joinError?.response?.data?.detail ?? "";
@@ -178,21 +166,27 @@ export function TelegramJoinDialog({
           {state.eligible && !state.telegram_linked && (
             <div className="rounded-xl border border-border bg-surface-2 p-4">
               <p className="text-[13px] font-semibold text-foreground">
-                Step 1 — connect your Telegram
+                Step 1 — open the MasterSAT bot
               </p>
               <p className="mt-1 text-[12px] text-muted-foreground">
-                You will come straight back here afterwards.
+                Press <b>Start</b> there once. The bot learns which Telegram account is yours,
+                and your invite arrives in that chat — you do not need to come back here.
               </p>
               <div className="mt-3">
-                {startUrl ? (
-                  <TelegramLoginButton
-                    startUrl={startUrl}
-                    next={`/classes/${classId}`}
-                    label="Connect Telegram"
-                  />
+                {botLink.isPending && !botLink.data ? (
+                  <Spinner className="h-5 w-5 text-primary" />
+                ) : botLink.data?.bot_link ? (
+                  <a
+                    href={botLink.data.bot_link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ds-ring inline-flex items-center gap-1.5 rounded-xl bg-[#2AABEE] px-3.5 py-2 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
+                  >
+                    <ExternalLink className="h-[15px] w-[15px]" aria-hidden /> Open the bot
+                  </a>
                 ) : (
                   <p className="text-[12px] text-muted-foreground">
-                    Telegram sign-in is not available right now. Please try again later.
+                    The Telegram bot cannot be reached right now. Please try again shortly.
                   </p>
                 )}
               </div>
@@ -211,25 +205,8 @@ export function TelegramJoinDialog({
               <p className="mt-1 text-[12px] text-muted-foreground">
                 {state.status === "JOINED"
                   ? "You are already in the group. Get a new link only if you have left it."
-                  : "Press below and the bot will cut you a single-use invite."}
+                  : "Press below and the bot will cut you a single-use invite, here and in your Telegram chat with it."}
               </p>
-              {/* A bot may only message somebody who has messaged it first, so until the
-                  student opens this chat every DM we send them — their invite, the note
-                  explaining why they came out of the group — silently fails. */}
-              {botUsername && (
-                <p className="mt-1.5 text-[12px] text-muted-foreground">
-                  Say hello to{" "}
-                  <a
-                    href={`https://t.me/${botUsername}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-semibold text-primary underline-offset-2 hover:underline"
-                  >
-                    @{botUsername}
-                  </a>{" "}
-                  once and it can send your invites and group news to Telegram as well.
-                </p>
-              )}
               <div className="mt-3">
                 <Button
                   variant="primary"

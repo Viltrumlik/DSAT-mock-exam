@@ -20,13 +20,18 @@ from rest_framework.test import APIClient
 from access import constants as C
 from classes import telegram_group as tg
 from classes.models import Classroom, ClassroomMembership
-from classes.models_telegram import ClassroomTelegramEvent, ClassroomTelegramMember
+from classes.models_telegram import (
+    ClassroomTelegramEvent,
+    ClassroomTelegramMember,
+    TelegramStartToken,
+)
 from notifications.models import Notification
 
 User = get_user_model()
 
 CHAT = "-1001234567890"
 BOT_ID = 777
+BOT_USERNAME = "MasterSATTestBot"
 TOKEN = f"{BOT_ID}:TESTTOKEN"
 
 
@@ -56,6 +61,9 @@ class FakeTelegram:
 
     def get_chat(self, chat_id):
         return tg.api.TgResult(True, {"title": "Junior G15 English"})
+
+    def get_me(self):
+        return tg.api.TgResult(True, {"id": BOT_ID, "is_bot": True, "username": BOT_USERNAME})
 
     def get_chat_member_count(self, chat_id):
         return tg.api.TgResult(True, len([k for k in self.members if k[0] == str(chat_id)]))
@@ -91,6 +99,7 @@ class FakeTelegram:
             "classes.telegram_group_api",
             get_chat_member=self.get_chat_member,
             get_chat=self.get_chat,
+            get_me=self.get_me,
             get_chat_member_count=self.get_chat_member_count,
             create_one_time_invite_link=self.create_one_time_invite_link,
             revoke_invite_link=self.revoke_invite_link,
@@ -122,6 +131,9 @@ class TelegramGroupBase(TestCase):
         # The join throttle counts through the shared cache, which outlives a test. Without
         # this the third test in a class starts already rate-limited.
         cache.clear()
+        # `bot_username()` memoises per token and the token is the same in every test here,
+        # so one run's fake @name would outlive it.
+        tg.api._username_cache.clear()
         self.tg = FakeTelegram()
         self._patch = self.tg.patches()
         self._patch.start()
@@ -132,8 +144,8 @@ class TelegramGroupBase(TestCase):
         self.teacher = User.objects.create_user(
             "tg_teacher@t.com", "secret123", role=C.ROLE_TEACHER, subject=C.DOMAIN_ENGLISH
         )
-        self.student = User.objects.create_user("tg_s1@t.com", "secret123", telegram_id=1001)
-        self.other = User.objects.create_user("tg_s2@t.com", "secret123", telegram_id=1002)
+        self.student = User.objects.create_user("tg_s1@t.com", "secret123", telegram_bot_user_id=1001)
+        self.other = User.objects.create_user("tg_s2@t.com", "secret123", telegram_bot_user_id=1002)
 
         self.classroom = Classroom.objects.create(
             name="Junior G15 English",
@@ -180,8 +192,8 @@ class IssueInviteTests(TelegramGroupBase):
         )
 
     def test_unlinked_telegram_is_refused_before_any_api_call(self):
-        self.student.telegram_id = None
-        self.student.save(update_fields=["telegram_id"])
+        self.student.telegram_bot_user_id = None
+        self.student.save(update_fields=["telegram_bot_user_id"])
         self.client.force_authenticate(user=self.student)
         r = self.client.post(self.join_url(), {}, format="json")
         self.assertEqual(r.status_code, 409)
@@ -221,7 +233,7 @@ class IssueInviteTests(TelegramGroupBase):
         self.assertEqual(self.tg.links, [])
 
     def test_a_non_member_cannot_get_a_link(self):
-        outsider = User.objects.create_user("tg_out@t.com", "secret123", telegram_id=1009)
+        outsider = User.objects.create_user("tg_out@t.com", "secret123", telegram_bot_user_id=1009)
         self.client.force_authenticate(user=outsider)
         r = self.client.post(self.join_url(), {}, format="json")
         self.assertIn(r.status_code, (403, 404))
@@ -340,8 +352,8 @@ class JoinVerificationTests(TelegramGroupBase):
 
     def test_a_teacher_is_never_removed(self):
         """Even a teacher who is in no class group row and holds no ticket."""
-        self.teacher.telegram_id = 2001
-        self.teacher.save(update_fields=["telegram_id"])
+        self.teacher.telegram_bot_user_id = 2001
+        self.teacher.save(update_fields=["telegram_bot_user_id"])
         ClassroomMembership.objects.filter(
             classroom=self.classroom, user=self.teacher
         ).update(status=ClassroomMembership.STATUS_REMOVED)
@@ -445,8 +457,8 @@ class FreezeTests(TelegramGroupBase):
 
     def test_freezing_a_teacher_removes_nobody(self):
         """Rule 2 again, at the freeze end: only students are ever taken out."""
-        self.teacher.telegram_id = 2001
-        self.teacher.save(update_fields=["telegram_id"])
+        self.teacher.telegram_bot_user_id = 2001
+        self.teacher.save(update_fields=["telegram_bot_user_id"])
         ClassroomTelegramMember.objects.create(
             classroom=self.classroom, user=self.teacher, telegram_user_id=2001,
             status=ClassroomTelegramMember.STATUS_JOINED,
@@ -791,7 +803,7 @@ class SharedGroupTests(TelegramGroupBase):
             telegram_chat_id=CHAT,  # the same group
         )
         self.second_student = User.objects.create_user(
-            "tg_s3@t.com", "secret123", telegram_id=1003
+            "tg_s3@t.com", "secret123", telegram_bot_user_id=1003
         )
         ClassroomMembership.objects.create(
             classroom=self.second, user=self.second_student,
@@ -864,8 +876,8 @@ class AdoptionTicketTests(TelegramGroupBase):
         self.assertEqual(self.row(self.student).invite_link, "")
 
     def test_a_teacher_who_walks_in_is_recorded_as_known_not_a_stranger(self):
-        self.teacher.telegram_id = 2001
-        self.teacher.save(update_fields=["telegram_id"])
+        self.teacher.telegram_bot_user_id = 2001
+        self.teacher.save(update_fields=["telegram_bot_user_id"])
         ClassroomMembership.objects.filter(
             classroom=self.classroom, user=self.teacher
         ).update(status=ClassroomMembership.STATUS_REMOVED)
@@ -953,6 +965,187 @@ class FailedRemovalTests(TelegramGroupBase):
         )
 
 
+class BotDeepLinkTests(TelegramGroupBase):
+    """How the site learns a person's Bot API id, which is the only identity that counts at
+    the group door.
+
+    It cannot be looked up. ``User.telegram_id`` holds the subject of an
+    ``oauth.telegram.org`` sign-in — a different number for the same human, 17-19 digits
+    against 9-11 — and comparing the two rejected every genuine join the feature ever saw.
+    So the student is handed a single-use ``/start`` link, and pressing Start in Telegram is
+    the introduction: that one update carries the token and the Bot API id together.
+    """
+
+    def bot_link_url(self):
+        return f"/api/classes/{self.classroom.pk}/telegram/bot-link/"
+
+    def mint_link(self, user):
+        self.client.force_authenticate(user=user)
+        r = self.client.post(self.bot_link_url(), {}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()["bot_link"]
+
+    def start(self, telegram_id, payload="", first_name="Aziz"):
+        text = f"/start {payload}".strip()
+        return self.client.post(
+            "/api/classes/telegram/webhook/",
+            {
+                "message": {
+                    "chat": {"id": telegram_id, "type": "private"},
+                    "from": {"id": telegram_id, "first_name": first_name},
+                    "text": text,
+                }
+            },
+            format="json",
+            HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN="s3cr3t",
+        )
+
+    def unbound(self):
+        """A student the bot has never met — the state every real student starts in."""
+        self.student.telegram_bot_user_id = None
+        self.student.save(update_fields=["telegram_bot_user_id"])
+
+    def test_the_link_points_at_this_bot_and_carries_a_token(self):
+        self.unbound()
+        url = self.mint_link(self.student)
+        self.assertTrue(url.startswith(f"https://t.me/{BOT_USERNAME}?start="))
+        token = url.split("start=")[1]
+        # Telegram truncates a /start payload past 64 characters, silently.
+        self.assertLessEqual(len(token), 64)
+        row = TelegramStartToken.objects.get(token=token)
+        self.assertEqual(row.user_id, self.student.pk)
+        self.assertEqual(row.classroom_id, self.classroom.pk)
+        self.assertTrue(row.is_open())
+
+    def test_pressing_start_binds_the_account_and_sends_the_invite(self):
+        self.unbound()
+        token = self.mint_link(self.student).split("start=")[1]
+
+        self.start(1001, payload=token)
+
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.telegram_bot_user_id, 1001)
+        self.assertIsNotNone(TelegramStartToken.objects.get(token=token).used_at)
+        # One invite, sent to the chat that just identified itself.
+        self.assertEqual(len(self.tg.links), 1)
+        sent = " ".join(body for chat, body in self.tg.messages if chat == "1001")
+        self.assertIn(self.tg.links[0], sent)
+
+    def test_and_then_the_door_opens(self):
+        """End to end: the bug that started all this. Bind, take the ticket, walk in."""
+        self.unbound()
+        # A Telegram sign-in has also happened, leaving an OIDC subject on the account. It
+        # must have no bearing on the check at the door.
+        self.student.telegram_id = 2717500225591788993
+        self.student.save(update_fields=["telegram_id"])
+
+        token = self.mint_link(self.student).split("start=")[1]
+        self.start(1001, payload=token)
+        link = self.tg.links[0]
+
+        self.tg.join(1001)
+        outcome = tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1001}, invite_link=link)
+        )
+
+        self.assertEqual(outcome, "joined")
+        self.assertEqual(self.tg.kicked, [])
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_JOINED)
+
+    def test_a_token_works_once(self):
+        self.unbound()
+        token = self.mint_link(self.student).split("start=")[1]
+        self.start(1001, payload=token)
+        self.tg.messages.clear()
+
+        self.start(9999, payload=token)
+
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.telegram_bot_user_id, 1001)  # unmoved
+        self.assertIn("already been used", self.tg.messages[-1][1])
+
+    def test_minting_a_second_link_kills_the_first(self):
+        """Two live tokens means two accounts can bind, and only one is holding the screen."""
+        self.unbound()
+        first = self.mint_link(self.student).split("start=")[1]
+        self.mint_link(self.student)
+
+        self.start(9999, payload=first)
+
+        self.student.refresh_from_db()
+        self.assertIsNone(self.student.telegram_bot_user_id)
+        self.assertIn("already been used", self.tg.messages[-1][1])
+
+    def test_an_expired_token_is_refused(self):
+        self.unbound()
+        token = self.mint_link(self.student).split("start=")[1]
+        TelegramStartToken.objects.filter(token=token).update(
+            expires_at=timezone.now() - timedelta(minutes=1)
+        )
+        self.start(1001, payload=token)
+        self.student.refresh_from_db()
+        self.assertIsNone(self.student.telegram_bot_user_id)
+        self.assertIn("expired", self.tg.messages[-1][1])
+
+    def test_a_telegram_account_already_bound_elsewhere_is_refused(self):
+        """`telegram_bot_user_id` is unique, so the alternative to refusing is a 500 — and
+        the honest reading is that somebody is holding the wrong phone."""
+        self.unbound()
+        token = self.mint_link(self.student).split("start=")[1]
+
+        self.start(1002, payload=token)  # 1002 is self.other's account
+
+        self.student.refresh_from_db()
+        self.other.refresh_from_db()
+        self.assertIsNone(self.student.telegram_bot_user_id)
+        self.assertEqual(self.other.telegram_bot_user_id, 1002)
+        self.assertIn("different MasterSAT account", self.tg.messages[-1][1])
+        self.assertEqual(self.tg.links, [])
+
+    def test_a_frozen_student_is_bound_but_gets_no_link(self):
+        """The binding is about identity; the invite is about eligibility. Refusing the
+        first would leave them unreachable by the message explaining the second."""
+        self.unbound()
+        token = self.mint_link(self.student).split("start=")[1]
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+
+        self.start(1001, payload=token)
+
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.telegram_bot_user_id, 1001)
+        self.assertEqual(self.tg.links, [])
+        self.assertIn("frozen", self.tg.messages[-1][1].lower())
+
+    def test_a_student_already_in_the_group_is_told_so(self):
+        self.unbound()
+        token = self.mint_link(self.student).split("start=")[1]
+        self.tg.join(1001)
+
+        self.start(1001, payload=token)
+
+        self.assertEqual(self.tg.links, [])
+        self.assertIn("already in the", self.tg.messages[-1][1])
+
+    def test_a_frozen_student_cannot_even_mint_the_link(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+        # Straight to the column above, so the freeze hook stays out of this test — but the
+        # request is then authenticated with an object that predates the write, and the
+        # permission class reads `request.user`. Refresh or the test proves nothing.
+        self.student.refresh_from_db()
+        self.client.force_authenticate(user=self.student)
+        r = self.client.post(self.bot_link_url(), {}, format="json")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(TelegramStartToken.objects.count(), 0)
+
+    def test_a_class_with_no_group_offers_no_link(self):
+        self.classroom.telegram_chat_id = ""
+        self.classroom.save(update_fields=["telegram_chat_id"])
+        self.client.force_authenticate(user=self.student)
+        r = self.client.post(self.bot_link_url(), {}, format="json")
+        self.assertEqual(r.status_code, 409)
+        self.assertEqual(r.json()["code"], "no_group")
+
+
 class BotDirectMessageTests(TelegramGroupBase):
     """`/start` is what opens the DM channel — a bot may not message anyone first."""
 
@@ -983,7 +1176,7 @@ class BotDirectMessageTests(TelegramGroupBase):
 
     def test_an_unknown_account_is_told_to_connect_first(self):
         self._start(987654)
-        self.assertIn("Connect your Telegram", self.tg.messages[-1][1])
+        self.assertIn("Join Telegram", self.tg.messages[-1][1])
 
     def test_the_bot_never_hands_out_a_link_over_dm(self):
         """Joining is decided on the classroom page, where the checks are."""
