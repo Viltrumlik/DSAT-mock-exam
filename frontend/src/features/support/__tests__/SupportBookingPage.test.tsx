@@ -42,7 +42,10 @@ const today = new Date();
 const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
 
 function hour(d: Date, h: number, state: SupportHour["state"], note = ""): SupportHour {
-  return { starts_at: at(d, h), ends_at: at(d, h + 1), state, capacity: 1, seats_left: 1, note };
+  return {
+    starts_at: at(d, h), ends_at: at(d, h + 1), state, capacity: 1, seats_left: 1, note,
+    availability_id: state === "open" ? 500 + h : null, booking_id: null,
+  };
 }
 
 const CALENDAR: SupportCalendar = {
