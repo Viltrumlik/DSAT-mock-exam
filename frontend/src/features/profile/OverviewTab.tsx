@@ -305,7 +305,9 @@ function GoalPanel({
                     href={resultHref(a)}
                     className="ds-ring inline-flex items-center gap-1 rounded-md text-[12.5px] font-bold text-primary no-underline after:absolute after:inset-0 after:content-[''] dark:text-primary-hover"
                   >
-                    Review
+                    {/* The word only where there is room for it; on a phone the arrow says it, and the
+                        link keeps "Review" as its name either way. */}
+                    <span className="sr-only sm:not-sr-only">Review</span>
                     <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
                   </Link>
                 </li>
@@ -489,7 +491,7 @@ function HomeworkPanel({ homework, onRetry }: { homework: Load<HomeworkRow[]>; o
                   >
                     <span
                       className={cn(
-                        "inline-flex w-[108px] shrink-0 items-center justify-center rounded-full px-2 py-1 text-[11.5px] font-extrabold",
+                        "hidden w-[108px] shrink-0 items-center justify-center rounded-full px-2 py-1 text-[11.5px] font-extrabold sm:inline-flex",
                         DUE_TONE[due.tone],
                       )}
                     >
@@ -497,8 +499,12 @@ function HomeworkPanel({ homework, onRetry }: { homework: Load<HomeworkRow[]>; o
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13.5px] font-bold text-foreground">{row.title || "Homework"}</p>
-                      <p className="truncate text-[12px] font-medium text-muted-foreground">
-                        {[row.classroom_name, size].filter(Boolean).join(" · ")}
+                      <p className="flex min-w-0 items-center gap-1.5 text-[12px] font-medium text-muted-foreground">
+                        {/* On a phone the due date moves under the title, so the title keeps the width. */}
+                        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold sm:hidden", DUE_TONE[due.tone])}>
+                          {due.text}
+                        </span>
+                        <span className="truncate">{[row.classroom_name, size].filter(Boolean).join(" · ")}</span>
                       </p>
                     </div>
                     <ArrowRight

@@ -166,7 +166,7 @@ export function DevicesSection() {
                       type="button"
                       onClick={() => void signOutOne(session)}
                       disabled={busyId === session.id || busyOthers || leaving}
-                      className={pill("quiet", "rose", "sm")}
+                      className={cn(pill("quiet", "rose", "sm"), "self-start sm:self-auto")}
                     >
                       <LogOut className="h-3.5 w-3.5" aria-hidden />
                       {busyId === session.id ? "Signing out…" : "Sign out"}
