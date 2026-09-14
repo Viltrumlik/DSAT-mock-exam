@@ -119,7 +119,9 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
               Students cannot see a draft, so there is nothing to grade yet. You publish it on the Assignments tab.
             </p>
           ) : (
-            <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`${base}?tab=grading`)}>
+            // Straight to this homework's grades. The gradebook's list leaves archived homework out, so on an
+            // archived homework's page the list alone was a dead end.
+            <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`${base}?tab=grading&assignment=${assignment.id}`)}>
               Open in gradebook
             </Button>
           )}

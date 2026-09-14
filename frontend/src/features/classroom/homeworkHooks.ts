@@ -12,7 +12,9 @@ const keys = {
 export function useAssignment(classId: number, assignmentId: number) {
   return useQuery({
     queryKey: keys.assignment(classId, assignmentId),
-    queryFn: () => homeworkApi.getAssignment(classId, assignmentId),
+    // Archived homework too: the Assignments tab's archived list opens it here, and without asking the
+    // page read "Assignment not available" for every one of them.
+    queryFn: () => homeworkApi.getAssignment(classId, assignmentId, { includeArchived: true }),
     enabled: enabledId(classId) && enabledId(assignmentId),
   });
 }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ChevronRight, GraduationCap, Sparkles, Bot, User2, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
@@ -43,9 +44,27 @@ function SourceBadge({ autoGraded, label }: { autoGraded: boolean; label: string
     : <Pill tone="neutral"><User2 className="h-3 w-3" /> Manual grading</Pill>;
 }
 
+/**
+ * The homework a link opens the tab on: `?tab=grading&assignment=<id>`, from that homework's own page.
+ * The list leaves archived homework out, so a row of it cannot be the only way in to its grades.
+ */
+function linkedAssignmentId(raw: string | null | undefined): number | null {
+  return raw && /^\d+$/.test(raw) && Number(raw) > 0 ? Number(raw) : null;
+}
+
 export function Gradebook({ classroom }: { classroom: ClassroomWithRole }) {
   const classId = Number(classroom.id);
-  const [openId, setOpenId] = useState<number | null>(null);
+  // `?.`: outside the app router there are no search params at all.
+  const searchParams = useSearchParams();
+  const [openId, setOpenId] = useState<number | null>(() => linkedAssignmentId(searchParams?.get("assignment")));
+  useEffect(() => {
+    // Read once. Left in the address, a refresh after Back would reopen the homework, and switching tabs
+    // would carry it along.
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("assignment")) return;
+    url.searchParams.delete("assignment");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
   return openId
     ? <RosterView classId={classId} assignmentId={openId} onBack={() => setOpenId(null)} />
     : <Overview classId={classId} onOpen={setOpenId} />;
@@ -100,7 +119,7 @@ function Overview({ classId, onOpen }: { classId: number; onOpen: (id: number) =
 type Filter = "ALL" | GradebookStatus;
 
 function RosterView({ classId, assignmentId, onBack }: { classId: number; assignmentId: number; onBack: () => void }) {
-  const { data, isLoading, isError, refetch } = useGradebookAssignment(classId, assignmentId);
+  const { data, isLoading, isError, error, refetch } = useGradebookAssignment(classId, assignmentId);
   const [filter, setFilter] = useState<Filter>("ALL");
 
   const rows = useMemo(() => {
@@ -108,11 +127,31 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
     return filter === "ALL" ? all : all.filter((r) => r.status === filter);
   }, [data, filter]);
 
-  if (isLoading) return <LoadingState label="Loading roster…" />;
-  if (isError || !data) return <ErrorState onRetry={() => refetch()} />;
+  // A link opens this view as well as the list does, so the way back is there while the grades load and
+  // when they cannot be loaded.
+  const back = (
+    <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
+      <ArrowLeft className="h-4 w-4" /> Gradebook
+    </button>
+  );
+  if (isLoading) return <div className="space-y-4">{back}<LoadingState label="Loading grades…" /></div>;
+  if (isError || !data) {
+    return (
+      <div className="space-y-4">
+        {back}
+        {normalizeApiError(error).status === 404
+          // Deleted, or a link to another class's homework: asking again cannot find it either.
+          ? <ErrorState title="Homework not found" message="It may have been deleted, or it belongs to another class." />
+          : <ErrorState onRetry={() => refetch()} />}
+      </div>
+    );
+  }
 
   const a = data.assignment;
   const c = data.counts;
+  // Archived homework is hidden from students, so nothing on it is graded or returned here: work returned
+  // for revision would go to a student who can no longer open it. Archiving promises the grades are kept.
+  const archived = a.status === "ARCHIVED";
   const chips: { key: Filter; label: string; n: number }[] = [
     { key: "ALL", label: "All", n: c.total },
     ...(!a.is_auto_graded ? [{ key: "SUBMITTED" as Filter, label: "Needs grading", n: c.needs_grading }] : []),
@@ -123,13 +162,17 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Gradebook
-      </button>
+      {back}
       <Card>
         <CardHeader
           title={a.title}
-          actions={<SourceBadge autoGraded={a.is_auto_graded} label={a.source_label} />}
+          description={archived ? (
+            <>
+              Archived homework is hidden from students, and its grades are kept.
+              {!a.is_auto_graded && " To grade or return work on it, unarchive it on the Assignments tab."}
+            </>
+          ) : undefined}
+          actions={<>{archived && <Pill tone="neutral">Archived</Pill>}<SourceBadge autoGraded={a.is_auto_graded} label={a.source_label} /></>}
         />
         {a.is_auto_graded && data.performance && (
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -153,7 +196,7 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
           {rows.length === 0 ? (
             <EmptyState icon={Sparkles} title="Nothing here" description="No students in this view." />
           ) : rows.map((r) => (
-            <RosterRowItem key={r.student_id} classId={classId} assignmentId={assignmentId} row={r} autoGraded={a.is_auto_graded} maxScore={a.max_score} />
+            <RosterRowItem key={r.student_id} classId={classId} assignmentId={assignmentId} row={r} autoGraded={a.is_auto_graded} maxScore={a.max_score} readOnly={archived} />
           ))}
         </div>
       </Card>
@@ -161,8 +204,8 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
   );
 }
 
-function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore }: {
-  classId: number; assignmentId: number; row: RosterRow; autoGraded: boolean; maxScore: string | null;
+function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore, readOnly }: {
+  classId: number; assignmentId: number; row: RosterRow; autoGraded: boolean; maxScore: string | null; readOnly: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [score, setScore] = useState(row.grade ?? "");
@@ -172,8 +215,9 @@ function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore }: {
   const ret = useReturnSubmission(classId, assignmentId);
 
   const meta = STATUS_META[row.status];
-  // Manual grading only: a submitted/returned/graded manual row with a submission can be graded.
-  const canGrade = !autoGraded && row.submission_id != null && row.status !== "MISSING";
+  // Manual grading only: a submitted/returned/graded manual row with a submission can be graded, while the
+  // homework is not archived.
+  const canGrade = !readOnly && !autoGraded && row.submission_id != null && row.status !== "MISSING";
 
   async function save() {
     setErr(null);
