@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { parseClassroomList } from "@/lib/criticalApiContract";
 
 /**
@@ -13,12 +14,15 @@ import { parseClassroomList } from "@/lib/criticalApiContract";
  * and fell out of the list. Teachers reach this page too (the teacher shell's profile link
  * is `/profile`), and a teacher-only user was told "No classes yet", while the page still
  * selected their first class and listed its students under "No class selected".
+ *
+ * The tab was rebuilt in quartz (one card per class, classmates beside them); the rule held here
+ * is the same.
  */
 
 const classes = vi.hoisted(() => ({
   list: vi.fn(),
-  listAssignments: vi.fn(),
-  getMySubmission: vi.fn(),
+  myAssignments: vi.fn(),
+  mySchedule: vi.fn(),
   people: vi.fn(),
 }));
 const users = vi.hoisted(() => ({
@@ -26,15 +30,20 @@ const users = vi.hoisted(() => ({
   getTelegramWidgetConfig: vi.fn(),
   listExamDates: vi.fn(),
 }));
-const auth = vi.hoisted(() => ({ getSessions: vi.fn() }));
 
-vi.mock("@/lib/api", () => ({ authApi: auth, classesApi: classes, usersApi: users }));
+vi.mock("@/lib/api", () => ({ authApi: {}, classesApi: classes, usersApi: users }));
 vi.mock("@/features/examsStudent/api", () => ({ examsStudentApi: { getAttempts: async () => ({ items: [] }) } }));
 vi.mock("@/features/rewards/rewardsApi", () => ({ rewardsApi: { me: async () => null } }));
+vi.mock("@/hooks/useMe", () => ({ invalidateMe: vi.fn() }));
+vi.mock("@/components/ToastProvider", () => ({ useToast: () => ({ push: vi.fn() }) }));
+vi.mock("next/link", () => ({
+  default: ({ children, href, className }: { children: React.ReactNode; href: string; className?: string }) => (
+    <a href={href} className={className}>{children}</a>
+  ),
+}));
 // Not on the Classes tab; stubbed so their own data layers stay out of this test.
 vi.mock("@/features/notifications/NotificationPreferencesCard", () => ({ NotificationPreferencesCard: () => null }));
 vi.mock("@/components/EmailVerificationModal", () => ({ EmailVerificationModal: () => null }));
-vi.mock("@/components/TelegramLoginButton", () => ({ default: () => null }));
 
 const { default: ProfilePage } = await import("@/app/(main)/profile/page");
 
@@ -49,6 +58,7 @@ function classRow(id: number, name: string, myRole: string | null) {
     start_date: "2026-09-01",
     join_code: `JOIN${id}`,
     members_count: 3,
+    student_count: 2,
     teacher_details: null,
     my_role: myRole,
   };
@@ -68,9 +78,7 @@ async function tick(until: () => boolean) {
 
 /** The class names on the Classes tab's cards, in order. */
 function listedClasses(): string[] {
-  return [...host.querySelectorAll("button")]
-    .filter((b) => b.textContent?.includes("Teacher:"))
-    .map((b) => b.querySelector("p")?.textContent ?? "");
+  return [...host.querySelectorAll("article[aria-label]")].map((card) => card.querySelector("h3")?.textContent ?? "");
 }
 
 beforeEach(() => {
@@ -91,9 +99,8 @@ beforeEach(() => {
   });
   users.getTelegramWidgetConfig.mockResolvedValue({ enabled: false, bot_username: null, client_id: null, start_url: null });
   users.listExamDates.mockResolvedValue([]);
-  auth.getSessions.mockResolvedValue({ sessions: [] });
-  classes.listAssignments.mockResolvedValue({ items: [] });
-  classes.getMySubmission.mockResolvedValue(null);
+  classes.myAssignments.mockResolvedValue({ count: 0, items: [] });
+  classes.mySchedule.mockResolvedValue({ from: "2026-09-01", to: "2026-09-30", events: [] });
   classes.people.mockResolvedValue([
     { id: 1, role: "TEACHER", user: { id: 1, username: "dilnoza", first_name: "Dilnoza", last_name: "Rashidova" } },
     { id: 2, role: "STUDENT", user: { id: 601, username: "aziza", first_name: "Aziza", last_name: "Karimova" } },
@@ -128,18 +135,29 @@ describe("ProfilePage — the Classes tab", () => {
     host = document.createElement("div");
     document.body.appendChild(host);
     root = createRoot(host);
-    await act(async () => root.render(<ProfilePage />));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ProfilePage />
+        </QueryClientProvider>,
+      ),
+    );
     await tick(() => host.querySelector('[role="tab"]') != null);
 
     const classesTab = [...host.querySelectorAll('[role="tab"]')].find((t) => t.textContent?.includes("Classes"));
+    // The tab carries the count, where the old card said "5 enrolled".
+    expect(classesTab?.textContent).toContain("5");
     await act(async () => (classesTab as HTMLButtonElement).click());
-    await tick(() => host.textContent?.includes("Classmates") === true && host.querySelector(".animate-spin") == null);
+    await tick(() => host.textContent?.includes("Aziza Karimova") === true);
 
     expect(listedClasses()).toEqual(["Geometry", "SAT Math", "Algebra 1", "Statistics", "Reading"]);
-    expect(host.textContent).toContain("5 enrolled");
-    // The class the page opened is on the list, so the classmates card names it.
-    expect(host.textContent).not.toContain("No class selected");
-    expect(host.textContent).toContain("Aziza Karimova");
+    // The class the page opened is on the list, so the classmates panel names it.
+    expect(host.textContent).not.toContain("Choose a class to see who's in it.");
+    const classmates = [...host.querySelectorAll("h3")].find((h) => h.textContent === "Classmates")?.closest("section");
+    expect(classmates?.textContent).toContain("Geometry");
+    // Students only: the teacher is not a classmate.
+    expect(classmates?.textContent).not.toContain("Dilnoza Rashidova");
     expect(classes.people).toHaveBeenCalledWith(3);
   });
 });
