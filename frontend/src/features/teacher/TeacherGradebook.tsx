@@ -1,11 +1,8 @@
 "use client";
 
-import { Gauge, Users, AlertTriangle, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { Gauge, Users, AlertTriangle, ArrowUpRight, ArrowDownRight, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/cn";
-import {
-  Avatar, Card, CardContent, Badge, EmptyState, Skeleton,
-  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
-} from "@/components/ui";
+import { Alert, Avatar, Button, Card, CardContent, Badge, EmptyState, Skeleton } from "@/components/ui";
 import { ChartCard, BarChart } from "@/components/ui/charts";
 import { useGradebook, type Cell, type ClassOption, type GradebookModel } from "./useGradebook";
 
@@ -26,10 +23,20 @@ function cellText(c: Cell): string {
 }
 
 export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption[]; model: GradebookModel } }) {
-  const { status, classes, selectedClassId, setSelectedClassId, loading, model } = useGradebook(preview);
+  const { status, classes, selectedClassId, setSelectedClassId, loading, model, classListError, retryClassList, matrixError, retryMatrix } = useGradebook(preview);
 
   if (status === "booting") return <div className="mx-auto max-w-6xl"><Skeleton className="mb-4 h-10 w-48" /><Skeleton className="h-96 w-full rounded-2xl" /></div>;
   if (status === "unauthenticated") return <div className="mx-auto max-w-md py-16"><Card><CardContent className="py-10 text-center"><p className="ds-h3">Gradebook</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a teacher account.</p></CardContent></Card></div>;
+  if (status === "error") {
+    return (
+      <div className="mx-auto max-w-2xl space-y-3 py-12">
+        <Alert tone="danger" title="Couldn’t load your classes">
+          {classListError?.detail ?? "Your classes and their grades are unchanged — only this page failed to load."}
+        </Alert>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retryClassList}>Try again</Button>
+      </div>
+    );
+  }
   if (status === "empty") return <div className="mx-auto max-w-2xl py-12"><EmptyState icon={Users} title="No classes yet" description="Your gradebook appears once you have a class with assignments." /></div>;
 
   return (
@@ -55,7 +62,8 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
         <Stat icon={AlertTriangle} label="Missing work" value={model?.missingCount ?? "—"} tone={model && model.missingCount > 0 ? "warning" : undefined} />
         <ChartCard title="How is the class distributed?" className="sm:col-span-3 lg:col-span-1">
           {!model || model.distribution.every((d) => d.count === 0) ? (
-            <div className="flex h-[120px] items-center justify-center text-[13px] text-muted-foreground">No graded work yet</div>
+            // With no gradebook loaded there is nothing to say about grades, least of all that there are none.
+            <div className="flex h-[120px] items-center justify-center text-[13px] text-muted-foreground">{model ? "No graded work yet" : "—"}</div>
           ) : (
             <BarChart data={model.distribution} xKey="band" series={[{ key: "count", label: "Students" }]} height={120} />
           )}
@@ -67,6 +75,13 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
         <CardContent className="p-0">
           {loading ? (
             <div className="p-5"><Skeleton className="h-64 w-full rounded-xl" /></div>
+          ) : matrixError ? (
+            <div className="space-y-3 p-5">
+              <Alert tone="danger" title={`Couldn’t load the gradebook for ${classes.find((c) => c.id === selectedClassId)?.name ?? "this class"}`}>
+                {matrixError.detail ?? "Grades and submissions are unchanged — only this view failed to load."}
+              </Alert>
+              <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retryMatrix}>Try again</Button>
+            </div>
           ) : !model || model.students.length === 0 ? (
             <div className="p-5"><EmptyState compact title="No students yet" description="Students and their grades appear here once enrolled." /></div>
           ) : (
