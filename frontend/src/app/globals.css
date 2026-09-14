@@ -193,9 +193,14 @@
   --border: var(--border-subtle);
   --ds-sheen: rgba(255, 255, 255, 0.055);
 
-  --primary: #4b5ce6;
-  --primary-hover: #6e7cf2;
-  --primary-soft: rgba(75, 92, 230, 0.18);
+  /* Blue, as in light mode. This was indigo (#4b5ce6), so every button, tab, link and selected
+     sidebar item turned violet with the theme — the owner: "light modeda blue turibdi dark modeda
+     siyoh rang shuni har yerda blue qiling". The brand blue, lifted a step for the dark: white on
+     #3170d6 is 4.8:1. The hover and the text-on-dark shade is #5b8def, the blue the dashboard
+     already used in the dark (5.1:1 on --card). */
+  --primary: #3170d6;
+  --primary-hover: #5b8def;
+  --primary-soft: rgba(49, 112, 214, 0.18);
   --primary-foreground: #ffffff;
 
   --accent: #38bdf8;
@@ -219,9 +224,9 @@
   --info-foreground: #7dd3fc;
 
   --muted: var(--text-secondary);
-  --ring: rgba(75, 92, 230, 0.5);
+  --ring: rgba(49, 112, 214, 0.5);
 
-  --chart-1: #4b5ce6;
+  --chart-1: #5b8def;
   --chart-2: #38bdf8;
   --chart-3: #34d399;
   --chart-4: #fbbf24;
@@ -371,7 +376,7 @@ optgroup {
 
 .dark .app-bg {
   background:
-    radial-gradient(120% 62% at 50% -12%, rgba(75, 92, 230, 0.20), transparent 62%),
+    radial-gradient(120% 62% at 50% -12%, rgba(49, 112, 214, 0.20), transparent 62%),
     var(--background);
   background-attachment: fixed;
 }
@@ -416,7 +421,7 @@ optgroup {
 }
 
 .dark .ui-card:hover {
-  border-color: rgba(75, 92, 230, 0.3);
+  border-color: rgba(91, 141, 239, 0.3);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -616,7 +621,7 @@ optgroup {
 }
 
 .dark .metric-tile:hover {
-  border-color: rgba(75, 92, 230, 0.25);
+  border-color: rgba(91, 141, 239, 0.25);
   box-shadow: var(--ds-shadow-md);
 }
 
