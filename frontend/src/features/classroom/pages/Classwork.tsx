@@ -152,6 +152,7 @@ function StaffRow({
   classBase,
   index,
   canAward,
+  canDelete,
   archived,
 }: {
   row: StudentClasswork;
@@ -160,6 +161,8 @@ function StaffRow({
   index: number;
   /** `capabilities.canManageClass` — OWNER + TEACHER. Never `isStaff`; classwork XP is minted. */
   canAward: boolean;
+  /** `capabilities.canDeleteAssignment` — OWNER + TEACHER. A TA archives instead. */
+  canDelete: boolean;
   /** Rendered in the archived section: hidden from the class, so no XP is offered on it. */
   archived?: boolean;
 }) {
@@ -194,7 +197,7 @@ function StaffRow({
             )}
             {/* Edit, publish, archive and delete. They lived only on the Assignments list,
                 which classwork no longer appears on — without them here, nothing could. */}
-            <AssignmentRowActions classId={classId} classBase={classBase} row={row} archived={archived} kind="classwork" />
+            <AssignmentRowActions classId={classId} classBase={classBase} row={row} archived={archived} kind="classwork" canDelete={canDelete} />
           </>
         }
       />
@@ -289,6 +292,7 @@ export function Classwork({ classroom }: { classroom: ClassroomWithRole }) {
                 classBase={classBase}
                 index={i}
                 canAward={caps.canManageClass}
+                canDelete={caps.canDeleteAssignment}
               />
             ),
           )}
@@ -323,6 +327,7 @@ export function Classwork({ classroom }: { classroom: ClassroomWithRole }) {
                   classBase={classBase}
                   index={i}
                   canAward={caps.canManageClass}
+                  canDelete={caps.canDeleteAssignment}
                   archived
                 />
               ))}

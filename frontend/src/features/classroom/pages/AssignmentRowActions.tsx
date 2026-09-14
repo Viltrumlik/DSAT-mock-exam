@@ -48,6 +48,7 @@ export function AssignmentRowActions({
   row,
   archived,
   kind = "homework",
+  canDelete,
 }: {
   classId: number;
   classBase: string;
@@ -55,6 +56,8 @@ export function AssignmentRowActions({
   /** Rendered from an archived list, where the row may predate its status being sent. */
   archived?: boolean;
   kind?: RowWorkKind;
+  /** `capabilities.canDeleteAssignment`: an owner or a teacher. A TA archives instead, and the API refuses them a delete. */
+  canDelete: boolean;
 }) {
   const qc = useQueryClient();
   const lc = useAssignmentLifecycle(classId, row.id);
@@ -98,7 +101,9 @@ export function AssignmentRowActions({
         {(row.status === "ARCHIVED" || archived) && (
           <MenuItem icon={RotateCcw} onClick={() => run(lc.unarchive, `“${title}” unarchived.`)}>Unarchive</MenuItem>
         )}
-        <MenuItem icon={Trash2} destructive onClick={() => setConfirmDelete(true)}>Delete</MenuItem>
+        {canDelete && (
+          <MenuItem icon={Trash2} destructive onClick={() => setConfirmDelete(true)}>Delete</MenuItem>
+        )}
       </KebabMenu>
 
       <ConfirmDialog
