@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { classesApi } from "@/lib/api";
 import { subscribeRealtime } from "@/lib/realtime";
 import { capabilitiesFor } from "@/features/classroom/capabilities";
 import { AlertTriangle, Calendar, ChevronRight, ClipboardCheck } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 
 type Row = {
   id: number;
@@ -47,14 +48,32 @@ export default function HomeworkGradingHub({
   homeworkManagementLabel,
 }: Props) {
   const [loading, setLoading] = useState(true);
+  /**
+   * Why the homework did not load. Nothing has loaded, so it takes the list's place: drawn from no
+   * data, the list would say there is nothing to grade.
+   */
   const [error, setError] = useState<string | null>(null);
+  /** Why the latest refresh failed. The homework that did load stays on screen, with this above it. */
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  /** A refresh is running, so "Try again" waits for it rather than starting another. */
+  const [refreshing, setRefreshing] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
+  /** Homework has loaded at least once, so from now on a failure is a failed refresh. */
+  const loaded = useRef(false);
+  /** Refreshes in flight. Realtime events can start several at once. */
+  const refreshesRunning = useRef(0);
 
   const base = basePath.replace(/\/$/, "");
 
   const fetchRows = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
-    setError(null);
+    // Only a load that goes through clears an error. Cleared here, a refresh after a failed load
+    // would show "No assignments to grade yet" for as long as it waited on the server.
+    if (silent) {
+      refreshesRunning.current += 1;
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const all = await classesApi.list();
       // Every class the user may grade in, as the assignment page and the server decide it.
@@ -92,11 +111,21 @@ export default function HomeworkGradingHub({
         return ty - tx;
       });
       setRows(out);
+      loaded.current = true;
+      setError(null);
+      setRefreshError(null);
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      setError(typeof d === "string" ? d : "Could not load homework.");
+      const detail = typeof d === "string" ? d : null;
+      if (loaded.current) setRefreshError(detail ?? "Could not refresh homework.");
+      else setError(detail ?? "Could not load homework.");
     } finally {
-      if (!silent) setLoading(false);
+      if (silent) {
+        refreshesRunning.current -= 1;
+        setRefreshing(refreshesRunning.current > 0);
+      } else {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -184,13 +213,41 @@ export default function HomeworkGradingHub({
         </p>
       </div>
 
-      {error ? (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>
+      {refreshError ? (
+        <div
+          role="status"
+          className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
+          <p>
+            <span className="font-semibold">{refreshError}</span> The list below may be out of date.
+          </p>
+          <button
+            type="button"
+            onClick={() => void fetchRows(true)}
+            disabled={refreshing}
+            className="inline-flex items-center gap-2 rounded-xl border border-amber-300 px-3 py-1.5 text-sm font-bold text-amber-800 hover:bg-amber-100 disabled:cursor-wait disabled:opacity-70"
+          >
+            <RotateCcw className="h-4 w-4" />
+            {refreshing ? "Trying again…" : "Try again"}
+          </button>
+        </div>
       ) : null}
 
       {loading ? (
         <div className="flex justify-center rounded-2xl border border-border bg-card p-12">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        </div>
+      ) : error ? (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={() => void fetchRows()}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300 px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-100"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Try again
+          </button>
         </div>
       ) : empty ? (
         <div className="rounded-2xl border border-border bg-card p-10 text-center">
