@@ -314,6 +314,7 @@ export default function ProfilePage() {
             selectedId={selectedClassId}
             onSelect={setSelectedClassId}
             people={people}
+            selfId={me.id}
             onRetryPeople={() => selectedClassId != null && void loadPeople(selectedClassId)}
           />
         ) : (

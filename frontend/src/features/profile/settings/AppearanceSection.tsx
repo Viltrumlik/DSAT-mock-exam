@@ -56,7 +56,7 @@ export function AppearanceSection() {
     <Panel>
       <PanelHeader icon={Palette} tone="violet" title="Appearance" description="How MasterSAT looks on this device." />
 
-      <div role="radiogroup" aria-label="Theme" className="mt-5 grid gap-3 sm:grid-cols-3">
+      <div role="radiogroup" aria-label="Theme" className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         {CHOICES.map(({ value, label, hint, icon: Icon }) => {
           const selected = current === value;
           return (
@@ -91,7 +91,7 @@ export function AppearanceSection() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[13.5px] font-extrabold text-foreground">{label}</span>
-                  <span className="block truncate text-[12px] font-medium text-muted-foreground">{hint}</span>
+                  <span className="block text-[12px] font-medium leading-snug text-muted-foreground">{hint}</span>
                 </span>
                 <span
                   aria-hidden

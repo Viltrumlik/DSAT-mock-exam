@@ -98,7 +98,7 @@ function ClassCard({
         </div>
       </div>
 
-      <dl className="grid gap-2.5 text-[13px] sm:grid-cols-2">
+      <dl className="grid grid-cols-1 gap-2 text-[13px]">
         <div className="flex min-w-0 items-center gap-2">
           <Avatar src={cls.teacher_details?.profile_image_url} name={teacher ?? "?"} size={26} />
           <div className="min-w-0">
@@ -157,14 +157,20 @@ function ClassCard({
 function ClassmatesPanel({
   cls,
   people,
+  selfId,
   onRetry,
 }: {
   cls: ProfileClass | null;
   people: Load<ClassPerson[]>;
+  /** The student's own id: the list is of classmates, so they are not on it. */
+  selfId: number | null;
   onRetry: () => void;
 }) {
-  const students = people.status === "ready" ? people.data.filter((p) => String(p.role).toUpperCase() === "STUDENT") : [];
-  const shown = students.slice(0, 18);
+  const students =
+    people.status === "ready"
+      ? people.data.filter((p) => String(p.role).toUpperCase() === "STUDENT" && p.user.id !== selfId)
+      : [];
+  const shown = students.slice(0, 12);
 
   return (
     <Panel index={1} className="xl:sticky xl:top-4">
@@ -219,6 +225,7 @@ export function ClassesTab({
   selectedId,
   onSelect,
   people,
+  selfId,
   onRetryPeople,
 }: {
   classes: ProfileClass[];
@@ -226,6 +233,7 @@ export function ClassesTab({
   selectedId: number | null;
   onSelect: (id: number) => void;
   people: Load<ClassPerson[]>;
+  selfId: number | null;
   onRetryPeople: () => void;
 }) {
   if (classes.length === 0) {
@@ -242,8 +250,8 @@ export function ClassesTab({
 
   const selected = classes.find((c) => c.id === selectedId) ?? null;
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-3">
-      <div className="grid gap-4 md:grid-cols-2 xl:col-span-2">
+    <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:col-span-2">
         {classes.map((cls, i) => (
           <ClassCard
             key={cls.id}
@@ -255,7 +263,7 @@ export function ClassesTab({
           />
         ))}
       </div>
-      <ClassmatesPanel cls={selected} people={people} onRetry={onRetryPeople} />
+      <ClassmatesPanel cls={selected} people={people} selfId={selfId} onRetry={onRetryPeople} />
     </div>
   );
 }

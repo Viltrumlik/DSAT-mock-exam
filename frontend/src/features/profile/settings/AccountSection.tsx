@@ -149,7 +149,7 @@ export function AccountSection({ me, onSaved }: { me: ProfileMe; onSaved: (me: P
       </div>
 
       <form onSubmit={save} className="mt-5 flex flex-col gap-5" noValidate>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="First name" htmlFor="acc-first" error={error("first_name")}>
             <Input id="acc-first" autoComplete="given-name" value={draft.first_name} onChange={set("first_name")} invalid={!!error("first_name")} />
           </Field>

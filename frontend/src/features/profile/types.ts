@@ -2,6 +2,7 @@ import type { Classroom } from "@/lib/api";
 
 /** The profile's copy of `/users/me/`: strings where a form edits them, nulls where it doesn't. */
 export interface ProfileMe {
+  id: number | null;
   username: string;
   first_name: string;
   last_name: string;
@@ -22,6 +23,7 @@ const toNumber = (v: unknown): number | null => (typeof v === "number" && Number
 
 export function toProfileMe(me: any): ProfileMe {
   return {
+    id: toNumber(me?.id),
     username: me?.username || "",
     first_name: me?.first_name || "",
     last_name: me?.last_name || "",

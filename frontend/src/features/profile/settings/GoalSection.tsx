@@ -179,7 +179,7 @@ export function GoalSection({
         description="The score you're aiming for, and the SAT date you're working towards."
       />
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
         <SectionSlider
           id="goal-english"
           label="Reading & Writing"
@@ -221,7 +221,7 @@ export function GoalSection({
       <fieldset className="mt-6">
         <legend className="text-[13.5px] font-bold text-foreground">SAT date</legend>
         <p className="mt-0.5 text-[12.5px] font-medium text-muted-foreground">The dates your learning center has opened.</p>
-        <div role="radiogroup" aria-label="SAT date" className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <div role="radiogroup" aria-label="SAT date" className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {examDates.map((option) => {
             const days = daysUntil(option.exam_date);
             return (

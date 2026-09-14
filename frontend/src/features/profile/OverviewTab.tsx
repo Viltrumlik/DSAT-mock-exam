@@ -75,9 +75,13 @@ function StatTile({
       style={{ animationDelay: `${index * 60}ms` }}
     >
       {explain ? (
-        <ExplainButton title={explain.title} side="left" className="absolute right-2.5 top-2.5 z-10">
-          {explain.body}
-        </ExplainButton>
+        // Placed by a wrapper: the button's own root is `relative`, and `cn` does not merge, so
+        // an `absolute` passed in loses to it — on the old tiles the ! sat on top of the icon.
+        <span className="absolute right-2.5 top-2.5 z-10">
+          <ExplainButton title={explain.title} side="left">
+            {explain.body}
+          </ExplainButton>
+        </span>
       ) : null}
       <div className="flex items-center gap-2.5">
         <IconTile icon={icon} tone={tone} size="sm" />
@@ -108,7 +112,7 @@ function StatTiles({ rewards, homework }: { rewards: Load<MyRewards>; homework: 
   const turnedInPct = summary && summary.total > 0 ? Math.round((summary.turnedIn / summary.total) * 100) : null;
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <StatTile
         index={0}
         tone="primary"
@@ -210,7 +214,7 @@ function GoalPanel({
   const results = attempts.status === "ready" ? recentResults(attempts.data) : [];
 
   return (
-    <Panel index={1} className="lg:col-span-2">
+    <Panel index={1} className="lg:col-span-3">
       <PanelHeader
         icon={Target}
         tone="primary"
@@ -223,7 +227,7 @@ function GoalPanel({
         }
       />
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <GoalWell tone="primary" label="Target score" sub={sections}>
           {me.target_score ?? "—"}
           {me.target_score != null ? <span className="ml-1.5 text-base font-bold text-muted-foreground">/ 1600</span> : null}
@@ -355,7 +359,7 @@ function ChecklistPanel({
 
   if (todo.length === 0) {
     return (
-      <Panel index={2}>
+      <Panel index={2} className="lg:col-span-2">
         <PanelHeader
           icon={PartyPopper}
           tone="emerald"
@@ -384,7 +388,7 @@ function ChecklistPanel({
   };
 
   return (
-    <Panel index={2}>
+    <Panel index={2} className="lg:col-span-2">
       <PanelHeader icon={ListChecks} tone="violet" title="Finish your profile" description={`${done.length} of ${items.length} done`} />
       <ul className="mt-4 space-y-2">
         {todo.map((item) => (
@@ -432,7 +436,7 @@ function HomeworkPanel({ homework, onRetry }: { homework: Load<HomeworkRow[]>; o
   const more = summary ? summary.toDo.length - shown.length : 0;
 
   return (
-    <Panel index={3} className="lg:col-span-2">
+    <Panel index={3} className="lg:col-span-3">
       <PanelHeader
         icon={ClipboardCheck}
         tone="amber"
@@ -535,7 +539,7 @@ const PAYMENT_PREVIEW: { icon: LucideIcon; label: string }[] = [
  */
 function PaymentsPanel() {
   return (
-    <Panel index={4} className="overflow-hidden" aria-label="Payments — coming soon">
+    <Panel index={4} className="overflow-hidden lg:col-span-2" aria-label="Payments — coming soon">
       <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", TONE.violet.edge)} />
       <PanelHeader
         icon={Wallet}
@@ -597,7 +601,7 @@ export function OverviewTab({
   return (
     <div className="flex flex-col gap-5">
       <StatTiles rewards={rewards} homework={homework} />
-      <div className="grid items-start gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-5">
         <GoalPanel me={me} attempts={attempts} onOpenSettings={onOpenSettings} onRetryAttempts={onRetryAttempts} />
         <ChecklistPanel
           me={me}
@@ -607,7 +611,7 @@ export function OverviewTab({
           onConfirmEmail={onConfirmEmail}
         />
       </div>
-      <div className="grid items-start gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-5">
         <HomeworkPanel homework={homework} onRetry={onRetryHomework} />
         <PaymentsPanel />
       </div>

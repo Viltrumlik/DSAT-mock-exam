@@ -137,7 +137,7 @@ function PasswordForm({ onDone, onCancel }: { onDone: (signedOut: number, change
   const error = (key: string) => errors[key]?.[0];
 
   return (
-    <form onSubmit={submit} noValidate className={cn("squircle mt-3.5 grid gap-4 p-4 [--sq:11px]", TONE.primary.well)}>
+    <form onSubmit={submit} noValidate className={cn("squircle mt-3.5 grid grid-cols-1 gap-4 p-4 [--sq:11px]", TONE.primary.well)}>
       <Field label="Current password" htmlFor="pw-current" error={error("current_password")}>
         <PasswordInput
           id="pw-current"
@@ -149,7 +149,7 @@ function PasswordForm({ onDone, onCancel }: { onDone: (signedOut: number, change
           invalid={!!error("current_password")}
         />
       </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field
           label="New password"
           htmlFor="pw-new"

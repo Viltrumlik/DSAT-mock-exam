@@ -51,7 +51,7 @@ export function SettingsTab({
   onPasswordChanged: (changedAt: string | null) => void;
 }) {
   return (
-    <div className="grid items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[250px_minmax(0,1fr)]">
       <nav data-settings-nav aria-label="Settings" className="quartz squircle p-2 [--sq:13px] lg:sticky lg:top-4">
         {/* `p-1` is headroom for the focus ring: the row scrolls sideways on a phone, and a
             scrolling box clips whatever pokes past its edge. */}
