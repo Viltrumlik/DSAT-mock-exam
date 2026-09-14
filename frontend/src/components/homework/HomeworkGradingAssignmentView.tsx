@@ -39,7 +39,15 @@ export default function HomeworkGradingAssignmentView({
   const hubHref = basePath.replace(/\/$/, "");
 
   const [loading, setLoading] = useState(true);
+  /**
+   * Why the page did not load: a request failed, or the user's role cannot grade. It takes the lists'
+   * place — drawn from no data, they would say nothing was turned in.
+   */
   const [error, setError] = useState<string | null>(null);
+  /** `error` came from a request that failed, so trying again may work. A retry never turns a refusal round. */
+  const [loadFailed, setLoadFailed] = useState(false);
+  /** A failed save or return. Everything else on the page is still true, so it stays on screen. */
+  const [actionError, setActionError] = useState<string | null>(null);
   const [className, setClassName] = useState("");
   const [assignmentTitle, setAssignmentTitle] = useState("");
   const [assignmentLocksFileUpload, setAssignmentLocksFileUpload] = useState(false);
@@ -54,6 +62,7 @@ export default function HomeworkGradingAssignmentView({
 
   const load = useCallback(async () => {
     setError(null);
+    setLoadFailed(false);
     setLoading(true);
     try {
       const cls = await classesApi.get(classId);
@@ -81,6 +90,7 @@ export default function HomeworkGradingAssignmentView({
     } catch (e: unknown) {
       const d = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
       setError(typeof d === "string" ? d : "Could not load assignment.");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -146,7 +156,7 @@ export default function HomeworkGradingAssignmentView({
       return;
     }
     setSaving(true);
-    setError(null);
+    setActionError(null);
     setSuccess(null);
     try {
       await classesApi.gradeSubmission(Number(selectedSub.id), {
@@ -160,12 +170,12 @@ export default function HomeworkGradingAssignmentView({
     } catch (e: unknown) {
       const ax = e as { response?: { status?: number; data?: { detail?: string } } };
       if (ax.response?.status === 409) {
-        setError("Submission changed. Refreshed.");
+        setActionError("Submission changed. Refreshed.");
         await load();
         return;
       }
       const d = ax.response?.data?.detail;
-      setError(typeof d === "string" ? d : "Could not save grade.");
+      setActionError(typeof d === "string" ? d : "Could not save grade.");
     } finally {
       setSaving(false);
     }
@@ -177,7 +187,7 @@ export default function HomeworkGradingAssignmentView({
       return;
     }
     setSaving(true);
-    setError(null);
+    setActionError(null);
     setSuccess(null);
     try {
       await classesApi.returnSubmission(Number(selectedSub.id), {
@@ -190,12 +200,12 @@ export default function HomeworkGradingAssignmentView({
     } catch (e: unknown) {
       const ax = e as { response?: { status?: number; data?: { detail?: string } } };
       if (ax.response?.status === 409) {
-        setError("Submission changed. Refreshed.");
+        setActionError("Submission changed. Refreshed.");
         await load();
         return;
       }
       const d = ax.response?.data?.detail;
-      setError(typeof d === "string" ? d : "Could not return.");
+      setActionError(typeof d === "string" ? d : "Could not return.");
     } finally {
       setSaving(false);
     }
@@ -265,8 +275,11 @@ export default function HomeworkGradingAssignmentView({
         })()}
       </div>
 
-      {error ? (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>
+      {/* A 409 reloads the page. If that reload fails, "Refreshed." is no longer true. */}
+      {actionError && !error ? (
+        <div role="alert" className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          {actionError}
+        </div>
       ) : null}
       {success ? (
         <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
@@ -277,6 +290,20 @@ export default function HomeworkGradingAssignmentView({
       {loading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        </div>
+      ) : error ? (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          <p>{error}</p>
+          {loadFailed ? (
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-300 px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-100"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Try again
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-12">
