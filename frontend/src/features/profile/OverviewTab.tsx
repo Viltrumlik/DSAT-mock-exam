@@ -214,7 +214,7 @@ function GoalPanel({
   const results = attempts.status === "ready" ? recentResults(attempts.data) : [];
 
   return (
-    <Panel index={1} className="lg:col-span-3">
+    <Panel index={1}>
       <PanelHeader
         icon={Target}
         tone="primary"
@@ -361,7 +361,7 @@ function ChecklistPanel({
 
   if (todo.length === 0) {
     return (
-      <Panel index={2} className="lg:col-span-2">
+      <Panel index={2}>
         <PanelHeader
           icon={PartyPopper}
           tone="emerald"
@@ -390,7 +390,7 @@ function ChecklistPanel({
   };
 
   return (
-    <Panel index={2} className="lg:col-span-2">
+    <Panel index={2}>
       <PanelHeader icon={ListChecks} tone="violet" title="Finish your profile" description={`${done.length} of ${items.length} done`} />
       <ul className="mt-4 space-y-2">
         {todo.map((item) => (
@@ -438,7 +438,7 @@ function HomeworkPanel({ homework, onRetry }: { homework: Load<HomeworkRow[]>; o
   const more = summary ? summary.toDo.length - shown.length : 0;
 
   return (
-    <Panel index={3} className="lg:col-span-3">
+    <Panel index={3}>
       <PanelHeader
         icon={ClipboardCheck}
         tone="amber"
@@ -545,7 +545,7 @@ const PAYMENT_PREVIEW: { icon: LucideIcon; label: string }[] = [
  */
 function PaymentsPanel() {
   return (
-    <Panel index={4} className="overflow-hidden lg:col-span-2" aria-label="Payments — coming soon">
+    <Panel index={4} className="overflow-hidden" aria-label="Payments — coming soon">
       <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", TONE.violet.edge)} />
       <PanelHeader
         icon={Wallet}
@@ -607,19 +607,23 @@ export function OverviewTab({
   return (
     <div className="flex flex-col gap-5">
       <StatTiles rewards={rewards} homework={homework} />
+      {/* Two columns that stack on their own. As two shared rows, a tall checklist left a gap
+          under a short goal card the height of the difference. */}
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-5">
-        <GoalPanel me={me} attempts={attempts} onOpenSettings={onOpenSettings} onRetryAttempts={onRetryAttempts} />
-        <ChecklistPanel
-          me={me}
-          realEmail={realEmail}
-          telegramStartUrl={telegramStartUrl}
-          onOpenSettings={onOpenSettings}
-          onConfirmEmail={onConfirmEmail}
-        />
-      </div>
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-5">
-        <HomeworkPanel homework={homework} onRetry={onRetryHomework} />
-        <PaymentsPanel />
+        <div className="flex min-w-0 flex-col gap-5 lg:col-span-3">
+          <GoalPanel me={me} attempts={attempts} onOpenSettings={onOpenSettings} onRetryAttempts={onRetryAttempts} />
+          <HomeworkPanel homework={homework} onRetry={onRetryHomework} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
+          <ChecklistPanel
+            me={me}
+            realEmail={realEmail}
+            telegramStartUrl={telegramStartUrl}
+            onOpenSettings={onOpenSettings}
+            onConfirmEmail={onConfirmEmail}
+          />
+          <PaymentsPanel />
+        </div>
       </div>
     </div>
   );
