@@ -76,9 +76,48 @@ export function capabilitiesFor(raw: RawRole): Capabilities {
   };
 }
 
-export const ROLE_LABEL: Record<MembershipRole, string> = {
-  OWNER: "Owner",
-  TEACHER: "Teacher",
-  TA: "Teaching Assistant",
-  STUDENT: "Student",
-};
+/**
+ * What a member of the teaching team is called — on the People page and in the class header.
+ *
+ * Named after the person's ACCOUNT, never the membership. The membership role is a permission
+ * tier, not a job title, and read as one it was wrong almost everywhere: an ownership transfer
+ * demotes the admin who made the class to TEACHER and promotes the class's teacher to OWNER,
+ * and a support teacher joins as a TA. On 2026-09-13 prod titled 13 teacher memberships "Owner",
+ * 10 admin memberships and 6 super_admin memberships "Teacher", and 21 support-teacher
+ * memberships "Teaching Assistant". The owner's correction is one title per account role — and
+ * the learning center's owner is the super_admin, so "Owner" is that account's title alone.
+ *
+ * Four titles, the four the owner named. There is no "Teaching assistant": the learning center
+ * has no such job, and a TA membership is how a support teacher sits on a class.
+ *
+ * A label only. What a member may DO still comes from the membership, via `capabilitiesFor`.
+ */
+export type StaffTitle = "Owner" | "Admin" | "Teacher" | "Support teacher";
+
+/** The order the teaching team is listed in: the owner first, then down the house. */
+export const STAFF_TITLE_ORDER: readonly StaffTitle[] = ["Owner", "Admin", "Teacher", "Support teacher"];
+
+export function staffTitle(membershipRole: RawRole, accountRole?: string | null): StaffTitle | null {
+  const role = normalizeRole(membershipRole);
+  if (role == null || role === "STUDENT") return null;
+  switch (String(accountRole ?? "").trim().toLowerCase()) {
+    case "super_admin":
+      return "Owner";
+    case "admin":
+      return "Admin";
+    case "teacher":
+      return "Teacher";
+    case "support_teacher":
+      return "Support teacher";
+  }
+  // An account whose role names no staff job is titled by the seat its membership gives it.
+  // In prod every such TA is support staff whose account has since been set back to student
+  // (working hours, availability and settled bookings all say support teacher). Never "Owner",
+  // whatever the membership says: that title belongs to the super_admin.
+  return role === "TA" ? "Support teacher" : "Teacher";
+}
+
+/** `staffTitle`, or "Student" for a student membership — the class header's "· <title>". */
+export function memberTitle(membershipRole: RawRole, accountRole?: string | null): string | null {
+  return normalizeRole(membershipRole) === "STUDENT" ? "Student" : staffTitle(membershipRole, accountRole);
+}
