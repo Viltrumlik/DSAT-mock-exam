@@ -39,7 +39,12 @@ export function Tabs({
     <div
       // `p-2` is also the headroom the pills' hover lift needs: `overflow-x-auto` makes
       // the other axis scroll too, so a 2px rise with no padding would be clipped.
-      className={cn("quartz flex gap-2 overflow-x-auto rounded-2xl p-2", className)}
+      //
+      // `w-fit`: the block is as wide as its tabs and grows with each one added, rather
+      // than stretching across the whole view — a full-width white bar behind two or three
+      // pills read as an empty panel. `max-w-full` keeps a long bar from running off a
+      // narrow screen: it caps at the column and the row scrolls inside it instead.
+      className={cn("quartz flex w-fit max-w-full gap-2 overflow-x-auto rounded-2xl p-2", className)}
       role="tablist"
     >
       {items.map((t) => {
