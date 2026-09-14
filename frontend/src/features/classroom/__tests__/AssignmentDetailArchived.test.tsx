@@ -1,11 +1,11 @@
 /**
  * An archived homework's own page as the teaching team sees it (`/teacher/classrooms/[id]/assignments/[id]`).
  *
- * The API leaves archived work out of what it gives the teaching team unless the request asks for it
- * with `include_archived`, as the Assignments tab's archived list does. This page never asked, so an
- * archived homework opened from that list read "Assignment not available" and its "Open in gradebook"
- * was never reached. Archiving keeps the grades, but the gradebook's list leaves archived homework out,
- * so the button opens the gradebook on this homework itself.
+ * The API used to leave archived work out of what it gave the teaching team by id, as its list still does
+ * unless the request says `include_archived`. So an archived homework opened from the Assignments tab's
+ * archived list read "Assignment not available" and its "Open in gradebook" was never reached. By id, the
+ * teaching team now gets archived work too. Archiving keeps the grades, but the gradebook's list leaves
+ * archived homework out, so the button opens the gradebook on this homework itself.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -37,7 +37,7 @@ const { AssignmentDetailPage } = await import("../pages/AssignmentDetail");
 
 const BASE = "/teacher/classrooms/34";
 
-/** `GET /api/classes/34/assignments/102/?include_archived=1` for a written homework the class owner archived. */
+/** `GET /api/classes/34/assignments/102/` for a written homework the class owner archived. */
 const ARCHIVED_HOMEWORK = {
   id: 102,
   title: "Unit 3 review",
@@ -52,13 +52,6 @@ const ARCHIVED_HOMEWORK = {
   vocab_homeworks: [],
   external_urls: [],
 };
-
-/** The 404 `get_object_or_404` answers with, as axios rejects with it. */
-function notFound() {
-  return Object.assign(new Error("Request failed with status code 404"), {
-    response: { status: 404, data: { detail: "No Assignment matches the given query." } },
-  });
-}
 
 let host: HTMLElement;
 let root: Root;
@@ -79,15 +72,10 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
-/**
- * Mount the page for the class owner, with the API answering as `AssignmentViewSet` does: the teaching
- * team gets archived work only from a request that says `include_archived=1` (or `true`).
- */
+/** Mount the page for the class owner, with the API answering as `AssignmentViewSet` does: by id, the teaching team gets archived work. */
 async function mount() {
-  get.mockImplementation(async (url: string, config?: { params?: Record<string, unknown> }) => {
+  get.mockImplementation(async (url: string) => {
     if (url !== "/classes/34/assignments/102/") throw new Error(`unexpected GET ${url}`);
-    const asked = ["1", "true"].includes(String(config?.params?.include_archived ?? "").toLowerCase());
-    if (!asked) throw notFound();
     return { data: ARCHIVED_HOMEWORK };
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });

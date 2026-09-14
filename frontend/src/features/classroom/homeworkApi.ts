@@ -92,20 +92,8 @@ export interface MySubmission {
 }
 
 export const homeworkApi = {
-  /**
-   * `includeArchived`: the API gives the teaching team archived homework only when the request asks.
-   * Only a page that just reads the homework asks: saving an edit or deleting it still goes through
-   * routes that leave archived work out. A student is only ever given published work, whatever this says.
-   */
-  getAssignment: async (
-    classId: number,
-    assignmentId: number,
-    opts: { includeArchived?: boolean } = {},
-  ): Promise<AssignmentDetail> =>
-    (await api.get(
-      `/classes/${classId}/assignments/${assignmentId}/`,
-      opts.includeArchived ? { params: { include_archived: 1 } } : undefined,
-    )).data,
+  getAssignment: async (classId: number, assignmentId: number): Promise<AssignmentDetail> =>
+    (await api.get(`/classes/${classId}/assignments/${assignmentId}/`)).data,
   getMySubmission: (classId: number, assignmentId: number): Promise<MySubmission> =>
     classesApi.getMySubmission(classId, assignmentId),
   submit: (classId: number, assignmentId: number, formData: FormData) =>

@@ -1,9 +1,10 @@
-"""What an archived homework's page and its gradebook link rely on. No view changes with these tests.
+"""What an archived homework's page and its gradebook link rely on.
 
-The page asks for the homework with ``include_archived=1``, because the teaching team's queryset leaves
-archived work out unless asked. The gradebook opens its grades by id, because the gradebook's list leaves
-archived work out. A student who asks the same way still gets nothing, and a homework of another class
-is not found. The frontend tests mock exactly these answers, so these tests keep the mocks honest.
+The page asks for the homework by id, where the teaching team gets archived work too
+(``tests_archived_homework_by_id`` covers every by-id route). The gradebook opens its grades by id, because the
+gradebook's list leaves archived work out. A student who asks for archived work still gets nothing, and a
+homework of another class is not found. The frontend tests mock exactly these answers, so these tests keep the
+mocks honest.
 """
 
 from __future__ import annotations
@@ -47,13 +48,13 @@ class ArchivedHomeworkGradesTests(TestCase):
     def _page_url(self):
         return f"/api/classes/{self.classroom.id}/assignments/{self.homework.id}/"
 
-    def test_the_teaching_team_gets_an_archived_homework_when_the_page_asks_for_it(self):
-        resp = self.client.get(self._page_url(), {"include_archived": "1"})
+    def test_the_teaching_team_gets_an_archived_homework_by_id(self):
+        resp = self.client.get(self._page_url())
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["status"], Assignment.STATUS_ARCHIVED)
 
-    def test_a_student_who_asks_the_same_way_still_gets_nothing(self):
+    def test_a_student_who_asks_for_archived_work_still_gets_nothing(self):
         self.client.force_authenticate(self.student)
 
         self.assertEqual(self.client.get(self._page_url(), {"include_archived": "1"}).status_code, 404)
