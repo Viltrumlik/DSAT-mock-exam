@@ -360,6 +360,15 @@ REALTIME_SSE_DB_POLL_EVERY_S = float(os.getenv("REALTIME_SSE_DB_POLL_EVERY_S", "
 # No events are lost: they are persisted and re-fetched via last_id on reconnect.
 REALTIME_SSE_MAX_STREAM_S = float(os.getenv("REALTIME_SSE_MAX_STREAM_S", "25"))
 
+# SSE: whether GET /api/realtime/events/ streams at all. Off unless a deployment opts in with
+# REALTIME_SSE_ENABLED=true; off, the view answers 204 No Content at once (the view says why 204).
+# Each stream holds a sync worker for up to REALTIME_SSE_MAX_STREAM_S and production runs three,
+# so any logged-in user with three tabs, or a loop, could stop the site answering for everyone:
+# the 2026-08-23 freeze. deploy/nginx.conf caps the endpoint at one request at a time: turned on
+# with sync workers, it holds at most one of them and serves one stream at a time. Serve it from
+# async workers, and raise that cap, before relying on it.
+REALTIME_SSE_ENABLED = os.getenv("REALTIME_SSE_ENABLED", "False").lower() == "true"
+
 # ─── Celery (optional in dev; required for scale) ─────────────────────────────
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")
