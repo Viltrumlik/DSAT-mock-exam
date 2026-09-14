@@ -65,14 +65,15 @@ function Overview({ classId, onOpen }: { classId: number; onOpen: (id: number) =
       />
       <div className="mt-4 space-y-2">
         {data.assignments.length === 0 ? (
-          <EmptyState icon={ClipboardList} title="No assignments yet" />
+          // The server leaves drafts out (no student has been given one), so a class whose homework
+          // is all still in draft lands here too.
+          <EmptyState icon={ClipboardList} title="No assignments yet" description="Assignments show up here once they are published." />
         ) : data.assignments.map((a) => (
           <button key={a.id} onClick={() => onOpen(a.id)}
             className="w-full rounded-xl border border-border px-4 py-3 text-left transition-colors hover:bg-surface-2">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 <span className="truncate text-sm font-medium text-foreground">{a.title}</span>
-                {a.status === "DRAFT" && <Pill tone="neutral">Draft</Pill>}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <SourceBadge autoGraded={a.is_auto_graded} label={a.source_label} />
