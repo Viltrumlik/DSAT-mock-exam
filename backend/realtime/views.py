@@ -111,6 +111,13 @@ class RealtimeEventsSSEView(APIView):
     renderer_classes = [EventStreamRenderer, _JSONRenderer]
 
     def get(self, request):
+        if not getattr(settings, "REALTIME_SSE_ENABLED", False):
+            # 204, not 200/404/503. An EventSource treats any non-200 as final, and the HTML spec
+            # names 204 as the way to stop it reconnecting; an empty 200 stream would fire onopen,
+            # which resets lib/realtime.ts's backoff to 1 s. Nor is it an error, so it adds nothing
+            # to 4xx/5xx counts. HttpResponse, not DRF's Response: that renders None through
+            # EventStreamRenderer and sends b"None" as the 204's body.
+            return HttpResponse(status=204)
         user = request.user
         try:
             last_id = int(request.query_params.get("last_id") or 0)
