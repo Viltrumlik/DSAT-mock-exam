@@ -12,9 +12,9 @@ Nothing downstream re-sorts, so this order is a contract:
   homework, and a student's Trend depends on which end of those columns is the newest;
 - ``features/teacher/useGradingQueue.ts`` keeps the first 12 rows of each class.
 
-Their tests serve rows that are already in order. If this order changed, they would stay green
-while the gradebook kept the wrong 12 homework and read each Trend from the wrong end. So it is
-pinned here, for a teacher and for a student:
+A frontend test mocks this list with rows already in order, so it cannot see a change here: the 12
+homework the gradebook keeps, and the direction of every Trend, would change with nothing going
+red. So the order is pinned here, for a teacher and for a student:
 
 1. with nothing published through the action, the newest ``created_at`` comes first;
 2. publishing an old draft floats it to the top, while a homework published a week ago still
