@@ -78,7 +78,9 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
       if (cancelled) return;
       const members = (Array.isArray(peopleRes) ? peopleRes : (peopleRes as { members?: unknown[] }).members ?? (peopleRes as { items?: unknown[] }).items ?? []) as Array<{ role?: string; user?: { id: number; first_name?: string; last_name?: string; email?: string; profile_image_url?: string | null } }>;
       const students = members.filter((m) => (m.role ?? "student").toLowerCase() === "student" && m.user).map((m) => m.user!);
-      const assignments = (aRes.items as Array<{ id: number; title?: string; created_at?: string }>).slice(0, ASSIGNMENT_CAP);
+      // Drafts stay out, before the cap: no student has been given one, so its column would be all "missing"
+      // and would take a slot from homework they were given. A row that names no status is kept.
+      const assignments = aRes.items.filter((a) => a.status !== "DRAFT").slice(0, ASSIGNMENT_CAP);
 
       // submissions per assignment → studentId -> {status, grade}
       const subByAssignment = new Map<number, Map<number, { status: Cell["status"]; grade: number | null }>>();
