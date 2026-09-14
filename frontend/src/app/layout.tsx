@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Baloo_2, Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { Baloo_2, Geist, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import QueryProvider from "@/components/QueryProvider";
@@ -7,11 +7,6 @@ import { ToastProvider } from "@/components/ToastProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
   subsets: ["latin"],
 });
 
@@ -60,7 +55,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} ${plusJakarta.variable} ${baloo.variable}`}
+      className={`${geistSans.variable} ${plusJakarta.variable} ${baloo.variable}`}
     >
       <head />
       <body className="antialiased">
