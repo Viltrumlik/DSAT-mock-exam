@@ -2655,7 +2655,6 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             status=ClassroomMembership.STATUS_REMOVED
         ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
-        assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
 
         student = request.user
         if not classroom.memberships.filter(user=student, role=ClassroomMembership.ROLE_STUDENT).exists():
@@ -2663,6 +2662,12 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                 {"detail": "Only students can submit homework for this assignment."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+        # A student never sees DRAFT or ARCHIVED work (get_queryset), so to them it does not
+        # exist: 404, exactly like a missing id. The due-date lock further down is no gate for
+        # it, because homework has a due_at from creation, draft or not.
+        assignment = get_object_or_404(
+            Assignment, pk=pk, classroom=classroom, status=Assignment.STATUS_PUBLISHED
+        )
 
         new_files = list(request.FILES.getlist("files"))
         if not new_files:
@@ -2953,10 +2958,17 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             status=ClassroomMembership.STATUS_REMOVED
         ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
-        assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
-        if classroom.memberships.filter(
+        is_student = classroom.memberships.filter(
             user=request.user, role=ClassroomMembership.ROLE_STUDENT
-        ).exists():
+        ).exists()
+        # Unpublished work does not exist to a student, as in submit. This GET writes, too: the
+        # sync below creates and auto-grades a Submission, so it must never reach a draft or an
+        # archived homework. Staff see drafts, so their lookup is unfiltered.
+        assignments = Assignment.objects.filter(classroom=classroom)
+        if is_student:
+            assignments = assignments.filter(status=Assignment.STATUS_PUBLISHED)
+        assignment = get_object_or_404(assignments, pk=pk)
+        if is_student:
             try:
                 sync_practice_submission_for_assignment(request.user, assignment)
             except Exception:
