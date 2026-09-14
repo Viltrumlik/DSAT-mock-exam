@@ -130,7 +130,10 @@ export function PanelHeader({
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
+      {/* `flex-1` with a basis: the words wrap inside their own block while there is room for the
+          actions beside them, and the actions drop below only on a narrow panel. Without it a
+          slightly longer label ("Change goal" for "Set a goal") pushed the button under the text. */}
+      <div className="flex min-w-0 flex-1 basis-[15rem] items-center gap-3">
         <IconTile icon={icon} tone={tone} />
         <div className="min-w-0">
           <Heading className="text-[17px] font-extrabold leading-tight tracking-[-0.01em] text-foreground">{title}</Heading>
