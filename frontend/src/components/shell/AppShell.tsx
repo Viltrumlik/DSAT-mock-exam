@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { useTheme } from "next-themes";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   Menu,
   X,
@@ -98,7 +97,6 @@ export function AppShell({
   // draw — the ops and builder consoles mount this same component.
   const unread = useUnreadSummary(Boolean(notifications));
   const unreadTotal = unread.data?.total ?? 0;
-  const queryClient = useQueryClient();
   const [acctOpen, setAcctOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const cmdRef = useRef<HTMLDivElement>(null);
@@ -516,15 +514,21 @@ export function AppShell({
           which is what lets a mobile browser retract its address bar. While `main` owned the
           scroll, the bar stayed out permanently and sat over the last ~60px of every page. */}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col md:overflow-hidden">
-        {/* Large faint brand watermark — sits behind all page content */}
+        {/* Large faint brand watermark — sits behind all page content. It hangs off the corner
+            on purpose, so it carries its OWN clip: this column only clips from `md` up, and
+            cannot below it — `overflow-hidden` here would make the column the sticky header's
+            scroll container, and the header would scroll away with the page. Unclipped, the
+            logo ran 64px past a phone's right edge, and every page could be dragged sideways. */}
         {brand.logoSrc ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={brand.logoSrc}
-            alt=""
-            aria-hidden
-            className="pointer-events-none absolute -bottom-20 -right-16 z-0 w-[min(55vw,560px)] select-none opacity-[0.045] dark:opacity-[0.07]"
-          />
+          <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={brand.logoSrc}
+              alt=""
+              aria-hidden
+              className="pointer-events-none absolute -bottom-20 -right-16 z-0 w-[min(55vw,560px)] select-none opacity-[0.045] dark:opacity-[0.07]"
+            />
+          </div>
         ) : null}
         <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-2 border-b border-border bg-card/80 px-3 backdrop-blur md:gap-4 md:px-6">
           <IconButton
