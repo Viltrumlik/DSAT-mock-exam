@@ -31,10 +31,10 @@ attempt is dropped whole, and the count is disclosed in ``data_quality.excluded`
 
 **Answer keys are intersected with the module's real question ids.** The same bug files
 Module 1's question ids under the Module 2 key. Anything that flattens ``module_answers``
-values into one list therefore counts Module 1 twice — which is exactly what
-``classes/analytics.py`` ``sat_topic_accuracy`` does, and why its numbers must not be reused
-here. Looking each question up by its own id inside its own module makes the intersection
-structural.
+values into one list therefore counts Module 1 twice — which is exactly what the classroom
+analytics' ``sat_topic_accuracy`` did before it was removed, and why numbers computed that way
+must not be reused here. Looking each question up by its own id inside its own module makes
+the intersection structural.
 
 **A module nobody opened is skipped, not marked omitted.** An absent module key means the
 student never reached that module; treating its questions as blank omissions would inflate

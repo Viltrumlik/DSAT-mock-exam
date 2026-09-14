@@ -336,6 +336,8 @@ This is the entire effect of attendance on ranking; everything else attendance p
 
 **Endpoints (read-only):** `GET …/analytics/class` (staff), `GET …/analytics/me` (member, own), `GET …/analytics/students/{id}` (staff or self). Computed live; no snapshot persistence.
 
+> **Removed 2026-09-13.** The classroom Analytics tab was removed in June and nothing called these endpoints afterwards, so they and their service functions were deleted. `classes/analytics.py` now keeps only `_completion_map` and `_academic_assignments`, which the roadmap and the progress report use.
+
 ---
 
 ## 6. Implementation order (backend-first)

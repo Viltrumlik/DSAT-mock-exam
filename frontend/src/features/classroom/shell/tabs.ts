@@ -22,10 +22,8 @@ import type { Capabilities } from "../capabilities";
  * cannot be turned back into an array, so the array has to be the source and
  * `isClassroomTabId` (below) has to be the only runtime guard.
  *
- * `stream`, `rankings` and `analytics` have no entry in CLASSROOM_TABS any more —
- * Overview absorbed all three — but they stay admitted here because Overview still
- * calls `onNavigate("rankings")`/`onNavigate("analytics")`; the visibleTabs check lands
- * them on Overview, which is where those views now live.
+ * `stream`, `rankings` and `analytics` were dropped with their tabs. An old `?tab=` link
+ * to one of them fails the guard, and ClassroomWorkspace opens Overview instead.
  */
 export const CLASSROOM_TAB_IDS = [
   "overview",
@@ -35,12 +33,9 @@ export const CLASSROOM_TAB_IDS = [
   "materials",
   "midterms",
   "results",
-  "stream",
   "people",
-  "rankings",
   "grading",
   "attendance",
-  "analytics",
   "settings",
 ] as const;
 

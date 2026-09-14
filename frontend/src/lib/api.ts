@@ -1301,11 +1301,6 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/stream/`, { params });
         return r.data;
     },
-    /** Student-focused slices: your_assignments (with workflow_status), due_soon, recently_graded, new_posts. */
-    getStudentWorkspace: async (classId: number) => {
-        const r = await api.get(`/classes/${classId}/student-workspace/`);
-        return r.data;
-    },
     listComments: async (classId: number, targetType: 'post' | 'assignment', targetId: number) => {
         const r = await api.get(`/classes/${classId}/comments/`, {
             params: { target_type: targetType, target_id: targetId },

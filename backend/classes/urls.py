@@ -22,7 +22,6 @@ from .views_attendance import (
     AttendanceMeView,
     AttendanceStudentView,
 )
-from .views_analytics import AnalyticsClassView, AnalyticsMeView, AnalyticsStudentView
 from .views_telegram import (
     ClassroomTelegramBotLinkView,
     ClassroomTelegramJoinView,
@@ -159,10 +158,6 @@ urlpatterns = [
     path("<int:classroom_pk>/attendance/summary/", AttendanceSummaryView.as_view(), name="attendance-summary"),
     path("<int:classroom_pk>/attendance/me/", AttendanceMeView.as_view(), name="attendance-me"),
     path("<int:classroom_pk>/attendance/students/<int:student_id>/", AttendanceStudentView.as_view(), name="attendance-student"),
-    # Analytics
-    path("<int:classroom_pk>/analytics/class/", AnalyticsClassView.as_view(), name="analytics-class"),
-    path("<int:classroom_pk>/analytics/me/", AnalyticsMeView.as_view(), name="analytics-me"),
-    path("<int:classroom_pk>/analytics/students/<int:student_id>/", AnalyticsStudentView.as_view(), name="analytics-student"),
     # Teacher assignment + admin governance
     path("<int:classroom_pk>/assign-midterm/", AssignMidtermView.as_view(), name="class-assign-midterm"),
     path("<int:classroom_pk>/assign-teacher/", AssignTeacherView.as_view(), name="class-assign-teacher"),
