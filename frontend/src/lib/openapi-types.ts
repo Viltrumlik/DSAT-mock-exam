@@ -5978,6 +5978,7 @@ export interface components {
             readonly created_at: string;
             readonly created_by: components["schemas"]["AssignmentCreatedBy"];
             readonly submissions_count: number;
+            readonly turned_in_count?: number;
         };
         AssignmentAssessmentHomework: {
             homework_id: number;

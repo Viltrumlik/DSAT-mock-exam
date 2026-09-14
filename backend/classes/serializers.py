@@ -357,6 +357,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     created_by = serializers.SerializerMethodField()
     submissions_count = serializers.IntegerField(read_only=True)
+    # How many of the class's active students have turned it in (SUBMITTED or REVIEWED). The
+    # teaching team's assignment queryset annotates it — see AssignmentViewSet.get_queryset — and a
+    # response built from any other queryset omits it rather than guessing.
+    turned_in_count = serializers.IntegerField(read_only=True)
     attachment_file_url = serializers.SerializerMethodField(read_only=True)
     video_file_url = serializers.SerializerMethodField(read_only=True)
     attachment_urls = serializers.SerializerMethodField(read_only=True)
@@ -456,12 +460,14 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "created_at",
             "created_by",
             "submissions_count",
+            "turned_in_count",
         ]
         read_only_fields = [
             "id",
             "created_at",
             "created_by",
             "submissions_count",
+            "turned_in_count",
             "practice_bundle_tests",
             "locks_file_upload",
             "vocab_homeworks",

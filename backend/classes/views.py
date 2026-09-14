@@ -2013,6 +2013,24 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             )
         include_archived = str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
         staff_qs = qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
+        # How many of the class's students have turned each homework in, for the grading hub's
+        # "N missing" and "All in": SUBMITTED or REVIEWED, which is what the grading page lists as
+        # submitted, from the ACTIVE students the class row's `student_count` counts. It is not
+        # `submissions_count`, which counts every row: a draft, work returned for revision, and the
+        # work of a student who has left the class or joined its teaching team.
+        active_students = classroom.memberships.filter(
+            role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE
+        ).values("user_id")
+        staff_qs = staff_qs.annotate(
+            turned_in_count=Count(
+                "submissions",
+                filter=Q(
+                    submissions__status__in=(Submission.STATUS_SUBMITTED, Submission.STATUS_REVIEWED),
+                    submissions__student__in=active_students,
+                ),
+                distinct=True,
+            )
+        )
         # Newest-GIVEN first (published_at, falling back to created_at) — mirrors the
         # student branch so a freshly published old draft floats to the top.
         return staff_qs.annotate(_given_at=Coalesce("published_at", "created_at")).order_by("-_given_at", "-id")

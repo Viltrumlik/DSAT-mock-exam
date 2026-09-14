@@ -8996,6 +8996,9 @@ components:
         submissions_count:
           type: integer
           readOnly: true
+        turned_in_count:
+          type: integer
+          readOnly: true
       required:
       - archived_at
       - assessment_homework
