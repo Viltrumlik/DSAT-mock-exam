@@ -10,7 +10,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Users, ArrowRight, UserPlus, BookOpen, Calculator, GraduationCap, AlertTriangle, RefreshCw } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { Button, Dialog, Field, Input } from "../ui";
+import { Button, Dialog, Field, Input, Tabs } from "../ui";
 import { useClassrooms, useJoinClass } from "../hooks";
 import type { ClassroomWithRole } from "../types";
 
@@ -103,29 +103,18 @@ export function ClassesHome() {
           </button>
         </div>
 
-        {/* Filter pills (loaded state only) */}
+        {/* Filter (loaded state only). The shared tab bar rather than a row of its own
+            buttons: this was the one tab row in the student view still drawn by hand — an
+            outlined pill in a paler blue — so it kept the old look after every other bar had
+            moved on. It also gains the tablist semantics the hand-drawn buttons never had. */}
         {!isLoading && !isError && classes.length > 0 ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
-          {FILTERS.map((f) => {
-            const active = filter === f.key;
-            return (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilter(f.key)}
-                className="dz-pill"
-                style={{
-                  border: active ? "1px solid var(--dz-indigo)" : "1px solid var(--dz-border)",
-                  background: active ? "var(--dz-indigo-soft)" : "var(--dz-panel)",
-                  color: active ? "var(--dz-indigo)" : "var(--dz-mute)",
-                }}
-              >
-                {f.label}{" "}
-                <span style={{ opacity: 0.7, fontWeight: 800 }}>{f.count}</span>
-              </button>
-            );
-          })}
-        </div>
+          <div style={{ marginBottom: 22 }}>
+            <Tabs
+              items={FILTERS.map((f) => ({ id: f.key, label: f.label, count: f.count }))}
+              active={filter}
+              onChange={(id) => setFilter(id as Filter)}
+            />
+          </div>
         ) : null}
 
         {/* Body */}

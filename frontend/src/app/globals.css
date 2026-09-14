@@ -1138,13 +1138,6 @@ mark.ts-annot {
 }
 .dzboard .dz-openbtn:hover { background: var(--acc); color: #fff; gap: 10px; box-shadow: 0 8px 18px color-mix(in srgb, var(--acc) 40%, transparent); }
 .dzboard .dz-openbtn:active { transform: scale(.93); }
-.dzboard .dz-pill {
-  display: flex; align-items: center; gap: 8px; padding: 9px 15px; border-radius: 11px;
-  font-family: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
-  transition: transform .14s, background .14s, border-color .14s, color .14s;
-}
-.dzboard .dz-pill:hover { transform: translateY(-2px); }
-.dzboard .dz-pill:active { transform: scale(.95); }
 .dzboard .dz-joinbtn2 { transition: transform .18s, box-shadow .18s; }
 .dzboard .dz-joinbtn2:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(42,104,192,.4); }
 .dzboard .dz-joinbtn2:active { transform: translateY(0) scale(.97); }
