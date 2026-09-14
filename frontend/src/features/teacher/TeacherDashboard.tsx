@@ -3,11 +3,11 @@
 import Link from "next/link";
 import {
   Users, UserCheck, Gauge, ClipboardCheck, GraduationCap, ArrowRight,
-  ClipboardPen, Table2, LineChart as LineIcon, AlertTriangle, CalendarClock, Radar as RadarIcon,
+  ClipboardPen, Table2, LineChart as LineIcon, AlertTriangle, CalendarClock, Radar as RadarIcon, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
-  Card, CardContent, Badge, Button, Avatar, Progress, EmptyState, Skeleton,
+  Alert, Card, CardContent, Badge, Button, Avatar, Progress, EmptyState, Skeleton,
   Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
 } from "@/components/ui";
 import { ChartCard, LineChart, BarChart, type ChartSeries } from "@/components/ui/charts";
@@ -16,11 +16,21 @@ import { useTeacherDashboard, type TeacherDashboardModel } from "./useTeacherDas
 const trendSeries: ChartSeries[] = [{ key: "score", label: "Group mean" }];
 
 export function TeacherDashboard({ previewModel }: { previewModel?: TeacherDashboardModel }) {
-  const { status, model } = useTeacherDashboard(previewModel);
+  const { status, model, error, retry } = useTeacherDashboard(previewModel);
 
   if (status === "booting") return <TeacherSkeleton />;
   if (status === "unauthenticated") {
     return <div className="mx-auto max-w-md py-16"><Card><CardContent className="py-10 text-center"><p className="ds-h3">Teacher</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a teacher account to continue.</p></CardContent></Card></div>;
+  }
+  if (status === "error") {
+    return (
+      <div className="mx-auto max-w-2xl space-y-3 py-12">
+        <Alert tone="danger" title="Couldn’t load your class overview">
+          {error?.detail ?? "Your classes and their students are unchanged — only this page failed to load."}
+        </Alert>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retry}>Try again</Button>
+      </div>
+    );
   }
   if (status === "empty" || !model) {
     return (

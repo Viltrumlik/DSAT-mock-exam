@@ -10,7 +10,7 @@
  * SAT strand data is unavailable (handled with empty states by consumers).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { classesWithCapability } from "./classesWithCapability";
@@ -97,29 +97,44 @@ function computeRisk(s: Omit<StudentRecord, "riskLevel" | "riskReasons">): { lev
   return { level: atRisk ? "at-risk" : watch ? "watch" : "on-track", reasons };
 }
 
-export type TeacherAnalyticsData = { status: "booting" | "unauthenticated" | "empty" | "ready"; model: TeacherAnalyticsModel | null };
+/** A load that did not come back, with the server's reason if it gave one (a 403 or 404 does; a crash or a dropped connection does not). */
+export type LoadError = { detail: string | null };
+/** The server's `detail` from a rejected request. Anything else (an HTML error page, no answer at all) gives no reason. */
+function loadErrorOf(e: unknown): LoadError { const d = (e as { response?: { data?: { detail?: unknown } } } | null)?.response?.data?.detail; return { detail: typeof d === "string" ? d : null }; }
+
+export type TeacherAnalyticsData = {
+  status: "booting" | "unauthenticated" | "error" | "empty" | "ready";
+  model: TeacherAnalyticsModel | null;
+  /** The model did not load, or not all of it (status "error"). None of it is drawn: every figure in it is taken over all of the teacher's classes. */
+  error: LoadError | null;
+  retry: () => void;
+};
 
 export function useTeacherAnalytics(previewModel?: TeacherAnalyticsModel): TeacherAnalyticsData {
   const { bootState } = useMe();
   const [model, setModel] = useState<TeacherAnalyticsModel | null>(previewModel ?? null);
   const [loading, setLoading] = useState(!previewModel);
   const [empty, setEmpty] = useState(false);
+  const [error, setError] = useState<LoadError | null>(null);
+  // "Try again" bumps this to run the load again.
+  const [tries, setTries] = useState(0);
 
   useEffect(() => {
     if (previewModel) return;
     if (bootState !== "AUTHENTICATED") { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
+    setError(null);
     (async () => {
-      const classesRes = await classesApi.list().catch(() => ({ items: [] as Array<{ id: number; name?: string; my_role?: string }> }));
+      const classesRes = await classesApi.list();
       const managed = classesWithCapability(classesRes.items as Array<{ id: number; name?: string; my_role?: string }>, "canViewClassAnalytics");
       if (cancelled) return;
       if (managed.length === 0) { setEmpty(true); setLoading(false); return; }
 
       const perClass = await mapWithConcurrency(managed, 4, async (c) => {
         const [iv, lb] = await Promise.all([
-          classesApi.getInterventions(c.id).catch(() => null) as Promise<AnyRow | null>,
-          classesApi.getLeaderboard(c.id).catch(() => null) as Promise<AnyRow | null>,
+          classesApi.getInterventions(c.id) as Promise<AnyRow>,
+          classesApi.getLeaderboard(c.id) as Promise<AnyRow>,
         ]);
         return { c, iv, lb };
       });
@@ -221,17 +236,20 @@ export function useTeacherAnalytics(previewModel?: TeacherAnalyticsModel): Teach
         recommendations: recommendations.slice(0, 4),
       });
       setLoading(false);
-    })();
+    })().catch((e: unknown) => { if (!cancelled) { setModel(null); setError(loadErrorOf(e)); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [bootState, previewModel]);
+  }, [bootState, previewModel, tries]);
+
+  const retry = useCallback(() => setTries((n) => n + 1), []);
 
   const status = useMemo<TeacherAnalyticsData["status"]>(() => {
     if (previewModel) return "ready";
     if (bootState === "BOOTING" || (bootState === "AUTHENTICATED" && loading)) return "booting";
     if (bootState !== "AUTHENTICATED") return "unauthenticated";
+    if (error) return "error";
     if (empty) return "empty";
     return "ready";
-  }, [bootState, loading, empty, previewModel]);
+  }, [bootState, loading, error, empty, previewModel]);
 
-  return { status, model };
+  return { status, model, error, retry };
 }
