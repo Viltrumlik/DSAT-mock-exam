@@ -1315,8 +1315,15 @@ class ClassroomViewSet(ModelViewSet):
         ).exists():
             return Response({"detail": "Not a member."}, status=status.HTTP_403_FORBIDDEN)
 
+        # The students in the class: ACTIVE memberships, as the classroom's student count, the
+        # gradebook and the class rankings count them. Removal is a soft delete, so without the
+        # status filter a removed student stayed on the board and in every figure below — the
+        # headcounts, completion rates, group means, class averages and the bar for a rank. An
+        # INVITED student has not joined yet. Opening the board is the gate above, unchanged.
         student_memberships = list(
-            classroom.memberships.filter(role=ClassroomMembership.ROLE_STUDENT)
+            classroom.memberships.filter(
+                role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE
+            )
             .select_related("user")
             .order_by("user__first_name", "user__last_name", "user__email")
         )
