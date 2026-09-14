@@ -52,6 +52,8 @@ export function CancelBookingDialog({
       open={open}
       onClose={close}
       size="sm"
+      // Portalled onto <body>, outside the shell's sans — without this it reads in Georgia.
+      className="ds-app"
       title="Cancel this session?"
       description={`${when} with ${teacherName}. Let them know why so they can offer the hour to someone else.`}
       footer={
@@ -72,10 +74,10 @@ export function CancelBookingDialog({
               onClick={() => setPicked(p)}
               aria-pressed={picked === p}
               className={cn(
-                "ds-ring rounded-full border px-3 py-1.5 text-sm font-semibold transition-colors",
+                "ds-ring cr-press rounded-full px-3.5 py-1.5 font-[inherit] text-sm font-semibold transition-colors",
                 picked === p
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border bg-card text-foreground hover:bg-surface-2",
+                  ? "bg-primary text-primary-foreground shadow-[0_6px_14px_-6px_var(--primary)]"
+                  : "bg-surface-2 text-foreground hover:bg-surface-3",
               )}
             >
               {p}
