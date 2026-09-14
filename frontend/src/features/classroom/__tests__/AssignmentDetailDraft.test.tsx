@@ -114,7 +114,7 @@ describe("A homework's page — the Grading card", () => {
     const [open] = buttons("Open in gradebook");
     expect(open).toBeTruthy();
     await act(async () => open.click());
-    expect(push).toHaveBeenCalledWith(`${BASE}?tab=grading`);
+    expect(push).toHaveBeenCalledWith(`${BASE}?tab=grading&assignment=102`);
     expect(host.textContent).not.toContain("Students cannot see a draft");
   });
 });
