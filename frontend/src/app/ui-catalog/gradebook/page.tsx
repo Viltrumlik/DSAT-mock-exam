@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
 import { teacherNav } from "@/components/shell/navConfig";
 import { TeacherGradebook } from "@/features/teacher/TeacherGradebook";
-import type { Cell, GradebookModel, ClassOption } from "@/features/teacher/useGradebook";
+import { gradeTrend, type Cell, type GradebookModel, type ClassOption } from "@/features/teacher/useGradebook";
 
 const A = [
   { id: 1, title: "HW 1" }, { id: 2, title: "HW 2" }, { id: 3, title: "Quiz 1" }, { id: 4, title: "Mock 1" }, { id: 5, title: "HW 3" },
@@ -14,7 +14,7 @@ function row(id: number, name: string, grades: (number | null | "miss" | "sub")[
   const cells: Cell[] = grades.map((g, i) => g === "miss" ? cell(A[i].id, "missing", null) : g === "sub" ? cell(A[i].id, "submitted", null) : cell(A[i].id, "graded", g));
   const graded = cells.filter((c) => c.grade != null).map((c) => c.grade as number);
   const average = graded.length ? Math.round(graded.reduce((a, b) => a + b, 0) / graded.length) : null;
-  const trendDelta = graded.length >= 2 ? graded[graded.length - 1] - graded[0] : null;
+  const trendDelta = gradeTrend(graded); // A lists the homework oldest first.
   return { id, name, cells, average, trendDelta, missing: cells.filter((c) => c.status === "missing").length };
 }
 
