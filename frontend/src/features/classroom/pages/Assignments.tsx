@@ -147,7 +147,7 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
         <div className="divide-y divide-border border-y border-border">
           {rows.map((a, i) =>
             staff ? (
-              <StaffRow key={a.id} classId={classId} classBase={classBase} a={a} index={i} />
+              <StaffRow key={a.id} classId={classId} classBase={classBase} a={a} index={i} canDelete={caps.canDeleteAssignment} />
             ) : (
               <StudentRow key={a.id} classBase={classBase} a={a} index={i} />
             ),
@@ -170,7 +170,7 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
             <EmptyState icon={Archive} title="Nothing archived" />
           ) : (
             <div className="divide-y divide-border border-y border-border">
-              {archivedRows.map((a, i) => <StaffRow key={a.id} classId={classId} classBase={classBase} a={a} index={i} archived />)}
+              {archivedRows.map((a, i) => <StaffRow key={a.id} classId={classId} classBase={classBase} a={a} index={i} archived canDelete={caps.canDeleteAssignment} />)}
             </div>
           )}
         </div>
@@ -226,7 +226,7 @@ function StudentRow({ classBase, a, index }: { classBase: string; a: AsgRow; ind
   );
 }
 
-function StaffRow({ classId, classBase, a, index, archived }: { classId: number; classBase: string; a: AsgRow; index: number; archived?: boolean }) {
+function StaffRow({ classId, classBase, a, index, archived, canDelete }: { classId: number; classBase: string; a: AsgRow; index: number; archived?: boolean; canDelete: boolean }) {
   return (
     <RowShell
       classBase={classBase}
@@ -238,7 +238,7 @@ function StaffRow({ classId, classBase, a, index, archived }: { classId: number;
           : a.status === "ARCHIVED" ? <Pill tone="neutral">Archived</Pill>
           : null
       }
-      actions={<AssignmentRowActions classId={classId} classBase={classBase} row={a} archived={archived} />}
+      actions={<AssignmentRowActions classId={classId} classBase={classBase} row={a} archived={archived} canDelete={canDelete} />}
     />
   );
 }
