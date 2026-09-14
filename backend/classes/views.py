@@ -1658,8 +1658,11 @@ class ClassroomViewSet(ModelViewSet):
         # submitted_set[assignment_id] = set of student_ids who submitted
         submitted_set: dict[int, set] = defaultdict(set)
         last_activity: dict[int, object] = {}  # student_id → latest submission updated_at
+        # RETURNED ("returned for revision") counts as turned in: the student submitted and the
+        # teacher sent it back, which the gradebook reports as NEEDS_REVISION, not MISSING.
+        turned_in = {Submission.STATUS_SUBMITTED, Submission.STATUS_REVIEWED, Submission.STATUS_RETURNED}
         for s in submissions:
-            if s["status"] in ("submitted", "reviewed", "returned"):
+            if s["status"] in turned_in:
                 submitted_set[s["assignment_id"]].add(s["student_id"])
             ts = s["updated_at"]
             prev = last_activity.get(s["student_id"])
