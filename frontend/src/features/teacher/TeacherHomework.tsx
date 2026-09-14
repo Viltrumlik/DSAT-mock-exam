@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ClipboardList, TrendingDown, AlertTriangle, ClipboardCheck } from "lucide-react";
+import { ClipboardList, TrendingDown, AlertTriangle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { Card, CardContent, Badge, EmptyState, Skeleton, Progress, SegmentedControl, type Segment } from "@/components/ui";
+import { Alert, Button, Card, CardContent, Badge, EmptyState, Skeleton, Progress, SegmentedControl, type Segment } from "@/components/ui";
 import { useTeacherAnalytics, type AssignmentRecord, type TeacherAnalyticsModel } from "./useTeacherAnalytics";
 
 type Filter = "all" | "attention" | "healthy";
@@ -16,7 +16,7 @@ const effBadge: Record<AssignmentRecord["effectiveness"], { label: string; varia
 };
 
 export function TeacherHomework({ previewModel }: { previewModel?: TeacherAnalyticsModel }) {
-  const { status, model } = useTeacherAnalytics(previewModel);
+  const { status, model, error, retry } = useTeacherAnalytics(previewModel);
   const [classId, setClassId] = useState<number | "all">("all");
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -30,6 +30,16 @@ export function TeacherHomework({ previewModel }: { previewModel?: TeacherAnalyt
 
   if (status === "booting") return <div className="mx-auto max-w-6xl"><Skeleton className="mb-4 h-10 w-48" /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[0,1,2,3].map((i) => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div></div>;
   if (status === "unauthenticated") return <div className="mx-auto max-w-md py-16"><Card><CardContent className="py-10 text-center"><p className="ds-h3">Homework</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a teacher account.</p></CardContent></Card></div>;
+  if (status === "error") {
+    return (
+      <div className="mx-auto max-w-2xl space-y-3 py-12">
+        <Alert tone="danger" title="Couldn’t load your assignments">
+          {error?.detail ?? "Your assignments and their submissions are unchanged — only this page failed to load."}
+        </Alert>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retry}>Try again</Button>
+      </div>
+    );
+  }
   if (status === "empty" || !model) return <div className="mx-auto max-w-2xl py-12"><EmptyState icon={ClipboardList} title="No assignments yet" description="Assignment health appears here once you assign work." /></div>;
 
   const lowCompletion = model.assignments.filter((a) => a.effectiveness === "low-completion").length;

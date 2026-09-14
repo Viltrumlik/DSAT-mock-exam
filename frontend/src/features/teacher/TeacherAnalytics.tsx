@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import {
-  GraduationCap, Users, ShieldAlert, Eye, Sparkles, ArrowRight, Radar as RadarIcon, AlertTriangle,
+  GraduationCap, Users, ShieldAlert, Eye, Sparkles, ArrowRight, Radar as RadarIcon, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
-  Card, CardContent, Badge, Avatar, EmptyState, Skeleton, Progress,
+  Alert, Button, Card, CardContent, Badge, Avatar, EmptyState, Skeleton, Progress,
   Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
 } from "@/components/ui";
 import { ChartCard, LineChart, BarChart, DonutChart, type ChartSeries } from "@/components/ui/charts";
@@ -15,10 +15,20 @@ import { useTeacherAnalytics, type TeacherAnalyticsModel } from "./useTeacherAna
 const trendSeries: ChartSeries[] = [{ key: "score", label: "Group mean" }];
 
 export function TeacherAnalytics({ previewModel }: { previewModel?: TeacherAnalyticsModel }) {
-  const { status, model } = useTeacherAnalytics(previewModel);
+  const { status, model, error, retry } = useTeacherAnalytics(previewModel);
 
   if (status === "booting") return <div className="mx-auto max-w-6xl"><Skeleton className="mb-4 h-10 w-56" /><Skeleton className="h-40 w-full rounded-2xl" /></div>;
   if (status === "unauthenticated") return <div className="mx-auto max-w-md py-16"><Card><CardContent className="py-10 text-center"><p className="ds-h3">Analytics</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a teacher account.</p></CardContent></Card></div>;
+  if (status === "error") {
+    return (
+      <div className="mx-auto max-w-2xl space-y-3 py-12">
+        <Alert tone="danger" title="Couldn’t load your class analytics">
+          {error?.detail ?? "Your classes and their students are unchanged — only this page failed to load."}
+        </Alert>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retry}>Try again</Button>
+      </div>
+    );
+  }
   if (status === "empty" || !model) return <div className="mx-auto max-w-2xl py-12"><EmptyState icon={GraduationCap} title="No classes yet" description="Analytics appear once you have classes with activity." /></div>;
 
   const m = model;

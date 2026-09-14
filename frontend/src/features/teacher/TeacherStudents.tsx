@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Users, ShieldAlert, Clock, ClipboardCheck, Gauge, Activity } from "lucide-react";
+import { Users, ShieldAlert, Clock, ClipboardCheck, Gauge, Activity, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
-  Card, CardContent, Badge, Avatar, EmptyState, Skeleton, Drawer, Progress, SegmentedControl, type Segment,
+  Alert, Button, Card, CardContent, Badge, Avatar, EmptyState, Skeleton, Drawer, Progress, SegmentedControl, type Segment,
 } from "@/components/ui";
 import { useTeacherAnalytics, type StudentRecord, type RiskLevel, type TeacherAnalyticsModel } from "./useTeacherAnalytics";
 
@@ -16,7 +16,7 @@ const riskBadge: Record<RiskLevel, { label: string; variant: "warning" | "info" 
 function isActive(s: StudentRecord) { return s.inactiveDays == null || s.inactiveDays < 7; }
 
 export function TeacherStudents({ previewModel }: { previewModel?: TeacherAnalyticsModel }) {
-  const { status, model } = useTeacherAnalytics(previewModel);
+  const { status, model, error, retry } = useTeacherAnalytics(previewModel);
   const [classId, setClassId] = useState<number | "all">("all");
   const [risk, setRisk] = useState<RiskLevel | "all">("all");
   const [activity, setActivity] = useState<"all" | "active" | "inactive">("all");
@@ -33,6 +33,16 @@ export function TeacherStudents({ previewModel }: { previewModel?: TeacherAnalyt
 
   if (status === "booting") return <div className="mx-auto max-w-6xl"><Skeleton className="mb-4 h-10 w-48" /><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[0,1,2,3,4,5].map((i) => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div></div>;
   if (status === "unauthenticated") return <div className="mx-auto max-w-md py-16"><Card><CardContent className="py-10 text-center"><p className="ds-h3">Students</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a teacher account.</p></CardContent></Card></div>;
+  if (status === "error") {
+    return (
+      <div className="mx-auto max-w-2xl space-y-3 py-12">
+        <Alert tone="danger" title="Couldn’t load your students">
+          {error?.detail ?? "Your students and their work are unchanged — only this page failed to load."}
+        </Alert>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retry}>Try again</Button>
+      </div>
+    );
+  }
   if (status === "empty" || !model) return <div className="mx-auto max-w-2xl py-12"><EmptyState icon={Users} title="No students yet" description="Students appear here once you have classes with members." /></div>;
 
   const riskOpts: Segment<RiskLevel | "all">[] = [{ value: "all", label: "All" }, { value: "at-risk", label: "At risk" }, { value: "watch", label: "Watch" }, { value: "on-track", label: "On track" }];
