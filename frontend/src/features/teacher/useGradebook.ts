@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
+import { classesWithCapability } from "./classesWithCapability";
 
 export type Cell = { assignmentId: number; status: "graded" | "submitted" | "missing"; grade: number | null };
 export type StudentRow = { id: number; name: string; avatarUrl?: string | null; cells: Cell[]; average: number | null; trendDelta: number | null; missing: number };
@@ -55,7 +56,7 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
     let cancelled = false;
     (async () => {
       const res = await classesApi.list().catch(() => ({ items: [] as Array<{ id: number; name?: string; my_role?: string }> }));
-      const managed = (res.items as Array<{ id: number; name?: string; my_role?: string }>).filter((c) => c.my_role && c.my_role !== "student");
+      const managed = classesWithCapability(res.items as Array<{ id: number; name?: string; my_role?: string }>, "canGrade");
       if (cancelled) return;
       if (managed.length === 0) { setEmpty(true); setLoading(false); return; }
       setClasses(managed.map((c) => ({ id: c.id, name: c.name || "Class" })));

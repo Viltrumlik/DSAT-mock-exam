@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
+import { classesWithCapability } from "./classesWithCapability";
 
 type InterventionStudent = { student_id: number; first_name?: string; last_name?: string; email?: string; profile_image_url?: string | null };
 type Interventions = {
@@ -69,7 +70,7 @@ export function useTeacherDashboard(previewModel?: TeacherDashboardModel): Teach
     setLoading(true);
     (async () => {
       const classesRes = await classesApi.list().catch(() => ({ items: [] as Array<{ id: number; name?: string; my_role?: string }> }));
-      const managed = (classesRes.items as Array<{ id: number; name?: string; my_role?: string }>).filter((c) => c.my_role && c.my_role !== "student");
+      const managed = classesWithCapability(classesRes.items as Array<{ id: number; name?: string; my_role?: string }>, "canViewClassAnalytics");
       if (cancelled) return;
       if (managed.length === 0) { setEmpty(true); setLoading(false); return; }
 
