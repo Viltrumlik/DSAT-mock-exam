@@ -42,7 +42,24 @@ function apiUrl(path: string): string {
   return `/api${path}`;
 }
 
+/**
+ * Whether this build may open the realtime stream: only when NEXT_PUBLIC_REALTIME_STREAM is "1".
+ *
+ * Leave it off while the backend runs sync workers. `/api/realtime/events/` is a StreamingHttpResponse,
+ * so each open stream holds one gunicorn worker for up to REALTIME_SSE_MAX_STREAM_S (25 s), and the
+ * client opens the next one the moment it ends. Production has three sync workers: three open tabs
+ * leave none for anyone else. That was the 2026-08-23 freeze (5a6828f7), when 234 of 500 backend
+ * requests were streams and everything else queued for 11–25 s. It holds under `next dev` as well,
+ * which sends /api to production unless API_PROXY_TARGET says otherwise.
+ *
+ * Off, subscribing opens nothing and calls no handler, so a page has only what it loads itself.
+ */
+function streamEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_REALTIME_STREAM === "1";
+}
+
 export function subscribeRealtime(handlers: Handlers, options?: RealtimeSubscribeOptions): () => void {
+  if (!streamEnabled()) return () => {};
   const debounceMs = options?.debounceMs ?? 64;
   let closed = false;
   let es: EventSource | null = null;
