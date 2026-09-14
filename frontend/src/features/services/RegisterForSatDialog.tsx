@@ -28,11 +28,17 @@
  *    retires — or one that has simply passed — leaves this checklist on its own. A student
  *    being told to register for a date that is gone is the failure this avoids, and it is the
  *    one that would otherwise happen every single year. See `TestDates`.
+ *
+ * Dressed like the Services page that opens it: steps numbered on tinted tiles, the card and
+ * cardholder as blocks of quartz with a pill to copy, dates and centres as tinted chips instead
+ * of grey ones. The modal is set in the app's sans (`ds-app`) — portalled onto `<body>`, it was
+ * reading in the body's Georgia. Every word, the gate and the link are as they were.
  */
 
 import { useState } from "react";
-import { Copy, ExternalLink, MessageCircle } from "lucide-react";
+import { Check, Copy, ExternalLink, MapPin, MessageCircle } from "lucide-react";
 import { Alert, Button, Modal, Skeleton } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { YouTubeEmbed } from "./YouTubeEmbed";
 import { formatExamDate, useExamDates } from "./servicesHooks";
 
@@ -68,13 +74,13 @@ function Step({
     <li className="flex gap-3">
       <span
         aria-hidden
-        className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-soft text-xs font-extrabold text-primary"
+        className="squircle mt-px flex h-7 w-7 shrink-0 items-center justify-center bg-primary/10 text-[12.5px] font-extrabold text-primary [--sq:5px] dark:text-primary-hover"
       >
         {n}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-bold text-foreground">{title}</p>
-        {children ? <div className="mt-1.5">{children}</div> : null}
+        <p className="pt-1 text-[14.5px] font-extrabold leading-tight text-foreground">{title}</p>
+        {children ? <div className="mt-2">{children}</div> : null}
       </div>
     </li>
   );
@@ -96,7 +102,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   };
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2">
+    <div className="quartz squircle flex items-center justify-between gap-3 px-3.5 py-2.5 [--sq:8px]">
       <div className="min-w-0">
         <p className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
           {label}
@@ -106,9 +112,18 @@ function CopyRow({ label, value }: { label: string; value: string }) {
       <button
         type="button"
         onClick={copy}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-foreground"
+        className={cn(
+          "ds-ring inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 font-[inherit] text-xs font-bold transition-colors",
+          copied
+            ? "bg-success/15 text-success-foreground"
+            : "bg-primary/10 text-primary hover:bg-primary/15 dark:text-primary-hover",
+        )}
       >
-        <Copy className="h-3.5 w-3.5" aria-hidden />
+        {copied ? (
+          <Check className="h-3.5 w-3.5" aria-hidden />
+        ) : (
+          <Copy className="h-3.5 w-3.5" aria-hidden />
+        )}
         {copied ? "Copied" : "Copy"}
       </button>
     </div>
@@ -131,7 +146,7 @@ function TestDates() {
   const dates = useExamDates();
 
   if (dates.isPending) {
-    return <Skeleton className="h-8 w-48 rounded-lg" />;
+    return <Skeleton variant="circle" className="h-8 w-48" />;
   }
 
   if (dates.isError) {
@@ -163,7 +178,7 @@ function TestDates() {
       {dates.data.map((option) => (
         <span
           key={option.id}
-          className="rounded-lg bg-surface-2 px-2.5 py-1 text-sm font-bold text-foreground"
+          className="rounded-full bg-primary/10 px-3 py-1 text-[13px] font-bold text-primary dark:text-primary-hover"
         >
           {formatExamDate(option)}
         </span>
@@ -190,13 +205,13 @@ export function RegisterForSatDialog({
   };
 
   return (
-    <Modal open={open} onClose={close} title="Register for the SAT">
-      <div className="space-y-4">
+    <Modal open={open} onClose={close} title="Register for the SAT" className="ds-app">
+      <div className="space-y-5">
         <p className="text-sm font-semibold text-foreground">
           Send these six things to the registrar on Telegram.
         </p>
 
-        <ol className="space-y-4">
+        <ol className="space-y-5">
           <Step n={1} title="Your College Board account">
             <p className="text-sm font-medium text-muted-foreground">
               Don&apos;t have one yet? Watch this and create it first.
@@ -211,7 +226,7 @@ export function RegisterForSatDialog({
 
           <Step n={2} title="Your College Board password">
             {/* Alert draws its own tone icon, so this carries text only. */}
-            <Alert tone="warning">
+            <Alert tone="warning" className="squircle [--sq:10px]">
               <span className="text-sm font-semibold">
                 Send this only to the registrar, and change your password once your
                 registration is confirmed. Never send it to anyone else who asks.
@@ -220,10 +235,14 @@ export function RegisterForSatDialog({
           </Step>
 
           <Step n={3} title="Test center">
-            <ul className="space-y-1">
+            <ul className="flex flex-wrap gap-1.5">
               {TEST_CENTERS.map((c) => (
-                <li key={c} className="text-sm font-medium text-muted-foreground">
-                  • {c}
+                <li
+                  key={c}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[13px] font-bold text-primary dark:text-primary-hover"
+                >
+                  <MapPin className="h-3.5 w-3.5" aria-hidden />
+                  {c}
                 </li>
               ))}
             </ul>
@@ -250,17 +269,17 @@ export function RegisterForSatDialog({
           </Step>
         </ol>
 
-        <Alert tone="info">
+        <Alert tone="info" className="squircle [--sq:10px]">
           Registration takes around 2–3 days. Please be patient — the registrar will message
           you when it&apos;s done.
         </Alert>
 
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border p-3 text-sm font-semibold">
+        <label className="quartz squircle flex cursor-pointer items-start gap-3 p-3.5 text-sm font-semibold [--sq:9px]">
           <input
             type="checkbox"
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
-            className="mt-0.5"
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]"
           />
           <span>I&apos;ve read this and I have everything ready.</span>
         </label>
@@ -271,7 +290,7 @@ export function RegisterForSatDialog({
             href={TELEGRAM_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-extrabold text-primary-foreground no-underline"
+            className="ds-ring cr-press flex w-full items-center justify-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-primary-foreground no-underline shadow-[0_8px_18px_-8px_var(--primary)] hover:bg-primary-hover"
             onClick={close}
           >
             <MessageCircle className="h-4 w-4" aria-hidden />
@@ -279,7 +298,9 @@ export function RegisterForSatDialog({
             <ExternalLink className="h-3.5 w-3.5 opacity-80" aria-hidden />
           </a>
         ) : (
-          <Alert tone="info">Tick the box above and the Telegram link will appear.</Alert>
+          <Alert tone="info" className="squircle [--sq:10px]">
+            Tick the box above and the Telegram link will appear.
+          </Alert>
         )}
 
         <div className="flex justify-end">
