@@ -47,7 +47,8 @@ async function render(...students: StudentRow[]) {
   const model: GradebookModel = {
     assignments: HOMEWORK,
     students,
-    // The stat cards and the distribution chart above the matrix are not read here.
+    // The stat cards and the chart above the matrix are not read here. Left empty, the chart is not drawn: recharts
+    // measures itself with a ResizeObserver, which jsdom does not have.
     classAverage: null,
     distribution: [],
     missingCount: 0,
