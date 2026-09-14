@@ -685,7 +685,18 @@ def grant_practice_test_library_access_for_assignment(assignment: Assignment) ->
     targets a pastpaper card / section did not update that M2M, so assigned work was invisible
     on the global practice library until bulk-assign from admin. Sync class students here.
     Timed mock sections (mock_exam set) are skipped.
+
+    PUBLISHED homework only, and ACTIVE students only. ``assigned_users`` is the library's one
+    gate, so this grant IS the homework reaching the class: running it for a draft opened the
+    test on "Save as draft", and running it for a REMOVED or INVITED member opened it to people
+    who are not in the class. ``publish`` and ``unarchive`` call it, so a draft opens when it
+    goes live.
+
+    Never revokes. ``assigned_users`` does not record who added a student, so taking a test
+    back on archive could remove access that a library assignment or another homework gave.
     """
+    if assignment.status != Assignment.STATUS_PUBLISHED:
+        return
     ids = assignment_target_practice_test_ids(assignment)
     if not ids:
         return
@@ -694,7 +705,8 @@ def grant_practice_test_library_access_for_assignment(assignment: Assignment) ->
         return
     student_ids = list(
         assignment.classroom.memberships.filter(
-            role=ClassroomMembership.ROLE_STUDENT
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
         ).values_list("user_id", flat=True)
     )
     if not student_ids:
@@ -708,10 +720,16 @@ def grant_practice_test_library_access_for_assignment(assignment: Assignment) ->
 
 
 def grant_practice_test_library_access_for_user_in_classroom(classroom: Classroom, user) -> None:
-    """When a student joins a class, unlock existing pastpaper homework targets on the practice library."""
+    """When a student joins a class, unlock existing pastpaper homework targets on the practice library.
+
+    The class's PUBLISHED homework only, for the reason the per-assignment grant above gives:
+    a draft has not been given to anyone yet, and archived work is retired.
+    """
     if user is None:
         return
-    for assignment in Assignment.objects.filter(classroom=classroom):
+    for assignment in Assignment.objects.filter(
+        classroom=classroom, status=Assignment.STATUS_PUBLISHED
+    ):
         ids = assignment_target_practice_test_ids(assignment)
         if not ids:
             continue
@@ -1055,7 +1073,15 @@ class ClassComment(models.Model):
 
 @receiver(post_save, sender=ClassroomMembership)
 def _grant_practice_library_on_student_enroll(sender, instance, created, **kwargs):
-    if not created or instance.role != ClassroomMembership.ROLE_STUDENT:
+    # Any save that leaves an ACTIVE student, not only a new row. The homework grant skips
+    # REMOVED members, so a student reinstated through the join code, the roster add or the
+    # roster PATCH (all saves of the existing row) would otherwise never get the homework
+    # published while they were out. An INVITED member gets it once they are ACTIVE. The grant
+    # is idempotent: a save that changed nothing adds nothing.
+    if (
+        instance.role != ClassroomMembership.ROLE_STUDENT
+        or instance.status != ClassroomMembership.STATUS_ACTIVE
+    ):
         return
     grant_practice_test_library_access_for_user_in_classroom(instance.classroom, instance.user)
 

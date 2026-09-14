@@ -61,7 +61,10 @@ from .db_retry import db_retry_operation
 from .metrics import record_homework_submit_attempt, record_homework_submit_error, record_homework_submit_success
 from .submission_limits import max_batch_upload_bytes, max_files_per_submission
 from .submission_uploads import abandon_staged_uploads, stream_upload_to_storage
-from .homework_auto_submit import sync_practice_submission_for_assignment
+from .homework_auto_submit import (
+    sync_practice_submission_for_assignment,
+    sync_practice_submissions_for_class,
+)
 from .capabilities import can as has_cap
 from .views_rankings import resolve_ranking_visibility
 from .throttles import HomeworkSubmitClassThrottle, HomeworkSubmitGlobalThrottle, HomeworkSubmitThrottle
@@ -2069,6 +2072,8 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             a.due_at = homework_due_at(a.classroom)
             fields.append("due_at")
         a.save(update_fields=fields)
+        # Before the announcement, so the test is open by the time anyone is told about it.
+        self._open_to_class(a)
 
         # Publishing a draft is the moment it reaches the students — email them. Only on the
         # FIRST publish, and notify itself is idempotent, so re-publishing an unarchived
@@ -2103,7 +2108,31 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if a.published_at is None:
             a.published_at = timezone.now()
         a.save(update_fields=["status", "archived_at", "published_at", "updated_at"])
+        self._open_to_class(a)
         return Response({"id": a.id, "status": a.status})
+
+    @staticmethod
+    def _open_to_class(assignment):
+        """The homework just went live: open its pastpapers to the class, and hand in the tests
+        its students already finished.
+
+        The library grant and the post_save sync both skip homework that is not PUBLISHED.
+        Without this, a draft-then-published pastpaper homework could not be opened at all, a
+        student who joined while it was archived would never get it, and a test finished before
+        it went live would wait for a lazy sync. Best-effort, like the grant in ``create``: the
+        status change has already landed.
+        """
+        try:
+            grant_practice_test_library_access_for_assignment(assignment)
+        except Exception:
+            logger.exception(
+                "grant_practice_test_library_access_for_assignment failed for assignment %s",
+                assignment.pk,
+            )
+        try:
+            sync_practice_submissions_for_class(assignment)
+        except Exception:
+            logger.exception("sync_practice_submissions_for_class failed for assignment %s", assignment.pk)
 
     @staticmethod
     def _assessment_set_ids_from_request(request) -> list[int]:
@@ -3014,25 +3043,9 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if not has_cap(request.user, classroom, "can_grade"):
             return Response({"detail": "Only the teaching team can view submissions."}, status=status.HTTP_403_FORBIDDEN)
         assignment = get_object_or_404(Assignment, pk=pk, classroom=classroom)
-        if assignment_target_practice_test_ids(assignment):
-            student_ids = classroom.memberships.filter(
-                role=ClassroomMembership.ROLE_STUDENT
-            ).values_list("user_id", flat=True)
-            from django.contrib.auth import get_user_model
-
-            User = get_user_model()
-            for uid in student_ids:
-                u = User.objects.filter(pk=uid).first()
-                if not u:
-                    continue
-                try:
-                    sync_practice_submission_for_assignment(u, assignment)
-                except Exception:
-                    logger.exception(
-                        "sync_practice_submission_failed assignment_id=%s student_id=%s",
-                        assignment.pk,
-                        uid,
-                    )
+        # The lazy practice sync. This GET writes, so it runs for PUBLISHED homework and ACTIVE
+        # students only: it used to hand a draft in and re-grade archived work from a retake.
+        sync_practice_submissions_for_class(assignment)
 
         # Lazy-sync assessment homework submissions (a bundle can hold several).
         hw_links = list(assignment.assessment_homeworks.all())
