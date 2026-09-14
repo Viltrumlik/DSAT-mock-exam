@@ -8,6 +8,7 @@ import HomeworkFilePreviewTile from "@/components/classroom/HomeworkFilePreviewT
 import { fileNameFromUrl } from "@/lib/homeworkFileDisplay";
 import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardCheck, Loader2, RotateCcw, Trophy, User } from "lucide-react";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
+import { capabilitiesFor } from "@/features/classroom/capabilities";
 
 type Member = {
   role: string;
@@ -56,7 +57,9 @@ export default function HomeworkGradingAssignmentView({
     setLoading(true);
     try {
       const cls = await classesApi.get(classId);
-      if (cls?.my_role !== "ADMIN") {
+      // The server grades on `can_grade`: the whole teaching team (OWNER, TEACHER, TA and the
+      // legacy ADMIN), not the ADMIN role alone.
+      if (!capabilitiesFor(cls?.my_role).canGrade) {
         setError("Only class teachers can grade this homework.");
         setLoading(false);
         return;

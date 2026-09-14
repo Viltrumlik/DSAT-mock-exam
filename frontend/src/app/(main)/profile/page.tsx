@@ -25,6 +25,7 @@ import { rewardsApi, type MyRewards } from "@/features/rewards/rewardsApi";
 import {
   Button, Card, CardHeader, EmptyState, ErrorState, Pill, Spinner,
 } from "@/features/classroom/ui";
+import { capabilitiesFor } from "@/features/classroom/capabilities";
 import { cn } from "@/lib/cn";
 
 type MeForm = {
@@ -55,7 +56,6 @@ type ClassPerson = { id: number; role: string; user: { id: number; username?: st
 type Attempt = { id: number; submitted_at?: string | null; is_completed?: boolean; score?: number | null; practice_test_details?: { subject?: string; title?: string } };
 type ExamDateOptionRow = { id: number; exam_date: string; label: string };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function mapMeToForm(me: any): MeForm {
   return {
     username: me.username || "", first_name: me.first_name || "", last_name: me.last_name || "",
@@ -135,7 +135,6 @@ export default function ProfilePage() {
   const [telegramCfg, setTelegramCfg] = useState<{ enabled: boolean; bot_username: string | null; client_id: string | null; start_url: string | null } | null>(null);
   const [telegramLinkBusy, setTelegramLinkBusy] = useState(false);
   const [examDateOptions, setExamDateOptions] = useState<ExamDateOptionRow[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [sessionsFailed, setSessionsFailed] = useState(false);
@@ -238,7 +237,6 @@ export default function ProfilePage() {
           const assignments = await classesApi.listAssignments(c.id);
           for (const asg of assignments.items) {
             total += 1;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             let sub: any = null;
             try { sub = await classesApi.getMySubmission(c.id, asg.id); } catch { sub = null; }
             if (!!sub && sub.status === "SUBMITTED") { submitted += 1; continue; }
@@ -371,7 +369,9 @@ export default function ProfilePage() {
   const completion = profileCompletion(me);
   const targetScore = me.target_score ? Math.max(0, Math.min(1600, parseInt(me.target_score, 10))) : null;
   const nextDays = me.sat_exam_date ? daysUntil(me.sat_exam_date) : null;
-  const enrolledClasses = classes.filter((c) => { const r = String(c.my_role || "").toLowerCase(); return r === "student" || r === "admin"; });
+  // Every class the user holds a seat in. This named STUDENT and ADMIN, all the roles there were
+  // when it was written; the OWNER, TEACHER and TA seats that came later fell off the list.
+  const enrolledClasses = classes.filter((c) => capabilitiesFor(c.my_role).isMember);
   const totalPeers = enrolledClasses.reduce((acc, c) => acc + Math.max(0, (c.members_count || 0) - 1), 0);
   const selectedClass = enrolledClasses.find((c) => c.id === selectedClassId) || null;
   const selectedStudents = selectedClassPeople.filter((p) => String(p.role || "").toLowerCase() === "student");
