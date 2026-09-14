@@ -774,6 +774,8 @@ REST_FRAMEWORK = {
         'email_verify_target': os.getenv('EMAIL_VERIFY_TARGET_THROTTLE', '5/hour'),
         'email_verify_user': os.getenv('EMAIL_VERIFY_USER_THROTTLE', '10/hour'),
         'email_verify_confirm': os.getenv('EMAIL_VERIFY_CONFIRM_THROTTLE', '20/hour'),
+        # Changing your own password from the profile (users.throttles.PasswordChangeThrottle).
+        'password_change': os.getenv('PASSWORD_CHANGE_THROTTLE', '10/hour'),
         'homework_submit': os.getenv('CLASSROOM_HOMEWORK_SUBMIT_THROTTLE', '120/hour'),
         # Minting a class-group invite: one Bot API call and one live credential each.
         'telegram_group_join': os.getenv('CLASSROOM_TELEGRAM_JOIN_THROTTLE', '10/hour'),

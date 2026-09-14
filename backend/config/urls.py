@@ -4,6 +4,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 from users.views import (
+    ChangePasswordView,
     ClientAuthTelemetryIngestView,
     ConfirmEmailCodeView,
     CookieLogoutView,
@@ -35,6 +36,7 @@ urlpatterns = [
     path('api/auth/sessions/', SessionListView.as_view(), name='auth-sessions'),
     path('api/auth/sessions/revoke_all/', RevokeAllSessionsView.as_view(), name='auth-revoke-all'),
     path('api/auth/sessions/<int:session_id>/revoke/', RevokeSessionView.as_view(), name='auth-revoke-session'),
+    path('api/auth/password/change/', ChangePasswordView.as_view(), name='auth-password-change'),
     path('api/ops/alertmanager/webhook/', AlertmanagerWebhookView.as_view(), name='alertmanager-webhook'),
     path('api/health/live/', LiveHealthView.as_view(), name='health-live'),
     path('api/health/ready/', ReadyHealthView.as_view(), name='health-ready'),

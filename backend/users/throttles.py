@@ -52,6 +52,16 @@ class EmailVerifyPerUserThrottle(UserRateThrottle):
     scope = "email_verify_user"
 
 
+class PasswordChangeThrottle(UserRateThrottle):
+    """Caps password-change attempts per account.
+
+    The endpoint asks for the current password, so on a session left signed in on a shared
+    classroom computer it is a guessing oracle for that password. This bounds the guesses.
+    """
+
+    scope = "password_change"
+
+
 class EmailConfirmThrottle(UserRateThrottle):
     """Caps code submissions per account.
 

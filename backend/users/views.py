@@ -50,7 +50,10 @@ from .throttles import (
     EmailConfirmThrottle,
     EmailVerifyPerTargetThrottle,
     EmailVerifyPerUserThrottle,
+    PasswordChangeThrottle,
 )
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .serializers import (
     ExamDateOptionPublicSerializer,
     ExamDateOptionSerializer,
@@ -621,11 +624,64 @@ class CookieLogoutView(APIView):
         return resp
 
 
+def _current_refresh_jti(request) -> str | None:
+    """The session row this browser renews with, by the jti in its refresh cookie.
+
+    The cookie is HttpOnly on path "/", so it rides along on every API request. A native app
+    authenticates with a bearer access token that names no session, and an expired or forged
+    cookie decodes to nothing — either way there is no "this device", and callers must cope.
+    """
+    try:
+        raw = request.COOKIES.get(REFRESH_COOKIE)
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        return _jti_of_refresh(raw) or None
+    except Exception:
+        return None
+
+
+def _revoke_session_rows(qs) -> int:
+    """Revoke every row in ``qs``: stamp it in the database and mark its jti in the cache.
+
+    The cache mark is what stops a revoked refresh token at its next renewal without a
+    database round trip; the stamp is what takes the row off the device list.
+    """
+    jtis = list(qs.values_list("refresh_jti", flat=True)[:500])
+    for jti in jtis:
+        try:
+            cache.set(_revoked_key(str(jti)), "1", timeout=int(timedelta(days=8).total_seconds()))
+        except Exception:
+            pass
+    qs.update(revoked_at=timezone.now())
+    return len(jtis)
+
+
 class SessionListView(APIView):
+    """GET ``/api/auth/sessions/`` — the devices signed in to this account right now.
+
+    Live rows only. A refresh ROTATES on every renewal: the old row is revoked and a new one
+    written, so an account's history is one row per renewal, not one per device — 176 students
+    on production had thirteen or more, one had 342, and the profile listed fifty of them with
+    raw user-agent strings. The unrevoked row at the head of each chain is the device. A row
+    older than the refresh lifetime is a device that stopped coming back: its token can no
+    longer renew, so it is not signed in anywhere and is left off too.
+
+    ``is_current`` marks the row this browser holds, listed first.
+    """
+
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get(self, request):
-        qs = RefreshSession.objects.filter(user=request.user).order_by("-last_seen_at", "-id")[:50]
+        lifetime = settings.SIMPLE_JWT.get("REFRESH_TOKEN_LIFETIME") or timedelta(weeks=1)
+        current = _current_refresh_jti(request)
+        qs = RefreshSession.objects.filter(
+            user=request.user,
+            revoked_at__isnull=True,
+            created_at__gte=timezone.now() - lifetime,
+        ).order_by("-last_seen_at", "-id")[:50]
         rows = []
         for s in qs:
             rows.append(
@@ -636,33 +692,47 @@ class SessionListView(APIView):
                     "ip": s.ip,
                     "user_agent": s.user_agent,
                     "revoked_at": s.revoked_at.isoformat() if s.revoked_at else None,
+                    "is_current": bool(current) and s.refresh_jti == current,
                 }
             )
+        # Stable: the current device first, the rest still most recently seen first.
+        rows.sort(key=lambda row: not row["is_current"])
         return Response({"sessions": rows}, status=status.HTTP_200_OK)
 
 
 class RevokeAllSessionsView(APIView):
+    """POST ``/api/auth/sessions/revoke_all/`` — sign out everywhere, or everywhere else.
+
+    ``{"keep_current": true}`` signs out every OTHER device: the row this browser renews with
+    stays live and its cookies are left alone. Without it every session goes, this one
+    included, and the response clears this browser's cookies — the original behaviour.
+
+    If the current session cannot be identified (no refresh cookie), "everywhere else" cannot
+    be told apart from "everywhere", and the safe reading of a sign-out is the wider one: all
+    rows are revoked, the cookies cleared, and ``kept_current`` says false so the client knows
+    it has been signed out too.
+    """
+
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request):
-        now = timezone.now()
+        keep_value = (request.data or {}).get("keep_current")
+        keep_current = keep_value is True or str(keep_value).strip().lower() in ("1", "true", "yes")
+        current = _current_refresh_jti(request) if keep_current else None
         qs = RefreshSession.objects.filter(user=request.user, revoked_at__isnull=True)
-        jtis = list(qs.values_list("refresh_jti", flat=True)[:500])
-        for jti in jtis:
-            try:
-                cache.set(_revoked_key(str(jti)), "1", timeout=int(timedelta(days=8).total_seconds()))
-            except Exception:
-                pass
-        qs.update(revoked_at=now)
+        if current:
+            qs = qs.exclude(refresh_jti=current)
+        revoked = _revoke_session_rows(qs)
         log_security_event(
             user_id=int(request.user.pk),
-            event_type="session_revoke_all",
+            event_type="session_revoke_others" if current else "session_revoke_all",
             request=request,
-            detail={"sessions": len(jtis)},
+            detail={"sessions": revoked},
             severity="info",
         )
-        resp = Response({"ok": True}, status=status.HTTP_200_OK)
-        clear_auth_cookies(response=resp, request=request)
+        resp = Response({"ok": True, "revoked": revoked, "kept_current": bool(current)}, status=status.HTTP_200_OK)
+        if not current:
+            clear_auth_cookies(response=resp, request=request)
         return resp
 
 
@@ -687,6 +757,93 @@ class RevokeSessionView(APIView):
                 severity="info",
             )
         return Response({"ok": True}, status=status.HTTP_200_OK)
+
+
+class ChangePasswordView(APIView):
+    """POST ``/api/auth/password/change/`` — a signed-in user replaces their own password.
+
+    Body: ``{"current_password": "...", "new_password": "..."}``. Errors come back keyed by
+    field, the shape DRF serializers use, so the form can put each message under its input.
+
+    Under ``/api/auth/`` for the same reason as email verification: ``access.host_guard`` lets
+    that prefix through on every console.
+
+    The current password is required even though the request is already authenticated: a
+    session left open on a shared classroom computer must not be enough to take the account for
+    good. The new one goes through ``AUTH_PASSWORD_VALIDATORS``, like every other place a
+    password is set.
+
+    On success every OTHER device is signed out — whoever else holds a session is exactly who a
+    password change is meant to lock out — and this browser stays in. Signed-out devices stop at
+    their next renewal. A native app, which carries no refresh cookie, cannot be told apart from
+    the others and is signed out with them.
+    """
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+    throttle_classes = [PasswordChangeThrottle]
+
+    def post(self, request):
+        user = request.user
+        data = request.data or {}
+        current_password = str(data.get("current_password") or "")
+        new_password = str(data.get("new_password") or "")
+
+        missing = {}
+        if not current_password:
+            missing["current_password"] = ["Enter your current password."]
+        if not new_password:
+            missing["new_password"] = ["Enter a new password."]
+        if missing:
+            return Response(missing, status=status.HTTP_400_BAD_REQUEST)
+
+        if not user.has_usable_password() or not user.check_password(current_password):
+            log_security_event(
+                user_id=int(user.pk),
+                event_type="password_change_failed",
+                request=request,
+                detail={"reason": "current_password"},
+                severity="warning",
+            )
+            return Response(
+                {"current_password": ["That isn't your current password."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if new_password == current_password:
+            return Response(
+                {"new_password": ["Choose a password that is different from your current one."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            return Response({"new_password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        current = _current_refresh_jti(request)
+        with transaction.atomic():
+            user.set_password(new_password)
+            user.last_password_change = timezone.now()
+            user.security_step_up_required_until = None
+            user.save(update_fields=["password", "last_password_change", "security_step_up_required_until"])
+            others = RefreshSession.objects.filter(user=user, revoked_at__isnull=True)
+            if current:
+                others = others.exclude(refresh_jti=current)
+            signed_out = _revoke_session_rows(others)
+
+        log_security_event(
+            user_id=int(user.pk),
+            event_type="password_change",
+            request=request,
+            detail={"signed_out_sessions": signed_out},
+            severity="info",
+        )
+        return Response(
+            {
+                "ok": True,
+                "signed_out_sessions": signed_out,
+                "last_password_change": user.last_password_change.isoformat(),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ClientAuthTelemetryIngestView(APIView):
