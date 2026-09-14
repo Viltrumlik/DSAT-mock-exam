@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Baloo_2, Geist, Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { Baloo_2, Geist, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import QueryProvider from "@/components/QueryProvider";
@@ -7,11 +7,6 @@ import { ToastProvider } from "@/components/ToastProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
   subsets: ["latin"],
 });
 
@@ -53,11 +48,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    // The font variables go on <html>, not <body>. Tailwind declares its @theme tokens on :root,
+    // and a custom property resolves its var() where it is declared: with --font-geist-sans only
+    // on <body>, `--font-sans: var(--font-geist-sans), …` resolved to nothing, and every
+    // var(--font-sans) silently fell back to inheriting whatever surrounded it.
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${plusJakarta.variable} ${baloo.variable}`}
+    >
       <head />
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} ${plusJakarta.variable} ${baloo.variable} antialiased`}
-      >
+      <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <QueryProvider>
             <ToastProvider>

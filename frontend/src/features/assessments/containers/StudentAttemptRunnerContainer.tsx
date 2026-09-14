@@ -1784,7 +1784,7 @@ function ExamSimulationView({
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col font-sans text-slate-900 overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-white flex flex-col text-slate-900 overflow-hidden">
       {/* Top banners — render above the header without breaking its layout */}
       {!online && (
         <div className="w-full bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-bold py-1.5 px-4 text-center">

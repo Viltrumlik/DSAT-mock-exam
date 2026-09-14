@@ -61,7 +61,7 @@
 
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   /* Academic, editorial reading face. Used as the document default for
-     long-form/reading text; UI controls stay on --font-sans (see below). */
+     long-form/reading text; form controls take their surface's face (see below). */
   --font-serif: Georgia, "Times New Roman", "Noto Serif", serif;
 }
 
@@ -247,17 +247,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Keep interactive controls on the sans stack: serif form controls change
-   metrics/density and read as less "UI". Buttons, inputs, the question map,
-   admin-dense surfaces, etc. that opt into `font-sans` are unaffected by the
-   serif body default. KaTeX (.katex) and the Django admin set their own fonts,
-   so math alignment and admin density are untouched. */
+/* Form controls take the face of the surface around them: Georgia in the staff consoles, Geist
+   in the app shell, Plus Jakarta on the pages set in it. The rule has always done exactly this.
+   It used to say `font-family: var(--font-sans)`, which resolved to nothing until the font
+   variables moved onto <html>, so it computed to `inherit`; every screen was designed and
+   approved that way. It now says `inherit` outright.
+   Being unlayered, it also outranks any font utility placed ON a control. The `font-mono` on
+   the question editor's JSON textareas and on the class-code input and button has therefore
+   never applied: delete this rule and those turn monospace. */
 button,
 input,
 select,
 textarea,
 optgroup {
-  font-family: var(--font-sans);
+  font-family: inherit;
 }
 
 /* Keep math formulas on a single line everywhere (builder editors + student
@@ -847,7 +850,7 @@ html:not(.dark) .shell-sidebar-gold {
    Arial elsewhere) so the clock matches Bluebook. Long-form content (passage,
    question stem, answer choices) opts back into Georgia locally via font-[Georgia],
    which wins over this inherited value. The `.ts-runner button` variant (0,1,1)
-   beats the global `button { font-family: var(--font-sans) }` rule (0,0,1). */
+   beats the global `button { font-family: inherit }` rule (0,0,1). */
 .ts-runner,
 .ts-runner button,
 .ts-runner input,
@@ -860,9 +863,10 @@ html:not(.dark) .shell-sidebar-gold {
 /* Surfaces driven by the new shell use the sans UI stack; the serif
    body default is preserved for long-form reading passages. */
 .ds-app {
-  /* Reference the next/font variable directly (it's defined on <body>, not
-     :root) with a concrete fallback so the declaration is always valid —
-     keeps the new shell on the sans UI stack over the serif body default. */
+  /* Names the next/font variable directly, with a concrete fallback. It was
+     written while --font-sans still resolved to nothing (the font variables
+     sat on <body>; they are on <html> now), and it keeps the shell's exact
+     fallback stack — on the sans UI face over the serif body default. */
   font-family: var(--font-geist-sans, ui-sans-serif), ui-sans-serif, system-ui,
     -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }

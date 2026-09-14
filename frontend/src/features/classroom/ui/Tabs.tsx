@@ -60,8 +60,8 @@ export function Tabs({
             onPointerDown={spawnRipple}
             className={cn(
               "ds-ring cr-ripple cr-pill flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2",
-              // `font-[inherit]`: the global `button { font-family }` rule would otherwise
-              // set these in Geist inside a page set in Plus Jakarta.
+              // Tabs take the surrounding page's face through the global controls rule in
+              // globals.css (`font-family: inherit`); `font-[inherit]` only restates it.
               "font-[inherit] text-[13.5px] font-bold",
               selected
                 ? "cr-tabpop bg-primary text-primary-foreground shadow-[0_6px_14px_-6px_var(--primary)]"

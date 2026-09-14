@@ -131,10 +131,13 @@ export function ModePill({
   );
 }
 
-/** Keycap used in the modes' shortcut hints. */
+/**
+ * Keycap used in the modes' shortcut hints. `font-[inherit]` keeps the mode's own face: a `<kbd>`
+ * otherwise gets Tailwind's monospace stack.
+ */
 export function Kbd({ children }: { children: ReactNode }) {
   return (
-    <kbd className="inline-flex min-w-[1.4rem] items-center justify-center rounded-md border border-border bg-surface-2 px-1.5 py-0.5 font-sans text-[11px] font-extrabold text-muted-foreground shadow-card">
+    <kbd className="inline-flex min-w-[1.4rem] items-center justify-center rounded-md border border-border bg-surface-2 px-1.5 py-0.5 font-[inherit] text-[11px] font-extrabold text-muted-foreground shadow-card">
       {children}
     </kbd>
   );

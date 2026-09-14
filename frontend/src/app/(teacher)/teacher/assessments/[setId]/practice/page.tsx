@@ -214,7 +214,7 @@ export default function TeacherAssessmentPracticePage() {
 
   return (
     <AuthGuard>
-      <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-white font-sans text-slate-900">
+      <div className="fixed inset-0 z-50 flex flex-col overflow-hidden bg-white text-slate-900">
         {/* Header */}
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 bg-white px-6 py-3 shadow-sm">
           <button type="button" onClick={() => router.push("/teacher/assessments")} className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-500 transition-colors hover:text-slate-900">
