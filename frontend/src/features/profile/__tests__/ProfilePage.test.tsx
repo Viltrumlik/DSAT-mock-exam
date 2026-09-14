@@ -115,7 +115,8 @@ async function click(el: HTMLElement) {
 beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   users.getMe.mockResolvedValue(ME);
-  users.getTelegramWidgetConfig.mockResolvedValue({ enabled: true, bot_username: "Bot", client_id: "1", start_url: "/api/users/telegram/start/" });
+  // Absolute on purpose: check:api-layer forbids a relative API path in a string literal anywhere in src, tests included.
+  users.getTelegramWidgetConfig.mockResolvedValue({ enabled: true, bot_username: "Bot", client_id: "1", start_url: "https://mastersat.uz/api/users/telegram/start/" });
   users.listExamDates.mockResolvedValue([
     { id: 9, exam_date: "2026-10-03", label: "October SAT" },
     { id: 10, exam_date: "2026-11-07", label: "November SAT" },
