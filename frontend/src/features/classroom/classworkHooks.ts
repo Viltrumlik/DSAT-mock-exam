@@ -2,10 +2,10 @@
 
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { classesApi } from "@/lib/api";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
 import { classroomKeys } from "./queryKeys";
-import { useAssignments } from "./hooks";
 import { classworkFromAssignments, type StudentClasswork } from "./classworkApi";
 import { classworkAwardsApi, type ClassworkAwardsPanel } from "./classworkAwardsApi";
 import { lessonsApi, type LessonClasswork } from "./lessonsApi";
@@ -78,19 +78,41 @@ export function useAwardClasswork(classId: number, lessonId: number) {
 }
 
 /**
- * Every classwork the requesting member can see in this class, newest first.
- *
- * Reads the classroom's assignment list — the same query the Assignments tab already
- * holds, so opening Classwork costs no extra request when that cache is warm.
+ * Hung off the classroom's assignment key, so every write that refreshes the assignment list —
+ * award, publish, archive, delete, a lesson's hand-out — refreshes this one too (react-query
+ * matches by prefix).
  */
-export function useStudentClasswork(classId: number): {
+const classworkListKey = (classId: number, archived: boolean) =>
+  [...classroomKeys.assignments(classId), "classwork", archived ? "archived" : "live"] as const;
+
+/**
+ * Every classwork the requesting member can see in this class, newest first — or, with
+ * `archived`, the teaching team's archived ones.
+ *
+ * Asks for classwork by name (`category: "CLASSWORK"`). It used to read the shared assignment
+ * list and keep the classwork rows, which only worked because that list carried classwork —
+ * the very thing that put classwork under homework. The plain list is homework now.
+ */
+export function useStudentClasswork(
+  classId: number,
+  opts?: { archived?: boolean; enabled?: boolean },
+): {
   rows: StudentClasswork[];
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
 } {
-  const query = useAssignments(classId);
-  const rows = useMemo(() => classworkFromAssignments(query.data?.items ?? []), [query.data]);
+  const archived = Boolean(opts?.archived);
+  const query = useQuery({
+    queryKey: classworkListKey(classId, archived),
+    queryFn: () => classesApi.listAssignments(classId, { category: "CLASSWORK", includeArchived: archived }),
+    enabled: (opts?.enabled ?? true) && enabledId(classId),
+  });
+  const rows = useMemo(() => {
+    const all = classworkFromAssignments(query.data?.items ?? []);
+    // `include_archived` returns the live rows as well; the archived section shows only these.
+    return archived ? all.filter((r) => r.status === "ARCHIVED") : all;
+  }, [query.data, archived]);
   return {
     rows,
     isLoading: query.isLoading,

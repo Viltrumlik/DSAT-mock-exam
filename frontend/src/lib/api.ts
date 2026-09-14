@@ -1334,8 +1334,20 @@ export const classesApi = {
         return r.data;
     },
     // Assignments
-    listAssignments: async (classId: number): Promise<NormalizedList<Assignment>> => {
-        const r = await api.get(`/classes/${classId}/assignments/`);
+    /**
+     * A classroom's set work. **Homework unless asked otherwise** — the server leaves classwork
+     * out of the plain list, because every reader but one is a homework surface. The Classwork
+     * tab passes `category: "CLASSWORK"`; a reader that must see everything the class was given
+     * passes `"ALL"`. `includeArchived` is honoured for the teaching team only.
+     */
+    listAssignments: async (
+        classId: number,
+        opts?: { category?: "CLASSWORK" | "ALL"; includeArchived?: boolean },
+    ): Promise<NormalizedList<Assignment>> => {
+        const params: Record<string, string> = {};
+        if (opts?.category) params.category = opts.category;
+        if (opts?.includeArchived) params.include_archived = "1";
+        const r = await api.get(`/classes/${classId}/assignments/`, { params });
         return parseAssignmentList(r.data, `GET /classes/${classId}/assignments/`);
     },
     createAssignment: async (classId: number, data: any, isFormData = false) => {

@@ -409,8 +409,13 @@ class ClassroomViewSet(ModelViewSet):
         # per-classroom list applies for non-staff. It is not cosmetic: the payload
         # carries no status, so no client can filter it back out, and an assessment
         # reachable from here is also startable.
+        #
+        # Homework only, for the same reason: the payload carries no category either, and
+        # every consumer — the web To-do, /assessments, the iOS homework list — reads it as
+        # homework. Classwork lives in each classroom's Classwork tab.
         assignments = list(
-            Assignment.objects.filter(
+            Assignment.objects.homework()
+            .filter(
                 classroom_id__in=classroom_ids,
                 status=Assignment.STATUS_PUBLISHED,
             )
@@ -1315,8 +1320,11 @@ class ClassroomViewSet(ModelViewSet):
         student_ids = [m.user_id for m in student_memberships]
         n_students = len(student_ids)
 
+        # Homework only, here and in the completion count below: the teacher portal reads
+        # both as the class's homework, and classwork is marked in its own tab.
         practice_assignments = list(
-            Assignment.objects.filter(classroom=classroom)
+            Assignment.objects.homework()
+            .filter(classroom=classroom)
             .filter(
                 Q(practice_test__isnull=False)
                 | Q(practice_test_ids__isnull=False)
@@ -1393,9 +1401,10 @@ class ClassroomViewSet(ModelViewSet):
         min_cfg = int(getattr(settings, "CLASSROOM_LEADERBOARD_MIN_REVIEWED_FOR_RANK", 2))
         effective_min_for_rank = min(min_cfg, max_review_cnt) if max_review_cnt else min_cfg
 
-        homework_assignment_count = Assignment.objects.filter(classroom=classroom).count()
+        homework_assignment_count = Assignment.objects.homework().filter(classroom=classroom).count()
         turn_in_rows = (
             Submission.objects.filter(assignment__classroom=classroom, student_id__in=student_ids)
+            .exclude(assignment__category=Assignment.CATEGORY_CLASSWORK)
             .exclude(status=Submission.STATUS_DRAFT)
             .values("student_id")
             .annotate(n=Count("id"))
@@ -1628,9 +1637,12 @@ class ClassroomViewSet(ModelViewSet):
                 },
             })
 
-        # All assignments in the classroom.
+        # All homework in the classroom. Not classwork: there is nothing to turn in, so every
+        # student would read as not having done it, and the completion figures the teacher
+        # dashboard shows would be pulled down by work that was never meant to be handed in.
         assignments = list(
-            Assignment.objects.filter(classroom=classroom)
+            Assignment.objects.homework()
+            .filter(classroom=classroom)
             .prefetch_related("assessment_homeworks__assessment_set")
             .order_by("due_at", "-created_at")
         )
@@ -2139,6 +2151,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         qs = Assignment.objects.filter(classroom=classroom).select_related(
             "created_by", "mock_exam", "practice_test", "practice_test_pack", "module"
         ).prefetch_related("extra_attachments").annotate(submissions_count=Count("submissions"))
+        if self.action == "list":
+            # The LIST only. A classwork's own detail page, its edit form and its delete all
+            # come through this same queryset by id, and must keep finding it.
+            qs = self._category_scope(qs)
         is_staff = classroom.memberships.filter(
             user=user, role__in=ClassroomMembership.STAFF_ROLES
         ).exclude(status=ClassroomMembership.STATUS_REMOVED).exists()
@@ -2156,6 +2172,25 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         # Newest-GIVEN first (published_at, falling back to created_at) — mirrors the
         # student branch so a freshly published old draft floats to the top.
         return staff_qs.annotate(_given_at=Coalesce("published_at", "created_at")).order_by("-_given_at", "-id")
+
+    def _category_scope(self, qs):
+        """Which kind of work the list returns: homework, unless the caller names another.
+
+        Homework by default because every reader of this list but one is a homework surface —
+        the Assignments tab, the gradebook, the grading queue, a student's profile — and
+        classwork showed up in all of them (the owner: *"classwork classworkni o'zida
+        ko'rinishi kerak"*). The one exception, the Classwork tab, asks with
+        ``?category=CLASSWORK``. ``?category=ALL`` is both, for a reader that has to know
+        everything the class was given, such as the one-set-per-classroom assessment guard.
+        """
+        raw = str(self.request.query_params.get("category", "") or "").strip().upper()
+        if not raw:
+            return qs.homework()
+        if raw == "ALL":
+            return qs
+        if raw in {value for value, _label in Assignment.CATEGORY_CHOICES}:
+            return qs.filter(category=raw)
+        raise DRFValidationError({"category": f"Unknown category {raw!r}: use CLASSWORK, ALL or an assignment category."})
 
     def _manage_or_404(self, request, pk):
         """Fetch the assignment for lifecycle actions, bypassing the visibility filter,
@@ -2185,7 +2220,11 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         fields = ["status", "archived_at", "published_at", "updated_at"]
         # A draft becomes "given" when it is published, so its deadline is the next
         # lesson after THAT moment — not after it was drafted.
-        if first_publish:
+        #
+        # Homework only. Classwork has no deadline, as a rule rather than a default (create
+        # writes none), and publishing a classwork draft used to hand it the next lesson as
+        # a due date anyway — after which it read "Due …" and counted as overdue.
+        if first_publish and a.category != Assignment.CATEGORY_CLASSWORK:
             a.due_at = homework_due_at(a.classroom)
             fields.append("due_at")
         a.save(update_fields=fields)

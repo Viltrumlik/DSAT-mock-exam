@@ -102,7 +102,11 @@ def _homework_for(classroom, student) -> dict | None:
     from .analytics import _academic_assignments, _completion_map
     from .models import Assignment
 
-    assignments = _academic_assignments(classroom)
+    # Not classwork, though the academic set includes it: this figure is labelled
+    # "Homework", and classwork — nothing to hand in — could only ever count as not done.
+    assignments = [
+        a for a in _academic_assignments(classroom) if a.category != Assignment.CATEGORY_CLASSWORK
+    ]
     published = [a for a in assignments if a.status == Assignment.STATUS_PUBLISHED]
     if not published:
         return None

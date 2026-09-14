@@ -293,12 +293,33 @@ class ClassPost(models.Model):
         ordering = ["-created_at"]
 
 
+class AssignmentQuerySet(models.QuerySet):
+    """Homework and classwork share one table, and every list has to say which it wants.
+
+    The owner's rule (2026-09-13): *"classwork bilan homework alohida narsa"* — classwork is
+    shown in the Classwork tab and nowhere else. It has no deadline and nothing to hand in, so
+    a homework list that carried it offered work nobody could turn in, and a completion rate
+    that counted it could never reach 100%.
+
+    ``homework()`` is everything that is not classwork — "homework" is the product's word for
+    set work, and every other category (quiz, practice test, …) is set work too.
+    """
+
+    def homework(self):
+        return self.exclude(category=self.model.CATEGORY_CLASSWORK)
+
+    def classwork(self):
+        return self.filter(category=self.model.CATEGORY_CLASSWORK)
+
+
 class Assignment(models.Model):
     """
     Homework / class work. ``practice_scope`` filters which **SAT sections** count for this
     assignment (English vs Math vs both). It is **not** RBAC: authorization uses
     ``User.role``, ``User.subject`` (math|english), and ``access.UserAccess``.
     """
+
+    objects = AssignmentQuerySet.as_manager()
 
     PRACTICE_SCOPE_BOTH = "BOTH"
     PRACTICE_SCOPE_ENGLISH = "ENGLISH"

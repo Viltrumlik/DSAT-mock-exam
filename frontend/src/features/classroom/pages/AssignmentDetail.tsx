@@ -85,11 +85,12 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
   // The standalone console lives on the teacher portal, and the middleware there bounces
   // anything outside `/teacher/*`. Offered only from a render that can actually reach it.
   const fullAnalysisHref = base.startsWith("/teacher") ? "/teacher/question-analysis" : null;
+  const isClasswork = String(assignment.category || "").toUpperCase() === "CLASSWORK";
   return (
     <div className="cr-section mt-4 space-y-5">
       <header>
         <div className="flex items-center gap-2">
-          <Pill tone="primary">{KIND_LABEL[kind]}</Pill>
+          <Pill tone="primary">{isClasswork ? "Classwork" : KIND_LABEL[kind]}</Pill>
           {assignment.status === "DRAFT" && <Pill tone="neutral">Draft</Pill>}
           {assignment.status === "ARCHIVED" && <Pill tone="neutral">Archived</Pill>}
         </div>
@@ -98,12 +99,23 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
       {assignment.instructions && (
         <Card className="cr-card"><CardHeader title="Instructions" /><p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{assignment.instructions}</p></Card>
       )}
-      <Card className="cr-card">
-        <CardHeader title="Grading" description={assignment.category === "HOMEWORK" || kind === "FILE" ? "Manual grading" : "Auto-graded"} />
-        <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`${base}?tab=grading`)}>
-          Open in gradebook
-        </Button>
-      </Card>
+      {isClasswork ? (
+        // Classwork is not in the gradebook — it has nothing to hand in and is not homework.
+        // What a teacher does with it is give XP, which happens on the Classwork tab.
+        <Card className="cr-card">
+          <CardHeader title="XP" description="Classwork is not graded. You give XP for it on the Classwork tab." />
+          <Button className="mt-4" icon={Sparkles} onClick={() => router.push(`${base}?tab=classwork`)}>
+            Open Classwork
+          </Button>
+        </Card>
+      ) : (
+        <Card className="cr-card">
+          <CardHeader title="Grading" description={assignment.category === "HOMEWORK" || kind === "FILE" ? "Manual grading" : "Auto-graded"} />
+          <Button className="mt-4" icon={GraduationCap} onClick={() => router.push(`${base}?tab=grading`)}>
+            Open in gradebook
+          </Button>
+        </Card>
+      )}
       {/* Staff only, and only from this branch. The flagged cards carry question prompts,
           recorded answer keys and exactly which questions the class fell over — none of which
           a student may read, least of all one who can still hand this homework in. */}
