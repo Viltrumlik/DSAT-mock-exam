@@ -24,6 +24,16 @@ function cellText(c: Cell): string {
   if (c.grade != null) return String(c.grade);
   return "•";
 }
+// A trend in whole points, like the Avg column. Grades have two decimals, but the float difference of two doesn't
+// (83.33 − 76.67 is 6.659999999999997), so the move goes back to hundredths before it is rounded: left as it is,
+// that noise decides a move ending in a half. Its size is what's rounded, so a fall prints like the same rise.
+function trendPoints(delta: number): number {
+  return Math.round(Math.round(Math.abs(delta) * 100) / 100);
+}
+// A trend reads as a fall only when the points it prints fell: a dip that prints as 0 is no change.
+function trendFalls(delta: number): boolean {
+  return delta < 0 && trendPoints(delta) > 0;
+}
 
 export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption[]; model: GradebookModel } }) {
   const { status, classes, selectedClassId, setSelectedClassId, loading, model } = useGradebook(preview);
@@ -96,8 +106,8 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
                       <td className="px-3 py-2.5 text-center"><Badge variant={s.average == null ? "neutral" : s.average < 60 ? "warning" : "success"}>{s.average != null ? `${s.average}%` : "—"}</Badge></td>
                       <td className="px-3 py-2.5 text-center">
                         {s.trendDelta == null ? <span className="text-label-foreground">—</span> : (
-                          <span className={cn("ds-num inline-flex items-center gap-0.5 text-[13px] font-bold", s.trendDelta >= 0 ? "text-success-foreground" : "text-warning-foreground")}>
-                            {s.trendDelta >= 0 ? <ArrowUpRight className="h-3.5 w-3.5" /> : <ArrowDownRight className="h-3.5 w-3.5" />}{Math.abs(s.trendDelta)}
+                          <span className={cn("ds-num inline-flex items-center gap-0.5 text-[13px] font-bold", trendFalls(s.trendDelta) ? "text-warning-foreground" : "text-success-foreground")}>
+                            {trendFalls(s.trendDelta) ? <ArrowDownRight className="h-3.5 w-3.5" /> : <ArrowUpRight className="h-3.5 w-3.5" />}{trendPoints(s.trendDelta)}
                           </span>
                         )}
                       </td>
