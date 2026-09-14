@@ -2167,7 +2167,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                 .annotate(_given_at=Coalesce("published_at", "created_at"))
                 .order_by("-_given_at", "-id")
             )
-        include_archived = str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
+        # "Show archived" is a switch on the LIST. By id the teaching team finds archived work whatever the
+        # request says: its page, its edit form and its delete all come through here, and a 404 left every
+        # archived row with an Edit that could not load and a Delete that deleted nothing.
+        include_archived = self.action != "list" or str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
         staff_qs = qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
         # Newest-GIVEN first (published_at, falling back to created_at) — mirrors the
         # student branch so a freshly published old draft floats to the top.
