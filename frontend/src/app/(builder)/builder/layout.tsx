@@ -1,6 +1,7 @@
 "use client";
 
 import AuthGuard from "@/components/AuthGuard";
+import { OverlayFaceProvider } from "@/components/ui/OverlayFace";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
@@ -78,7 +79,19 @@ function isNavActive(pathname: string, href: string, exact: boolean): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
+/**
+ * The console is set in the body's Georgia — it never took the app shell's `ds-app` — so its dialogs
+ * and toasts are too, rather than being the one sans thing in it. See OverlayFace.
+ */
 export default function BuilderLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <OverlayFaceProvider face="body">
+      <BuilderConsole>{children}</BuilderConsole>
+    </OverlayFaceProvider>
+  );
+}
+
+function BuilderConsole({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   // Editor pages get a full-screen layout — no sidebar competing for space.

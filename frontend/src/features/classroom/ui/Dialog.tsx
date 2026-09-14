@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useOverlayFaceClass } from "@/components/ui/OverlayFace";
 
 export interface DialogProps {
   open: boolean;
@@ -19,6 +20,9 @@ const widths = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl" } as const;
 
 /** Accessible modal: Escape to close, scrim click to close, body scroll lock. */
 export function Dialog({ open, onClose, title, description, size = "md", children, footer }: DialogProps) {
+  // Portalled onto <body>, out of the page's typeface — see OverlayFace.
+  const faceClass = useOverlayFaceClass();
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -34,7 +38,11 @@ export function Dialog({ open, onClose, title, description, size = "md", childre
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+    <div
+      className={cn("fixed inset-0 z-50 flex items-end justify-center sm:items-center", faceClass)}
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="absolute inset-0 bg-[var(--overlay-scrim)] backdrop-blur-[2px]" onClick={onClose} aria-hidden />
       <div
         className={cn(

@@ -30,6 +30,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useOverlayFaceClass } from "@/components/ui/OverlayFace";
 
 import type { Story } from "./storiesApi";
 
@@ -68,6 +69,8 @@ export function StoryViewer({
   // screen because a parent card is animating is exactly the bug this rewrite is fixing.
   // Mounted-after-effect so the server render matches the first client render.
   useEffect(() => setMounted(true), []);
+  // Portalled onto <body>, out of the page's typeface — see OverlayFace.
+  const faceClass = useOverlayFaceClass();
 
   const go = useCallback(
     (next: number) => {
@@ -138,6 +141,7 @@ export function StoryViewer({
       role="dialog"
       aria-modal="true"
       aria-label={story.title || "Story"}
+      className={faceClass}
       style={{
         position: "fixed",
         inset: 0,

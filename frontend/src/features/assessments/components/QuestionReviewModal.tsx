@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, BookOpen, CheckCircle2, ChevronRight, Flag, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useOverlayFaceClass } from "@/components/ui/OverlayFace";
 import type { PedagogicalReviewQuestion } from "@/features/assessmentsStudent/api";
 import { ReportProblemModal } from "@/features/question-reports/ReportProblemModal";
 import { QuestionDeepDive, getQuestionOutcome, OUTCOME_META } from "./QuestionDeepDive";
@@ -31,6 +32,9 @@ export function QuestionReviewModal({
   const total = questions.length;
   const q = questions[index];
   const [reportOpen, setReportOpen] = useState(false);
+  // Portalled onto <body>, out of the page's typeface — see OverlayFace. The question, passage,
+  // choices and explanation set `font-[Georgia]` themselves and keep it.
+  const faceClass = useOverlayFaceClass();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -53,7 +57,7 @@ export function QuestionReviewModal({
   const meta = OUTCOME_META[outcome];
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-8">
+    <div className={cn("fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-8", faceClass)}>
       <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
       <div className="relative flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-[24px] border border-border bg-card shadow-2xl">
         {/* Header */}

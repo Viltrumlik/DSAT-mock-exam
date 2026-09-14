@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useOverlayFaceClass } from "./OverlayFace";
 
 export type DrawerProps = {
   open: boolean;
@@ -27,6 +28,8 @@ export function Drawer({
 }: DrawerProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Portalled onto <body>, out of the page's typeface — see OverlayFace.
+  const faceClass = useOverlayFaceClass();
 
   useEffect(() => {
     if (!open) return;
@@ -43,7 +46,7 @@ export function Drawer({
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200]">
+    <div className={cn("fixed inset-0 z-[200]", faceClass)}>
       <div
         className="ds-anim-fade absolute inset-0 bg-[var(--overlay-scrim)]"
         onClick={onClose}

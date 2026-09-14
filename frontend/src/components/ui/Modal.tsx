@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/cn";
+import { useOverlayFaceClass } from "./OverlayFace";
 
 export type ModalProps = {
   open: boolean;
@@ -44,6 +45,8 @@ export function Modal({
 }: ModalProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  // Portalled onto <body>, out of the page's typeface — see OverlayFace.
+  const faceClass = useOverlayFaceClass();
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +65,7 @@ export function Modal({
   if (!mounted || !open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+    <div className={cn("fixed inset-0 z-[200] flex items-center justify-center p-4", faceClass)}>
       <div
         className="ds-anim-fade absolute inset-0 bg-[var(--overlay-scrim)] backdrop-blur-[2px]"
         onClick={onClose}
