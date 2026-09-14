@@ -1411,25 +1411,53 @@ class ClassroomViewSet(ModelViewSet):
         min_cfg = int(getattr(settings, "CLASSROOM_LEADERBOARD_MIN_REVIEWED_FOR_RANK", 2))
         effective_min_for_rank = min(min_cfg, max_review_cnt) if max_review_cnt else min_cfg
 
-        homework_assignment_count = Assignment.objects.homework().filter(classroom=classroom).count()
-        turn_in_rows = (
-            Submission.objects.filter(assignment__classroom=classroom, student_id__in=student_ids)
-            .exclude(assignment__category=Assignment.CATEGORY_CLASSWORK)
-            .exclude(status=Submission.STATUS_DRAFT)
-            .values("student_id")
-            .annotate(n=Count("id"))
+        # Homework completion, against the class's PUBLISHED homework: nobody is asked to turn in a
+        # draft, archived work is retired, and classwork has nothing to turn in. Each student's rate is
+        # turned in ÷ (turned in + missing), missing being past its due date and not turned in, as the
+        # interventions endpoint's "overdue" is. So homework that is not due yet counts once it is
+        # turned in, and never against the student before that.
+        homework_due_at = dict(
+            Assignment.objects.homework()
+            .filter(classroom=classroom, status=Assignment.STATUS_PUBLISHED)
+            .values_list("id", "due_at")
         )
-        turn_in_by_student = {row["student_id"]: row["n"] for row in turn_in_rows}
+        homework_ids = list(homework_due_at)
+        homework_assignment_count = len(homework_ids)
+        now = timezone.now()
+        past_due_ids = {a_id for a_id, due_at in homework_due_at.items() if due_at is not None and due_at < now}
+
+        # Turned in, as interventions counts it: a submission the student sent (RETURNED was sent back
+        # for revision, which is not missing), or a submitted or graded attempt on any of the homework's
+        # assessments. Assessment homework is turned in as an attempt, and a homework carrying several
+        # assessments never gets a submission from them. Sets, because most homework with a single
+        # assessment has both records.
+        from assessments.models import AssessmentAttempt
+
+        turned_in_by_student: dict[int, set[int]] = defaultdict(set)
+        submissions = Submission.objects.filter(
+            assignment_id__in=homework_ids,
+            student_id__in=student_ids,
+            status__in=(Submission.STATUS_SUBMITTED, Submission.STATUS_REVIEWED, Submission.STATUS_RETURNED),
+        )
+        for student_id, assignment_id in submissions.values_list("student_id", "assignment_id"):
+            turned_in_by_student[student_id].add(assignment_id)
+        attempts = AssessmentAttempt.objects.filter(
+            homework__assignment_id__in=homework_ids,
+            student_id__in=student_ids,
+            status__in=(AssessmentAttempt.STATUS_SUBMITTED, AssessmentAttempt.STATUS_GRADED),
+        )
+        for student_id, assignment_id in attempts.values_list("student_id", "homework__assignment_id"):
+            turned_in_by_student[student_id].add(assignment_id)
 
         homework_grade_rows: list[dict] = []
         for mem in student_memberships:
             uid = mem.user_id
             avg_g = review_avg_by_student.get(uid)
             cnt = reviewed_count_by_student.get(uid, 0)
-            turn_in = turn_in_by_student.get(uid, 0)
-            completion_pct = (
-                round(100.0 * turn_in / homework_assignment_count, 1) if homework_assignment_count else None
-            )
+            turned_in = turned_in_by_student.get(uid, set())
+            turn_in = len(turned_in)
+            counted = len(past_due_ids | turned_in)
+            completion_pct = round(100.0 * turn_in / counted, 1) if counted else None
             homework_grade_rows.append(
                 {
                     "user_id": uid,
@@ -1580,7 +1608,7 @@ class ClassroomViewSet(ModelViewSet):
                     "description": (
                         "Rankings by average teacher grade (SubmissionReview.grade) across "
                         "submissions marked reviewed in this class. Ties use graded count, then "
-                        "classwork completion rate, then number of non-draft turn-ins."
+                        "homework completion rate, then number of homework turned in."
                     ),
                     "class_average_review_grade": class_average_review_grade,
                     "classwork_assignment_count": homework_assignment_count,
@@ -1589,7 +1617,7 @@ class ClassroomViewSet(ModelViewSet):
                         f"Rank is shown only when a student has at least {effective_min_for_rank} "
                         "graded homework item(s) in this class and a numeric average; "
                         "otherwise rank is null (rank_ordinal still reflects sort order). "
-                        "Completion rate is non-draft submissions ÷ total class assignments."
+                        "Completion rate is published homework turned in ÷ homework turned in or past due."
                     ),
                     "rows": homework_grade_rows,
                 },
