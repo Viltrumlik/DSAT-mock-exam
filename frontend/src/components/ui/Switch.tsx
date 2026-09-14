@@ -7,6 +7,9 @@ export type SwitchProps = {
   onCheckedChange: (checked: boolean) => void;
   disabled?: boolean;
   label?: string;
+  /** The switch's name for a screen reader when its row already shows the words — `label` would
+   *  print them a second time beside the switch. */
+  ariaLabel?: string;
   id?: string;
   className?: string;
 };
@@ -16,6 +19,7 @@ export function Switch({
   onCheckedChange,
   disabled,
   label,
+  ariaLabel,
   id,
   className,
 }: SwitchProps) {
@@ -25,7 +29,7 @@ export function Switch({
       role="switch"
       id={id}
       aria-checked={checked}
-      aria-label={label}
+      aria-label={label ?? ariaLabel}
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
