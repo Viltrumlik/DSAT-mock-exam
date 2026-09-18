@@ -177,26 +177,38 @@ class MySubmissionRequiresPublishedHomeworkTests(UnpublishedHomeworkFixture):
 
     def setUp(self):
         super().setUp()
-        from exams.models import PracticeTest, TestAttempt
+        from exams.models import PracticeTest
 
         self.practice_test = PracticeTest.objects.create(mock_exam=None, subject="MATH", title="Section")
-        # Finished BEFORE any homework targets it, so the post_save sync has nothing to attach
-        # it to. Only the lazy sync inside my-submission can.
-        TestAttempt.objects.create(
-            practice_test=self.practice_test, student=self.student, is_completed=True, score=90,
-        )
+
+    def _finish_unseen(self):
+        """The test, finished after the homework was set and written with no post_save, so only
+        the lazy sync inside my-submission can find it. After, not before: a sitting from before
+        the homework is history and never hands it in (``classes.pastpaper_retake``)."""
+        from exams.models import TestAttempt
+
+        now = timezone.now()
+        TestAttempt.objects.bulk_create([
+            TestAttempt(
+                practice_test=self.practice_test, student=self.student, is_completed=True,
+                score=90, current_state=TestAttempt.STATE_COMPLETED,
+                completed_at=now, submitted_at=now,
+            )
+        ])
 
     def _my_submission(self, homework):
         return self.client.get(self._url(homework.id, "my-submission"))
 
     def test_draft_homework_is_a_404_and_nothing_is_synced(self):
         draft = self._homework(Assignment.STATUS_DRAFT, practice_test=self.practice_test)
+        self._finish_unseen()
         r = self._my_submission(draft)
         self.assertEqual(r.status_code, 404, r.content)
         self.assertFalse(Submission.objects.filter(assignment=draft).exists())
 
     def test_archived_homework_is_a_404_and_nothing_is_synced(self):
         archived = self._homework(Assignment.STATUS_ARCHIVED, practice_test=self.practice_test)
+        self._finish_unseen()
         r = self._my_submission(archived)
         self.assertEqual(r.status_code, 404, r.content)
         self.assertFalse(Submission.objects.filter(assignment=archived).exists())
@@ -205,6 +217,7 @@ class MySubmissionRequiresPublishedHomeworkTests(UnpublishedHomeworkFixture):
         # Control, and proof the fixture really does sync: on published work the same finished
         # attempt becomes an auto-graded submission.
         homework = self._homework(Assignment.STATUS_PUBLISHED, practice_test=self.practice_test)
+        self._finish_unseen()
         r = self._my_submission(homework)
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json()["status"], Submission.STATUS_REVIEWED)

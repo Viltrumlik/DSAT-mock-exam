@@ -12,6 +12,7 @@ from access.services import normalized_role
 from exams.models import MockExam, PracticeTest, PracticeTestPack
 from users.photos import profile_image_url
 
+from .pastpaper_retake import homework_set_at
 from .submission_validation import validate_submission_grade
 
 from .models import (
@@ -708,8 +709,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
         pts = list(PracticeTest.objects.filter(id__in=ids))
         pts.sort(key=lambda p: (order.get(p.subject, 9), p.id))
         # Per-section attempt state for the requesting student (one query), so the
-        # launcher renders Start / Resume / Review per section.
-        states = self._exam_states([p.id for p in pts])
+        # launcher renders Start / Resume / Review per section. Only sittings finished
+        # since this homework was set count, so a paper set again reads Start, not the
+        # Review of last month's attempt (pastpaper_retake).
+        states = self._exam_states([p.id for p in pts], since=homework_set_at(obj))
         return [
             {
                 "id": p.id,
@@ -721,6 +724,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 "subject": p.subject,
                 "state": states[p.id]["state"],
                 "attempt_id": states[p.id]["attempt_id"],
+                # Sat before this homework and not since: the launcher says "Start again".
+                "retake": states[p.id]["retake"],
             }
             for p in pts
         ]
@@ -731,34 +736,44 @@ class AssignmentSerializer(serializers.ModelSerializer):
         u = getattr(req, "user", None)
         return u if (u is not None and getattr(u, "is_authenticated", False)) else None
 
-    def _exam_states(self, ids):
-        """Map {practice_test_id: {"state","attempt_id"}} for the requesting student.
-        A completed attempt wins (→ review); else an active (started, non-abandoned)
-        attempt (→ resume); else not_started. One query for all ids."""
-        out = {tid: {"state": "not_started", "attempt_id": None} for tid in ids}
+    def _exam_states(self, ids, since=None):
+        """Map {practice_test_id: {"state","attempt_id","retake"}} for the requesting student.
+        A completed attempt finished since ``since`` wins (→ review); else an active
+        (started, non-abandoned) attempt (→ resume); else not_started. A completed attempt
+        from BEFORE ``since`` is history — an earlier homework's, or the library's — so it
+        only sets ``retake`` and the paper is offered again. One query for all ids."""
+        out = {tid: {"state": "not_started", "attempt_id": None, "retake": False} for tid in ids}
         user = self._req_user()
         if user is None or not ids:
             return out
         from exams.models import TestAttempt
 
         completed: dict[int, int] = {}
+        earlier: set[int] = set()
         active: dict[int, int] = {}
         rows = (
             TestAttempt.objects.filter(student=user, practice_test_id__in=ids)
             .order_by("practice_test_id", "-id")
-            .values("id", "practice_test_id", "is_completed", "current_state")
+            .values("id", "practice_test_id", "is_completed", "current_state", "completed_at")
         )
         for r in rows:  # ordered -id → first seen per test is the latest
             tid = r["practice_test_id"]
             if r["is_completed"] and r["current_state"] == TestAttempt.STATE_COMPLETED:
-                completed.setdefault(tid, r["id"])
+                finished = r["completed_at"]
+                if since is None or (finished is not None and finished >= since):
+                    completed.setdefault(tid, r["id"])
+                else:
+                    earlier.add(tid)
             elif r["current_state"] not in (TestAttempt.STATE_NOT_STARTED, TestAttempt.STATE_ABANDONED):
                 active.setdefault(tid, r["id"])
         for tid in ids:
+            retake = tid in earlier and tid not in completed
             if tid in completed:
-                out[tid] = {"state": "completed", "attempt_id": completed[tid]}
+                out[tid] = {"state": "completed", "attempt_id": completed[tid], "retake": False}
             elif tid in active:
-                out[tid] = {"state": "in_progress", "attempt_id": active[tid]}
+                out[tid] = {"state": "in_progress", "attempt_id": active[tid], "retake": retake}
+            else:
+                out[tid]["retake"] = retake
         return out
 
     def _hw_progress(self, hw, user):

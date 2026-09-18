@@ -11,11 +11,16 @@ without it.
 There is no *issue* endpoint. A pastpaper certificate is minted when the paper is completed —
 nobody approves it, so nothing needs a button. Only the repair path (`?force=1` for staff)
 re-freezes one, and that exists for the case the platform has already seen: an answer key
-corrected after students had sat the paper.
+corrected after students had sat the paper. The download by attempt also mints one that is
+missing; `AttemptCertificatePdfView` says why.
 """
 
 from __future__ import annotations
 
+import logging
+
+from django.db import IntegrityError
+from django.db.models import F
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http
@@ -27,9 +32,11 @@ from access import constants as acc_const
 from access.services import is_global_scope_staff, normalized_role
 
 from .models_certificates import PastpaperCertificate
-from .pastpaper_certificate import issue_for_attempt
+from .pastpaper_certificate import is_eligible, issue_for_attempt
 from .pastpaper_certificate_pdf import render_pdf_safe, render_report_pdf
 from .pastpaper_report import build_error_report
+
+logger = logging.getLogger(__name__)
 
 
 def _is_staff(user) -> bool:
@@ -43,6 +50,45 @@ def _is_staff(user) -> bool:
 def _readable(user, cert) -> bool:
     """Owner, or staff. The single ownership rule for everything in this module."""
     return cert.student_id == user.pk or is_global_scope_staff(user) or _is_staff(user)
+
+
+def _history(attempt) -> list[dict]:
+    """Every finished sitting of this paper by this student, newest first.
+
+    A paper set again as homework is sat again (``pastpaper_retake``), and the sitting before
+    it stays here with its own score and its own certificate.
+    """
+    from exams.models import TestAttempt
+
+    rows = (
+        TestAttempt.objects.filter(
+            student_id=attempt.student_id,
+            practice_test_id=attempt.practice_test_id,
+            is_completed=True,
+            current_state=TestAttempt.STATE_COMPLETED,
+        )
+        .order_by(F("completed_at").desc(nulls_last=True), "-id")
+        .values("id", "score", "completed_at")
+    )
+    return [
+        {"attempt_id": r["id"], "score": r["score"], "completed_at": r["completed_at"]}
+        for r in rows
+    ]
+
+
+def _certificate_for(attempt):
+    """The attempt's certificate, minted now if it never was. ``None`` when minting failed."""
+    existing = PastpaperCertificate.objects.filter(attempt=attempt).first()
+    if existing is not None:
+        return existing
+    try:
+        return issue_for_attempt(attempt)
+    except IntegrityError:
+        # Two first downloads at once, and the other one's insert won.
+        return PastpaperCertificate.objects.filter(attempt=attempt).first()
+    except Exception:
+        logger.exception("pastpaper_certificate_issue_failed attempt=%s", attempt.pk)
+        return None
 
 
 def _serialize(cert, *, report=None) -> dict:
@@ -138,9 +184,15 @@ class AttemptErrorReportView(APIView):
         cert = PastpaperCertificate.objects.filter(attempt=attempt).first()
         return Response({
             "attempt_id": attempt.pk,
+            "practice_test_id": attempt.practice_test_id,
             "score": attempt.score,
             "paper_title": getattr(attempt.practice_test, "collection_name", "") or "",
             "certificate_code": cert.code if cert else None,
+            # Whether this sitting earns a certificate at all; a mock section does not. The
+            # download button follows this, not the code: the code is missing on every sitting
+            # the completion signal never reached, and the download mints it.
+            "certificate_available": is_eligible(attempt),
+            "history": _history(attempt),
             **build_error_report(attempt),
         })
 
@@ -173,6 +225,52 @@ class PastpaperErrorReportPdfView(APIView):
         response["Content-Disposition"] = (
             f'attachment; filename="MasterSAT-error-report-{attempt.pk}.pdf"'
         )
+        return response
+
+
+class AttemptCertificatePdfView(APIView):
+    """The certificate PDF for one finished sitting, by attempt, minted if it is missing.
+
+    Every certificate button reads this: the report page's, and one per row of its history.
+
+    **Why it mints.** The certificate was meant to be issued on completion by a ``post_save``
+    receiver (``pastpaper_signals``), but ``TestAttempt.complete_test`` records the finish with
+    a conditional ``UPDATE`` (``exams.engine_db_guard``), which sends no signal. On 2026-09-18
+    prod had 976 finished pastpapers and not one certificate, so the report page never showed
+    its button. Issuing is idempotent on the attempt, so minting at the first download gives
+    every sitting, the old ones included, the certificate it was meant to get on the day. The
+    printed date is the day the paper was finished (``PastpaperCertificate.date_display``).
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, attempt_id):
+        from exams.models import TestAttempt
+
+        attempt = get_object_or_404(
+            TestAttempt.objects.select_related("practice_test", "student"), pk=attempt_id
+        )
+        if not (attempt.student_id == request.user.pk or _is_staff(request.user)
+                or is_global_scope_staff(request.user)):
+            return Response({"detail": "Not yours."}, status=http.HTTP_403_FORBIDDEN)
+        if not attempt.is_completed:
+            return Response(
+                {"detail": "This paper isn't finished yet."}, status=http.HTTP_400_BAD_REQUEST
+            )
+        if not is_eligible(attempt):
+            return Response(
+                {"detail": "This sitting has no certificate."}, status=http.HTTP_404_NOT_FOUND
+            )
+
+        cert = _certificate_for(attempt)
+        pdf = render_pdf_safe(cert) if cert is not None else None
+        if pdf is None:
+            return Response(
+                {"detail": "The PDF couldn't be produced right now. Your result is safe."},
+                status=http.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        response = HttpResponse(pdf, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="MasterSAT-{cert.number}.pdf"'
         return response
 
 

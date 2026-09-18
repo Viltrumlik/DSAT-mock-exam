@@ -25,6 +25,7 @@ from .models import (
     SubmissionReview,
     assignment_target_practice_test_ids,
 )
+from .pastpaper_retake import homework_set_at
 from .submission_audit import audit_submission_event
 
 
@@ -62,24 +63,27 @@ def _auto_grade(s: Submission, assignment: Assignment, grade, max_score, source:
 logger = logging.getLogger("classes.homework_auto_submit")
 
 
-def _latest_completed_attempt(student_id: int, practice_test_id: int) -> TestAttempt | None:
-    return (
-        TestAttempt.objects.filter(
-            student_id=student_id,
-            practice_test_id=practice_test_id,
-            is_completed=True,
-        )
-        .order_by("-submitted_at", "-id")
-        .first()
+def _latest_completed_attempt(
+    student_id: int, practice_test_id: int, since=None
+) -> TestAttempt | None:
+    qs = TestAttempt.objects.filter(
+        student_id=student_id,
+        practice_test_id=practice_test_id,
+        is_completed=True,
     )
+    if since is not None:
+        # A sitting from before the homework was set is history, not this homework: the same
+        # paper is set again for revision (see classes.pastpaper_retake).
+        qs = qs.filter(completed_at__gte=since)
+    return qs.order_by("-submitted_at", "-id").first()
 
 
 def _collect_completed_attempts_for_targets(
-    student_id: int, targets: list[int]
+    student_id: int, targets: list[int], since=None
 ) -> list[TestAttempt] | None:
     out: list[TestAttempt] = []
     for pt_id in targets:
-        ta = _latest_completed_attempt(student_id, pt_id)
+        ta = _latest_completed_attempt(student_id, pt_id, since)
         if not ta:
             return None
         out.append(ta)
@@ -161,6 +165,10 @@ def sync_practice_submission_for_assignment(student, assignment: Assignment) -> 
     """
     If every practice-test target for ``assignment`` has a completed attempt for ``student``,
     ensure the class submission is SUBMITTED with a linked attempt.
+
+    Only attempts finished since the homework was set count. A paper set again is a new
+    sitting, and handing in last month's attempt the moment it went live is what left
+    students unable to sit it again (``pastpaper_retake``).
     """
     # Live homework only. A draft has not been given to anyone, so finishing its test hands
     # nothing in. ARCHIVED work is read-only with its grades retained (see Assignment.STATUS_*),
@@ -176,7 +184,9 @@ def sync_practice_submission_for_assignment(student, assignment: Assignment) -> 
     targets = assignment_target_practice_test_ids(assignment)
     if not targets:
         return False
-    attempts = _collect_completed_attempts_for_targets(student.pk, targets)
+    attempts = _collect_completed_attempts_for_targets(
+        student.pk, targets, since=homework_set_at(assignment)
+    )
     if not attempts:
         return False
     best = _representative_attempt(attempts)
