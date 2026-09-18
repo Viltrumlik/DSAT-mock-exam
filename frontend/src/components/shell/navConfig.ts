@@ -25,6 +25,7 @@ import {
   Trophy,
   ShoppingBag,
   ClipboardList as ClipboardListIcon,
+  CalendarDays,
 } from "lucide-react";
 
 export type NavItem = {
@@ -95,6 +96,9 @@ export const studentNav: NavSection[] = [
       // exists now and then, and points are a running total worth seeing on every page
       // rather than a destination to remember.
       { href: "/surveys", label: "Surveys", icon: ClipboardListIcon, hiddenInSidebar: true },
+      // Events, like Surveys, are reached from the header rather than the sidebar: there is
+      // one on now and then, and a permanent entry would be a dead link most of the term.
+      { href: "/events", label: "Events", icon: CalendarDays, hiddenInSidebar: true },
       { href: "/rewards", label: "Points", icon: Coins, hiddenInSidebar: true },
       // No Question Bank: the school took it out of the student area (students never used
       // it). The route stays for staff — see app/(main)/question-bank/page.tsx — and the
