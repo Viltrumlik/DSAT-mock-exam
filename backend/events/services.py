@@ -281,34 +281,33 @@ def registered_students(event: Event):
 
 
 def publish_and_announce(event: Event, *, now=None) -> bool:
-    """Publish, and tell every active student — once. The entry point the API calls."""
+    from . import mail as event_mail
     from . import notifications as event_notifications
 
     if not publish(event, now=now):
         return False
     event_notifications.announce_published(event, active_students())
+    event_mail.enqueue_event_announcement(event.pk)
     return True
 
 
 def update_and_announce(event: Event, fields: dict, *, now=None):
-    """Edit, and tell the students holding a seat when the time or place moved."""
+    from . import mail as event_mail
     from . import notifications as event_notifications
 
     event, moved = update_event(event, fields, now=now)
     if moved and event.status == Event.STATUS_PUBLISHED:
         event_notifications.announce_changed(event, registered_students(event))
+        event_mail.enqueue_event_changed(event.pk)
     return event, moved
 
 
 def cancel_and_announce(event: Event, *, actor=None, now=None) -> Event:
-    """Call it off, and tell the students who had a seat.
-
-    The recipients are read BEFORE the seats are closed — afterwards there are none, and the
-    message would reach nobody at all.
-    """
+    from . import mail as event_mail
     from . import notifications as event_notifications
 
     told = registered_students(event)
     event = cancel_event(event, actor=actor, now=now)
     event_notifications.announce_cancelled(event, told)
+    event_mail.enqueue_event_cancelled(event.pk, [s.pk for s in told])
     return event

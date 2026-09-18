@@ -49,10 +49,33 @@ HOMEWORK_SAMPLE = {
     "homework_url": "https://mastersat.uz/classes/12/assignments/340",
 }
 
+SAMPLE_EVENT = {
+    "event_title": "Robotics open day",
+    "description": "Bring a laptop.",
+    "location": "Fergana city branch, room 3",
+    "month_label": "SEP",
+    "day_number": "18",
+    "weekday_short": "THU",
+    "weekday_label": "Thursday",
+    "date_label": "18 September",
+    "start_time": "15:00",
+    "end_time": "17:00",
+    "timezone_label": "+05",
+    "cancel_by_label": "Thu 18 Sep, 13:00",
+    "seats": 30,
+    "xp_points": 10,
+    "cover_url": "https://mastersat.uz/api/events/1/cover/",
+    "events_url": "https://mastersat.uz/events",
+}
+
 TEMPLATES = {
     "email/verification_code.html": {"code": "079431", "ttl_minutes": 15},
     "email/midterm_scheduled.html": MIDTERM_SAMPLE,
     "email/homework_assigned.html": HOMEWORK_SAMPLE,
+    "email/event_announcement.html": SAMPLE_EVENT,
+    "email/event_reminder.html": SAMPLE_EVENT,
+    "email/event_changed.html": SAMPLE_EVENT,
+    "email/event_cancelled.html": SAMPLE_EVENT,
 }
 
 

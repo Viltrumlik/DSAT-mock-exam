@@ -1,0 +1,40 @@
+{% extends "email/base.html" %}
+
+{% block subject %}Event updated: {{ event_title }}{% endblock %}
+{% block preheader %}Now {{ weekday_label }} {{ date_label }} at {{ start_time }}{% if location %} · {{ location }}{% endif %}.{% endblock %}
+
+{% block content %}
+  <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;">EVENT UPDATED</div>
+
+  <h1 class="ms-h1 ms-ink" style="margin:6px 0 8px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
+    {{ event_title }}
+  </h1>
+
+  <p class="ms-mute" style="margin:0 0 22px;font-size:15px;font-weight:600;line-height:1.6;color:#64748b;">
+    You have a seat at this one, so here is where it now stands.
+  </p>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;">
+    <tr>
+      <td class="ms-card" style="background:#ffffff;border:1px solid #e7ebf3;border-radius:17px;padding:16px 18px;">
+        <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;">NOW</div>
+        <div class="ms-ink" style="margin-top:6px;font-size:18px;font-weight:800;line-height:1.4;color:#0f1729;">
+          {{ weekday_label }} {{ date_label }}, {{ start_time }}&ndash;{{ end_time }}
+        </div>
+        {% if location %}
+          <div class="ms-mute" style="margin-top:6px;font-size:14px;font-weight:600;color:#64748b;">{{ location }}</div>
+        {% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;">
+    <tr>
+      <td align="center" style="background:#2a68c0;border-radius:12px;">
+        <a href="{{ events_url }}" style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">
+          See the event
+        </a>
+      </td>
+    </tr>
+  </table>
+{% endblock %}

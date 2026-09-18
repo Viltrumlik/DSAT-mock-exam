@@ -1,0 +1,27 @@
+{% extends "email/base.html" %}
+
+{% block subject %}Event cancelled: {{ event_title }}{% endblock %}
+{% block preheader %}The event on {{ date_label }} at {{ start_time }} is off.{% endblock %}
+
+{% block content %}
+  <div style="font-size:11px;font-weight:800;letter-spacing:0.12em;color:#2a68c0;">EVENT CANCELLED</div>
+
+  <h1 class="ms-h1 ms-ink" style="margin:6px 0 8px;font-size:22px;font-weight:800;letter-spacing:-0.02em;line-height:1.25;color:#0f1729;">
+    {{ event_title }}
+  </h1>
+
+  <p class="ms-mute" style="margin:0 0 22px;font-size:15px;font-weight:600;line-height:1.6;color:#64748b;">
+    The event on {{ weekday_label }} {{ date_label }} at {{ start_time }} has been cancelled,
+    and your registration has been closed. Nothing else to do.
+  </p>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">
+    <tr>
+      <td align="center" style="background:#2a68c0;border-radius:12px;">
+        <a href="{{ events_url }}" style="display:inline-block;padding:13px 26px;font-size:15px;font-weight:800;color:#ffffff;text-decoration:none;">
+          Browse events
+        </a>
+      </td>
+    </tr>
+  </table>
+{% endblock %}
