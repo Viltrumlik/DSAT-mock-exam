@@ -24,6 +24,7 @@ import {
   useMarkAttendance,
   usePublishEvent,
   useSaveEvent,
+  useTicket,
 } from "@/features/events/eventsHooks";
 
 const EMPTY = {
@@ -185,6 +186,21 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
   const open = opensAt ? Date.now() >= opensAt.getTime() : false;
   const counts = list.data?.counts;
 
+  // The typed box and the QR scan share one lookup. Below 8 cleaned characters it can only
+  // ever be a partial code, so the list is filtered client-side; at 8 — a full code — the
+  // server is asked, the same way a scan would be.
+  const [typed, setTyped] = useState("");
+  const cleaned = typed.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const lookupCode = cleaned.length === 8 ? cleaned : "";
+  const lookup = useTicket(lookupCode);
+  const registrations = list.data?.registrations ?? [];
+  const matches =
+    lookupCode && lookup.data?.event.id === event.id
+      ? registrations.filter((r) => r.id === lookup.data!.registration_id)
+      : cleaned.length >= 4 && !lookupCode
+        ? registrations.filter((r) => (r.ticket_code || "").replace("-", "").includes(cleaned))
+        : registrations;
+
   return (
     <Modal open onClose={onClose} title={event.title} description="Who signed up, and who came" size="lg">
       {list.isPending ? (
@@ -202,6 +218,22 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
         </div>
       ) : (
         <div className="space-y-3">
+          <Field label="Ticket code" hint="Type or paste it — dashes and case don't matter.">
+            <Input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder="4K29-7XPD"
+            />
+          </Field>
+          {lookupCode ? (
+            lookup.isPending ? (
+              <Alert tone="info">Checking the code…</Alert>
+            ) : lookup.isError ? (
+              <Alert tone="danger">No ticket with that code.</Alert>
+            ) : lookup.data && lookup.data.event.id !== event.id ? (
+              <Alert tone="warning">That ticket is for {lookup.data.event.title}.</Alert>
+            ) : null
+          ) : null}
           <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
             Registered {counts?.registered ?? 0} · Attended {counts?.attended ?? 0} · Missed{" "}
             {counts?.missed ?? 0} · Not marked {counts?.not_marked ?? 0}
@@ -212,7 +244,7 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
             </Alert>
           ) : null}
           <ul className="divide-y divide-border">
-            {(list.data?.registrations ?? []).map((row) => (
+            {matches.map((row) => (
               <li key={row.id} className="flex flex-wrap items-center gap-3 py-2.5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold text-foreground">{row.student_name}</p>
@@ -221,6 +253,9 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
                     {row.status === "CANCELLED" ? " · cancelled" : ""}
                   </p>
                 </div>
+                <span className="text-xs font-bold tracking-widest text-muted-foreground">
+                  {row.ticket_code || "No code"}
+                </span>
                 {row.status === "CANCELLED" ? (
                   <span className="text-xs font-bold text-muted-foreground">Gave the seat back</span>
                 ) : (
@@ -247,9 +282,9 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
                 )}
               </li>
             ))}
-            {(list.data?.registrations ?? []).length === 0 ? (
+            {matches.length === 0 ? (
               <li className="py-6 text-center text-sm text-muted-foreground">
-                Nobody has signed up yet.
+                {registrations.length === 0 ? "Nobody has signed up yet." : "No match for that code."}
               </li>
             ) : null}
           </ul>

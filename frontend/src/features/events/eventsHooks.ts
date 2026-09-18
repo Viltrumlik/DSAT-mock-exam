@@ -129,3 +129,19 @@ export function useMarkAttendance(eventId: number) {
     },
   });
 }
+
+/**
+ * Resolve a ticket code — the scan and the typed box both call this.
+ *
+ * A door is where the same ticket gets scanned twice by mistake; a cached answer still
+ * reading "not marked" would send somebody through the flow again.
+ */
+export function useTicket(code: string) {
+  return useQuery({
+    queryKey: ["events", "ticket", code],
+    queryFn: () => eventsApi.adminTicket(code),
+    enabled: Boolean(code),
+    staleTime: 0,
+    retry: false,
+  });
+}
