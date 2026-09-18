@@ -10,7 +10,7 @@ branches on; the detail is what it shows.
 from __future__ import annotations
 
 from django.db.models import Count, Q
-from django.http import Http404, HttpResponseRedirect
+from django.http import Http404, HttpResponse, HttpResponseRedirect
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status as http
@@ -291,3 +291,94 @@ class AdminAttendanceView(_StaffView):
         except services.EventRefused as exc:
             return _refused(exc)
         return Response(AdminRegistrationSerializer(row).data)
+
+
+class EventTicketView(APIView):
+    """The caller's own ticket for one event, as a PNG attachment.
+
+    Behind the student's own session and keyed on the event, not on a registration id: the
+    code is not a secret worth much, but a ticket carries somebody's name, and an endpoint
+    that hands one over by id would hand over everybody's.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, event_id: int):
+        from . import ticket as ticket_renderer
+
+        row = (
+            EventRegistration.objects.select_related("event", "student")
+            .filter(
+                event_id=event_id,
+                student=request.user,
+                status=EventRegistration.STATUS_REGISTERED,
+                event__status=Event.STATUS_PUBLISHED,
+            )
+            .first()
+        )
+        if row is None or not row.ticket_code:
+            raise Http404
+
+        data = ticket_renderer.render_png(row)
+        response = HttpResponse(data, content_type="image/png")
+        response["Content-Disposition"] = (
+            f'attachment; filename="mastersat-event-{row.ticket_code}.png"'
+        )
+        return response
+
+
+class AdminTicketLookupView(_StaffView):
+    """Resolve a ticket code: the scan and the typed box both land here.
+
+    It answers `can_mark` WITH a reason rather than a bare boolean, because the desk needs to
+    know which one — "too early" and "they gave the seat back" are different conversations
+    with the student standing in front of them.
+    """
+
+    def get(self, request, code: str):
+        denied = self._guard(request)
+        if denied:
+            return denied
+
+        row = services.find_by_ticket_code(code)
+        if row is None:
+            raise Http404
+
+        event = row.event
+        now = timezone.now()
+        if event.status == Event.STATUS_CANCELLED:
+            can_mark, reason = False, "event_cancelled"
+        elif row.status != EventRegistration.STATUS_REGISTERED:
+            can_mark, reason = False, "cancelled"
+        elif now < services.marking_opens_at(event):
+            can_mark, reason = False, "too_early"
+        else:
+            can_mark, reason = True, ""
+
+        marked_by = row.marked_by
+        return Response({
+            "registration_id": row.pk,
+            "ticket_code": services.format_ticket_code(row.ticket_code or ""),
+            "student_name": (row.student.get_full_name() or "").strip()
+            or getattr(row.student, "username", "")
+            or "Student",
+            "status": row.status,
+            "attendance": row.attendance,
+            "marked_at": row.marked_at,
+            "marked_by_name": (
+                ((marked_by.get_full_name() or "").strip() or getattr(marked_by, "email", ""))
+                if marked_by
+                else ""
+            ),
+            "can_mark": can_mark,
+            "reason": reason,
+            "marking_opens_at": services.marking_opens_at(event),
+            "event": {
+                "id": event.pk,
+                "title": event.title,
+                "starts_at": event.starts_at,
+                "ends_at": event.ends_at,
+                "location": event.location,
+                "status": event.status,
+            },
+        })

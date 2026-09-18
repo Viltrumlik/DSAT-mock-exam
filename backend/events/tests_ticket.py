@@ -204,3 +204,153 @@ class TicketFontTests(TicketFixture):
         html = ticket.render_html(self.row)
 
         self.assertIn("@font-face", html)
+
+
+class TicketEndpointTests(TicketFixture):
+    def setUp(self):
+        super().setUp()
+        from rest_framework.test import APIClient
+
+        self.client = APIClient()
+        self.boris = User.objects.create_user("tk_boris2@t.com", "secret123", role=C.ROLE_STUDENT)
+
+    def _as(self, user):
+        self.client.force_authenticate(user)
+        return self.client
+
+    def test_a_student_downloads_their_own_ticket(self):
+        from unittest.mock import patch
+
+        from events import ticket
+
+        with patch.object(ticket, "render_png", return_value=b"\x89PNG\r\n\x1a\nstub"):
+            response = self._as(self.anna).get(f"/api/events/{self.event.id}/ticket.png")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertIn("attachment", response["Content-Disposition"])
+
+    def test_somebody_else_s_ticket_is_404(self):
+        self.assertEqual(
+            self._as(self.boris).get(f"/api/events/{self.event.id}/ticket.png").status_code, 404
+        )
+
+    def test_a_cancelled_seat_has_no_ticket(self):
+        services.cancel_registration(self.row, now=self.now)
+
+        self.assertEqual(
+            self._as(self.anna).get(f"/api/events/{self.event.id}/ticket.png").status_code, 404
+        )
+
+
+class OpsTicketLookupTests(TicketFixture):
+    def setUp(self):
+        super().setUp()
+        from rest_framework.test import APIClient
+
+        self.client = APIClient()
+        self.code = services.format_ticket_code(self.row.ticket_code)
+
+    def _as(self, user):
+        self.client.force_authenticate(user)
+        return self.client
+
+    def _lookup(self, user, code=None):
+        return self._as(user).get(f"/api/events/admin/tickets/{code or self.code}/")
+
+    def test_a_student_cannot_resolve_a_code(self):
+        # A stranger who scans a ticket meets the sign-in screen, not a name.
+        self.assertEqual(self._lookup(self.anna).status_code, 403)
+
+    def test_staff_get_the_name_and_the_event(self):
+        body = self._lookup(self.staff).json()
+
+        self.assertEqual(body["student_name"], "Anna Karimova")
+        self.assertEqual(body["event"]["id"], self.event.id)
+        self.assertEqual(body["registration_id"], self.row.id)
+
+    def test_it_says_when_marking_is_still_too_early_and_why(self):
+        body = self._lookup(self.staff).json()
+
+        self.assertFalse(body["can_mark"])
+        self.assertEqual(body["reason"], "too_early")
+
+    def test_a_cancelled_seat_says_so(self):
+        services.cancel_registration(self.row, now=self.now)
+
+        body = self._lookup(self.staff).json()
+
+        self.assertEqual((body["can_mark"], body["reason"]), (False, "cancelled"))
+
+    def test_an_unknown_code_is_404(self):
+        self.assertEqual(self._lookup(self.staff, code="2222-2222").status_code, 404)
+
+    def test_a_marked_ticket_reports_who_marked_it_and_when(self):
+        services.mark_attendance(
+            self.row,
+            EventRegistration.ATTENDANCE_ATTENDED,
+            actor=self.staff,
+            now=self.event.starts_at,
+        )
+
+        body = self._lookup(self.staff).json()
+
+        self.assertEqual(body["attendance"], EventRegistration.ATTENDANCE_ATTENDED)
+        self.assertTrue(body["marked_at"])
+        self.assertTrue(body["marked_by_name"])
+
+
+class TicketLookupThenMarkTests(TicketFixture):
+    """R5: the code the door reads resolves to the same seat the EXISTING attendance
+    endpoint marks — proven end to end, through both endpoints, exactly once paid."""
+
+    def test_resolving_the_code_then_marking_attendance_pays_exactly_once(self):
+        from rest_framework.test import APIClient
+
+        from rewards import constants as RC
+        from rewards.models import PointAward, RewardRule
+
+        RewardRule.objects.get_or_create(
+            event=RC.EVENT_ATTENDED, defaults={"points": 10, "grants_xp": True}
+        )
+
+        # Close enough to "now" that marking_opens_at (starts_at - CANCEL_CUTOFF) has already
+        # passed by the time the requests below run for real — the attendance endpoint always
+        # reads the real clock rather than accepting one, so this moves the clock the same way
+        # tests_attendance.py and tests_api_ops.py do: by placing `starts_at` relative to it.
+        soon = Event.objects.create(
+            title="Career talk",
+            starts_at=self.now + timedelta(minutes=1),
+            ends_at=self.now + timedelta(hours=1),
+            seats=10,
+            status=Event.STATUS_PUBLISHED,
+            published_at=self.now - timedelta(days=1),
+            created_by=self.staff,
+        )
+        row = services.sign_up(soon, self.anna, now=self.now)
+        code = services.format_ticket_code(row.ticket_code)
+
+        client = APIClient()
+        client.force_authenticate(self.staff)
+
+        looked_up = client.get(f"/api/events/admin/tickets/{code}/")
+        self.assertEqual(looked_up.status_code, 200)
+        self.assertTrue(looked_up.json()["can_mark"])
+        registration_id = looked_up.json()["registration_id"]
+
+        attempts = [
+            client.post(
+                f"/api/events/admin/registrations/{registration_id}/attendance/",
+                {"attendance": EventRegistration.ATTENDANCE_ATTENDED},
+                format="json",
+            )
+            for _ in range(2)
+        ]
+
+        self.assertEqual([r.status_code for r in attempts], [200, 200])
+        self.assertEqual(
+            PointAward.objects.filter(
+                idempotency_key=RC.event_attendance_key(registration_id)
+            ).count(),
+            1,
+        )

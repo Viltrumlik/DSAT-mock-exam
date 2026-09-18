@@ -156,3 +156,22 @@ class SweepTests(ReminderFixture):
 
         self.assertEqual(services.send_due_reminders(now=later)["events"], 1)
         self.assertEqual(len(mail.outbox), 1)
+
+
+class ReminderTicketCopyTests(ReminderFixture):
+    """Task 3 Step 4b: the reminder promises the ticket, now that one exists. PR 1 shipped
+    this deliberately ticket-neutral (see mail.py's `_text_body`) because a promise pointing
+    at nothing would have been worse than no promise at all."""
+
+    def test_it_carries_the_ticket_line_and_button(self):
+        event = self._event(starts_in=timedelta(hours=23))
+        services.sign_up(event, self.anna, now=self.now)
+
+        services.send_due_reminders(now=self.now)
+
+        message = mail.outbox[0]
+        html = message.alternatives[0][0]
+        self.assertIn("Open my ticket", html)
+        self.assertIn("Your ticket is on the events page", html)
+        self.assertIn("Your ticket is on the events page", message.body)
+        self.assertIn("Open your ticket:", message.body)

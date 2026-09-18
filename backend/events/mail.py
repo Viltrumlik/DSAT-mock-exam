@@ -133,14 +133,14 @@ def _text_body(kind: str, context: dict) -> str:
             lines += ["", context["description"]]
         lines += ["", f"Sign up: {context['events_url']}"]
     elif kind == KIND_REMINDER:
-        # No promise of a ticket here: tickets are built in a later, separate PR, and until
-        # that ships "Open my ticket" would point at nothing.
         lines += [
+            "",
+            "Your ticket is on the events page — bring it with you.",
             "",
             f"Can't come? Cancel by {context['cancel_by_label']} so someone else can take "
             "your seat.",
             "",
-            f"See the event: {context['events_url']}",
+            f"Open your ticket: {context['events_url']}",
         ]
     elif kind == KIND_CHANGED:
         lines += ["", "That's the new time and place.", "", f"See it: {context['events_url']}"]
