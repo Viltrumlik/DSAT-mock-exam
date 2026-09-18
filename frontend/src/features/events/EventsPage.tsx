@@ -20,6 +20,7 @@ import {
   useCancelEventSeat,
   useMyEvents,
   useSignUpForEvent,
+  useTicketDownload,
   useUpcomingEvents,
 } from "./eventsHooks";
 
@@ -45,6 +46,7 @@ function seatLine(row: LearningEvent): string {
 function EventRow({ row, past }: { row: LearningEvent; past?: boolean }) {
   const signUp = useSignUpForEvent();
   const cancel = useCancelEventSeat();
+  const ticket = useTicketDownload();
   const seat = row.my_registration;
   const holdsSeat = seat?.status === "REGISTERED";
 
@@ -116,6 +118,34 @@ function EventRow({ row, past }: { row: LearningEvent; past?: boolean }) {
       ) : (
         <span className="text-xs font-extrabold text-muted-foreground">Full</span>
       )}
+
+      {/* Both branches where the student still holds a seat — the cancel window can be open
+          or closed, but the seat is the seat, so the ticket is offered either way. */}
+      {!past && holdsSeat ? (
+        <>
+          <button
+            type="button"
+            onClick={() => ticket.mutate(row.id)}
+            disabled={ticket.isPending}
+            className="ds-ring inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-extrabold text-foreground"
+          >
+            <Ticket className="h-4 w-4 text-primary" aria-hidden />
+            Download ticket
+          </button>
+          {seat?.ticket_code ? (
+            <span className="text-xs font-bold tracking-widest text-muted-foreground">
+              Ticket {seat.ticket_code}
+            </span>
+          ) : null}
+          {/* Its own line, not the signUp/cancel either-or chain below: a lingering sign-up
+              or cancel error must never hide a failed download, or the reverse. */}
+          {ticket.isError ? (
+            <p role="alert" className="w-full text-xs font-semibold text-danger-foreground">
+              Couldn't download the ticket. Try again.
+            </p>
+          ) : null}
+        </>
+      ) : null}
 
       {signUp.isError ? (
         <p role="alert" className="w-full text-xs font-semibold text-danger-foreground">

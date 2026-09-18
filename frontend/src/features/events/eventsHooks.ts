@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { downloadBlob } from "@/lib/download";
+
 import { eventsApi, type Attendance } from "./eventsApi";
 
 const keys = {
@@ -48,6 +50,23 @@ export function useCancelEventSeat() {
     onSuccess: () => invalidateSeats(qc),
     // Same reasoning: the 2-hour window can close between render and click.
     onError: () => invalidateSeats(qc),
+  });
+}
+
+/**
+ * Download the ticket.
+ *
+ * A mutation rather than a query: it writes a file, it must not be cached, and it must not
+ * run because a component mounted. `downloadBlob` is the same helper the certificate and
+ * midterm-report downloads already use, so the browser-side half of this is not a second
+ * implementation of "save a Blob".
+ */
+export function useTicketDownload() {
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const blob = await eventsApi.ticketBlob(id);
+      downloadBlob(blob, `mastersat-event-${id}.png`);
+    },
   });
 }
 
@@ -108,5 +127,21 @@ export function useMarkAttendance(eventId: number) {
       qc.invalidateQueries({ queryKey: keys.registrations(eventId) });
       qc.invalidateQueries({ queryKey: ["rewards"] });
     },
+  });
+}
+
+/**
+ * Resolve a ticket code — the scan and the typed box both call this.
+ *
+ * A door is where the same ticket gets scanned twice by mistake; a cached answer still
+ * reading "not marked" would send somebody through the flow again.
+ */
+export function useTicket(code: string) {
+  return useQuery({
+    queryKey: ["events", "ticket", code],
+    queryFn: () => eventsApi.adminTicket(code),
+    enabled: Boolean(code),
+    staleTime: 0,
+    retry: false,
   });
 }

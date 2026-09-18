@@ -17,6 +17,8 @@ export interface EventSeat {
   registered_at: string;
   /** What this seat has actually paid, read from the ledger — 0 until somebody is marked. */
   points_awarded: number;
+  /** Shown as "4K29-7XPD". Empty on a row minted before this migration ran. */
+  ticket_code: string;
 }
 
 export interface LearningEvent {
@@ -55,12 +57,37 @@ export interface AdminRegistration {
   registered_at: string;
   attendance: Attendance;
   marked_at: string | null;
+  /** Shown as "4K29-7XPD", or "" on a row minted before this migration ran. */
+  ticket_code: string;
 }
 
 export interface RegistrationsPayload {
   registrations: AdminRegistration[];
   counts: EventCounts;
   marking_opens_at: string;
+}
+
+/** What GET /events/admin/tickets/<code>/ answers — the scan and the typed box both land here. */
+export interface TicketLookup {
+  registration_id: number;
+  ticket_code: string;
+  student_name: string;
+  status: "REGISTERED" | "CANCELLED";
+  attendance: Attendance;
+  marked_at: string | null;
+  marked_by_name: string;
+  can_mark: boolean;
+  /** "" when can_mark, else `cancelled` | `event_cancelled` | `too_early`. */
+  reason: string;
+  marking_opens_at: string;
+  event: {
+    id: number;
+    title: string;
+    starts_at: string;
+    ends_at: string;
+    location: string;
+    status: EventStatus;
+  };
 }
 
 /** The refusal code the server sends beside its sentence: `full`, `cancel_window_closed`, … */
@@ -104,6 +131,17 @@ export const eventsApi = {
   },
   async cancel(id: number): Promise<EventSeat> {
     const { data } = await api.post<EventSeat>(`/events/${id}/cancel/`);
+    return data;
+  },
+  /**
+   * The ticket as a Blob.
+   *
+   * Fetched through the axios instance rather than linked with an `<a href>`: the endpoint is
+   * behind the session, the instance owns the auth header and the refresh retry, and a
+   * hand-written URL in a component is exactly what `check:api-layer` forbids.
+   */
+  async ticketBlob(id: number): Promise<Blob> {
+    const { data } = await api.get<Blob>(`/events/${id}/ticket.png`, { responseType: "blob" });
     return data;
   },
 
@@ -153,6 +191,13 @@ export const eventsApi = {
     const { data } = await api.post<AdminRegistration>(
       `/events/admin/registrations/${registrationId}/attendance/`,
       { attendance },
+    );
+    return data;
+  },
+  /** Resolve a scanned or typed code to the registration behind it. 404 when nobody holds it. */
+  async adminTicket(code: string): Promise<TicketLookup> {
+    const { data } = await api.get<TicketLookup>(
+      `/events/admin/tickets/${encodeURIComponent(code)}/`,
     );
     return data;
   },

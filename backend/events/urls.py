@@ -14,9 +14,11 @@ from .views import (
     AdminEventPublishView,
     AdminEventsView,
     AdminRegistrationsView,
+    AdminTicketLookupView,
     EventCancelView,
     EventCoverView,
     EventSignUpView,
+    EventTicketView,
     EventsView,
     MyEventsView,
 )
@@ -30,6 +32,11 @@ urlpatterns = [
         AdminAttendanceView.as_view(),
         name="events-admin-attendance",
     ),
+    path(
+        "admin/tickets/<str:code>/",
+        AdminTicketLookupView.as_view(),
+        name="events-admin-ticket",
+    ),
     path("admin/<int:event_id>/", AdminEventDetailView.as_view(), name="events-admin-detail"),
     path("admin/<int:event_id>/publish/", AdminEventPublishView.as_view(), name="events-admin-publish"),
     path("admin/<int:event_id>/cancel/", AdminEventCancelView.as_view(), name="events-admin-cancel"),
@@ -41,4 +48,5 @@ urlpatterns = [
     path("<int:event_id>/sign-up/", EventSignUpView.as_view(), name="events-sign-up"),
     path("<int:event_id>/cancel/", EventCancelView.as_view(), name="events-cancel"),
     path("<int:event_id>/cover/", EventCoverView.as_view(), name="events-cover"),
+    path("<int:event_id>/ticket.png", EventTicketView.as_view(), name="events-ticket"),
 ]

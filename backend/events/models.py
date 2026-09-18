@@ -124,6 +124,12 @@ class EventRegistration(models.Model):
     status = models.CharField(
         max_length=12, choices=STATUS_CHOICES, default=STATUS_REGISTERED, db_index=True
     )
+    #: What the student shows at the door. Minted once, on the row's creation, and kept for
+    #: its life — a student who cancels and signs up again keeps one identity at the door and
+    #: one in the ledger. Stored bare; the dash in "4K29-7XPD" is display only.
+    ticket_code = models.CharField(
+        max_length=10, unique=True, db_index=True, null=True, blank=True
+    )
     cancel_reason = models.CharField(
         max_length=20, choices=REASON_CHOICES, blank=True, default=""
     )

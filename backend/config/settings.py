@@ -97,6 +97,11 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'MasterSAT <support@masters
 # the logo breaks in every inbox. See core/mail.py.
 EMAIL_SITE_URL = os.getenv('EMAIL_SITE_URL', 'https://mastersat.uz')
 
+# Where the ops console lives. The QR on an event ticket points here, because `host_guard`
+# only allows the ops pages' API calls on the admin host — a QR aimed at the apex opens a
+# page that 403s the moment it loads. Set per environment; the default is production's.
+OPS_SITE_URL = os.getenv('OPS_SITE_URL', 'https://admin.mastersat.uz')
+
 # Django ALWAYS supplies EMAIL_BACKEND (smtp), EMAIL_HOST ("localhost"), EMAIL_PORT (25)
 # and DEFAULT_FROM_EMAIL ("webmaster@localhost") defaults, so their presence proves
 # nothing about whether mail can actually be delivered — checking for them is how you
