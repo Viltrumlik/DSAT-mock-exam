@@ -311,3 +311,50 @@ def cancel_and_announce(event: Event, *, actor=None, now=None) -> Event:
     event_notifications.announce_cancelled(event, told)
     event_mail.enqueue_event_cancelled(event.pk, [s.pk for s in told])
     return event
+
+
+def send_due_reminders(*, now=None) -> dict:
+    """Remind the students holding a seat, a day before the start.
+
+    The window is checked in Python rather than with an F-expression over a timedelta: the
+    candidate set is "published events starting in the next day", which is a handful of rows,
+    and this way the rule reads the same on Postgres and on SQLite.
+    """
+    from . import mail as event_mail
+    from . import notifications as event_notifications
+
+    now = now or timezone.now()
+    stats = {"events": 0, "students": 0}
+
+    candidates = Event.objects.filter(
+        status=Event.STATUS_PUBLISHED,
+        reminder_sent_at__isnull=True,
+        starts_at__gt=now,
+        starts_at__lte=now + REMINDER_LEAD,
+    )
+    for event in candidates:
+        # An event published less than a day before it starts gets no reminder: the
+        # announcement is that recent, and two messages in a day is how a reminder stops
+        # being read.
+        if event.published_at and event.published_at > event.starts_at - REMINDER_LEAD:
+            continue
+
+        # The claim, before anything is sent: two overlapping beats cannot both remind.
+        claimed = Event.objects.filter(pk=event.pk, reminder_sent_at__isnull=True).update(
+            reminder_sent_at=now
+        )
+        if not claimed:
+            continue
+        event.reminder_sent_at = now
+
+        students = registered_students(event)
+        stats["events"] += 1
+        stats["students"] += len(students)
+        if not students:
+            continue
+        event_notifications.announce_reminder(event, students)
+        event_mail.enqueue_event_reminder(event.pk, [s.pk for s in students])
+
+    if stats["events"]:
+        logger.info("event_reminders %s", stats)
+    return stats
