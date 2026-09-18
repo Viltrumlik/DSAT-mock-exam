@@ -176,6 +176,7 @@ INSTALLED_APPS = [
     'surveys.apps.SurveysConfig',
     'shop.apps.ShopConfig',
     'stories.apps.StoriesConfig',
+    'events.apps.EventsConfig',
     'notifications.apps.NotificationsConfig',
     'annotations.apps.AnnotationsConfig',
 ]
