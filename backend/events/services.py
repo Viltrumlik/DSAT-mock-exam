@@ -12,6 +12,7 @@ what the page branches on.
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import timedelta
 
 from django.db import transaction
@@ -31,6 +32,11 @@ CANCEL_CUTOFF = timedelta(hours=2)
 
 #: How long before the start the reminder goes out.
 REMINDER_LEAD = timedelta(hours=24)
+
+#: No O/0, I/1, L or U. The code is read off a phone screen at a door and typed by hand, and
+#: every one of those pairs is a support call waiting to happen.
+TICKET_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
+TICKET_LENGTH = 8
 
 
 class EventRefused(Exception):
@@ -57,6 +63,34 @@ def is_signupable_student(user) -> bool:
     )
 
 
+def new_ticket_code() -> str:
+    """A code no ticket has yet. ~6.5 × 10¹¹ of them, drawn with `secrets`, not `random`."""
+    for _ in range(12):
+        code = "".join(secrets.choice(TICKET_ALPHABET) for _ in range(TICKET_LENGTH))
+        if not EventRegistration.objects.filter(ticket_code=code).exists():
+            return code
+    # Twelve collisions in a row is not luck; it is a broken alphabet or a broken RNG.
+    raise RuntimeError("could not mint an unused ticket code")
+
+
+def format_ticket_code(code: str) -> str:
+    """"4K297XPD" → "4K29-7XPD". Display only; nothing stores the dash."""
+    code = (code or "").strip().upper()
+    return f"{code[:4]}-{code[4:]}" if len(code) == TICKET_LENGTH else code
+
+
+def find_by_ticket_code(code):
+    """The one lookup behind both the scan and the typed box. Nothing for an unknown code."""
+    cleaned = "".join(ch for ch in str(code or "").upper() if ch.isalnum())
+    if len(cleaned) != TICKET_LENGTH:
+        return None
+    return (
+        EventRegistration.objects.select_related("event", "student", "marked_by")
+        .filter(ticket_code=cleaned)
+        .first()
+    )
+
+
 @transaction.atomic
 def sign_up(event: Event, student, *, now=None) -> EventRegistration:
     """Claim a seat. Idempotent; raises `EventRefused` when it cannot be claimed."""
@@ -80,7 +114,9 @@ def sign_up(event: Event, student, *, now=None) -> EventRegistration:
         raise EventRefused("full", "That event is full. A seat opens if somebody cancels.")
 
     if row is None:
-        return EventRegistration.objects.create(event=event, student=student)
+        return EventRegistration.objects.create(
+            event=event, student=student, ticket_code=new_ticket_code()
+        )
 
     row.status = EventRegistration.STATUS_REGISTERED
     row.cancel_reason = ""

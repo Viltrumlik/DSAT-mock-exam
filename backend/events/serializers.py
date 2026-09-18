@@ -33,10 +33,16 @@ def _image_url(instance, request=None):
 
 class EventRegistrationSerializer(serializers.ModelSerializer):
     points_awarded = serializers.SerializerMethodField()
+    ticket_code = serializers.SerializerMethodField()
 
     class Meta:
         model = EventRegistration
-        fields = ["id", "status", "attendance", "registered_at", "points_awarded"]
+        fields = ["id", "status", "attendance", "registered_at", "points_awarded", "ticket_code"]
+
+    def get_ticket_code(self, obj) -> str:
+        from .services import format_ticket_code
+
+        return format_ticket_code(obj.ticket_code) if obj.ticket_code else ""
 
     def get_points_awarded(self, obj) -> int:
         """What this seat has actually paid. Read from the ledger, never from the rule.
@@ -145,17 +151,23 @@ class AdminRegistrationSerializer(serializers.ModelSerializer):
 
     student_name = serializers.SerializerMethodField()
     phone = serializers.SerializerMethodField()
+    ticket_code = serializers.SerializerMethodField()
 
     class Meta:
         model = EventRegistration
         fields = [
-            "id", "student", "student_name", "phone", "status", "registered_at",
+            "id", "student", "student_name", "phone", "ticket_code", "status", "registered_at",
             "attendance", "marked_at",
         ]
 
     def get_student_name(self, obj) -> str:
         full = (obj.student.get_full_name() or "").strip()
         return full or (getattr(obj.student, "username", "") or "").strip() or "Student"
+
+    def get_ticket_code(self, obj) -> str:
+        from .services import format_ticket_code
+
+        return format_ticket_code(obj.ticket_code) if obj.ticket_code else ""
 
     def get_phone(self, obj) -> str:
         # The brief's own text names the field `phone`; the User model calls it
