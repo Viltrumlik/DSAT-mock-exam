@@ -10,6 +10,12 @@ print a single A4 landscape page (the card is scaled uniformly to fill the sheet
     ranked.html  → classroom certificate (Class Rank #N · of M students chip)
     norank.html  → standalone certificate (certificate number, no rank)
 
+``events/ticket.py`` also reads ``norank.html``: it lifts that file's embedded
+``@font-face`` rules (Plus Jakarta Sans, Space Mono) to draw the event ticket in the same
+faces without shipping a second copy of the font binaries (see its `_embedded_font_faces`).
+Re-exporting or regenerating norank.html must keep those rules and their family names —
+nothing here enforces that at either end.
+
 If Chromium / playwright isn't available on the host, callers fall back to the legacy
 reportlab renderer (see ``certificate_pdf``) so downloads never hard-fail.
 """

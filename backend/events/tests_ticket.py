@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
 from access import constants as C
@@ -180,10 +180,15 @@ class TicketRenderTests(TicketFixture):
 
         from events import ticket
 
-        with patch.object(ticket, "_render_png_chromium", side_effect=RuntimeError("no browser")):
+        # assertLogs both proves the failure is logged for ops and keeps its traceback out of
+        # the test output.
+        with patch.object(
+            ticket, "_render_png_chromium", side_effect=RuntimeError("no browser")
+        ), self.assertLogs("events.ticket", level="ERROR") as logs:
             data = ticket.render_png(self.row)
 
         self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertIn("ticket_render_failed", logs.output[0])
 
 
 class TicketFontTests(TicketFixture):
@@ -354,3 +359,224 @@ class TicketLookupThenMarkTests(TicketFixture):
             ).count(),
             1,
         )
+
+
+# ---------------------------------------------------------------------------------------
+# Fix round 1 — the controller's render of fictional sample tickets found real bugs in the
+# Pillow fallback (never wraps; its bundled font has no glyph for a dash), plus minor
+# polish on the designed card. See task-1-3-report.md's "Fix round 1" section.
+# ---------------------------------------------------------------------------------------
+
+
+class _FakeFont:
+    """A stand-in for a Pillow font: fixed width per character, so the wrap math in these
+    tests is exact and independent of whatever TrueType font the host actually has."""
+
+    def __init__(self, char_width: int = 10):
+        self.char_width = char_width
+
+    def getlength(self, text: str) -> float:
+        return len(text) * self.char_width
+
+
+class WrapLinesTests(SimpleTestCase):
+    """`_wrap_lines`: the Pillow fallback never wrapped a long title, place or name —
+    it ran off the card's right edge instead. Tested against a fake fixed-width font."""
+
+    def setUp(self):
+        from events import ticket
+
+        self.ticket = ticket
+        self.font = _FakeFont(char_width=10)  # 100px fits exactly 10 characters
+
+    def test_a_short_text_comes_back_as_one_line(self):
+        lines = self.ticket._wrap_lines("Anna Karimova", self.font, max_width=300, max_lines=3)
+
+        self.assertEqual(lines, ["Anna Karimova"])
+
+    def test_blank_text_returns_no_lines(self):
+        self.assertEqual(self.ticket._wrap_lines("", self.font, 300, 3), [])
+        self.assertEqual(self.ticket._wrap_lines(None, self.font, 300, 3), [])
+        self.assertEqual(self.ticket._wrap_lines("   ", self.font, 300, 3), [])
+
+    def test_every_returned_line_fits_the_width(self):
+        text = "SAT Math strategy workshop hard linear equation traps and how to spot fast"
+
+        lines = self.ticket._wrap_lines(text, self.font, max_width=100, max_lines=10)
+
+        self.assertTrue(lines)
+        for line in lines:
+            self.assertLessEqual(self.font.getlength(line), 100)
+
+    def test_a_single_word_wider_than_the_card_is_itself_split(self):
+        word = "A" * 40  # 400px at 10px/char — far past a 100px line, and unsplittable at spaces
+
+        lines = self.ticket._wrap_lines(word, self.font, max_width=100, max_lines=10)
+
+        self.assertGreater(len(lines), 1)
+        for line in lines:
+            self.assertLessEqual(self.font.getlength(line), 100)
+        self.assertEqual("".join(lines), word)
+
+    def test_an_over_long_text_is_capped_and_the_last_line_ends_in_ellipsis(self):
+        text = "one two three four five six seven eight nine ten eleven twelve"
+
+        lines = self.ticket._wrap_lines(text, self.font, max_width=100, max_lines=2)
+
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[-1].endswith("…"))
+        for line in lines:
+            self.assertLessEqual(self.font.getlength(line), 100)
+
+    def test_a_text_that_exactly_fills_the_cap_needs_no_ellipsis(self):
+        # Two words per line, exactly two lines, nothing left over to truncate.
+        text = "one two three four"
+
+        lines = self.ticket._wrap_lines(text, self.font, max_width=100, max_lines=2)
+
+        self.assertEqual(lines, ["one two", "three four"])
+
+
+class NormalizeForDrawingTests(SimpleTestCase):
+    """`_normalize_for_drawing`: Pillow's bundled default font has no glyph for an en/em
+    dash or a curly quote, so it maps them to ASCII — but only when no real TrueType font
+    was found (a real one already covers these)."""
+
+    def test_maps_dashes_and_curly_quotes_when_no_ttf_is_installed(self):
+        from unittest.mock import patch
+
+        from events import ticket
+
+        with patch.object(ticket, "_fallback_font_path", return_value=None):
+            out = ticket._normalize_for_drawing("15:00–17:00 “hall” ‘A’ — wing")
+
+        self.assertTrue(out.isascii())
+        self.assertEqual(
+            out, "15:00-17:00 \"hall\" 'A' - wing",
+        )
+
+    def test_leaves_text_untouched_when_a_real_font_was_found(self):
+        from unittest.mock import patch
+
+        from events import ticket
+
+        with patch.object(ticket, "_fallback_font_path", return_value="/some/font.ttf"):
+            out = ticket._normalize_for_drawing("15:00–17:00")
+
+        self.assertEqual(out, "15:00–17:00")
+
+    def test_our_own_ellipsis_is_mapped_too(self):
+        from unittest.mock import patch
+
+        from events import ticket
+
+        with patch.object(ticket, "_fallback_font_path", return_value=None):
+            out = ticket._normalize_for_drawing("spot them…")
+
+        self.assertEqual(out, "spot them...")
+
+
+class FallbackTimeRangeTests(SimpleTestCase):
+    def test_it_is_plain_ascii_with_a_hyphen(self):
+        from events import ticket
+
+        text = ticket._fallback_time_range({"start_time": "15:00", "end_time": "17:00"})
+
+        self.assertEqual(text, "15:00 - 17:00")
+        self.assertTrue(text.isascii())
+
+
+class ResolveFontUrlsGzipTests(SimpleTestCase):
+    """`_resolve_font_urls`'s gzip branch was untested: none of the certificate template's
+    own font entries are actually compressed, so nothing else ever reached it."""
+
+    def test_a_compressed_manifest_entry_decodes_back_to_the_original_bytes(self):
+        import base64
+        import gzip
+        import re
+
+        from events import ticket
+
+        original = b"\x00\x01fake-woff2-bytes\xffthe end"
+        uuid = "deadbeef-0000-0000-0000-000000000000"
+        manifest = {
+            uuid: {
+                "mime": "font/woff2",
+                "compressed": True,
+                "data": base64.b64encode(gzip.compress(original)).decode("ascii"),
+            }
+        }
+        block = f'@font-face {{ src: url("{uuid}") format(\'woff2\'); }}'
+
+        resolved = ticket._resolve_font_urls(block, manifest)
+
+        match = re.search(r"url\(data:font/woff2;base64,([^)]+)\)", resolved)
+        self.assertIsNotNone(match)
+        self.assertEqual(base64.b64decode(match.group(1)), original)
+
+
+class TicketAssetAndLayoutTests(TicketFixture):
+    """The designed card: a legible logo on the band, and room to grow rather than clip."""
+
+    def test_the_band_logo_is_the_white_shield_not_the_navy_one(self):
+        from events import ticket
+
+        context = ticket.build_context(self.row)
+
+        # Navy-on-blue was nearly invisible on the band; white reads clearly there.
+        self.assertEqual(context["logo"], ticket._data_uri("shield_white.png"))
+        self.assertNotEqual(context["logo"], ticket._data_uri("shield_navy.png"))
+
+    def test_the_card_can_grow_rather_than_clip_a_long_ticket(self):
+        from events import ticket
+
+        html = ticket.render_html(self.row)
+
+        self.assertIn("min-height", html)
+
+    def test_the_qr_is_bigger_with_room_around_the_code(self):
+        from events import ticket
+
+        html = ticket.render_html(self.row)
+
+        self.assertIn("300px", html)
+        self.assertIn("gap: 32px", html)
+
+
+class LongContentFallbackTests(SimpleTestCase):
+    """The exact shape of data that exposed the wrap and glyph bugs (the controller's own
+    render_samples.py). Unsaved model instances are enough — `render_png_fallback` never
+    touches the database, only attributes already set on what it is handed."""
+
+    def test_a_long_title_place_and_name_render_without_crashing(self):
+        from events import ticket
+
+        now = timezone.now()
+        event = Event(
+            id=1,
+            title=(
+                "SAT Math strategy workshop: hard linear-equation traps and how to spot "
+                "them fast"
+            ),
+            location=(
+                "Tashkent, Chilonzor branch — 2nd floor, main hall (entrance from "
+                "the courtyard)"
+            ),
+            seats=30,
+            status=Event.STATUS_PUBLISHED,
+            starts_at=now + timedelta(days=7),
+            ends_at=now + timedelta(days=7, hours=2),
+        )
+        student = User(
+            email="long@example.com", first_name="Muhammadali",
+            last_name="Abdurakhmonov-Tursunboyev",
+        )
+        row = EventRegistration(
+            id=1, event=event, student=student,
+            status=EventRegistration.STATUS_REGISTERED, ticket_code="4K297XPD",
+        )
+
+        data = ticket.render_png_fallback(row)
+
+        self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(data), 2000)

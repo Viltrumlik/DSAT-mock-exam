@@ -7,6 +7,10 @@ inline `data:` URIs, so Chromium never needs a network request to lay the text o
 'Plus Jakarta Sans', the code in 'Space Mono', each followed by a system stack as a fallback.
 The QR and the logo are inline data URIs too, for the same reason: the page is handed over
 via set_content and has no base URL to resolve anything against.
+
+The card's height is a minimum, not a fixed size: an extreme title, place or name pushes it
+taller rather than getting clipped out of the element screenshot (events/ticket.py's
+`_render_png_chromium` shoots `#ticket` itself, whatever height it ends up).
 {% endcomment %}
 <!doctype html>
 <html lang="en">
@@ -16,11 +20,11 @@ via set_content and has no base URL to resolve anything against.
   {{ font_faces|safe }}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    width: {{ card_w }}px; height: {{ card_h }}px; background: #eef3fb;
+    width: {{ card_w }}px; min-height: {{ card_h }}px; background: #eef3fb;
     font-family: 'Plus Jakarta Sans', "Helvetica Neue", "Segoe UI", Arial, sans-serif;
     -webkit-print-color-adjust: exact;
   }
-  #ticket { width: {{ card_w }}px; height: {{ card_h }}px; background: #ffffff; display: flex; flex-direction: column; }
+  #ticket { width: {{ card_w }}px; min-height: {{ card_h }}px; background: #ffffff; display: flex; flex-direction: column; }
   .band { background: linear-gradient(160deg, #2a68c0, #1f4d9a); color: #fff; padding: 30px 40px; display: flex; align-items: center; gap: 14px; }
   .band img { width: 42px; height: auto; }
   .brand { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
@@ -31,9 +35,13 @@ via set_content and has no base URL to resolve anything against.
   .who { margin-top: 26px; padding-top: 22px; border-top: 1px solid #e7ebf3; }
   .label { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; color: #2a68c0; }
   .name { margin-top: 6px; font-size: 30px; font-weight: 800; color: #0f1729; }
-  .codeblock { margin-top: 26px; display: flex; align-items: center; gap: 24px; }
+  {% comment %} width:100% + wrap: the row (code, then QR) holds fine at 640px of content
+  width, but if it ever did not, the QR drops to its own line and the auto margins below
+  centre it there instead of overflowing. {% endcomment %}
+  .codeblock { margin-top: 26px; width: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 32px; }
+  .code-wrap { flex: 0 0 auto; }
   .code { font-family: 'Space Mono', "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 46px; font-weight: 800; letter-spacing: 0.08em; color: #0f1729; font-variant-numeric: tabular-nums; }
-  .qr { width: 220px; height: 220px; }
+  .qr { width: 300px; height: 300px; flex: 0 0 auto; margin-left: auto; margin-right: auto; }
   .foot { padding: 24px 40px 30px; font-size: 16px; font-weight: 700; color: #64748b; }
 </style>
 </head>
@@ -60,7 +68,7 @@ via set_content and has no base URL to resolve anything against.
       </div>
 
       <div class="codeblock">
-        <div>
+        <div class="code-wrap">
           <div class="label">CODE</div>
           <div class="code">{{ ticket_code }}</div>
         </div>
