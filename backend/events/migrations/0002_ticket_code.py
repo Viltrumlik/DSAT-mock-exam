@@ -37,10 +37,15 @@ class Migration(migrations.Migration):
     dependencies = [("events", "0001_initial")]
 
     operations = [
+        # A bare column first: no db_index, no unique. On PostgreSQL both a db_index and a
+        # unique CharField get a `<column>_like` index, and adding unique=True in the
+        # AlterField below creates it again, so an indexed AddField here failed the
+        # 2026-09-18 deploy with 'relation "..._ticket_code_..._like" already exists'.
+        # The AlterField brings the unique constraint and the index in one step.
         migrations.AddField(
             model_name="eventregistration",
             name="ticket_code",
-            field=models.CharField(blank=True, db_index=True, max_length=10, null=True),
+            field=models.CharField(blank=True, max_length=10, null=True),
         ),
         migrations.RunPython(backfill, drop),
         migrations.AlterField(

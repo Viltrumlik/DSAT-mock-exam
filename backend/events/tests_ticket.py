@@ -102,6 +102,26 @@ class AdminRegistrationTicketCodeTests(TicketFixture):
         self.assertEqual(row["ticket_code"], f"{code[:4]}-{code[4:]}")
 
 
+class TicketMigrationShapeTests(SimpleTestCase):
+    """The tests run on SQLite with migrations skipped, so nothing here ever executes the
+    migration's DDL on PostgreSQL. This pins the one shape that broke a production deploy."""
+
+    def test_the_column_is_added_bare_and_only_the_alter_indexes_it(self):
+        import importlib
+
+        from django.db import migrations as m
+
+        ops = importlib.import_module("events.migrations.0002_ticket_code").Migration.operations
+        add = next(op for op in ops if isinstance(op, m.AddField))
+        alter = next(op for op in ops if isinstance(op, m.AlterField))
+
+        # An indexed AddField plus an AlterField to unique=True makes PostgreSQL create the
+        # `_like` index twice: 'relation "..._like" already exists'.
+        self.assertFalse(add.field.db_index)
+        self.assertFalse(add.field.unique)
+        self.assertTrue(alter.field.unique)
+
+
 class TicketMigrationBackfillTests(TicketFixture):
     """R10: the migration's own backfill, proven directly — the fast test settings never
     run migrations, so this is the only thing that actually exercises `backfill`."""
