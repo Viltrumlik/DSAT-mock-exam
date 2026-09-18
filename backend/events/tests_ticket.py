@@ -127,3 +127,80 @@ class TicketMigrationBackfillTests(TicketFixture):
             self.assertEqual(len(code), 8)
             self.assertLessEqual(set(code), set(services.TICKET_ALPHABET))
         self.assertEqual(len(codes), len(set(codes)))
+
+
+class TicketRenderTests(TicketFixture):
+    """The card's data and its fallback. The Chromium path is NOT exercised: CI has no
+    browser, and the certificate suite already guards that renderer with a skipUnless."""
+
+    def test_the_context_carries_what_the_door_needs(self):
+        from events import ticket
+
+        context = ticket.build_context(self.row)
+
+        self.assertEqual(context["student_name"], "Anna Karimova")
+        self.assertEqual(context["event_title"], "Robotics open day")
+        self.assertEqual(context["location"], "Fergana city branch, room 3")
+        self.assertEqual(
+            context["ticket_code"], services.format_ticket_code(self.row.ticket_code)
+        )
+        self.assertIn(self.row.ticket_code, context["check_url"])
+
+    def test_the_qr_points_at_the_ops_console_host(self):
+        from django.test import override_settings
+
+        from events import ticket
+
+        with override_settings(OPS_SITE_URL="https://admin.example.test"):
+            url = ticket.check_url(self.row.ticket_code)
+
+        # The ops pages' API calls are only allowed on that host, so a QR aimed anywhere else
+        # opens a page that 403s the moment it loads.
+        self.assertTrue(url.startswith("https://admin.example.test/ops/events/check/"))
+
+    def test_the_html_names_the_student_and_the_code(self):
+        from events import ticket
+
+        html = ticket.render_html(self.row)
+
+        self.assertIn("Anna Karimova", html)
+        self.assertIn(services.format_ticket_code(self.row.ticket_code), html)
+        self.assertIn("data:image/svg+xml", html)  # the QR, inline
+
+    def test_the_fallback_draws_a_real_png(self):
+        from events import ticket
+
+        data = ticket.render_png_fallback(self.row)
+
+        self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertGreater(len(data), 2000)
+
+    def test_a_broken_browser_falls_back_rather_than_failing_the_download(self):
+        from unittest.mock import patch
+
+        from events import ticket
+
+        with patch.object(ticket, "_render_png_chromium", side_effect=RuntimeError("no browser")):
+            data = ticket.render_png(self.row)
+
+        self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
+
+
+class TicketFontTests(TicketFixture):
+    """R4: the ticket embeds its own fonts (lifted from the certificate template) rather
+    than relying on a system stack."""
+
+    def test_the_extracted_rules_mention_both_families(self):
+        from events import ticket
+
+        rules = ticket._embedded_font_faces()
+
+        self.assertIn("Plus Jakarta Sans", rules)
+        self.assertIn("Space Mono", rules)
+
+    def test_the_rendered_html_carries_the_font_face_rules(self):
+        from events import ticket
+
+        html = ticket.render_html(self.row)
+
+        self.assertIn("@font-face", html)

@@ -1,0 +1,74 @@
+{% comment %}
+The event ticket, captured as a PNG by headless Chromium (events/ticket.py).
+
+Its fonts are embedded, not a webfont fetch: `font_faces` is a set of `@font-face` rules
+lifted from the certificate template (which already ships them) and rewritten to point at
+inline `data:` URIs, so Chromium never needs a network request to lay the text out — text in
+'Plus Jakarta Sans', the code in 'Space Mono', each followed by a system stack as a fallback.
+The QR and the logo are inline data URIs too, for the same reason: the page is handed over
+via set_content and has no base URL to resolve anything against.
+{% endcomment %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  {{ font_faces|safe }}
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: {{ card_w }}px; height: {{ card_h }}px; background: #eef3fb;
+    font-family: 'Plus Jakarta Sans', "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+    -webkit-print-color-adjust: exact;
+  }
+  #ticket { width: {{ card_w }}px; height: {{ card_h }}px; background: #ffffff; display: flex; flex-direction: column; }
+  .band { background: linear-gradient(160deg, #2a68c0, #1f4d9a); color: #fff; padding: 30px 40px; display: flex; align-items: center; gap: 14px; }
+  .band img { width: 42px; height: auto; }
+  .brand { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .eyebrow { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; opacity: 0.85; }
+  .body { padding: 36px 40px 0; flex: 1; }
+  .title { font-size: 36px; font-weight: 800; color: #0f1729; line-height: 1.15; }
+  .meta { margin-top: 14px; font-size: 19px; font-weight: 600; color: #334155; line-height: 1.5; }
+  .who { margin-top: 26px; padding-top: 22px; border-top: 1px solid #e7ebf3; }
+  .label { font-size: 12px; font-weight: 800; letter-spacing: 0.14em; color: #2a68c0; }
+  .name { margin-top: 6px; font-size: 30px; font-weight: 800; color: #0f1729; }
+  .codeblock { margin-top: 26px; display: flex; align-items: center; gap: 24px; }
+  .code { font-family: 'Space Mono', "Helvetica Neue", "Segoe UI", Arial, sans-serif; font-size: 46px; font-weight: 800; letter-spacing: 0.08em; color: #0f1729; font-variant-numeric: tabular-nums; }
+  .qr { width: 220px; height: 220px; }
+  .foot { padding: 24px 40px 30px; font-size: 16px; font-weight: 700; color: #64748b; }
+</style>
+</head>
+<body>
+  <div id="ticket">
+    <div class="band">
+      {% if logo %}<img src="{{ logo }}" alt="" />{% endif %}
+      <div>
+        <div class="brand">MasterSAT</div>
+        <div class="eyebrow">EVENT TICKET</div>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="title">{{ event_title }}</div>
+      <div class="meta">
+        {{ weekday_label }} {{ date_label }}<br />
+        {{ start_time }}&ndash;{{ end_time }}{% if location %}<br />{{ location }}{% endif %}
+      </div>
+
+      <div class="who">
+        <div class="label">TICKET HOLDER</div>
+        <div class="name">{{ student_name }}</div>
+      </div>
+
+      <div class="codeblock">
+        <div>
+          <div class="label">CODE</div>
+          <div class="code">{{ ticket_code }}</div>
+        </div>
+        <img class="qr" src="{{ qr }}" alt="" />
+      </div>
+    </div>
+
+    <div class="foot">Show this at the door.</div>
+  </div>
+</body>
+</html>

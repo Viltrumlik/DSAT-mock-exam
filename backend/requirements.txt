@@ -26,6 +26,10 @@ PyMuPDF==1.27.2.3
 playwright==1.61.0
 reportlab==4.2.5
 
+# QR codes on event tickets. Pure Python, no system libraries — it writes the SVG that goes
+# into the ticket template and the PNG the Pillow fallback pastes in.
+segno==1.6.1
+
 # Config
 python-dotenv==1.2.2
 google-auth==2.40.3
