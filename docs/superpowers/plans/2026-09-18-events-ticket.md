@@ -937,10 +937,26 @@ cd /Users/macbook/Projects/dsat-wt-events/backend && SECRET_KEY=test-secret DEBU
 ```
 Expected: one `OK`.
 
+- [ ] **Step 4b: Put the ticket back into the reminder email**
+
+PR 1 shipped a ticket-neutral reminder on purpose (ledger Ruling 15: a reminder promising a ticket
+that did not exist yet would have pointed students at nothing if PR 1 deployed alone). Now the
+ticket exists, so restore what spec §5 asks for:
+- `backend/templates/email/event_reminder.html`: add the "Your ticket is on the events page — bring
+  it with you" line (a small card, in the same table idiom as the rest of the template) and make
+  the button "Open my ticket" → `events_url`.
+- `backend/events/mail.py`, the reminder branch of `_text_body`: add the same sentence and
+  "Open your ticket: <events_url>".
+- `backend/events/tests_email.py` or `tests_reminder.py`: assert the reminder HTML contains
+  "Open my ticket" and the ticket sentence.
+
+Run `events` and `users.tests.test_email_templates` again; only a literal `OK` counts. Include these
+files in this task's commit.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/macbook/Projects/dsat-wt-events && git add backend/events && git commit -m "$(cat <<'EOF'
+cd /Users/macbook/Projects/dsat-wt-events && git add backend/events backend/templates/email/event_reminder.html && git commit -m "$(cat <<'EOF'
 feat(events): download your ticket, and resolve a code at the door
 
 The ticket endpoint serves the caller's own seat only — a ticket carries somebody's
