@@ -210,3 +210,55 @@ def delete_draft(event: Event) -> None:
             "not_a_draft", "This event has been published — cancel it instead of deleting it."
         )
     event.delete()
+
+
+def marking_opens_at(event: Event):
+    """When ops may start marking arrivals: the moment the cancel window closes.
+
+    The door opens before the event does, and a student standing at it has already lost the
+    right to give the seat up — so the two moments are deliberately the same one.
+    """
+    return event.starts_at - CANCEL_CUTOFF
+
+
+def mark_attendance(registration: EventRegistration, value, *, actor=None, now=None):
+    """Record that a student came, or did not, and settle the reward either way."""
+    from rewards import constants as reward_const
+    from rewards.services import award, revoke
+
+    now = now or timezone.now()
+    allowed = (None, EventRegistration.ATTENDANCE_ATTENDED, EventRegistration.ATTENDANCE_MISSED)
+    if value not in allowed:
+        raise EventRefused("bad_value", "Mark a student as Attended or Missed.")
+
+    event = registration.event
+    if event.status != Event.STATUS_PUBLISHED:
+        raise EventRefused("not_open", "That event isn't running.")
+    if registration.status != EventRegistration.STATUS_REGISTERED:
+        raise EventRefused("not_registered", "That student gave their seat back.")
+    if now < marking_opens_at(event):
+        opens = timezone.localtime(marking_opens_at(event)).strftime("%H:%M")
+        raise EventRefused("too_early", f"You can mark arrivals from {opens}.")
+
+    registration.attendance = value
+    registration.marked_by = actor
+    registration.marked_at = now
+    registration.save(update_fields=["attendance", "marked_by", "marked_at", "updated_at"])
+
+    key = reward_const.event_attendance_key(registration.pk)
+    if value == EventRegistration.ATTENDANCE_ATTENDED:
+        award(
+            registration.student,
+            reward_const.EVENT_ATTENDED,
+            idempotency_key=key,
+            # No classroom: an event is not a lesson, so the points count towards the
+            # student's balance and the global board, never a class board.
+            classroom=None,
+            source_type="event_registration",
+            source_id=registration.pk,
+            actor=actor,
+            reason=f"attended “{event.title}”"[:240],
+        )
+    else:
+        revoke(key, reason="event attendance withdrawn", actor=actor)
+    return registration
