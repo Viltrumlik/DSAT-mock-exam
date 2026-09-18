@@ -71,7 +71,7 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
             "title": mock.title,
             "subject": getattr(mock, "midterm_subject", None) or Midterm.READING_WRITING,
             # The builder authors the tier on the legacy exam; mirror it verbatim so a
-            # Math middle/senior midterm gets its calculator (see Midterm.calculator_enabled).
+            # Math midterm gets its level's calculator (see Midterm.calculator_mode).
             "level": getattr(mock, "midterm_level", "") or "",
             "scoring_scale": getattr(mock, "midterm_scoring_scale", None) or Midterm.SCALE_100,
             "duration_minutes": duration,

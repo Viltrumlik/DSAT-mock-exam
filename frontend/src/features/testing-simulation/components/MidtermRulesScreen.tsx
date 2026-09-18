@@ -48,8 +48,10 @@ interface MidtermRulesScreenProps {
   isRetake?: boolean;
   /** Whether an access code is required — a standalone midterm has none to hand out. */
   requiresCode?: boolean;
-  /** Desmos gate as decided server-side; midterms only offer it at Math middle/senior. */
+  /** Desmos gate as decided server-side; midterms offer it at every tagged Math level. */
   calculatorEnabled?: boolean;
+  /** Junior/foundation Math: Desmos's Scientific calculator only. */
+  calculatorScientificOnly?: boolean;
 }
 
 type Rule = { icon: React.ElementType; text: string };
@@ -72,6 +74,11 @@ const ALLOWED: Rule[] = [
 const CALCULATOR_ALLOWED: Rule = {
   icon: Calculator,
   text: "The built-in Desmos calculator, opened from the toolbar. No physical calculator.",
+};
+
+const SCIENTIFIC_CALCULATOR_ALLOWED: Rule = {
+  icon: Calculator,
+  text: "The built-in Desmos scientific calculator, opened from the toolbar. No physical calculator.",
 };
 
 const PROHIBITED: Rule[] = [
@@ -138,9 +145,11 @@ export function MidtermRulesScreen({
   isRetake = false,
   requiresCode = true,
   calculatorEnabled = false,
+  calculatorScientificOnly = false,
 }: MidtermRulesScreenProps) {
   const required = requiresCode ? [...REQUIRED, REQUIRED_CODE] : REQUIRED;
-  const allowed = calculatorEnabled ? [...ALLOWED, CALCULATOR_ALLOWED] : ALLOWED;
+  const calculatorRule = calculatorScientificOnly ? SCIENTIFIC_CALCULATOR_ALLOWED : CALCULATOR_ALLOWED;
+  const allowed = calculatorEnabled ? [...ALLOWED, calculatorRule] : ALLOWED;
   // Quote a pass mark ONLY when the scale is known. The two scales don't share a floor
   // (a blank 800-scale paper scores 200), so guessing one would put a real number in front
   // of the student that the server would then disagree with.

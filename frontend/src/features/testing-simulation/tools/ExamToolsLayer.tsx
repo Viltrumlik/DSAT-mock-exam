@@ -9,6 +9,8 @@ import type { ExamTools } from "./useExamTools";
 interface ExamToolsLayerProps {
   tools: ExamTools;
   attemptId: number | string;
+  /** Desmos's Scientific calculator only — no Graphing tab (junior/foundation Math midterms). */
+  calculatorScientificOnly?: boolean;
 }
 
 /**
@@ -16,7 +18,7 @@ interface ExamToolsLayerProps {
  * one line. Each child is independent and self-persisting. The calculator floats
  * (draggable, Bluebook-style) and never reserves layout space.
  */
-export function ExamToolsLayer({ tools, attemptId }: ExamToolsLayerProps) {
+export function ExamToolsLayer({ tools, attemptId, calculatorScientificOnly = false }: ExamToolsLayerProps) {
   return (
     <>
       {tools.calculatorOpen && (
@@ -24,6 +26,7 @@ export function ExamToolsLayer({ tools, attemptId }: ExamToolsLayerProps) {
           onClose={tools.toggleCalculator}
           enlarged={tools.calculatorEnlarged}
           onToggleEnlarge={tools.toggleCalculatorEnlarge}
+          scientificOnly={calculatorScientificOnly}
         />
       )}
       {tools.referenceOpen && <ReferenceSheet onClose={tools.toggleReference} />}

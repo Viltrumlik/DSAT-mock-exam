@@ -10,6 +10,8 @@ interface DesmosCalculatorProps {
   /** Enlarged window (and the runner reserves more space for it). */
   enlarged: boolean;
   onToggleEnlarge: () => void;
+  /** Offer only the Scientific calculator — no Graphing tab (junior/foundation Math midterms). */
+  scientificOnly?: boolean;
 }
 
 type Mode = "graphing" | "scientific";
@@ -20,8 +22,10 @@ type Mode = "graphing" | "scientific";
  * falls back to the built-in scientific calculator if the script can't load
  * (offline / CSP). An enlarge button grows the window. UI-only; no exam coupling.
  */
-export function DesmosCalculator({ onClose, enlarged, onToggleEnlarge }: DesmosCalculatorProps) {
-  const [mode, setMode] = useState<Mode>("graphing");
+export function DesmosCalculator({ onClose, enlarged, onToggleEnlarge, scientificOnly = false }: DesmosCalculatorProps) {
+  const [picked, setMode] = useState<Mode>("graphing");
+  // Scientific-only locks the mode and hides the tabs, so Graphing can't be reached.
+  const mode: Mode = scientificOnly ? "scientific" : picked;
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const mountRef = useRef<HTMLDivElement>(null);
   const instanceRef = useRef<DesmosInstance | null>(null);
@@ -68,17 +72,19 @@ export function DesmosCalculator({ onClose, enlarged, onToggleEnlarge }: DesmosC
 
   return (
     <FloatingPanel
-      title="Calculator"
+      title={scientificOnly ? "Scientific Calculator" : "Calculator"}
       onClose={onClose}
       dark
       initial={{ x: 16, y: 80, w: enlarged ? 720 : 460, h: enlarged ? 700 : 560 }}
       minW={360}
       minH={420}
       headerLeft={
-        <div className="flex items-center gap-1">
-          {tab("graphing", "Graphing")}
-          {tab("scientific", "Scientific")}
-        </div>
+        scientificOnly ? undefined : (
+          <div className="flex items-center gap-1">
+            {tab("graphing", "Graphing")}
+            {tab("scientific", "Scientific")}
+          </div>
+        )
       }
       headerExtra={
         <button

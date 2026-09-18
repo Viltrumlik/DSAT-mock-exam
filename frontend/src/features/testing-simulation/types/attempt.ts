@@ -77,8 +77,10 @@ const practiceTestDetailsSchema = z
     mock_kind: z.string().nullable().optional(),
     /** Midterm difficulty tier (foundation/junior/middle/senior). Only /midterms/attempts sends these. */
     level: z.string().nullable().optional(),
-    /** Server-decided Desmos gate for midterms (Math + middle/senior). Absent on other exam types. */
+    /** Server-decided Desmos gate for midterms (Math + a tagged level). Absent on other exam types. */
     calculator_enabled: z.boolean().nullable().optional(),
+    /** Which Desmos a midterm offers: "full" (middle/senior) or "scientific" alone (junior/foundation). */
+    calculator_mode: z.string().nullable().optional(),
     /**
      * Questions in the WHOLE paper, across every module. The pre-exam rules screen needs it
      * because a not-yet-started attempt has no module payload to count, and on a two-module

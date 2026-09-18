@@ -17,6 +17,7 @@ import { mockApi } from "@/lib/mockApi";
 import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attemptMerge";
 import {
   calculatorAllowed,
+  calculatorScientificOnly,
   isMath,
   isProctored,
   isMidtermAttempt,
@@ -920,6 +921,7 @@ export function ExamRunnerPage() {
           // never told to start without one they then get asked for.
           requiresCode={requiresCode !== false}
           calculatorEnabled={calculatorAllowed(attempt)}
+          calculatorScientificOnly={calculatorScientificOnly(attempt)}
         />
       );
     }
@@ -1140,7 +1142,7 @@ export function ExamRunnerPage() {
 
       {/* All SAT-experience tool overlays (calculator, reference, notes, help,
           highlight popover). Single mount point; each is engine-isolated. */}
-      <ExamToolsLayer tools={tools} attemptId={attemptId} />
+      <ExamToolsLayer tools={tools} attemptId={attemptId} calculatorScientificOnly={calculatorScientificOnly(attempt)} />
 
       {/* Forced fullscreen — if the student leaves fullscreen mid-test, block the
           UI until they re-enter (the only path is a user-gesture button). Gated on
