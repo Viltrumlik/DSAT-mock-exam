@@ -9,6 +9,12 @@
  * not hear about it in time cannot act on it later.
  *
  * The rules that keep it a prompt and not a nag:
+ *   * Only one dialog on screen at a time. `StudentPrompts` mounts this as a sibling of the
+ *     survey invitation, not behind a gate, because gating it on "no surveys waiting" would
+ *     silence it for the whole two weeks a survey stays open. Instead, this component waits
+ *     out its OWN delay and then checks the DOM itself: if any `[role="dialog"]
+ *     [aria-modal="true"]` is already open (the survey invitation, most likely, or the push
+ *     opt-in), it re-checks every second rather than stacking a second scrim on top.
  *   * Once per sign-in, per event (`lib/eventInvitePrompt`, cleared on logout).
  *   * Never on `/events`: interrupting somebody to suggest the page they are reading is how
  *     a prompt teaches people to dismiss prompts.
@@ -30,8 +36,15 @@ import { markEventInviteShown, wasEventInviteShown } from "@/lib/eventInviteProm
 
 import { useSignUpForEvent, useUpcomingEvents } from "./eventsHooks";
 
-/** Long enough for the page behind it to settle, short enough to still read as "on sign-in". */
-const OPEN_DELAY_MS = 1500;
+/**
+ * Long enough for the page behind it to settle, short enough to still read as "on sign-in" —
+ * and later than the survey prompt's own 1500ms, so a survey that is opening has already
+ * committed its dialog (mounted the timer that will open it) before this one even looks.
+ */
+const OPEN_DELAY_MS = 2200;
+
+/** How often to look again while another dialog still has the screen. */
+const RECHECK_MS = 1000;
 
 function fmtWhen(iso: string) {
   const d = new Date(iso);
@@ -69,13 +82,33 @@ export function EventInviteDialog() {
       setOpen(false);
       return;
     }
-    const timer = window.setTimeout(() => {
+
+    // Cleared unconditionally below, whichever one is currently pending — `tryOpen` reassigns
+    // this on every re-check, so the cleanup always clears the LATEST scheduled timer, never a
+    // stale one.
+    let recheckTimer: number | undefined;
+
+    const tryOpen = () => {
+      // Only one dialog at a time. This runs after our own delay has already let a survey (or
+      // the push opt-in) commit to opening, so if one is on screen now, it got here first —
+      // wait for it to close rather than stacking a second scrim on top of it.
+      const anotherDialogOpen =
+        document.querySelector('[role="dialog"][aria-modal="true"]') != null;
+      if (anotherDialogOpen) {
+        recheckTimer = window.setTimeout(tryOpen, RECHECK_MS);
+        return;
+      }
       setOpen(true);
       // Marked when it is actually seen: a student who signs in and navigates away at once
       // has not been asked, and should be asked next time.
       markEventInviteShown(featuredId);
-    }, OPEN_DELAY_MS);
-    return () => window.clearTimeout(timer);
+    };
+
+    const timer = window.setTimeout(tryOpen, OPEN_DELAY_MS);
+    return () => {
+      window.clearTimeout(timer);
+      if (recheckTimer != null) window.clearTimeout(recheckTimer);
+    };
   }, [owed, eligible, featuredId]);
 
   if (!eligible || featured == null) return null;

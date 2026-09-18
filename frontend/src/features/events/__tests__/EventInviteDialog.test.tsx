@@ -67,7 +67,7 @@ async function mount() {
 async function render() {
   await mount();
   await act(async () => {
-    vi.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2500);
   });
 }
 
@@ -83,6 +83,10 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  // Defensive: a failed assertion inside "waits while another dialog is on screen" could
+  // otherwise leave its manually-appended blocker on <body>, where it would silently gate
+  // every later test's dialog closed.
+  document.querySelectorAll('[role="dialog"][aria-modal="true"]').forEach((el) => el.remove());
   vi.clearAllMocks();
   vi.useRealTimers();
 });
@@ -103,9 +107,26 @@ describe("EventInviteDialog", () => {
 
   it("waits before opening, rather than landing with the page", async () => {
     await mount();
-    await act(async () => { vi.advanceTimersByTime(500); });
-    expect(text()).not.toContain("There's an event coming up");
     await act(async () => { vi.advanceTimersByTime(2000); });
+    expect(text()).not.toContain("There's an event coming up");
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(text()).toContain("There's an event coming up");
+  });
+
+  it("waits while another dialog is on screen", async () => {
+    // The survey invitation (or the push opt-in) may already have the screen — a raw node is
+    // enough to stand in for it, since the check is a DOM query, not a mock.
+    const blocker = document.createElement("div");
+    blocker.setAttribute("role", "dialog");
+    blocker.setAttribute("aria-modal", "true");
+    document.body.appendChild(blocker);
+
+    await mount();
+    await act(async () => { vi.advanceTimersByTime(2500); });
+    expect(text()).not.toContain("There's an event coming up");
+
+    blocker.remove();
+    await act(async () => { vi.advanceTimersByTime(1000); });
     expect(text()).toContain("There's an event coming up");
   });
 
