@@ -262,3 +262,53 @@ def mark_attendance(registration: EventRegistration, value, *, actor=None, now=N
     else:
         revoke(key, reason="event attendance withdrawn", actor=actor)
     return registration
+
+
+def active_students():
+    """Every student who could act on an event: active, unfrozen, role student."""
+    from django.contrib.auth import get_user_model
+
+    users = get_user_model().objects.filter(is_active=True)
+    return [u for u in users if is_signupable_student(u)]
+
+
+def registered_students(event: Event):
+    """The students holding a seat right now, skipping the frozen and the deactivated."""
+    rows = EventRegistration.objects.filter(
+        event=event, status=EventRegistration.STATUS_REGISTERED
+    ).select_related("student")
+    return [r.student for r in rows if is_signupable_student(r.student)]
+
+
+def publish_and_announce(event: Event, *, now=None) -> bool:
+    """Publish, and tell every active student — once. The entry point the API calls."""
+    from . import notifications as event_notifications
+
+    if not publish(event, now=now):
+        return False
+    event_notifications.announce_published(event, active_students())
+    return True
+
+
+def update_and_announce(event: Event, fields: dict, *, now=None):
+    """Edit, and tell the students holding a seat when the time or place moved."""
+    from . import notifications as event_notifications
+
+    event, moved = update_event(event, fields, now=now)
+    if moved and event.status == Event.STATUS_PUBLISHED:
+        event_notifications.announce_changed(event, registered_students(event))
+    return event, moved
+
+
+def cancel_and_announce(event: Event, *, actor=None, now=None) -> Event:
+    """Call it off, and tell the students who had a seat.
+
+    The recipients are read BEFORE the seats are closed — afterwards there are none, and the
+    message would reach nobody at all.
+    """
+    from . import notifications as event_notifications
+
+    told = registered_students(event)
+    event = cancel_event(event, actor=actor, now=now)
+    event_notifications.announce_cancelled(event, told)
+    return event
