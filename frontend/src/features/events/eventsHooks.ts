@@ -35,6 +35,9 @@ export function useSignUpForEvent() {
   return useMutation({
     mutationFn: (id: number) => eventsApi.signUp(id),
     onSuccess: () => invalidateSeats(qc),
+    // A refusal is often the seat filling between render and click — refetch so a row that
+    // just lost the race flips to "Full" on its own instead of still offering "Sign up".
+    onError: () => invalidateSeats(qc),
   });
 }
 
@@ -43,6 +46,8 @@ export function useCancelEventSeat() {
   return useMutation({
     mutationFn: (id: number) => eventsApi.cancel(id),
     onSuccess: () => invalidateSeats(qc),
+    // Same reasoning: the 2-hour window can close between render and click.
+    onError: () => invalidateSeats(qc),
   });
 }
 

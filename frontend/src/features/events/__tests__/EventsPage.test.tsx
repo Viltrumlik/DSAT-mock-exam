@@ -12,14 +12,16 @@ import { createRoot, type Root } from "react-dom/client";
 
 const useUpcomingEvents = vi.fn();
 const useMyEvents = vi.fn();
+const useSignUpForEvent = vi.fn();
+const useCancelEventSeat = vi.fn();
 const signUp = vi.fn();
 const cancelSeat = vi.fn();
 
 vi.mock("../eventsHooks", () => ({
   useUpcomingEvents: () => useUpcomingEvents(),
   useMyEvents: () => useMyEvents(),
-  useSignUpForEvent: () => ({ mutate: signUp, isPending: false }),
-  useCancelEventSeat: () => ({ mutate: cancelSeat, isPending: false }),
+  useSignUpForEvent: () => useSignUpForEvent(),
+  useCancelEventSeat: () => useCancelEventSeat(),
 }));
 
 vi.mock("next/link", () => ({
@@ -99,6 +101,8 @@ beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   useUpcomingEvents.mockReturnValue(query({ data: [row()] }));
   useMyEvents.mockReturnValue(query({ data: [] }));
+  useSignUpForEvent.mockReturnValue({ mutate: signUp, isPending: false, isError: false, error: null });
+  useCancelEventSeat.mockReturnValue({ mutate: cancelSeat, isPending: false, isError: false, error: null });
 });
 
 afterEach(async () => {
@@ -198,6 +202,53 @@ describe("EventsPage", () => {
     expect(text()).toContain("Missed");
     // Never the punishing word — see the house copy rule.
     expect(text()).not.toContain("Absent");
+  });
+
+  it("shows the server's reason when a sign-up fails", async () => {
+    useSignUpForEvent.mockReturnValue({
+      mutate: signUp,
+      isPending: false,
+      isError: true,
+      error: {
+        response: {
+          data: { code: "full", detail: "That event is full. A seat opens if somebody cancels." },
+        },
+      },
+    });
+    await render();
+    expect(text()).toContain("That event is full. A seat opens if somebody cancels.");
+  });
+
+  it("shows the server's reason when a cancel fails", async () => {
+    useUpcomingEvents.mockReturnValue(
+      query({
+        data: [
+          row({
+            can_sign_up: false,
+            can_cancel: true,
+            my_registration: {
+              id: 5, status: "REGISTERED", attendance: null,
+              registered_at: "2026-09-20T10:00:00+05:00", points_awarded: 0,
+            },
+          }),
+        ],
+      }),
+    );
+    useCancelEventSeat.mockReturnValue({
+      mutate: cancelSeat,
+      isPending: false,
+      isError: true,
+      error: {
+        response: {
+          data: {
+            code: "cancel_window_closed",
+            detail: "Too close to the start to cancel now.",
+          },
+        },
+      },
+    });
+    await render();
+    expect(text()).toContain("Too close to the start to cancel now.");
   });
 
   it("says the list failed rather than pretending there is nothing on", async () => {

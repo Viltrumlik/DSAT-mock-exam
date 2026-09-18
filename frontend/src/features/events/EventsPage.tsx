@@ -15,7 +15,7 @@ import { HeroPage, PageHero, Skeleton } from "@/components/ui";
 import { Card, CardHeader, EmptyState, ErrorState } from "@/features/classroom/ui";
 import { RewardCoin } from "@/components/RewardCoin";
 
-import type { LearningEvent } from "./eventsApi";
+import { refusalText, type LearningEvent } from "./eventsApi";
 import {
   useCancelEventSeat,
   useMyEvents,
@@ -116,6 +116,16 @@ function EventRow({ row, past }: { row: LearningEvent; past?: boolean }) {
       ) : (
         <span className="text-xs font-extrabold text-muted-foreground">Full</span>
       )}
+
+      {signUp.isError ? (
+        <p role="alert" className="w-full text-xs font-semibold text-danger-foreground">
+          {refusalText(signUp.error) ?? "Couldn't do that. Try again."}
+        </p>
+      ) : cancel.isError ? (
+        <p role="alert" className="w-full text-xs font-semibold text-danger-foreground">
+          {refusalText(cancel.error) ?? "Couldn't do that. Try again."}
+        </p>
+      ) : null}
     </li>
   );
 }
