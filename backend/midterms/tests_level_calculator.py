@@ -1,9 +1,9 @@
 """Midterm level + level-gated Desmos calculator.
 
-The calculator used to be blanket-denied for every midterm. It is now level-gated to
-match the assessment rule: a MATH midterm at middle/senior offers it; everything else
-(R&W, or an untagged/junior/foundation Math midterm) does not. The rule lives on the
-model and is echoed to the runner, so the frontend never re-derives it.
+The calculator used to be blanket-denied for every midterm. It is now level-gated: a MATH
+midterm at middle/senior offers the full Desmos, junior/foundation its Scientific
+calculator only; R&W and an untagged Math midterm get none. The rule lives on the model
+and is echoed to the runner, so the frontend never re-derives it.
 """
 from __future__ import annotations
 
@@ -28,10 +28,20 @@ class CalculatorEnabledRuleTests(TestCase):
         self.assertTrue(_mk(level=Midterm.LEVEL_MIDDLE).calculator_enabled)
         self.assertTrue(_mk(level=Midterm.LEVEL_SENIOR).calculator_enabled)
 
-    def test_math_junior_foundation_and_untagged_do_not(self):
-        self.assertFalse(_mk(level=Midterm.LEVEL_JUNIOR).calculator_enabled)
-        self.assertFalse(_mk(level=Midterm.LEVEL_FOUNDATION).calculator_enabled)
-        self.assertFalse(_mk(level="").calculator_enabled)  # legacy/untagged
+    def test_math_middle_and_senior_get_the_full_calculator(self):
+        self.assertEqual(_mk(level=Midterm.LEVEL_MIDDLE).calculator_mode, Midterm.CALCULATOR_FULL)
+        self.assertEqual(_mk(level=Midterm.LEVEL_SENIOR).calculator_mode, Midterm.CALCULATOR_FULL)
+
+    def test_math_junior_and_foundation_get_the_scientific_calculator_only(self):
+        for level in (Midterm.LEVEL_JUNIOR, Midterm.LEVEL_FOUNDATION):
+            midterm = _mk(level=level)
+            self.assertTrue(midterm.calculator_enabled)
+            self.assertEqual(midterm.calculator_mode, Midterm.CALCULATOR_SCIENTIFIC)
+
+    def test_untagged_math_gets_none(self):
+        midterm = _mk(level="")  # legacy/untagged
+        self.assertFalse(midterm.calculator_enabled)
+        self.assertIsNone(midterm.calculator_mode)
 
     def test_reading_writing_never_gets_it_even_at_middle(self):
         self.assertFalse(_mk(level=Midterm.LEVEL_MIDDLE, subject=Midterm.READING_WRITING).calculator_enabled)
@@ -80,7 +90,7 @@ class SyncCarriesLegacyLevelTests(TestCase):
         self.assertEqual(midterm.level, "")
         self.assertFalse(midterm.calculator_enabled)
 
-    def test_downgrading_the_legacy_level_turns_the_calculator_off(self):
+    def test_downgrading_the_legacy_level_narrows_to_scientific(self):
         from exams.models import MockExam
         from midterms.sync import upsert_midterm_from_legacy
 
@@ -88,10 +98,10 @@ class SyncCarriesLegacyLevelTests(TestCase):
             title="M2", kind=MockExam.KIND_MIDTERM, midterm_subject="MATH",
             midterm_level="middle", midterm_module_count=1, midterm_module1_minutes=60,
         )
-        self.assertTrue(upsert_midterm_from_legacy(mock).calculator_enabled)
+        self.assertEqual(upsert_midterm_from_legacy(mock).calculator_mode, Midterm.CALCULATOR_FULL)
         mock.midterm_level = "junior"
         mock.save(update_fields=["midterm_level"])
-        self.assertFalse(upsert_midterm_from_legacy(mock).calculator_enabled)
+        self.assertEqual(upsert_midterm_from_legacy(mock).calculator_mode, Midterm.CALCULATOR_SCIENTIFIC)
 
 
 class RunnerPayloadTests(TestCase):
@@ -107,15 +117,17 @@ class RunnerPayloadTests(TestCase):
         self.assertEqual(details["mock_kind"], "MIDTERM")  # existing contract
         self.assertEqual(details["level"], "middle")
         self.assertTrue(details["calculator_enabled"])
+        self.assertEqual(details["calculator_mode"], "full")
 
-    def test_junior_math_midterm_reports_calculator_disabled(self):
+    def test_junior_math_midterm_reports_scientific_only(self):
         from midterms.serializers import MidtermAttemptSerializer
         from midterms.models import MidtermAttempt
 
         student = User.objects.create_user("calc_student2@test.com", "secret123")
         attempt = MidtermAttempt.objects.create(midterm=_mk(level=Midterm.LEVEL_JUNIOR), student=student)
         details = MidtermAttemptSerializer(attempt).data["practice_test_details"]
-        self.assertFalse(details["calculator_enabled"])
+        self.assertTrue(details["calculator_enabled"])
+        self.assertEqual(details["calculator_mode"], "scientific")
 
 
 class AdminLevelValidationTests(TestCase):

@@ -20,8 +20,9 @@
  *   - There is no pause and no early submit — the paper is taken in when time runs out.
  *   - Leaving the exam window is an offence; the third one forfeits the sitting.
  *   - The Desmos calculator is LEVEL-GATED, not hidden: a Math midterm at middle/senior
- *     offers it. The server decides (Midterm.calculator_enabled) and the runner reads it
- *     via `calculatorAllowed` in testing-simulation/state/selectors.ts.
+ *     offers the full calculator, junior/foundation the Scientific one only. The server
+ *     decides (Midterm.calculator_mode) and the runner reads it via `calculatorAllowed` /
+ *     `calculatorScientificOnly` in testing-simulation/state/selectors.ts.
  */
 
 import type { ModuleProgress } from "./satRules";

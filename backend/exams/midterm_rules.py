@@ -10,8 +10,9 @@ Digital SAT structure (see sat_rules.py). They have their own rules:
   - Scoring uses MockExam.midterm_scoring_scale (100-point or 800-point).
   - The reference sheet is hidden.
   - The Desmos calculator is LEVEL-GATED, not hidden: a Math midterm at middle/senior
-    level offers it. The rule lives on the new app's model (midterms.Midterm.
-    calculator_enabled, driven by MockExam.midterm_level which sync mirrors), NOT here.
+    level offers the full calculator, junior/foundation the Scientific one only. The rule
+    lives on the new app's model (midterms.Midterm.calculator_mode, driven by
+    MockExam.midterm_level which sync mirrors), NOT here.
 
 Keep in sync with the frontend mirror: frontend/src/lib/midtermRules.ts
 """

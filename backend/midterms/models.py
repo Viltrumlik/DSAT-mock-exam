@@ -128,8 +128,12 @@ class Midterm(TwoModuleQuestionSource, TimestampedModel):
         MATH: (LEVEL_FOUNDATION, LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
     }
     # Levels that unlock the Desmos calculator (Math only) — mirrors the assessment rule
-    # (StudentAttemptRunnerContainer: math + middle/senior). See `calculator_enabled`.
+    # (StudentAttemptRunnerContainer: math + middle/senior). See `calculator_mode`.
     CALCULATOR_LEVELS = (LEVEL_MIDDLE, LEVEL_SENIOR)
+    # Math levels that get Desmos's Scientific calculator ONLY — no Graphing tab.
+    SCIENTIFIC_CALCULATOR_LEVELS = (LEVEL_FOUNDATION, LEVEL_JUNIOR)
+    CALCULATOR_FULL = "full"
+    CALCULATOR_SCIENTIFIC = "scientific"
 
     # Structural invariants — a midterm never offers these. Kept as class attributes
     # (not fields/toggles) so they cannot be authored on. The calculator is NOT one of
@@ -275,15 +279,27 @@ class Midterm(TwoModuleQuestionSource, TimestampedModel):
         return cls.ALLOWED_LEVELS_BY_SUBJECT.get(subject, ())
 
     @property
-    def calculator_enabled(self) -> bool:
-        """Whether the runner may offer Desmos — the single source of truth.
+    def calculator_mode(self) -> str | None:
+        """Which Desmos the runner offers — the single source of truth.
 
-        Math midterms at middle/senior level only; every other midterm (R&W, or an
-        untagged/junior/foundation Math midterm) has no calculator. Computed here — not
-        re-derived client-side — because `subject` is UPPERCASE here while the assessment
-        rule compares lowercase, and one authority avoids the two drifting.
+        Math only: middle/senior get the full calculator (Graphing + Scientific tabs),
+        junior/foundation get the Scientific calculator alone, and R&W or an untagged Math
+        midterm get none (``None``). Computed here — not re-derived client-side — because
+        `subject` is UPPERCASE here while the assessment rule compares lowercase, and one
+        authority avoids the two drifting.
         """
-        return self.subject == self.MATH and self.level in self.CALCULATOR_LEVELS
+        if self.subject != self.MATH:
+            return None
+        if self.level in self.CALCULATOR_LEVELS:
+            return self.CALCULATOR_FULL
+        if self.level in self.SCIENTIFIC_CALCULATOR_LEVELS:
+            return self.CALCULATOR_SCIENTIFIC
+        return None
+
+    @property
+    def calculator_enabled(self) -> bool:
+        """Whether the runner may offer Desmos at all — see `calculator_mode`."""
+        return self.calculator_mode is not None
 
     @property
     def score_ceiling(self) -> int:

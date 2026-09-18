@@ -81,8 +81,10 @@ def _legacy_facts(exam) -> dict:
         "pass_mark": getattr(exam, "midterm_pass_mark", None),
         "is_graded": str(getattr(exam, "midterm_type", "") or "").upper() != "PRE_MIDTERM",
         "is_retake": str(getattr(exam, "midterm_type", "") or "").upper() == "RETAKE",
-        # Mirror Midterm.calculator_enabled without importing it: Math at middle/senior.
-        "calculator_enabled": subject.upper() == "MATH" and level in ("middle", "senior"),
+        # Mirror Midterm.calculator_mode without importing it: Math middle/senior get the full
+        # Desmos, junior/foundation its Scientific calculator only.
+        "calculator_enabled": subject.upper() == "MATH" and level in ("middle", "senior", "junior", "foundation"),
+        "calculator_scientific_only": subject.upper() == "MATH" and level in ("junior", "foundation"),
     }
 
 
@@ -97,6 +99,7 @@ def _midterm_facts(midterm) -> dict:
         "is_graded": midterm.is_graded,
         "is_retake": midterm.midterm_type == midterm.TYPE_RETAKE,
         "calculator_enabled": bool(midterm.calculator_enabled),
+        "calculator_scientific_only": midterm.calculator_mode == midterm.CALCULATOR_SCIENTIFIC,
     }
 
 
@@ -175,6 +178,7 @@ def build_context(schedule: MidtermSchedule) -> dict | None:
         # Rule flags — mirror the runner's rules screen so the two never disagree.
         is_graded=facts["is_graded"],
         calculator_enabled=facts["calculator_enabled"],
+        calculator_scientific_only=facts["calculator_scientific_only"],
         # A classroom midterm always hands out a code (this mail is classroom-only).
         requires_code=True,
         pass_mark_label=_pass_mark_label(facts),
@@ -207,7 +211,8 @@ def _text_rules(context: dict) -> str:
     allowed = ["- Blank scratch paper and a pen or pencil.",
                "- Flagging questions to review before time runs out."]
     if context.get("calculator_enabled"):
-        allowed.append("- The built-in Desmos calculator from the toolbar. No physical calculator.")
+        kind = "Desmos scientific calculator" if context.get("calculator_scientific_only") else "Desmos calculator"
+        allowed.append(f"- The built-in {kind} from the toolbar. No physical calculator.")
 
     not_allowed = [
         "- Other apps, tabs, or programs — close everything else first.",

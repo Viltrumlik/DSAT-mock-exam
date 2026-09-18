@@ -94,9 +94,11 @@ class MidtermAttemptSerializer(serializers.Serializer):
                 "title": midterm.title,
                 "mock_exam_id": None,
                 "mock_kind": "MIDTERM",
-                # Authoritative tool gate: Math middle/senior midterms offer Desmos. Computed
+                # Authoritative tool gate: Math midterms offer Desmos — the full calculator at
+                # middle/senior, the Scientific one alone at junior/foundation. Computed
                 # server-side so the runner never re-derives the rule (subject casing differs).
                 "calculator_enabled": bool(midterm.calculator_enabled),
+                "calculator_mode": midterm.calculator_mode,
                 # Whole-paper size (both modules, version-aware). ONLY the pre-exam rules
                 # screen reads it — once a module is live the runner counts the payload — so
                 # it is computed only while the attempt is not running. Emitting it always
