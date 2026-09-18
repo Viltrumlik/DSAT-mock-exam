@@ -65,7 +65,13 @@ def build_context(event: Event) -> dict:
     ends = timezone.localtime(event.ends_at)
     cancel_by = timezone.localtime(event.starts_at - CANCEL_CUTOFF)
     site = str(getattr(settings, "EMAIL_SITE_URL", "https://mastersat.uz")).rstrip("/")
-    points, _grants_xp = pricing_for(reward_const.EVENT_ATTENDED)
+    points, grants_xp = pricing_for(reward_const.EVENT_ATTENDED)
+    seats = int(event.seats)
+    # Named for the reader, not the offset: "+05" tells nobody in Fergana or Tashkent what
+    # time they are reading, and %Z is not dependable across platforms for a zoneinfo name
+    # in the first place.
+    tz_name = str(getattr(settings, "TIME_ZONE", "Asia/Tashkent"))
+    timezone_label = tz_name.rsplit("/", 1)[-1].replace("_", " ") or "local"
 
     return brand_context(
         event_title=event.title,
@@ -76,14 +82,20 @@ def build_context(event: Event) -> dict:
         # Short and uppercase: a spelled-out weekday overflows the 88px date chip.
         weekday_short=starts.strftime("%a").upper(),
         weekday_label=starts.strftime("%A"),
-        date_label=starts.strftime("%d %B"),
+        # `starts.day` is never zero-padded: "3 October", never "03 October".
+        date_label=f"{starts.day} {starts.strftime('%B')}",
         start_time=starts.strftime("%H:%M"),
         end_time=ends.strftime("%H:%M"),
-        timezone_label=starts.strftime("%Z") or "local",
+        timezone_label=timezone_label,
         # With its day: the cancel deadline is not always on the event's own date.
         cancel_by_label=cancel_by.strftime("%a %d %b, %H:%M").replace(" 0", " "),
-        seats=int(event.seats),
+        seats=seats,
+        seats_word="seat" if seats == 1 else "seats",
         xp_points=int(points),
+        # Whether this earning also carries XP, per the same rule row `pricing_for` prices
+        # it from — a rule the learning center has switched off (see `RewardRule.grants_xp`)
+        # still pays points, and the copy must not promise XP it does not grant.
+        grants_xp=bool(grants_xp),
         # Through the redirect, not the signed URL: media is private and every `.url`
         # expires within the hour, so a signed link in an inbox breaks by lunchtime.
         cover_url=f"{site}/api/events/{event.pk}/cover/" if event.cover_image else "",
@@ -113,20 +125,22 @@ def _text_body(kind: str, context: dict) -> str:
         lines.append(place)
 
     if kind == KIND_ANNOUNCEMENT:
-        lines += ["", f"{context['seats']} seats."]
+        lines += ["", f"{context['seats']} {context['seats_word']}."]
         if context["xp_points"]:
-            lines.append(f"Coming earns you {context['xp_points']} XP.")
+            unit = "XP" if context.get("grants_xp") else "points"
+            lines.append(f"Coming earns you {context['xp_points']} {unit}.")
         if context["description"]:
             lines += ["", context["description"]]
         lines += ["", f"Sign up: {context['events_url']}"]
     elif kind == KIND_REMINDER:
+        # No promise of a ticket here: tickets are built in a later, separate PR, and until
+        # that ships "Open my ticket" would point at nothing.
         lines += [
             "",
-            "Your ticket is on the events page — bring it with you.",
             f"Can't come? Cancel by {context['cancel_by_label']} so someone else can take "
             "your seat.",
             "",
-            f"Open your ticket: {context['events_url']}",
+            f"See the event: {context['events_url']}",
         ]
     elif kind == KIND_CHANGED:
         lines += ["", "That's the new time and place.", "", f"See it: {context['events_url']}"]
@@ -192,8 +206,25 @@ def _send_batch(recipients, *, subject: str, text: str, html: str) -> dict:
                 message.send(fail_silently=False)
                 sent += 1
             except Exception:
-                failed += 1
-                logger.exception("event_email failed student=%s", student.pk)
+                # A dropped connection leaves the backend holding a dead socket, after which
+                # `.open()` is a no-op and every remaining message in the batch would fail
+                # with it — losing the rest of an ~370-student announcement for good, since
+                # publish only fires this once. Close it, reopen a fresh one, and give THIS
+                # message a single retry before it counts as failed.
+                logger.warning(
+                    "event_email send failed, retrying once student=%s", student.pk
+                )
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+                try:
+                    connection.open()
+                    message.send(fail_silently=False)
+                    sent += 1
+                except Exception:
+                    failed += 1
+                    logger.exception("event_email failed student=%s", student.pk)
     finally:
         connection.close()
     return {"sent": sent, "failed": failed}

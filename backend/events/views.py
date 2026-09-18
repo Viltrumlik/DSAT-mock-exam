@@ -28,8 +28,8 @@ from .serializers import (
     EventRegistrationSerializer,
     EventSerializer,
     EventWriteSerializer,
+    _image_url,
 )
-from .serializers import _image_url
 
 #: `full` is the one refusal that is about the world rather than the request.
 _STATUS_FOR_CODE = {"full": http.HTTP_409_CONFLICT}

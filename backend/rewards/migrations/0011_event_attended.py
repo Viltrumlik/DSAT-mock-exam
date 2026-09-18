@@ -1,6 +1,6 @@
 """EVENT_ATTENDED: what turning up to a learning-center event pays.
 
-The AlterFields are the new choice; the RunPython is the row the school retunes from ops.
+The AlterFields are the new choice; the RunPython is the row the learning center retunes from ops.
 `get_or_create`, never update: re-running must not undo a retune made since.
 """
 

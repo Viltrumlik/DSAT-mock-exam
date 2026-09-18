@@ -60,10 +60,12 @@ SAMPLE_EVENT = {
     "date_label": "18 September",
     "start_time": "15:00",
     "end_time": "17:00",
-    "timezone_label": "+05",
+    "timezone_label": "Tashkent",
     "cancel_by_label": "Thu 18 Sep, 13:00",
     "seats": 30,
+    "seats_word": "seats",
     "xp_points": 10,
+    "grants_xp": True,
     "cover_url": "https://mastersat.uz/api/events/1/cover/",
     "events_url": "https://mastersat.uz/events",
 }

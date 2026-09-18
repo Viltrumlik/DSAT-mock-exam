@@ -155,7 +155,8 @@ def update_event(event: Event, fields: dict, *, now=None):
         if seats < taken:
             raise EventRefused(
                 "seats_below_registered",
-                f"{taken} student{'' if taken == 1 else 's'} already hold a seat, so there "
+                f"{taken} student{'' if taken == 1 else 's'} already "
+                f"{'holds' if taken == 1 else 'hold'} a seat, so there "
                 f"cannot be fewer than {taken}.",
             )
 
@@ -303,6 +304,11 @@ def update_and_announce(event: Event, fields: dict, *, now=None):
 
 
 def cancel_and_announce(event: Event, *, actor=None, now=None) -> Event:
+    """Call it off, and tell the students who had a seat.
+
+    The recipients are read BEFORE the seats are closed — afterwards there are none, and the
+    message would reach nobody at all.
+    """
     from . import mail as event_mail
     from . import notifications as event_notifications
 

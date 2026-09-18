@@ -19,7 +19,7 @@ signed bucket URL — those expire within the hour, and this message is read for
   </h1>
 
   <p class="ms-mute" style="margin:0 0 22px;font-size:15px;font-weight:600;line-height:1.6;color:#64748b;">
-    {{ seats }} seats. Sign up while there are some left.
+    {{ seats }} {{ seats_word }}. Sign up while there are some left.
   </p>
 
   {% if cover_url %}
@@ -77,7 +77,7 @@ signed bucket URL — those expire within the hour, and this message is read for
   {% if xp_points %}
     {% comment %} Read from the reward rule at send time — never a number typed in here. {% endcomment %}
     <p class="ms-mute" style="margin:18px 0 0;font-size:14px;font-weight:700;line-height:1.6;color:#0f1729;">
-      Coming earns you {{ xp_points }} XP.
+      {% if grants_xp %}Coming earns you {{ xp_points }} XP.{% else %}Coming earns you {{ xp_points }} points.{% endif %}
     </p>
   {% endif %}
 

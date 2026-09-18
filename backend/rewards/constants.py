@@ -25,7 +25,7 @@ EVENT_CLASSWORK_MANUAL = "CLASSWORK_MANUAL"   # a teacher's hand, amount always 
 EVENT_MANUAL = "MANUAL"                 # an admin adjustment, amount always explicit
 
 #: Turning up to a learning-center event — not a lesson (that is EVENT_ATTENDANCE_PRESENT).
-#: One price for every event, so the school retunes one row rather than one per event.
+#: One price for every event, so the learning center retunes one row rather than one per event.
 EVENT_ATTENDED = "EVENT_ATTENDED"
 
 # ── The one event that SPENDS ─────────────────────────────────────────────────
