@@ -14,14 +14,17 @@ const useUpcomingEvents = vi.fn();
 const useMyEvents = vi.fn();
 const useSignUpForEvent = vi.fn();
 const useCancelEventSeat = vi.fn();
+const useTicketDownload = vi.fn();
 const signUp = vi.fn();
 const cancelSeat = vi.fn();
+const downloadTicket = vi.fn();
 
 vi.mock("../eventsHooks", () => ({
   useUpcomingEvents: () => useUpcomingEvents(),
   useMyEvents: () => useMyEvents(),
   useSignUpForEvent: () => useSignUpForEvent(),
   useCancelEventSeat: () => useCancelEventSeat(),
+  useTicketDownload: () => useTicketDownload(),
 }));
 
 vi.mock("next/link", () => ({
@@ -49,6 +52,7 @@ type Row = {
     attendance: string | null;
     registered_at: string;
     points_awarded: number;
+    ticket_code: string;
   };
   can_sign_up: boolean;
   can_cancel: boolean;
@@ -103,6 +107,7 @@ beforeEach(() => {
   useMyEvents.mockReturnValue(query({ data: [] }));
   useSignUpForEvent.mockReturnValue({ mutate: signUp, isPending: false, isError: false, error: null });
   useCancelEventSeat.mockReturnValue({ mutate: cancelSeat, isPending: false, isError: false, error: null });
+  useTicketDownload.mockReturnValue({ mutate: downloadTicket, isPending: false, isError: false });
 });
 
 afterEach(async () => {
@@ -142,6 +147,7 @@ describe("EventsPage", () => {
             my_registration: {
               id: 5, status: "REGISTERED", attendance: null,
               registered_at: "2026-09-20T10:00:00+05:00", points_awarded: 0,
+              ticket_code: "",
             },
           }),
         ],
@@ -162,6 +168,7 @@ describe("EventsPage", () => {
             my_registration: {
               id: 5, status: "REGISTERED", attendance: null,
               registered_at: "2026-09-20T10:00:00+05:00", points_awarded: 0,
+              ticket_code: "",
             },
           }),
         ],
@@ -183,6 +190,7 @@ describe("EventsPage", () => {
             my_registration: {
               id: 7, status: "REGISTERED", attendance: "ATTENDED",
               registered_at: "2026-09-01T10:00:00+05:00", points_awarded: 10,
+              ticket_code: "",
             },
           }),
           row({
@@ -191,6 +199,7 @@ describe("EventsPage", () => {
             my_registration: {
               id: 8, status: "REGISTERED", attendance: "MISSED",
               registered_at: "2026-09-01T10:00:00+05:00", points_awarded: 0,
+              ticket_code: "",
             },
           }),
         ],
@@ -229,6 +238,7 @@ describe("EventsPage", () => {
             my_registration: {
               id: 5, status: "REGISTERED", attendance: null,
               registered_at: "2026-09-20T10:00:00+05:00", points_awarded: 0,
+              ticket_code: "",
             },
           }),
         ],
@@ -262,5 +272,53 @@ describe("EventsPage", () => {
     useUpcomingEvents.mockReturnValue(query({ data: [] }));
     await render();
     expect(text()).toContain("Nothing coming up");
+  });
+
+  it("offers the ticket, with its code, to a student holding a seat", async () => {
+    useUpcomingEvents.mockReturnValue(
+      query({
+        data: [
+          row({
+            can_sign_up: false,
+            can_cancel: true,
+            my_registration: {
+              id: 5, status: "REGISTERED", attendance: null,
+              registered_at: "2026-09-20T10:00:00+05:00", points_awarded: 0,
+              ticket_code: "4K29-7XPD",
+            },
+          }),
+        ],
+      }),
+    );
+    await render();
+    expect(text()).toContain("4K29-7XPD");
+    await act(async () => buttonLabelled("Download ticket")!.click());
+    expect(downloadTicket).toHaveBeenCalledWith(1);
+  });
+
+  it("offers no ticket to somebody without a seat", async () => {
+    await render();
+    expect(buttonLabelled("Download ticket")).toBeUndefined();
+  });
+
+  it("says the download failed rather than staying silent", async () => {
+    useUpcomingEvents.mockReturnValue(
+      query({
+        data: [
+          row({
+            can_sign_up: false,
+            can_cancel: true,
+            my_registration: {
+              id: 5, status: "REGISTERED", attendance: null,
+              registered_at: "2026-09-20T10:00:00+05:00", points_awarded: 0,
+              ticket_code: "4K29-7XPD",
+            },
+          }),
+        ],
+      }),
+    );
+    useTicketDownload.mockReturnValue({ mutate: downloadTicket, isPending: false, isError: true });
+    await render();
+    expect(text()).toContain("Couldn't download the ticket. Try again.");
   });
 });

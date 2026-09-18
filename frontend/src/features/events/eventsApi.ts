@@ -17,6 +17,8 @@ export interface EventSeat {
   registered_at: string;
   /** What this seat has actually paid, read from the ledger — 0 until somebody is marked. */
   points_awarded: number;
+  /** Shown as "4K29-7XPD". Empty on a row minted before this migration ran. */
+  ticket_code: string;
 }
 
 export interface LearningEvent {
@@ -104,6 +106,17 @@ export const eventsApi = {
   },
   async cancel(id: number): Promise<EventSeat> {
     const { data } = await api.post<EventSeat>(`/events/${id}/cancel/`);
+    return data;
+  },
+  /**
+   * The ticket as a Blob.
+   *
+   * Fetched through the axios instance rather than linked with an `<a href>`: the endpoint is
+   * behind the session, the instance owns the auth header and the refresh retry, and a
+   * hand-written URL in a component is exactly what `check:api-layer` forbids.
+   */
+  async ticketBlob(id: number): Promise<Blob> {
+    const { data } = await api.get<Blob>(`/events/${id}/ticket.png`, { responseType: "blob" });
     return data;
   },
 

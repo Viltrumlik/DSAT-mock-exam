@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { downloadBlob } from "@/lib/download";
+
 import { eventsApi, type Attendance } from "./eventsApi";
 
 const keys = {
@@ -48,6 +50,23 @@ export function useCancelEventSeat() {
     onSuccess: () => invalidateSeats(qc),
     // Same reasoning: the 2-hour window can close between render and click.
     onError: () => invalidateSeats(qc),
+  });
+}
+
+/**
+ * Download the ticket.
+ *
+ * A mutation rather than a query: it writes a file, it must not be cached, and it must not
+ * run because a component mounted. `downloadBlob` is the same helper the certificate and
+ * midterm-report downloads already use, so the browser-side half of this is not a second
+ * implementation of "save a Blob".
+ */
+export function useTicketDownload() {
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const blob = await eventsApi.ticketBlob(id);
+      downloadBlob(blob, `mastersat-event-${id}.png`);
+    },
   });
 }
 
