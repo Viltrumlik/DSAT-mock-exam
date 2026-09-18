@@ -178,6 +178,10 @@ class SubdomainAPIGuardMiddleware:
             # only console that can reach it, exactly as the shop inventory would.
             if path.startswith("/api/stories/"):
                 return self.get_response(request)
+            # Events: created and run from the admin console — the desk publishes them and
+            # marks who came. The student-facing page is on the apex, which needs no entry.
+            if path.startswith("/api/events/"):
+                return self.get_response(request)
             # Notifications: the bell is in the shell, so it renders on every console. Without
             # this it 403s on all of them except the apex, and an admin's bell would be
             # permanently empty rather than obviously broken.
