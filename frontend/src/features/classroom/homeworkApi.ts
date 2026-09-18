@@ -50,6 +50,8 @@ export interface AssignmentDetail {
     subject?: string;
     state?: ContentState;
     attempt_id?: number | null;
+    /** Sat before this homework was set and not since: the paper is offered again. */
+    retake?: boolean;
   }[];
   /** Requesting student's assessment attempt state (for the QUIZ launcher card). */
   assessment_progress?: { state: ContentState; attempt_id: number | null };
@@ -177,6 +179,18 @@ export interface ContentAction {
    * launcher POSTs a new attempt and routes to /exam/{attemptId}?welcome=1.
    */
   startTestId?: number;
+  /**
+   * A past paper the student sat before this homework was set, and not since. The old sitting
+   * is history, not this homework, so the launcher offers a new one: "Start again".
+   */
+  retake?: boolean;
+}
+
+/** The launcher button's word for one content. */
+export function launcherLabel(c: Pick<ContentAction, "mode" | "retake">): string {
+  if (c.mode === "review") return "Review";
+  if (c.mode === "resume") return "Resume";
+  return c.retake ? "Start again" : "Start";
 }
 
 /**
@@ -262,6 +276,7 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
         kind: "PASTPAPER", name, label: "Open Past Paper", href, mode, attemptId: aid,
         // Only a fresh section starts a new attempt; resume/review follow href.
         startTestId: mode === "start" ? t.id : undefined,
+        retake: mode === "start" && Boolean(t.retake),
       });
     }
   }

@@ -21,9 +21,11 @@ import { useRouter } from "next/navigation";
 import { examsPublicApi, type PastpaperSection } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { useAuthCriticalGate } from "@/hooks/useAuthCriticalGate";
+import { cardState, type CardAttempt, type CardState } from "@/features/pastpapers/pastpaperCardState";
+import { pastpaperReportApi, type ReopenedPastpaper } from "@/features/pastpapers/pastpaperReportApi";
 import {
   BookOpen, Calculator, Calendar, Globe, Search, Play, PlayCircle, Eye, Clock,
-  AlertTriangle, FileText, RefreshCw, Award,
+  AlertTriangle, FileText, RefreshCw, Award, History, RotateCcw,
 } from "lucide-react";
 
 function fmtMonth(s: string | null | undefined): string {
@@ -73,27 +75,8 @@ function collectionLabel(s: PastpaperSection): string {
   return fmtMonth(s.practice_date);
 }
 
-type Att = { id: number; practice_test: number; is_completed: boolean; is_expired: boolean; score: number | null; completed_at?: string | null; submitted_at?: string | null };
-type Status = "new" | "progress" | "completed";
-type Derived = {
-  status: Status;
-  score: number | null;
-  completedDate: string | null;
-  completedAttemptId: number | null;
-};
-
-function derive(section: PastpaperSection, list: Att[]): Derived {
-  const sorted = [...list].sort((a, b) => b.id - a.id);
-  const completed = sorted.find((a) => a.is_completed);
-  const active = sorted.find((a) => !a.is_completed && !a.is_expired);
-  const status: Status = completed ? "completed" : active ? "progress" : "new";
-  return {
-    status,
-    score: completed?.score ?? null,
-    completedDate: completed?.completed_at || completed?.submitted_at || null,
-    completedAttemptId: completed?.id ?? null,
-  };
-}
+type Att = CardAttempt;
+type Derived = CardState;
 
 type Region = "ALL" | "US" | "INTL";
 type StatusFilter = "ALL" | "new" | "progress" | "completed";
@@ -104,6 +87,7 @@ export default function PastpapersPage() {
   const { assertCriticalAuth } = useAuthCriticalGate();
   const [sections, setSections] = useState<PastpaperSection[]>([]);
   const [atts, setAtts] = useState<Att[]>([]);
+  const [reopened, setReopened] = useState<Map<number, ReopenedPastpaper>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [region, setRegion] = useState<Region>("ALL");
@@ -118,8 +102,15 @@ export default function PastpapersPage() {
     Promise.all([
       examsPublicApi.getPastpaperSections(),
       isAuthenticated ? examsPublicApi.getAttempts().then((r) => r.items as Att[]).catch(() => []) : Promise.resolve([] as Att[]),
+      // Finished papers a homework has set again. Soft like the attempts above: without it a
+      // card falls back to what it showed before, "Completed", and the page still works.
+      isAuthenticated ? pastpaperReportApi.reopened().catch(() => [] as ReopenedPastpaper[]) : Promise.resolve([] as ReopenedPastpaper[]),
     ])
-      .then(([s, a]) => { setSections(s); setAtts(a); })
+      .then(([s, a, r]) => {
+        setSections(s);
+        setAtts(a);
+        setReopened(new Map(r.map((row) => [row.practice_test_id, row])));
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, [isAuthenticated]);
@@ -141,19 +132,21 @@ export default function PastpapersPage() {
   const rows = useMemo(() => {
     const q = search.toLowerCase().trim();
     return sections
-      .map((s) => ({ section: s, d: derive(s, byTest.get(s.id) ?? []) }))
+      .map((s) => ({ section: s, d: cardState(byTest.get(s.id) ?? [], reopened.get(s.id)) }))
       .filter(({ section, d }) => {
         if (region === "US" && section.form_type !== "US") return false;
         if (region === "INTL" && section.form_type === "US") return false;
         if (year !== "ALL" && yearOf(section.practice_date) !== year) return false;
-        if (status !== "ALL" && d.status !== status) return false;
+        // A paper set again is work to start, so it sits under "New".
+        const bucket = d.status === "reopened" ? "new" : d.status;
+        if (status !== "ALL" && bucket !== status) return false;
         if (q) {
           const blob = `${sectionTitle(section)} ${collectionLabel(section)} ${section.label || ""} ${section.form_type || ""} ${subjectLabel(section.subject)} ${fmtMonth(section.practice_date)}`.toLowerCase();
           if (!blob.includes(q)) return false;
         }
         return true;
       });
-  }, [sections, byTest, region, year, status, search]);
+  }, [sections, byTest, reopened, region, year, status, search]);
 
   // Group filtered cards by sitting MONTH (one header per month); within a month
   // order by variant then subject so each paper's R&W + Math sit together, and
@@ -181,7 +174,8 @@ export default function PastpapersPage() {
   const hasFilter = region !== "ALL" || year !== "ALL" || status !== "ALL" || !!search.trim();
 
   const handleOpen = async (section: PastpaperSection, d: Derived) => {
-    // Completed: review the finished attempt. Otherwise start/resume an attempt.
+    // Completed: review the newest finished sitting. Otherwise start/resume an attempt; a paper
+    // a homework has set again starts a NEW sitting, and the old one stays in the history.
     if (d.status === "completed" && d.completedAttemptId) {
       router.push(`/review/${d.completedAttemptId}?back=/pastpapers`);
       return;
@@ -190,11 +184,12 @@ export default function PastpapersPage() {
     setStarting(section.id);
     setStartError(null);
     try {
-      let attempt = atts.find((a) => a.practice_test === section.id && !a.is_completed && !a.is_expired);
+      let attempt = d.openAttemptId != null ? atts.find((a) => a.id === d.openAttemptId) : undefined;
       const isFreshStart = !attempt;
       if (!attempt) {
         attempt = (await examsPublicApi.startTest(section.id)) as unknown as Att;
-        setAtts((prev) => [...prev, attempt!]);
+        const started = attempt;
+        setAtts((prev) => (prev.some((a) => a.id === started.id) ? prev : [...prev, started]));
       }
       try { sessionStorage.setItem(`mastersat.attempt.bootstrap.${attempt.id}`, JSON.stringify(attempt)); } catch {}
       router.push(`/exam/${attempt.id}${isFreshStart ? "?welcome=1" : ""}`);
@@ -264,6 +259,7 @@ export default function PastpapersPage() {
                       error={startError?.sectionId === section.id ? startError.msg : null}
                       onOpen={() => void handleOpen(section, d)}
                       onReport={() => { if (d.completedAttemptId) router.push(`/pastpapers/${d.completedAttemptId}/report`); }}
+                      onHistory={() => { if (d.completedAttemptId) router.push(`/pastpapers/${d.completedAttemptId}/report#history`); }}
                     />
                   ))}
                 </div>
@@ -297,7 +293,7 @@ function Segmented({ label, value, onChange, options }: { label: string; value: 
   );
 }
 
-function Booklet({ section, d, busy, error, onOpen, onReport }: { section: PastpaperSection; d: Derived; busy: boolean; error: string | null; onOpen: () => void; onReport: () => void }) {
+function Booklet({ section, d, busy, error, onOpen, onReport, onHistory }: { section: PastpaperSection; d: Derived; busy: boolean; error: string | null; onOpen: () => void; onReport: () => void; onHistory: () => void }) {
   const isUS = section.form_type === "US";
   const rw = isRW(section.subject);
   const regionMain = isUS ? "var(--dz-indigo)" : "#0d9488";
@@ -307,6 +303,7 @@ function Booklet({ section, d, busy, error, onOpen, onReport }: { section: Pastp
   const statusMeta = {
     new: { dot: regionMain, label: "Not started", color: "var(--dz-mute)", bg: "var(--dz-card)" },
     progress: { dot: "var(--dz-amber)", label: "In progress", color: "var(--dz-amber)", bg: "color-mix(in srgb, var(--dz-amber) 12%, transparent)" },
+    reopened: { dot: "var(--dz-indigo)", label: "Assigned again", color: "var(--dz-indigo)", bg: "var(--dz-indigo-soft)" },
     completed: { dot: "#16a34a", label: "Completed", color: "#16a34a", bg: "rgba(22,163,74,.12)" },
   }[d.status];
   const SubjIcon = rw ? BookOpen : Calculator;
@@ -351,15 +348,7 @@ function Booklet({ section, d, busy, error, onOpen, onReport }: { section: Pastp
 
         {d.status === "completed" ? (
           <>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 14, marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--dz-faint)", marginBottom: 3 }}>YOUR SCORE</div>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
-                  <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)", lineHeight: 1 }}>{d.score ?? "—"}</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: "var(--dz-faint)" }}>/ 800</span>
-                </div>
-              </div>
-            </div>
+            <ScoreBlock label="YOUR SCORE" score={d.score} />
             {d.completedDate ? (
               <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: 14 }}>
                 <Clock size={13} /> Completed {fmtDay(d.completedDate)}
@@ -378,12 +367,34 @@ function Booklet({ section, d, busy, error, onOpen, onReport }: { section: Pastp
                 <Award size={15} /> Report &amp; certificate
               </button>
             ) : null}
+            {d.sittings > 1 ? <HistoryLink sittings={d.sittings} onClick={onHistory} /> : null}
+          </>
+        ) : d.status === "reopened" ? (
+          // Sat before, and a homework has set it again since: a new sitting, not the old review.
+          // The last score stays on the card until the new one replaces it.
+          <>
+            <ScoreBlock label="LAST SCORE" score={d.score} />
+            {d.reopenedBy ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 600, color: "var(--dz-mute)", marginBottom: 14, minWidth: 0 }}>
+                <RotateCcw size={13} style={{ flex: "none" }} />
+                <span className="clip1">Set again in {d.reopenedBy.assignment_title}</span>
+              </div>
+            ) : null}
+            <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
+              style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-indigo)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+              <Play size={15} /> {busy ? "Starting…" : "Start again"}
+            </button>
+            <HistoryLink sittings={d.sittings} onClick={onHistory} />
           </>
         ) : d.status === "progress" ? (
-          <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
-            style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-amber)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-            <PlayCircle size={15} /> {busy ? "…" : "Resume"}
-          </button>
+          <>
+            {d.sittings > 0 ? <ScoreBlock label="LAST SCORE" score={d.score} /> : null}
+            <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
+              style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-amber)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+              <PlayCircle size={15} /> {busy ? "…" : "Resume"}
+            </button>
+            {d.sittings > 0 ? <HistoryLink sittings={d.sittings} onClick={onHistory} /> : null}
+          </>
         ) : (
           <button type="button" disabled={busy} onClick={(e) => { e.stopPropagation(); onOpen(); }} className="dz-actionbtn"
             style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: 11, borderRadius: 11, border: "none", background: "var(--dz-indigo)", color: "#fff", fontFamily: "inherit", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
@@ -392,6 +403,30 @@ function Booklet({ section, d, busy, error, onOpen, onReport }: { section: Pastp
         )}
       </div>
     </div>
+  );
+}
+
+function ScoreBlock({ label, score }: { label: string; score: number | null }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 14, marginBottom: 14 }}>
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--dz-faint)", marginBottom: 3 }}>{label}</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
+          <span style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)", lineHeight: 1 }}>{score ?? "—"}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--dz-faint)" }}>/ 800</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Every finished sitting of the paper, each with its own certificate, on the report page. */
+function HistoryLink({ sittings, onClick }: { sittings: number; onClick: () => void }) {
+  return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick(); }} className="dz-actionbtn"
+      style={{ alignSelf: "center", marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 8px", borderRadius: 8, border: "none", background: "transparent", color: "var(--dz-mute)", fontFamily: "inherit", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+      <History size={13} /> History · {sittings} {sittings === 1 ? "attempt" : "attempts"}
+    </button>
   );
 }
 
