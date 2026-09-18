@@ -5,6 +5,7 @@ import {
   Bell,
   BellOff,
   BellRing,
+  CalendarDays,
   ClipboardCheck,
   Coins,
   FileText,
@@ -52,6 +53,7 @@ const HINTS: Partial<Record<NotificationCategory, string>> = {
   CLASSROOM: "Announcements from your class, and replies to your comments.",
   SUPPORT: "Support sessions you've booked, changed or been reminded about.",
   REWARDS: "Points you've earned and shop orders ready to collect.",
+  EVENTS: "New events at the learning center, and reminders for ones you've signed up for.",
   SYSTEM: "Occasional messages from the learning center itself.",
 };
 
@@ -63,6 +65,7 @@ const LOOK: Partial<Record<NotificationCategory, { icon: LucideIcon; tile: strin
   CLASSROOM: { icon: Users, tile: "bg-info/15 text-info-foreground" },
   SUPPORT: { icon: LifeBuoy, tile: "bg-success/15 text-success-foreground" },
   REWARDS: { icon: Coins, tile: "bg-warning/15 text-warning-foreground" },
+  EVENTS: { icon: CalendarDays, tile: "bg-primary/12 text-primary dark:text-primary-hover" },
   SYSTEM: { icon: Megaphone, tile: "bg-[color-mix(in_oklab,var(--chart-6)_16%,transparent)] text-[var(--chart-6)]" },
 };
 

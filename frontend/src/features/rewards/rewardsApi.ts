@@ -15,6 +15,8 @@ export type RewardEvent =
   /** Classwork, priced by the teacher who awards it. Never automatic. */
   | "CLASSWORK_MANUAL"
   | "MANUAL"
+  /** Turning up to a learning-center event. One price for every event. */
+  | "EVENT_ATTENDED"
   // Retired bands. Nothing new is awarded with these, but thousands of ledger rows carry
   // them, so a student's history still serves them and they must still parse and render.
   | "HOMEWORK_FULL"
