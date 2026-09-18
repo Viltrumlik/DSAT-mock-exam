@@ -58,6 +58,9 @@ class ReminderFixture(TestCase):
             ).values_list("recipient_id", flat=True)
         )
 
+    def _recipients(self):
+        return {address for message in mail.outbox for address in message.to}
+
 
 class SweepTests(ReminderFixture):
     def test_nothing_goes_out_before_the_twenty_four_hour_mark(self):
@@ -68,6 +71,29 @@ class SweepTests(ReminderFixture):
 
         self.assertEqual(stats["events"], 0)
         self.assertEqual(mail.outbox, [])
+
+    def test_exactly_twenty_four_hours_out_is_inside_the_window(self):
+        # Pins the boundary itself: `starts_at == now + REMINDER_LEAD` must be INSIDE the
+        # window (the candidate filter is `starts_at__lte`), so a slip to `__lt` fails this.
+        event = self._event(starts_in=services.REMINDER_LEAD)
+        services.sign_up(event, self.anna, now=self.now)
+
+        stats = services.send_due_reminders(now=self.now)
+
+        self.assertEqual(stats["events"], 1)
+
+    def test_only_registered_students_are_reminded_not_every_active_student(self):
+        event = self._event(starts_in=timedelta(hours=23))
+        services.sign_up(event, self.anna, now=self.now)
+        # Active and signupable, but never signed up for this event.
+        bystander = User.objects.create_user(
+            "ev_bystander6@t.com", "secret123", role=C.ROLE_STUDENT
+        )
+
+        services.send_due_reminders(now=self.now)
+
+        self.assertNotIn(bystander.id, self._reminded())
+        self.assertEqual(self._recipients(), {"ev_anna6@t.com"})
 
     def test_inside_the_window_the_seat_holders_are_reminded_once(self):
         event = self._event(starts_in=timedelta(hours=23))

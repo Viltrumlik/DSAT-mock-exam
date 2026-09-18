@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -14,6 +14,12 @@ from events import services
 from events.models import Event, EventRegistration
 
 User = get_user_model()
+
+# The admin console lives behind the admin subdomain host guard (access.host_guard), so a
+# request has to arrive with a host the guard allows or it is 403'd before the view is
+# reached — same pattern as classes/tests_notifications_homework.py.
+_ADMIN_HOST = "admin.mastersat.uz"
+_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "testserver", _ADMIN_HOST]
 
 
 class OpsApiFixture(TestCase):
@@ -64,6 +70,17 @@ class OpsAccessTests(OpsApiFixture):
 
     def test_an_admin_is_let_in(self):
         self.assertEqual(self._as(self.admin).get("/api/events/admin/").status_code, 200)
+
+    @override_settings(ALLOWED_HOSTS=_ALLOWED_HOSTS)
+    def test_the_admin_console_host_is_not_refused_by_the_host_guard(self):
+        """New namespaces 403-ing on the admin host is a known bug class here — access.host_guard
+        allowlists paths per console, and a forgotten entry 403s before the view is ever
+        reached, which a same-host test suite would never notice."""
+        self._as(self.admin)
+
+        response = self.client.get("/api/events/admin/", HTTP_HOST=_ADMIN_HOST)
+
+        self.assertEqual(response.status_code, 200)
 
 
 class OpsCrudTests(OpsApiFixture):

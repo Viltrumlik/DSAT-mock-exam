@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import base64
+import tempfile
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -14,6 +17,13 @@ from events import services
 from events.models import Event, EventRegistration
 
 User = get_user_model()
+
+#: The smallest thing Pillow will accept as an image — a 1×1 transparent PNG, same constant
+#: `stories/tests_stories.py` uses. The bytes never matter; `ImageField` just needs a real one.
+PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
+    "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
 
 
 class StudentApiFixture(TestCase):
@@ -152,3 +162,27 @@ class CoverTests(StudentApiFixture):
     def test_an_event_without_a_picture_is_404(self):
         # No session at all: an email client fetches images without one.
         self.assertEqual(APIClient().get(f"/api/events/{self.event.id}/cover/").status_code, 404)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class CoverWithImageTests(StudentApiFixture):
+    """Uploads land in a throwaway MEDIA_ROOT — the real one is a working directory in the
+    repo, and a test suite must not leave 1×1 PNGs in it."""
+
+    def _image(self):
+        return SimpleUploadedFile("cover.png", PNG_1PX, content_type="image/png")
+
+    def test_a_published_event_with_an_image_redirects_to_a_signed_url(self):
+        event = self._event(cover_image=self._image())
+
+        # No session at all: an email client fetches images without one.
+        response = APIClient().get(f"/api/events/{event.id}/cover/")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"])
+        self.assertEqual(response["Cache-Control"], "public, max-age=600")
+
+    def test_a_cancelled_event_with_an_image_is_404(self):
+        event = self._event(status=Event.STATUS_CANCELLED, cover_image=self._image())
+
+        self.assertEqual(APIClient().get(f"/api/events/{event.id}/cover/").status_code, 404)

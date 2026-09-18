@@ -107,9 +107,14 @@ class AnnouncementTests(EventEmailFixture):
         html = mail.outbox[0].alternatives[0][0]
         self.assertIn("Robotics open day", html)
         self.assertIn("Fergana city branch, room 3", html)
-        # Read from the rule at send time, never written into the copy.
-        self.assertIn("7", html)
         self.assertIn("/events", html)
+        # The full sentence, not a bare "7" — the HTML always contains a stray "7" (in
+        # #0f1729 and #e7ebf3), so asserting only the digit can never fail.
+        self.assertIn("Coming earns you 7 XP.", html)
+        # Read from the rule at send time, never written into the copy — and the reader's
+        # own local start time, not merely present somewhere in the markup.
+        local_start = timezone.localtime(self.event.starts_at).strftime("%H:%M")
+        self.assertIn(local_start, html)
 
     def test_nothing_is_mailed_when_sending_is_off(self):
         with override_settings(EMAIL_SENDING_ENABLED=False):
@@ -120,6 +125,60 @@ class AnnouncementTests(EventEmailFixture):
         self.assertEqual(
             Notification.objects.filter(event=note_const.EVENT_EVENT_PUBLISHED).count(), 3
         )
+
+    def test_one_failing_address_does_not_stop_the_rest(self):
+        """A dropped send for one student must not cost the other 369 their announcement."""
+        from unittest.mock import patch
+
+        from django.core.mail import EmailMultiAlternatives
+
+        from events import mail as event_mail
+
+        carla = User.objects.create_user("ev_carla5@t.com", "secret123", role=C.ROLE_STUDENT)
+        services.publish(self.event, now=self.now)
+
+        original_send = EmailMultiAlternatives.send
+
+        def _flaky_send(message, *args, **kwargs):
+            if message.to == ["ev_boris5@t.com"]:
+                raise Exception("simulated delivery failure")
+            return original_send(message, *args, **kwargs)
+
+        with patch.object(EmailMultiAlternatives, "send", autospec=True, side_effect=_flaky_send):
+            result = event_mail.send_event_announcement_emails(self.event.pk)
+
+        self.assertEqual((result["sent"], result["failed"]), (2, 1))
+        self.assertEqual(self._recipients(), {"ev_anna5@t.com", "ev_carla5@t.com"})
+
+    def test_a_dropped_connection_is_retried_once_before_counting_as_failed(self):
+        """A disconnect mid-batch must not lose the rest of the announcement either — the
+        backend's own connection would otherwise sit dead for every message still to come."""
+        from smtplib import SMTPServerDisconnected
+        from unittest.mock import patch
+
+        from django.core.mail import EmailMultiAlternatives
+
+        from events import mail as event_mail
+
+        services.publish(self.event, now=self.now)
+        calls = {"n": 0}
+        original_send = EmailMultiAlternatives.send
+
+        def _disconnect_once_then_send(message, *args, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise SMTPServerDisconnected("Connection unexpectedly closed")
+            return original_send(message, *args, **kwargs)
+
+        with patch.object(
+            EmailMultiAlternatives, "send", autospec=True, side_effect=_disconnect_once_then_send
+        ):
+            result = event_mail.send_event_announcement_emails(self.event.pk)
+
+        # Both students end up sent: the one hit by the disconnect is retried once, not
+        # simply counted as failed.
+        self.assertEqual((result["sent"], result["failed"]), (2, 0))
+        self.assertEqual(self._recipients(), {"ev_anna5@t.com", "ev_boris5@t.com"})
 
 
 class SeatHolderEmailTests(EventEmailFixture):
@@ -158,5 +217,15 @@ class SeatHolderEmailTests(EventEmailFixture):
         mail.outbox.clear()
 
         event_mail.send_event_announcement_emails(self.event.pk)
+
+        self.assertEqual(mail.outbox, [])
+
+    def test_a_queued_reminder_for_an_event_cancelled_since_sends_nothing(self):
+        from events import mail as event_mail
+
+        services.cancel_event(self.event, actor=self.staff, now=self.now)
+        mail.outbox.clear()
+
+        event_mail.send_event_reminder_emails(self.event.pk, [self.anna.pk])
 
         self.assertEqual(mail.outbox, [])
