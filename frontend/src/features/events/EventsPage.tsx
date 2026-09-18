@@ -137,6 +137,13 @@ function EventRow({ row, past }: { row: LearningEvent; past?: boolean }) {
               Ticket {seat.ticket_code}
             </span>
           ) : null}
+          {/* Its own line, not the signUp/cancel either-or chain below: a lingering sign-up
+              or cancel error must never hide a failed download, or the reverse. */}
+          {ticket.isError ? (
+            <p role="alert" className="w-full text-xs font-semibold text-danger-foreground">
+              Couldn't download the ticket. Try again.
+            </p>
+          ) : null}
         </>
       ) : null}
 
@@ -147,10 +154,6 @@ function EventRow({ row, past }: { row: LearningEvent; past?: boolean }) {
       ) : cancel.isError ? (
         <p role="alert" className="w-full text-xs font-semibold text-danger-foreground">
           {refusalText(cancel.error) ?? "Couldn't do that. Try again."}
-        </p>
-      ) : ticket.isError ? (
-        <p role="alert" className="w-full text-xs font-semibold text-danger-foreground">
-          Couldn't download the ticket. Try again.
         </p>
       ) : null}
     </li>

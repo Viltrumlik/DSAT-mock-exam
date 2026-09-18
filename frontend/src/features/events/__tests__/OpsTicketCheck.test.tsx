@@ -13,7 +13,11 @@ import { createRoot, type Root } from "react-dom/client";
  */
 
 const useTicket = vi.fn();
-const mark = vi.fn();
+// Calls the mutate options' onSuccess, the way the real mutation does once the server
+// answers — needed to prove the check page actually refetches after marking.
+const mark = vi.fn((_vars: { id: number; attendance: string }, opts?: { onSuccess?: () => void }) => {
+  opts?.onSuccess?.();
+});
 
 vi.mock("@/features/events/eventsHooks", () => ({
   useTicket: (code: string) => useTicket(code),
@@ -86,6 +90,14 @@ describe("ops ticket check", () => {
       { id: 12, attendance: "ATTENDED" },
       expect.anything(),
     );
+  });
+
+  it("refetches the ticket once marking succeeds", async () => {
+    const refetch = vi.fn();
+    useTicket.mockReturnValue(query({ data: ticket(), refetch }));
+    await render();
+    await act(async () => buttonLabelled("Attended")!.click());
+    expect(refetch).toHaveBeenCalled();
   });
 
   it("reports a ticket that has already been marked, and by whom", async () => {

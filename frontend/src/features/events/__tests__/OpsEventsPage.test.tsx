@@ -292,6 +292,8 @@ describe("OpsEventsPage", () => {
     await act(async () => buttonLabelled("Who came")!.click());
     await typeCode("9Q11-3ZZZ");
     expect(text()).toContain("That ticket is for Career talk.");
+    // A code for someone else's event must not leave this event's own list showing.
+    expect(text()).not.toContain("Aziza Karimova");
   });
 
   it("says a full code the server does not know is not a ticket", async () => {
@@ -311,6 +313,8 @@ describe("OpsEventsPage", () => {
     await act(async () => buttonLabelled("Who came")!.click());
     await typeCode("ZZZZ-ZZZZ");
     expect(text()).toContain("No ticket with that code.");
+    // An unknown code must not leave this event's own list showing either.
+    expect(text()).not.toContain("Aziza Karimova");
   });
 
   it("says it is checking while a full code's lookup is in flight", async () => {
@@ -330,5 +334,61 @@ describe("OpsEventsPage", () => {
     await act(async () => buttonLabelled("Who came")!.click());
     await typeCode("4K29-7XPD");
     expect(text()).toContain("Checking the code…");
+  });
+
+  it("cleans a lower-case, space-separated paste before calling the lookup", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "PUBLISHED" })], isPending: false, isError: false, refetch: vi.fn(),
+    });
+    useEventRegistrations.mockReturnValue({
+      data: {
+        registrations: [registration()],
+        counts: { registered: 1, attended: 0, missed: 0, not_marked: 1, cancelled: 0 },
+        marking_opens_at: "2026-09-25T13:00:00+05:00",
+      },
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    useTicket.mockReturnValue({ data: ticketLookup(), isPending: false, isError: false, refetch: vi.fn() });
+    await render();
+    await act(async () => buttonLabelled("Who came")!.click());
+    await typeCode("4k29 7xpd");
+    expect(useTicket).toHaveBeenCalledWith("4K297XPD");
+  });
+
+  it("treats a 9-character input as a partial code rather than a full one", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "PUBLISHED" })], isPending: false, isError: false, refetch: vi.fn(),
+    });
+    useEventRegistrations.mockReturnValue({
+      data: {
+        registrations: [registration()],
+        counts: { registered: 1, attended: 0, missed: 0, not_marked: 1, cancelled: 0 },
+        marking_opens_at: "2026-09-25T13:00:00+05:00",
+      },
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Who came")!.click());
+    await typeCode("4K29-7XPDX");
+    expect(text()).not.toContain("Aziza Karimova");
+    expect(text()).toContain("No match for that code.");
+    expect(useTicket).not.toHaveBeenCalledWith("4K297XPDX");
+  });
+
+  it("shows when each registration registered", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "PUBLISHED" })], isPending: false, isError: false, refetch: vi.fn(),
+    });
+    useEventRegistrations.mockReturnValue({
+      data: {
+        registrations: [registration({ registered_at: "2026-09-20T10:00:00+05:00" })],
+        counts: { registered: 1, attended: 0, missed: 0, not_marked: 1, cancelled: 0 },
+        marking_opens_at: "2026-09-25T13:00:00+05:00",
+      },
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Who came")!.click());
+    expect(text()).toContain(new Date("2026-09-20T10:00:00+05:00").toLocaleString());
   });
 });

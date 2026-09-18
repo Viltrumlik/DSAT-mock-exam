@@ -51,6 +51,12 @@ function fromLocalInput(value: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/** Same date + time format the event list already prints, just for a registration's row. */
+function fmtRegisteredAt(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
 function statusOf(event: LearningEvent): { variant: BadgeVariant; label: string } {
   if (event.status === "CANCELLED") return { variant: "neutral", label: "Cancelled" };
   if (event.status === "DRAFT") return { variant: "warning", label: "Draft" };
@@ -197,7 +203,7 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
   const matches =
     lookupCode && lookup.data?.event.id === event.id
       ? registrations.filter((r) => r.id === lookup.data!.registration_id)
-      : cleaned.length >= 4 && !lookupCode
+      : cleaned.length >= 4
         ? registrations.filter((r) => (r.ticket_code || "").replace("-", "").includes(cleaned))
         : registrations;
 
@@ -255,6 +261,9 @@ function AttendancePanel({ event, onClose }: { event: LearningEvent; onClose: ()
                 </div>
                 <span className="text-xs font-bold tracking-widest text-muted-foreground">
                   {row.ticket_code || "No code"}
+                </span>
+                <span className="text-xs font-bold tracking-widest text-muted-foreground">
+                  {fmtRegisteredAt(row.registered_at)}
                 </span>
                 {row.status === "CANCELLED" ? (
                   <span className="text-xs font-bold text-muted-foreground">Gave the seat back</span>
