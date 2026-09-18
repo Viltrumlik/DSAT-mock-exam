@@ -60,5 +60,6 @@ urlpatterns = [
     path('api/surveys/', include('surveys.urls')),
     path('api/shop/', include('shop.urls')),
     path('api/stories/', include('stories.urls')),
+    path('api/events/', include('events.urls')),
     path('api/notifications/', include('notifications.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

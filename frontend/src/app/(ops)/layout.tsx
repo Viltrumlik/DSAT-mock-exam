@@ -18,6 +18,7 @@ import {
   ShoppingBag,
   Building2,
   CalendarClock,
+  CalendarDays,
   LifeBuoy,
   NotebookText,
   Timer,
@@ -114,6 +115,15 @@ const OPS_NAV = [
     href: "/ops/stories",
     label: "Stories",
     icon: Images,
+    exact: false,
+  },
+  {
+    // Workshops, talks and open days: the desk publishes them and marks who came. Next to
+    // Stories because it is the same kind of job — an admin-authored list with a picture that
+    // students see.
+    href: "/ops/events",
+    label: "Events",
+    icon: CalendarDays,
     exact: false,
   },
   {

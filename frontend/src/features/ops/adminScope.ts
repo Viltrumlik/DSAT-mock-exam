@@ -1,10 +1,12 @@
 /**
  * What an `admin` sees in the ops console.
  *
- * The school's list, verbatim: Dashboard, Classrooms, Branches, Support, Shop, Access and
- * Users. Everything else in the console — Journals, Midterms, Mock sittings, Surveys,
- * Stories, Exam dates, and the old Assignments notice — is not shown to an admin at all,
- * neither in the sidebar nor by typing its address.
+ * The school's list, verbatim: Dashboard, Classrooms, Branches, Support, Shop, Access,
+ * Users and Events. Everything else in the console — Journals, Midterms, Mock sittings,
+ * Surveys, Stories, Exam dates, and the old Assignments notice — is not shown to an admin at
+ * all, neither in the sidebar nor by typing its address. Events sits next to Stories in the
+ * nav because the two are the same kind of job, but only Events made the school's list —
+ * Stories stays out of a scoped admin's reach.
  *
  * Scoped to the `admin` ROLE and nothing wider. Teachers and test auditors can also open
  * this console and see all of it; the school asked about admins, so nobody else's view
@@ -23,6 +25,7 @@ export const ADMIN_OPS_SECTIONS: readonly string[] = [
   "/ops/shop",
   "/ops/access",
   "/ops/users",
+  "/ops/events",
 ];
 
 /** `useMe` types the payload as an open record, so the fields are narrowed here. */

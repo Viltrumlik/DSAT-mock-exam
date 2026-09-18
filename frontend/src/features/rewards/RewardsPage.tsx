@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   Sparkles,
   CalendarCheck,
+  CalendarDays,
   ClipboardList,
   FileText,
   GraduationCap,
@@ -34,6 +35,7 @@ const EVENT_ICON: Record<RewardEvent, LucideIcon> = {
   HOMEWORK: ClipboardList,
   CLASSWORK_MANUAL: GraduationCap,
   MANUAL: Sparkles,
+  EVENT_ATTENDED: CalendarDays,
   HOMEWORK_FULL: ClipboardList,
   HOMEWORK_HIGH: ClipboardList,
   HOMEWORK_MID: ClipboardList,

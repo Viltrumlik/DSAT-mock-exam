@@ -176,6 +176,7 @@ INSTALLED_APPS = [
     'surveys.apps.SurveysConfig',
     'shop.apps.ShopConfig',
     'stories.apps.StoriesConfig',
+    'events.apps.EventsConfig',
     'notifications.apps.NotificationsConfig',
     'annotations.apps.AnnotationsConfig',
 ]
@@ -439,6 +440,14 @@ CELERY_BEAT_SCHEDULE = {
     # percentage is unchanged), so the extra passes cost queries, not correctness.
     "rewards-settle-due-homework": {
         "task": "rewards.tasks.settle_due_homework",
+        "schedule": crontab(minute="*/10"),
+    },
+    # The day-before reminder for an event. Every 10 minutes, so the message lands within ten
+    # minutes of the 24-hour mark; the sweep claims `reminder_sent_at` before it sends, so a
+    # re-run costs queries rather than a second message. Nothing else raises this: a day
+    # passing is not something anybody does.
+    "events-send-due-reminders": {
+        "task": "events.send_due_event_reminders",
         "schedule": crontab(minute="*/10"),
     },
     # Full mocks never pause, so an attempt whose student closed the tab mid-module sits

@@ -24,6 +24,10 @@ EVENT_HOMEWORK = "HOMEWORK"             # proportional: max_points × percent / 
 EVENT_CLASSWORK_MANUAL = "CLASSWORK_MANUAL"   # a teacher's hand, amount always explicit
 EVENT_MANUAL = "MANUAL"                 # an admin adjustment, amount always explicit
 
+#: Turning up to a learning-center event — not a lesson (that is EVENT_ATTENDANCE_PRESENT).
+#: One price for every event, so the learning center retunes one row rather than one per event.
+EVENT_ATTENDED = "EVENT_ATTENDED"
+
 # ── The one event that SPENDS ─────────────────────────────────────────────────
 #
 # Every other event in this file adds points. This one takes them away, and it is in the same
@@ -60,6 +64,7 @@ EVENT_CHOICES = [
     (EVENT_HOMEWORK, "Homework completed"),
     (EVENT_CLASSWORK_MANUAL, "Classwork awarded by a teacher"),
     (EVENT_MANUAL, "Manual adjustment"),
+    (EVENT_ATTENDED, "Attended an event"),
     (EVENT_COIN_CONVERSION, "Turned into coins"),
     # Legacy — kept so historical rows still read. Never awarded.
     #
@@ -89,6 +94,7 @@ DEFAULT_POINTS = {
     EVENT_HOMEWORK: 15,
     EVENT_CLASSWORK_MANUAL: 0,   # the teacher names the amount; see EVENT_MANUAL
     EVENT_MANUAL: 0,        # always passed explicitly; a default would be a footgun
+    EVENT_ATTENDED: 10,
     # Not a price. A conversion's amount is whatever the student chose to spend, negated;
     # this 0 exists only so a lookup by event never misses, and `services.award` must never
     # be handed this event in the first place.
@@ -282,3 +288,13 @@ def support_session_ladder(base: int) -> list[int]:
     what the hook actually pays when the school retunes the rule.
     """
     return [support_session_points(base, n) for n in range(1, SUPPORT_GROUP_MAX + 1)]
+
+
+def event_attendance_key(registration_id: int) -> str:
+    """Keyed on the registration, not on (event, student).
+
+    The registration row survives a cancellation and is reused when the student signs up
+    again, so the key stays stable across both — and the ticket code (PR 2) hangs off the
+    same row, which keeps one identity at the door and one in the ledger.
+    """
+    return f"event:{registration_id}"

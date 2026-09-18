@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ClipboardList } from "lucide-react";
+import { CalendarDays, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { RewardCoin } from "@/components/RewardCoin";
+import { useUpcomingEvents } from "@/features/events/eventsHooks";
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
 import { useOpenSurveys } from "@/features/surveys/surveysHooks";
 
@@ -19,6 +20,14 @@ import { useOpenSurveys } from "@/features/surveys/surveysHooks";
 export function StudentHeaderExtras() {
   const rewards = useMyRewards();
   const surveys = useOpenSurveys();
+  const events = useUpcomingEvents();
+  const openEvents = (events.data ?? []).filter((row) => row.can_sign_up);
+  // A FAILED request is not "no events". `data ?? []` collapses the two, and this is one of
+  // only two desktop routes to /events, so a dropped connection used to remove the entry
+  // point and the retry behind it. On an error the button stays, without a count it cannot
+  // honestly claim.
+  const eventsFailed = events.isError;
+  const showEvents = openEvents.length > 0 || eventsFailed;
 
   const points = rewards.data?.points;
   const coins = rewards.data?.coins;
@@ -70,6 +79,42 @@ export function StudentHeaderExtras() {
         </Tooltip>
       ) : null}
 
+      {showEvents ? (
+        <Tooltip
+          content={
+            eventsFailed
+              ? "Events — couldn’t check for new ones"
+              : openEvents.length === 1
+                ? openEvents[0].title
+                : `${openEvents.length} events open`
+          }
+          side="bottom"
+        >
+          <Link
+            href="/events"
+            aria-label={
+              eventsFailed
+                ? "Events"
+                : openEvents.length === 1
+                  ? `Event open: ${openEvents[0].title}`
+                  : `${openEvents.length} events open`
+            }
+            // Desktop only, like the survey prompt: on a phone the same thing is a row in
+            // the account menu, and the top bar has a hamburger, a title, the points pill,
+            // a bell, a theme toggle and an avatar to fit already.
+            className="ds-ring relative hidden h-10 shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-2.5 text-sm font-bold text-foreground transition-colors hover:border-primary/30 hover:bg-surface-2 md:inline-flex md:px-3"
+          >
+            <CalendarDays className="h-[18px] w-[18px] text-primary" strokeWidth={2.25} />
+            <span className="hidden sm:inline">Events</span>
+            {openEvents.length > 1 ? (
+              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary-soft px-1 text-[11px] font-extrabold text-primary">
+                {openEvents.length}
+              </span>
+            ) : null}
+          </Link>
+        </Tooltip>
+      ) : null}
+
       <Tooltip content="Your points and coins" side="bottom">
         <Link
           href="/rewards"
@@ -111,6 +156,8 @@ export function StudentAccountMenuRows() {
   const rewards = useMyRewards();
   const surveys = useOpenSurveys();
   const open = surveys.data ?? [];
+  const events = useUpcomingEvents();
+  const openEvents = (events.data ?? []).filter((row) => row.can_sign_up);
 
   return (
     <>
@@ -146,6 +193,21 @@ export function StudentAccountMenuRows() {
         <span className="ds-num text-sm font-bold text-muted-foreground">
           {rewards.data?.coins ?? "—"}
         </span>
+      </Link>
+      <Link
+        role="menuitem"
+        href="/events"
+        className="flex items-center justify-between gap-2 border-t border-border px-3 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface-2 md:hidden"
+      >
+        <span className="inline-flex items-center gap-2.5">
+          <CalendarDays className="h-4 w-4 text-primary" />
+          Events
+        </span>
+        {openEvents.length > 0 ? (
+          <span className="rounded-full bg-primary-soft px-2 py-0.5 text-[11px] font-extrabold text-primary">
+            {openEvents.length} open
+          </span>
+        ) : null}
       </Link>
     </>
   );

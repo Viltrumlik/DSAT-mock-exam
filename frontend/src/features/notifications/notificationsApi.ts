@@ -7,6 +7,7 @@ export type NotificationCategory =
   | "EXAMS"
   | "SUPPORT"
   | "REWARDS"
+  | "EVENTS"
   | "SYSTEM";
 
 export interface AppNotification {

@@ -17,6 +17,7 @@ import {
     broadcastLogoutToOtherTabs,
 } from "@/lib/auth/authTabSync";
 import { meQueryKey } from "@/lib/auth/meQueryKey";
+import { clearEventInvitePrompts } from "@/lib/eventInvitePrompt";
 import { clearSurveyInvitePrompts } from "@/lib/surveyInvitePrompt";
 import type { TestAttempt } from "@/features/examsStudent/testAttemptSchema";
 import type { RoadmapResponse } from "@/features/roadmap/types";
@@ -660,6 +661,7 @@ export const authApi = {
         // sign in on this tab (or the same student coming back) would silently inherit a
         // "already asked" marker they never saw.
         clearSurveyInvitePrompts();
+        clearEventInvitePrompts();
         broadcastLogoutToOtherTabs();
         clearAuthCookiesEverywhere();
         queryClient?.removeQueries({ queryKey: [...meQueryKey] });
