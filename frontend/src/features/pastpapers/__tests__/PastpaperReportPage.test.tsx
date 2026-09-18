@@ -14,18 +14,30 @@ import type { AttemptErrorReport } from "../pastpaperReportApi";
 
 const useAttemptReport = vi.fn();
 
+const downloadCertificateForAttempt = vi.fn();
+const push = vi.fn();
+
 vi.mock("../pastpaperReportHooks", () => ({
   useAttemptReport: (...a: unknown[]) => useAttemptReport(...a),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("../pastpaperReportApi", () => ({
+  pastpaperReportApi: {
+    downloadCertificateForAttempt: (...a: unknown[]) => downloadCertificateForAttempt(...a),
+    downloadReport: vi.fn(),
+  },
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 const { PastpaperReportPage } = await import("../PastpaperReportPage");
 
 const REPORT: AttemptErrorReport = {
   attempt_id: 7,
+  practice_test_id: 12,
   score: 640,
   paper_title: "SAT March 2024",
   certificate_code: "abc123",
+  certificate_available: true,
+  history: [{ attempt_id: 7, score: 640, completed_at: "2026-09-16T10:00:00Z" }],
   total_count: 44,
   correct_count: 33,
   wrong: 11,
@@ -65,6 +77,9 @@ beforeEach(() => {
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
+  // jsdom has no object URLs; the download hands the blob to a throwaway link.
+  URL.createObjectURL = vi.fn(() => "blob:certificate");
+  URL.revokeObjectURL = vi.fn();
 });
 
 afterEach(() => {
@@ -102,12 +117,82 @@ describe("PastpaperReportPage", () => {
 
   it("offers no certificate when the attempt never earned one", async () => {
     useAttemptReport.mockReturnValue(query({
-      data: { ...REPORT, certificate_code: null },
+      data: { ...REPORT, certificate_code: null, certificate_available: false },
     }));
     await render();
 
     const buttons = [...host.querySelectorAll("button")].map((b) => b.textContent);
     expect(buttons.some((b) => b?.includes("Certificate"))).toBe(false);
+  });
+
+  it("offers the certificate of a sitting that was never minted one, and downloads it by attempt", async () => {
+    // Prod had not one certificate: the finish never fired the signal that mints it. The
+    // button follows `certificate_available`, and the download mints it on the server.
+    downloadCertificateForAttempt.mockResolvedValue(new Blob(["%PDF"]));
+    useAttemptReport.mockReturnValue(query({
+      data: { ...REPORT, certificate_code: null, certificate_available: true },
+    }));
+    await render();
+
+    const cert = [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Certificate");
+    expect(cert).toBeTruthy();
+    await act(async () => cert!.click());
+
+    expect(downloadCertificateForAttempt).toHaveBeenCalledWith(7);
+  });
+
+  describe("history", () => {
+    const TWO_SITTINGS: AttemptErrorReport = {
+      ...REPORT,
+      attempt_id: 5,
+      score: 560,
+      history: [
+        { attempt_id: 7, score: 690, completed_at: "2026-09-16T10:00:00Z" },
+        { attempt_id: 5, score: 560, completed_at: "2026-08-02T10:00:00Z" },
+      ],
+    };
+
+    async function renderSitting(attemptId: number) {
+      await act(async () => root.render(<PastpaperReportPage attemptId={attemptId} />));
+    }
+
+    it("lists every sitting of the paper, newest first, and marks this one", async () => {
+      useAttemptReport.mockReturnValue(query({ data: TWO_SITTINGS }));
+      await renderSitting(5);
+
+      const history = host.querySelector("#history");
+      expect(history?.textContent).toContain("HISTORY");
+      const text = history?.textContent ?? "";
+      expect(text.indexOf("690")).toBeLessThan(text.indexOf("560"));
+      expect(text).toContain("Latest");
+      expect(text).toContain("This report");
+    });
+
+    it("gives every sitting its own certificate download", async () => {
+      downloadCertificateForAttempt.mockResolvedValue(new Blob(["%PDF"]));
+      useAttemptReport.mockReturnValue(query({ data: TWO_SITTINGS }));
+      await renderSitting(5);
+
+      const rowButtons = [...host.querySelectorAll("#history button")].filter(
+        (b) => b.textContent?.includes("Certificate"),
+      );
+      expect(rowButtons).toHaveLength(2);
+
+      await act(async () => (rowButtons[0] as HTMLButtonElement).click());
+      expect(downloadCertificateForAttempt).toHaveBeenLastCalledWith(7);
+    });
+
+    it("opens another sitting's report from its row", async () => {
+      useAttemptReport.mockReturnValue(query({ data: TWO_SITTINGS }));
+      await renderSitting(5);
+
+      const open = [...host.querySelectorAll("#history button")].find(
+        (b) => b.textContent?.trim() === "Report",
+      );
+      await act(async () => (open as HTMLButtonElement).click());
+
+      expect(push).toHaveBeenCalledWith("/pastpapers/7/report");
+    });
   });
 
   it("discloses untagged mistakes rather than hiding them", async () => {

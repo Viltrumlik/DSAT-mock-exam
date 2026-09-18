@@ -14,7 +14,7 @@ import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui"
 import { useClassroom } from "../hooks";
 import { capabilitiesFor } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
-import { assignmentKind, contentActions, homeworkAnalysisScope, KIND_LABEL, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
+import { assignmentKind, contentActions, homeworkAnalysisScope, KIND_LABEL, launcherLabel, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
 import { HomeworkQuestionStatistics } from "@/features/questionAnalysis/HomeworkQuestionStatistics";
 import { spawnRipple } from "../ui/ripple";
 import { examsStudentApi } from "@/features/examsStudent/api";
@@ -337,7 +337,7 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
                   router.push(href);
                 }}
               >
-                {c.mode === "review" ? "Review" : c.mode === "resume" ? "Resume" : "Start"}
+                {launcherLabel(c)}
               </Button>
             </Card>
           ))}

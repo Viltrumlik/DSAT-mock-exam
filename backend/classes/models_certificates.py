@@ -17,6 +17,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 def _new_code() -> str:
@@ -250,7 +251,15 @@ class PastpaperCertificate(models.Model):
 
     @property
     def date_display(self) -> str:
-        return self.issued_at.strftime("%B %d, %Y") if self.issued_at else ""
+        """The day the paper was finished, in the school's time zone.
+
+        Not ``issued_at``: a certificate the completion signal never minted is minted at its
+        first download (``AttemptCertificatePdfView``), and a July sitting must not carry the
+        September day somebody first pressed the button.
+        """
+        attempt = self.attempt if self.attempt_id else None
+        when = getattr(attempt, "completed_at", None) or self.issued_at
+        return timezone.localtime(when).strftime("%B %d, %Y") if when else ""
 
     @property
     def tier_info(self) -> dict:

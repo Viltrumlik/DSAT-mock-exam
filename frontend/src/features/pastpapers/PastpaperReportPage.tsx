@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Award, Download, Target } from "lucide-react";
 import { useAttemptReport } from "./pastpaperReportHooks";
 import { pastpaperReportApi } from "./pastpaperReportApi";
+
+function fmtDay(s: string | null | undefined): string {
+  if (!s) return "";
+  const d = new Date(s);
+  return Number.isNaN(d.getTime())
+    ? ""
+    : d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+}
 
 /**
  * The error report for one finished pastpaper, plus the certificate download.
@@ -20,8 +28,18 @@ import { pastpaperReportApi } from "./pastpaperReportApi";
 export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
   const router = useRouter();
   const report = useAttemptReport(attemptId);
-  const [downloading, setDownloading] = useState<null | "cert" | "report">(null);
+  // The report PDF, or the attempt id whose certificate is being prepared.
+  const [downloading, setDownloading] = useState<null | "report" | number>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+
+  // The library card's "History" link lands on #history, and the list only exists once the
+  // report has loaded — so the browser's own jump to the anchor finds nothing to scroll to.
+  useEffect(() => {
+    if (report.data && window.location.hash === "#history") {
+      historyRef.current?.scrollIntoView({ block: "start" });
+    }
+  }, [report.data]);
 
   const save = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob);
@@ -32,14 +50,17 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
     URL.revokeObjectURL(url);
   };
 
-  // Two downloads, because they are two documents — the same split a midterm has.
-  const downloadCertificate = async () => {
-    const code = report.data?.certificate_code;
-    if (!code) return;
-    setDownloading("cert");
+  // Two downloads, because they are two documents — the same split a midterm has. The
+  // certificate goes by attempt: that works for every sitting in the history, and for the ones
+  // finished before a certificate was ever minted.
+  const downloadCertificate = async (forAttempt: number) => {
+    setDownloading(forAttempt);
     setDownloadError(null);
     try {
-      save(await pastpaperReportApi.downloadCertificate(code), `MasterSAT-${code}.pdf`);
+      save(
+        await pastpaperReportApi.downloadCertificateForAttempt(forAttempt),
+        `MasterSAT-certificate-${forAttempt}.pdf`,
+      );
     } catch {
       setDownloadError("The certificate couldn't be produced right now. Your result is safe.");
     } finally {
@@ -61,6 +82,12 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
       setDownloading(null);
     }
   };
+
+  // A sitting that earns a certificate shows the button whether or not one was ever minted: the
+  // download mints it. `certificate_code` alone kept the button hidden on every sitting.
+  const certificateAvailable =
+    report.data?.certificate_available ?? Boolean(report.data?.certificate_code);
+  const history = report.data?.history ?? [];
 
   return (
     <div className="dzboard" style={{ maxWidth: 900, margin: "0 auto", padding: "18px 16px 40px" }}>
@@ -129,10 +156,10 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
             </div>
 
             <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {report.data.certificate_code ? (
+              {certificateAvailable ? (
                 <button
                   type="button"
-                  onClick={() => void downloadCertificate()}
+                  onClick={() => void downloadCertificate(attemptId)}
                   disabled={downloading !== null}
                   className="dz-actionbtn"
                   style={{
@@ -143,7 +170,7 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
                   }}
                 >
                   <Award size={15} />
-                  {downloading === "cert" ? "Preparing…" : "Certificate"}
+                  {downloading === attemptId ? "Preparing…" : "Certificate"}
                 </button>
               ) : null}
               {report.data.wrong > 0 ? (
@@ -171,6 +198,84 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
               </div>
             ) : null}
           </div>
+
+          {/* Every sitting of this paper, newest first, each with its own certificate. A paper a
+              homework sets again is sat again, and the sitting before it stays here. */}
+          {history.length > 0 ? (
+            <div ref={historyRef} id="history" style={{ marginBottom: 16, scrollMarginTop: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".1em", color: "var(--dz-faint)", margin: "0 0 10px 2px" }}>
+                HISTORY
+              </div>
+              <div
+                style={{
+                  borderRadius: 16, overflow: "hidden",
+                  background: "var(--dz-card)", border: "1px solid var(--dz-line)",
+                }}
+              >
+                {history.map((row, i) => {
+                  const here = row.attempt_id === attemptId;
+                  const day = fmtDay(row.completed_at);
+                  return (
+                    <div
+                      key={row.attempt_id}
+                      style={{
+                        display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8,
+                        padding: "12px 16px",
+                        borderTop: i === 0 ? "none" : "1px solid var(--dz-line)",
+                      }}
+                    >
+                      <div style={{ flex: "1 1 140px", minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 6 }}>
+                          <span style={{ fontSize: 16, fontWeight: 800, color: "var(--dz-ink)" }}>
+                            {row.score ?? "—"}
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--dz-faint)" }}>/ 800</span>
+                          {i === 0 ? <Tag>Latest</Tag> : null}
+                          {here ? <Tag>This report</Tag> : null}
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--dz-mute)" }}>
+                          {day || "—"}
+                        </div>
+                      </div>
+                      {here ? null : (
+                        <button
+                          type="button"
+                          onClick={() => router.push(`/pastpapers/${row.attempt_id}/report`)}
+                          className="dz-actionbtn"
+                          style={{
+                            padding: "7px 11px", borderRadius: 9,
+                            border: "1px solid var(--dz-line)", background: "transparent",
+                            color: "var(--dz-ink)",
+                            fontFamily: "inherit", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                          }}
+                        >
+                          Report
+                        </button>
+                      )}
+                      {certificateAvailable && row.score != null ? (
+                        <button
+                          type="button"
+                          onClick={() => void downloadCertificate(row.attempt_id)}
+                          disabled={downloading !== null}
+                          aria-label={day ? `Certificate for ${day}` : "Certificate"}
+                          className="dz-actionbtn"
+                          style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            padding: "7px 11px", borderRadius: 9, border: "none",
+                            background: "var(--dz-indigo-soft)", color: "var(--dz-indigo)",
+                            fontFamily: "inherit", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                          }}
+                        >
+                          <Download size={14} />
+                          {downloading === row.attempt_id ? "Preparing…" : "Certificate"}
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
           {/* Totals */}
           <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
@@ -307,5 +412,19 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
         </>
       )}
     </div>
+  );
+}
+
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      style={{
+        fontSize: 10.5, fontWeight: 800, letterSpacing: ".04em",
+        color: "var(--dz-indigo)", background: "var(--dz-indigo-soft)",
+        padding: "2px 7px", borderRadius: 6,
+      }}
+    >
+      {children}
+    </span>
   );
 }

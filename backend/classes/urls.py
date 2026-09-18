@@ -75,12 +75,14 @@ from .views_org import (
     RegionListCreateView,
 )
 from .views_pastpaper_certificates import (
+    AttemptCertificatePdfView,
     AttemptErrorReportView,
     PastpaperCertificateDetailView,
     PastpaperCertificateDownloadView,
     PastpaperCertificateReissueView,
     PastpaperErrorReportPdfView,
 )
+from .views_pastpaper_retake import ReopenedPastpapersView
 from .views_certificates import (
     IssueMidtermCertificatesView,
     MidtermCertificatesDownloadAllView,
@@ -216,6 +218,8 @@ urlpatterns = [
     path("pastpapers/attempts/<int:attempt_id>/report/pdf/", PastpaperErrorReportPdfView.as_view(), name="pastpaper-error-report-pdf"),
     path("pastpapers/attempts/<int:attempt_id>/report/", AttemptErrorReportView.as_view(), name="pastpaper-error-report"),
     path("pastpapers/attempts/<int:attempt_id>/certificate/reissue/", PastpaperCertificateReissueView.as_view(), name="pastpaper-certificate-reissue"),
+    path("pastpapers/attempts/<int:attempt_id>/certificate/pdf/", AttemptCertificatePdfView.as_view(), name="pastpaper-attempt-certificate-pdf"),
+    path("pastpapers/reopened/", ReopenedPastpapersView.as_view(), name="pastpaper-reopened"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/panel/", MidtermPanelView.as_view(), name="class-midterm-panel"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/issue/", IssueMidtermCertificatesView.as_view(), name="class-midterm-certificates-issue"),
     path("<int:classroom_pk>/midterms/<int:mock_exam_id>/certificates/download-all/", MidtermCertificatesDownloadAllView.as_view(), name="class-midterm-certificates-download-all"),
