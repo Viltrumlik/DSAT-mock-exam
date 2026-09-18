@@ -31,11 +31,30 @@ and one missed path is a student who cannot start.
 from __future__ import annotations
 
 from django.db.models import Q
+from django.db.models.functions import Coalesce
 
 
 def homework_set_at(assignment):
     """The floor: an attempt finished at or after this moment counts for ``assignment``."""
     return assignment.created_at
+
+
+def finished_at_expr():
+    """When a finished attempt was finished, as a query expression.
+
+    The runner always writes ``completed_at`` (prod, 2026-09-18: all 976 finished pastpapers
+    have it). A row without it, from a repair or an admin edit, falls back to ``submitted_at``
+    and then to when the attempt was started, so it is still placed in time instead of silently
+    never counting for any homework.
+    """
+    return Coalesce("completed_at", "submitted_at", "created_at")
+
+
+def finished_at(attempt):
+    """``finished_at_expr`` for an attempt instance or a ``values()`` row."""
+    if isinstance(attempt, dict):
+        return attempt.get("completed_at") or attempt.get("submitted_at") or attempt.get("created_at")
+    return attempt.completed_at or attempt.submitted_at or attempt.created_at
 
 
 def reopened_papers(user) -> dict[int, dict]:
@@ -92,12 +111,13 @@ def reopened_papers(user) -> dict[int, dict]:
         practice_test__in=standalone,
         is_completed=True,
         current_state=TestAttempt.STATE_COMPLETED,
-    ).values_list("practice_test_id", "completed_at")
+    ).values("practice_test_id", "completed_at", "submitted_at", "created_at")
 
     sat_before: set[int] = set()
     sat_since: set[int] = set()
-    for pt_id, completed_at in finished:
-        if completed_at is not None and completed_at >= homework_set_at(latest[pt_id]):
+    for row in finished:
+        pt_id = row["practice_test_id"]
+        if finished_at(row) >= homework_set_at(latest[pt_id]):
             sat_since.add(pt_id)
         else:
             sat_before.add(pt_id)

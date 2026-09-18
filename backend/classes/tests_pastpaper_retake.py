@@ -150,6 +150,28 @@ class HomeworkHandsInOnlyANewSittingTests(RetakeFixture):
         self.assertEqual(r.json(), {})
         self.assertIsNone(self._submission(homework))
 
+    def test_a_sitting_without_a_finish_time_is_judged_by_when_it_was_started(self):
+        """The runner always writes ``completed_at``, but a repaired or hand-edited row may not
+        have it. Such a row must still be placed in time, not silently never count."""
+        homework = self._homework(days_ago=1)
+        (before,) = TestAttempt.objects.bulk_create([
+            TestAttempt(
+                practice_test=self.section, student=self.student, score=560,
+                current_state=TestAttempt.STATE_COMPLETED, is_completed=True,
+            )
+        ])
+        TestAttempt.objects.filter(pk=before.pk).update(created_at=self.now - timedelta(days=30))
+
+        sync_practice_submission_for_assignment(self.student, homework)
+        self.assertIsNone(self._submission(homework))
+
+        after = TestAttempt.objects.create(
+            practice_test=self.section, student=self.student, score=690,
+            current_state=TestAttempt.STATE_COMPLETED, is_completed=True,
+        )
+
+        self.assertEqual(self._submission(homework).attempt_id, after.pk)
+
     def test_publishing_does_not_hand_in_the_old_sitting(self):
         """``publish`` hands in what the class already finished, and last month's sitting of the
         same paper is not that."""

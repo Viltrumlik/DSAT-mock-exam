@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from django.utils import timezone
 from rest_framework.test import APIClient
 
 from classes.models import Assignment, Classroom, ClassroomMembership
@@ -109,12 +108,10 @@ class HomeworkMetadataTests(TestCase):
         bt = self._detail(a)["practice_bundle_tests"][0]
         self.assertEqual(bt["state"], "in_progress")
         self.assertEqual(bt["attempt_id"], att.id)
-        # Completed → completed (review, not restart). With its finish time, as the runner writes
-        # it: only a sitting finished since the homework was set is this homework's.
+        # Completed → completed (review, not restart).
         att.current_state = TestAttempt.STATE_COMPLETED
         att.is_completed = True
-        att.completed_at = timezone.now()
-        att.save(update_fields=["current_state", "is_completed", "completed_at"])
+        att.save(update_fields=["current_state", "is_completed"])
         bt = self._detail(a)["practice_bundle_tests"][0]
         self.assertEqual(bt["state"], "completed")
         self.assertEqual(bt["attempt_id"], att.id)

@@ -25,7 +25,7 @@ from .models import (
     SubmissionReview,
     assignment_target_practice_test_ids,
 )
-from .pastpaper_retake import homework_set_at
+from .pastpaper_retake import finished_at_expr, homework_set_at
 from .submission_audit import audit_submission_event
 
 
@@ -74,7 +74,7 @@ def _latest_completed_attempt(
     if since is not None:
         # A sitting from before the homework was set is history, not this homework: the same
         # paper is set again for revision (see classes.pastpaper_retake).
-        qs = qs.filter(completed_at__gte=since)
+        qs = qs.annotate(_finished_at=finished_at_expr()).filter(_finished_at__gte=since)
     return qs.order_by("-submitted_at", "-id").first()
 
 

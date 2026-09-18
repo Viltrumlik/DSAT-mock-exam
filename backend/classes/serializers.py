@@ -12,7 +12,7 @@ from access.services import normalized_role
 from exams.models import MockExam, PracticeTest, PracticeTestPack
 from users.photos import profile_image_url
 
-from .pastpaper_retake import homework_set_at
+from .pastpaper_retake import finished_at, homework_set_at
 from .submission_validation import validate_submission_grade
 
 from .models import (
@@ -754,13 +754,15 @@ class AssignmentSerializer(serializers.ModelSerializer):
         rows = (
             TestAttempt.objects.filter(student=user, practice_test_id__in=ids)
             .order_by("practice_test_id", "-id")
-            .values("id", "practice_test_id", "is_completed", "current_state", "completed_at")
+            .values(
+                "id", "practice_test_id", "is_completed", "current_state",
+                "completed_at", "submitted_at", "created_at",
+            )
         )
         for r in rows:  # ordered -id → first seen per test is the latest
             tid = r["practice_test_id"]
             if r["is_completed"] and r["current_state"] == TestAttempt.STATE_COMPLETED:
-                finished = r["completed_at"]
-                if since is None or (finished is not None and finished >= since):
+                if since is None or finished_at(r) >= since:
                     completed.setdefault(tid, r["id"])
                 else:
                     earlier.add(tid)
