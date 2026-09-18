@@ -12,8 +12,11 @@ rebuilt on the 800 scale, and 215 finished 0-100 papers turned into "0%, failed"
 Scale and pass mark, in order of authority:
   1. the verdict frozen for this very sitting (``MidtermOutcome.attempt`` = it);
   2. otherwise the scale is read off the score — a 100-scale score never exceeds 100 and an
-     800-scale one never drops below 200 — and the pass mark is the midterm's own if it is
-     still on that scale, else that scale's default; a pre-midterm gets none;
+     800-scale one never drops below 200 — and the pass mark is the one the midterm's frozen
+     verdicts on that scale were judged against (the most common, if they differ). A verdict
+     row only ever points at a student's LATEST sitting, so this is how a superseded sitting
+     learns the mark of its day; with no such verdicts, the midterm's own mark if it is still
+     on that scale, else that scale's default, and none for a pre-midterm;
   3. a sitting with no score yet (still in progress) takes the midterm's current ones — the
      ones it would have been pinned with, had it started a minute ago.
 
@@ -66,6 +69,12 @@ class Command(BaseCommand):
             o.attempt_id: o
             for o in MidtermOutcome.objects.filter(attempt_id__in=[a.pk for a in attempts])
         }
+        # The pass marks each midterm's frozen verdicts were judged against, per scale.
+        self._peer_marks: dict[tuple[int, str], Counter] = defaultdict(Counter)
+        for mid, scale, mark in MidtermOutcome.objects.filter(
+            midterm_id__in={a.midterm_id for a in attempts}
+        ).exclude(scoring_scale="").values_list("midterm_id", "scoring_scale", "pass_mark"):
+            self._peer_marks[(mid, scale)][int(mark)] += 1
 
         per_midterm: dict[int, Counter] = defaultdict(Counter)
         titles: dict[int, str] = {}
@@ -100,7 +109,10 @@ class Command(BaseCommand):
                 scale = midterm.scoring_scale
             else:
                 scale = SCALE_100 if int(att.score) <= 100 else SCALE_800
-            if not midterm.is_graded:
+            peers = self._peer_marks.get((midterm.id, scale)) if att.score is not None else None
+            if peers:
+                pass_mark = peers.most_common(1)[0][0]
+            elif not midterm.is_graded:
                 pass_mark = None
             elif scale == midterm.scoring_scale:
                 pass_mark = midterm.effective_pass_mark

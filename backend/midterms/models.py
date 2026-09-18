@@ -12,7 +12,7 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from .engine_db_guard import TransitionConflict, conditional_midterm_attempt_update
@@ -701,19 +701,28 @@ class MidtermAttempt(TimestampedModel):
         v0 = int(self.version_number or 0)
         ts = timezone.now()
         started = self.started_at or ts
-        n = conditional_midterm_attempt_update(
-            pk=int(self.pk),
-            expect_state=STATE_NOT_STARTED,
-            expect_version=v0,
-            updates={
-                "current_state": STATE_ACTIVE,
-                "started_at": started,
-                "version_number": v0 + 1,
-                "updated_at": ts,
-                "version_id": self.version_id,
-                **self._paper_pins(),
-            },
-        )
+        pins = self._paper_pins()
+        with transaction.atomic():
+            # The same row lock midterms.sync._refresh_module takes before editing a module in
+            # place: an edit landing this instant finishes before the paper is pinned, or sees
+            # it pinned and goes onto a fresh module instead.
+            from exams.models import Module
+
+            paper = [pins["paper_module_id"], pins["paper_module_2_id"]]
+            list(Module.objects.select_for_update().filter(pk__in=[m for m in paper if m]))
+            n = conditional_midterm_attempt_update(
+                pk=int(self.pk),
+                expect_state=STATE_NOT_STARTED,
+                expect_version=v0,
+                updates={
+                    "current_state": STATE_ACTIVE,
+                    "started_at": started,
+                    "version_number": v0 + 1,
+                    "updated_at": ts,
+                    "version_id": self.version_id,
+                    **pins,
+                },
+            )
         if n == 0:
             self.refresh_from_db()
             # Same "already started" set as the guard above — MODULE_2_ACTIVE included, or a

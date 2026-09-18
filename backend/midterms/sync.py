@@ -426,20 +426,28 @@ def _refresh_module(module, live_questions, *, module_order: int, time_limit: in
       which is how 2026-09-18 deleted every question they had answered — without touching a
       single one of their results.
     """
+    from django.db import transaction
+
     from exams.models import Module
 
-    if module is not None:
-        diff = _module_diff(module, live_questions)
-        if diff is not None and diff <= _CORRECTION_FIELDS:
-            if diff:
-                _sync_module_questions_in_place(module, live_questions)
-            return module
-    if module is None or _paper_is_pinned(module.id):
-        module = Module.objects.create(
-            practice_test=None, module_order=module_order, time_limit_minutes=time_limit
-        )
-    _sync_module_questions_in_place(module, live_questions)
-    return module
+    with transaction.atomic():
+        if module is not None:
+            # Row lock first. start_attempt takes the same lock before pinning a module, so a
+            # student starting at this very moment either pins it before the check below (and
+            # the edit forks) or after the edit commits (and gets the whole new paper) — never
+            # a paper half-rewritten under them.
+            Module.objects.select_for_update().get(pk=module.pk)
+            diff = _module_diff(module, live_questions)
+            if diff is not None and diff <= _CORRECTION_FIELDS:
+                if diff:
+                    _sync_module_questions_in_place(module, live_questions)
+                return module
+        if module is None or _paper_is_pinned(module.id):
+            module = Module.objects.create(
+                practice_test=None, module_order=module_order, time_limit_minutes=time_limit
+            )
+        _sync_module_questions_in_place(module, live_questions)
+        return module
 
 
 def _repoint(owner, **modules) -> None:

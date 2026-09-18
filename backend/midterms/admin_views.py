@@ -28,6 +28,26 @@ from exams.views import _mutable_admin_question_payload
 
 from .admin_serializers import AdminMidtermSerializer, _publish_check
 from .models import Midterm
+from .sync import _paper_is_pinned
+
+
+def _refuse_if_sat(module_id) -> None:
+    """Refuse to edit a module a sitting was given (``MidtermAttempt.paper_module``).
+
+    It is that student's paper now, and this editor writes rows in place. The builder is the
+    safe place to change a midterm somebody has sat: its sync puts the change on a fresh paper
+    for the next student to start and leaves every sitting's own paper as it was.
+    """
+    if _paper_is_pinned(module_id):
+        raise DRFValidationError(
+            {
+                "non_field_errors": [
+                    "Students have already sat this paper, so it cannot be changed here. "
+                    "Edit the midterm in the builder: the next student to start gets the new "
+                    "paper, and everyone who already sat it keeps theirs."
+                ]
+            }
+        )
 
 
 class AdminMidtermViewSet(viewsets.ModelViewSet):
@@ -187,6 +207,7 @@ class AdminMidtermQuestionViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         midterm = self._midterm()
         module = self._module()
+        _refuse_if_sat(module.pk)
         # question_limit is a PER-MODULE authoring cap (it sizes one timed module), so it is
         # counted against this module's own rows — but the message names the module so a
         # two-module midterm's "30" doesn't read as a whole-paper limit of 30.
@@ -199,8 +220,13 @@ class AdminMidtermQuestionViewSet(viewsets.ModelViewSet):
             )
         serializer.save(module=module, order=current)
 
+    def perform_update(self, serializer):
+        _refuse_if_sat(serializer.instance.module_id)
+        serializer.save()
+
     def perform_destroy(self, instance):
         module_id = instance.module_id
+        _refuse_if_sat(module_id)
         instance.delete()
         dense_compact_module_orders_locked(module_id)
 
@@ -209,6 +235,7 @@ class AdminMidtermQuestionViewSet(viewsets.ModelViewSet):
         # Reordering never PROVISIONS anything — _module() only creates module 1 on demand,
         # and rejects a module-2 request on a midterm that has no second module.
         module = self._module()
+        _refuse_if_sat(module.pk)
         ordered = request.data.get("ordered_ids") or []
         reindex_module_questions_dense_locked(module.id, list(ordered))
         return Response(self.get_serializer(self.get_queryset(), many=True).data)

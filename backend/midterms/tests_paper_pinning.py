@@ -522,3 +522,63 @@ class PinBackfillCommandTests(TestCase):
         out = StringIO()
         call_command("pin_midterm_papers", "--commit", stdout=out)
         self.assertIn("pinned 0", out.getvalue())
+
+
+class MirrorQuestionEditorTests(TestCase):
+    """The mirror's own question editor writes rows in place, so it must not touch a paper
+    somebody has sat — that was a second door to the 2026-09-18 incident."""
+
+    def setUp(self):
+        self.exam, self.pt, self.mt = _builder_midterm(n=3)
+        self.staff = User.objects.create(username="qa", email="qa@x.io", is_staff=True, is_superuser=True)
+        self.client = APIClient()
+        self.client.force_authenticate(self.staff)
+
+    def _url(self, suffix=""):
+        return f"/api/midterms/admin/midterms/{self.mt.id}/questions/{suffix}"
+
+    def test_every_write_is_refused_once_the_paper_was_sat(self):
+        _sit(self.mt, User.objects.create(username="s", email="s@x.io"))
+        q = self.mt.questions().first()
+        ids = [x.id for x in self.mt.questions()]
+        attempts = (
+            self.client.post(self._url(), {"question_text": "extra"}, format="json"),
+            self.client.patch(self._url(f"{q.id}/"), {"question_text": "reworded"}, format="json"),
+            self.client.delete(self._url(f"{q.id}/")),
+            self.client.post(self._url("bulk-reorder/"), {"ordered_ids": ids[::-1]}, format="json"),
+        )
+        self.assertEqual([r.status_code for r in attempts], [400, 400, 400, 400])
+        self.assertEqual([x.id for x in self.mt.questions()], ids)
+        self.assertEqual(self.mt.questions().first().question_text, "OLD Q0")
+
+    def test_an_unsat_paper_can_still_be_edited_here(self):
+        q = self.mt.questions().first()
+        r = self.client.patch(self._url(f"{q.id}/"), {"question_text": "reworded"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+
+class PinBackfillPassMarkTests(TestCase):
+    def test_a_superseded_sitting_takes_the_pass_mark_its_day_was_judged_on(self):
+        """A verdict row points at a student's LATEST sitting only; an earlier sitting learns
+        the pass mark of its day from the midterm's verdicts, not from today's setting."""
+        exam, pt, mt = _builder_midterm(n=2, scale="SCALE_100", pass_mark=60)
+        student = User.objects.create(username="s1", email="s1@x.io")
+        now = timezone.now()
+        first = MidtermAttempt.objects.create(
+            midterm=mt, student=student, current_state=MidtermAttempt.STATE_COMPLETED,
+            is_completed=True, score=65, completed_at=now, started_at=now,
+        )
+        resit = MidtermAttempt.objects.create(
+            midterm=mt, student=student, current_state=MidtermAttempt.STATE_COMPLETED,
+            is_completed=True, score=90, completed_at=now, started_at=now,
+        )
+        MidtermOutcome.objects.create(
+            midterm=mt, student=student, attempt=resit, score=90, pass_mark=60,
+            scoring_scale="SCALE_100", passed=True,
+        )
+        mt.pass_mark = 70  # raised since
+        mt.save(update_fields=["pass_mark"])
+
+        call_command("pin_midterm_papers", "--commit", stdout=StringIO())
+        first.refresh_from_db()
+        self.assertEqual((first.paper_scale, first.paper_pass_mark, first.passed), ("SCALE_100", 60, True))
