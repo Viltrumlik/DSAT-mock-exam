@@ -326,7 +326,7 @@ class MidtermStandaloneResultsView(APIView):
         # NEWEST wins, which matters once a re-sit gives a student two of them.
         attempts = {
             a.student_id: a
-            for a in MidtermAttempt.objects.filter(midterm=midterm).order_by("created_at")
+            for a in MidtermAttempt.objects.filter(midterm=midterm).select_related("midterm").order_by("created_at")
         }
         sittings: dict[int, int] = {}
         for sid in MidtermAttempt.objects.filter(midterm=midterm, is_completed=True).values_list(

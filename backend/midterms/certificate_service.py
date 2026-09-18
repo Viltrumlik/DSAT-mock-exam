@@ -190,7 +190,7 @@ def _latest_completed_attempts(midterm: Midterm, student_ids):
     latest = {}
     qs = MidtermAttempt.objects.filter(
         midterm=midterm, student_id__in=student_ids, is_completed=True
-    ).order_by("created_at")
+    ).select_related("midterm").order_by("created_at")
     for att in qs:
         latest[att.student_id] = att  # last write wins
     return latest

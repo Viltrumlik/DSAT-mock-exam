@@ -637,9 +637,11 @@ def _prefetch(midterm_ids, student_ids) -> tuple[dict, dict]:
     if not midterm_ids or not student_ids:
         return attempts, outcomes
 
+    # select_related: a sitting not yet pinned (MidtermAttempt.paper_*) reads its midterm's
+    # scale and pass mark, and that must not become a query per student inside the roll-up.
     for attempt in MidtermAttempt.objects.filter(
         midterm_id__in=midterm_ids, student_id__in=student_ids
-    ).order_by("created_at"):
+    ).select_related("midterm").order_by("created_at"):
         slot = attempts.setdefault(attempt.midterm_id, {})
         slot[attempt.student_id] = pick_sitting(slot.get(attempt.student_id), attempt)
 

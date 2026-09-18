@@ -227,7 +227,7 @@ def pick_sitting(previous, candidate):
 
 def _attempts_by_student(midterm_id, student_ids) -> dict:
     out = {}
-    for a in MidtermAttempt.objects.filter(midterm_id=midterm_id, student_id__in=student_ids).order_by(
+    for a in MidtermAttempt.objects.filter(midterm_id=midterm_id, student_id__in=student_ids).select_related("midterm").order_by(
         "created_at"
     ):
         out[a.student_id] = pick_sitting(out.get(a.student_id), a)
