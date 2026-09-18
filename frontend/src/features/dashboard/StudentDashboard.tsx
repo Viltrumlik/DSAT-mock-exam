@@ -29,6 +29,7 @@ import type { ScheduleEvent } from "@/lib/api";
 import { useDashboardData, type DashboardModel, type ExamDateOption } from "./useDashboardData";
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 import { DashboardStories } from "./DashboardStories";
+import { DashboardEvents } from "./DashboardEvents";
 import { DashboardPulse } from "./DashboardPulse";
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -94,6 +95,10 @@ function DashboardBody({
             nothing at all when there is nothing posted, so it costs an empty dashboard no
             vertical space. */}
         <DashboardStories />
+
+        {/* The nearest event, under the noticeboard it belongs beside. Renders nothing when
+            there is none, so an empty dashboard costs no vertical space. */}
+        <DashboardEvents />
 
         {/* Goal + countdown, first thing on the dashboard. For a while they sat below the
             calendar with a chip each standing in for them up top; the owner asked for the
