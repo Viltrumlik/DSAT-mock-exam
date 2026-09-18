@@ -98,9 +98,13 @@ export type ReportRow = {
   student_name: string;
   student_profile_image_url?: string | null;
   midterm_score: number | null;
+  /** Out of what THIS sitting was scored on — a paper whose scale changed holds both. */
+  midterm_score_ceiling?: number | null;
   midterm_state: MidtermState;
   midterm_passed: boolean | null;
   retake_score: number | null;
+  /** The retake sitting's own ceiling — says which of several retakes' scales it is on. */
+  retake_score_ceiling?: number | null;
   retake_state: MidtermState | null;
   retake_passed: boolean | null;
   /** True only for a student who failed AND has a retake to sit. */

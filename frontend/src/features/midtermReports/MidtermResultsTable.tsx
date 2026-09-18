@@ -211,7 +211,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                               </span>
                             ) : (
                               <span className="text-foreground">
-                                {formatScore(row.midterm_score, midterm.score_ceiling)}
+                                {formatScore(row.midterm_score, row.midterm_score_ceiling ?? midterm.score_ceiling)}
                               </span>
                             )}
                           </td>
@@ -228,11 +228,18 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                               ) : (
                                 <span
                                   className="text-foreground"
-                                  title={ambiguousRetakeScale ? AMBIGUOUS_SCORE_REASON : undefined}
+                                  title={
+                                    ambiguousRetakeScale && row.retake_score_ceiling == null
+                                      ? AMBIGUOUS_SCORE_REASON
+                                      : undefined
+                                  }
                                 >
                                   {formatScore(
                                     row.retake_score,
-                                    ambiguousRetakeScale ? null : retake.score_ceiling,
+                                    // The sitting says its own scale; only without it is the
+                                    // column's header a guess worth withholding.
+                                    row.retake_score_ceiling ??
+                                      (ambiguousRetakeScale ? null : retake.score_ceiling),
                                   )}
                                 </span>
                               )}

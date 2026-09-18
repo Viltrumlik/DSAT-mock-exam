@@ -383,6 +383,20 @@ export interface StandaloneSummary {
   score_ceiling: number;
 }
 
+/**
+ * A score on its own scale, expressed on another — for a total across sittings only.
+ *
+ * A midterm whose scale changed after some students sat it holds both 0–100 and 200–800
+ * scores; each row still SHOWS its own. The 800 scale floors at 200 (`midterms/outcomes.py`),
+ * so the conversion goes through the share of the work, never "percent of the ceiling".
+ */
+export function scoreOnScale(score: number, fromCeiling: number, toCeiling: number): number {
+  if (fromCeiling === toCeiling) return score;
+  const floor = (ceiling: number) => (ceiling >= 800 ? 200 : 0);
+  const share = Math.min(1, Math.max(0, (score - floor(fromCeiling)) / (fromCeiling - floor(fromCeiling))));
+  return Math.round(floor(toCeiling) + share * (toCeiling - floor(toCeiling)));
+}
+
 export function summarizeStandalone(rows: StandaloneResultRow[], ceiling: number): StandaloneSummary {
   const s: StandaloneSummary = {
     granted: rows.length,
@@ -417,7 +431,7 @@ export function summarizeStandalone(rows: StandaloneResultRow[], ceiling: number
         s.not_started += 1;
     }
     if (r.submitted && typeof r.score === "number") {
-      scoreTotal += r.score;
+      scoreTotal += ceiling ? scoreOnScale(r.score, r.score_ceiling || ceiling, ceiling) : r.score;
       scored += 1;
     }
   }
