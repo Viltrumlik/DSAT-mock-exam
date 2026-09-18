@@ -105,3 +105,108 @@ def cancel_registration(registration: EventRegistration, *, now=None) -> EventRe
     registration.cancelled_at = now
     registration.save(update_fields=["status", "cancel_reason", "cancelled_at", "updated_at"])
     return registration
+
+
+#: A change to any of these is news to somebody who has planned their evening around it.
+#: Everything else — the description, the picture, the seat count — is housekeeping.
+MOVE_FIELDS = ("starts_at", "ends_at", "location")
+
+
+def publish(event: Event, *, now=None) -> bool:
+    """DRAFT → PUBLISHED. Returns True when THIS call claimed the announcement.
+
+    The claim is a conditional UPDATE, not a read-then-save, so two admins pressing Publish
+    in the same instant announce once between them. Every downstream leg — the bell, the
+    push, roughly 370 emails — hangs off this return value.
+    """
+    now = now or timezone.now()
+    if event.status == Event.STATUS_CANCELLED:
+        raise EventRefused("cancelled", "That event was cancelled.")
+    if event.starts_at <= now:
+        raise EventRefused(
+            "started",
+            "That event has already started — publishing it would tell everybody too late.",
+        )
+
+    claimed = Event.objects.filter(pk=event.pk, status=Event.STATUS_DRAFT).update(
+        status=Event.STATUS_PUBLISHED, published_at=now, updated_at=now
+    )
+    if not claimed:
+        return False
+    event.status = Event.STATUS_PUBLISHED
+    event.published_at = now
+    return True
+
+
+def update_event(event: Event, fields: dict, *, now=None):
+    """Edit an event. Returns ``(event, moved)`` — `moved` when the time or place changed."""
+    now = now or timezone.now()
+    if event.status == Event.STATUS_CANCELLED:
+        raise EventRefused("cancelled", "That event was cancelled, so it cannot be edited.")
+
+    starts_at = fields.get("starts_at", event.starts_at)
+    ends_at = fields.get("ends_at", event.ends_at)
+    if ends_at <= starts_at:
+        raise EventRefused("ends_before_start", "The event would end before it started.")
+
+    if "seats" in fields:
+        seats = int(fields["seats"])
+        taken = event.registered_count
+        if seats < taken:
+            raise EventRefused(
+                "seats_below_registered",
+                f"{taken} student{'' if taken == 1 else 's'} already hold a seat, so there "
+                f"cannot be fewer than {taken}.",
+            )
+
+    moved = any(
+        field in fields and fields[field] != getattr(event, field) for field in MOVE_FIELDS
+    )
+    start_moved = "starts_at" in fields and fields["starts_at"] != event.starts_at
+
+    for field, value in fields.items():
+        setattr(event, field, value)
+
+    if start_moved:
+        # Far enough away to be worth a reminder of its own → re-arm the sweep. Inside the
+        # lead time → the change message has just told them, so count it as the reminder
+        # rather than following it with a second message minutes later.
+        event.reminder_sent_at = None if event.starts_at - REMINDER_LEAD > now else now
+
+    event.save()
+    return event, moved
+
+
+def cancel_event(event: Event, *, actor=None, now=None) -> Event:
+    """Call it off, before it starts, and close every seat with it."""
+    now = now or timezone.now()
+    if event.status == Event.STATUS_CANCELLED:
+        return event
+    if event.status != Event.STATUS_PUBLISHED:
+        raise EventRefused("not_open", "Only a published event can be cancelled.")
+    if event.starts_at <= now:
+        # Attendance may already have paid, and there is no honest way to unwind that here.
+        raise EventRefused("started", "That event has already started, so it cannot be called off.")
+
+    with transaction.atomic():
+        event.status = Event.STATUS_CANCELLED
+        event.cancelled_at = now
+        event.save(update_fields=["status", "cancelled_at", "updated_at"])
+        EventRegistration.objects.filter(
+            event=event, status=EventRegistration.STATUS_REGISTERED
+        ).update(
+            status=EventRegistration.STATUS_CANCELLED,
+            cancel_reason=EventRegistration.REASON_EVENT_CANCELLED,
+            cancelled_at=now,
+        )
+    logger.info("event_cancelled event=%s actor=%s", event.pk, getattr(actor, "pk", None))
+    return event
+
+
+def delete_draft(event: Event) -> None:
+    """A draft nobody has seen is deleted; anything published is cancelled instead."""
+    if event.status != Event.STATUS_DRAFT:
+        raise EventRefused(
+            "not_a_draft", "This event has been published — cancel it instead of deleting it."
+        )
+    event.delete()
