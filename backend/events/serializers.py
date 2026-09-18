@@ -7,6 +7,7 @@ trip per card is what makes a list page feel broken on a phone.
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -92,3 +93,73 @@ class EventSerializer(serializers.ModelSerializer):
         if not row or row.status != EventRegistration.STATUS_REGISTERED:
             return False
         return timezone.now() < obj.starts_at - CANCEL_CUTOFF
+
+
+class EventWriteSerializer(serializers.ModelSerializer):
+    """Ops create/update. Multipart when a picture is attached, like `StoryWriteSerializer`."""
+
+    cover_image = serializers.ImageField(required=False, allow_null=True)
+
+    class Meta:
+        model = Event
+        fields = [
+            "title", "description", "cover_image", "starts_at", "ends_at", "location", "seats",
+        ]
+
+    def validate_title(self, value):
+        title = (value or "").strip()
+        if not title:
+            raise serializers.ValidationError("Give the event a name — students see it first.")
+        return title
+
+    def validate_seats(self, value):
+        if int(value) < 1:
+            raise serializers.ValidationError("An event needs at least one seat.")
+        return value
+
+    def validate_cover_image(self, value):
+        """Same rule as the profile photo: an image, and not a phone original."""
+        if value is None:
+            return value
+        max_b = int(getattr(settings, "EVENT_MAX_IMAGE_BYTES", 5 * 1024 * 1024))
+        if int(getattr(value, "size", 0) or 0) > max_b:
+            raise serializers.ValidationError(f"That picture is too large. Maximum is {max_b} bytes.")
+        content_type = str(getattr(value, "content_type", "") or "").lower()
+        if content_type and not content_type.startswith("image/"):
+            raise serializers.ValidationError("That file isn't an image.")
+        return value
+
+    def validate(self, attrs):
+        instance = getattr(self, "instance", None)
+        starts_at = attrs.get("starts_at", getattr(instance, "starts_at", None))
+        ends_at = attrs.get("ends_at", getattr(instance, "ends_at", None))
+        if starts_at and ends_at and ends_at <= starts_at:
+            raise serializers.ValidationError(
+                {"ends_at": "The event would end before it started. Move the end time later."}
+            )
+        return attrs
+
+
+class AdminRegistrationSerializer(serializers.ModelSerializer):
+    """The attendance list. Names and a phone number, so the desk can find a person."""
+
+    student_name = serializers.SerializerMethodField()
+    phone = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EventRegistration
+        fields = [
+            "id", "student", "student_name", "phone", "status", "registered_at",
+            "attendance", "marked_at",
+        ]
+
+    def get_student_name(self, obj) -> str:
+        full = (obj.student.get_full_name() or "").strip()
+        return full or (getattr(obj.student, "username", "") or "").strip() or "Student"
+
+    def get_phone(self, obj) -> str:
+        # The brief's own text names the field `phone`; the User model calls it
+        # `phone_number` (users/models.py) — there is no `phone` attribute at all, so
+        # `getattr(obj.student, "phone", "")` would silently read "" for every row. Reading
+        # the real field is what makes this list actually useful at the door.
+        return str(getattr(obj.student, "phone_number", "") or "")
