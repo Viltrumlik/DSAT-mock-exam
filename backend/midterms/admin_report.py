@@ -37,6 +37,7 @@ from classes.models import Classroom, ClassroomMembership
 from classes.models_schedule import MidtermSchedule
 
 from .models import Midterm, MidtermAttempt, MidtermOutcome
+from .outcomes import rescale
 from .views_report import SUBJECT_LABELS, display_name
 
 User = get_user_model()
@@ -158,20 +159,21 @@ def sitting_for(midterm, student_id, attempts_by_student, outcomes_by_student) -
     outcome = outcomes_by_student.get(student_id)
     if outcome is not None:
         passed = bool(outcome.passed)
-    elif midterm.is_graded and attempt.score is not None:
-        # No frozen verdict — an attempt completed before verdicts were recorded. Judging it
-        # against TODAY's pass mark is exactly the retroactive re-judging MidtermOutcome
-        # exists to prevent, so this is a stopgap: run `backfill_midterm_outcomes` to give
-        # these sittings a real frozen verdict.
-        passed = midterm.is_passing_score(attempt.score)
     else:
-        passed = None
+        # No frozen verdict — e.g. a sitting completed before verdicts were recorded. Judged
+        # by the sitting's OWN pass mark and scale (MidtermAttempt.paper_*), never the
+        # midterm's current ones: those may have changed since, and on 2026-09-18 re-reading
+        # 0-100 scores against a new 650-of-800 pass mark failed every one of them.
+        passed = attempt.passed
     return {
         "score": attempt.score,
         "state": attempt.current_state,
         "passed": passed,
         # Distinguishes "no verdict because it is a diagnostic" from "no verdict yet".
-        "graded": bool(midterm.is_graded),
+        "graded": bool(attempt.is_graded),
+        # The scale this sitting was scored on — one table can hold both after a scale change.
+        "score_ceiling": attempt.score_ceiling,
+        "scoring_scale": attempt.scoring_scale,
     }
 
 
@@ -298,6 +300,7 @@ def build_midterm_rows(classroom, midterm, retakes) -> tuple[list[dict], dict]:
     r_outcomes = {r.id: _outcomes_by_student(r.id, student_ids) for r in retakes}
 
     rows = []
+    on_scale = []
     for sid in student_ids:
         student = students.get(sid)
         if student is None:  # membership pointing at a deleted user
@@ -315,18 +318,25 @@ def build_midterm_rows(classroom, midterm, retakes) -> tuple[list[dict], dict]:
                 "student_id": sid,
                 "student_name": display_name(student),
                 "midterm_score": m["score"],
+                # Out of what THIS sitting was scored on (see sitting_for).
+                "midterm_score_ceiling": m.get("score_ceiling"),
                 "midterm_state": m["state"],
                 "midterm_passed": m["passed"],
                 "retake_score": r["score"] if r else None,
+                "retake_score_ceiling": r.get("score_ceiling") if r else None,
                 "retake_state": r["state"] if r else None,
                 "retake_passed": r["passed"] if r else None,
                 "retake_eligible": eligible,
                 "final_status": final_status_for(m, r),
             }
         )
+        if m["score"] is not None:
+            # The average is stated on the midterm's current scale, so a sitting scored on
+            # another one is converted for it (its own row still shows its real score).
+            on_scale.append(rescale(m["score"], m.get("scoring_scale") or midterm.scoring_scale, midterm.scoring_scale))
     rows.sort(key=lambda r: r["student_name"].lower())
 
-    scored = [r["midterm_score"] for r in rows if r["midterm_score"] is not None]
+    scored = on_scale
     summary = {
         "students": len(rows),
         **_tally([r["final_status"] for r in rows]),

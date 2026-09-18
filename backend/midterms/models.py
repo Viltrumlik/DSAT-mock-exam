@@ -445,6 +445,31 @@ class MidtermAttempt(TimestampedModel):
         max_length=24, choices=TERMINATION_CHOICES, blank=True, default="", db_index=True
     )
 
+    # ── the paper this sitting was given ─────────────────────────────────────
+    # Pinned when the attempt STARTS. From then on this sitting is served, scored, frozen and
+    # shown against exactly what the student was given, whatever the builder holds later.
+    # The midterm itself stays live: an edit to a paper somebody has been given goes onto
+    # fresh modules (``midterms.sync._refresh_module``), so the next student to start gets the
+    # new paper and nobody's started or finished paper changes. The one exception is a
+    # correction to the answer key (``sync._CORRECTION_FIELDS``): that reaches every paper, so
+    # a sitting still in progress is graded right — finished ones keep the score frozen when
+    # they were handed in. On 2026-09-18 a rebuild of six already-sat midterms deleted the
+    # questions 215 students had answered and re-read their 0-100 scores on an 800 scale;
+    # these four columns are why that cannot happen again.
+    # All four are empty on an attempt that has not started, and on attempts from before
+    # pinning existed until ``pin_midterm_papers`` backfills them. Those resolve through the
+    # midterm (or version) exactly as before.
+    paper_module = models.ForeignKey(
+        "exams.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    paper_module_2 = models.ForeignKey(
+        "exams.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    # Blank = not pinned: read the midterm's current scale and pass mark. Once pinned, a NULL
+    # pass mark means the sitting is not judged pass/fail (a pre-midterm).
+    paper_scale = models.CharField(max_length=16, blank=True, default="")
+    paper_pass_mark = models.PositiveSmallIntegerField(null=True, blank=True)
+
     # Idempotency anchor for the post-deploy migration of legacy exams.TestAttempt.
     legacy_test_attempt_id = models.BigIntegerField(null=True, blank=True, unique=True, db_index=True)
 
@@ -550,7 +575,10 @@ class MidtermAttempt(TimestampedModel):
         cached = getattr(self, "_module_count_memo", None)
         if cached is not None:
             return cached
-        count = self._question_source.module_count()
+        if self.paper_module_id:
+            count = 2 if self.paper_module_2_id and self.effective_questions_for_order(2).exists() else 1
+        else:
+            count = self._question_source.module_count()
         self._module_count_memo = count
         return count
 
@@ -562,14 +590,24 @@ class MidtermAttempt(TimestampedModel):
         return super().refresh_from_db(*args, **kwargs)
 
     def effective_module_for_order(self, order: int):
-        """The exams.Module for module 1 or module 2 (version-aware). None if absent."""
+        """The exams.Module for module 1 or module 2 — this sitting's own once pinned, else
+        the version's/midterm's. None if absent."""
+        if self.paper_module_id:
+            return self.paper_module_2 if int(order) == 2 else self.paper_module
         src = self._question_source
         if int(order) == 2:
             return getattr(src, "question_module_2", None)
         return getattr(src, "question_module", None)
 
     def effective_questions_for_order(self, order: int):
-        """Ordered question queryset for one module (1 or 2), version-aware."""
+        """Ordered question queryset for one module (1 or 2): the pinned paper's, else live."""
+        if self.paper_module_id:
+            from exams.models import Question
+
+            module_id = self.paper_module_2_id if int(order) == 2 else self.paper_module_id
+            if not module_id:
+                return Question.objects.none()
+            return Question.objects.filter(module_id=module_id).order_by("order", "id")
         return self._question_source.questions_for_order(order)
 
     def effective_questions(self) -> list:
@@ -582,9 +620,57 @@ class MidtermAttempt(TimestampedModel):
         on single-module fixtures and blow up in production on the first two-module paper.
         """
         if self.module_count() < 2:
-            src = self.version if self.version_id else self.midterm
-            return list(src.questions())
+            return list(self.effective_questions_for_order(1))
         return list(self.effective_questions_for_order(1)) + list(self.effective_questions_for_order(2))
+
+    # ── the scale and verdict this sitting is judged on ──────────────────────
+    # Named like the Midterm's own attributes so a caller showing a SITTING's result swaps
+    # ``midterm.score_ceiling`` for ``attempt.score_ceiling`` and nothing else. Once pinned
+    # they are the sitting's own; until then the midterm's current ones.
+    @property
+    def scoring_scale(self) -> str:
+        return self.paper_scale or self.midterm.scoring_scale
+
+    @property
+    def score_ceiling(self) -> int:
+        return 800 if self.scoring_scale == SCALE_800 else 100
+
+    @property
+    def is_graded(self) -> bool:
+        """Whether this sitting gets a pass/fail verdict at all (a pre-midterm does not)."""
+        if self.paper_scale:
+            return self.paper_pass_mark is not None
+        return self.midterm.is_graded
+
+    @property
+    def pass_mark(self) -> int | None:
+        """The mark this sitting is judged against, on its own scale; None when not judged."""
+        if self.paper_scale:
+            return self.paper_pass_mark
+        return self.midterm.effective_pass_mark if self.midterm.is_graded else None
+
+    @property
+    def passed(self) -> bool | None:
+        """This sitting's own verdict: None until it has a score, or when it is not judged."""
+        if self.score is None or not self.is_graded:
+            return None
+        return int(self.score) >= int(self.pass_mark)
+
+    def _paper_pins(self) -> dict:
+        """The paper, scale and pass mark this sitting takes, read from the midterm NOW.
+
+        Module 2 is pinned only when it holds questions — the same rule ``module_count``
+        applies — so an opted-in but empty module 2 cannot turn into a second module later.
+        """
+        src = self._question_source
+        module_2 = src.question_module_2_id if src.question_module_2_id and src.questions_for_order(2).exists() else None
+        midterm = self.midterm
+        return {
+            "paper_module_id": src.question_module_id,
+            "paper_module_2_id": module_2,
+            "paper_scale": midterm.scoring_scale,
+            "paper_pass_mark": midterm.effective_pass_mark if midterm.is_graded else None,
+        }
 
     # ── timing ───────────────────────────────────────────────────────────────
     def get_timing(self, *, now=None):
@@ -605,6 +691,13 @@ class MidtermAttempt(TimestampedModel):
             return False
         if self.current_state != STATE_NOT_STARTED:
             raise TransitionNotAllowed(f"cannot start midterm attempt {self.pk} from {self.current_state}")
+        if not self.version_id and MidtermVersion.objects.filter(midterm_id=self.midterm_id).exists():
+            # Created before this midterm had versions. Its flat module stopped being fed the
+            # moment the versions appeared, so starting on it would hand this student a stale
+            # paper; seat them on a version now, exactly as create() does today.
+            from .access import resolve_version_for_student
+
+            self.version = resolve_version_for_student(self.student, self.midterm)
         v0 = int(self.version_number or 0)
         ts = timezone.now()
         started = self.started_at or ts
@@ -617,6 +710,8 @@ class MidtermAttempt(TimestampedModel):
                 "started_at": started,
                 "version_number": v0 + 1,
                 "updated_at": ts,
+                "version_id": self.version_id,
+                **self._paper_pins(),
             },
         )
         if n == 0:
@@ -925,7 +1020,9 @@ class MidtermOutcome(models.Model):
         (pre-midterm) or the attempt has no score yet.
         """
         midterm = attempt.midterm
-        if not midterm.is_graded or attempt.score is None:
+        # The sitting's own rules, not the midterm's current ones: a pass mark or a scale
+        # changed after the student started must not re-judge them (MidtermAttempt.paper_*).
+        if not attempt.is_graded or attempt.score is None:
             return None
 
         # NEVER walk backwards. A (midterm, student) pair can hold more than one completed
@@ -945,7 +1042,7 @@ class MidtermOutcome(models.Model):
             if prior is not None and not _is_later_sitting(attempt, prior):
                 return existing
 
-        mark = midterm.effective_pass_mark
+        mark = attempt.pass_mark
         outcome, _created = cls.objects.update_or_create(
             midterm_id=midterm.pk,
             student_id=attempt.student_id,
@@ -953,7 +1050,7 @@ class MidtermOutcome(models.Model):
                 "attempt_id": attempt.pk,
                 "score": int(attempt.score),
                 "pass_mark": int(mark),
-                "scoring_scale": midterm.scoring_scale,
+                "scoring_scale": attempt.scoring_scale,
                 "passed": int(attempt.score) >= int(mark),
             },
         )

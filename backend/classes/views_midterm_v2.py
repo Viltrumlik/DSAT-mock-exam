@@ -32,6 +32,7 @@ from midterms.certificate_service import (
     issue_classroom_certificates,
 )
 from midterms.models import Midterm, MidtermAttempt, MidtermResit, MidtermVersion, MidtermVersionAssignment
+from midterms.outcomes import fraction, rescale
 from midterms.seating import (
     DEFAULT_COLUMNS,
     SEATS_PER_DESK,
@@ -349,7 +350,11 @@ class MidtermV2PanelView(_ClassroomScopedView):
 
         cohort = _classroom_cohort_ids(midterm, classroom)
         latest = _latest_completed_attempts(midterm, cohort)
-        ranks, _ = _competition_ranks([(sid, att.score) for sid, att in latest.items()])
+        # Ranked by share of the work, not the raw number: once the midterm's scale has
+        # changed, a room can hold 90/100 beside 300/800, and 90% is the better paper.
+        ranks, _ = _competition_ranks(
+            [(sid, fraction(att.score, att.scoring_scale)) for sid, att in latest.items()]
+        )
         users = {u.id: u for u in User.objects.filter(pk__in=cohort)}
         codes = {
             c.student_id: c.code
@@ -376,12 +381,15 @@ class MidtermV2PanelView(_ClassroomScopedView):
         ).values_list("student_id", flat=True):
             sittings[sid] = sittings.get(sid, 0) + 1
         students = []
-        scores = []
+        scores = []  # on the midterm's CURRENT scale, so the totals below add up
+        scales = set()
         for sid in cohort:
             att = latest.get(sid)
             score = att.score if att else None
+            on_scale = rescale(score, att.scoring_scale, midterm.scoring_scale) if att else None
             if score is not None:
-                scores.append(score)
+                scores.append(on_scale)
+                scales.add(att.scoring_scale)
             ver = assign_map.get(sid)
             seat = seat_map.get(sid)
             students.append({
@@ -390,7 +398,12 @@ class MidtermV2PanelView(_ClassroomScopedView):
                 "student_profile_image_url": profile_image_url(users.get(sid), request),
                 "state": att.current_state if att else "NOT_STARTED",
                 "submitted": bool(att),
+                # Their own score on the scale they sat it on — never converted.
                 "score": score,
+                "score_ceiling": att.score_ceiling if att else midterm.score_ceiling,
+                "scoring_scale": att.scoring_scale if att else midterm.scoring_scale,
+                # The same paper expressed on the midterm's current scale: for the chart only.
+                "score_on_scale": on_scale,
                 "rank": ranks.get(sid),
                 "certificate_code": codes.get(sid),
                 # How many times they have finished it, and whether they may sit it once more.
@@ -403,7 +416,9 @@ class MidtermV2PanelView(_ClassroomScopedView):
                 "side": seat[1] % SEATS_PER_DESK if seat else None,
                 "desk_number": (seat[0] * seat_columns + seat[1] // SEATS_PER_DESK + 1) if seat else None,
             })
-        students.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0), r["student_name"]))
+        students.sort(
+            key=lambda r: (r["score"] is None, -(r["score_on_scale"] or 0), r["student_name"])
+        )
 
         sched = MidtermSchedule.objects.filter(classroom=classroom, midterm=midterm).first()
         # Not "everyone has a completed attempt": a student holding an unspent re-sit, or
@@ -420,6 +435,8 @@ class MidtermV2PanelView(_ClassroomScopedView):
             "average": round(sum(scores) / len(scores)) if scores else None,
             "highest": max(scores) if scores else None,
             "lowest": min(scores) if scores else None,
+            # Some papers were sat on a different scale and are counted here converted.
+            "mixed_scales": len(scales) > 1,
         }
         return Response({
             "midterm": _midterm_brief(midterm),

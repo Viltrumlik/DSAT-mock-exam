@@ -65,10 +65,10 @@ def grade_questions(questions, answers, scoring_scale: str) -> dict:
 
 
 def score_midterm_attempt(attempt) -> dict:
-    """Compute the score for a MidtermAttempt from its authoritative question set
-    (the assigned version's questions when versioned, else the midterm's own)."""
+    """Compute the score for a MidtermAttempt from its authoritative question set — the
+    paper it was given — on the scale it was given (``MidtermAttempt.scoring_scale``)."""
     questions = list(attempt.effective_questions())
-    return grade_questions(questions, attempt.answers or {}, attempt.midterm.scoring_scale)
+    return grade_questions(questions, attempt.answers or {}, attempt.scoring_scale)
 
 
 def build_midterm_review(attempt, *, include_answer_key: bool = False) -> dict:
@@ -81,7 +81,6 @@ def build_midterm_review(attempt, *, include_answer_key: bool = False) -> dict:
     The score is recomputed via the SAME ``_grade`` pass as ``score_midterm_attempt`` so a
     review is byte-consistent with the stored score for freshly-scored attempts.
     """
-    midterm = attempt.midterm
     questions = list(attempt.effective_questions())
     answers = attempt.answers or {}
     correct_count = 0
@@ -108,9 +107,9 @@ def build_midterm_review(attempt, *, include_answer_key: bool = False) -> dict:
         rows.append(row)
     total_count = len(questions)
     return {
-        "score": compute_score(correct_count, total_count, midterm.scoring_scale),
+        "score": compute_score(correct_count, total_count, attempt.scoring_scale),
         "correct_count": correct_count,
         "total_count": total_count,
-        "scoring_scale": midterm.scoring_scale,
+        "scoring_scale": attempt.scoring_scale,
         "questions": rows,
     }

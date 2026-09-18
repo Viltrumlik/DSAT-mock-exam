@@ -79,8 +79,10 @@ class MyMidtermsView(APIView):
                 "midterm_id": mid,
                 "title": m.title,
                 "subject": m.subject,
-                "scoring_scale": m.scoring_scale,
-                "score_ceiling": m.score_ceiling,
+                # A finished row shows the score on the scale it was sat on; an unsat one
+                # shows the scale the student is about to be given.
+                "scoring_scale": att.scoring_scale if submitted else m.scoring_scale,
+                "score_ceiling": att.score_ceiling if submitted else m.score_ceiling,
                 "duration_minutes": m.duration_minutes,
                 "question_count": m.display_question_count(),
                 "flavor": flavor,

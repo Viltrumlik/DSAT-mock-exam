@@ -1682,6 +1682,15 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
         exam = serializer.save()
         self._provision_exam_after_create(exam)
 
+    def perform_update(self, serializer):
+        exam = serializer.save()
+        # A settings-only save (scale, pass mark, type, timing, title) has to reach the
+        # student side as well — question edits resync on their own, this did not, so the
+        # builder showed one midterm while students and teachers got another. Safe on a
+        # midterm people have sat: their sittings keep their own paper, scale and pass mark.
+        if exam.kind == MockExam.KIND_MIDTERM:
+            _resync_midterm_mirror_for_exam(exam)
+
     @action(
         detail=True, methods=["get"], url_path="export-csv",
         permission_classes=[IsAuthenticated, IsSuperAdmin],
@@ -1948,8 +1957,10 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
     def remove_test(self, request, pk=None):
         """Remove a PracticeTest from this MockExam."""
         test_id = request.data.get('test_id')
-        test = get_object_or_404(PracticeTest, id=test_id, mock_exam=self.get_object())
+        exam = self.get_object()
+        test = get_object_or_404(PracticeTest, id=test_id, mock_exam=exam)
         test.delete()
+        _resync_midterm_mirror_for_exam(exam)  # no-op unless it is a midterm
         return Response({'status': 'removed'})
 
     @action(detail=True, methods=['post'], url_path='add-midterm-version')
