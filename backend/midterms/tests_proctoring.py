@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
 from exams.models import Module, Question
-from midterms.models import Midterm, MidtermAttempt
+from midterms.models import Midterm, MidtermAttempt, MidtermAttemptEngineAudit
 from midterms.proctoring import GRACE_SECONDS, VIOLATION_LIMIT
 
 User = get_user_model()
@@ -49,10 +49,10 @@ class OffscreenRuleTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.student)
 
-    def _offscreen(self, *, key=None):
+    def _offscreen(self, *, key=None, body=None):
         url = f"/api/midterms/attempts/{self.attempt.pk}/offscreen/"
         headers = {"HTTP_IDEMPOTENCY_KEY": key} if key else {}
-        return self.client.post(url, {}, format="json", **headers)
+        return self.client.post(url, body or {}, format="json", **headers)
 
     # ── the rule ─────────────────────────────────────────────────────────────
     def test_first_offence_grants_grace_and_does_not_terminate(self):
@@ -120,6 +120,71 @@ class OffscreenRuleTests(TestCase):
         resp = self._offscreen()  # e.g. a closing tab firing one last event
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["violations"], VIOLATION_LIMIT)
+
+    # ── every counted offence leaves evidence ────────────────────────────────
+    # Until this existed the only trace of a strike was its idempotency row: nothing said
+    # whether the page was hidden, fullscreen was exited or focus moved, nor whether strikes
+    # 2 and 3 were new absences or ONE absence running out its grace. That question had to be
+    # answered from gunicorn logs, which rotate away after a week.
+    def _evidence(self):
+        return list(
+            MidtermAttemptEngineAudit.objects.filter(attempt=self.attempt, event="offscreen")
+            .order_by("id")
+            .values_list("detail", flat=True)
+        )
+
+    def test_each_counted_offence_is_logged_with_what_the_browser_saw(self):
+        self._offscreen(body={"reason": "fullscreen", "continuing": False})
+        self._offscreen(body={"reason": "fullscreen", "continuing": True})
+        self.assertEqual(
+            self._evidence(),
+            [
+                {"reason": "fullscreen", "continuing": False, "violations": 1, "terminated": False},
+                {"reason": "fullscreen", "continuing": True, "violations": 2, "terminated": False},
+            ],
+        )
+
+    def test_the_terminating_offence_is_logged_before_the_submit_it_causes(self):
+        for _ in range(VIOLATION_LIMIT):
+            self._offscreen(body={"reason": "hidden"})
+        events = list(
+            MidtermAttemptEngineAudit.objects.filter(attempt=self.attempt).order_by("id").values_list("event", flat=True)
+        )
+        last_offence = max(i for i, event in enumerate(events) if event == "offscreen")
+        self.assertLess(last_offence, events.index("submit"))
+        self.assertTrue(self._evidence()[-1]["terminated"])
+
+    def test_a_replayed_report_logs_nothing_new(self):
+        self._offscreen(key="evt-1", body={"reason": "blur"})
+        self._offscreen(key="evt-1", body={"reason": "blur"})
+        self.assertEqual(len(self._evidence()), 1)
+
+    def test_a_report_after_the_paper_is_in_logs_nothing(self):
+        for _ in range(VIOLATION_LIMIT):
+            self._offscreen()
+        self._offscreen(body={"reason": "hidden"})
+        self.assertEqual(len(self._evidence()), VIOLATION_LIMIT)
+
+    def test_a_bodyless_report_is_still_counted_and_logged(self):
+        # A runner loaded before this change sends `{}`; its offences count exactly as before.
+        resp = self._offscreen()
+        self.assertEqual(resp.data["violations"], 1)
+        self.assertEqual(
+            self._evidence(), [{"reason": "", "continuing": False, "violations": 1, "terminated": False}]
+        )
+
+    def test_evidence_is_whitelisted(self):
+        self._offscreen(body={"reason": "<script>", "continuing": "yes"})
+        self.assertEqual(self._evidence()[0]["reason"], "")
+        self.assertIs(self._evidence()[0]["continuing"], False)
+
+    def test_evidence_never_changes_the_consequence(self):
+        # The body is the client's word; it can neither buy a chance back nor end the paper.
+        resp = self._offscreen(body={"reason": "hidden", "continuing": True, "violations": 99, "terminated": True})
+        self.assertEqual(resp.data["violations"], 1)
+        self.assertFalse(resp.data["terminated"])
+        self.attempt.refresh_from_db()
+        self.assertEqual(self.attempt.current_state, MidtermAttempt.STATE_ACTIVE)
 
     # ── the early-submit lock is relaxed for this case ONLY ──────────────────
     def test_submit_is_still_refused_before_the_deadline_normally(self):
