@@ -116,6 +116,10 @@ export type ReportSummary = Counts & {
   students: number;
   pass_mark: number | null;
   average_score: number | null;
+  /** What the pass mark and average are out of: the scale this class sat on. */
+  score_ceiling?: number;
+  /** Some sittings were scored on another scale and are counted converted. */
+  mixed_scales?: boolean;
 };
 
 export type MidtermReport = {

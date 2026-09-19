@@ -582,3 +582,66 @@ class PinBackfillPassMarkTests(TestCase):
         call_command("pin_midterm_papers", "--commit", stdout=StringIO())
         first.refresh_from_db()
         self.assertEqual((first.paper_scale, first.paper_pass_mark, first.passed), ("SCALE_100", 60, True))
+
+
+class SummaryBasisTests(TestCase):
+    """A total over a class's sittings speaks the scale that class sat on (outcomes.summary_basis)."""
+
+    def setUp(self):
+        from classes.models import Classroom, ClassroomMembership
+
+        self.exam, self.pt, self.mt = _builder_midterm(n=2, scale="SCALE_100")
+        self.teacher = User.objects.create(username="t2", email="t2@x.io", is_staff=True)
+        self.room = Classroom.objects.create(
+            name="MATH-2", subject=Classroom.SUBJECT_MATH, level="junior", description="x",
+            lesson_days="ODD", teacher=self.teacher, created_by=self.teacher,
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.room, user=self.teacher, role=ClassroomMembership.ROLE_TEACHER,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        self.sitters = []
+        for i, answer in enumerate(("a", "b")):  # 100 and 0 on the 100 scale
+            s = User.objects.create(username=f"k{i}", email=f"k{i}@x.io")
+            ClassroomMembership.objects.create(
+                classroom=self.room, user=s, role=ClassroomMembership.ROLE_STUDENT,
+                status=ClassroomMembership.STATUS_ACTIVE,
+            )
+            grant(s, self.mt, classroom=self.room)
+            self.sitters.append(_sit(self.mt, s, answer=answer))
+        # The whole class has sat it; THEN the midterm moves to the 800 scale.
+        self.exam.midterm_scoring_scale = "SCALE_800"
+        self.exam.midterm_pass_mark = 650
+        self.exam.save()
+        self.mt = upsert_midterm_from_legacy(self.exam)
+
+    def test_basis_is_the_class_own_scale_and_pass_mark(self):
+        from midterms.outcomes import summary_basis
+
+        self.assertEqual(
+            summary_basis(self.sitters, self.mt),
+            {"scoring_scale": "SCALE_100", "score_ceiling": 100, "pass_mark": 50, "mixed_scales": False},
+        )
+        # Nobody sat yet: the midterm as it stands now.
+        self.assertEqual(
+            summary_basis([], self.mt),
+            {"scoring_scale": "SCALE_800", "score_ceiling": 800, "pass_mark": 650, "mixed_scales": False},
+        )
+
+    def test_classroom_panel_totals_are_out_of_what_the_room_sat(self):
+        c = APIClient()
+        c.force_authenticate(self.teacher)
+        stats = c.get(f"/api/classes/{self.room.id}/midterms-v2/{self.mt.id}/panel/").json()["stats"]
+        self.assertEqual(
+            (stats["score_ceiling"], stats["average"], stats["highest"], stats["lowest"], stats["mixed_scales"]),
+            (100, 50, 100, 0, False),
+        )
+
+    def test_admin_report_summary_states_the_class_pass_mark(self):
+        from midterms.admin_report import build_midterm_rows
+
+        _rows, summary = build_midterm_rows(self.room, self.mt, [])
+        self.assertEqual(
+            (summary["pass_mark"], summary["score_ceiling"], summary["average_score"], summary["mixed_scales"]),
+            (50, 100, 50, False),
+        )

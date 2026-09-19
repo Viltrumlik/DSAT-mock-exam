@@ -96,6 +96,8 @@ interface PanelData {
   students: PanelStudent[];
   stats: {
     assigned: number; completed: number; average: number | null; highest: number | null; lowest: number | null;
+    /** What the totals and chart are out of: the scale this room sat on (it can differ from the midterm's current one). */
+    score_ceiling?: number;
     /** Some papers were sat on another scale; the totals count them converted to this one. */
     mixed_scales?: boolean;
   };
@@ -214,7 +216,7 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
     () => (data?.students ?? []).map((s) => s.score_on_scale ?? s.score).filter((s): s is number => s != null),
     [data],
   );
-  const ceiling = data?.midterm.score_ceiling ?? 100;
+  const ceiling = data?.stats.score_ceiling ?? data?.midterm.score_ceiling ?? 100;
   const bands = useMemo(() => scoreBands(scores, ceiling), [scores, ceiling]);
 
   if (isLoading) return <LoadingState label="Loading midterm…" />;
@@ -237,7 +239,8 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
   }
 
   const { schedule, stats, students, certificates_issued, all_finished } = data;
-  const scale = data.midterm.score_ceiling;
+  // The scale this room sat on, which a later edit to the midterm does not change.
+  const scale = stats.score_ceiling ?? data.midterm.score_ceiling;
   const missing = Math.max(0, stats.assigned - stats.completed);
   // A share of an empty roster is unknown, not zero — an em dash, never "0%".
   const finishedRate = stats.assigned > 0 ? Math.round((100 * stats.completed) / stats.assigned) : null;

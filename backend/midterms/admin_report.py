@@ -37,7 +37,7 @@ from classes.models import Classroom, ClassroomMembership
 from classes.models_schedule import MidtermSchedule
 
 from .models import Midterm, MidtermAttempt, MidtermOutcome
-from .outcomes import rescale
+from .outcomes import rescale, summary_basis
 from .views_report import SUBJECT_LABELS, display_name
 
 User = get_user_model()
@@ -301,6 +301,9 @@ def build_midterm_rows(classroom, midterm, retakes) -> tuple[list[dict], dict]:
 
     rows = []
     on_scale = []
+    # The summary speaks the scale and pass mark this class was judged on, not whatever the
+    # midterm says today (outcomes.summary_basis).
+    basis = summary_basis([m_attempts.get(sid) for sid in student_ids], midterm)
     for sid in student_ids:
         student = students.get(sid)
         if student is None:  # membership pointing at a deleted user
@@ -331,17 +334,21 @@ def build_midterm_rows(classroom, midterm, retakes) -> tuple[list[dict], dict]:
             }
         )
         if m["score"] is not None:
-            # The average is stated on the midterm's current scale, so a sitting scored on
-            # another one is converted for it (its own row still shows its real score).
-            on_scale.append(rescale(m["score"], m.get("scoring_scale") or midterm.scoring_scale, midterm.scoring_scale))
+            # A sitting scored on another scale than the summary's is converted for the
+            # average only; its own row still shows its real score.
+            on_scale.append(rescale(m["score"], m.get("scoring_scale") or midterm.scoring_scale, basis["scoring_scale"]))
     rows.sort(key=lambda r: r["student_name"].lower())
 
     scored = on_scale
     summary = {
         "students": len(rows),
         **_tally([r["final_status"] for r in rows]),
-        "pass_mark": midterm.effective_pass_mark if midterm.is_graded else None,
+        "pass_mark": basis["pass_mark"],
         "average_score": int(round(sum(scored) / len(scored))) if scored else None,
+        # What the pass mark and the average are out of, and whether some sittings were
+        # scored on another scale and are counted converted.
+        "score_ceiling": basis["score_ceiling"],
+        "mixed_scales": basis["mixed_scales"],
     }
     return rows, summary
 

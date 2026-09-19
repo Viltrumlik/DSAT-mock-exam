@@ -32,7 +32,11 @@ import type { MidtermReport } from "./types";
  */
 export function MidtermResultsTable({ report }: { report: MidtermReport }) {
   const { midterm, retake, summary, rows } = report;
-  const graded = isGraded(midterm);
+  // Graded if this class's sittings were judged — even when the midterm has since become a
+  // pre-midterm, their verdicts stand.
+  const graded = isGraded(midterm) || summary.pass_mark != null;
+  // Out of what this class sat on; the midterm's own scale may have changed since.
+  const ceiling = summary.score_ceiling ?? midterm.score_ceiling;
   const [onlyFailed, setOnlyFailed] = useState(false);
 
   const failedCount = useMemo(() => rows.filter(isFailed).length, [rows]);
@@ -50,7 +54,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
   const mixedScales =
     retake != null &&
     retake.score_ceiling != null &&
-    retake.score_ceiling !== midterm.score_ceiling;
+    retake.score_ceiling !== ceiling;
 
   /**
    * The ceilings the retake column's scores could be out of.
@@ -83,7 +87,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
         <span className="font-semibold">
           Pass mark:{" "}
           <span className="text-foreground tabular-nums">
-            {graded ? formatScore(summary.pass_mark, midterm.score_ceiling) : "not graded"}
+            {graded ? formatScore(summary.pass_mark, ceiling) : "not graded"}
           </span>
         </span>
         <span className="font-semibold">
@@ -91,7 +95,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
           <span className="text-foreground tabular-nums">
             {summary.average_score == null
               ? "no scores yet"
-              : formatScore(summary.average_score, midterm.score_ceiling)}
+              : formatScore(summary.average_score, ceiling)}
           </span>
         </span>
         {retake && (
@@ -112,9 +116,16 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
       {mixedScales && (
         <p className="flex items-start gap-2 rounded-xl border border-warning/25 bg-warning-soft px-3 py-2 text-xs font-semibold text-warning-foreground">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-          The midterm is scored out of {midterm.score_ceiling} and the retake out of{" "}
+          The midterm is scored out of {ceiling} and the retake out of{" "}
           {retake?.score_ceiling}. The two score columns are on different scales — compare each
           against its own pass mark, not against each other.
+        </p>
+      )}
+
+      {summary.mixed_scales && (
+        <p className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-xs font-semibold text-muted-foreground">
+          Some students sat this midterm before its scale changed. Each row shows the score on the
+          scale it was sat on; the class average converts them to {ceiling} points.
         </p>
       )}
 
@@ -173,7 +184,7 @@ export function MidtermResultsTable({ report }: { report: MidtermReport }) {
                       <th scope="col" className="px-3 py-2 text-right">
                         Midterm score
                         <span className="block font-semibold normal-case tracking-normal">
-                          out of {midterm.score_ceiling}
+                          out of {ceiling}
                         </span>
                       </th>
                       {retake && (

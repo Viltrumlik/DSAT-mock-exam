@@ -90,6 +90,7 @@ from .admin_report import (
     sitting_for,
 )
 from .models import Midterm, MidtermAttempt, MidtermOutcome
+from .outcomes import summary_basis
 from .views_report import display_name
 
 #: ``strftime`` format of a month key. Computed in LOCAL time (``TIME_ZONE`` is
@@ -1072,9 +1073,15 @@ def classroom_month(classroom, month) -> tuple[list[dict], dict, list[dict]]:
         retakes = retakes_by_parent.get(midterm.id, [])
         tally = _tally_from(midterm, roster_ids, retakes, attempts, outcomes)
         total = total.merged(tally)
+        sittings = attempts.get(midterm.id, {})
+        judged_on = summary_basis([sittings.get(sid) for sid in roster_ids], midterm)
         rows.append(
             {
                 **_midterm_brief(midterm),
+                # The pass mark this class was judged against, on its own scale — not whatever
+                # the midterm says today (outcomes.summary_basis).
+                "pass_mark": judged_on["pass_mark"],
+                "score_ceiling": judged_on["score_ceiling"],
                 "month": month,
                 "month_basis": basis,
                 "retakes": [{"id": r.id, "title": r.title} for r in retakes],
