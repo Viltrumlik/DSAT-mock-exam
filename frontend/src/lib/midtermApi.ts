@@ -398,6 +398,13 @@ export function scoreOnScale(score: number, fromCeiling: number, toCeiling: numb
 }
 
 export function summarizeStandalone(rows: StandaloneResultRow[], ceiling: number): StandaloneSummary {
+  // The average speaks the scale these papers were sat on when they share one — a midterm
+  // whose scale changed after everyone here sat it still reads "72 / 100" in every row, so
+  // its average must too. Only a genuine mix falls back to the midterm's current scale.
+  const sat = new Set(
+    rows.filter((r) => r.submitted && typeof r.score === "number").map((r) => r.score_ceiling || ceiling),
+  );
+  const summaryCeiling = sat.size === 1 ? [...sat][0] : ceiling;
   const s: StandaloneSummary = {
     granted: rows.length,
     not_started: 0,
@@ -408,7 +415,7 @@ export function summarizeStandalone(rows: StandaloneResultRow[], ceiling: number
     resit_open: 0,
     outstanding: 0,
     average_score: null,
-    score_ceiling: ceiling,
+    score_ceiling: summaryCeiling,
   };
   let scoreTotal = 0;
   let scored = 0;
@@ -431,7 +438,9 @@ export function summarizeStandalone(rows: StandaloneResultRow[], ceiling: number
         s.not_started += 1;
     }
     if (r.submitted && typeof r.score === "number") {
-      scoreTotal += ceiling ? scoreOnScale(r.score, r.score_ceiling || ceiling, ceiling) : r.score;
+      scoreTotal += summaryCeiling
+        ? scoreOnScale(r.score, r.score_ceiling || summaryCeiling, summaryCeiling)
+        : r.score;
       scored += 1;
     }
   }

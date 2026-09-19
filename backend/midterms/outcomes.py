@@ -19,6 +19,8 @@ wrong tier — the reason tiers and pass marks are both defined on ``fraction()`
 
 from __future__ import annotations
 
+from collections import Counter
+
 from .scoring import SCALE_100, SCALE_800
 
 # ── scale geometry ───────────────────────────────────────────────────────────
@@ -57,6 +59,36 @@ def score_for_fraction(frac: float, scoring_scale: str) -> int:
     """
     floor, ceiling = scale_bounds(scoring_scale)
     return int(round(floor + max(0.0, min(1.0, frac)) * (ceiling - floor)))
+
+
+def summary_basis(attempts, midterm) -> dict:
+    """The scale and pass mark a summary over these sittings is stated on.
+
+    A total, an average, a chart or a pass-mark label over a class's sittings must speak the
+    scale those sittings were judged on — a class that sat the paper on the 100 scale reads
+    "72 / 100" in every row, and "Average 491 / 800" above them would contradict all of it,
+    even after the midterm itself moved to 800. So: their own scale and pass mark when every
+    scored sitting shares one; the midterm's current ones only when they genuinely differ,
+    with ``mixed_scales`` set so the caller can say the others are counted converted
+    (``rescale``). With nothing scored yet, the midterm as it stands.
+    """
+    scored = [a for a in attempts if a is not None and a.is_completed and a.score is not None]
+    scales = {a.scoring_scale for a in scored}
+    scale = next(iter(scales)) if len(scales) == 1 else midterm.scoring_scale
+    on_scale = [a for a in scored if a.scoring_scale == scale]
+    marks = Counter(a.pass_mark for a in on_scale if a.pass_mark is not None)
+    if marks:
+        pass_mark = marks.most_common(1)[0][0]
+    elif on_scale:
+        pass_mark = None  # sat, but never judged: a diagnostic
+    else:
+        pass_mark = midterm.effective_pass_mark if midterm.is_graded else None
+    return {
+        "scoring_scale": scale,
+        "score_ceiling": scale_bounds(scale)[1],
+        "pass_mark": pass_mark,
+        "mixed_scales": len(scales) > 1,
+    }
 
 
 def rescale(score, from_scale: str, to_scale: str) -> int | None:

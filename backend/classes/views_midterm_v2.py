@@ -32,7 +32,7 @@ from midterms.certificate_service import (
     issue_classroom_certificates,
 )
 from midterms.models import Midterm, MidtermAttempt, MidtermResit, MidtermVersion, MidtermVersionAssignment
-from midterms.outcomes import fraction, rescale
+from midterms.outcomes import fraction, rescale, summary_basis
 from midterms.seating import (
     DEFAULT_COLUMNS,
     SEATS_PER_DESK,
@@ -381,15 +381,16 @@ class MidtermV2PanelView(_ClassroomScopedView):
         ).values_list("student_id", flat=True):
             sittings[sid] = sittings.get(sid, 0) + 1
         students = []
-        scores = []  # on the midterm's CURRENT scale, so the totals below add up
-        scales = set()
+        # Totals speak the scale this room was judged on (see outcomes.summary_basis); a paper
+        # sat on another scale is counted converted, and the stats say so.
+        basis = summary_basis(latest.values(), midterm)
+        scores = []
         for sid in cohort:
             att = latest.get(sid)
             score = att.score if att else None
-            on_scale = rescale(score, att.scoring_scale, midterm.scoring_scale) if att else None
+            on_scale = rescale(score, att.scoring_scale, basis["scoring_scale"]) if att else None
             if score is not None:
                 scores.append(on_scale)
-                scales.add(att.scoring_scale)
             ver = assign_map.get(sid)
             seat = seat_map.get(sid)
             students.append({
@@ -402,7 +403,7 @@ class MidtermV2PanelView(_ClassroomScopedView):
                 "score": score,
                 "score_ceiling": att.score_ceiling if att else midterm.score_ceiling,
                 "scoring_scale": att.scoring_scale if att else midterm.scoring_scale,
-                # The same paper expressed on the midterm's current scale: for the chart only.
+                # The same paper on the scale the totals use: for the chart only.
                 "score_on_scale": on_scale,
                 "rank": ranks.get(sid),
                 "certificate_code": codes.get(sid),
@@ -435,8 +436,10 @@ class MidtermV2PanelView(_ClassroomScopedView):
             "average": round(sum(scores) / len(scores)) if scores else None,
             "highest": max(scores) if scores else None,
             "lowest": min(scores) if scores else None,
-            # Some papers were sat on a different scale and are counted here converted.
-            "mixed_scales": len(scales) > 1,
+            # What the totals and the chart are out of, and whether some papers were sat on
+            # another scale and are counted here converted.
+            "score_ceiling": basis["score_ceiling"],
+            "mixed_scales": basis["mixed_scales"],
         }
         return Response({
             "midterm": _midterm_brief(midterm),

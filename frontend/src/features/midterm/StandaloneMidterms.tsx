@@ -751,7 +751,7 @@ export function StandaloneMidtermDetail({ midtermId }: { midtermId: number }) {
         <StatCard label="Results in" value={summary.submitted} icon={ClipboardCheck} />
         <StatCard
           label="Average score"
-          value={summary.average_score != null ? `${summary.average_score} / ${midterm.score_ceiling}` : "—"}
+          value={summary.average_score != null ? `${summary.average_score} / ${summary.score_ceiling}` : "—"}
           icon={FileText}
           sub={
             summary.average_score != null

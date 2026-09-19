@@ -100,6 +100,18 @@ describe("summarizeStandalone", () => {
     expect(s.average_score).toBe(620);
   });
 
+  it("states the average on the scale everyone sat, even after the midterm's scale changed", () => {
+    const s = summarizeStandalone(
+      [
+        row({ student_id: 1, state: "COMPLETED", submitted: true, score: 90, score_ceiling: 100 }),
+        row({ student_id: 2, state: "COMPLETED", submitted: true, score: 70, score_ceiling: 100 }),
+      ],
+      800,
+    );
+    expect(s.average_score).toBe(80);
+    expect(s.score_ceiling).toBe(100);
+  });
+
   it("is null, not zero, when nobody has finished", () => {
     const s = summarizeStandalone(
       [row({ student_id: 1 }), row({ student_id: 2, state: "ACTIVE" })],

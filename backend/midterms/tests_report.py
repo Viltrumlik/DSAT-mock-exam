@@ -263,7 +263,7 @@ class AdminReportTests(TestCase):
         self.assertEqual(
             body["summary"],
             {"students": 4, "passed": 2, "failed": 1, "absent": 1, "pending": 0,
-             "pass_mark": 500, "average_score": 400},
+             "pass_mark": 500, "average_score": 400, "score_ceiling": 800, "mixed_scales": False},
         )
         rows = {r["student_name"]: r for r in body["rows"]}
         self.assertEqual([r["student_name"] for r in body["rows"]],
