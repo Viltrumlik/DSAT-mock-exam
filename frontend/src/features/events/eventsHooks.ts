@@ -14,8 +14,10 @@ const keys = {
 };
 
 /**
- * What is coming up. Also drives the top-bar button, the sign-in dialog and the dashboard
- * card, so it runs on every page — hence a staleTime rather than a refetch per mount.
+ * What is coming up. Also drives the top-bar button and the sign-in dialog, so it runs on
+ * every page — hence a staleTime rather than a refetch per mount. The top-bar button is
+ * permanent now, so this runs for every student on every page whatever the answer is: one
+ * cached request a minute, and the button's label is read off that answer.
  */
 export function useUpcomingEvents() {
   return useQuery({ queryKey: keys.upcoming, queryFn: () => eventsApi.upcoming(), staleTime: 60_000 });
