@@ -46,6 +46,21 @@ const CONFIRM_MS = 250;
  */
 const ARM_MS = 800;
 
+/** Which signal said the student was gone: a hidden page, a lost fullscreen, or focus elsewhere. */
+export type OffscreenReason = "hidden" | "fullscreen" | "blur";
+
+/**
+ * What the browser saw, sent with each report so the server can keep it as evidence. It
+ * decides nothing — the count, the grace and the forfeit stay the server's — but without it
+ * nobody can tell a student who pressed Esc from one who switched tabs, nor three absences
+ * from ONE absence that outlasted its grace twice (`continuing`).
+ */
+export interface OffscreenEvidence {
+  reason: OffscreenReason | null;
+  /** True when this offence is the same absence still running after its grace expired. */
+  continuing: boolean;
+}
+
 /** What the offence endpoint answers, on either backend. */
 export interface OffscreenReport {
   violations?: number;
@@ -68,7 +83,7 @@ interface UseOffscreenGuardArgs {
    * midterm and an invigilated full mock — the rule is identical, only the backend differs,
    * and hardcoding one of them is what kept this hook midterm-only.
    */
-  report: (attemptId: number, idempotencyKey: string) => Promise<OffscreenReport>;
+  report: (attemptId: number, idempotencyKey: string, evidence: OffscreenEvidence) => Promise<OffscreenReport>;
 }
 
 export interface OffscreenGuard {
@@ -141,6 +156,9 @@ export function useOffscreenGuard({
   // browser, denied request) doesn't read as permanently off-screen.
   const awayRef = useRef(false);
   const eventKeyRef = useRef<string | null>(null);
+  // Minted with the key: a retry re-sends the SAME offence, so it keeps the account it was
+  // first sent with instead of turning a fresh absence into a "continuing" one.
+  const continuingRef = useRef(false);
   const sawFullscreenRef = useRef(false);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Bumped whenever an absence begins or ends, so a report that resolves late can tell
@@ -216,6 +234,15 @@ export function useOffscreenGuard({
       !document.hasFocus() ||
       (fullscreenLost() && selfFullscreenSettling() === 0);
 
+    // The same three signals as isAway, named for the evidence. A hidden page outranks a
+    // lost fullscreen, which outranks focus sitting in another window.
+    const awayReason = (): OffscreenReason | null => {
+      if (document.hidden) return "hidden";
+      if (fullscreenLost() && selfFullscreenSettling() === 0) return "fullscreen";
+      if (!document.hasFocus()) return "blur";
+      return null;
+    };
+
     const startCountdown = (seconds: number) => {
       if (tickRef.current) clearInterval(tickRef.current);
       tickRef.current = null;
@@ -244,13 +271,19 @@ export function useOffscreenGuard({
       }, 1000);
     };
 
-    const report = async () => {
+    const report = async (continuing: boolean) => {
       if (cancelled || terminatedRef.current) return;
-      const key = eventKeyRef.current ?? `offscreen.${attemptId}.${randomSegment()}`;
-      eventKeyRef.current = key;
+      if (eventKeyRef.current === null) {
+        eventKeyRef.current = `offscreen.${attemptId}.${randomSegment()}`;
+        continuingRef.current = continuing;
+      }
+      const key = eventKeyRef.current;
       const absence = absenceRef.current;
       try {
-        const res = await reportRef.current(attemptId, key);
+        const res = await reportRef.current(attemptId, key, {
+          reason: awayReason(),
+          continuing: continuingRef.current,
+        });
         reportFailedRef.current = false;
         if (typeof res.limit === "number" && res.limit > 0) {
           limitRef.current = res.limit;
@@ -310,7 +343,7 @@ export function useOffscreenGuard({
       // still have landed, and charging two chances for one absence is the wrong way to be
       // wrong about it.
       if (!reportFailedRef.current) eventKeyRef.current = null;
-      await report();
+      await report(true);
     };
 
     const evaluate = () => {
@@ -335,7 +368,7 @@ export function useOffscreenGuard({
           if (cancelled || !isAway()) return;
           awayRef.current = true;
           absenceRef.current += 1;
-          void report();
+          void report(false);
         }, CONFIRM_MS);
         return;
       }

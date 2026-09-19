@@ -1006,6 +1006,9 @@ export function ExamRunnerPage() {
         // their exam — the opposite of what it says.
         saveExitAllowed={!isMidterm}
         onSaveAndExit={handleSaveAndExit}
+        // Same reasoning for fullscreen on any proctored paper: leaving it IS the offence,
+        // so the menu must not offer it (it still offers entering it).
+        fullscreenExitAllowed={!proctored}
         onReportProblem={currentQuestion ? () => setReportOpen(true) : undefined}
 
       />
