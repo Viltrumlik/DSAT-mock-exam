@@ -5,9 +5,11 @@ import { createRoot, type Root } from "react-dom/client";
 /**
  * The events entry in the top bar.
  *
- * It appears only while something is open for sign-up — a permanent entry would be dead most
- * of the term — and it survives a failed request, because on desktop it is one of only two
- * ways onto /events and vanishing with the network takes the retry with it.
+ * It is PERMANENT. It used to be gated on `can_sign_up`, which the server turns false the
+ * moment a student takes a seat — so signing up deleted the student's own way back to their
+ * ticket, the joining details and the cancel button. The owner reported exactly that and
+ * asked for the button to stay. These tests pin the three ways it used to disappear: after a
+ * sign-up, with nothing coming up, and on a failed request.
  */
 
 const useMyRewards = vi.fn();
@@ -29,11 +31,22 @@ function event(over: Record<string, unknown> = {}) {
   return { id: 3, title: "Robotics open day", can_sign_up: true, seats_left: 12, ...over };
 }
 
+/** The same event as a student who has taken a seat sees it: the server drops `can_sign_up`. */
+function seatTaken(over: Record<string, unknown> = {}) {
+  return event({
+    can_sign_up: false,
+    my_registration: { id: 9, status: "REGISTERED", ticket_code: "4K297XPD" },
+    ...over,
+  });
+}
+
 let container: HTMLDivElement;
 let root: Root;
 
 const hrefs = () =>
   Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+const eventsLink = () => container.querySelector('a[href="/events"]');
+const eventsLabel = () => eventsLink()?.getAttribute("aria-label") ?? "";
 
 async function render() {
   container = document.createElement("div");
@@ -59,17 +72,53 @@ describe("StudentHeaderExtras — events", () => {
   it("offers a way to /events while one is open for sign-up", async () => {
     await render();
     expect(hrefs()).toContain("/events");
+    expect(eventsLabel()).toContain("Robotics open day");
   });
 
-  it("says nothing when there is nothing to sign up for", async () => {
-    useUpcomingEvents.mockReturnValue({ data: [event({ can_sign_up: false })], isError: false });
+  it("stays put after the student has signed up, and says so", async () => {
+    useUpcomingEvents.mockReturnValue({ data: [seatTaken()], isError: false });
     await render();
-    expect(hrefs()).not.toContain("/events");
+    // The regression: this is the screen of a student holding a ticket, and this button is
+    // their only desktop route to it.
+    expect(hrefs()).toContain("/events");
+    expect(eventsLabel()).toContain("you’re signed up for Robotics open day");
+  });
+
+  it("stays put when there is nothing coming up at all", async () => {
+    useUpcomingEvents.mockReturnValue({ data: [], isError: false });
+    await render();
+    expect(hrefs()).toContain("/events");
+    expect(eventsLabel()).toBe("Events — nothing coming up yet");
   });
 
   it("keeps the way in when the check failed", async () => {
     useUpcomingEvents.mockReturnValue({ data: undefined, isError: true });
     await render();
     expect(hrefs()).toContain("/events");
+    expect(eventsLabel()).toContain("couldn’t check");
+  });
+
+  it("counts open sign-ups from one, because a permanent button no longer says it by being there", async () => {
+    await render();
+    expect(eventsLink()?.textContent).toContain("1");
+  });
+
+  it("counts every open one when several are, and ignores the seat already taken", async () => {
+    useUpcomingEvents.mockReturnValue({
+      data: [event(), event({ id: 4, title: "Math night" }), seatTaken({ id: 5 })],
+      isError: false,
+    });
+    await render();
+    expect(eventsLink()?.textContent).toContain("2");
+    expect(eventsLabel()).toBe("Events — 2 open for sign-up");
+  });
+
+  it("shows no count when nothing is open, rather than a zero", async () => {
+    useUpcomingEvents.mockReturnValue({ data: [seatTaken()], isError: false });
+    await render();
+    // Asserted separately: without it, a button that had vanished would fail this with
+    // "undefined is not a string" instead of saying what actually went wrong.
+    expect(eventsLink()).not.toBeNull();
+    expect(eventsLink()?.textContent).not.toContain("0");
   });
 });

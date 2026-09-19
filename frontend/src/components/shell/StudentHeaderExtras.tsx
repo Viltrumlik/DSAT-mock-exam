@@ -10,24 +10,46 @@ import { useMyRewards } from "@/features/rewards/rewardsHooks";
 import { useOpenSurveys } from "@/features/surveys/surveysHooks";
 
 /**
- * The student's top-bar controls: a running points/coins total, and a call to action that
- * appears only while a survey is waiting.
+ * The student's top-bar controls: a call to action that appears only while a survey is
+ * waiting, a permanent way into Events, and a running points/coins total.
  *
- * Both were sidebar entries before. Neither belonged there — points are a number you want
- * to see change while you work, not a place you navigate to, and a survey exists only now
- * and then, so a permanent link to it is a dead entry most of the term.
+ * Points and the survey prompt were sidebar entries before. Neither belonged there — points
+ * are a number you want to see change while you work, not a place you navigate to, and a
+ * survey exists only now and then, so a permanent link to it is a dead entry most of the
+ * term.
+ *
+ * Events is the opposite case, and the owner said so: it is the student's standing way to
+ * the events list and to the ticket for the seat they hold, so it stays put whatever the
+ * list says. It is also the ONLY place it is offered now — the dashboard card that used to
+ * carry the nearest event was removed with this change.
  */
 export function StudentHeaderExtras() {
   const rewards = useMyRewards();
   const surveys = useOpenSurveys();
   const events = useUpcomingEvents();
-  const openEvents = (events.data ?? []).filter((row) => row.can_sign_up);
-  // A FAILED request is not "no events". `data ?? []` collapses the two, and this is one of
-  // only two desktop routes to /events, so a dropped connection used to remove the entry
-  // point and the retry behind it. On an error the button stays, without a count it cannot
-  // honestly claim.
+  const upcoming = events.data ?? [];
+  const openEvents = upcoming.filter((row) => row.can_sign_up);
+  // The seat the student is already holding. `can_sign_up` turns false the moment they take
+  // one, so an Events button gated on it vanished at exactly the wrong moment: the student
+  // who HAD signed up lost their only desktop route to their own ticket, the joining details
+  // and the cancel button. The owner reported it as "signup qilgandan keyin navbardagi
+  // events yo'qolib qolyapti". The button is permanent now — Events is a place the student
+  // goes, like Points, not a notice that is spent once it has been read.
+  const mySeat = upcoming.find((row) => row.my_registration?.status === "REGISTERED") ?? null;
+  // A FAILED request is not "no events", and must not read as "nothing on": the button is
+  // there either way, and the label is what tells the two apart.
   const eventsFailed = events.isError;
-  const showEvents = openEvents.length > 0 || eventsFailed;
+  const eventsLabel = eventsFailed
+    ? "Events — couldn’t check for new ones"
+    : openEvents.length === 1
+      ? `Events — sign-up open: ${openEvents[0].title}`
+      : openEvents.length > 1
+        ? `Events — ${openEvents.length} open for sign-up`
+        : mySeat
+          ? `Events — you’re signed up for ${mySeat.title}`
+          : upcoming.length > 0
+            ? `Events — next: ${upcoming[0].title}`
+            : "Events — nothing coming up yet";
 
   const points = rewards.data?.points;
   const coins = rewards.data?.coins;
@@ -79,41 +101,27 @@ export function StudentHeaderExtras() {
         </Tooltip>
       ) : null}
 
-      {showEvents ? (
-        <Tooltip
-          content={
-            eventsFailed
-              ? "Events — couldn’t check for new ones"
-              : openEvents.length === 1
-                ? openEvents[0].title
-                : `${openEvents.length} events open`
-          }
-          side="bottom"
+      <Tooltip content={eventsLabel} side="bottom">
+        <Link
+          href="/events"
+          aria-label={eventsLabel}
+          // Desktop only, like the survey prompt: on a phone the same thing is a row in
+          // the account menu, and the top bar has a hamburger, a title, the points pill,
+          // a bell, a theme toggle and an avatar to fit already.
+          className="ds-ring relative hidden h-10 shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-2.5 text-sm font-bold text-foreground transition-colors hover:border-primary/30 hover:bg-surface-2 md:inline-flex md:px-3"
         >
-          <Link
-            href="/events"
-            aria-label={
-              eventsFailed
-                ? "Events"
-                : openEvents.length === 1
-                  ? `Event open: ${openEvents[0].title}`
-                  : `${openEvents.length} events open`
-            }
-            // Desktop only, like the survey prompt: on a phone the same thing is a row in
-            // the account menu, and the top bar has a hamburger, a title, the points pill,
-            // a bell, a theme toggle and an avatar to fit already.
-            className="ds-ring relative hidden h-10 shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-2.5 text-sm font-bold text-foreground transition-colors hover:border-primary/30 hover:bg-surface-2 md:inline-flex md:px-3"
-          >
-            <CalendarDays className="h-[18px] w-[18px] text-primary" strokeWidth={2.25} />
-            <span className="hidden sm:inline">Events</span>
-            {openEvents.length > 1 ? (
-              <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary-soft px-1 text-[11px] font-extrabold text-primary">
-                {openEvents.length}
-              </span>
-            ) : null}
-          </Link>
-        </Tooltip>
-      ) : null}
+          <CalendarDays className="h-[18px] w-[18px] text-primary" strokeWidth={2.25} />
+          <span className="hidden sm:inline">Events</span>
+          {/* The count is on from ONE open event now. While the button came and went, its
+              mere presence said "something is open"; a permanent button says nothing by
+              being there, so the number has to. */}
+          {openEvents.length > 0 ? (
+            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-primary-soft px-1 text-[11px] font-extrabold text-primary">
+              {openEvents.length}
+            </span>
+          ) : null}
+        </Link>
+      </Tooltip>
 
       <Tooltip content="Your points and coins" side="bottom">
         <Link

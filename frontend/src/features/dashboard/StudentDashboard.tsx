@@ -29,7 +29,6 @@ import type { ScheduleEvent } from "@/lib/api";
 import { useDashboardData, type DashboardModel, type ExamDateOption } from "./useDashboardData";
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 import { DashboardStories } from "./DashboardStories";
-import { DashboardEvents } from "./DashboardEvents";
 import { DashboardPulse } from "./DashboardPulse";
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -96,9 +95,9 @@ function DashboardBody({
             vertical space. */}
         <DashboardStories />
 
-        {/* The nearest event, under the noticeboard it belongs beside. Renders nothing when
-            there is none, so an empty dashboard costs no vertical space. */}
-        <DashboardEvents />
+        {/* Events had a card here, under the noticeboard. The owner asked for it to live in
+            the top bar instead ("events dashboardda ko'rinib turmasin tepada navbarda
+            ko'rinib tursin"), where the button is now permanent — see StudentHeaderExtras. */}
 
         {/* Goal + countdown, first thing on the dashboard. For a while they sat below the
             calendar with a chip each standing in for them up top; the owner asked for the
